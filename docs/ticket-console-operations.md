@@ -390,7 +390,10 @@ ticket-detail flow is unavailable:
 /tickets flag-remove flag-id:<exact ID> reason:<reason>
 ```
 
-`flag-add` needs at least one Discord ID or player tag. Copy the exact flag ID
+`flag-add` automatically uses the ticket applicant and recorded account tags when
+run in either the candidate or staff thread with both identity options omitted.
+Outside a ticket, supply at least one Discord ID or player tag. Explicit options
+are never combined with the surrounding ticket’s identity. Copy the exact flag ID
 from ticket detail or `flags` before removing it.
 
 An active **GHOSTED** flag gives matching ticket threads a `👻` prefix on both

@@ -14,7 +14,7 @@ from hikari.impl import (
     TextDisplayComponentBuilder as Text,
 )
 
-from extensions.commands.tickets import flag_store, store, thread_service, ticket
+from extensions.commands.tickets import flag_store, store, thread_service, ticket, perms
 from extensions.commands.tickets.console import (
     refresh_open_staff_contexts_for_flag_best_effort,
     request_hub_refresh_best_effort,
@@ -102,6 +102,23 @@ async def _reply(ctx, title: str, body: str, *, accent: int) -> None:
     )
 
 
+async def flag_identity_from_context(ctx, mongo, discord_ids, player_tags):
+    """Infer only when neither identity option was supplied; never mix targets."""
+    if discord_ids or player_tags:
+        return discord_ids, player_tags
+    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        return (), ()  # The authoritative write authorization returns the denial.
+    document = await store.find_by_location(mongo, ctx.channel_id)
+    if not document or int(document.get("guild_id") or 0) != int(ctx.guild_id or 0):
+        raise ValueError("Run this command in the recruit's ticket or staff thread, or supply discord-ids or player-tags.")
+    applicant = document.get("user_id")
+    if not applicant:
+        raise ValueError("This ticket has no applicant identity. Supply discord-ids or player-tags.")
+    # Stored identities are append-only and include reviewed provider links;
+    # unverified tags mentioned in conversation are deliberately excluded.
+    return (str(applicant),), tuple(document.get("player_tags") or ())
+
+
 @ticket.register()
 class FlagAddCommand(
     lightbulb.SlashCommand,
@@ -126,13 +143,13 @@ class FlagAddCommand(
     )
     discord_ids = lightbulb.string(
         "discord-ids",
-        "One or more Discord IDs, separated by commas",
+        "Discord IDs; omit both identity fields to use this ticket's applicant",
         default=None,
         max_length=100,
     )
     player_tags = lightbulb.string(
         "player-tags",
-        "One or more player tags, separated by commas",
+        "Player tags; omit both identity fields to use this ticket's applicant",
         default=None,
         max_length=100,
     )
@@ -151,6 +168,7 @@ class FlagAddCommand(
         try:
             discord_ids = _discord_ids(self.discord_ids)
             player_tags = _tags(self.player_tags)
+            discord_ids, player_tags = await flag_identity_from_context(ctx, mongo, discord_ids, player_tags)
             result = await flag_store.set_flag_authorized(
                 mongo,
                 member=ctx.member,

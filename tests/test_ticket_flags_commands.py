@@ -367,3 +367,60 @@ def test_flag_remove_stays_successful_when_context_propagation_is_deferred(monke
         "defer", "removed", "context-pending", "hub", "respond",
     ]
     assert "Flag removed" in str(events[-1][1]["components"][0].build())
+
+
+@pytest.mark.parametrize('channel',[101,102])
+def test_flag_identity_infers_candidate_in_both_threads(monkeypatch,channel):
+    from tests.test_ticket_storage_foundation import _mongo,_ticket
+    ticket=_ticket();ticket['mentioned_tags']=['#FOREIGN']
+    async def allowed(*a): return True
+    monkeypatch.setattr(flags.perms,'is_recruiter',allowed)
+    ctx=SimpleNamespace(channel_id=channel,guild_id=10,member=object())
+    ids,tags=asyncio.run(flags.flag_identity_from_context(ctx,_mongo(ticket),(),()))
+    assert ids==(str(ticket['user_id']),)
+    assert tags==tuple(ticket['player_tags'])
+    assert '#FOREIGN' not in tags
+
+
+@pytest.mark.parametrize('ids,tags',[(('123',),()),((),('#PYY',))])
+def test_explicit_flag_target_does_not_mix_in_ticket_identity(monkeypatch,ids,tags):
+    async def forbidden(*a): raise AssertionError('No contextual lookup for an explicit target')
+    monkeypatch.setattr(flags.store,'find_by_location',forbidden)
+    assert asyncio.run(flags.flag_identity_from_context(None,None,ids,tags))==(ids,tags)
+
+
+def test_flag_inference_does_not_read_before_authorization(monkeypatch):
+    async def denied(*a): return False
+    async def forbidden(*a): raise AssertionError('Unauthorized lookup')
+    monkeypatch.setattr(flags.perms,'is_recruiter',denied)
+    monkeypatch.setattr(flags.store,'find_by_location',forbidden)
+    assert asyncio.run(flags.flag_identity_from_context(SimpleNamespace(member=None),None,(),()))==((),())
+
+
+@pytest.mark.parametrize('guild,channel',[(11,101),(10,999)])
+def test_flag_inference_rejects_foreign_guild_and_non_ticket(monkeypatch,guild,channel):
+    from tests.test_ticket_storage_foundation import _mongo,_ticket
+    async def allowed(*a): return True
+    monkeypatch.setattr(flags.perms,'is_recruiter',allowed)
+    with pytest.raises(ValueError,match='ticket or staff thread'):
+        asyncio.run(flags.flag_identity_from_context(SimpleNamespace(member=object(),guild_id=guild,channel_id=channel),_mongo(_ticket()),(),()))
+
+
+def test_flag_add_command_passes_inferred_identity_to_authorized_writer(monkeypatch):
+    from tests.test_ticket_storage_foundation import _mongo,_ticket
+    from extensions.commands.tickets import store
+    ticket=_ticket();captured={}
+    async def allowed(*a): return True
+    async def write(*a,**kw):
+        captured.update(kw)
+        return SimpleNamespace(outcome=store.WON,doc={'discord_ids':list(kw['discord_ids']),'player_tags':list(kw['player_tags']),'reason':kw['reason']})
+    async def nothing(*a,**kw): pass
+    monkeypatch.setattr(flags.perms,'is_recruiter',allowed)
+    monkeypatch.setattr(flags.flag_store,'set_flag_authorized',write)
+    for name in ('_reconcile_ghost_names_best_effort','refresh_open_staff_contexts_for_flag_best_effort','request_hub_refresh_best_effort','_reply'):
+        monkeypatch.setattr(flags,name,nothing)
+    ctx=SimpleNamespace(defer=nothing,member=object(),guild_id=10,channel_id=102,user=SimpleNamespace(username='Recruiter'))
+    command=SimpleNamespace(discord_ids=None,player_tags=None,kind=flags.flag_store.FLAG_GHOSTED,reason='Stopped responding')
+    asyncio.run(flags.FlagAddCommand.invoke(command,ctx,mongo=_mongo(ticket),bot=object()))
+    assert captured['discord_ids']==(str(ticket['user_id']),)
+    assert captured['player_tags']==tuple(ticket['player_tags'])
