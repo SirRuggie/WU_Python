@@ -1170,6 +1170,29 @@ def _pending_fwa_identity_review(ticket: Mapping) -> Mapping | None:
     return review
 
 
+def _conflict_review_covers_fwa_accounts(ticket: Mapping, review: Mapping) -> bool:
+    """One explicit account review also satisfies the FWA re-review of those tags.
+
+    Never extend that consent to newly discovered accounts or changed ownership.
+    The fresh linked snapshot must still match the saved provider fingerprint.
+    """
+    linked = ticket.get("linked_accounts") or {}
+    confirmed = linked.get("conflict_review") or {}
+    new_tags = set(review.get("new_tags") or ())
+    return bool(
+        new_tags
+        and confirmed.get("reason")
+        and confirmed.get("reviewed_by")
+        and confirmed.get("user_id") == ticket.get("user_id")
+        and confirmed.get("conflict_key")
+        and confirmed.get("conflict_key") == linked.get("conflict_key")
+        and not linked.get("unavailable_sources")
+        and not linked.get("conflicting_tags")
+        and new_tags <= set(confirmed.get("tags") or ())
+        and new_tags <= set(linked.get("current_tags") or ())
+    )
+
+
 async def _staff_context_is_fresh_for_review(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
@@ -1442,8 +1465,10 @@ async def _resolve_ticket(
         and str(ticket.get("ticket_type") or "").lower() == "fwa"
         else None
     )
-    review_acknowledged = False
-    if review is not None:
+    review_acknowledged = bool(
+        review is not None and _conflict_review_covers_fwa_accounts(ticket, review)
+    )
+    if review is not None and not review_acknowledged:
         review_revision = max(0, int(review.get("account_revision") or 0))
         context_fresh = await _staff_context_is_fresh_for_review(
             bot, mongo, ticket, review

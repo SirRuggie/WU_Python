@@ -73,6 +73,7 @@ invalidate the review; an unavailable provider cannot be overridden this way.
 Submission resumes the same approval service (or the explicitly requested
 console overturn flow). Restored tags participate in historical identity, flags,
 blacklist and FWA Chocolate checks. Existing decision and account revision guards
-remain in place. A new FWA account may still require the existing Chocolate review
-before approval finishes. No path approves automatically merely because a review
+remain in place. The exact accounts explicitly confirmed in this review also satisfy the FWA
+account re-review, avoiding a redundant prompt. Unrelated newly discovered
+accounts still require their own review. No path approves automatically merely because a review
 reason was supplied. Staff see the saved reason alongside player information.
