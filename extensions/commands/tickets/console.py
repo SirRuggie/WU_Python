@@ -3340,7 +3340,15 @@ async def build_staff_identity_context(
     )
     heading = f"## {STAFF_CONTEXT_TITLE_PREFIX}"
     account_copy = _staff_account_summary(ticket_doc) if has_account_snapshot else None
-    account_state = account_sync.snapshot_from_ticket(ticket_doc).state
+    account_snapshot = account_sync.snapshot_from_ticket(ticket_doc)
+    account_state = account_snapshot.state
+    from extensions.commands.tickets.player_info import account_line, warnings
+    if has_account_snapshot:
+        warning = warnings(account_snapshot)
+        preview = '\n\n'.join(account_line(a) for a in account_snapshot.current_accounts[:3])
+        account_copy = '\n\n'.join(part for part in (account_copy, warning, preview) if part)
+        if len(account_snapshot.current_accounts) > 3:
+            account_copy += '\n\nOpen **View All Player Info** for the complete account list.'
     history_heading = (
         "### This person has opened a ticket before.\n"
         "Open the earlier thread and read it before you answer here."
@@ -3379,6 +3387,11 @@ async def build_staff_identity_context(
         Text(content=heading),
         *([Text(content=account_copy)] if account_copy else []),
     ]
+    if has_account_snapshot:
+        components.append(ActionRow(components=[
+            Button(style=hikari.ButtonStyle.SECONDARY,label="View All Player Info",custom_id=f"ticket_player_info:{_ticket_id(ticket_doc)}|1"),
+            Button(style=hikari.ButtonStyle.SECONDARY,label="Refresh Player Info",custom_id=f"ticket_player_refresh:{_ticket_id(ticket_doc)}"),
+        ]))
     for (prefix, reason), reason_budget in zip(flag_copy, reason_budgets):
         components.append(Text(content=(
             prefix + _truncate_text(reason, reason_budget)

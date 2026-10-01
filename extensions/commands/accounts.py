@@ -45,6 +45,8 @@ class AccountEntry:
     tag: str
     status: str
     account: todo_data.Account | None = None
+    link_sources: tuple[str, ...] = ()
+    clashperk_verified: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +55,8 @@ class AccountsData:
 
     entries: tuple[AccountEntry, ...] = ()
     problem: str | None = None
+    unavailable_sources: tuple[str, ...] = ()
+    conflicting_tags: tuple[str, ...] = ()
 
     @property
     def linked_count(self) -> int:
@@ -134,6 +138,7 @@ async def load_accounts(
     discord_id: int,
     *,
     force: bool = False,
+    linked_result=None,
 ) -> AccountsData:
     """Resolve and account for every tag linked to ``discord_id``.
 
@@ -146,26 +151,33 @@ async def load_accounts(
     reconciles its output against the original link list.
     """
     discord_id = int(discord_id)
-    if not force and (cached := _cached_result(discord_id)) is not None:
+    if linked_result is None and not force and (cached := _cached_result(discord_id)) is not None:
         return cached
 
     cache_key = f"links:{discord_id}"
     # A newly linked account must appear when the member reruns the command.
     # Page clicks use the warm result above; only a fresh slash invocation
     # bypasses the six-hour shared link cache.
-    tags = None if force else todo_data.cache_get(cache_key)
-    if tags is None:
-        tags = await resolve_tags(discord_id)
-        if tags is None:
-            return AccountsData(problem=LINK_FAILURE)
-        tags = _normalize_tags(tags)
-        todo_data.cache_put(cache_key, tags, todo_data.TTL_LINKS)
+    if linked_result is not None:
+        tags = list(linked_result.sources)
     else:
-        tags = _normalize_tags(tags)
+        tags = None if force else todo_data.cache_get(cache_key)
+        if tags is None:
+            tags = await resolve_tags(discord_id)
+            if tags is None:
+                return AccountsData(problem=LINK_FAILURE)
+            tags = _normalize_tags(tags)
+            todo_data.cache_put(cache_key, tags, todo_data.TTL_LINKS)
+        else:
+            tags = _normalize_tags(tags)
 
     if not tags:
-        data = AccountsData()
-        _remember_result(discord_id, data)
+        data = AccountsData(
+            unavailable_sources=linked_result.unavailable if linked_result else (),
+            conflicting_tags=linked_result.conflicts if linked_result else (),
+        )
+        if linked_result is None:
+            _remember_result(discord_id, data)
         return data
 
     loaded, errors = await todo_data.fetch_accounts(coc_client, tags)
@@ -193,9 +205,20 @@ async def load_accounts(
         else:
             entries.append(AccountEntry(tag, STATUS_NOT_FOUND))
 
+    if linked_result is not None:
+        entries = [AccountEntry(
+            entry.tag, entry.status, entry.account,
+            linked_result.sources.get(entry.tag, ()),
+            linked_result.verified.get(entry.tag),
+        ) for entry in entries]
     entries.sort(key=_entry_sort_key)
-    data = AccountsData(entries=tuple(entries))
-    _remember_result(discord_id, data)
+    data = AccountsData(
+        entries=tuple(entries),
+        unavailable_sources=linked_result.unavailable if linked_result else (),
+        conflicting_tags=linked_result.conflicts if linked_result else (),
+    )
+    if linked_result is None:
+        _remember_result(discord_id, data)
     return data
 
 

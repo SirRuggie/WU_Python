@@ -1319,7 +1319,7 @@ def _candidate_account_copy(ticket: Mapping[str, Any] | None) -> str:
     if snapshot.state == "empty":
         return (
             "### 🔗 No linked accounts found\n"
-            "Please link your Clash accounts through ClashKing `/link`. Staff can "
+            "Please link your Clash accounts through ClashKing or ClashPerk `/link`. Staff can "
             "also help privately. Your complete account list will be checked again "
             "before a decision."
         )

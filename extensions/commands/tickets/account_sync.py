@@ -19,11 +19,17 @@ import coc
 from extensions.commands.accounts import (
     LINK_FAILURE,
     AccountEntry,
-    load_accounts,
+    load_accounts as _load_accounts,
 )
 from extensions.commands.tickets import schema, store
-from utils import bot_data
+from utils import bot_data, recruit_links
 from utils.mongo import MongoClient
+
+
+async def load_accounts(coc_client, discord_id, *, force=True):
+    """All ticket paths (opening, refresh, decisions) use both link sources."""
+    links = await recruit_links.resolve(discord_id)
+    return await _load_accounts(coc_client, discord_id, force=True, linked_result=links)
 
 
 _log = logging.getLogger(__name__)
@@ -44,7 +50,7 @@ SOURCE_RECOVERY = "automatic_retry"
 MAX_SOURCE_LENGTH = 80
 MAX_NAME_LENGTH = 100
 MAX_SYNC_RETRIES = 8
-CONTEXT_REFRESH_SOURCES = frozenset({SOURCE_FINAL_APPROVE, SOURCE_RECOVERY})
+CONTEXT_REFRESH_SOURCES = frozenset({SOURCE_FINAL_APPROVE, SOURCE_RECOVERY, SOURCE_RECRUITER_REFRESH})
 
 
 class AccountSyncError(RuntimeError):
@@ -57,6 +63,10 @@ class LinkedAccount:
     name: str | None = None
     town_hall: int = 0
     profile_status: str = "not_loaded"
+    link_sources: tuple[str, ...] = ()
+    clashperk_verified: bool | None = None
+    clan_name: str | None = None
+    clan_tag: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,10 +81,12 @@ class AccountSnapshot:
     last_success_at: datetime | None = None
     error: str | None = None
     revision: int = 0
+    unavailable_sources: tuple[str, ...] = ()
+    conflicting_tags: tuple[str, ...] = ()
 
     @property
     def successful(self) -> bool:
-        return self.state in {STATE_READY, STATE_EMPTY}
+        return self.state in {STATE_READY, STATE_EMPTY} and not self.retry_required
 
     @property
     def has_linked_accounts(self) -> bool:
@@ -119,6 +131,10 @@ def _account_from_document(value: Mapping[str, Any]) -> LinkedAccount | None:
         name=_text(value.get("name"), limit=MAX_NAME_LENGTH),
         town_hall=max(0, int(value.get("town_hall") or 0)),
         profile_status=str(value.get("profile_status") or "not_loaded")[:40],
+        link_sources=tuple(v for v in value.get("link_sources", ()) if v in {"ClashKing", "ClashPerk"}),
+        clashperk_verified=value.get("clashperk_verified") if isinstance(value.get("clashperk_verified"), bool) else None,
+        clan_name=_text(value.get("clan_name"), limit=MAX_NAME_LENGTH),
+        clan_tag=_text(value.get("clan_tag"), limit=20),
     )
 
 
@@ -152,6 +168,8 @@ def snapshot_from_ticket(ticket: Mapping[str, Any] | None) -> AccountSnapshot:
         last_success_at=linked.get("last_success_at") if isinstance(linked.get("last_success_at"), datetime) else None,
         error=_text(linked.get("error"), limit=120),
         revision=max(0, int(linked.get("revision") or 0)),
+        unavailable_sources=tuple(linked.get("unavailable_sources") or ()),
+        conflicting_tags=tuple(linked.get("conflicting_tags") or ()),
     )
 
 
@@ -165,6 +183,10 @@ def _entry_document(entry: AccountEntry) -> dict:
         "name": _text(getattr(account, "name", None), limit=MAX_NAME_LENGTH),
         "town_hall": max(0, int(getattr(account, "town_hall", 0) or 0)),
         "profile_status": str(entry.status or "not_loaded")[:40],
+        "link_sources": list(getattr(entry, "link_sources", ())),
+        "clashperk_verified": getattr(entry, "clashperk_verified", None),
+        "clan_name": _text(getattr(account, "clan_name", None), limit=MAX_NAME_LENGTH),
+        "clan_tag": _text(getattr(account, "clan_tag", None), limit=20),
     }
 
 
@@ -193,7 +215,7 @@ def _failed_update(
     }
     update = {
         "$set": {
-            "linked_accounts.version": 1,
+            "linked_accounts.version": 2,
             "linked_accounts.state": STATE_FAILED,
             "linked_accounts.retry_required": True,
             "linked_accounts.source": source,
@@ -240,8 +262,19 @@ def _success_update(
     source: str,
     at: datetime,
     accounts: list[dict],
+    unavailable: tuple[str, ...] = (),
+    conflicts: tuple[str, ...] = (),
 ) -> tuple[dict, tuple[str, ...], tuple[str, ...]]:
     prior = snapshot_from_ticket(ticket)
+    # During an outage, retain prior records whose provider could not answer.
+    # They remain visibly stale, never interpreted as newly unlinked.
+    if unavailable:
+        present = {item["tag"] for item in accounts}
+        for old in (ticket.get("linked_accounts") or {}).get("current", ()):
+            if old["tag"] not in present and old["tag"] not in conflicts and (
+                not old.get("link_sources") or set(old["link_sources"]) & set(unavailable)
+            ):
+                accounts.append(dict(old))
     current_tags = tuple(schema.player_tags(item["tag"] for item in accounts))
     observed_linked = {
         tag
@@ -252,7 +285,7 @@ def _success_update(
     added = tuple(tag for tag in current_tags if tag not in observed_linked)
     no_longer_linked = tuple(tag for tag in prior.current_tags if tag not in set(current_tags))
     revision = prior.revision + 1
-    state = STATE_READY if current_tags else STATE_EMPTY
+    state = (STATE_READY if current_tags else STATE_EMPTY) if not (unavailable or conflicts) else (STATE_READY if current_tags else STATE_FAILED)
     normalized_accounts = tuple(
         account
         for item in accounts
@@ -262,17 +295,21 @@ def _success_update(
         prior.state != state
         or prior.current_accounts != normalized_accounts
         or prior.current_tags != current_tags
+        or prior.unavailable_sources != unavailable
+        or prior.conflicting_tags != conflicts
     )
     approval_review_tags = tuple(
         tag for tag in current_tags if tag not in set(prior.current_tags)
     )
     update: dict = {
         "$set": {
-            "linked_accounts.version": 1,
+            "linked_accounts.version": 2,
             "linked_accounts.state": state,
             "linked_accounts.current": accounts,
             "linked_accounts.current_tags": list(current_tags),
-            "linked_accounts.retry_required": False,
+            "linked_accounts.retry_required": bool(unavailable or conflicts),
+            "linked_accounts.unavailable_sources": list(unavailable),
+            "linked_accounts.conflicting_tags": list(conflicts),
             "linked_accounts.source": source,
             "linked_accounts.last_attempt_at": at,
             "linked_accounts.last_success_at": at,
@@ -297,6 +334,8 @@ def _success_update(
             },
         },
     }
+    if unavailable or conflicts:
+        update["$set"].pop("linked_accounts.last_success_at", None)
     if current_tags:
         update["$addToSet"] = {"player_tags": {"$each": list(current_tags)}}
         if not ticket.get("player_tag"):
@@ -401,7 +440,9 @@ async def _persist_sync_result(
             assert loaded is not None
             accounts = [_entry_document(entry) for entry in loaded.entries]
             update, added, removed = _success_update(
-                ticket, source=origin, at=at, accounts=accounts
+                ticket, source=origin, at=at, accounts=accounts,
+                unavailable=loaded.unavailable_sources,
+                conflicts=loaded.conflicting_tags,
             )
         result = await store.compare_and_swap_linked_accounts(
             mongo,
@@ -729,49 +770,46 @@ async def recover_pending_account_syncs(
         except Exception:
             counts["failed"] += 1
             continue
-        if result.snapshot.retry_required:
-            counts["failed"] += 1
-        else:
-            if flag_identity_refresh_required(result.ticket):
-                try:
-                    durable = await reconcile_flag_identities(
-                        mongo,
-                        result.ticket or {},
-                        source=SOURCE_RECOVERY,
+        if flag_identity_refresh_required(result.ticket):
+            try:
+                durable = await reconcile_flag_identities(
+                    mongo,
+                    result.ticket or {},
+                    source=SOURCE_RECOVERY,
+                )
+                result = AccountSyncResult(
+                    durable,
+                    snapshot_from_ticket(durable),
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                counts["failed"] += 1
+                continue
+        context_required = staff_context_refresh_required(result.ticket)
+        if context_required and result.ticket is not None:
+            if after_sync is None:
+                counts["failed"] += 1
+                continue
+            try:
+                queued = await after_sync(result.ticket)
+                if not queued:
+                    raise AccountSyncError(
+                        "staff-context refresh was not durably queued"
                     )
-                    result = AccountSyncResult(
-                        durable,
-                        snapshot_from_ticket(durable),
+                confirmed = await confirm_staff_context_queued(
+                    mongo,
+                    result.ticket["_id"],
+                    account_revision=result.snapshot.revision,
+                )
+                if not confirmed:
+                    raise AccountSyncError(
+                        "staff-context queue confirmation lost an account race"
                     )
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    counts["failed"] += 1
-                    continue
-            context_required = staff_context_refresh_required(result.ticket)
-            if context_required and result.ticket is not None:
-                if after_sync is None:
-                    counts["failed"] += 1
-                    continue
-                try:
-                    queued = await after_sync(result.ticket)
-                    if not queued:
-                        raise AccountSyncError(
-                            "staff-context refresh was not durably queued"
-                        )
-                    confirmed = await confirm_staff_context_queued(
-                        mongo,
-                        result.ticket["_id"],
-                        account_revision=result.snapshot.revision,
-                    )
-                    if not confirmed:
-                        raise AccountSyncError(
-                            "staff-context queue confirmation lost an account race"
-                        )
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    counts["failed"] += 1
-                    continue
-            counts["completed"] += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                counts["failed"] += 1
+                continue
+        counts["failed" if result.snapshot.retry_required else "completed"] += 1
     return counts

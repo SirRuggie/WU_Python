@@ -1464,6 +1464,11 @@ async def _resolve_ticket(
                 FWA_IDENTITY_REFRESH_PENDING_MESSAGE,
             )
         review_acknowledged = True
+    if kind == KIND_APPROVE and (snapshot.unavailable_sources or snapshot.conflicting_tags):
+        return store.Transition(
+            store.BLOCKED, ticket,
+            "Account lookup is incomplete or has conflicting ownership. Refresh player info and resolve the source warnings before approval.",
+        )
     if kind == KIND_APPROVE and not snapshot.has_linked_accounts:
         reason = (
             "linked-account lookup failed; approval is blocked until it succeeds"
