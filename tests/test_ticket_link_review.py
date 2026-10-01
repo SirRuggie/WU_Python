@@ -132,3 +132,27 @@ def test_no_does_not_save_review_or_approve(monkeypatch):
     async def edit(**kw): pass
     monkeypatch.setattr(link_review,'session',sess);monkeypatch.setattr(link_review,'save_review',forbidden)
     asyncio.run(link_review.no(SimpleNamespace(defer=defer,interaction=SimpleNamespace(edit_initial_response=edit)),'token',mongo=object()))
+
+
+def test_button_modal_updates_origin_instead_of_creating_new_response():
+    import hikari
+    calls=[]
+    async def create(response_type): calls.append(response_type)
+    async def forbidden(**kw): raise AssertionError('Must not create another ephemeral reply')
+    ctx=SimpleNamespace(defer=forbidden,interaction=SimpleNamespace(message=object(),create_initial_response=create))
+    asyncio.run(link_review.defer_modal_update(ctx))
+    assert calls==[hikari.ResponseType.DEFERRED_MESSAGE_UPDATE]
+
+
+def test_no_updates_original_and_removes_yes_no_controls(monkeypatch):
+    calls=[]
+    async def sess(*a): return {'ticket_id':'ticket'}
+    async def defer(**kw): calls.append(('defer',kw))
+    async def edit(**kw): calls.append(('edit',kw))
+    monkeypatch.setattr(link_review,'session',sess)
+    ctx=SimpleNamespace(defer=defer,interaction=SimpleNamespace(edit_initial_response=edit))
+    asyncio.run(link_review.no(ctx,'token',mongo=object()))
+    assert calls[0]==('defer',{'edit':True})
+    rendered=str([c.build() for c in calls[1][1]['components']])
+    assert 'ticket_link_review_yes' not in rendered and 'ticket_link_review_no' not in rendered
+    assert 'Review Player Info' in rendered

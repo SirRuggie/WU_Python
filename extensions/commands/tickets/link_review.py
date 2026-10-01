@@ -16,6 +16,19 @@ from utils.mongo import MongoClient
 REASON = 'linked_account_conflict_review'
 
 
+def notice(text):
+    return [Container(accent_color=0xF1C40F, components=[Text(content=text)])]
+
+
+async def defer_modal_update(ctx):
+    # Lightbulb ModalContext.defer only creates a new response. Discord modal
+    # submissions originating from a button can instead update that message.
+    if getattr(ctx.interaction, 'message', None) is not None:
+        await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
+    else:
+        await ctx.defer(ephemeral=True)
+
+
 async def prompt(mongo, ticket, owner_id, guild_id, *, overturn=False):
     linked = ticket.get('linked_accounts') or {}
     token = uuid.uuid4().hex
@@ -55,10 +68,10 @@ async def yes(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
 @register_action('ticket_link_review_no',opens_modal=True,no_return=True,preload_state=False)
 @lightbulb.di.with_di
 async def no(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
-    await ctx.defer(ephemeral=True)
+    await ctx.defer(edit=True)
     data=await session(ctx,mongo,action_id)
     if not data:
-        await ctx.interaction.edit_initial_response(content='This review expired or is not yours. Click Approve again.')
+        await ctx.interaction.edit_initial_response(components=notice('This review expired or is not yours. Click Approve again.'))
         return
     await ctx.interaction.edit_initial_response(components=[Container(accent_color=0xF1C40F,components=[
         Text(content='## Review first\nReview and resolve the linked-account conflicts, or click Approve again when you are ready to record your reasoning. Nothing was changed.'),
@@ -89,12 +102,13 @@ async def save_review(mongo, data, *, reason, actor_id, actor_name):
 @register_action('ticket_link_review_submit',is_modal=True,no_return=True,preload_state=False)
 @lightbulb.di.with_di
 async def submit(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,bot:hikari.GatewayBot=lightbulb.di.INJECTED,**_):
-    await ctx.defer(ephemeral=True)
+    await defer_modal_update(ctx)
     data=await session(ctx,mongo,action_id)
     from extensions.commands.tickets import console, resolve
     if not data or not await save_review(mongo,data,reason=console._modal_value(ctx,'reason'),actor_id=ctx.user.id,actor_name=ctx.user.username):
-        await ctx.interaction.edit_initial_response(content='The review expired, was already submitted, or the ticket/accounts changed. Click Approve again to review the latest information.')
+        await ctx.interaction.edit_initial_response(components=notice('The review expired, was already submitted, or the ticket/accounts changed. Click Approve again to review the latest information.'))
         return
+    await ctx.interaction.edit_initial_response(components=notice('Review saved. Continuing approval…'))
     if data.get('overturn'):
         result=await resolve.overturn_ticket(bot,mongo,ticket_id=data['ticket_id'],member=ctx.member,actor_name=ctx.user.username,to_status='approved')
     else:
