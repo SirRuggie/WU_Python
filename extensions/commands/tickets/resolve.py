@@ -1420,6 +1420,10 @@ async def _resolve_ticket(
                 return store.Transition(store.MISSING, None)
             ticket = synced.ticket
             snapshot = synced.snapshot
+    if kind == KIND_APPROVE and snapshot.unavailable_sources:
+        return store.Transition(store.BLOCKED, ticket, "Account lookup is incomplete. Retry when both link services are available.")
+    if kind == KIND_APPROVE and snapshot.conflicting_tags:
+        return store.Transition(store.BLOCKED, ticket, "linked_account_conflict_review")
     context_refreshed_this_attempt = False
     if kind == KIND_APPROVE and account_sync.staff_context_refresh_required(ticket):
         queued = await _queue_and_deliver_latest_staff_context(
@@ -1464,11 +1468,6 @@ async def _resolve_ticket(
                 FWA_IDENTITY_REFRESH_PENDING_MESSAGE,
             )
         review_acknowledged = True
-    if kind == KIND_APPROVE and (snapshot.unavailable_sources or snapshot.conflicting_tags):
-        return store.Transition(
-            store.BLOCKED, ticket,
-            "Account lookup is incomplete or has conflicting ownership. Refresh player info and resolve the source warnings before approval.",
-        )
     if kind == KIND_APPROVE and not snapshot.has_linked_accounts:
         reason = (
             "linked-account lookup failed; approval is blocked until it succeeds"

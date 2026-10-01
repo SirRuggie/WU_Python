@@ -55,3 +55,24 @@ owners, empty versus unavailable sources, partial-outage retention, recovery,
 ClashPerk-only approval, incomplete-lookup approval blocks, credentials/401s,
 batching, authorization and Discord layout limits. A read-only live lookup also
 checks source access and official game profiles. No test changes provider links.
+
+## Reviewing link conflicts during approval
+
+Approve from a console button or `/tickets approve` presents one private review
+for all conflicting accounts: **Yes — Reviewed** opens a required reason modal;
+**No — Review First** leaves the ticket unchanged and links to player information.
+All handlers recheck the requesting recruiter, guild and fixed 15-minute session.
+
+The review is recorded under `linked_accounts.conflict_review` and in the bounded
+`account_identity_audit` with reviewer, time, reason, tags and a fingerprint of the
+applicant plus both providers' exact owner mappings. It is a ticket-local staff
+review, not a change to an external link service. Conflicting tags are included
+only while this exact review matches a fresh, complete lookup. Changed mappings
+invalidate the review; an unavailable provider cannot be overridden this way.
+
+Submission resumes the same approval service (or the explicitly requested
+console overturn flow). Restored tags participate in historical identity, flags,
+blacklist and FWA Chocolate checks. Existing decision and account revision guards
+remain in place. A new FWA account may still require the existing Chocolate review
+before approval finishes. No path approves automatically merely because a review
+reason was supplied. Staff see the saved reason alongside player information.

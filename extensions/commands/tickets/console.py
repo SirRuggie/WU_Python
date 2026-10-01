@@ -3342,9 +3342,9 @@ async def build_staff_identity_context(
     account_copy = _staff_account_summary(ticket_doc) if has_account_snapshot else None
     account_snapshot = account_sync.snapshot_from_ticket(ticket_doc)
     account_state = account_snapshot.state
-    from extensions.commands.tickets.player_info import account_line, warnings
+    from extensions.commands.tickets.player_info import account_line, warnings, review_note
     if has_account_snapshot:
-        warning = warnings(account_snapshot)
+        warning = "\n\n".join(p for p in (warnings(account_snapshot), review_note(ticket_doc)) if p)
         preview = '\n\n'.join(account_line(a) for a in account_snapshot.current_accounts[:3])
         account_copy = '\n\n'.join(part for part in (account_copy, warning, preview) if part)
         if len(account_snapshot.current_accounts) > 3:
@@ -6484,7 +6484,7 @@ async def ticket_console_browse_pick(
 
 
 async def _transition_result_panel(
-    result, *, verb: str, mongo: MongoClient, owner_id: int, guild_id: int,
+    result, *, verb: str, mongo: MongoClient, owner_id: int, guild_id: int, overturn: bool = False,
 ) -> list[Container]:
     if result.outcome == store.WON:
         return _notice(
@@ -6499,6 +6499,9 @@ async def _transition_result_panel(
             resolve.RESOLUTION_EFFECT_RETRY_MESSAGE,
             accent=ACCENT_YELLOW,
         )
+    if result.outcome == store.BLOCKED and result.reason == "linked_account_conflict_review" and result.doc:
+        from .link_review import prompt
+        return await prompt(mongo, result.doc, owner_id, guild_id, **({"overturn": True} if overturn else {}))
     if result.outcome == store.BLOCKED:
         blocker = result.blocker or {}
         if not blocker:
@@ -6748,7 +6751,7 @@ async def ticket_console_overturn_approve_go(
     if result.outcome in {store.WON, store.EFFECT_FAILED}:
         await request_hub_refresh_best_effort(bot, mongo, reason="ticket overturned")
     return await _transition_result_panel(
-        result, verb="approved", mongo=mongo, owner_id=owner_id, guild_id=guild_id,
+        result, verb="approved", mongo=mongo, owner_id=owner_id, guild_id=guild_id, overturn=True,
     )
 
 

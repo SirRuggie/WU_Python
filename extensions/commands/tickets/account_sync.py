@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Mapping
 
@@ -26,9 +26,13 @@ from utils import bot_data, recruit_links
 from utils.mongo import MongoClient
 
 
-async def load_accounts(coc_client, discord_id, *, force=True):
+async def load_accounts(coc_client, discord_id, *, force=True, conflict_review=None):
     """All ticket paths (opening, refresh, decisions) use both link sources."""
     links = await recruit_links.resolve(discord_id)
+    if (conflict_review and links.conflict_key and not links.unavailable
+        and conflict_review.get("conflict_key") == links.conflict_key
+        and conflict_review.get("user_id") == int(discord_id)):
+        links = replace(links, sources={**links.sources, **links.disputed_sources}, conflicts=())
     return await _load_accounts(coc_client, discord_id, force=True, linked_result=links)
 
 
@@ -264,6 +268,7 @@ def _success_update(
     accounts: list[dict],
     unavailable: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
+    conflict_key: str = "",
 ) -> tuple[dict, tuple[str, ...], tuple[str, ...]]:
     prior = snapshot_from_ticket(ticket)
     # During an outage, retain prior records whose provider could not answer.
@@ -310,6 +315,7 @@ def _success_update(
             "linked_accounts.retry_required": bool(unavailable or conflicts),
             "linked_accounts.unavailable_sources": list(unavailable),
             "linked_accounts.conflicting_tags": list(conflicts),
+            "linked_accounts.conflict_key": conflict_key,
             "linked_accounts.source": source,
             "linked_accounts.last_attempt_at": at,
             "linked_accounts.last_success_at": at,
@@ -334,6 +340,9 @@ def _success_update(
             },
         },
     }
+    prior_review = (ticket.get("linked_accounts") or {}).get("conflict_review") or {}
+    if not unavailable and prior_review and prior_review.get("conflict_key") != conflict_key:
+        update["$unset"]["linked_accounts.conflict_review"] = ""
     if unavailable or conflicts:
         update["$set"].pop("linked_accounts.last_success_at", None)
     if current_tags:
@@ -443,6 +452,7 @@ async def _persist_sync_result(
                 ticket, source=origin, at=at, accounts=accounts,
                 unavailable=loaded.unavailable_sources,
                 conflicts=loaded.conflicting_tags,
+                conflict_key=loaded.conflict_key,
             )
         result = await store.compare_and_swap_linked_accounts(
             mongo,
@@ -496,7 +506,9 @@ async def sync_ticket_accounts(
         ticket = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
         if ticket is None:
             return AccountSyncResult(None, snapshot_from_ticket(None))
-        loaded = await load_accounts(coc_client, int(ticket.get("user_id") or 0), force=True)
+        review = (ticket.get("linked_accounts") or {}).get("conflict_review")
+        kwargs = {"conflict_review": review} if review else {}
+        loaded = await load_accounts(coc_client, int(ticket.get("user_id") or 0), force=True, **kwargs)
         if loaded.problem:
             failure = "link_service" if loaded.problem == LINK_FAILURE else str(loaded.problem)[:120]
     except asyncio.CancelledError:

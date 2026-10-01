@@ -4,6 +4,8 @@ Source outages are explicit. Contradictory owners are quarantined, not merged
 into the applicant's identity. Historical ticket identities are never erased.
 """
 import asyncio
+import hashlib
+import json
 from dataclasses import dataclass, field
 
 from utils import clash_links, clashperk_links
@@ -15,6 +17,8 @@ class LinksResult:
     verified: dict[str, bool] = field(default_factory=dict)
     unavailable: tuple[str, ...] = ()
     conflicts: tuple[str, ...] = ()
+    conflict_key: str = ""
+    disputed_sources: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 async def resolve(discord_id: int) -> LinksResult:
@@ -22,6 +26,7 @@ async def resolve(discord_id: int) -> LinksResult:
     providers = {"ClashKing": clash_links._lookup_shared_links, "ClashPerk": clashperk_links.lookup}
     results = await asyncio.gather(*(call(discord_ids=[wanted]) for call in providers.values()))
     sources, verified, unavailable, conflicts = {}, {}, [], set()
+    owners = {}
     def identity(row, provider):
         tag = clash_links._normalize_tag(row.get("player_tag" if provider == "ClashKing" else "tag"))
         owner = str(row.get("user_id" if provider == "ClashKing" else "userId") or "")
@@ -39,6 +44,7 @@ async def resolve(discord_id: int) -> LinksResult:
                 if provider not in unavailable:
                     unavailable.append(provider)
                 continue
+            owners.setdefault(tag, {}).setdefault(provider, set()).add(owner)
             if owner == wanted:
                 sources.setdefault(tag, []).append(provider)
                 if provider == "ClashPerk":
@@ -58,10 +64,14 @@ async def resolve(discord_id: int) -> LinksResult:
                     if provider not in unavailable:
                         unavailable.append(provider)
                     continue
+                if tag in sources:
+                    owners.setdefault(tag, {}).setdefault(provider, set()).add(owner)
                 if tag in sources and owner.isdigit() and owner != wanted:
                     conflicts.add(tag)
     return LinksResult(
         {tag: tuple(dict.fromkeys(labels)) for tag, labels in sources.items() if tag not in conflicts},
-        {tag: flag for tag, flag in verified.items() if tag not in conflicts},
+        verified,
         tuple(unavailable), tuple(sorted(conflicts)),
+        hashlib.sha256(json.dumps([wanted, {tag: {provider: sorted(ids) for provider, ids in owners[tag].items()} for tag in sorted(conflicts)}], sort_keys=True).encode()).hexdigest() if conflicts else "",
+        {tag: tuple(dict.fromkeys(sources[tag])) for tag in sorted(conflicts)},
     )

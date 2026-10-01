@@ -57,6 +57,7 @@ class AccountsData:
     problem: str | None = None
     unavailable_sources: tuple[str, ...] = ()
     conflicting_tags: tuple[str, ...] = ()
+    conflict_key: str = ""
 
     @property
     def linked_count(self) -> int:
@@ -175,6 +176,7 @@ async def load_accounts(
         data = AccountsData(
             unavailable_sources=linked_result.unavailable if linked_result else (),
             conflicting_tags=linked_result.conflicts if linked_result else (),
+            conflict_key=linked_result.conflict_key if linked_result else "",
         )
         if linked_result is None:
             _remember_result(discord_id, data)
@@ -216,6 +218,7 @@ async def load_accounts(
         entries=tuple(entries),
         unavailable_sources=linked_result.unavailable if linked_result else (),
         conflicting_tags=linked_result.conflicts if linked_result else (),
+        conflict_key=linked_result.conflict_key if linked_result else "",
     )
     if linked_result is None:
         _remember_result(discord_id, data)

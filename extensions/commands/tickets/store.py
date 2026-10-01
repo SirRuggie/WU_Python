@@ -708,6 +708,8 @@ async def compare_and_swap_linked_accounts(
     expected_revision: int,
     update: dict,
     fetched_at: datetime | None = None,
+    expected_ticket_revision: int | None = None,
+    expected_status: str | None = None,
 ) -> Transition:
     """Atomically persist one linked-account observation without changing decision rev.
 
@@ -733,6 +735,10 @@ async def compare_and_swap_linked_accounts(
         else {"linked_accounts.revision": revision}
     )
     filt = {"_id": ticket_id, **RUNTIME_FILTER}
+    if expected_ticket_revision is not None:
+        filt["rev"] = expected_ticket_revision
+    if expected_status is not None:
+        filt["status"] = expected_status
     if fetched_at is None:
         filt.update(revision_filter)
     else:

@@ -34,6 +34,16 @@ def warnings(snapshot):
     return '\n'.join(lines)
 
 
+def review_note(ticket):
+    from extensions.commands.accounts import _escape_markdown
+    linked = ticket.get('linked_accounts') or {}
+    review = linked.get('conflict_review') or {}
+    if not review or review.get('conflict_key') != linked.get('conflict_key') or linked.get('conflicting_tags'):
+        return ''
+    return ('**Staff-reviewed link conflicts:** ' + ', '.join(review.get('tags') or [])
+        + '\n**Reason:** ' + _escape_markdown(review.get('reason'), max_raw_length=300))
+
+
 def panel(ticket, page=1):
     snapshot = account_sync.snapshot_from_ticket(ticket)
     accounts = snapshot.current_accounts
@@ -46,7 +56,7 @@ def panel(ticket, page=1):
         controls.append(Button(style=hikari.ButtonStyle.SECONDARY,label=label,custom_id=f'ticket_player_info:{ticket_id}|{target}',is_disabled=disabled))
     return [Container(accent_color=0x3498DB,components=[
         Text(content=f'## Linked Player Information · {len(accounts)} accounts'),
-        Text(content=(warnings(snapshot) + '\n\n' + content).strip()),
+        Text(content=('\n\n'.join(p for p in (warnings(snapshot),review_note(ticket),content) if p)).strip()),
         Text(content=f'Page {page}/{pages} · Sources: ClashKing and ClashPerk'),
         Row(components=controls),
     ])]

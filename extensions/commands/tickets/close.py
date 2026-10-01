@@ -198,6 +198,10 @@ class Approve(
         if result.outcome == store.MISSING:
             await ctx.respond("❌ The ticket record is missing. Nothing was changed.")
             return
+        if result.outcome == store.BLOCKED and result.reason == "linked_account_conflict_review" and result.doc:
+            from .link_review import prompt
+            await ctx.respond(components=await prompt(mongo, result.doc, ctx.user.id, ctx.guild_id), user_mentions=False, role_mentions=False, mentions_everyone=False)
+            return
         if result.outcome == store.BLOCKED:
             if result.blocker:
                 await ctx.respond("⛔ Approval blocked: this applicant is blacklisted.")
