@@ -69,7 +69,7 @@ def format_weight_reference_guide(current_weight: int, current_th: int | None, c
     config = config or war_weight.defaults()
     lines = []
 
-    for th_level, range_data in sorted(war_weight.ranges(config).items()):
+    for th_level, range_data in sorted(war_weight.ranges(config).items(), reverse=True):
         if th_level < config["minimum_th"]:
             continue
         emoji = get_th_emoji(th_level, config, available)

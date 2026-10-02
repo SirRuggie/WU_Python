@@ -43,15 +43,15 @@ async def panel(mongo, state, notice=""):
     children += [hikari.impl.SeparatorComponentBuilder(divider=True),
         hikari.impl.TextDisplayComponentBuilder(content="\n".join(
             f"**TH{th}** · {data['min']:,}–{data['max']:,} · Emoji: {data.get('emoji') or f'Automatic (TH_{th})'}"
-            for th, data in sorted(entries.items())))]
+            for th, data in sorted(entries.items(), reverse=True)))]
     row = hikari.impl.MessageActionRowBuilder()
     menu = row.add_text_menu(f"weight_edit:{sid}", placeholder="Edit a Town Hall")
-    for th in sorted(entries):
+    for th in sorted(entries, reverse=True):
         menu.add_option(f"Town Hall {th}", str(th))
     children.append(row)
     row = hikari.impl.MessageActionRowBuilder()
     menu = row.add_text_menu(f"weight_minimum:{sid}", placeholder="Lowest Town Hall to show")
-    for th in sorted(entries):
+    for th in sorted(entries, reverse=True):
         menu.add_option(f"TH{th} and above", str(th))
     children.append(row)
     row = hikari.impl.MessageActionRowBuilder()
