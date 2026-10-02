@@ -87,7 +87,7 @@ def _allowed(ctx: Any, destination: str) -> bool:
         return any(_allowed(ctx, section) for section in ("fwa_bases", "fwa_war_messages", "fwa_points", "fwa_sync", "fwa_blacklist"))
     if destination == "fwa_blacklist":
         return member is not None and _guild_id(ctx) is not None
-    if destination in {"fwa_points", "fwa_sync"}:
+    if destination in {"fwa_points", "fwa_sync", "fwa_weight"}:
         return admin
     if destination == "fwa_bases":
         roles = member.get_roles() if member and hasattr(member, "get_roles") else ()
@@ -161,6 +161,7 @@ def _destination_section(label: str, key: str, description: str, token: str, all
         "fwa": "Access to an FWA section",
         "fwa_bases": "FWA Representative role",
         "fwa_blacklist": "Server membership to view; FWA Clan Rep role to edit",
+        "fwa_weight": "Administrator permission",
         "fwa_points": "Administrator permission",
         "fwa_sync": "Administrator permission",
         "fwa_war_messages": "FWA Clan Rep role",
@@ -212,6 +213,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
 
 
 FWA_SECTIONS = (
+    ("War Weight", "fwa_weight", "Edit Town Hall weight ranges, emojis, and the lowest level displayed"),
     ("Bases & Guidance", "fwa_bases", "Base links, artwork, Town Hall instructions, and upgrade notes"),
     ("War Messages", "fwa_war_messages", "Edit win, lose, mismatch, and blacklist announcements"),
     ("Blacklist", "fwa_blacklist", "Browse blacklisted clans; FWA Clan Reps can add or remove entries"),
@@ -264,6 +266,9 @@ async def _open(ctx: Any, mongo: MongoClient, destination: str, token: str, *,
         if not deferred:
             await ctx.defer(ephemeral=True)
         await ctx.interaction.edit_initial_response(components=fwa_home_components(ctx, token), **NO_MENTIONS)
+    elif destination == "fwa_weight":
+        from extensions.commands import fwa_weight_dashboard
+        await fwa_weight_dashboard.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
     elif destination == "fwa_sync":
         from extensions.commands import fwa_sync_dashboard
         await fwa_sync_dashboard.open_dashboard(ctx, mongo, manage_token=token, deferred=deferred)
@@ -362,6 +367,7 @@ fwa_destination = _register_destination("manage_fwa", "fwa")
 fwa_bases_destination = _register_destination("manage_fwa_bases", "fwa_bases")
 fwa_blacklist_destination = _register_destination("manage_fwa_blacklist", "fwa_blacklist")
 fwa_points_destination = _register_destination("manage_fwa_points", "fwa_points")
+fwa_weight_destination = _register_destination("manage_fwa_weight", "fwa_weight")
 fwa_sync_destination = _register_destination("manage_fwa_sync", "fwa_sync")
 fwa_war_messages_destination = _register_destination("manage_fwa_war_messages", "fwa_war_messages")
 cwl_destination = _register_destination("manage_cwl", "cwl")

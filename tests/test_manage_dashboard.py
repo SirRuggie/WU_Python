@@ -380,7 +380,7 @@ def test_roles_button_opens_real_workspace_without_double_ack(monkeypatch):
 @pytest.mark.parametrize("permissions,roles,unlocked", [
     (hikari.Permissions.NONE, (manage.FWA_REP_ROLE_ID,), {"manage_fwa_bases"}),
     (hikari.Permissions.NONE, (769130325460254740,), {"manage_fwa_war_messages"}),
-    (hikari.Permissions.ADMINISTRATOR, (), {"manage_fwa_points", "manage_fwa_sync"}),
+    (hikari.Permissions.ADMINISTRATOR, (), {"manage_fwa_points", "manage_fwa_sync", "manage_fwa_weight"}),
     (hikari.Permissions.NONE, (), set()),
 ])
 def test_fwa_hub_preserves_distinct_section_permissions(permissions, roles, unlocked):
@@ -389,7 +389,7 @@ def test_fwa_hub_preserves_distinct_section_permissions(permissions, roles, unlo
     nodes = list(walk([item.build()[0] for item in panel]))
     choices = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON
                and node.get("custom_id") != "manage_home:home-token"]
-    assert len(choices) == 5
+    assert len(choices) == 6
     assert {item["custom_id"].split(":")[0] for item in choices if not item["disabled"]} == unlocked | {"manage_fwa_blacklist"}
     assert all(item["custom_id"].split(":")[0] in components.registered_functions for item in choices)
     assert manage._allowed(ctx, "fwa") is True

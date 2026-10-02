@@ -1,9 +1,9 @@
 import lightbulb
 import hikari
+import logging
 
 from extensions.commands.fwa import loader, fwa
 from utils.constants import BLUE_ACCENT, GOLD_ACCENT, GREEN_ACCENT, RED_ACCENT
-from utils.emoji import emojis
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -13,76 +13,66 @@ from hikari.impl import (
     MediaGalleryItemBuilder as MediaItem,
 )
 
-# War weight ranges configuration (TH9 and up only)
-WAR_WEIGHT_RANGES = {
-    9: {"min": 56000, "max": 70000, "display": "56k - 70k"},
-    10: {"min": 71000, "max": 90000, "display": "71k - 90k"},
-    11: {"min": 91000, "max": 110000, "display": "91k - 110k"},
-    12: {"min": 111000, "max": 120000, "display": "111k - 120k"},
-    13: {"min": 121000, "max": 130000, "display": "121k - 130k"},
-    14: {"min": 131000, "max": 140000, "display": "131k - 140k"},
-    15: {"min": 141000, "max": 150000, "display": "141k - 150k"},
-    16: {"min": 151000, "max": 160000, "display": "151k - 160k"},
-    17: {"min": 161000, "max": 170000, "display": "161k - 170k"},
-    18: {"min": 171000, "max": 180000, "display": "171k - 180k"},
-}
+from utils import war_weight
+from utils.mongo import MongoClient
+
+WAR_WEIGHT_RANGES = war_weight.DEFAULT_RANGES
 
 
-def determine_town_hall(total_weight: int) -> tuple[int | None, str, int]:
+def determine_town_hall(total_weight: int, ranges=None) -> tuple[int | None, str, int]:
     """
     Determine town hall level from total war weight.
     Returns: (th_level, status, color)
     Status can be: 'exact', 'below', 'above', 'between'
     """
-    # Check if below TH9 minimum
-    if total_weight < 56000:
+    ranges = ranges or WAR_WEIGHT_RANGES
+    levels = sorted(ranges)
+    # Check configured bounds
+    if total_weight < ranges[levels[0]]["min"]:
         return None, "below", RED_ACCENT
 
-    # Check if above TH18 maximum
-    if total_weight > 180000:
+    # Check configured maximum
+    if total_weight > ranges[levels[-1]]["max"]:
         return None, "above", RED_ACCENT
 
     # Find exact match
-    for th_level, range_data in WAR_WEIGHT_RANGES.items():
+    for th_level, range_data in ranges.items():
         if range_data["min"] <= total_weight <= range_data["max"]:
             return th_level, "exact", GREEN_ACCENT
 
     # Find between ranges
-    for th_level in sorted(WAR_WEIGHT_RANGES.keys()):
-        if total_weight < WAR_WEIGHT_RANGES[th_level]["min"]:
-            return th_level - 1, "between", GOLD_ACCENT
+    for th_level in levels:
+        if total_weight < ranges[th_level]["min"]:
+            return levels[levels.index(th_level) - 1], "between", GOLD_ACCENT
 
     return None, "unknown", RED_ACCENT
 
 
-def get_th_emoji(th_level: int) -> str:
-    """Get the appropriate TH emoji or fallback."""
-    if th_level is None:
-        return "❓"
-
-    emoji_attr = f"TH{th_level}"
-    if hasattr(emojis, emoji_attr):
-        return str(getattr(emojis, emoji_attr))
-    return "🏛️"
+def get_th_emoji(th_level, config=None, available=()):
+    return war_weight.emoji_for(th_level, config or war_weight.defaults(), available)
 
 
-def calculate_position_in_range(weight: int, th_level: int) -> int:
+def calculate_position_in_range(weight: int, th_level: int, ranges=None) -> int:
     """Calculate percentage position within TH range."""
-    if th_level not in WAR_WEIGHT_RANGES:
+    ranges = ranges or WAR_WEIGHT_RANGES
+    if th_level not in ranges:
         return 0
 
-    range_data = WAR_WEIGHT_RANGES[th_level]
+    range_data = ranges[th_level]
     range_size = range_data["max"] - range_data["min"]
     position = weight - range_data["min"]
     return int((position / range_size) * 100)
 
 
-def format_weight_reference_guide(current_weight: int, current_th: int | None) -> str:
+def format_weight_reference_guide(current_weight: int, current_th: int | None, config=None, available=()) -> str:
     """Format the complete weight reference guide."""
+    config = config or war_weight.defaults()
     lines = []
 
-    for th_level, range_data in sorted(WAR_WEIGHT_RANGES.items()):
-        emoji = get_th_emoji(th_level)
+    for th_level, range_data in sorted(war_weight.ranges(config).items()):
+        if th_level < config["minimum_th"]:
+            continue
+        emoji = get_th_emoji(th_level, config, available)
         display = range_data["display"]
 
         # Highlight current TH level
@@ -94,14 +84,15 @@ def format_weight_reference_guide(current_weight: int, current_th: int | None) -
     return "\n".join(lines)
 
 
-def get_upgrade_info(weight: int, th_level: int | None) -> str:
+def get_upgrade_info(weight: int, th_level: int | None, ranges=None) -> str:
     """Get information about upgrading to next TH level."""
-    if th_level is None or th_level >= 18:
+    ranges = ranges or WAR_WEIGHT_RANGES
+    if th_level is None or th_level >= max(ranges):
         return ""
 
-    next_th = th_level + 1
-    if next_th in WAR_WEIGHT_RANGES:
-        next_min = WAR_WEIGHT_RANGES[next_th]["min"]
+    next_th = min(th for th in ranges if th > th_level)
+    if next_th in ranges:
+        next_min = ranges[next_th]["min"]
         weight_needed = next_min - weight
         if weight_needed > 0:
             return f"• {weight_needed:,} weight away from TH{next_th} range"
@@ -123,25 +114,37 @@ class WeightCommand(
     )
 
     @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context, bot: hikari.GatewayBot = lightbulb.di.INJECTED) -> None:
+    async def invoke(self, ctx: lightbulb.Context, bot: hikari.GatewayBot = lightbulb.di.INJECTED, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
+
+        config = await war_weight.load(mongo, ctx.guild_id)
+        ranges = war_weight.ranges(config)
+        lowest, highest = min(ranges), max(ranges)
+        available = list(bot.cache.get_emojis_view().values())
+        # Application emojis are not in the gateway guild emoji cache.
+        me = bot.get_me() if hasattr(bot, "get_me") else None
+        if me is not None:
+            try:
+                available.extend(await bot.rest.fetch_application_emojis(me.id))
+            except hikari.HTTPError:
+                logging.getLogger(__name__).warning("Application emoji lookup failed; using cached/fallback Town Hall emojis")
 
         # Calculate total weight (multiply by 5)
         total_weight = self.weight * 5
 
         # Determine town hall and status
-        th_level, status, color = determine_town_hall(total_weight)
+        th_level, status, color = determine_town_hall(total_weight, ranges)
 
         # Build status message
         if status == "below":
-            status_msg = "⚠️ **Below TH9 range**\nThis weight is lower than TH9 minimum (56k)."
-            th_display = "Below TH9"
+            status_msg = f"⚠️ **Below TH{lowest} range**\nThis weight is lower than the configured minimum ({ranges[lowest]['min']:,})."
+            th_display = f"Below TH{lowest}"
         elif status == "above":
-            status_msg = "⚠️ **Above TH8 range**\nThis weight exceeds the maximum range."
-            th_display = "Above TH18"
+            status_msg = f"⚠️ **Above TH{highest} range**\nThis weight exceeds the maximum configured range."
+            th_display = f"Above TH{highest}"
         elif status == "between":
-            if th_level and th_level < 18:
-                next_th = th_level + 1
+            if th_level and th_level < highest:
+                next_th = min(th for th in ranges if th > th_level)
                 status_msg = f"📊 **Between TH{th_level} and TH{next_th}**"
                 th_display = f"TH{th_level}-{next_th} Gap"
             else:
@@ -150,8 +153,8 @@ class WeightCommand(
         else:  # exact
             status_msg = f"✅ **Town Hall {th_level} Confirmed**"
             th_display = f"Town Hall {th_level}"
-            if th_level in WAR_WEIGHT_RANGES:
-                range_data = WAR_WEIGHT_RANGES[th_level]
+            if th_level in ranges:
+                range_data = ranges[th_level]
                 status_msg += f"\nWeight Range: {range_data['min']:,} - {range_data['max']:,}"
 
         # Build additional info_hub
@@ -159,12 +162,12 @@ class WeightCommand(
 
         # Add upgrade info_hub if applicable
         if th_level and status == "exact":
-            upgrade_info = get_upgrade_info(total_weight, th_level)
+            upgrade_info = get_upgrade_info(total_weight, th_level, ranges)
             if upgrade_info:
                 additional_info.append(upgrade_info)
 
             # Add position in range
-            position = calculate_position_in_range(total_weight, th_level)
+            position = calculate_position_in_range(total_weight, th_level, ranges)
             additional_info.append(f"• {position}% through TH{th_level} weight range")
 
         # Add FWA suitability with separator
@@ -186,7 +189,7 @@ class WeightCommand(
                     Separator(divider=True),
                     Text(content=(
                         f"**Storage Weight:** {self.weight:,}\n"
-                        f"**Total War Weight:** {self.weight:,} × 5 = {get_th_emoji(th_level)} **{total_weight:,}**\n\n"
+                        f"**Total War Weight:** {self.weight:,} × 5 = {get_th_emoji(th_level, config, available)} **{total_weight:,}**\n\n"
                         f"{status_msg}"
                     )),
                 ]
@@ -194,8 +197,8 @@ class WeightCommand(
             Container(
                 accent_color=BLUE_ACCENT,
                 components=[
-                    Text(content="### 📊 **War Weight Reference Guide (TH9+)**"),
-                    Text(content=format_weight_reference_guide(total_weight, th_level)),
+                    Text(content=f"### 📊 **War Weight Reference Guide (TH{config['minimum_th']}–TH{highest})**"),
+                    Text(content=format_weight_reference_guide(total_weight, th_level, config, available)),
                 ]
             )
         ]
