@@ -897,3 +897,12 @@ Logs named `ticket_resolution_timing` identify the ticket, step, and elapsed
 milliseconds for account sync, preapproval staff context, candidate/staff messages,
 candidate/staff names, staff context, and console queuing. Mandatory link ownership,
 new-account review, and blacklist checks still run before the approval is saved.
+
+### Administrator-granted console role access
+
+Additional roles granted channel visibility by an administrator do not need to
+appear in the bot's recruiter/viewer configuration and do not block refreshes.
+Role visibility alone grants no staff-action rights: approval, denial, flags,
+and other staff actions retain their existing authorization checks. Existing
+@everyone and individual-member audience checks, bot permissions, channel type,
+and configured recruiter-access checks remain in place.

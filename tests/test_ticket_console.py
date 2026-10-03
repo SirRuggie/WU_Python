@@ -4122,10 +4122,10 @@ def test_console_channel_validation_is_private_typed_and_permission_complete(mon
         deny=hikari.Permissions.NONE,
         allow=hikari.Permissions.VIEW_CHANNEL,
     ))
-    with pytest.raises(console.ConsoleConfigurationError, match="non-recruiter role"):
-        asyncio.run(console.validate_console_channel(
-            bot, object(), guild_id=guild_id, channel_id=444,
-        ))
+    # Administrator-granted role visibility does not block console refresh.
+    assert asyncio.run(console.validate_console_channel(
+        bot, object(), guild_id=guild_id, channel_id=444,
+    )) is channel
     async def allow_viewer(_mongo):
         return {rogue_role_id}
     monkeypatch.setattr(console.perms, "staff_viewer_role_ids", allow_viewer)
@@ -4494,13 +4494,13 @@ def test_orphaned_hub_scan_is_bounded_to_the_newest_200_messages():
     assert orphan is None
 
 
-def test_hub_publish_stops_before_private_data_render_on_permission_drift(monkeypatch):
+def test_hub_publish_stops_when_bot_cannot_write(monkeypatch):
     calls = []
 
     async def drift(*_args, **_kwargs):
         calls.append("validate")
         raise console.ConsoleConfigurationError(
-            "non-recruiter role can view the console channel"
+            "bot is missing SEND_MESSAGES"
         )
 
     async def forbidden_payload(*_args, **_kwargs):
@@ -4515,7 +4515,7 @@ def test_hub_publish_stops_before_private_data_render_on_permission_drift(monkey
 
     monkeypatch.setattr(console, "validate_console_channel", drift)
     monkeypatch.setattr(console, "_hub_payload", forbidden_payload)
-    with pytest.raises(console.ConsoleConfigurationError, match="non-recruiter"):
+    with pytest.raises(console.ConsoleConfigurationError, match="SEND_MESSAGES"):
         asyncio.run(console._publish_hub(
             SimpleNamespace(rest=Rest()),
             object(),

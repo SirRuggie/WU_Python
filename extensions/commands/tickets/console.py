@@ -1670,25 +1670,9 @@ async def validate_console_channel(
             )
 
     viewer_ids = recruiter_ids | await perms.staff_viewer_role_ids(mongo)
-    bot_role_ids = {_int(value) for value in getattr(bot_member, "role_ids", ())}
-    for role_id, role in roles_by_id.items():
-        if role_id == int(guild_id) or role_id in viewer_ids:
-            continue
-        if _role_permissions(role) & hikari.Permissions.ADMINISTRATOR:
-            continue
-        if role_id in bot_role_ids and getattr(role, "is_managed", False):
-            continue
-        role_permissions = thread_service._effective_permissions(
-            guild_id=int(guild_id),
-            owner_id=owner_id,
-            member=SimpleNamespace(id=0, role_ids=(role_id,)),
-            roles=roles,
-            channel=channel,
-        )
-        if role_permissions & hikari.Permissions.VIEW_CHANNEL:
-            raise ConsoleConfigurationError(
-                f"non-recruiter role {role_id} can view the console channel"
-            )
+    # Administrators own role-based access to this channel. A visible role
+    # does not need to appear in the bot's recruiter/viewer configuration.
+    # Staff actions still independently require recruiter authorization.
 
     member_overwrite_ids: set[int] = set()
     for overwrite in thread_service._overwrite_values(
