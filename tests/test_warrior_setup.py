@@ -77,6 +77,9 @@ class Cursor:
     async def to_list(self, **kw):
         return self.rows
 
+    def sort(self, _):
+        return self
+
     def limit(self, _):
         return self
 
@@ -451,3 +454,51 @@ def test_home_displays_assigned_roles_and_setup_guidance(monkeypatch):
     ):
         assert expected in text
     assert "**Member roles:** Ready" not in text
+
+
+def test_new_walkthrough_falls_back_to_latest_approved_ticket():
+    queries = []
+    sorts = []
+    class ApprovedCursor(Cursor):
+        def sort(self, spec):
+            sorts.append(spec)
+            return self
+    def find(query):
+        queries.append(query)
+        return ApprovedCursor([] if query['status'] == 'open' else [
+            {'_id': 'approved_latest', 'status': 'approved'},
+            {'_id': 'approved_older', 'status': 'approved'},
+        ])
+    selected = run(core.open_ticket(S(tickets=S(find=find)), 10, 30))
+    assert selected['_id'] == 'approved_latest'
+    assert [q['status'] for q in queries] == ['open', 'approved']
+    assert sorts[0][0] == ('handled_at', -1)
+    assert all(q['guild_id'] == 10 and q['user_id'] == {'$in': [30, '30']} for q in queries)
+
+
+@pytest.mark.parametrize('status', ['open', 'approved', 'denied', 'closed'])
+def test_existing_walkthrough_validates_its_original_ticket_status(status):
+    queries = []
+    def find(query):
+        queries.append(query)
+        assert query['_id'] == 'original'
+        assert query['status'] == {'$in': ['open', 'approved']}
+        return Cursor([{'_id': 'original', 'status': status}] if status in query['status']['$in'] else [])
+    call = core.open_ticket(S(tickets=S(find=find)), 10, 30, ticket_id='original')
+    if status in ('open', 'approved'):
+        assert run(call)['_id'] == 'original'
+    else:
+        with pytest.raises(core.SetupError, match='open or approved'):
+            run(call)
+    assert len(queries) == 1
+
+
+def test_begin_after_approval_remains_on_original_ticket(monkeypatch):
+    r = record()
+    m = mongo()
+    m.warrior_walkthroughs.find_one_and_update = AsyncMock(return_value=r)
+    lookup = AsyncMock(return_value={'_id': r['ticket_id'], 'status': 'approved'})
+    monkeypatch.setattr(core, 'open_ticket', lookup)
+    monkeypatch.setattr(core, 'context', AsyncMock(return_value=context()))
+    assert run(walkthrough.begin(object(), m, r, 20, r['ticket_channel']))
+    assert lookup.call_args.kwargs == {'ticket_id': r['ticket_id']}

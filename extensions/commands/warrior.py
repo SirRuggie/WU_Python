@@ -690,7 +690,16 @@ async def action(
                 *back(sid),
             )
         elif verb == "retry":
-            ticket = await core.open_ticket(mongo, c["guild"].id, c["member"].id)
+            existing_run = await mongo.warrior_walkthroughs.find_one({
+                "_id": walkthrough.run_id(c["guild"].id, c["member"].id),
+                "state": "paused",
+            })
+            if not existing_run or not existing_run.get("ticket_id"):
+                raise core.SetupError("There is no paused walkthrough to retry.")
+            ticket = await core.open_ticket(
+                mongo, c["guild"].id, c["member"].id,
+                ticket_id=existing_run["ticket_id"],
+            )
             await mongo.warrior_walkthroughs.update_one(
                 {
                     "_id": walkthrough.run_id(c["guild"].id, c["member"].id),

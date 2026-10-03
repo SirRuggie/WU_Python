@@ -16,8 +16,13 @@ uses separate action IDs, sessions, settings, walkthrough records, and worker.
 4. **Clan Roles:** add chosen clans, with pagination beyond 25 choices. Existing
    clan roles are preserved. Bulk add/remove lives in Advanced with a one-use
    confirmation.
-5. **Server Walkthrough:** choose one assigned clan. The member must have exactly
-   one open, live, new-system ticket in the command's server. The welcome and
+5. **Server Walkthrough:** choose one assigned clan. A new walkthrough uses the
+   member's unique open, live, new-system ticket in this server, or their most
+   recently approved available ticket if none is open. Multiple open tickets
+   still require resolution. Approval does not prevent onboarding: Begin,
+   delivery, and retry validate the run's original ticket as open or approved,
+   rather than selecting a different ticket. Denied, closed, missing, and test
+   tickets are not eligible. The welcome and
    Begin Walkthrough button are posted to that candidate thread, never the old
    launchpad (`1128966424082255872`). The next start message also goes there.
    Any currently authorized recruiter can press Begin in that message.

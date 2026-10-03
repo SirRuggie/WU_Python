@@ -263,26 +263,44 @@ def nickname(ign, zone, country):
     return value
 
 
-async def open_ticket(mongo, guild_id, user_id):
-    rows = await mongo.tickets.find(
-        {
-            **store.RUNTIME_FILTER,
-            "guild_id": int(guild_id),
-            "user_id": {"$in": [int(user_id), str(user_id)]},
-            "status": "open",
-            "venue": "thread",
-        }
-    ).to_list(length=3)
-    rows = [
-        r
-        for r in rows
-        if not r.get("thread_missing") and not testing_service.is_test_ticket(r)
-    ]
-    if len(rows) != 1:
+async def open_ticket(mongo, guild_id, user_id, *, ticket_id=None):
+    """Select an onboarding ticket, or validate a run's original ticket.
+
+    Prefer the unique open ticket for a new run; otherwise use the most recently
+    approved ticket. Existing runs never switch tickets when another is opened.
+    """
+    query = {
+        **store.RUNTIME_FILTER,
+        "guild_id": int(guild_id),
+        "user_id": {"$in": [int(user_id), str(user_id)]},
+        "venue": "thread",
+    }
+    if ticket_id is not None:
+        query.update(_id=ticket_id, status={"$in": ["open", "approved"]})
+        rows = await mongo.tickets.find(query).to_list(length=1)
+    else:
+        rows = await mongo.tickets.find({**query, "status": "open"}).to_list(length=3)
+        rows = [r for r in rows if not r.get("thread_missing") and not testing_service.is_test_ticket(r)]
+        if len(rows) > 1:
+            raise SetupError("This member has multiple open tickets. Resolve the duplicate before starting the walkthrough.")
+        if not rows:
+            rows = await mongo.tickets.find({
+                **query,
+                "status": "approved",
+                "$or": [
+                    {"thread_missing": {"$exists": False}},
+                    {"thread_missing": None},
+                    {"thread_missing": False},
+                    {"thread_missing": {}},
+                ],
+            }).sort([("handled_at", -1), ("created_at", -1), ("_id", -1)]).to_list(length=3)
+            rows = [r for r in rows if not testing_service.is_test_ticket(r)][:1]
+    rows = [r for r in rows if not r.get("thread_missing") and not testing_service.is_test_ticket(r)]
+    if not rows:
         raise SetupError(
-            "There is no open live ticket for this member in this server."
-            if not rows
-            else "This member has multiple open tickets. Resolve the duplicate before starting the walkthrough."
+            "The walkthrough’s original ticket must still be open or approved and available."
+            if ticket_id is not None else
+            "There is no open or approved live ticket for this member in this server."
         )
     return rows[0]
 
