@@ -878,3 +878,22 @@ Message History, Send Messages in Threads, Embed Links, and Attach Files on the
 candidate parent while denying Send Messages in the parent itself. Existing
 unrelated member overrides are preserved. No staff access or Gauntlet completion
 roles are granted. Isolated testing never makes this live permission change.
+
+### Approval delivery performance
+
+After committing a decision, the worker runs candidate, staff, and console work
+concurrently. Each thread receives its decision message before its status rename;
+a rate-limited rename in one thread cannot block the other thread or the console.
+Within one thread, delivery and rename stay ordered to avoid racing archive/lock
+restoration. Staff-context refresh follows the staff message and name update.
+
+New decisions carry `resolution_effects.fast_delivery=true`. Before a first send,
+the worker must persist `sending`; only a provably untouched `pending` delivery
+can skip the history scan. Interrupted/failed deliveries and older records retain
+history reconciliation. All lanes settle before the durable worker lease is
+released, and each step retains its existing recovery checkpoints.
+
+Logs named `ticket_resolution_timing` identify the ticket, step, and elapsed
+milliseconds for account sync, preapproval staff context, candidate/staff messages,
+candidate/staff names, staff context, and console queuing. Mandatory link ownership,
+new-account review, and blacklist checks still run before the approval is saved.

@@ -858,6 +858,8 @@ async def transition(
     supplied = {key: value for key, value in dict(extra or {}).items() if key not in protected}
     resolution_effects_doc = {
         "version": 1,
+        # Pending is provably unsent until the worker durably checkpoints sending.
+        "fast_delivery": True,
         "marker": marker,
         "kind": str(effect_kind or ("approve" if target == "approved" else "deny_custom")),
         "notification": {"state": "pending"},

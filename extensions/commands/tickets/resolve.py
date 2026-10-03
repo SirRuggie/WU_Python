@@ -22,6 +22,7 @@ import lightbulb
 import coc
 import asyncio
 import logging
+import time
 import uuid
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -666,14 +667,14 @@ def _staff_decision_components(ticket: dict, kind: str) -> list:
     )]
 
 
-async def _deliver_staff_decision(bot, ticket: dict, kind: str, marker: str):
+async def _deliver_staff_decision(bot, ticket: dict, kind: str, marker: str, *, skip_history=False):
     """Keep an append-only staff record, identified per resolution, without pings."""
     staff_id = int((ticket.get("location") or {}).get("staff_space_id") or 0)
     nonce = hashlib.sha256(f"staff:{marker}".encode()).hexdigest()[:24]
     me = bot.get_me()
     if me is None:
         raise RuntimeError("bot identity is unavailable")
-    for message in await _all_messages(bot.rest, staff_id):
+    for message in ([] if skip_history else await _all_messages(bot.rest, staff_id)):
         if (int(getattr(getattr(message, "author", None), "id", 0)) == int(me.id)
                 and str(getattr(message, "nonce", None)) == nonce):
             return message
@@ -704,10 +705,7 @@ async def _process_resolution_effects_owned(
     candidate_thread_missing = ticket_runtime.thread_missing_has_role(ticket, "candidate")
     staff_thread_missing = ticket_runtime.thread_missing_has_role(ticket, "staff")
 
-    for role, missing, thread_id, target in (
-        ("candidate", candidate_thread_missing, location_id, None),
-        ("staff", staff_thread_missing, int((ticket.get("location") or {}).get("staff_space_id") or 0), None),
-    ):
+    async def rename_thread(role, missing, thread_id):
         step = f"thread_names_{role}"
         saved = effects.get(step) or {}
         saved_details = {
@@ -715,12 +713,12 @@ async def _process_resolution_effects_owned(
         }
         try:
             if saved.get("state") in {"delivered", "skipped"}:
-                continue
+                return
             if missing or not thread_id:
                 await _checkpoint_effect(
                     mongo, ticket["_id"], marker, step=step, state="skipped",
                 )
-                continue
+                return
             public_name, staff_name = await thread_service.thread_names_for_ticket(mongo, ticket)
             target = public_name if role == "candidate" else staff_name
 
@@ -763,146 +761,187 @@ async def _process_resolution_effects_owned(
             )
             pending.append((f"{role} thread status name", exc))
 
-    notification = effects.get("notification") or {}
-    notification_message_id = store.as_int(notification.get("message_id"))
-    try:
-        notification_state = notification.get("state")
-        if notification_state not in {"delivered", "skipped"}:
-            if candidate_thread_missing:
+    async def candidate_notice():
+        notification = effects.get("notification") or {}
+        notification_message_id = store.as_int(notification.get("message_id"))
+        try:
+            notification_state = notification.get("state")
+            if notification_state not in {"delivered", "skipped"}:
+                if candidate_thread_missing:
+                    await _checkpoint_effect(
+                        mongo, ticket["_id"], marker, step="notification", state="skipped",
+                    )
+                else:
+                    me = bot.get_me()
+                    if me is None:
+                        raise RuntimeError("bot identity is unavailable")
+                    sent_message = None
+                    fresh = bool(effects.get("fast_delivery") and notification_state == "pending")
+                    if fresh and not await _checkpoint_effect(
+                        mongo, ticket["_id"], marker, step="notification", state="sending"
+                    ):
+                        raise RuntimeError("notification send checkpoint failed")
+                    if fresh or not await _notification_exists(
+                        bot.rest,
+                        location_id,
+                        marker,
+                        bot_user_id=int(me.id),
+                        kind=kind,
+                        message_id=notification_message_id,
+                    ):
+                        await _ensure_notification_thread_writable(bot.rest, ticket)
+                        if effects.get("overturn"):
+                            await _delete_previous_decision_card(bot, mongo, ticket, effects)
+                        sent_message = await run_side_effects(
+                            bot,
+                            mongo,
+                            kind=kind,
+                            ticket=ticket,
+                            reason=ticket.get("denial_reason"),
+                            marker=marker,
+                        )
+                    notification_message_id = (
+                        store.as_int(getattr(sent_message, "id", 0))
+                        or notification_message_id
+                    )
+                    await _checkpoint_effect(
+                        mongo, ticket["_id"], marker, step="notification", state="delivered",
+                        message_id=notification_message_id or None,
+                    )
+        except Exception as exc:
+            await _checkpoint_effect(
+                mongo, ticket["_id"], marker, step="notification", state="failed", error=exc
+            )
+            pending.append(("applicant notification", exc))
+
+    async def staff_notice_delivery():
+        # New decisions carry this obligation in Mongo. Historical completed
+        # decisions are not retroactively announced during deployment.
+        staff_notice = effects.get("staff_notification")
+        if staff_notice is not None and staff_notice.get("state") not in {"delivered", "skipped"}:
+            try:
+                staff_id = int((ticket.get("location") or {}).get("staff_space_id") or 0)
+                if staff_thread_missing or not staff_id:
+                    await _checkpoint_effect(mongo, ticket["_id"], marker,
+                        step="staff_notification", state="skipped")
+                else:
+                    fresh = bool(effects.get("fast_delivery") and staff_notice.get("state") == "pending")
+                    if fresh and not await _checkpoint_effect(
+                        mongo, ticket["_id"], marker, step="staff_notification", state="sending"
+                    ):
+                        raise RuntimeError("staff notification send checkpoint failed")
+                    sent = await _deliver_staff_decision(bot, ticket, kind, marker, **({"skip_history": True} if fresh else {}))
+                    if not await _checkpoint_effect(mongo, ticket["_id"], marker,
+                        step="staff_notification", state="delivered", message_id=int(sent.id)):
+                        raise RuntimeError("staff decision checkpoint failed")
+            except Exception as exc:
+                await _checkpoint_effect(mongo, ticket["_id"], marker,
+                    step="staff_notification", state="failed", error=exc)
+                pending.append(("staff decision notification", exc))
+
+    async def staff_context_refresh():
+        try:
+            staff_context_state = (effects.get("staff_context") or {}).get("state")
+            if staff_context_state in {"delivered", "skipped"}:
+                pass
+            elif staff_thread_missing:
                 await _checkpoint_effect(
-                    mongo, ticket["_id"], marker, step="notification", state="skipped",
+                    mongo, ticket["_id"], marker, step="staff_context", state="skipped",
                 )
             else:
-                me = bot.get_me()
-                if me is None:
-                    raise RuntimeError("bot identity is unavailable")
-                sent_message = None
-                if not await _notification_exists(
-                    bot.rest,
-                    location_id,
-                    marker,
-                    bot_user_id=int(me.id),
-                    kind=kind,
-                    message_id=notification_message_id,
-                ):
-                    await _ensure_notification_thread_writable(bot.rest, ticket)
-                    if effects.get("overturn"):
-                        await _delete_previous_decision_card(bot, mongo, ticket, effects)
-                    sent_message = await run_side_effects(
+                # Decisions committed before linked-account snapshots existed have
+                # nothing new to render; checkpoint them for upgrade-safe recovery.
+                if (ticket.get("linked_accounts") or {}).get("version"):
+                    from extensions.commands.tickets import console
+
+                    await console.deliver_staff_identity_context(
                         bot,
                         mongo,
-                        kind=kind,
-                        ticket=ticket,
-                        reason=ticket.get("denial_reason"),
-                        marker=marker,
+                        ticket,
+                        reopen_terminal_thread=True,
                     )
-                notification_message_id = (
-                    store.as_int(getattr(sent_message, "id", 0))
-                    or notification_message_id
-                )
+                    state_id = f"ticket_staff_context:{ticket['_id']}"
+                    context_state = await mongo.ticket_automation_state.find_one({
+                        "_id": state_id,
+                        "kind": "ticket_staff_context",
+                    }) or {}
+                    delivered_at = context_state.get("delivered_at")
+                    requested_at = context_state.get("refresh_requested_at")
+                    if (
+                        context_state.get("delivery_state") != "delivered"
+                        or context_state.get("lease_owner")
+                        or not isinstance(delivered_at, datetime)
+                        or not isinstance(requested_at, datetime)
+                        or delivered_at < requested_at
+                    ):
+                        raise RuntimeError("latest staff context refresh remains pending")
                 await _checkpoint_effect(
-                    mongo, ticket["_id"], marker, step="notification", state="delivered",
-                    message_id=notification_message_id or None,
-                )
-    except Exception as exc:
-        await _checkpoint_effect(
-            mongo, ticket["_id"], marker, step="notification", state="failed", error=exc
-        )
-        pending.append(("applicant notification", exc))
-
-    # New decisions carry this obligation in Mongo. Historical completed
-    # decisions are not retroactively announced during deployment.
-    staff_notice = effects.get("staff_notification")
-    if staff_notice is not None and staff_notice.get("state") not in {"delivered", "skipped"}:
-        try:
-            staff_id = int((ticket.get("location") or {}).get("staff_space_id") or 0)
-            if staff_thread_missing or not staff_id:
-                await _checkpoint_effect(mongo, ticket["_id"], marker,
-                    step="staff_notification", state="skipped")
-            else:
-                sent = await _deliver_staff_decision(bot, ticket, kind, marker)
-                if not await _checkpoint_effect(mongo, ticket["_id"], marker,
-                    step="staff_notification", state="delivered", message_id=int(sent.id)):
-                    raise RuntimeError("staff decision checkpoint failed")
-        except Exception as exc:
-            await _checkpoint_effect(mongo, ticket["_id"], marker,
-                step="staff_notification", state="failed", error=exc)
-            pending.append(("staff decision notification", exc))
-
-    try:
-        staff_context_state = (effects.get("staff_context") or {}).get("state")
-        if staff_context_state in {"delivered", "skipped"}:
-            pass
-        elif staff_thread_missing:
-            await _checkpoint_effect(
-                mongo, ticket["_id"], marker, step="staff_context", state="skipped",
-            )
-        else:
-            # Decisions committed before linked-account snapshots existed have
-            # nothing new to render; checkpoint them for upgrade-safe recovery.
-            if (ticket.get("linked_accounts") or {}).get("version"):
-                from extensions.commands.tickets import console
-
-                await console.deliver_staff_identity_context(
-                    bot,
                     mongo,
-                    ticket,
-                    reopen_terminal_thread=True,
+                    ticket["_id"],
+                    marker,
+                    step="staff_context",
+                    state="delivered",
                 )
-                state_id = f"ticket_staff_context:{ticket['_id']}"
-                context_state = await mongo.ticket_automation_state.find_one({
-                    "_id": state_id,
-                    "kind": "ticket_staff_context",
-                }) or {}
-                delivered_at = context_state.get("delivered_at")
-                requested_at = context_state.get("refresh_requested_at")
-                if (
-                    context_state.get("delivery_state") != "delivered"
-                    or context_state.get("lease_owner")
-                    or not isinstance(delivered_at, datetime)
-                    or not isinstance(requested_at, datetime)
-                    or delivered_at < requested_at
-                ):
-                    raise RuntimeError("latest staff context refresh remains pending")
+        except Exception as exc:
             await _checkpoint_effect(
                 mongo,
                 ticket["_id"],
                 marker,
                 step="staff_context",
-                state="delivered",
+                state="failed",
+                error=exc,
             )
-    except Exception as exc:
-        await _checkpoint_effect(
-            mongo,
-            ticket["_id"],
-            marker,
-            step="staff_context",
-            state="failed",
-            error=exc,
-        )
-        pending.append(("staff account context", exc))
+            pending.append(("staff account context", exc))
 
-    try:
-        if testing_service.is_test_scope(mongo):
-            await _checkpoint_effect(
-                mongo, ticket["_id"], marker, step="hub", state="skipped"
-            )
-        elif (effects.get("hub") or {}).get("state") != "requested":
-            from extensions.commands.tickets import console
+    async def hub_refresh():
+        try:
+            if testing_service.is_test_scope(mongo):
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step="hub", state="skipped"
+                )
+            elif (effects.get("hub") or {}).get("state") != "requested":
+                from extensions.commands.tickets import console
 
-            queued = await console.request_hub_refresh_best_effort(
-                bot, mongo, reason=f"ticket {ticket.get('status')}"
-            )
-            if not queued:
-                raise RuntimeError("hub refresh was not queued")
+                queued = await console.request_hub_refresh_best_effort(
+                    bot, mongo, reason=f"ticket {ticket.get('status')}"
+                )
+                if not queued:
+                    raise RuntimeError("hub refresh was not queued")
+                await _checkpoint_effect(
+                    mongo, ticket["_id"], marker, step="hub", state="requested"
+                )
+        except Exception as exc:
             await _checkpoint_effect(
-                mongo, ticket["_id"], marker, step="hub", state="requested"
+                mongo, ticket["_id"], marker, step="hub", state="failed", error=exc
             )
-    except Exception as exc:
-        await _checkpoint_effect(
-            mongo, ticket["_id"], marker, step="hub", state="failed", error=exc
-        )
-        pending.append(("console refresh", exc))
+            pending.append(("console refresh", exc))
+
+    async def timed_step(label, operation):
+        started = time.monotonic()
+        try:
+            return await operation
+        finally:
+            _log.info("ticket_resolution_timing ticket=%s step=%s elapsed_ms=%d",
+                      ticket["_id"], label, (time.monotonic() - started) * 1000)
+
+    async def candidate_lane():
+        await timed_step("candidate_notice", candidate_notice())
+        await timed_step("candidate_name", rename_thread("candidate", candidate_thread_missing, location_id))
+
+    async def staff_lane():
+        staff_id = int((ticket.get("location") or {}).get("staff_space_id") or 0)
+        await timed_step("staff_notice", staff_notice_delivery())
+        await timed_step("staff_name", rename_thread("staff", staff_thread_missing, staff_id))
+        await timed_step("staff_context", staff_context_refresh())
+
+    # Independent channels progress together. Within each channel, finish delivery
+    # before renaming so archive/unlock restoration cannot race a message send.
+    # Wait for all lanes even if one raises, before releasing the durable lease.
+    results = await asyncio.gather(candidate_lane(), staff_lane(),
+                                   timed_step("hub", hub_refresh()), return_exceptions=True)
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
 
     if kind in {"close", "reopen"} and not pending:
         try:
@@ -1235,6 +1274,7 @@ async def _queue_and_deliver_latest_staff_context(
 
     from extensions.commands.tickets import console
 
+    started = time.monotonic()
     try:
         if account_sync.staff_context_refresh_required(ticket):
             state_id = await console.queue_staff_identity_context(mongo, ticket)
@@ -1263,6 +1303,10 @@ async def _queue_and_deliver_latest_staff_context(
             ticket.get("_id"),
         )
         return False
+
+    finally:
+        _log.info("ticket_resolution_timing ticket=%s step=preapproval_staff_context elapsed_ms=%d",
+                  ticket.get("_id"), (time.monotonic() - started) * 1000)
 
 
 async def _resolve_ticket(
@@ -1408,12 +1452,15 @@ async def _resolve_ticket(
             )
     else:
         try:
+            sync_started = time.monotonic()
             synced = await account_sync.sync_ticket_accounts(
                 mongo,
                 coc_client,
                 ticket_id,
                 source=sync_source,
             )
+            _log.info("ticket_resolution_timing ticket=%s step=account_sync elapsed_ms=%d",
+                      ticket_id, (time.monotonic() - sync_started) * 1000)
         except account_sync.AccountSyncError:
             latest = await store.find_one(
                 mongo, {"_id": ticket_id, **store.RUNTIME_FILTER}
