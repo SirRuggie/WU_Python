@@ -42,8 +42,8 @@ _log = logging.getLogger(__name__)
 
 # Hard-coded ping channel, unchanged from the old feature; out of scope here.
 PING_CHANNEL = 1424256751913668770
-# Main CWL channel, matching extensions.tasks.cwl_reminder.CWL_CHANNEL_ID.
-MAIN_CWL_CHANNEL = 1072714594625257502
+# Main roster player pings: separate from CWL campaign announcements.
+MAIN_CWL_CHANNEL = 1555939498016374985
 
 JOB_DEFAULTS = {
     "coalesce": True,
