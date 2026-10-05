@@ -78,7 +78,7 @@ async def _allow(ctx, token: str | None) -> bool:
     if state is None or state["created"] < datetime.now(timezone.utc) - _SESSION_TTL:
         _sessions.pop(token, None)
         if ctx is not None:
-            await ctx.respond("This dashboard has expired. Run /manage and choose CWL Rosters again.", ephemeral=True)
+            await ctx.respond("This dashboard has expired. Run /manage and choose CWL Return Pings again.", ephemeral=True)
         return False
     guild = getattr(getattr(ctx, "interaction", None), "guild_id", None)
     user = _ctx_user(ctx)
@@ -175,7 +175,7 @@ def _header(clans, lists, chosen, tab, token):
         options.append(SelectOption(label=_name(clan.get("name") or tag), value=tag,
                                     description=_roster_description(by_tag.get(tag)),
                                     is_default=tag == chosen))
-    heading = Text(content=f"{breadcrumb('CWL Rosters', label, tab.title())}\n## CWL Rosters · {label} · {tab.title()}")
+    heading = Text(content=f"{breadcrumb('CWL Return Pings', label, tab.title())}\n## CWL Return Pings · {label} · {tab.title()}")
     clan = next((clan for clan in clans if _tag(clan["tag"]) == chosen), {})
     logo = clan.get("logo")
     if isinstance(logo, str) and logo.startswith("https://"):
@@ -184,7 +184,7 @@ def _header(clans, lists, chosen, tab, token):
         custom_id=_id("lazycwl_pick", token, tab), placeholder="Choose a clan",
         max_values=1, options=options)]), ActionRow(components=[
             _tab_button(label, key, tab, token, chosen)
-            for label, key in (("Overview", "overview"), ("Players", "players"), ("Return reminders", "reminders")) if section == "FWA" or key != "reminders"])]
+            for label, key in (("Overview", "overview"), ("Edit saved members", "players")) if section == "FWA" or key != "reminders"])]
     if pages > 1:
         body.append(Text(content=f"-# Clan list · Page {page + 1} of {pages}"))
         body.append(ActionRow(components=[
@@ -209,7 +209,39 @@ def _tab_button(label: str, tab: str, current: str, token: str, tag: str) -> But
 
 
 def _back(token: str, tag: str, tab: str = "overview") -> ActionRow:
-    return ActionRow(components=[_button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_home", token, f"{tab},{tag}"), label="Back to Rosters")])
+    return ActionRow(components=[_button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_home", token, f"{tab},{tag}"), label="Back to CWL Return Pings")])
+
+
+def _ping_controls(docs, token, tag, now):
+    running = [d for d in docs if d.get("reminders", {}).get("enabled")]
+    ends, next_runs = [], []
+    for doc in docs:
+        settings = doc.get("reminders") or {}
+        end = store._utc(doc["expires_at"])
+        if settings.get("started_at"):
+            end = min(end, store._utc(settings["started_at"]) + timedelta(days=7))
+        ends.append(end)
+        if settings.get("enabled"):
+            nxt = service.calculate_next_run(doc, now)
+            if nxt < end:
+                next_runs.append(nxt)
+    frequencies = {d.get("reminders", {}).get("every_minutes") or 60 for d in docs}
+    frequency = next(iter(frequencies)) if len(frequencies) == 1 else None
+    choices = [(30, "Every 30 minutes"), (60, "Every 1 hour"), (120, "Every 2 hours")]
+    summary = (f"### Return pings · {len(running)}/{len(docs)} clans running\n"
+        f"Destination: <#{service.reminder_channel('FWA')}>\n"
+        f"Next check: {_fmt_time(min(next_runs)) if next_runs else 'None scheduled'}\n"
+        f"{'Stops' if len(set(ends)) == 1 else 'Earliest stop'}: {_fmt_time(min(ends))}\n"
+        "Seven days from first start, or the 16th at 00:00 UTC, whichever comes first. "
+        "Everyone home skips a ping; checks continue. Pausing or changing frequency does not restart the timer.")
+    return [Text(content=summary), ActionRow(components=[TextSelectMenu(
+        custom_id=_id("lazycwl_frequency_save", token, tag), placeholder="Ping frequency · saves automatically",
+        max_values=1, options=[SelectOption(label=label, value=str(minutes), is_default=minutes == frequency) for minutes, label in choices],
+    )]), ActionRow(components=[
+        _button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_start_now", token, tag),
+            label="Resume Return Pings" if any(d.get("reminders", {}).get("started_at") for d in docs) else "Start Return Pings", is_disabled=len(running) == len(docs)),
+        _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_pause_now", token, tag), label="Pause Return Pings", is_disabled=not running),
+    ])]
 
 
 def render_home(lists: list, clans: list, selected_tag: Optional[str], now: datetime | None = None,
@@ -228,10 +260,12 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
     if note:
         body.append(Text(content=note))
     docs = _selected_docs(lists, chosen)
+    if chosen == "ALL":
+        body.append(Text(content=f"**Applies to all {label} clans**"))
     if tab == "overview":
         missing = sum(_tag(clan["tag"]) not in by_tag for clan in clans)
         capture_disabled = not chosen or (chosen == "ALL" and missing == 0)
-        capture_label = "Capture current roster"
+        capture_label = "Save Current Members"
         if chosen == "ALL":
             if not clans:
                 capture_label = "No clans to capture"
@@ -241,12 +275,15 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
                 saved_summary = "This clan already has a saved roster." if len(clans) == 1 else f"All {len(clans)} clans already have a saved roster."
                 summary = f"**{saved_summary}**\nNothing new to capture. Choose a clan above to see its saved players and capture date."
             else:
-                capture_label = f"Capture missing rosters ({missing})"
+                capture_label = f"Save Current Members ({missing} clans)"
                 summary = f"Saved rosters: {len(docs)} · **Clans to capture: {missing}.**\nCapture saves the current members of the clans without a roster. Existing rosters are kept."
             if docs:
                 if any(doc.get("legacy_snapshot_id") for doc in docs):
                     summary += "\nYour previous snapshots were carried over to this dashboard."
-                summary += "\n**Need a fresh roster?** Select that clan and choose **Replace roster…** to review the change."
+                summary += "\n**Need a fresh roster?** Select that clan and choose **Replace Saved Members** to review the change."
+            if section == "FWA" and docs:
+                known_away = [away_counts.get(d.get("clan_tag")) for d in docs]
+                summary += (f"\nPlayers away: {sum(known_away)}" if all(value is not None for value in known_away) else "\nPlayers away: some statuses unavailable")
             body.append(Text(content=f"### All {label} clans\n{summary}"))
         elif not chosen:
             capture_label = "Choose a clan first"
@@ -256,9 +293,9 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
             if not doc:
                 body.append(Text(content="### No saved roster\nCapture the current clan members." + (" Track who returns after CWL." if section == "FWA" else " Review and manage your Main CWL roster here.")))
             else:
-                capture_label = "Replace roster…"
+                capture_label = "Replace Saved Members"
                 away = away_counts.get(doc.get("clan_tag")); away_text = "unavailable" if away is None else str(away)
-                status = "Return status unavailable" if away is None else ("Players still away" if away else "Everyone returned")
+                status = "Return status unavailable" if away is None else ("Players still away" if away else "Everyone is home · Checks continue while running")
                 if not doc.get("players"):
                     status = "No players tracked"
                 settings = doc.get("reminders") or {}
@@ -271,10 +308,12 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
         buttons = [_button(style=hikari.ButtonStyle.SECONDARY if capture_disabled else hikari.ButtonStyle.PRIMARY,
             custom_id=_id("lazycwl_replace" if chosen != "ALL" and docs else "lazycwl_capture", token, chosen), label=capture_label, is_disabled=capture_disabled)]
         buttons.append(_button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen),
-                              label="Send return reminders" if section == "FWA" else "Send Reminders Now",
+                              label="Send Ping Now",
                               is_disabled=not docs))
         buttons.append(_button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_close", token, chosen), label=f"Clear all {label} Rosters" if chosen == "ALL" else "Clear roster", is_disabled=not docs))
         body.append(ActionRow(components=buttons))
+        if section == "FWA" and docs:
+            body.extend(_ping_controls(docs, token, chosen, now))
     elif tab == "players":
         if chosen == "ALL" or not docs:
             body.append(Text(content="Select one clan with a saved list to view or edit players."))
@@ -287,14 +326,7 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
         if not docs:
             body.append(Text(content="No saved lists are selected."))
         else:
-            lines = []
-            for doc in docs:
-                settings = doc.get("reminders") or {}; enabled = bool(settings.get("enabled"))
-                next_run = service.calculate_next_run(doc, now) if enabled else None
-                lines.append(f"**{_name(doc.get('clan_name') or doc.get('clan_tag'))}** · {'On' if enabled else 'Off'}" + (f" · {settings.get('every_minutes')} min · next {_fmt_time(next_run)}" if enabled else ""))
-            body.append(Text(content="### Reminders\nDestination: <#%s>\n%s" % (service.reminder_channel(_section(token)), "\n".join(lines))))
-            body.append(Text(content="Choose a frequency to enable or update reminders. Changes apply when you confirm. Reminders stop after seven days."))
-            body.append(ActionRow(components=[_button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_enable", token, chosen), label="Enable reminders"), _button(style=hikari.ButtonStyle.DANGER, custom_id=_id("lazycwl_disable", token, chosen), label="Disable reminders", is_disabled=not any(d.get("reminders", {}).get("enabled") for d in docs)), _button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_send", token, chosen), label="Send reminder now")]))
+            body.extend(_ping_controls(docs, token, chosen, now))
     footer_buttons = [_button(style=hikari.ButtonStyle.SECONDARY, custom_id=_id("lazycwl_refresh", token, f"{tab},{chosen}"), label="Refresh")]
     if manage_token := _sessions.get(token, {}).get("manage_token"):
         footer_buttons.append(_button(style=hikari.ButtonStyle.SECONDARY, custom_id=f"manage_home:{manage_token}", label="Management Home"))
@@ -302,7 +334,7 @@ def render_home(lists: list, clans: list, selected_tag: Optional[str], now: date
     return [Container(accent_color=GOLDENROD_ACCENT, components=body)]
 
 
-async def build_home(mongo: MongoClient, selected_tag: Optional[str] = None, note: Optional[str] = None, *, token: str | None = None, tab: str = "overview") -> list:
+async def build_home(mongo: MongoClient, selected_tag: Optional[str] = "ALL", note: Optional[str] = None, *, token: str | None = None, tab: str = "overview") -> list:
     clans, lists = await _clans(mongo, token), await _active(mongo, token)
     if _section(token) == "MAIN" and tab == "reminders": tab = "overview"
     valid_tags = {_tag(c["tag"]) for c in clans} | {_tag(d["clan_tag"]) for d in lists}
@@ -322,7 +354,7 @@ async def build_home(mongo: MongoClient, selected_tag: Optional[str] = None, not
 
 async def open_dashboard(ctx: lightbulb.Context, mongo: MongoClient, note: str | None = None,
                          *, manage_token: str | None = None, deferred: bool = False) -> None:
-    """Open an owner- and guild-bound dashboard for CWL Rosters from /manage."""
+    """Open an owner- and guild-bound dashboard for CWL Return Pings from /manage."""
     if not is_admin(ctx.member):
         await ctx.respond("Only server administrators can manage CWL rosters.", ephemeral=True)
         return
@@ -342,7 +374,7 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
     if kind == "replace":
         if tag == "ALL" or len(docs) != 1:
             return _notice("Choose a roster", "Select one saved roster to replace.", token, tag)
-        return _confirm("Replace roster?", [f"Section: {SECTION_LABELS[_section(token)]}",
+        return _confirm("Replace Saved Members?", [f"Section: {SECTION_LABELS[_section(token)]}",
             f"Clan: {_name(docs[0].get('clan_name'))}",
             f"Current capture: {_fmt_time(docs[0].get('saved_at'))}",
             "This closes the current roster and stops its reminders. A new roster will contain the clan’s current members; manual edits are not copied.",
@@ -358,7 +390,7 @@ async def _review(mongo, token: str, tag: str, kind: str, *, minutes: int | None
             return _notice("Nothing to capture", "Choose a clan without an active saved list.", token, tag)
         nonce = _bind(token, tag, [], operation="capture")
         _sessions[token]["pending"][nonce]["capture_tags"] = [_tag(clan["tag"]) for clan in targets]
-        return _confirm("Capture current roster?", [f"Affected clans: {len(targets)}", ", ".join(_name(clan.get("name") or clan["tag"]) for clan in targets), "This creates saved lists from members currently in those clans."], "lazycwl_capture_yes", token, nonce, GREEN_ACCENT)
+        return _confirm("Save Current Members?", [f"Affected clans: {len(targets)}", ", ".join(_name(clan.get("name") or clan["tag"]) for clan in targets), "This creates saved lists from members currently in those clans."], "lazycwl_capture_yes", token, nonce, GREEN_ACCENT)
     if not docs:
         return _notice("Nothing to review", "There are no active saved lists in this scope.", token, tag)
     if kind == "send":
@@ -414,6 +446,8 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
         return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
     docs = _selected_docs(await _active(mongo, token), tag)
     current = {_list_id(d): d for d in docs}
+    if bound.get("retry"):
+        current = {key: value for key, value in current.items() if key in {str(item) for item in ids}}
     if {str(item) for item in ids} != set(current):
         return _notice("Review expired", "The saved-list scope changed. Nothing was applied; refresh and review again.", token, tag, accent=RED_ACCENT)
     results = []
@@ -422,20 +456,33 @@ async def _apply_bound(mongo, token, value, operation: str, ctx) -> list:
             if operation == "replace": result = await service.replace_list(doc["clan_tag"], saved_by=_ctx_user(ctx), expected_list_id=doc["_id"], section=_section(token))
             elif operation == "send": result = await service.remind_now(doc["clan_tag"], expected_list_id=doc["_id"], section=_section(token))
             elif operation == "close": result = await service.finish(doc["clan_tag"], expected_list_id=doc["_id"], section=_section(token))
-            elif operation == "enable": result = await service.set_reminders(doc["clan_tag"], True, minutes, expected_list_id=doc["_id"], section=_section(token))
+            elif operation == "enable": result = {"ok": True} if doc.get("reminders", {}).get("enabled") else await service.set_reminders(doc["clan_tag"], True, minutes or doc.get("reminders", {}).get("every_minutes") or 60, expected_list_id=doc["_id"], section=_section(token))
             else: result = await service.set_reminders(doc["clan_tag"], False, expected_list_id=doc["_id"], section=_section(token))
         except Exception:
             _log.exception("LazyCWL %s failed for %s", operation, doc["clan_tag"])
             result = {"ok": False, "error": "Could not complete this action. Check the result before retrying."}
         results.append((doc, result))
-    failed = [_name(d.get("clan_name")) for d,r in results if not r.get("ok")]
-    if failed:
-        return _notice("Some changes were not applied", "Failed: " + ", ".join(failed) + ". Refresh before trying again.", token, tag, accent=RED_ACCENT)
-    verbs = {"replace": "Roster replaced", "send": "Reminder check completed", "close": "Saved rosters cleared", "enable": "Reminders enabled", "disable": "Reminders disabled"}
-    note = f"{verbs[operation]} for {len(results)} saved list(s)."
+    failures = [(d, r) for d, r in results if not r.get("ok")]
+    successes = len(results) - len(failures)
+    verbs = {"replace": "Saved members replaced", "send": "Ping check completed", "close": "Saved members cleared", "enable": "Return pings running", "disable": "Return pings paused"}
+    note = f"{verbs[operation]} for {successes} clan(s)."
     if operation == "send":
-        note = f"Sent reminders for {sum(bool(result.get('sent')) for _, result in results)} clans. Clans with everyone home were skipped."
-    return await build_home(mongo, tag, note, token=token, tab="reminders" if operation in {"send", "enable", "disable"} and _section(token) == "FWA" else "overview")
+        sent = [(d, r) for d, r in results if r.get("sent")]
+        note = f"Ping sent for {len(sent)} clans · {sum(r.get('away_count', 0) for _, r in sent)} players away." if sent else "Everyone is home · No ping needed."
+        if failures and not sent:
+            note = "No pings confirmed."
+    components = await build_home(mongo, tag, note, token=token, tab="overview")
+    if failures:
+        failed_docs = [d for d, _ in failures]
+        retry = _bind(token, tag, failed_docs, minutes, operation=operation)
+        _sessions[token]["pending"][retry]["retry"] = True
+        detail = "\n".join(f"• {_name(d.get('clan_name'))}: {r.get('error') or 'Could not complete action'}" for d, r in failures)
+        components.append(Container(accent_color=RED_ACCENT, components=[
+            Text(content="### Needs attention\n" + detail[:3000]),
+            ActionRow(components=[_button(style=hikari.ButtonStyle.PRIMARY, custom_id=_id("lazycwl_retry_failed", token, retry), label="Retry Failed Clans")]),
+        ]))
+    return components
+
 
 
 async def _player_page(mongo, token: str, tag: str, page: int, note: str | None = None) -> list:
@@ -482,7 +529,7 @@ async def _handler_ok(ctx, action_id):
 async def handle_section(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, section = await _handler_ok(ctx, action_id)
     if not token or section not in SECTION_LABELS:
-        return _notice("Choose a section", "Run /manage and choose CWL Rosters again.", "preview", "")
+        return _notice("Choose a section", "Run /manage and choose CWL Return Pings again.", "preview", "")
     previous = _sessions.pop(token)
     new_token = _session(previous["owner"], previous["guild"])
     _sessions[new_token]["section"] = section
@@ -496,7 +543,7 @@ async def handle_section(ctx=None, action_id="", mongo: MongoClient = lightbulb.
 async def handle_clans_page(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
     if not token:
-        return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+        return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     try:
         _sessions[token]["clan_page"] = max(0, int(value))
     except ValueError:
@@ -508,7 +555,7 @@ async def handle_clans_page(ctx=None, action_id="", mongo: MongoClient = lightbu
 @lightbulb.di.with_di
 async def handle_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, tab = await _handler_ok(ctx, action_id); values = getattr(ctx.interaction, "values", []) or []
-    return await build_home(mongo, values[0] if values else None, token=token, tab=tab if tab in {"overview", "players", "reminders"} else "overview") if token else _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    return await build_home(mongo, values[0] if values else None, token=token, tab=tab if tab in {"overview", "players", "reminders"} else "overview") if token else _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
 
 
 @register_action("lazycwl_cancel", preload_state=False)
@@ -516,7 +563,7 @@ async def handle_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.
 async def handle_cancel(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
     if not token:
-        return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+        return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     bound = _sessions[token]["pending"].pop(nonce, {})
     if bound.get("operation") == "remove":
         return await _player_page(mongo, token, bound["tag"], bound.get("page", 0))
@@ -526,26 +573,26 @@ async def handle_cancel(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
 @lightbulb.di.with_di
 async def handle_tab(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     tab, tag = value.split(",", 1); return await build_home(mongo, tag, token=token, tab=tab)
 
 @register_action("lazycwl_home", aliases=("lazycwl_refresh",), preload_state=False)
 @lightbulb.di.with_di
 async def handle_home(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     tab, tag = (value.split(",", 1) if "," in value else ("overview", value)); return await build_home(mongo, tag, token=token, tab=tab)
 
 @register_action("lazycwl_capture", preload_state=False)
 @lightbulb.di.with_di
 async def handle_capture(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-    token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, "capture") if token else _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, "capture") if token else _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
 
 @register_action("lazycwl_capture_yes", preload_state=False)
 @lightbulb.di.with_di
 async def handle_capture_yes(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     bound = _sessions.get(token, {}).get("pending", {}).pop(nonce, None)
     if not bound or bound.get("operation") != "capture":
         return _notice("Review expired", "Refresh and review the capture again.", token, "", accent=RED_ACCENT)
@@ -567,9 +614,13 @@ def _review_action(name, kind):
     @register_action(name, preload_state=False)
     @lightbulb.di.with_di
     async def handler(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-        token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, kind) if token else _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+        token, tag = await _handler_ok(ctx, action_id); return await _review(mongo, token, tag, kind) if token else _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     return handler
-handle_send = _review_action("lazycwl_send", "send")
+@register_action("lazycwl_send", preload_state=False)
+@lightbulb.di.with_di
+async def handle_send(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
+    return await _direct_ping_action(ctx, action_id, mongo, "send")
+
 handle_replace = _review_action("lazycwl_replace", "replace")
 handle_close = _review_action("lazycwl_close", "close")
 handle_disable = _review_action("lazycwl_disable", "disable")
@@ -578,7 +629,7 @@ handle_disable = _review_action("lazycwl_disable", "disable")
 @lightbulb.di.with_di
 async def handle_enable(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, tag = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     if _section(token) != "FWA":
         return _notice("FWA only", "Scheduled reminders are available in the FWA section.", token, tag)
     return [Container(accent_color=GOLDENROD_ACCENT, components=[Text(content="## Enable reminders"), Text(content=f"Destination: <#{service.reminder_channel(_section(token))}>. Choose an explicit frequency."), ActionRow(components=[TextSelectMenu(custom_id=_id("lazycwl_frequency", token, tag), placeholder="Choose frequency", max_values=1, options=[SelectOption(label=f"Every {m} minutes", value=str(m)) for m in REMINDER_FREQUENCIES])]), Separator(), _back(token, tag, "reminders")])]
@@ -591,11 +642,66 @@ async def handle_frequency(ctx=None, action_id="", mongo: MongoClient = lightbul
     except (IndexError, ValueError): minutes = 0
     return await _review(mongo, token, tag, "enable", minutes=minutes) if token and minutes in REMINDER_FREQUENCIES else _notice("Choose a frequency", "Select one of the offered reminder frequencies.", token or "preview", tag or "")
 
+
+async def _direct_ping_action(ctx, action_id, mongo, operation):
+    token, tag = await _handler_ok(ctx, action_id)
+    if not token:
+        return _notice("Access denied", "Reopen CWL Return Pings.", "preview", "")
+    docs = _selected_docs(await _active(mongo, token), tag)
+    if not docs:
+        return await build_home(mongo, tag, "Save Current Members first.", token=token)
+    nonce = _bind(token, tag, docs, operation=operation)
+    return await _apply_bound(mongo, token, nonce, operation, ctx)
+
+
+@register_action("lazycwl_start_now", preload_state=False)
+@lightbulb.di.with_di
+async def handle_start_now(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
+    return await _direct_ping_action(ctx, action_id, mongo, "enable")
+
+
+@register_action("lazycwl_pause_now", preload_state=False)
+@lightbulb.di.with_di
+async def handle_pause_now(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
+    return await _direct_ping_action(ctx, action_id, mongo, "disable")
+
+
+@register_action("lazycwl_retry_failed", preload_state=False)
+@lightbulb.di.with_di
+async def handle_retry_failed(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
+    token, nonce = await _handler_ok(ctx, action_id)
+    bound = _sessions.get(token, {}).get("pending", {}).get(nonce, {})
+    if not token or not bound.get("retry"):
+        return _notice("Retry expired", "Refresh the panel.", token or "preview", "")
+    return await _apply_bound(mongo, token, nonce, bound["operation"], ctx)
+
+
+@register_action("lazycwl_frequency_save", preload_state=False)
+@lightbulb.di.with_di
+async def handle_frequency_save(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
+    token, tag = await _handler_ok(ctx, action_id)
+    values = getattr(ctx.interaction, "values", []) or []
+    if not token or len(values) != 1 or values[0] not in {str(v) for v in REMINDER_FREQUENCIES}:
+        return _notice("Choose a frequency", "Use 30 minutes, 1 hour, or 2 hours.", token or "preview", tag or "")
+    if _section(token) != "FWA":
+        return await build_home(mongo, tag, "Main return pings are manual only.", token=token)
+    docs = _selected_docs(await _active(mongo, token), tag)
+    errors = []
+    for doc in docs:
+        try:
+            result = await service.set_reminders(doc["clan_tag"], bool(doc.get("reminders", {}).get("enabled")), int(values[0]), expected_list_id=doc["_id"], section="FWA")
+            if not result.get("ok"):
+                errors.append(f"{_name(doc.get('clan_name'))}: {result.get('error')}")
+        except Exception:
+            errors.append(f"{_name(doc.get('clan_name'))}: Could not save frequency")
+    return await build_home(mongo, tag, "Frequency saved. Running pings updated; paused pings stay paused." if not errors else "Some frequencies could not be saved: " + "; ".join(errors), token=token)
+
+
 def _apply_action(name, operation):
     @register_action(name, preload_state=False)
     @lightbulb.di.with_di
     async def handler(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
-        token, value = await _handler_ok(ctx, action_id); return await _apply_bound(mongo, token, value, operation, ctx) if token else _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+        token, value = await _handler_ok(ctx, action_id); return await _apply_bound(mongo, token, value, operation, ctx) if token else _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     return handler
 handle_send_yes = _apply_action("lazycwl_send_yes", "send")
 handle_replace_yes = _apply_action("lazycwl_replace_yes", "replace")
@@ -634,7 +740,7 @@ async def handle_add_submit(ctx=None, action_id="", mongo: MongoClient = lightbu
 @lightbulb.di.with_di
 async def handle_players_page(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     tag, page = value.rsplit(",", 1)
     try: page = int(page)
     except ValueError: page = 0
@@ -644,7 +750,7 @@ async def handle_players_page(ctx=None, action_id="", mongo: MongoClient = light
 @lightbulb.di.with_di
 async def handle_remove(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     tag, page = value.rsplit(",", 1)
     return await _player_page(mongo, token, tag, int(page))
 
@@ -652,7 +758,7 @@ async def handle_remove(ctx=None, action_id="", mongo: MongoClient = lightbulb.d
 @lightbulb.di.with_di
 async def handle_remove_pick(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, value = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     tag, page = value.rsplit(",", 1); values = getattr(ctx.interaction, "values", []) or []
     doc = await store.get_active(mongo, tag, section=_section(token))
     if not doc or not values: return await _player_page(mongo, token, tag, int(page), "Choose at least one player.")
@@ -664,7 +770,7 @@ async def handle_remove_pick(ctx=None, action_id="", mongo: MongoClient = lightb
 @lightbulb.di.with_di
 async def handle_remove_yes(ctx=None, action_id="", mongo: MongoClient = lightbulb.di.INJECTED, **kw):
     token, nonce = await _handler_ok(ctx, action_id)
-    if not token: return _notice("Access denied", "Run /manage and choose CWL Rosters again.", "preview", "")
+    if not token: return _notice("Access denied", "Run /manage and choose CWL Return Pings again.", "preview", "")
     bound = _sessions.get(token, {}).get("pending", {}).pop(nonce, None)
     if not bound or bound.get("operation") != "remove" or len(bound["ids"]) != 1: return _notice("Review expired", "Refresh and choose the players again.", token, "", accent=RED_ACCENT)
     try:

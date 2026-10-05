@@ -117,7 +117,7 @@ def _reminder_expired(reminders: dict, now: datetime) -> bool:
     started_at = reminders.get("started_at")
     if not started_at:
         return False
-    return now - store._utc(started_at) > SEVEN_DAYS
+    return now - store._utc(started_at) >= SEVEN_DAYS
 
 
 def calculate_next_run(doc: dict, now: Optional[datetime] = None) -> datetime:
@@ -418,12 +418,14 @@ def _stale_result() -> dict:
     return {"ok": False, "stale": True, "error": "This saved list changed. Refresh and try again."}
 
 
-async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = store.DEFAULT_SECTION) -> dict:
+async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = store.DEFAULT_SECTION, scheduled: bool = False) -> dict:
     """Send an away-players reminder for clan_tag's active saved list."""
     section = store.normalize_section(section)
     if reminder_channel(section) is None:
         return {**_REMIND_NOW_DEFAULTS, "error": "No reminder destination is configured."}
     doc = await store.get_active(mongo_client, clan_tag, section=section)
+    if doc is not None and store._utc(doc["expires_at"]) <= datetime.now(timezone.utc):
+        return {**_REMIND_NOW_DEFAULTS, "error": "This saved member list has expired. No ping sent."}
     if doc is None or (expected_list_id is not None and doc.get("_id") != expected_list_id):
         if expected_list_id is not None:
             return {**_REMIND_NOW_DEFAULTS, **_stale_result()}
@@ -445,10 +447,13 @@ async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = sto
     # followed by a replacement list must not receive an old confirmation's
     # reminder.
     current = await store.get_by_id(mongo_client, doc["_id"])
-    if current is None or current.get("status") != "active" or (
+    if current is None or current.get("status") != "active" or store._utc(current["expires_at"]) <= datetime.now(timezone.utc) or (
         expected_list_id is not None and current.get("_id") != expected_list_id
     ):
         return {**_REMIND_NOW_DEFAULTS, **_stale_result()}
+
+    if scheduled and (not current.get("reminders", {}).get("enabled") or _reminder_expired(current.get("reminders", {}), datetime.now(timezone.utc))):
+        return {**_REMIND_NOW_DEFAULTS, "error": "Return pings are paused or their seven-day window has ended."}
 
     # Recipient lookup above can take time; the active-list check immediately
     # before this send prevents a finish or replacement during that lookup.
@@ -566,6 +571,7 @@ async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[in
             args=[doc["_id"]],
             id=job_id,
             replace_existing=True,
+            next_run_time=calculate_next_run(doc),
             **JOB_DEFAULTS,
         )
     except Exception as exc:
@@ -598,21 +604,15 @@ async def reminder_job(list_id) -> None:
             return
 
         now = datetime.now(timezone.utc)
-        if _reminder_expired(doc["reminders"], now):
+        if store._utc(doc["expires_at"]) <= now or _reminder_expired(doc["reminders"], now):
             await store.set_reminders(
                 mongo_client, doc["clan_tag"], enabled=False,
                 every_minutes=doc["reminders"].get("every_minutes"), expected_list_id=list_id,
             )
             _remove_job(job_id)
-            await bot_instance.rest.create_message(
-                channel=PING_CHANNEL,
-                components=[Container(accent_color=RED_ACCENT, components=[
-                    Text(content=f"Auto reminders for {doc['clan_name']} stopped after 7 days."),
-                ])],
-            )
             return
 
-        await remind_now(doc["clan_tag"], expected_list_id=list_id)
+        await remind_now(doc["clan_tag"], expected_list_id=list_id, scheduled=True)
     except Exception:
         _log.exception("lazycwl_service.reminder_job: unhandled error list_id=%s", list_id)
 
@@ -624,7 +624,7 @@ async def restore_reminder_jobs() -> None:
     now = datetime.now(timezone.utc)
 
     for doc in docs:
-        if _reminder_expired(doc["reminders"], now):
+        if store._utc(doc["expires_at"]) <= now or _reminder_expired(doc["reminders"], now):
             await store.set_reminders(
                 mongo_client, doc["clan_tag"], enabled=False,
                 every_minutes=doc["reminders"].get("every_minutes"), expected_list_id=doc["_id"],

@@ -65,7 +65,7 @@ def test_single_manage_command_has_optional_section_and_is_loaded():
         ("Recruitment Questions", "recruitment-questions"),
         ("Ticket Settings", "ticket-settings"), ("Ticket Testing", "ticket-testing"),
         ("FWA", "fwa"),
-        ("CWL", "cwl"), ("CWL Rosters", "cwl-rosters"),
+        ("CWL", "cwl"), ("CWL Return Pings", "cwl-rosters"),
     ]
 
 
@@ -285,8 +285,8 @@ def test_fwa_war_messages_home_button_routes_through_dispatcher(monkeypatch):
     assert saved["user_id"] == 1 and saved["guild_id"] == 2
     assert ctx.events[-1][0] == "edit"
     rendered = ctx.events[-1][1]["components"][0].build()[0]
-    assert any(node.get("content") == "## FWA War Messages" for node in walk(rendered))
-    assert any("Management › FWA › War Messages" in node.get("content", "") for node in walk(rendered))
+    assert any(node.get("content") == "## FWA War Message Templates" for node in walk(rendered))
+    assert any("Management › FWA › War Message Templates" in node.get("content", "") for node in walk(rendered))
 
 
 def test_old_dashboard_slash_entries_are_absent_but_manage_and_actions_remain():

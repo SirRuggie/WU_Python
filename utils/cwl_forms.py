@@ -55,7 +55,7 @@ def schedule_form(schedule):
         ]
     if mode == "specific":
         at = str(schedule.get("at", ""))
-        return "One-time delivery", [
+        return "Date and time · repeats monthly", [
             _field("date", "Date (YYYY-MM-DD)", at[:10]),
             _field("time", "Time in campaign timezone", at[11:16] if len(at) > 15 else "17:00"),
         ]

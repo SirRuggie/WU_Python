@@ -77,6 +77,7 @@ def test_sequence_submit_configures_numbered_slots_and_validates_resolved_plan(m
 
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", load)
     monkeypatch.setattr(dashboard, "_save_timing", autosave)
+    monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value={"campaign": draft["campaign"], "activated": False}))
     asyncio.run(dashboard.submit_sequence(context, "a" * 32 + "|evenly", mongo=object()))
     campaign = saved[0]
     assert campaign["reminder_sequence"] == {
@@ -104,6 +105,7 @@ def test_interval_modal_uses_only_interval_lead_and_gap_and_keeps_internal_count
         return draft | {"campaign": campaign}, "Scheduled."
 
     monkeypatch.setattr(dashboard, "_save_timing", autosave)
+    monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value={"campaign": draft["campaign"], "activated": False}))
     submit_context = _ctx({"interval_hours": "48", "final_hours": "1", "min_gap_hours": "3"})
     asyncio.run(dashboard.submit_sequence(submit_context, "a" * 32 + "|interval", mongo=object()))
     assert saved[0]["reminder_sequence"] == {
@@ -126,6 +128,7 @@ def test_intermediate_invalid_deadline_saves_so_sequence_can_be_repaired(monkeyp
         saved.append(campaign)
         return draft | {"campaign": campaign}, "NOT SCHEDULED: Signup deadline must be after signups open. Your previous sending schedule is unchanged."
     monkeypatch.setattr(dashboard, "_save_timing", autosave)
+    monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value={"campaign": draft["campaign"], "activated": False}))
     context = _ctx({"date": "2026-10-20", "time": "17:30", "timezone": "America/New_York"})
 
     asyncio.run(dashboard.submit_settings(context, "a" * 32 + "|specific", mongo=object()))
@@ -167,6 +170,7 @@ def test_manual_signup_opening_saves_intermediate_sequence_repair(monkeypatch):
         saved.append(campaign)
         return draft | {"campaign": campaign}, "NOT SCHEDULED: Choose a signup opening time before automatic reminders. Your previous sending schedule is unchanged."
     monkeypatch.setattr(dashboard, "_save_timing", autosave)
+    monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value={"campaign": draft["campaign"], "activated": False}))
     context = _ctx()
     context.interaction.values = ("manual",)
 

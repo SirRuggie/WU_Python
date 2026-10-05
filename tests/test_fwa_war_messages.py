@@ -219,13 +219,9 @@ def test_text_edit_save_conflict_and_reset_follow_strict_cas(monkeypatch):
         assert form.events[0][0] == "initial"
         assert form.events[-1][0] == "edit"
     drafts = [row for row in db.component_state.rows.values() if row.get("view") == "editor" and row["_id"] not in {"a", "b"}]
-    assert len(drafts) == 2
-    first, second = drafts
-    run(components._dispatch(Context(f"fwa_war_save:{first['_id']}"), db))
+    assert len(drafts) == 1  # First submit saved; second stale submit was rejected.
+    assert "Not saved" in str(form.events[-1])
     assert db.bot_config.rows["fwa_war_template:20:win"]["sections"][0] == "# First"
-    conflict = Context(f"fwa_war_save:{second['_id']}")
-    run(components._dispatch(conflict, db))
-    assert "changed elsewhere" in str(conflict.events[-1])
     assert db.bot_config.rows["fwa_war_template:20:win"]["revision"] == 1
 
     use_dispatch(monkeypatch, "fwa_war_reset_confirm", db)
@@ -235,7 +231,7 @@ def test_text_edit_save_conflict_and_reset_follow_strict_cas(monkeypatch):
     assert db.bot_config.rows["fwa_war_template:20:win"]["sections"] == base["sections"]
 
 
-def test_footer_upload_stays_in_draft_until_save(monkeypatch):
+def test_footer_upload_saves_immediately_for_future_posts(monkeypatch):
     db = mongo()
     base = service.default_template("win")
     db.component_state.rows["draft"] = {
@@ -256,10 +252,10 @@ def test_footer_upload_stays_in_draft_until_save(monkeypatch):
     run(components._dispatch(ctx, db))
     assert ctx.events[0][0] == "initial"
     assert ctx.events[-1][0] == "edit"
-    assert db.bot_config.rows == {}
+    assert db.bot_config.rows["fwa_war_template:20:win"]["revision"] == 1
     staged = latest_state(db, "editor")
     assert staged["template"]["footer_url"] == "https://img.example.com/footer.png"
-    assert staged["saved_template"]["footer_url"] == base["footer_url"]
+    assert staged["saved_template"] == staged["template"]
     media.upload_bytes.assert_awaited_once()
     use_dispatch(monkeypatch, "fwa_war_save", db)
     run(components._dispatch(Context(f"fwa_war_save:{staged['_id']}"), db))

@@ -29,7 +29,7 @@ DESTINATIONS = (
     ("Ticket Testing", "ticket_testing", "Open an isolated test window or use your tester access"),
     ("FWA", "fwa", "Bases, war messages, blacklist, points, and sync reminders"),
     ("CWL", "cwl", "Edit announcements and manage scheduled delivery"),
-    ("CWL Rosters", "cwl_rosters", "Manage saved rosters and player return reminders"),
+    ("CWL Return Pings", "cwl_rosters", "Save clan members and send return pings after CWL"),
 )
 SECTION_CHOICES = (
     lightbulb.Choice("Server", "server"),
@@ -41,7 +41,7 @@ SECTION_CHOICES = (
     lightbulb.Choice("Ticket Testing", "ticket-testing"),
     lightbulb.Choice("FWA", "fwa"),
     lightbulb.Choice("CWL", "cwl"),
-    lightbulb.Choice("CWL Rosters", "cwl-rosters"),
+    lightbulb.Choice("CWL Return Pings", "cwl-rosters"),
 )
 SECTION_DESTINATION = {
     "roles": "roles",
@@ -215,7 +215,7 @@ async def manage_home_components(ctx: Any, mongo: MongoClient, *, token: str | N
 FWA_SECTIONS = (
     ("War Weight", "fwa_weight", "Edit Town Hall weight ranges, emojis, and the lowest level displayed"),
     ("Bases & Guidance", "fwa_bases", "Base links, artwork, Town Hall instructions, and upgrade notes"),
-    ("War Messages", "fwa_war_messages", "Edit win, lose, mismatch, and blacklist announcements"),
+    ("War Message Templates", "fwa_war_messages", "Edit win, lose, mismatch, and blacklist announcements"),
     ("Blacklist", "fwa_blacklist", "Browse blacklisted clans; FWA Clan Reps can add or remove entries"),
     ("Points Monitor", "fwa_points", "Monitor status, watched clans, and latest points results"),
     ("Sync & Reminders", "fwa_sync", "BAND sync schedules, signup channel, and reminder settings"),

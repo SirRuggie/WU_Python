@@ -61,10 +61,10 @@ def test_panel_has_three_workspaces_without_duplicate_settings(monkeypatch):
     monkeypatch.setattr(dashboard.cwl_campaign, "resolve_schedule", lambda *_args, **_kwargs: [])
     built = asyncio.run(dashboard.panel(_draft()))[0].build()[0]
     encoded = str(built)
-    for label in ("Overview", "Messages", "Schedule"):
+    for label in ("Overview", "Messages", "Signup Reminders"):
         assert label in encoded
     assert "'label': 'Settings'" not in encoded
-    assert "Save posts" in encoded
+    assert "Publish Final Roster" in encoded and "Save posts" not in encoded
     assert "Management › CWL › Overview" in encoded
     tabs = dashboard._tabs("draft", "overview").components
     assert all(button.emoji == dashboard.button_emoji(button.label) for button in tabs)
@@ -175,6 +175,7 @@ def test_apply_uses_the_campaign_base_revision_not_a_draft_edit_revision(monkeyp
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", AsyncMock(return_value=draft))
     monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", AsyncMock(return_value=draft))
     monkeypatch.setattr(dashboard.cwl_campaign, "new_draft", AsyncMock(return_value=draft))
+    monkeypatch.setattr(dashboard, "panel", AsyncMock(return_value=[]))
     apply = AsyncMock(return_value={"message": "Saved"})
     monkeypatch.setattr(dashboard.cwl_campaign, "apply_draft", apply)
     monkeypatch.setattr(dashboard.cwl_campaign, "resolve_schedule", lambda *_args, **_kwargs: [])
@@ -199,12 +200,15 @@ def test_modal_submission_acknowledges_before_reading_or_saving_draft(monkeypatc
 
     monkeypatch.setattr(dashboard.cwl_campaign, "load_draft", load)
     monkeypatch.setattr(dashboard.cwl_campaign, "patch_draft", AsyncMock(return_value=draft))
+    monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value={"campaign": draft["campaign"], "activated": True}))
+    monkeypatch.setattr(dashboard.cwl_campaign, "apply_draft", AsyncMock(return_value={"draft": draft}))
     asyncio.run(dashboard.submit_text(context, "f" * 32 + "|signup|main", mongo=object()))
     assert context.defer.await_count == 1
 
 
 def test_pause_rebases_only_the_immediately_preceding_draft_revision(monkeypatch):
     context = _ctx()
+    monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value={"campaign": {"paused": False}, "activated": True}))
     monkeypatch.setattr(dashboard.cwl_campaign, "set_paused", AsyncMock(return_value={"revision": 2}))
     monkeypatch.setattr(dashboard, "panel", AsyncMock(return_value=[]))
 

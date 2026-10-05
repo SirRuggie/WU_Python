@@ -22,7 +22,7 @@ from utils.manage_ui import breadcrumb, button_emoji
 
 loader = lightbulb.Loader()
 TTL = timedelta(minutes=30)
-PAGE_SIZE = 6
+PAGE_SIZE = 5
 NO_MENTIONS = {"user_mentions": False, "role_mentions": False, "mentions_everyone": False}
 _RAW_TAG = re.compile(r"#?[0-9A-Za-z]{3,15}\Z")
 
@@ -105,7 +105,7 @@ async def _snapshot(mongo: MongoClient) -> tuple[dict, list[dict]]:
     return config, watch
 
 
-async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> list:
+async def _panel(mongo: MongoClient, state: dict, notice: str | None = None, *, details: bool = False) -> list:
     try:
         config, watch = await _snapshot(mongo)
     except Exception:
@@ -119,9 +119,8 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
     rows = [
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "Points Monitor") + "\n## FWA Points Monitor"),
         hikari.impl.TextDisplayComponentBuilder(content=(
-            f"**Monitor:** {'Enabled' if config['enabled'] else 'Disabled'} · "
-            f"**Detector:** {detector} · **Active retries:** {retries}\n"
-            f"**Startup recovery:** {_safe(recovery, 180)}"
+            f"**Monitoring: {'On' if config['enabled'] else 'Off'}** · {len(watch)} clans\n"
+            + ("**Needs attention:** Monitoring is not running. Open Details." if config['enabled'] and detector != "Running" else "**Needs attention:** Some checks are retrying. Open Details." if retries else "Latest results and update times are shown below.")
         )),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         hikari.impl.TextDisplayComponentBuilder(content=(
@@ -178,12 +177,22 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
         rows.append(_buttons((f"fwa_points_remove:{state['_id']}", "Remove selected extra",
                               hikari.ButtonStyle.DANGER,
                               not any(entry["tag"] == selected for entry in extra_options))))
+    rows.append(_buttons((f"fwa_points_details:{state['_id']}", "Details", hikari.ButtonStyle.SECONDARY, False)))
+    if details:
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"### Details\nDetector: {detector} · Active retries: {retries}\nStartup recovery: {_safe(recovery, 180)}"))
     rows.append(hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL))
     rows.append(_buttons(
         (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
     ))
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+
+
+@register_action("fwa_points_details", preload_state=False)
+@lightbulb.di.with_di
+async def details_panel(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
+    state, problem = await _state(ctx, mongo, action_id)
+    return _error(problem) if problem else await _panel(mongo, state, details=True)
 
 
 async def open_dashboard(ctx: Any, mongo: MongoClient, *, manage_token: str,

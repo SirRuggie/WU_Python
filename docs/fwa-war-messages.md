@@ -1,6 +1,6 @@
-# FWA War Messages
+# FWA War Message Templates
 
-Open `/manage` → **FWA** → **War Messages**. The optional `section:FWA`
+Open `/manage` → **FWA** → **War Message Templates**. The optional `section:FWA`
 choice opens the FWA submenu. This private editor manages the **Win**, **Lose**,
 **Mismatch**, and **Blacklisted** templates used by `/fwa war-plans`.
 
@@ -11,7 +11,7 @@ choice opens the FWA submenu. This private editor manages the **Win**, **Lose**,
    separate so instructions copied into clan chat can stay concise.
 3. Optionally upload footer artwork or edit the six-digit accent color.
 4. Use Message preview or Copy preview to check the draft with example war details.
-5. Save changes to make the template available to future `/fwa war-plans` posts.
+5. Submitted edits automatically save for future `/fwa war-plans` posts; no separate Save step is needed.
 
 Saving a template does not publish a message or rewrite older announcements.
 The existing war-plan command still selects the clan, opponent, result, and
@@ -19,13 +19,14 @@ announcement channel. The blacklist lookup and its success/failure note remain
 runtime behavior of that command.
 
 Footer uploads accept PNG, JPG, GIF, or WEBP images up to 10 MB. Uploading or
-restoring artwork changes the draft; Save changes applies it to future posts.
+restoring artwork automatically saves it for future posts.
 Reset defaults has a confirmation screen and immediately saves the original
 text, copy text, color, and artwork for the selected outcome.
 
 The management UI uses gold styling. The public message preview uses the war
 message's own appearance. Back returns one level and Management Home returns
-to `/manage`; leaving unsaved changes requires an explicit choice.
+to `/manage`. Submitted edits are already saved. Older unsaved panels retain
+their existing leave confirmation.
 
 ## Access and storage
 

@@ -69,11 +69,11 @@ async def _state(ctx: Any, mongo: MongoClient, token: str, *, view: str | None =
         return None, "This editor expired. Run `/manage` again."
     user_id, guild_id = _identity(ctx)
     if user_id is None or guild_id is None or state.get("user_id") != user_id or state.get("guild_id") != guild_id:
-        return None, "Open your own FWA War Messages editor in this server."
+        return None, "Open your own FWA War Message Templates editor in this server."
     if not allowed(ctx):
         return None, "The FWA Clan Rep role is required to manage war messages."
     if view is not None and state.get("view") != view:
-        return None, "This editor panel is out of date. Open FWA War Messages from `/manage`."
+        return None, "This editor panel is out of date. Open FWA War Message Templates from `/manage`."
     return state, None
 
 
@@ -101,7 +101,7 @@ def _error(message: str) -> list:
     return [hikari.impl.ContainerComponentBuilder(
         accent_color=RED_ACCENT,
         components=[
-            hikari.impl.TextDisplayComponentBuilder(content=f"## FWA War Messages\n{message}"),
+            hikari.impl.TextDisplayComponentBuilder(content=f"## FWA War Message Templates\n{message}"),
             hikari.impl.TextDisplayComponentBuilder(content="Run `/manage` to open a fresh private editor."),
         ],
     )]
@@ -121,8 +121,8 @@ def _home(state: dict, notice: str | None = None) -> list:
     for variant in content.VARIANTS:
         menu.add_option(VARIANT_LABELS[variant], variant)
     rows = [
-        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Messages")),
-        hikari.impl.TextDisplayComponentBuilder(content="## FWA War Messages"),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Message Templates")),
+        hikari.impl.TextDisplayComponentBuilder(content="## FWA War Message Templates"),
         hikari.impl.TextDisplayComponentBuilder(content="Edit the win, lose, mismatch, and blacklisted messages used by `/fwa war-plans`."),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
     ]
@@ -130,7 +130,7 @@ def _home(state: dict, notice: str | None = None) -> list:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     rows.extend([
         selector,
-        hikari.impl.TextDisplayComponentBuilder(content="-# Changes affect future posts only after you save."),
+        hikari.impl.TextDisplayComponentBuilder(content="-# Submitted edits save automatically for future posts."),
         _buttons(
             (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
             (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
@@ -158,10 +158,10 @@ def _editor(state: dict, notice: str | None = None) -> list:
     native_footer = content.default_template(variant)["footer_url"]
     footer_status = "Original artwork" if template["footer_url"] == native_footer else "Custom artwork"
     rows = [
-        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Messages", VARIANT_LABELS[variant])),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Message Templates", VARIANT_LABELS[variant])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## {VARIANT_LABELS[variant]} War Message"),
         hikari.impl.TextDisplayComponentBuilder(content=f"{'Unsaved changes' if _dirty(state) else 'Saved'} · {len(template['sections'])} text blocks · {footer_status}"),
-        hikari.impl.TextDisplayComponentBuilder(content="Posting target: Future `/fwa war-plans` messages after Save changes."),
+        hikari.impl.TextDisplayComponentBuilder(content="Posting target: Future `/fwa war-plans` messages. Edits save automatically; use `/fwa war-plans` to post."),
         hikari.impl.TextDisplayComponentBuilder(content="Use `{opponent}`, `{author}`, `{clan_role}`, and `{fwa_rep_role}` for values filled in when a war plan is posted."),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
     ]
@@ -172,7 +172,6 @@ def _editor(state: dict, notice: str | None = None) -> list:
         _buttons(
             (f"fwa_war_preview:{sid}", "Message preview", hikari.ButtonStyle.SECONDARY, False),
             (f"fwa_war_copy_preview:{sid}", "Copy preview", hikari.ButtonStyle.SECONDARY, False),
-            (f"fwa_war_save:{sid}", "Save changes", hikari.ButtonStyle.SUCCESS, not _dirty(state)),
         ),
         _buttons(
             (f"fwa_war_footer:{sid}", "Upload footer", hikari.ButtonStyle.SECONDARY, False),
@@ -184,7 +183,7 @@ def _editor(state: dict, notice: str | None = None) -> list:
         ),
         hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL),
         _buttons(
-            (f"fwa_war_leave_variants:{sid}", "Back to War Messages", hikari.ButtonStyle.SECONDARY, False),
+            (f"fwa_war_leave_variants:{sid}", "Back to War Message Templates", hikari.ButtonStyle.SECONDARY, False),
             (f"{'fwa_war_leave' if _dirty(state) else 'manage_fwa'}:{sid if _dirty(state) else state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
             (f"{'fwa_war_leave_home' if _dirty(state) else 'manage_home'}:{sid if _dirty(state) else state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
         ),
@@ -194,11 +193,11 @@ def _editor(state: dict, notice: str | None = None) -> list:
 
 def _leave_review(state: dict, *, management: bool, home: bool = False) -> list:
     sid = state["_id"]
-    destination = "Management Home" if home else ("FWA" if management else "War Messages")
+    destination = "Management Home" if home else ("FWA" if management else "War Message Templates")
     leave_id = (f"manage_home:{state['manage_token']}" if home else
                 f"manage_fwa:{state['manage_token']}" if management else f"fwa_war_back:{sid}")
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=[
-        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Messages", VARIANT_LABELS[state["variant"]])),
+        hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "War Message Templates", VARIANT_LABELS[state["variant"]])),
         hikari.impl.TextDisplayComponentBuilder(content=f"## Return to {destination}?"),
         hikari.impl.TextDisplayComponentBuilder(content="Unsaved changes in this draft will not be restored. Save them first if you want future war posts to use them."),
         _buttons(
@@ -296,6 +295,15 @@ async def block(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJE
     )
 
 
+
+async def _autosave(mongo, state, template):
+    try:
+        saved = await content.save_template(mongo, state["guild_id"], state["variant"], template,
+            state["template"]["revision"], state["user_id"])
+    except (content.TemplateConflict, ValueError) as exc:
+        return state, f"Not saved: {exc}. Reopen this template before retrying."
+    return await _next(mongo, state, template=saved, saved_template=copy.deepcopy(saved)), "Saved for future posts."
+
 @register_action("fwa_war_submit", is_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def submit(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any) -> None:
@@ -334,8 +342,8 @@ async def submit(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJ
     except ValueError as exc:
         await _modal_edit(ctx, _editor(state, str(exc)))
         return
-    draft = await _next(mongo, state, template=template)
-    await _modal_edit(ctx, _editor(draft, "Draft updated. Save changes before posting a new war plan."))
+    draft, notice = await _autosave(mongo, state, template)
+    await _modal_edit(ctx, _editor(draft, notice))
 
 
 @register_action("fwa_war_preview", preload_state=False, no_return=True)
@@ -520,8 +528,8 @@ async def accent_submit(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
     except ValueError as exc:
         await _modal_edit(ctx, _editor(state, str(exc)))
         return
-    draft = await _next(mongo, state, template=template)
-    await _modal_edit(ctx, _editor(draft, "Accent updated in this draft. Save changes before posting."))
+    draft, notice = await _autosave(mongo, state, template)
+    await _modal_edit(ctx, _editor(draft, notice))
 
 
 def _modal_attachment(payload: dict | None) -> hikari.Attachment | None:
@@ -599,8 +607,8 @@ async def footer_submit(
     except ValueError as exc:
         await _modal_edit(ctx, _editor(state, str(exc)))
         return
-    draft = await _next(mongo, state, template=template)
-    await _modal_edit(ctx, _editor(draft, "Footer uploaded to this draft. Save changes to use it in future posts."))
+    draft, notice = await _autosave(mongo, state, template)
+    await _modal_edit(ctx, _editor(draft, notice))
 
 
 @register_action("fwa_war_restore_footer", preload_state=False)
@@ -611,5 +619,5 @@ async def restore_footer(ctx: Any, action_id: str, mongo: MongoClient = lightbul
         return _error(problem)
     template = copy.deepcopy(state["template"])
     template["footer_url"] = content.default_template(state["variant"])["footer_url"]
-    draft = await _next(mongo, state, template=template)
-    return _editor(draft, "Original artwork restored in this draft. Save changes to use it.")
+    draft, notice = await _autosave(mongo, state, template)
+    return _editor(draft, notice)

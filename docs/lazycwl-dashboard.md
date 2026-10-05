@@ -1,53 +1,25 @@
-# CWL rosters dashboard
+# CWL Return Pings
 
-Open this workspace from `/manage` by choosing **CWL Rosters**, or select it
+Open this workspace from `/manage` by choosing **CWL Return Pings**, or select it
 in the command's optional `section` choice. See [Server Management](manage-dashboard.md).
 
-`/manage section:CWL Rosters` is the administrator dashboard for CWL saved player lists. It
+`/manage section:CWL Return Pings` is the administrator dashboard for CWL saved player lists. It
 replaces `/lazycwl` and the nine retired `/fwa lazycwl-*` commands. Those
-old command names are no longer registered; use `/manage section:CWL Rosters` directly.
+old command names are no longer registered; use `/manage section:CWL Return Pings` directly.
 
 ## Dashboard flow
 
-Open `/manage section:CWL Rosters` to the FWA overview, then choose a clan. Use the
-**FWA** and **Main** buttons at the top to switch sections. The selected
-section stays visible in the heading. FWA uses clan type `FWA`;
-Main uses `Tactical` and `Flexible Fun` war clans, plus the legacy
-`Competitive` category. Dedicated `CWL` hosting clans are not treated as
-home rosters. Each section has its own
-clan selector and an explicit **All FWA clans** or **All Main clans** choice.
-Bulk capture, close, and reminder operations are confined to that section.
-Clan menus show up to 24 clans plus the bulk option per page; additional
-clans remain reachable with the clan navigation buttons.
+Open `/manage` → **CWL Return Pings**. It starts on **FWA → All FWA clans**; select one clan when needed. Main is available separately and defaults to All Main clans. The existing internal `cwl-rosters` route remains compatible.
 
-- **Overview** shows capture time, CWL season, player count, and expiry.
-  FWA additionally shows players away and scheduled return reminder status.
-  Main offers **Send Reminders Now** for a reviewed manual send.
-- **Capture current roster** reviews the selected clan first. Bulk capture
-  names only clans without a saved roster in that section.
-- **Replace roster…** appears for a selected saved roster. Its review explains
-  that the existing roster closes, reminders stop, and current clan members
-  form the replacement. Manual roster edits are not copied. Fetching happens
-  before replacing; an atomic database transaction keeps the old roster if
-  the replacement cannot be saved.
-- **Clear roster** or **Clear all FWA Rosters** / **Clear all Main Rosters** reviews the affected rosters, removes them from active tracking, and stops their reminders. Their records remain until the retention deadline.
-- **Players** displays 20 players per page, with reviewed add/remove actions.
-  Only FWA shows Away/Returned status.
-- **Return reminders** is available only for FWA. It shows the configured
-  destination, on/off state, frequency, and next run. Enabling, disabling,
-  and sending require review; recipients are checked again before sending.
-  Main has no reminder schedule or Return reminders tab. Its manual send
-  reviews saved players still away, refreshes their Discord links, and posts
-  to the Main CWL channel after confirmation.
+- **Save Current Members** saves current membership for clans without a saved list. Existing lists are retained.
+- **Replace Saved Members** appears for an individual saved clan and reviews the replacement before applying it. The old tracking and reminders stop; current members form the replacement. Failed replacements keep the original list.
+- **Send Ping Now** immediately checks current recipients and sends only for clans with players away. It does not start automatic pings or reset the timer. The existing public ping format is unchanged.
+- FWA offers **Start Return Pings**, **Pause Return Pings**, and **Resume Return Pings**. Frequency choices are 30 minutes, 1 hour, and 2 hours and save automatically. Paused pings stay paused when frequency changes.
+- Automatic checks end seven days after the original start, or at saved-list expiry on the 16th at 00:00 UTC, whichever comes first. Pause/resume and frequency changes never extend that deadline. Everyone home skips one ping but keeps future checks running.
+- Bulk failures show the affected clans and offer **Retry Failed Clans** without restarting successful clans.
+- Main has manual return pings only. Saved-member editing remains a secondary tool; no extra player browser is required for routine pinging.
 
-Confirmation buttons apply changes immediately; there is no separate Save
-step. Discord timestamps use the viewer's timezone; dropdown dates use UTC.
-
-Panels are private, expire after 20 minutes, and belong to the opening user
-and server. Every interaction rechecks Administrator permission. Confirmations
-are bound to section, operation, and roster ids and consumed once. Switching
-sections invalidates the previous panel and its pending confirmations. A bot
-restart also expires open panels; reopen `/manage section:CWL Rosters` to continue.
+The panel shows scope, saved-list status, away counts, frequency, next check, and stop time. Destructive Clear/Replace operations retain review. Private panels remain bound to the opening administrator/server and expire after 20 minutes. Reopen `/manage` after expiry or a restart; saved members and timer state persist.
 
 ## Storage and lifecycle
 
@@ -86,14 +58,14 @@ is retried by the startup reconciler; the database never claims that a newly
 enabled reminder is running when its job could not be registered.
 
 Manual reminders in both sections and scheduled FWA reminders recompute the
-current away players from the Clash API. Main also refreshes Discord links at
-review and again at send, so older Main captures can mention linked players.
+current away players from the Clash API. Main also refreshes Discord links before sending, so older Main captures can mention linked players.
 If nobody is away, no Discord message is sent.
 
 ## Safe dashboard actions
 
-Every destructive or state-changing action from a rendered list carries the
-saved-list id that was displayed to the administrator. The service includes
+Reviewed actions carry the saved-list ID from their review. Immediate ping
+actions resolve the selected clan scope and bind its current saved-list IDs
+before applying changes. The service includes
 that id in the database write query. If the list was finished and replaced
 while a confirmation was open, the action returns a stale-list result and
 does not change the replacement roster or its reminder configuration.

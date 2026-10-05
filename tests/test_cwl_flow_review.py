@@ -78,17 +78,16 @@ def test_overview_shows_edited_signup_time_without_competing_send_times(monkeypa
                 "run_at": live_time,
             }],
             "deliveries": [],
-            "skipped": [],
+            "skipped": [], "activated": True,
         }),
     )
 
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
-    assert dashboard._discord_time(draft_time) in content
-    assert dashboard._discord_time(live_time) not in content
-    assert "Unsaved changes" in content
-    assert "Next message" not in content
+    assert dashboard._discord_time(draft_time) not in content
+    assert dashboard._discord_time(live_time) in content
+    assert "Next reminder" in content
     assert "CWL announcements" in content
-    assert "delivery" not in content.lower()
+    assert "Last delivery" in content
 
 
 def test_default_dashboard_open_does_not_resume_a_draft_from_an_old_cycle(monkeypatch):
@@ -115,18 +114,18 @@ def test_overview_shows_one_next_message_only_for_settings_already_in_use(monkey
     saved = {
         "campaign": deepcopy(item["campaign"]),
         "schedule": [{"id": "2026-10|signup|main", "message_id": "signup", "run_at": when}],
-        "deliveries": [], "skipped": [],
+        "deliveries": [], "skipped": [], "activated": True,
     }
     monkeypatch.setattr(dashboard.cwl_campaign, "load_campaign", AsyncMock(return_value=saved))
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
-    assert "Saved." in content
-    assert content.count("### Next message") == 1
+    assert "Saved settings never reset" in content
+    assert content.count("**Next reminder:**") == 1
     assert dashboard._discord_time(when) in content
-    assert "delivery" not in content.lower()
+    assert "Last delivery" in content
     saved["campaign"]["paused"] = True
     item["campaign"]["paused"] = True
     content = "\n".join(text_content(run(dashboard.panel(item, "overview", mongo=object()))))
-    assert "Automatic messages are paused." in content
+    assert "Signup Reminders · Paused" in content
     assert dashboard._discord_time(when) not in content
 
 

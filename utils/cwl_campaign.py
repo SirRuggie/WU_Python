@@ -748,14 +748,14 @@ def monthly_campaign(campaign: dict, cycle: str) -> dict:
     return result
 
 
-async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | None = None, *, keep_draft: bool = False, require_future_signup: bool = False, repeat_monthly: bool = False) -> dict:
+async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | None = None, *, keep_draft: bool = False, require_future_signup: bool = False, repeat_monthly: bool = False, candidate_campaign: dict | None = None, preserve_editor_campaign: bool = False) -> dict:
     row = await load_draft(mongo, draft)
     if not row:
         raise ValueError("Draft expired or does not exist")
     if int(row["user_id"]) != int(user_id):
         raise PermissionError("This draft belongs to another editor")
     guild_id, cycle, scope = int(row["guild_id"]), row["cycle"], row["scope"]
-    validate_campaign(row["campaign"])
+    validate_campaign(candidate_campaign if candidate_campaign is not None else row["campaign"])
     live = await load_campaign(mongo, guild_id, cycle)
     if repeat_monthly and row.get("recurring_base_version") != live.get("recurring_version"):
         raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
@@ -770,7 +770,7 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
         wanted_revision = int(expected_revision)
     if current_revision != wanted_revision:
         raise RuntimeError("CWL campaign changed while this draft was open")
-    candidate = copy.deepcopy(row["campaign"])
+    candidate = copy.deepcopy(candidate_campaign if candidate_campaign is not None else row["campaign"])
     recurring_candidate = monthly_campaign(candidate, cycle) if repeat_monthly else None
     if recurring_candidate:
         for offset in range(1, 13):
@@ -860,7 +860,7 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
         # Keep existing dashboard buttons usable after a timing form saves.
         # Do not replace a newer edit submitted while this save was running.
         fields = {
-            "campaign": copy.deepcopy(candidate), "updated_at": _utcnow(),
+            "campaign": copy.deepcopy(row["campaign"] if preserve_editor_campaign else candidate), "updated_at": _utcnow(),
             "saved_campaign": copy.deepcopy(candidate),
             "base_revision": new_revision,
             "cycle_base_revision": result["revision"],

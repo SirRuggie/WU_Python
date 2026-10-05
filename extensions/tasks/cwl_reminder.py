@@ -493,6 +493,7 @@ async def send_campaign_message(
     message_id: str,
     variants: list[str] | None = None,
     generation: str | None = None,
+    *, manual: bool = False,
 ) -> bool:
     """Deliver one configured message with per-audience retry/idempotency."""
     if not bot_instance or not mongo_client:
@@ -505,7 +506,7 @@ async def send_campaign_message(
         return False
     campaign = loaded["campaign"]
     message = campaign.get("messages", {}).get(message_id)
-    if campaign.get("paused") or not message or not message.get("enabled", True) or _sequence_delivery_blocked(loaded, message_id, pendulum.now(DEFAULT_TIMEZONE)):
+    if (campaign.get("paused") and not manual) or not message or not message.get("enabled", True) or _sequence_delivery_blocked(loaded, message_id, pendulum.now(DEFAULT_TIMEZONE)):
         for variant in variants or cwl_campaign.AUDIENCES:
             job_id = _campaign_job_id(guild_id, cycle, message_id, variant)
             await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
@@ -598,6 +599,14 @@ async def send_campaign_message(
                 pass
             continue
         await _release_campaign_claim(guild_id, cycle, occurrence)
+    if failures and manual:
+        for variant, exc in failures:
+            await cwl_campaign.record_delivery(mongo_client, guild_id, cycle, {
+                "occurrence_id": cwl_campaign.occurrence_id(cycle, message_id, variant),
+                "message_key": message_id, "variant": variant, "status": "failed",
+                "error": _delivery_error_detail(exc), "error_type": type(exc).__name__,
+            })
+        return False
     if failures:
         await _schedule_campaign_retry(
             guild_id, cycle, message_id, [variant for variant, _ in failures],

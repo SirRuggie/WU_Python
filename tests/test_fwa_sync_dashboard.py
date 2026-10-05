@@ -105,7 +105,7 @@ def fixture(monkeypatch):
 
 def test_private_status_names_only_and_fixed_timing(monkeypatch):
     env = fixture(monkeypatch)
-    output = run(dashboard._panel(env.mongo, env.state))
+    output = run(dashboard._panel(env.mongo, env.state, details=True))
     text = built(output)
     assert "Sync, Sync2" in text and "secret" not in text
     assert "1 hour before" in text and "At sync time" in text and "Scheduler offsets" not in text

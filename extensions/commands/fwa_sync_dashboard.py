@@ -122,7 +122,7 @@ async def _recent_failures(mongo: MongoClient) -> list[str]:
     return rows
 
 
-async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> list:
+async def _panel(mongo: MongoClient, state: dict, notice: str | None = None, *, details: bool = False) -> list:
     try:
         config = await sync.load_config(mongo)
         recent = await _recent_rows(mongo)
@@ -135,12 +135,18 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
     feeds = ", ".join(sync.feed_urls().keys()) or "None configured"
     channel_id = config.get("panel_channel_id")
     channel_label = f"<#{int(channel_id)}>" if channel_id else "Not configured"
+    next_sync = "None recorded · Check Feed to refresh"
+    try:
+        event = await mongo.fwa_sync_events.find_one({"start_at": {"$gt": datetime.now(timezone.utc)}}, sort=[("start_at", 1)])
+        if event:
+            next_sync = f"{_safe(event.get('calendar') or 'Sync', 40)} · {discord_timestamp(event['start_at'], 'F')}"
+    except Exception:
+        next_sync = "Unavailable · Check Feed"
+    status = "Paused" if not config["enabled"] else "Needs setup" if not channel_id or feeds == "None configured" else "Needs attention" if poller != "Running" or failures else "Running"
     rows = [
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("FWA", "Sync & Reminders") + "\n## FWA Sync & Reminders"),
         hikari.impl.TextDisplayComponentBuilder(content=(
-            f"**Reminders:** {'Enabled' if config['enabled'] else 'Disabled'} · "
-            f"**Poller:** {poller} · **Startup recovery:** {_safe(recovery, 110)}\n"
-            f"**Feeds configured:** {_safe(feeds, 80)}"
+            f"**Sync reminders: {status}**\n**Next sync:** {next_sync}"
         )),
         hikari.impl.TextDisplayComponentBuilder(content=(
             f"**Panel channel:** {channel_label}\n"
@@ -165,7 +171,7 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
             (f"fwa_sync_refresh:{sid}", "Refresh", hikari.ButtonStyle.SECONDARY, False),
         ),
         _buttons(
-            (f"fwa_sync_check:{sid}", "Check feeds (no DM)", hikari.ButtonStyle.SECONDARY, False),
+            (f"fwa_sync_check:{sid}", "Check Feed (no DM)", hikari.ButtonStyle.SECONDARY, False),
             (f"fwa_sync_test:{sid}", "Send me test DM", hikari.ButtonStyle.SECONDARY, False),
         ),
     ])
@@ -177,14 +183,25 @@ async def _panel(mongo: MongoClient, state: dict, notice: str | None = None) -> 
     rows.append(channel_row)
     rows.append(_buttons(
         (f"fwa_sync_url:{sid}", "Set BAND fallback link", hikari.ButtonStyle.SECONDARY, False),
-        (f"fwa_band_monitor:{sid}", "BAND Monitor", hikari.ButtonStyle.SECONDARY, False),
+        (f"fwa_sync_details:{sid}", "Details", hikari.ButtonStyle.SECONDARY, False),
     ))
+    if details:
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"### Details\nPoller: {poller} · Startup recovery: {_safe(recovery, 110)}\nFeeds configured: {_safe(feeds, 80)}"))
+        rows.append(_buttons((f"fwa_band_monitor:{sid}", "BAND Monitor", hikari.ButtonStyle.SECONDARY, False)))
     rows.append(hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL))
     rows.append(_buttons(
         (f"manage_fwa:{state['manage_token']}", "Back to FWA", hikari.ButtonStyle.SECONDARY, False),
         (f"manage_home:{state['manage_token']}", "Management Home", hikari.ButtonStyle.SECONDARY, False),
     ))
     return [hikari.impl.ContainerComponentBuilder(accent_color=GOLDENROD_ACCENT, components=rows)]
+
+
+
+@register_action("fwa_sync_details", preload_state=False)
+@lightbulb.di.with_di
+async def details_panel(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any):
+    state, problem = await _state(ctx, mongo, action_id)
+    return _error(problem) if problem else await _panel(mongo, state, details=True)
 
 
 def _monitor_timestamp(value: Any) -> str:

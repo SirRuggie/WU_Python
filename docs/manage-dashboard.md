@@ -14,7 +14,7 @@ on one command, not separate subcommands.
 | `/manage section:Recruitment Questions` | Recruitment Questions | Edit all Primary, FWA, Explanation, and Keep It Moving messages |
 | `/manage section:FWA` | FWA | Choose Bases & Guidance, War Messages, Blacklist, Points Monitor, or Sync & Reminders |
 | `/manage section:CWL` | CWL | Manage campaign messages, schedules, and delivery settings |
-| `/manage section:CWL Rosters` | CWL Rosters | Manage saved Main/FWA rosters and FWA return reminders |
+| `/manage section:CWL Return Pings` | CWL Return Pings | Manage saved Main/FWA rosters and FWA return reminders |
 
 Recruit Gauntlet is the onboarding **content editor**. The member-specific
 `/recruit dashboard` workflow remains separate. The old `/content dashboard`,
@@ -23,7 +23,7 @@ points have been removed. Open these management workspaces through `/manage`.
 
 ## Permissions and interaction design
 
-The home shows six named workspaces with separators and Open buttons.
+The home shows nine named workspaces with separators and Open buttons.
 Workspaces outside the current member's access are locked. Back returns to
 the previous screen; Management Home returns to the central dashboard. Each
 workspace rechecks its existing authorization rules: Manage Server or
@@ -93,8 +93,8 @@ navigation, and expire after 30 minutes.
 
 ## FWA
 
-FWA opens a goldenrod submenu with five sections. **Bases & Guidance** is the existing
-base-link, image, description, and Town Hall editor. **War Messages** edits the
+FWA opens a goldenrod submenu with six sections. **Bases & Guidance** is the existing
+base-link, image, description, and Town Hall editor. **War Message Templates** edits the
 four reusable war-announcement templates. **Blacklist** browses the shared
 blacklist and lets FWA Clan Reps add or remove clans. **Points Monitor** controls automatic
 points monitoring and shows current status and watched-clan results.
@@ -144,7 +144,7 @@ the About Us onboarding message.
 
 ### Navigation and visual conventions
 
-The home screen groups its six workspaces under Recruitment, War Operations,
+The home screen groups its workspaces under Recruitment, War Operations,
 and Server without adding an intermediate screen. All management screens use
 pale goldenrod (`#EEEEAA`). Breadcrumbs identify the workspace and editor.
 
@@ -172,3 +172,5 @@ Server members retain read-only list access through the FWA hub. The FWA Clan
 Rep role is still required to add/remove entries, checked on each action; an
 Administrator flag alone does not bypass that role gate. The dashboard uses
 `mongo.fwa_blacklist`, preserving the war-plan and points integrations.
+
+The CWL and FWA War Message Templates editors automatically save submitted edits. CWL publishing and return-ping behavior follow the [agreed War Operations decisions](war-operations-ux-review.md).

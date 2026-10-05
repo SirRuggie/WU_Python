@@ -219,7 +219,7 @@ def test_badge_status_and_bulk_capture_are_visible_without_implicit_selection():
              {'tag': '#DEF', 'name': 'New clan'}]
     panel = dashboard.render_home([document], clans, '#ABC', away_counts={'#ABC': 0}, token=token)
     payload = [item.build() for item in panel]
-    assert 'Everyone returned' in '\n'.join(_walk_text(payload))
+    assert 'Everyone is home' in '\n'.join(_walk_text(payload))
     assert any(node.get('url') == 'https://example.com/badge.png' for node in _nodes(payload))
     assert panel[0].accent_color == dashboard.GOLDENROD_ACCENT
     no_list = dashboard.render_home([document], clans, '#DEF', token=token)

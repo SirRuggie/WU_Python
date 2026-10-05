@@ -50,6 +50,8 @@ def test_future_signup_timing_autosaves_live_campaign_reanchors_reminders_and_jo
         closing = now.add(days=10)
         cycle = cwl_campaign.cycle_key(timezone_name="America/New_York")
         draft = await _sequence_draft(mongo, cycle=cycle, opening=opening, closing=closing)
+        # This scenario edits an already running setup. New setups stay paused.
+        await mongo.bot_config.update_one({"_id": cwl_campaign.cycle_id(22, cycle)}, {"$set": {"activated": True, "revision": 0}}, upsert=True)
 
         context = modal_context(values={
             "date": opening.format("YYYY-MM-DD"), "time": opening.format("HH:mm"),

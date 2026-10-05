@@ -14,7 +14,12 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from extensions.commands.fwa import lazy_cwl_service as service
 from utils import lazy_cwl_store as store
-from tests.test_lazy_cwl_store import _Collection, _Mongo, _list_doc, NOW
+from tests.test_lazy_cwl_store import _Collection, _Mongo, _list_doc as _historical_list_doc, NOW
+
+
+def _list_doc(*args, **kwargs):
+    kwargs.setdefault("expires_at", datetime.now(timezone.utc) + timedelta(days=12))
+    return _historical_list_doc(*args, **kwargs)
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -661,8 +666,7 @@ def test_reminder_job_seven_day_limit_disables(monkeypatch):
     assert "lazycwl_reminder_list-1" in scheduler.removed
     refreshed = asyncio.run(store.get_by_id(mongo, "list-1"))
     assert refreshed["reminders"]["enabled"] is False
-    assert len(bot.rest.sent) == 1
-    assert "stopped after 7 days" in bot.rest.sent[0]["components"][0].components[0].content
+    assert bot.rest.sent == []  # No messages after the cutoff.
 
 
 def test_reminder_job_sends_when_eligible(monkeypatch):
@@ -1068,7 +1072,12 @@ def test_only_store_mongo_and_tests_reference_lazy_cwl_lists():
         line for line in result.stdout.splitlines()
         if not line.startswith("./.worktrees/") and not line.startswith("./.claude/")
     ]
-    allowed_exact = {"./utils/lazy_cwl_store.py", "./utils/mongo.py", "./tools/lazycwl_mongo.py"}
+    # The central namespace router may declare the collection; application
+    # access must still go through the store.
+    allowed_exact = {
+        "./utils/lazy_cwl_store.py", "./utils/mongo.py",
+        "./utils/mongo_routes.py", "./tools/lazycwl_mongo.py",
+    }
     disallowed = [
         hit for hit in hits
         if hit not in allowed_exact and not hit.startswith("./tests/")

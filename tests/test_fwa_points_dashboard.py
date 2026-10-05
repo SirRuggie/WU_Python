@@ -96,9 +96,9 @@ def test_monitor_loader_keeps_lifecycle_without_public_slash_group():
 
 def test_status_effective_watch_rows_and_private_navigation(monkeypatch):
     env = fixture(monkeypatch)
-    response = run(dashboard._panel(env.mongo, env.state))
+    response = run(dashboard._panel(env.mongo, env.state, details=True))
     content = built(response)
-    assert "Enabled" in content and "Not running" in content
+    assert "Monitoring: On" in content and "Not running" in content
     assert "Automatic FWA" in content and "Extra" in content
     assert "Win" in content and "War #4" in content
     assert "Sync #7" in content and "Balance 0" in content

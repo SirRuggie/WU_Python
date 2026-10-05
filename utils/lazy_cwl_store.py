@@ -432,28 +432,35 @@ async def set_reminders(
     section: str = DEFAULT_SECTION,
     now: datetime | None = None,
 ) -> dict | None:
-    """Turn a clan's reminders on or off. Enabling resets started_at,
-    last_sent_at, and sent_count; disabling keeps sent_count for history.
-    Returns None if the clan has no active list."""
+    """Save frequency and running state without extending the original window."""
     now = _utc(now)
     section = normalize_section(section)
     if section == "MAIN":
         raise ValueError("MAIN rosters do not support scheduled reminders")
     clan_tag = _normalize_tag(clan_tag)
 
+    query = _active_query(clan_tag, expected_list_id, section=section)
+    current = await _coll(mongo).find_one(query)
+    if current is None:
+        return None
+    previous = current.get("reminders") or {}
+    started = previous.get("started_at")
+    if enabled and now >= _utc(current["expires_at"]):
+        raise ValueError("This saved member list has expired; no more pings are allowed.")
+    if enabled and started and now >= _utc(started) + timedelta(days=7):
+        raise ValueError("The seven-day return-ping window has ended.")
     update: dict[str, Any] = {
         "reminders.enabled": enabled,
-        "reminders.every_minutes": every_minutes,
+        "reminders.every_minutes": every_minutes or previous.get("every_minutes") or 60,
     }
-    if enabled:
+    if enabled and not started:
         update["reminders.started_at"] = now
         update["reminders.last_sent_at"] = None
         update["reminders.sent_count"] = 0
-
+    # Concurrent starts cannot replace the first start timestamp.
+    query["reminders.started_at"] = started
     return await _coll(mongo).find_one_and_update(
-        _active_query(clan_tag, expected_list_id, section=section),
-        {"$set": update},
-        return_document=ReturnDocument.AFTER,
+        query, {"$set": update}, return_document=ReturnDocument.AFTER,
     )
 
 

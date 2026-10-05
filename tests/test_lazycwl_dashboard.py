@@ -84,7 +84,7 @@ def test_review_scope_uses_a_short_server_side_nonce_and_is_one_shot():
 def test_reminder_controls_are_explicit_enable_and_disable():
     rendered = dashboard.render_home([_doc()], [_clan(1)], "#A1", NOW, token="preview", tab="reminders")
     labels = [node.label for node in _nodes(rendered) if getattr(node, "label", None)]
-    assert "Enable reminders" in labels and "Disable reminders" in labels
+    assert "Start Return Pings" in labels and "Pause Return Pings" in labels
 
 
 class _Ctx:
@@ -151,9 +151,11 @@ def test_apply_confirmation_passes_raw_expected_list_ids_and_keeps_per_clan_resu
         sent.append((tag, expected_list_id)); return {"ok": tag == "#A1", "error": "failed"}
     monkeypatch.setattr(dashboard.store, "list_active", active)
     monkeypatch.setattr(dashboard.service, "remind_now", remind)
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(dashboard, "build_home", AsyncMock(return_value=[]))
     result = asyncio.run(dashboard._apply_bound(object(), token, nonce, "send", ctx))
     assert sent == [("#A1", docs[0]["_id"]), ("#A2", docs[1]["_id"])]
-    assert "not applied" in _text(result)
+    assert "Needs attention" in _text(result) and "Clan 2" in _text(result)
 
 
 def test_enable_and_disable_reviews_remain_explicit_and_use_selected_frequency(monkeypatch):
@@ -229,11 +231,11 @@ def test_main_rendering_is_scoped_and_has_manual_reminders_only():
                                      {"#A2": 3}, token=token, tab="reminders")
     text = _text(rendered)
     labels = [node.label for node in _nodes(rendered) if getattr(node, "label", None)]
-    assert "CWL Rosters · Main · Overview" in text
+    assert "CWL Return Pings · Main · Overview" in text
     assert "Clan 2" in text and "Clan 1" not in text
     assert "Players away:" not in text and "Return reminders" not in labels
-    assert "Send Reminders Now" in labels
-    assert "Enable reminders" not in labels and "Disable reminders" not in labels
+    assert "Send Ping Now" in labels
+    assert "Start Return Pings" not in labels and "Pause Return Pings" not in labels
 
 
 def test_main_send_review_and_confirmation_are_section_scoped(monkeypatch):
@@ -264,7 +266,7 @@ def test_main_send_review_and_confirmation_are_section_scoped(monkeypatch):
     nonce = next(iter(dashboard._sessions[token]["pending"]))
     result = asyncio.run(dashboard._apply_bound(object(), token, nonce, "send", _Ctx(token)))
     assert calls == [("#A1", doc["_id"], "MAIN")]
-    assert "Sent reminders for 1 clans" in result[0]
+    assert "Ping sent for 1 clans" in result[0]
 
 
 def test_switching_section_rotates_token_and_invalidates_old_confirmation(monkeypatch):

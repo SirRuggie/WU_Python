@@ -69,10 +69,10 @@ def test_war_editor_status_and_navigation_follow_saved_template():
         "template": template, "saved_template": copy.deepcopy(template),
     }
     rows = _built(fwa_war_messages._editor(state))
-    assert "Management › FWA › War Messages › Win" in _text(rows)
+    assert "Management › FWA › War Message Templates › Win" in _text(rows)
     assert "Saved" in _text(rows)
     assert "Posting target: Future `/fwa war-plans`" in _text(rows)
-    assert [button["label"] for button in _buttons(rows[-1])] == ["Back to War Messages", "Back to FWA", "Management Home"]
+    assert [button["label"] for button in _buttons(rows[-1])] == ["Back to War Message Templates", "Back to FWA", "Management Home"]
     assert _buttons(rows[-1])[1]["custom_id"] == "manage_fwa:home"
     assert _buttons(rows[-1])[2]["custom_id"] == "manage_home:home"
     state["template"] = copy.deepcopy(template)
