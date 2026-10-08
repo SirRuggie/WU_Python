@@ -5,6 +5,7 @@ import logging
 import re
 import sqlite3
 import time
+import unicodedata
 
 import hikari
 import lightbulb
@@ -46,13 +47,18 @@ def profile_label(value):
     Use visually similar punctuation so names with separators or Markdown
     characters cannot break the link into literal source text.
     """
-    label = ''.join(c for c in value if c.isprintable())[:64]
+    # Discord parses emoji before masked links in some clients. Keep the
+    # anchor text free of emoji, flags, joiners and variation selectors.
+    label = ''.join(c for c in value if c.isprintable()
+                    and unicodedata.category(c) != 'So'
+                    and not ('\U0001f3fb' <= c <= '\U0001f3ff')
+                    and c not in '\ufe0e\ufe0f\u20e3')[:64]
     label = label.translate(str.maketrans({
         '|': '│', '\\': '╲', '[': '［', ']': '］',
         '(': '（', ')': '）', '*': '∗', '_': '＿',
         '~': '～', '`': '′', '<': '‹', '>': '›',
     }))
-    return label.replace('@', '@\u200b') or 'Discord profile'
+    return ' '.join(label.replace('@', '@\u200b').split()) or 'Discord profile'
 
 
 async def load_discord_labels(owners, *, rest=None):

@@ -202,3 +202,16 @@ def test_profile_names_do_not_emit_broken_link_escapes(name):
                  discord_labels={'123456789012345678': name})
     texts = [c.content for c in command.render_board(board)[0].components if hasattr(c, 'content')]
     assert f'[{label}](https://discord.com/users/123456789012345678)' in '\n'.join(texts)
+
+
+@pytest.mark.parametrize(('name', 'expected'), [
+    ('Luke | BST 🇬🇧', 'Luke │ BST'),
+    ('shuangjiang/luffyao | IST 🇮🇳', 'shuangjiang/luffyao │ IST'),
+    ('DIO | GMT 🇵🇹', 'DIO │ GMT'),
+    ('Ebi | GMT+7 🇮🇩', 'Ebi │ GMT+7'),
+    ('Friday | IST 🇮🇳', 'Friday │ IST'),
+    ('☀️ Hawk Moth ☀️', 'Hawk Moth'),
+    ('🇬🇧', 'Discord profile'),
+])
+def test_profile_labels_exclude_emoji_that_break_discord_links(name, expected):
+    assert command.profile_label(name) == expected
