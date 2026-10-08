@@ -79,3 +79,9 @@ are shown. Disagreeing owners show `Link conflict`, rather than selecting one.
 An unavailable provider leaves successful results usable, while unmatched rows
 say `Link unavailable` rather than claiming no account is linked. Gold scores
 and clan membership do not depend on whether a Discord link exists.
+
+Rows include the bot's existing Town Hall emoji, player name, gold looted,
+player tag, linked Discord account and clan. The displayed players' current
+Town Hall levels are fetched from the official API during refresh, in parallel
+with Discord link resolution. An unavailable level shows `TH ?`; it never
+changes the stored loot totals.

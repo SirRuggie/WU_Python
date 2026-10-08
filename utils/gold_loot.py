@@ -325,6 +325,33 @@ async def collect(db, command, *, display=True):
         return failures
 
 
+async def load_town_halls(player_tags):
+    """Fetch current TH levels for displayed players; failures remain unknown."""
+    load_dotenv(ROOT / '.env')
+    token = os.getenv('COC_API_TOKEN', '').strip()
+    if not token:
+        return {}
+    semaphore = asyncio.Semaphore(5)
+    async with aiohttp.ClientSession(
+        headers={'Authorization': 'Bearer ' + token},
+        timeout=aiohttp.ClientTimeout(total=10),
+    ) as http:
+        async def fetch(tag):
+            async with semaphore:
+                try:
+                    async with http.get('https://api.clashofclans.com/v1/players/' + tag.replace('#', '%23')) as response:
+                        if response.status != 200:
+                            return tag, None
+                        data = await response.json()
+                        level = data.get('townHallLevel')
+                        return tag, level if type(level) is int and level > 0 else None
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError):
+                    return tag, None
+        return {tag: level for tag, level in await asyncio.gather(
+            *(fetch(tag) for tag in dict.fromkeys(player_tags))
+        ) if level is not None}
+
+
 def refresh_board(path=DEFAULT_DB):
     """Run in a worker thread: SQLite waits and HTTP do not block Discord."""
     if not path.is_file():

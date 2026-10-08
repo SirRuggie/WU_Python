@@ -19,7 +19,8 @@ from hikari.impl import (
 from extensions.components import register_action
 from utils.recruit_links import resolve_players
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
-from utils.gold_loot import refresh_board
+from utils.gold_loot import refresh_board, load_town_halls
+from utils.emoji import emojis
 
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
@@ -50,7 +51,9 @@ def render_board(board):
             'No linked Discord account'
         )
         clan = safe_name(row.get('clan_name') or 'Warriors United')
-        lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {linked} • {clan}")
+        level = board.get('town_halls', {}).get(row['tag'])
+        th = str(getattr(emojis, f'TH{level}', f'🏰 TH{level}')) if level else '🏰 TH ?'
+        lines.append(f"{medal} {th} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# `{row['tag']}` • {linked} • {clan}")
     components = [
         Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United Family • Top 10**'),
         Separator(divider=True),
@@ -79,7 +82,9 @@ async def load_board(*, force=False):
         if (_cached is None or time.monotonic() - _cached_at >= 60
                 or (force and _cached_at < requested_at)):
             board = await asyncio.to_thread(refresh_board)
-            links = await resolve_players([row['tag'] for row in board['rows']])
+            tags = [row['tag'] for row in board['rows']]
+            links, town_halls = await asyncio.gather(resolve_players(tags), load_town_halls(tags))
+            board['town_halls'] = town_halls
             board['owners'] = links.owners
             board['link_conflicts'] = links.conflicts
             board['link_unavailable'] = links.unavailable

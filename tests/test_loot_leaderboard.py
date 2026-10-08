@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 from unittest.mock import AsyncMock
 from types import SimpleNamespace
 
@@ -6,6 +7,11 @@ from extensions.commands import loot_leaderboard as command
 from utils import gold_loot
 from utils.recruit_links import PlayerOwners
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
+
+
+@pytest.fixture(autouse=True)
+def mock_town_hall_lookup(monkeypatch):
+    monkeypatch.setattr(command, 'load_town_halls', AsyncMock(return_value={}))
 
 
 def test_api_failure_keeps_original_baseline_and_warns(tmp_path, monkeypatch):
@@ -137,3 +143,16 @@ def test_link_conflict_and_provider_outage_are_not_unlinked():
     payload = str(command.render_board(board)[0].build())
     assert 'Link unavailable' in payload
     assert 'No linked Discord account' not in payload
+
+
+def test_row_shows_th_emoji_tag_discord_clan_and_loot():
+    board = dict(session={'started': '2026-10-08T13:47:41+00:00'}, count=551,
+                 rows=[dict(tag='#RU00V8UP', name='Sir Ruggie', looted=1665325, clan_name='Warriors United')],
+                 owners={'#RU00V8UP': '123456789012345678'}, warning=None,
+                 town_halls={'#RU00V8UP': 18})
+    payload = str(command.render_board(board)[0].build())
+    assert str(command.emojis.TH18) in payload
+    assert '`#RU00V8UP`' in payload
+    assert '<@123456789012345678>' in payload
+    assert 'Warriors United' in payload and '1,665,325' in payload
+    assert 'clashk.ing' not in payload
