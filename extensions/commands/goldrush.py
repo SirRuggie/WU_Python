@@ -85,7 +85,7 @@ def render(data):
         Text(content=f"# 💰 GOLD RUSH\n**{event['duration_hours']} hours • {event['prize']} • {status}**"),
         Separator(divider=True),
         Text(content='**1 · JOIN** — Enter your linked family accounts.\n'
-                     '**2 · RAID** — Farming + Ranked + Legend gold counts.\n'
+                     '**2 · RAID** — Gold from Farming + Ranked battles counts.\n'
                      '**3 · WIN** — Most total gold wins the Gold Pass.\n\n'
                      '**Automatic tracking. No screenshots.**\n'
                      'All your eligible accounts count together. Late joins count from the start.'),

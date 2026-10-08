@@ -23,7 +23,7 @@ accounts are locked; repeated joins are idempotent. New linked accounts do not
 automatically alter an existing entry.
 
 Late signup is allowed until the end. Scores count battle timestamps from the
-event start, not signup time. Farming, ranked and legend gold count; screenshots
+event start, not signup time. Farming and ranked battle gold count (including Legend within ranked); screenshots
 are never requested. Only `[start, end)` battle timestamps are included. For a
 tie, the earlier last positive-loot battle wins (when that entrant first reached
 the final score). Exact timestamp ties remain unresolved for prize review;
