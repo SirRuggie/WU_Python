@@ -15,7 +15,7 @@ capture timestamp. Gold Grab is not used for scoring: its 2-billion cap affected
 Records persist in `loot_events`, keyed by player, timestamp and battle mode.
 Repeated refreshes update an existing record instead of double counting. Missing
 records in a later response do not delete stored loot. Failed queries preserve
-saved totals and display a warning. Source attribution appears in the header.
+saved totals and display a warning. The panel header shows only the leaderboard title and family scope.
 
 ClashKing polls the official API: no guaranteed delay or complete-history
 coverage is assumed. Backfilling after downtime depends on retained upstream

@@ -50,7 +50,7 @@ def render_board(board):
         clan = safe_name(row.get('clan_name') or 'Warriors United')
         lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {linked} • {clan}")
     components = [
-        Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United Family • Top 10** • [ClashKing](https://clashk.ing)'),
+        Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United Family • Top 10**'),
         Separator(divider=True),
         Text(content='\n\n'.join(lines) or 'No player samples are available yet.'),
         Separator(divider=True),
