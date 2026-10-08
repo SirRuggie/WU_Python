@@ -40,6 +40,21 @@ def safe_name(value):
     return re.sub(r'([\\`*_~|\[\]()])', r'\\\1', value)
 
 
+def profile_label(value):
+    """Avoid backslash escapes inside Discord masked-link labels.
+
+    Use visually similar punctuation so names with separators or Markdown
+    characters cannot break the link into literal source text.
+    """
+    label = ''.join(c for c in value if c.isprintable())[:64]
+    label = label.translate(str.maketrans({
+        '|': '│', '\\': '╲', '[': '［', ']': '］',
+        '(': '（', ')': '）', '*': '∗', '_': '＿',
+        '~': '～', '`': '′', '<': '‹', '>': '›',
+    }))
+    return label.replace('@', '@\u200b') or 'Discord profile'
+
+
 async def load_discord_labels(owners, *, rest=None):
     """Fetch names for explicit profile links; no dependence on viewer caches."""
     if rest is None:
@@ -71,7 +86,7 @@ def render_board(board):
         medal = ('🥇', '🥈', '🥉')[rank - 1] if rank <= 3 else f'**{rank}.**'
         owner = (board.get('owners') or {}).get(row['tag'])
         label = board.get('discord_labels', {}).get(owner)
-        linked = (f'[{safe_name(label)}](https://discord.com/users/{owner})'
+        linked = (f'[{profile_label(label)}](https://discord.com/users/{owner})'
                   if label else f'[Discord profile](https://discord.com/users/{owner})') if owner and str(owner).isdigit() else (
             'Link conflict' if row['tag'] in board.get('link_conflicts', ()) else
             'Link unavailable' if board.get('owners') is None or board.get('link_unavailable') else

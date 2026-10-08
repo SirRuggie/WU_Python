@@ -186,3 +186,19 @@ def test_command_posts_standalone_in_invoking_channel(monkeypatch):
         123, components=['panel'], user_mentions=False, role_mentions=False, mentions_everyone=False)
     interaction.delete_initial_response.assert_awaited_once()
     interaction.edit_initial_response.assert_not_awaited()
+
+
+@pytest.mark.parametrize('name', [
+    'Luke | BST 🇬🇧', 'shuangjiang/luffyao | IST 🇮🇳',
+    'DIO | GMT 🇵🇹', 'Ebi | GMT+7 🇮🇩', 'Zheng_05/Lihua | CEST',
+    '[name] (test) *bold* ~test~ `code`',
+])
+def test_profile_names_do_not_emit_broken_link_escapes(name):
+    label = command.profile_label(name)
+    assert not any(c in label for c in '\\[]()*_~`|')
+    board = dict(session={'started': '2026-10-08T13:47:41+00:00'}, count=551,
+                 rows=[dict(tag='#ABC', name='Player', looted=1)],
+                 owners={'#ABC': '123456789012345678'}, warning=None,
+                 discord_labels={'123456789012345678': name})
+    texts = [c.content for c in command.render_board(board)[0].components if hasattr(c, 'content')]
+    assert f'[{label}](https://discord.com/users/123456789012345678)' in '\n'.join(texts)
