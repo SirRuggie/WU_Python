@@ -20,6 +20,8 @@ from hikari.impl import (
 from utils.constants import GOLDENROD_ACCENT, GOLD_ACCENT, BLUE_ACCENT
 from utils.emoji import emojis
 
+LAZY_CWL_RULES_URL = "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit"
+
 
 def native_components(variant: str, *, recruit_mention: str, recruiter_mention: str,
                       action_id: str = "preview") -> list:
@@ -130,6 +132,10 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                                 f"{emojis.blank}{emojis.white_arrow_right} Once everyone is in their assigned CWL Clan, we will start the search.\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} After the search begins, **return to your Home FWA Clan** immediately.\n"
                             )),
+                            ActionRow(components=[LinkButton(
+                                url=LAZY_CWL_RULES_URL,
+                                label="Deep-Dive Lazy CWL Rules",
+                            )]),
                             Media(
                                 items=[
                                     MediaItem(media="assets/Blue_Footer.png")
@@ -161,20 +167,6 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                                 f"{emojis.red_arrow_right} Sign up for **each CWL season** in <#1072728485233180692> (#fwa-lazycwl-signups), which is visible after joining the clan.\n\n"
                                 f"{emojis.red_arrow_right} **Last-minute signups are strongly discouraged** and may not be accepted. We run several Lazy CWL clans, and proper planning is crucial.\n\n"
                             )),
-                            Section(
-                                components=[
-                                    Text(
-                                        content=(
-                                            f"{emojis.white_arrow_right}"
-                                            "**More Info**"
-                                        )
-                                    )
-                                ],
-                                accessory=LinkButton(
-                                    url="https://docs.google.com/document/d/13HrxwaUkenWZ4F1QNCPzdM5n5uXYcLqQYOdQzyQksuA/edit?tab=t.0",
-                                    label="Deep-Dive Lazy CWL Rules",
-                                ),
-                            ),
                             Separator(divider=True),
                             Text(content=(
                                 "## **<a:Alert:1398260063075827745>IMPORTANT:**\n"

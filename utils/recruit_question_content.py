@@ -296,7 +296,7 @@ VARIANT_LABELS.update({
     "chop_chop": "Chop Chop...",
 })
 
-from utils.recruit_question_native import native_components, native_base_result
+from utils.recruit_question_native import native_components, native_base_result, LAZY_CWL_RULES_URL
 
 
 def _walk(items):
@@ -417,6 +417,13 @@ def validate_template(variant: str, template: dict) -> dict:
     if variant not in VARIANTS or not isinstance(template, dict) or template.get("variant") != variant:
         raise ValueError("Choose an active recruitment question.")
     sections = template.get("sections")
+    if variant == "lazy_cwl_explanation" and isinstance(sections, list):
+        sections = list(sections)
+        # Remove the old signup button's text slot, preserving other saved copy.
+        if len(sections) == 8:
+            sections.pop(5)
+        if len(sections) == 7 and isinstance(sections[2], str):
+            sections[2] = sections[2].replace(LAZY_CWL_RULES_URL, "").rstrip()
     if not isinstance(sections, list) or len(sections) != len(BLOCK_LABELS[variant]):
         raise ValueError("This question has the wrong number of text blocks.")
     if any(not isinstance(value, str) or not value.strip() for value in sections):
