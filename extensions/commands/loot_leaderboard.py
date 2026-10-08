@@ -49,7 +49,7 @@ def render_board(board):
         )
         lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {linked} • {row['tag']}")
     components = [
-        Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United • Top 10**'),
+        Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United • Top 10** • [ClashKing](https://clashk.ing)'),
         Separator(divider=True),
         Text(content='\n\n'.join(lines) or 'No player samples are available yet.'),
         Separator(divider=True),

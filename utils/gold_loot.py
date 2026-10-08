@@ -1,4 +1,4 @@
-"""Persistent Gold Grab leaderboard for Warriors United's starting roster."""
+"""Persistent battle-loot leaderboard for Warriors United’s starting roster."""
 import argparse
 import asyncio
 from datetime import datetime, timezone
@@ -26,6 +26,11 @@ def connect(path):
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA synchronous=FULL")
     db.executescript('''
+        CREATE TABLE IF NOT EXISTS loot_events (
+            tag TEXT NOT NULL, battle_time TEXT NOT NULL, mode TEXT NOT NULL,
+            gold INTEGER NOT NULL CHECK (gold >= 0),
+            PRIMARY KEY (tag, battle_time, mode)
+        );
         CREATE TABLE IF NOT EXISTS session (clan TEXT PRIMARY KEY, name TEXT, started TEXT);
         CREATE TABLE IF NOT EXISTS players (
             tag TEXT PRIMARY KEY, name TEXT NOT NULL, baseline INTEGER NOT NULL,
@@ -90,15 +95,75 @@ def save_sample(db, player, timestamp):
                (player['name'], value, timestamp, player['tag']))
 
 
+RANKING_SQL = """SELECT p.*, COALESCE(e.looted, 0) AS looted FROM players p
+    LEFT JOIN (SELECT tag, SUM(gold) AS looted FROM loot_events GROUP BY tag) e
+    ON e.tag=p.tag ORDER BY looted DESC, p.tag ASC LIMIT 10"""
+
+
+def save_battles(db, tag, items, timestamp):
+    """Validate a full response before storing; retries never double count loot."""
+    row = db.execute('SELECT baseline_at FROM players WHERE tag=?', (tag,)).fetchone()
+    if row is None or not isinstance(items, list):
+        raise ValueError('Invalid battle history response')
+    began = datetime.fromisoformat(row['baseline_at'])
+    records = []
+    for item in items:
+        mode = item.get('battleMode')
+        if mode not in ('farming', 'ranked', 'legend'):
+            raise ValueError('Unknown battle mode')
+        moment = datetime.fromisoformat(item['battleTime'].replace('Z', '+00:00'))
+        amount = item.get('lootedResources', {}).get('gold')
+        if type(amount) is not int or amount < 0:
+            raise ValueError('Invalid battle gold amount')
+        if moment >= began:
+            records.append((tag, moment.astimezone(timezone.utc).isoformat(), mode, amount))
+    db.executemany("""INSERT INTO loot_events VALUES (?, ?, ?, ?)
+        ON CONFLICT(tag, battle_time, mode) DO UPDATE SET gold=excluded.gold""", records)
+    db.execute('UPDATE players SET updated=? WHERE tag=?', (timestamp, tag))
+
+
+async def collect_battles(db, *, display=True):
+    """ClashKing returns observed farming, ranked and legend attacks, not defenses."""
+    rows = db.execute('SELECT tag,baseline_at FROM players').fetchall()
+    if not db.execute('SELECT 1 FROM session').fetchone():
+        raise ValueError('No baseline yet. Run start first.')
+    semaphore = asyncio.Semaphore(5)
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as http:
+        async def sample(row):
+            async with semaphore:
+                url = 'https://api.clashk.ing/v2/player/' + row['tag'].replace('#', '%23') + '/battlelog/history'
+                async with http.get(url, params={'time[after]': row['baseline_at']}) as response:
+                    if response.status != 200:
+                        raise ValueError(f'Battle history HTTP {response.status}')
+                    data = await response.json()
+                    return data['items'], now()
+        results = await asyncio.gather(*(sample(row) for row in rows), return_exceptions=True)
+    failures = 0
+    with db:
+        db.execute('BEGIN IMMEDIATE')
+        for row, result in zip(rows, results):
+            try:
+                if isinstance(result, Exception):
+                    raise ValueError('Battle history unavailable') from result
+                save_battles(db, row['tag'], *result)
+            except (ValueError, KeyError, TypeError):
+                failures += 1
+    backup_database(db)
+    if display:
+        leaderboard(db)
+        if failures:
+            print(f'WARNING: {failures} players could not refresh; saved battle totals retained.')
+    return failures
+
+
 def leaderboard(db):
     session = db.execute('SELECT * FROM session').fetchone()
     if session is None:
         raise ValueError('No baseline yet. Run start first.')
-    rows = db.execute('''SELECT *, latest-baseline AS looted FROM players
-                         ORDER BY looted DESC, tag ASC LIMIT 10''').fetchall()
+    rows = db.execute(RANKING_SQL).fetchall()
     print(f"\n{session['name']} — TOP 10 GOLD LOOTERS", flush=True)
     print(f"Starting roster | Baseline capture began {session['started']}")
-    print('Gold Grab increase only; timestamps are UTC. Ties ordered by tag.')
+    print('Recorded farming, ranked and legend gold • ClashKing. Timestamps are UTC.')
     print(f"{'Rank':<5} {'Player':<24} {'Tag':<14} {'Gold looted':>15}  Last sample")
     for index, row in enumerate(rows, 1):
         name = ''.join(c for c in row['name'] if c.isprintable())[:24]
@@ -108,6 +173,8 @@ def leaderboard(db):
 
 
 async def collect(db, command, *, display=True):
+    if command != 'start':
+        return await collect_battles(db, display=display)
     load_dotenv(ROOT / '.env')
     token = os.getenv('COC_API_TOKEN', '').strip()
     if not token:
@@ -197,7 +264,7 @@ def refresh_board(path=DEFAULT_DB):
             warning = 'Refresh unavailable. Showing the last saved totals.'
         session = dict(db.execute('SELECT * FROM session').fetchone())
         rows = [dict(row) for row in db.execute(
-            'SELECT *, latest-baseline AS looted FROM players ORDER BY looted DESC, tag ASC LIMIT 10'
+            RANKING_SQL
         )]
         stats = db.execute('SELECT count(*), min(updated), max(updated) FROM players').fetchone()
         return dict(session=session, rows=rows, count=stats[0], oldest=stats[1],

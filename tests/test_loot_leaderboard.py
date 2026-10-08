@@ -15,6 +15,8 @@ def test_api_failure_keeps_original_baseline_and_warns(tmp_path, monkeypatch):
         db.execute('INSERT INTO session VALUES (?, ?, ?)', ('#CLAN', 'Warriors United', timestamp))
         db.execute('INSERT INTO players VALUES (?, ?, ?, ?, ?, ?)',
                    ('#ABC', '**Player** @everyone', 1000, 1600, timestamp, timestamp))
+    with db:
+        db.execute('INSERT INTO loot_events VALUES (?, ?, ?, ?)', ('#ABC', timestamp, 'farming', 600))
     db.close()
     monkeypatch.setattr(gold_loot, 'collect', AsyncMock(side_effect=ValueError('unavailable')))
     board = gold_loot.refresh_board(path)
