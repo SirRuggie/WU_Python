@@ -96,3 +96,11 @@ The slash command posts a standalone message in the invoking channel, without
 reply metadata or a public command-response header. Its private deferred
 acknowledgment is removed after posting. Errors stay private. The Update button
 continues editing the standalone message in place.
+
+## Opt-in giveaway mode
+
+When a Gold Rush event exists, `/loot-leaderboard` and Update on an old family
+panel display the opt-in giveaway instead of ranking non-entrants. See
+[Gold Rush](goldrush.md) for signup, combined-account scoring, automatic updates,
+time-window confirmation and recovery behavior. Family battle collection stays
+intact even when no player has joined the giveaway.

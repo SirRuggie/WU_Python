@@ -11,6 +11,8 @@ from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 
 @pytest.fixture(autouse=True)
 def mock_town_hall_lookup(monkeypatch):
+    from extensions.commands import goldrush
+    monkeypatch.setattr(goldrush, 'route_existing', AsyncMock(return_value=False))
     monkeypatch.setattr(command, 'load_town_halls', AsyncMock(return_value={}))
     monkeypatch.setattr(command, 'load_discord_labels', AsyncMock(return_value={}))
 

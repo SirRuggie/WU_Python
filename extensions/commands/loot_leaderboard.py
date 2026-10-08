@@ -146,6 +146,9 @@ async def execute(ctx):
     if ctx.guild_id != WARRIORS_UNITED_GUILD_ID:
         await ctx.respond('This leaderboard is available in Warriors United.', ephemeral=True)
         return
+    from extensions.commands.goldrush import route_existing
+    if await route_existing(ctx):
+        return
     await ctx.defer(ephemeral=True)
     try:
         board = await load_board()
@@ -185,6 +188,9 @@ async def update_leaderboard(ctx, action_id, **kwargs):
     if ctx.interaction.guild_id != WARRIORS_UNITED_GUILD_ID:
         await ctx.respond('This leaderboard is available in Warriors United.', ephemeral=True)
         return None
+    from extensions.commands.goldrush import route_existing
+    if await route_existing(ctx, edit=True):
+        return
     try:
         components = render_board(await load_board(force=True))
         await ctx.interaction.edit_initial_response(

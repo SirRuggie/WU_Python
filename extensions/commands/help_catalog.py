@@ -48,7 +48,10 @@ HELP_CATEGORIES = {
         "emoji": "⚔️",
         "description": "Clan information, FWA tools, bases, and LazyCWL",
         "commands": [
-            ("/loot-leaderboard", "Show the top 10 gold looters across Warriors United’s linked clans."),
+            ("/loot-leaderboard", "Show the Gold Rush entrant leaderboard, or family loot when no event exists."),
+            ("/goldrush post", "Post the Gold Rush signup and leaderboard. Admin only."),
+            ("/goldrush configure", "Preview and confirm event start, duration and score reset. Admin only."),
+            ("/goldrush finalize", "Refresh and lock results after the event ends. Admin only."),
             ("/fwa bases", "Select and display an FWA base layout."),
             ("/fwa chocolate", "Look up a player or clan on FWA Chocolate."),
             ("/fwa links", "Open FWA verification and war-weight links."),
