@@ -36,6 +36,7 @@ def test_concurrent_requests_share_refresh(monkeypatch):
         return {'rows': []}
     monkeypatch.setattr(command, 'refresh_board', refresh)
     monkeypatch.setattr(command, '_cached', None)
+    monkeypatch.setattr(command, 'resolve_discord_ids', AsyncMock(return_value={}))
     async def run():
         monkeypatch.setattr(command, '_lock', asyncio.Lock())
         results = await asyncio.gather(command.load_board(), command.load_board())
@@ -63,3 +64,43 @@ def test_wrong_guild_does_not_read_tracker(monkeypatch):
     asyncio.run(command.execute(ctx))
     load.assert_not_called()
     assert ctx.respond.call_args.kwargs['ephemeral'] is True
+
+
+def test_linked_accounts_and_compact_update_panel():
+    board = dict(session={'started': '2026-10-08T13:47:41+00:00'}, count=44,
+                 rows=[dict(tag='#ABC', name='Player', looted=12500)],
+                 owners={'#ABC': '123456789012345678'}, warning=None)
+    payload = str(command.render_board(board)[0].build())
+    assert '<@123456789012345678>' in payload
+    assert '12,500' in payload
+    assert 'loot_leaderboard_update:main' in payload
+    assert 'Player samples' not in payload
+    assert 'Fixed starting roster' not in payload
+    assert '60 seconds' not in payload
+    board['owners'] = {}
+    assert 'No linked Discord account' in str(command.render_board(board)[0].build())
+    board['owners'] = None
+    assert 'Link unavailable' in str(command.render_board(board)[0].build())
+
+
+def test_update_button_forces_refresh(monkeypatch):
+    load = AsyncMock(return_value={'test': True})
+    monkeypatch.setattr(command, 'load_board', load)
+    monkeypatch.setattr(command, 'render_board', lambda board: ['updated panel'])
+    ctx = SimpleNamespace(interaction=SimpleNamespace(guild_id=WARRIORS_UNITED_GUILD_ID))
+    assert asyncio.run(command.update_leaderboard(ctx, 'main')) == ['updated panel']
+    load.assert_awaited_once_with(force=True)
+
+
+def test_force_refresh_bypasses_recent_cache(monkeypatch):
+    monkeypatch.setattr(command, '_cached', {'old': True})
+    monkeypatch.setattr(command, '_cached_at', command.time.monotonic())
+    monkeypatch.setattr(command, 'refresh_board', lambda: {'rows': [{'tag': '#ABC'}]})
+    links = AsyncMock(return_value={'#ABC': '123'})
+    monkeypatch.setattr(command, 'resolve_discord_ids', links)
+    async def run():
+        monkeypatch.setattr(command, '_lock', asyncio.Lock())
+        result = await command.load_board(force=True)
+        assert result['owners'] == {'#ABC': '123'}
+    asyncio.run(run())
+    links.assert_awaited_once_with(['#ABC'])

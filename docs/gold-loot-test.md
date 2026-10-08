@@ -39,7 +39,8 @@ or run `refresh` whenever you want the latest standings.
 
 Run **`/loot-leaderboard`** in Warriors United. It refreshes the saved test and
 shows a public goldenrod Components V2 panel with the top 10, gold gained,
-test start time, and player sample times. Concurrent requests share a refresh;
+test start time, and linked Discord accounts. The Update button refreshes the
+same message, including account links, and bypasses the normal cache. Concurrent requests share a refresh;
 results are cached for up to 60 seconds. API failures display saved totals with
 a warning. The command never starts or resets a baseline.
 

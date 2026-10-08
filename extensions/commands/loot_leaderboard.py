@@ -10,10 +10,14 @@ import hikari
 import lightbulb
 from hikari.impl import (
     ContainerComponentBuilder as Container,
+    MessageActionRowBuilder as ActionRow,
+    InteractiveButtonBuilder as Button,
     SeparatorComponentBuilder as Separator,
     TextDisplayComponentBuilder as Text,
 )
 
+from extensions.components import register_action
+from utils.clash_links import resolve_discord_ids
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board
 
@@ -39,7 +43,11 @@ def render_board(board):
     lines = []
     for rank, row in enumerate(board['rows'], 1):
         medal = ('🥇', '🥈', '🥉')[rank - 1] if rank <= 3 else f'**{rank}.**'
-        lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {row['tag']}")
+        owner = (board.get('owners') or {}).get(row['tag'])
+        linked = f'<@{owner}>' if owner and str(owner).isdigit() else (
+            'Link unavailable' if board.get('owners') is None else 'No linked Discord account'
+        )
+        lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {linked} • {row['tag']}")
     components = [
         Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United • Top 10**'),
         Text(content=f"Since <t:{stamp(session['started'])}:f> • **{board['count']}** tracked players"),
@@ -49,20 +57,22 @@ def render_board(board):
     ]
     if board['warning']:
         components.append(Text(content=f"⚠️ {board['warning']}"))
-    if board['oldest']:
-        components.append(Text(content=(
-            f"-# Player samples: <t:{stamp(board['oldest'])}:R> to <t:{stamp(board['newest'])}:R>\n"
-            '-# Gold looted since the test began • Fixed starting roster • Ties ordered by player tag\n'
-            '-# Run /loot-leaderboard to update. Results are reused for up to 60 seconds.'
-        )))
+    components.append(ActionRow(components=[Button(
+        style=hikari.ButtonStyle.SECONDARY,
+        custom_id='loot_leaderboard_update:main', label='Update', emoji='🔄',
+    )]))
     return [Container(accent_color=GOLDENROD_ACCENT, components=components)]
 
 
-async def load_board():
+async def load_board(*, force=False):
     global _cached, _cached_at
+    requested_at = time.monotonic()
     async with _lock:
-        if _cached is None or time.monotonic() - _cached_at >= 60:
-            _cached = await asyncio.to_thread(refresh_board)
+        if (_cached is None or time.monotonic() - _cached_at >= 60
+                or (force and _cached_at < requested_at)):
+            board = await asyncio.to_thread(refresh_board)
+            board['owners'] = await resolve_discord_ids([row['tag'] for row in board['rows']])
+            _cached = board
             _cached_at = time.monotonic()
         return _cached
 
@@ -85,6 +95,20 @@ async def execute(ctx):
     await ctx.interaction.edit_initial_response(
         components=components, user_mentions=False, role_mentions=False, mentions_everyone=False,
     )
+
+
+@register_action('loot_leaderboard_update', preload_state=False)
+async def update_leaderboard(ctx, action_id, **kwargs):
+    # The dispatcher defers a message update and replaces the original panel.
+    if ctx.interaction.guild_id != WARRIORS_UNITED_GUILD_ID:
+        await ctx.respond('This leaderboard is available in Warriors United.', ephemeral=True)
+        return None
+    try:
+        return render_board(await load_board(force=True))
+    except (ValueError, sqlite3.Error, OSError):
+        _log.exception('Gold leaderboard update failed')
+        await ctx.respond('Could not update the leaderboard. Please try again.', ephemeral=True)
+        return None
 
 
 class LootLeaderboard(
