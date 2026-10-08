@@ -87,8 +87,11 @@ def test_update_button_forces_refresh(monkeypatch):
     load = AsyncMock(return_value={'test': True})
     monkeypatch.setattr(command, 'load_board', load)
     monkeypatch.setattr(command, 'render_board', lambda board: ['updated panel'])
-    ctx = SimpleNamespace(interaction=SimpleNamespace(guild_id=WARRIORS_UNITED_GUILD_ID))
-    assert asyncio.run(command.update_leaderboard(ctx, 'main')) == ['updated panel']
+    ctx = SimpleNamespace(interaction=SimpleNamespace(
+        guild_id=WARRIORS_UNITED_GUILD_ID, edit_initial_response=AsyncMock()))
+    asyncio.run(command.update_leaderboard(ctx, 'main'))
+    ctx.interaction.edit_initial_response.assert_awaited_once_with(
+        components=['updated panel'], user_mentions=False, role_mentions=False, mentions_everyone=False)
     load.assert_awaited_once_with(force=True)
 
 

@@ -97,14 +97,17 @@ async def execute(ctx):
     )
 
 
-@register_action('loot_leaderboard_update', preload_state=False)
+@register_action('loot_leaderboard_update', preload_state=False, no_return=True)
 async def update_leaderboard(ctx, action_id, **kwargs):
     # The dispatcher defers a message update and replaces the original panel.
     if ctx.interaction.guild_id != WARRIORS_UNITED_GUILD_ID:
         await ctx.respond('This leaderboard is available in Warriors United.', ephemeral=True)
         return None
     try:
-        return render_board(await load_board(force=True))
+        components = render_board(await load_board(force=True))
+        await ctx.interaction.edit_initial_response(
+            components=components, user_mentions=False, role_mentions=False, mentions_everyone=False,
+        )
     except (ValueError, sqlite3.Error, OSError):
         _log.exception('Gold leaderboard update failed')
         await ctx.respond('Could not update the leaderboard. Please try again.', ephemeral=True)
