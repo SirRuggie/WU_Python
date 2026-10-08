@@ -170,3 +170,19 @@ def test_explicit_name_and_id_do_not_depend_on_mentions():
     assert '[Luke](https://discord.com/users/123456789012345678)' in payload
     assert '`123456789012345678`' not in payload
     assert '<@' not in payload
+
+
+def test_command_posts_standalone_in_invoking_channel(monkeypatch):
+    monkeypatch.setattr(command, 'load_board', AsyncMock(return_value={}))
+    monkeypatch.setattr(command, 'render_board', lambda _: ['panel'])
+    rest = SimpleNamespace(create_message=AsyncMock())
+    interaction = SimpleNamespace(app=SimpleNamespace(rest=rest),
+        delete_initial_response=AsyncMock(), edit_initial_response=AsyncMock())
+    ctx = SimpleNamespace(guild_id=WARRIORS_UNITED_GUILD_ID, channel_id=123,
+                          defer=AsyncMock(), interaction=interaction)
+    asyncio.run(command.execute(ctx))
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    rest.create_message.assert_awaited_once_with(
+        123, components=['panel'], user_mentions=False, role_mentions=False, mentions_everyone=False)
+    interaction.delete_initial_response.assert_awaited_once()
+    interaction.edit_initial_response.assert_not_awaited()

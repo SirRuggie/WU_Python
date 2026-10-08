@@ -91,3 +91,8 @@ names, rather than mention markup. Numeric IDs are not displayed. This avoids vi
 `@unknown-user` rendering. The bot fetches the guild member first, falling back
 to the Discord user when unavailable in the guild. If lookup fails, the linked
 profile link remains available with the label Discord profile. This does not force or modify Discord client caches.
+
+The slash command posts a standalone message in the invoking channel, without
+reply metadata or a public command-response header. Its private deferred
+acknowledgment is removed after posting. Errors stay private. The Update button
+continues editing the standalone message in place.

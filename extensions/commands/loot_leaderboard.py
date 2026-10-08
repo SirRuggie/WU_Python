@@ -125,7 +125,7 @@ async def execute(ctx):
     if ctx.guild_id != WARRIORS_UNITED_GUILD_ID:
         await ctx.respond('This leaderboard is available in Warriors United.', ephemeral=True)
         return
-    await ctx.defer()
+    await ctx.defer(ephemeral=True)
     try:
         board = await load_board()
         components = render_board(board)
@@ -136,9 +136,26 @@ async def execute(ctx):
             'The saved gold-loot test is unavailable on this bot host. '
             'Ask the bot owner to restore the test data, then run this command again.'
         ))])]
-    await ctx.interaction.edit_initial_response(
-        components=components, user_mentions=False, role_mentions=False, mentions_everyone=False,
-    )
+        await ctx.interaction.edit_initial_response(
+            components=components, user_mentions=False, role_mentions=False, mentions_everyone=False,
+        )
+        return
+    try:
+        await ctx.interaction.app.rest.create_message(
+            ctx.channel_id, components=components,
+            user_mentions=False, role_mentions=False, mentions_everyone=False,
+        )
+    except hikari.HTTPError:
+        _log.exception('Could not post gold leaderboard in channel')
+        await ctx.interaction.edit_initial_response(
+            content='Could not post the leaderboard. Check my channel permissions and try again.',
+        )
+        return
+    # Leave only the standalone channel message, without a command reply header.
+    try:
+        await ctx.interaction.delete_initial_response()
+    except hikari.HTTPError:
+        _log.warning('Could not remove private leaderboard acknowledgement', exc_info=True)
 
 
 @register_action('loot_leaderboard_update', preload_state=False, no_return=True)
