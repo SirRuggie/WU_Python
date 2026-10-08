@@ -71,8 +71,8 @@ def render_board(board):
         medal = ('🥇', '🥈', '🥉')[rank - 1] if rank <= 3 else f'**{rank}.**'
         owner = (board.get('owners') or {}).get(row['tag'])
         label = board.get('discord_labels', {}).get(owner)
-        linked = (f'[{safe_name(label)}](https://discord.com/users/{owner}) · `{owner}`'
-                  if label else f'[Discord ID {owner}](https://discord.com/users/{owner})') if owner and str(owner).isdigit() else (
+        linked = (f'[{safe_name(label)}](https://discord.com/users/{owner})'
+                  if label else f'[Discord profile](https://discord.com/users/{owner})') if owner and str(owner).isdigit() else (
             'Link conflict' if row['tag'] in board.get('link_conflicts', ()) else
             'Link unavailable' if board.get('owners') is None or board.get('link_unavailable') else
             'No linked Discord account'

@@ -168,5 +168,5 @@ def test_explicit_name_and_id_do_not_depend_on_mentions():
                  discord_labels={'123456789012345678': 'Luke'})
     payload = str(command.render_board(board)[0].build())
     assert '[Luke](https://discord.com/users/123456789012345678)' in payload
-    assert '`123456789012345678`' in payload
+    assert '`123456789012345678`' not in payload
     assert '<@' not in payload
