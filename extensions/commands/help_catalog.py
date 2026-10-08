@@ -48,6 +48,7 @@ HELP_CATEGORIES = {
         "emoji": "⚔️",
         "description": "Clan information, FWA tools, bases, and LazyCWL",
         "commands": [
+            ("/loot-leaderboard", "Show Warriors United’s top 10 gold looters since the test began."),
             ("/fwa bases", "Select and display an FWA base layout."),
             ("/fwa chocolate", "Look up a player or clan on FWA Chocolate."),
             ("/fwa links", "Open FWA verification and war-weight links."),
