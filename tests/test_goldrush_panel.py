@@ -22,6 +22,8 @@ def test_panel_is_concise_has_join_and_only_entered_accounts(db,monkeypatch):
     assert 'Be the first to join' in payload
     assert '#ONE' not in payload
     store.join_event(db,event['id'],1,['#ONE','#TWO'],at=START)
+    with db:
+        db.executemany('INSERT INTO loot_events VALUES (?, ?, ?, ?)',[(tag,START.isoformat(),'farming',100) for tag in ('#ONE','#TWO')])
     snapshot=store.snapshot(db,event['id'])
     payload=str(command.render(snapshot)[0].build())
     assert '#ONE' in payload and '#TWO' in payload

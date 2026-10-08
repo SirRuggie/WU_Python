@@ -103,7 +103,7 @@ def render(data):
         lines.append(f"{rank} {th} **{safe_name(account['name'])}** — **{row['gold']:,} gold**\n"
                      f"-# `{account['tag']}` • {owner} • {safe_name(account['clan_name'] or 'WU Family')}{extra}")
     parts += [Separator(divider=True),Text(content='## 🏆 TOP 10 • ENTRANTS ONLY'),
-              Text(content='\n\n'.join(lines) or '**Be the first to join!** Your gold will appear here.')]
+              Text(content='\n\n'.join(lines) or ('No gold recorded yet.' if data['entrants'] else '**Be the first to join!**'))]
     if data.get('warning'):
         parts.append(Text(content='⚠️ Some battle data could not refresh. Scores may be incomplete.'))
     footer = f"-# {data['entrants']} joined • {data['accounts']} accounts • Tie: first to reach the score."

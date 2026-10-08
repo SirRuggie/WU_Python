@@ -161,3 +161,17 @@ def test_per_account_rejoin_adds_missing_accounts_without_removing_existing(db):
     assert goldrush.join_event(db,e['id'],1,['#TWO'],at=START)
     assert not goldrush.join_event(db,e['id'],1,['#ONE','#TWO'],at=START)
     assert [r[0] for r in db.execute('SELECT player_tag FROM goldrush_entries ORDER BY player_tag')]==['#ONE','#TWO']
+
+
+
+def test_snapshot_only_displays_positive_gold_and_keeps_zero_accounts_entered(db):
+    e=event(db,mode='per_account')
+    goldrush.start_event(db,e['id'],at=START)
+    goldrush.join_event(db,e['id'],1,['#ONE','#TWO'],at=START)
+    assert goldrush.snapshot(db,e['id'])['rows']==[]
+    loot(db,'#ONE',START,100)
+    data=goldrush.snapshot(db,e['id'])
+    assert [r['accounts'][0]['tag'] for r in data['rows']]==['#ONE']
+    assert data['accounts']==2 and data['entrants']==1
+    loot(db,'#TWO',START,200)
+    assert [r['gold'] for r in goldrush.snapshot(db,e['id'])['rows']]==[200,100]

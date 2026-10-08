@@ -244,7 +244,7 @@ def snapshot(db, event_id):
     rows = standings(db,event_id)
     count = db.execute('SELECT count(DISTINCT user_id), count(*) FROM goldrush_entries WHERE event_id=?', (event_id,)).fetchone()
     refreshed = db.execute('SELECT min(p.updated) FROM players p JOIN goldrush_entries e ON e.player_tag=p.tag WHERE e.event_id=?', (event_id,)).fetchone()[0]
-    return dict(event=event, rows=rows[:10], entrants=count[0], accounts=count[1], refreshed=refreshed)
+    return dict(event=event, rows=[row for row in rows if row['gold'] > 0][:10], entrants=count[0], accounts=count[1], refreshed=refreshed)
 
 
 def register_message(db,event_id,channel_id,message_id):
