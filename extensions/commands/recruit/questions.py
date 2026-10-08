@@ -44,6 +44,7 @@ from utils.constants import (
 from utils.emoji import emojis
 from utils.mongo import MongoClient
 from extensions.components import register_action
+from utils.recruit_error_reporting import respond_error
 
 _log = logging.getLogger(__name__)
 
@@ -309,7 +310,7 @@ async def primary_questions(
                 template, user_id=int(user.id), recruiter_id=int(ctx.member.id),
             )
         except ValueError as exc:
-            await ctx.respond(str(exc), ephemeral=True)
+            await respond_error(ctx, str(exc), ephemeral=True)
             return
         if choice == "family_codes":
             family_code_session = await open_family_code_challenge(
@@ -321,7 +322,7 @@ async def primary_questions(
                 moderator_id=ctx.member.id,
             )
     else:
-        await ctx.respond("This recruitment question is unavailable. Reopen /recruit questions.", ephemeral=True)
+        await respond_error(ctx, "This recruitment question is unavailable. Reopen /recruit questions.", ephemeral=True)
         return
     try:
         message = await bot.rest.create_message(
@@ -574,7 +575,7 @@ async def fwa_questions(
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
     if choice not in question_content.GROUPS["fwa"]["variants"]:
-        await ctx.respond("Choose an available FWA question.", ephemeral=True)
+        await respond_error(ctx, "Choose an available FWA question.", ephemeral=True)
         return
     try:
         template = await question_content.load_template(mongo, int(ctx.guild_id), choice)
@@ -583,7 +584,7 @@ async def fwa_questions(
             action_id=ctx.interaction.custom_id.split(":", 1)[1],
         )
     except ValueError as exc:
-        await ctx.respond(str(exc), ephemeral=True)
+        await respond_error(ctx, str(exc), ephemeral=True)
         return
     if choice == "fwa_bases_upon_approval":
         await ctx.respond(components=components, ephemeral=True)
@@ -614,7 +615,7 @@ async def th_select(
     
     # Check if FWA data exists
     if not fwa:
-        await ctx.respond(
+        await respond_error(ctx,
             "❌ **FWA Data Not Found**\n\n"
             "The FWA data is not in the database yet. "
             "Please use the `/manage section:FWA` command to add all FWA data first.",
@@ -645,7 +646,7 @@ async def th_select(
 
     # Check if base_link exists
     if not base_link:
-        await ctx.respond(
+        await respond_error(ctx,
             f"❌ **FWA Base Link Not Found**\n\n"
             f"The FWA base link for {display_name} is not configured in the database. "
             "Please use the `/manage section:FWA` command to add all FWA base links.",
@@ -658,7 +659,7 @@ async def th_select(
     active_war_base_media = FWA_ACTIVE_WAR_BASE.get(choice)
     
     if not war_base_media or not active_war_base_media:
-        await ctx.respond(
+        await respond_error(ctx,
             f"❌ **FWA Base Images Not Found**\n\n"
             f"The FWA base images for {display_name} are not configured. "
             "Please contact an administrator to add the FWA base images.",
@@ -675,7 +676,7 @@ async def th_select(
             war_base_media=war_base_media, active_war_base_media=active_war_base_media,
         )
     except ValueError as exc:
-        await ctx.respond(str(exc), ephemeral=True)
+        await respond_error(ctx, str(exc), ephemeral=True)
         return
     await bot.rest.create_message(
         components=components,
@@ -700,7 +701,7 @@ async def explanations(
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
     if choice not in question_content.GROUPS["explanations"]["variants"]:
-        await ctx.respond("Choose an available explanation.", ephemeral=True)
+        await respond_error(ctx, "Choose an available explanation.", ephemeral=True)
         return
     try:
         template = await question_content.load_template(mongo, int(ctx.guild_id), choice)
@@ -708,7 +709,7 @@ async def explanations(
             template, user_id=int(user.id), recruiter_id=int(ctx.member.id),
         )
     except ValueError as exc:
-        await ctx.respond(str(exc), ephemeral=True)
+        await respond_error(ctx, str(exc), ephemeral=True)
         return
     await bot.rest.create_message(
         components=components,
@@ -736,7 +737,7 @@ async def keep_it_moving(
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
 
     if choice not in question_content.GROUPS["keep_it_moving"]["variants"]:
-        await ctx.respond("Choose an available Keep It Moving message.", ephemeral=True)
+        await respond_error(ctx, "Choose an available Keep It Moving message.", ephemeral=True)
         return
     try:
         template = await question_content.load_template(mongo, int(ctx.guild_id), choice)
@@ -744,7 +745,7 @@ async def keep_it_moving(
             template, user_id=int(user.id), recruiter_id=int(ctx.member.id),
         )
     except ValueError as exc:
-        await ctx.respond(str(exc), ephemeral=True)
+        await respond_error(ctx, str(exc), ephemeral=True)
         return
     await bot.rest.create_message(
         components=components,

@@ -15,6 +15,7 @@ from extensions.commands.tickets import handlers
 from utils.component_state import insert_state, get_state
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.recruit_error_reporting import edit_error, notify as notify_recruit_error
 
 
 def path_panel(session_id="preview", sections=None, *, media=None, preview=False):
@@ -89,7 +90,7 @@ async def open_paths(ctx, mongo: MongoClient = lightbulb.di.INJECTED, **_):
         ticket_type="main",
     )
     if not route.allowed or route.route != ticket_runtime.ROUTE_THREAD:
-        await ctx.interaction.edit_initial_response(content="This entry panel is not active. Please use the current ticket panel.")
+        await edit_error(ctx, content="This entry panel is not active. Please use the current ticket panel.")
         return
     session_id = uuid.uuid4().hex
     await insert_state(mongo, {
@@ -108,7 +109,7 @@ async def choose_path(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED
     if (not state or state.get("type") != "ticket_rite_paths" or kind not in {"main", "fwa"}
         or state.get("owner_id") != int(ctx.user.id) or state.get("guild_id") != int(ctx.guild_id)
         or state.get("channel_id") != int(ctx.channel_id)):
-        await ctx.respond("This path selection has expired. Open Earn Your Rite of Passage again.", ephemeral=True)
+        await ctx.respond(await notify_recruit_error(ctx, "This path selection has expired. Open Earn Your Rite of Passage again."), ephemeral=True)
         return
     # Reuse all existing readiness, current binding, rollout, cooldown, and slot
     # checks. The private chooser's message ID is never an intake authority.

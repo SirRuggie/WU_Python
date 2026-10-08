@@ -15,6 +15,7 @@ import pendulum as pend
 from hikari.events.interaction_events import ComponentInteractionCreateEvent
 from utils.constants import RED_ACCENT
 from utils.mongo import MongoClient
+from utils.recruit_error_reporting import is_recruit_action, notify as notify_recruit_error
 from utils.gauntlet_diagnostics import click_trace, observed, event as gauntlet_event
 from utils.component_state import get_state, prepare_storage
 
@@ -215,6 +216,12 @@ async def _refuse(ctx, message: str) -> None:
     belongs to the person who clicked, not to everyone watching.
     """
     try:
+        raw = getattr(ctx.interaction, "custom_id", "")
+        name = raw.partition(":")[0]
+        if name in group_keys:
+            name = next(iter(getattr(ctx.interaction, "values", ()) or ()), name)
+        if is_recruit_action(_resolve(name)):
+            message = await notify_recruit_error(ctx, message)
         await ctx.respond(message, ephemeral=True)
     except Exception:
         _log.exception("failed to deliver dispatcher message to user")

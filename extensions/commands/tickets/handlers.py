@@ -23,6 +23,7 @@ from extensions.commands.tickets import store
 from extensions.commands.tickets import thread_service, testing_service
 from extensions.commands import ticket_runtime
 from extensions.components import register_action
+from utils.recruit_error_reporting import edit_error
 from utils.mongo import MongoClient
 from utils.constants import GOLDENROD_ACCENT
 from utils.manage_ui import ICONS
@@ -330,7 +331,7 @@ async def handle_create_ticket(
     await ctx.defer(ephemeral=True)
 
     if not thread_intake_ready():
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content=(
                 "❌ Thread ticketing is still completing its safety checks. "
                 "Nothing was created; try again shortly."
@@ -340,12 +341,12 @@ async def handle_create_ticket(
 
     intake_surface, separator, ticket_type = action_id.partition(":")
     if separator != ":" or intake_surface not in {"pilot", "public"}:
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content="❌ This ticket panel is unavailable. Ask staff for the current panel."
         )
         return
     if ticket_type not in {"main", "fwa"}:
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content="❌ That ticket type is not available."
         )
         return
@@ -373,7 +374,7 @@ async def handle_create_ticket(
             f"guild={ctx.guild_id} channel={ctx.channel_id} "
             f"message={message_id} error={type(error).__name__}"
         )
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content="❌ Thread ticketing is temporarily unavailable. Nothing was created."
         )
         return
@@ -384,7 +385,7 @@ async def handle_create_ticket(
             if intake_surface == "pilot"
             else "❌ This public ticket panel is not active. Use the current panel or contact a recruiter."
         )
-        await ctx.interaction.edit_initial_response(content=message)
+        await edit_error(ctx, rest=bot.rest, content=message)
         return
 
     cleanup_expired_cooldowns()
@@ -438,7 +439,7 @@ async def handle_create_ticket(
             f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
             f"error={type(error).__name__}"
         )
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content="❌ Thread ticketing is temporarily unavailable. Nothing was created."
         )
         return
@@ -522,7 +523,7 @@ async def handle_create_ticket(
             f"guild={ctx.guild_id} user={user_id} type={ticket_type} "
             f"error={type(error).__name__}"
         )
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content="❌ Pilot ticketing is temporarily unavailable. Nothing was created."
         )
         return
@@ -555,13 +556,13 @@ async def handle_create_ticket(
         return
     except thread_service.ThreadConfigurationError as error:
         user_cooldowns.pop(user_id, None)
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content=f"❌ Thread ticketing is not ready: {error}. Please contact an administrator."
         )
         return
     except hikari.RateLimitTooLongError:
         user_cooldowns[user_id] = now + timedelta(seconds=RATE_LIMIT_BACKOFF)
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content="⏰ Discord is rate-limiting ticket creation. Please try again in a few minutes."
         )
         return
@@ -573,7 +574,7 @@ async def handle_create_ticket(
         if ready_ticket is not None:
             await _show_created_ticket(ctx, ready_ticket)
             return
-        await ctx.interaction.edit_initial_response(
+        await edit_error(ctx, rest=bot.rest,
             content=(
                 "❌ Your ticket could not be completed safely. The attempt was saved and can resume "
                 "without creating duplicates. Please try again or contact an administrator."

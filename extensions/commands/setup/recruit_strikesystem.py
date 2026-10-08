@@ -11,6 +11,7 @@ from extensions.commands.setup import loader, setup
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT
 from utils.mongo import MongoClient
+from utils.recruit_error_reporting import notify as notify_recruit_error
 from utils.gauntlet_diagnostics import observed, event as gauntlet_event
 from utils.gauntlet_routes import start_url
 from utils.gauntlet_routes import route_for, NEW_GUILD_ID
@@ -260,6 +261,7 @@ async def _private_continue(ctx, guild_id: int, message: str, *, bot) -> None:
 async def _private_error(ctx, message: str) -> None:
     """Send an actionable private error without exposing internal failures."""
     gauntlet_event("rejected", reason=message)
+    message = await notify_recruit_error(ctx, message)
     await observed("reply", ctx.interaction.execute, content=message, flags=hikari.MessageFlag.EPHEMERAL)
 
 
