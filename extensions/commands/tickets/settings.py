@@ -66,40 +66,101 @@ def role(value):
     return f'<@&{value}>' if value else 'Not configured'
 
 
+def duration(minutes):
+    minutes = int(minutes)
+    for unit, size in (('day', 1440), ('hour', 60), ('minute', 1)):
+        if minutes % size == 0:
+            value = minutes // size
+            return f'{value} {unit}' + ('' if value == 1 else 's')
+
+
 def page(data, notice=''):
     token, cfg, view = data['_id'], data['draft'], data.get('view', 'home')
-    body = [Text(content='-# Management › Recruitment\n## Ticket Settings')]
+    titles = {'home': 'Ticket Settings', 'timers': 'Inactivity & Archiving',
+              'routing': 'Channels & Staff', 'main': 'Main Applications',
+              'fwa': 'FWA Applications', 'access': 'Additional Staff Viewers',
+              'tools': 'Troubleshooting', 'panels': 'Restore Ticket Messages'}
+    body = [Text(content=f'-# Admin Settings › Recruitment\n## {titles.get(view, "Ticket Settings")}')]
     if notice:
         body.append(Text(content=notice[:3500]))
-    if view in ('main', 'fwa'):
-        body += [Text(content=f'### {view.upper()}\nCandidate channel: {channel(cfg.get(view+"_candidate_parent"))}\nStaff channel: {channel(cfg.get(view+"_staff_parent"))}\nRecruiter role: {role(cfg.get(view+"_thread_recruiter_role"))}'),
-                 Text(content='Choose channels and a recruiter role, then Save. Existing tickets keep their current locations. The candidate channel must match the active entry-panel channel.')]
-        for key, label in [('candidate_parent','Candidate channel'),('staff_parent','Staff channel'),('thread_recruiter_role','Recruiter role')]:
+
+    def section(title, description, controls):
+        body.extend([Separator(), Text(content=f'### {title}\n{description}'), *controls])
+
+    def direct(action, label):
+        return Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,
+            f'{action}:{token}', label=label)
+
+    review = duration(cfg.get('ticket_inactivity_minutes', 10080))
+    days = cfg.get('ticket_archive_quiet_days', 1)
+    archive = duration(int(days) * 1440) if days else 'Off'
+    if view == 'home':
+        body.append(Text(content='Choose what you want to manage. These settings are only available to server administrators.'))
+        section('Keep the ticket list tidy',
+                f'**Open tickets:** ask recruiters to review after **{review}** of silence.\n'
+                f'**Resolved tickets:** automatically archive after **{archive}** of silence.' if days else
+                f'**Open tickets:** review after **{review}** of silence.\n**Automatic archiving is off.**',
+                [button(token, 'timers', 'Manage inactivity & archiving')])
+        section('Choose where tickets go',
+                'Set the recruit and staff channels for Main and FWA applications, choose recruiters, or allow extra staff viewers.',
+                [button(token, 'routing', 'Manage channels & staff')])
+        section('Fix or test ticket setup',
+                'Check bot permissions, restore missing ticket messages, or try the ticket flow in a separate test area.',
+                [button(token, 'tools', 'Open troubleshooting')])
+    elif view == 'timers':
+        section('1 · Open tickets — ask staff to review',
+                f'**Current wait: {review}.**\nAfter no human messages in the recruit thread, the bot asks recruiters whether to deny as Ghosted or keep waiting. It does not automatically deny or archive the ticket. Staff-thread chat does not reset this timer.',
+                [direct('ticket_settings_interval', 'Change open-ticket review wait')])
+        section('2 · Resolved tickets — archive quiet chats',
+                f'**Current wait: {archive}.**\nApplies only to approved, denied, or closed tickets. Daily cleanup archives both threads after neither has human messages for this long. A new decision also starts a fresh wait. Bot messages do not reset it. History is kept; no new locks are added.',
+                [direct('ticket_settings_archive', 'Change resolved-ticket archive wait')])
+        body.append(Text(content='The form saves your new wait when you submit it. Set the archive wait to 0 to turn automatic archiving off.'))
+    elif view == 'routing':
+        section('Main applications', 'Choose where Main recruit and staff threads are created, and which role handles these applications.',
+                [button(token, 'main', 'Configure Main applications')])
+        section('FWA applications', 'Choose where FWA recruit and staff threads are created, and which role handles these applications.',
+                [button(token, 'fwa', 'Configure FWA applications')])
+        section('Other staff who may view tickets', 'Register additional roles already allowed to see the staff channel. This does not give them approval or denial powers.',
+                [button(token, 'access', 'Manage additional viewers')])
+    elif view in ('main', 'fwa'):
+        body.append(Text(content='Select each setting below, then **Save channel & role changes**. These choices apply to new tickets; existing tickets stay where they are.'))
+        for key, label, explanation in (
+            ('candidate_parent', 'Recruit channel', 'New private recruit threads are created here. This must be the channel containing the application entry message.'),
+            ('staff_parent', 'Staff channel', 'New staff discussion threads are created here. Only authorized staff should be able to view this channel.'),
+            ('thread_recruiter_role', 'Recruiter role', 'Members of this role handle these applications and receive recruiter notifications.'),
+        ):
             is_role = key.endswith('role')
-            body.append(Row(components=[Select(type=hikari.ComponentType.ROLE_SELECT_MENU if is_role else hikari.ComponentType.CHANNEL_SELECT_MENU,
-                custom_id=f'ticket_settings:{token}:select:{view}_{key}', placeholder=label, min_values=1, max_values=1)]))
-        body.append(button(token, 'save', 'Validate and Save'))
+            value = role(cfg.get(view+'_'+key)) if is_role else channel(cfg.get(view+'_'+key))
+            section(label, f'**Selected:** {value}\n{explanation}', [Row(components=[Select(
+                type=hikari.ComponentType.ROLE_SELECT_MENU if is_role else hikari.ComponentType.CHANNEL_SELECT_MENU,
+                custom_id=f'ticket_settings:{token}:select:{view}_{key}', placeholder=f'Choose {label.lower()}', min_values=1, max_values=1)])])
+        body.append(button(token, 'save', 'Save channel & role changes'))
     elif view == 'access':
-        body += [Text(content='### Additional staff access\n'+(', '.join(role(x) for x in cfg.get('ticket_staff_viewer_role_ids', [])) or 'No additional roles')+'\nThese roles may view the staff channel; they do not gain approve/deny access. Channel permissions must already match the selection.'),
-                 Row(components=[Select(type=hikari.ComponentType.ROLE_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:ticket_staff_viewer_role_ids', placeholder='Select additional staff viewer roles', min_values=0, max_values=25)]), button(token,'save','Validate and Save')]
+        body.append(Text(content='Allow the bot to recognize extra staff roles that already have access to the staff channel. This does not change Discord permissions or grant approve/deny actions.\n\nFirst give the role access in Discord channel permissions, then select it here and save.'))
+        section('Allowed viewer roles', ', '.join(role(x) for x in cfg.get('ticket_staff_viewer_role_ids', [])) or 'No additional roles selected.',
+                [Row(components=[Select(type=hikari.ComponentType.ROLE_SELECT_MENU,
+                 custom_id=f'ticket_settings:{token}:select:ticket_staff_viewer_role_ids', placeholder='Choose all additional viewer roles', min_values=0, max_values=25)]),
+                 button(token, 'save', 'Save viewer roles')])
+    elif view == 'tools':
+        section('Check for setup problems', 'Check both ticket types for channel access, recruiter permissions, and ticket storage readiness. This check does not change your settings.',
+                [button(token, 'validate', 'Run setup check')])
+        section('Restore a missing or outdated message', 'Update or recreate the recruit application message or staff console using the saved layout.',
+                [button(token, 'panels', 'Manage ticket messages')])
+        section('Try the flow safely', 'Open the separate ticket testing controls. Test tickets use isolated storage and do not change live applications.',
+                [button(token, 'testing', 'Open ticket testing')])
     elif view == 'panels':
-        body += [Text(content=f'### Panels\nEntry panel: {channel(data.get("entry_channel"))}\nRecruiter console: {channel(data.get("console_channel"))}'),
-                 Text(content='Repair updates the bound entry message, or recreates it if it was deleted. Choose the current console channel to repair it, or a channel for first setup. Existing console relocation remains protected.'),
-                 button(token,'repair_entry','Repair Entry Panel'),
-                 Row(components=[Select(type=hikari.ComponentType.CHANNEL_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:console_channel', placeholder='Choose recruiter console channel',min_values=1,max_values=1)]),
-                 button(token,'repair_console','Save / Repair Console')]
-    else:
-        body += [Text(content=f'**Intake:** {data.get("phase", "unknown")}\n**Inactivity review:** {cfg.get("ticket_inactivity_minutes", 10080):,} minutes\n**Resolved ticket auto-archive:** {cfg.get("ticket_archive_quiet_days", 1)} quiet days (0 = off)\nChanges are validated before saving.'),
-                 Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings:{token}:main',label='Main').add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings:{token}:fwa',label='FWA'),
-                 button(token,'access','Staff Access'),button(token,'panels','Entry Panel and Console'),
-                 Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings_interval:{token}',label='Inactivity Timing').add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings:{token}:validate',label='Check Permissions and Health'),
-                 Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings_archive:{token}',label='Automatic Archive Timing'),
-                 button(token,'testing','Isolated Testing')]
-    body.append(Separator())
+        section('Recruit application message', f'**Channel:** {channel(data.get("entry_channel"))}\nUpdate the saved application message, or recreate it if deleted. Clicking below applies the repair immediately.',
+                [button(token, 'repair_entry', 'Restore application message')])
+        section('Staff console', f'**Channel:** {channel(data.get("console_channel"))}\nRefresh or recreate the staff ticket console. Select its current channel, or choose a channel for first-time setup. This cannot move an existing console. Clicking Restore applies immediately.',
+                [Row(components=[Select(type=hikari.ComponentType.CHANNEL_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:console_channel', placeholder='Choose the staff console channel',min_values=1,max_values=1)]),
+                 button(token, 'repair_console', 'Restore staff console')])
     if view != 'home':
-        body.append(button(token,'home','Return to Ticket Settings'))
+        body.append(Separator())
+        if view in ('main', 'fwa', 'access'):
+            body.append(Text(content='Selections are not saved until you press Save. Returning to all settings discards unsaved changes.'))
+        body.append(button(token, 'home', 'Back to all settings'))
     if data.get('manage_token'):
-        body.append(Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'manage_home:{data["manage_token"]}',label='Management Home'))
+        body.append(Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'manage_home:{data["manage_token"]}',label='Back to server management'))
     return [Container(accent_color=GOLDENROD_ACCENT,components=body)]
 
 
@@ -186,7 +247,7 @@ async def action(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,bot:h
     token,op,*args=action_id.split(':')
     try:
         data=await session(ctx,mongo,token);notice=''
-        if op in ('home','main','fwa','access','panels'):
+        if op in ('home','timers','routing','tools','main','fwa','access','panels'):
             data=await fresh(ctx,mongo,data) if op=='home' else await draft(mongo,data,view=op)
         elif op=='select':
             key=args[0];values=[int(x) for x in ctx.interaction.values]
@@ -221,7 +282,7 @@ async def interval(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_
     try:data=await session(ctx,mongo,action_id)
     except ValueError as exc:
         await ctx.respond(str(exc),ephemeral=True);return
-    await ctx.respond_with_modal(title='Inactivity Review Timing',custom_id=f'ticket_settings_interval_submit:{action_id}',components=[ModalRow().add_text_input('minutes','Minutes of inactivity (7 days = 10080)',value=str(data['draft'].get('ticket_inactivity_minutes',10080)),min_length=1,max_length=6)])
+    await ctx.respond_with_modal(title='Open Ticket Review Wait',custom_id=f'ticket_settings_interval_submit:{action_id}',components=[ModalRow().add_text_input('days','Quiet days before staff review (1–365)',value=str(data['draft'].get('ticket_inactivity_minutes',10080) / 1440).removesuffix('.0'),min_length=1,max_length=10)])
 
 
 @register_action('ticket_settings_interval_submit',is_modal=True,preload_state=False,no_return=True)
@@ -231,8 +292,13 @@ async def interval_submit(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJEC
     try:
         data=await session(ctx,mongo,action_id)
         from extensions.commands.tickets.testing import _modal_value
-        value=int(_modal_value(ctx,'minutes'))
-        if not 1<=value<=525600:raise ValueError('Use 1–525600 minutes.')
+        from decimal import Decimal, InvalidOperation
+        try:
+            days=Decimal(_modal_value(ctx,'days'))
+            if not days.is_finite() or not 1<=days<=365:raise ValueError('Use 1–365 days.')
+            value=int(days*1440)
+        except InvalidOperation:
+            raise ValueError('Enter a number of days, such as 7.')
         cfg=deepcopy(data['draft']);cfg['ticket_inactivity_minutes']=value;data['draft']=cfg
         notice=await save(ctx,mongo,bot.rest,data);data=await fresh(ctx,mongo,data)
         await ctx.interaction.edit_initial_response(components=page(data,notice),**NO_MENTIONS)
@@ -246,7 +312,7 @@ async def archive_interval(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJE
     try:data=await session(ctx,mongo,action_id)
     except ValueError as exc:
         await ctx.respond(str(exc),ephemeral=True);return
-    await ctx.respond_with_modal(title='Resolved Ticket Auto-Archive',custom_id=f'ticket_settings_archive_submit:{action_id}',components=[ModalRow().add_text_input('days','Quiet days in BOTH threads (0 = off)',value=str(data['draft'].get('ticket_archive_quiet_days',1)),min_length=1,max_length=3)])
+    await ctx.respond_with_modal(title='Resolved Ticket Archive Wait',custom_id=f'ticket_settings_archive_submit:{action_id}',components=[ModalRow().add_text_input('days','Quiet days in BOTH threads (0 = off)',value=str(data['draft'].get('ticket_archive_quiet_days',1)),min_length=1,max_length=3)])
 
 
 @register_action('ticket_settings_archive_submit',is_modal=True,preload_state=False,no_return=True)

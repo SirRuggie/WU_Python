@@ -27,7 +27,7 @@ def walk(v):
         for x in v:yield from walk(x)
 
 
-@pytest.mark.parametrize('view',['home','main','fwa','access','panels'])
+@pytest.mark.parametrize('view',['home','timers','routing','tools','main','fwa','access','panels'])
 def test_settings_page_discord_limits_and_registered_actions(view):
     from extensions.components import registered_functions
     d=data();d['view']=view
@@ -162,3 +162,29 @@ def test_entry_repair_wont_edit_another_author(monkeypatch):
     m=NS(ticket_setup=NS(find_one=AsyncMock(return_value={})))
     with pytest.raises(ValueError,match='not owned'):asyncio.run(settings.repair_entry(ctx(),m,NS(rest=rest)))
     rest.edit_message.assert_not_awaited()
+
+
+def test_home_is_a_plain_language_overview():
+    nodes=list(walk([c.build() for c in settings.page(data())]))
+    text=' '.join(str(n.get('content','')) for n in nodes)
+    labels=[n['label'] for n in nodes if n.get('type')==2]
+    assert 'thread_default' not in text and '10,080' not in text
+    assert '7 days' in text and '1 day' in text
+    assert labels[:3]==['Manage inactivity & archiving','Manage channels & staff','Open troubleshooting']
+
+
+def test_timer_page_explains_review_versus_archive():
+    d=data();d['view']='timers'
+    text=' '.join(str(n.get('content','')) for n in walk([c.build() for c in settings.page(d)]))
+    assert 'does not automatically deny or archive' in text
+    assert 'archives both threads' in text
+    assert '0 to turn automatic archiving off' in text
+
+
+def test_open_ticket_review_form_saves_days_as_minutes(monkeypatch):
+    monkeypatch.setattr(settings,'session',AsyncMock(return_value=data()))
+    monkeypatch.setattr(testing,'_modal_value',lambda *a:'7')
+    save=AsyncMock(return_value='Saved');monkeypatch.setattr(settings,'save',save)
+    monkeypatch.setattr(settings,'fresh',AsyncMock(return_value=data()))
+    c=ctx();asyncio.run(settings.interval_submit(c,'token',mongo=NS(),bot=NS(rest=NS())))
+    assert save.call_args.args[3]['draft']['ticket_inactivity_minutes']==10080
