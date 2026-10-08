@@ -17,7 +17,7 @@ from hikari.impl import (
 )
 
 from extensions.components import register_action
-from utils.clash_links import resolve_discord_ids
+from utils.recruit_links import resolve_players
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board
 
@@ -45,7 +45,9 @@ def render_board(board):
         medal = ('🥇', '🥈', '🥉')[rank - 1] if rank <= 3 else f'**{rank}.**'
         owner = (board.get('owners') or {}).get(row['tag'])
         linked = f'<@{owner}>' if owner and str(owner).isdigit() else (
-            'Link unavailable' if board.get('owners') is None else 'No linked Discord account'
+            'Link conflict' if row['tag'] in board.get('link_conflicts', ()) else
+            'Link unavailable' if board.get('owners') is None or board.get('link_unavailable') else
+            'No linked Discord account'
         )
         clan = safe_name(row.get('clan_name') or 'Warriors United')
         lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {linked} • {clan}")
@@ -77,7 +79,10 @@ async def load_board(*, force=False):
         if (_cached is None or time.monotonic() - _cached_at >= 60
                 or (force and _cached_at < requested_at)):
             board = await asyncio.to_thread(refresh_board)
-            board['owners'] = await resolve_discord_ids([row['tag'] for row in board['rows']])
+            links = await resolve_players([row['tag'] for row in board['rows']])
+            board['owners'] = links.owners
+            board['link_conflicts'] = links.conflicts
+            board['link_unavailable'] = links.unavailable
             _cached = board
             _cached_at = time.monotonic()
         return _cached

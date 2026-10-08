@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from extensions.commands import loot_leaderboard as command
 from utils import gold_loot
+from utils.recruit_links import PlayerOwners
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 
 
@@ -38,7 +39,7 @@ def test_concurrent_requests_share_refresh(monkeypatch):
         return {'rows': []}
     monkeypatch.setattr(command, 'refresh_board', refresh)
     monkeypatch.setattr(command, '_cached', None)
-    monkeypatch.setattr(command, 'resolve_discord_ids', AsyncMock(return_value={}))
+    monkeypatch.setattr(command, 'resolve_players', AsyncMock(return_value=PlayerOwners()))
     async def run():
         monkeypatch.setattr(command, '_lock', asyncio.Lock())
         results = await asyncio.gather(command.load_board(), command.load_board())
@@ -101,8 +102,8 @@ def test_force_refresh_bypasses_recent_cache(monkeypatch):
     monkeypatch.setattr(command, '_cached', {'old': True})
     monkeypatch.setattr(command, '_cached_at', command.time.monotonic())
     monkeypatch.setattr(command, 'refresh_board', lambda: {'rows': [{'tag': '#ABC'}]})
-    links = AsyncMock(return_value={'#ABC': '123'})
-    monkeypatch.setattr(command, 'resolve_discord_ids', links)
+    links = AsyncMock(return_value=PlayerOwners(owners={'#ABC': '123'}))
+    monkeypatch.setattr(command, 'resolve_players', links)
     async def run():
         monkeypatch.setattr(command, '_lock', asyncio.Lock())
         result = await command.load_board(force=True)
@@ -124,3 +125,15 @@ def test_tracking_times_are_small_footer_below_rankings():
     assert '44 players' in footer
     assert texts.index(footer) > next(i for i, t in enumerate(texts) if '12,500' in t)
     assert 'tracked players' not in texts[0]
+
+
+def test_link_conflict_and_provider_outage_are_not_unlinked():
+    board = dict(session={'started': '2026-10-08T13:47:41+00:00'}, count=44,
+                 rows=[dict(tag='#ABC', name='Player', looted=10)],
+                 owners={}, warning=None, link_conflicts=('#ABC',))
+    assert 'Link conflict' in str(command.render_board(board)[0].build())
+    board['link_conflicts'] = ()
+    board['link_unavailable'] = ('ClashPerk',)
+    payload = str(command.render_board(board)[0].build())
+    assert 'Link unavailable' in payload
+    assert 'No linked Discord account' not in payload

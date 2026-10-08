@@ -70,3 +70,12 @@ do not establish where a player was a member at the time of each attack.
 A history refresh is limited to two minutes, retaining completed samples and
 warning about unfinished players. The next refresh prioritizes older samples.
 All saved battle records and backups remain durable across restarts.
+
+## Discord account links
+
+The displayed top 10 is resolved against both ClashPerk and ClashKing in
+parallel. Matching owners are deduplicated and accounts known to either provider
+are shown. Disagreeing owners show `Link conflict`, rather than selecting one.
+An unavailable provider leaves successful results usable, while unmatched rows
+say `Link unavailable` rather than claiming no account is linked. Gold scores
+and clan membership do not depend on whether a Discord link exists.

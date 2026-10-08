@@ -75,3 +75,43 @@ async def resolve(discord_id: int) -> LinksResult:
         hashlib.sha256(json.dumps([wanted, {tag: {provider: sorted(ids) for provider, ids in owners[tag].items()} for tag in sorted(conflicts)}], sort_keys=True).encode()).hexdigest() if conflicts else "",
         {tag: tuple(dict.fromkeys(sources[tag])) for tag in sorted(conflicts)},
     )
+
+
+@dataclass(frozen=True)
+class PlayerOwners:
+    owners: dict[str, str] = field(default_factory=dict)
+    conflicts: tuple[str, ...] = ()
+    unavailable: tuple[str, ...] = ()
+
+
+async def resolve_players(player_tags: list[str]) -> PlayerOwners:
+    """Combine CK and CP reverse links without arbitrarily choosing an owner."""
+    wanted = {clash_links._normalize_tag(tag) for tag in player_tags}
+    wanted.discard('')
+    if not wanted:
+        return PlayerOwners()
+    providers = {'ClashKing': clash_links._lookup_shared_links, 'ClashPerk': clashperk_links.lookup}
+    results = await asyncio.gather(
+        *(call(player_tags=sorted(wanted)) for call in providers.values()),
+        return_exceptions=True,
+    )
+    owners, unavailable = {}, []
+    for provider, rows in zip(providers, results):
+        if rows is None or isinstance(rows, Exception):
+            unavailable.append(provider)
+            continue
+        for row in rows:
+            tag = clash_links._normalize_tag(row.get('player_tag' if provider == 'ClashKing' else 'tag'))
+            owner = str(row.get('user_id' if provider == 'ClashKing' else 'userId') or '')
+            if tag not in wanted:
+                continue
+            if not owner.isascii() or not owner.isdigit() or int(owner) <= 0:
+                if provider not in unavailable:
+                    unavailable.append(provider)
+                continue
+            owners.setdefault(tag, set()).add(str(int(owner)))
+    return PlayerOwners(
+        owners={tag: next(iter(ids)) for tag, ids in owners.items() if len(ids) == 1},
+        conflicts=tuple(sorted(tag for tag, ids in owners.items() if len(ids) > 1)),
+        unavailable=tuple(unavailable),
+    )
