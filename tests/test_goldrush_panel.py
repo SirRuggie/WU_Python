@@ -90,3 +90,22 @@ def test_full_panel_fits_discord_text_limit(monkeypatch):
     panel=command.render(dict(event=event,rows=rows,entrants=10,accounts=200,labels=labels,refreshed=START.isoformat()))[0]
     size=sum(len(c.content) for c in panel.components if hasattr(c,'content'))
     assert size<=4000
+
+
+@pytest.mark.parametrize('conflict', ['#THREE', '#OUTSIDE'])
+def test_join_keeps_valid_accounts_when_another_link_is_disputed(db,monkeypatch,conflict):
+    event=store.create_event(db,guild_id=WARRIORS_UNITED_GUILD_ID,account_mode='per_account',allow_late_join=True,at=START)
+    store.start_event(db,event['id'],at=START)
+    monkeypatch.setattr(store,'utcnow',lambda:START)
+    async def database(fn,*args,**kwargs): return fn(db,*args,**kwargs)
+    monkeypatch.setattr(command,'database',database)
+    monkeypatch.setattr(command.recruit_links,'resolve',AsyncMock(return_value=recruit_links.LinksResult(
+        sources={'#ONE':('ClashKing',),'#TWO':('ClashPerk',)},conflicts=(conflict,))))
+    monkeypatch.setattr(command,'sync_messages',AsyncMock())
+    ctx=SimpleNamespace(user=SimpleNamespace(id=123),interaction=SimpleNamespace(guild_id=WARRIORS_UNITED_GUILD_ID),respond=AsyncMock())
+    asyncio.run(command.join(ctx,event['id']))
+    assert [r[0] for r in db.execute('SELECT player_tag FROM goldrush_entries ORDER BY player_tag')]==['#ONE','#TWO']
+    message=ctx.respond.call_args.args[0]
+    assert 'You joined' in message
+    assert ('Not entered:' in message)==(conflict=='#THREE')
+    assert ctx.respond.call_args.kwargs['ephemeral'] is True

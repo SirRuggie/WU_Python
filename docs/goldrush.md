@@ -17,8 +17,8 @@ is one Gold Pass. No event prize is automatically purchased, awarded, or sent.
 
 **Join Gold Rush** reads the clicker's account links through both ClashKing and
 ClashPerk, checks for conflicting ownership, and enters all matching accounts
-in the captured Warriors United family roster. Links unavailable or disputed
-block signup with a private explanation. Untracked/outside-family accounts are
+in the captured Warriors United family roster. Unavailable link services block signup with a private explanation. Disputed
+accounts are excluded with a private notice; valid accounts can still join. Untracked/outside-family accounts are
 excluded. Each player tag can belong to only one entrant per event. Entered
 accounts are locked; repeated joins are idempotent. New linked accounts do not
 automatically alter an existing entry.
