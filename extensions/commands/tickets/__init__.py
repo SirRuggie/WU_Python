@@ -325,6 +325,7 @@ async def on_started(
     start_ticket_workflow_recovery(bot, mongo)
     start_ticket_history_recovery(bot, mongo)
     inactivity.start(bot, mongo)
+    auto_archive.start(bot, mongo)
     if _capability_heartbeat_task is None or _capability_heartbeat_task.done():
         _capability_heartbeat_task = asyncio.create_task(
             _heartbeat_thread_name_capability(mongo), name="ticket-name-capability-heartbeat",
@@ -342,6 +343,7 @@ async def on_stopping(
     global _thread_intake_ready, _capability_heartbeat_task
     try:
         await inactivity.stop()
+        await auto_archive.stop()
         if _history_recovery is not None:
             await _history_recovery.stop()
         if _capability_heartbeat_task is not None:
@@ -394,7 +396,7 @@ from . import legacy_bulk
 from . import rollout
 from . import testing
 from . import rite
-from . import inactivity
+from . import inactivity, auto_archive
 from . import staff_creation
 from . import settings
 

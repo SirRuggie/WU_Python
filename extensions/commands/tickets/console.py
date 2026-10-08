@@ -891,6 +891,11 @@ def build_hub_actions(
         custom_id="ticket_v2_staff_create:hub",
         label="Create for Recruit",
         emoji="➕",
+    ), Button(
+        style=hikari.ButtonStyle.SECONDARY,
+        custom_id="ticket_admin_settings:hub",
+        label="Admin Settings",
+        emoji="⚙️",
     )]))
     if pages > 1:
         children.append(

@@ -23,7 +23,7 @@ from utils.mongo import MongoClient
 NO_MENTIONS = dict(user_mentions=False, role_mentions=False, mentions_everyone=False)
 FIELDS = tuple(f'{kind}_{key}' for kind in ('main', 'fwa') for key in
                ('candidate_parent', 'staff_parent', 'thread_recruiter_role')) + (
-               'ticket_staff_viewer_role_ids', 'ticket_inactivity_minutes')
+               'ticket_staff_viewer_role_ids', 'ticket_inactivity_minutes', 'ticket_archive_quiet_days')
 PANEL_LOCK = asyncio.Lock()
 
 
@@ -89,10 +89,11 @@ def page(data, notice=''):
                  Row(components=[Select(type=hikari.ComponentType.CHANNEL_SELECT_MENU, custom_id=f'ticket_settings:{token}:select:console_channel', placeholder='Choose recruiter console channel',min_values=1,max_values=1)]),
                  button(token,'repair_console','Save / Repair Console')]
     else:
-        body += [Text(content=f'**Intake:** {data.get("phase", "unknown")}\n**Inactivity review:** {cfg.get("ticket_inactivity_minutes", 10080):,} minutes\nChanges are validated before saving.'),
+        body += [Text(content=f'**Intake:** {data.get("phase", "unknown")}\n**Inactivity review:** {cfg.get("ticket_inactivity_minutes", 10080):,} minutes\n**Resolved ticket auto-archive:** {cfg.get("ticket_archive_quiet_days", 1)} quiet days (0 = off)\nChanges are validated before saving.'),
                  Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings:{token}:main',label='Main').add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings:{token}:fwa',label='FWA'),
                  button(token,'access','Staff Access'),button(token,'panels','Entry Panel and Console'),
                  Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings_interval:{token}',label='Inactivity Timing').add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings:{token}:validate',label='Check Permissions and Health'),
+                 Row().add_interactive_button(hikari.ButtonStyle.SECONDARY,f'ticket_settings_archive:{token}',label='Automatic Archive Timing'),
                  button(token,'testing','Isolated Testing')]
     body.append(Separator())
     if view != 'home':
@@ -237,3 +238,34 @@ async def interval_submit(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJEC
         await ctx.interaction.edit_initial_response(components=page(data,notice),**NO_MENTIONS)
     except (ValueError,thread_service.ThreadConfigurationError) as exc:
         await ctx.interaction.edit_initial_response(content=str(exc),**NO_MENTIONS)
+
+
+@register_action('ticket_settings_archive',opens_modal=True,preload_state=False,no_return=True)
+@lightbulb.di.with_di
+async def archive_interval(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
+    try:data=await session(ctx,mongo,action_id)
+    except ValueError as exc:
+        await ctx.respond(str(exc),ephemeral=True);return
+    await ctx.respond_with_modal(title='Resolved Ticket Auto-Archive',custom_id=f'ticket_settings_archive_submit:{action_id}',components=[ModalRow().add_text_input('days','Quiet days in BOTH threads (0 = off)',value=str(data['draft'].get('ticket_archive_quiet_days',1)),min_length=1,max_length=3)])
+
+
+@register_action('ticket_settings_archive_submit',is_modal=True,preload_state=False,no_return=True)
+@lightbulb.di.with_di
+async def archive_interval_submit(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,bot:hikari.GatewayBot=lightbulb.di.INJECTED,**_):
+    await ctx.defer(ephemeral=True)
+    try:
+        data=await session(ctx,mongo,action_id)
+        from extensions.commands.tickets.testing import _modal_value
+        from .auto_archive import quiet_days
+        cfg=deepcopy(data['draft']);cfg['ticket_archive_quiet_days']=int(_modal_value(ctx,'days'))
+        quiet_days(cfg);data['draft']=cfg
+        notice=await save(ctx,mongo,bot.rest,data);data=await fresh(ctx,mongo,data)
+        await ctx.interaction.edit_initial_response(components=page(data,notice),**NO_MENTIONS)
+    except (ValueError,thread_service.ThreadConfigurationError) as exc:
+        await ctx.interaction.edit_initial_response(content=str(exc),**NO_MENTIONS)
+
+
+@register_action('ticket_admin_settings',opens_modal=True,preload_state=False,no_return=True)
+@lightbulb.di.with_di
+async def console_admin_settings(ctx,mongo:MongoClient=lightbulb.di.INJECTED,**_):
+    await open_dashboard(ctx,mongo)

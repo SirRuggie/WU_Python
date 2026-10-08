@@ -38,3 +38,22 @@ on September 28, 2026, after testing was confirmed complete. Prompt text uses th
 configured interval, and No starts a fresh interval. The worker checks about once
 a minute. Existing prompts cannot deny a ticket that is not yet due under a newly
 increased interval.
+
+## Automatic archival of resolved tickets
+
+The console **Admin Settings** button opens private, administrator-only Ticket
+Settings. **Automatic Archive Timing** sets the number of quiet days for approved,
+denied, or closed ticket pairs (default **1 day**; **0** disables cleanup).
+Open-ticket inactivity review remains separate at **7 days**.
+
+Cleanup runs once daily after ticket startup recovery is ready, and persists its
+last completion time across restarts. Human messages in either the recruit thread
+or staff thread protect both threads. Bot/webhook messages do not reset the clock.
+The decision itself also starts a fresh quiet period. History is fetched from
+Discord; inaccessible or inconclusive history is skipped. Activity is checked
+again around archival, and a detected concurrent conversation or reopened ticket
+restores the threads changed by that pass.
+
+Archival preserves history and the application decision, and does not add locks.
+A failed partial pair operation attempts to restore the thread already archived.
+Legacy channel tickets and isolated test tickets are excluded.
