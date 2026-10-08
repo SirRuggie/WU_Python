@@ -12,6 +12,7 @@ from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 @pytest.fixture(autouse=True)
 def mock_town_hall_lookup(monkeypatch):
     monkeypatch.setattr(command, 'load_town_halls', AsyncMock(return_value={}))
+    monkeypatch.setattr(command, 'load_discord_labels', AsyncMock(return_value={}))
 
 
 def test_api_failure_keeps_original_baseline_and_warns(tmp_path, monkeypatch):
@@ -80,7 +81,8 @@ def test_linked_accounts_and_compact_update_panel():
                  rows=[dict(tag='#ABC', name='Player', looted=12500)],
                  owners={'#ABC': '123456789012345678'}, warning=None)
     payload = str(command.render_board(board)[0].build())
-    assert '<@123456789012345678>' in payload
+    assert 'https://discord.com/users/123456789012345678' in payload
+    assert '<@123456789012345678>' not in payload
     assert '12,500' in payload
     assert 'loot_leaderboard_update:main' in payload
     assert 'Player samples' not in payload
@@ -153,6 +155,18 @@ def test_row_shows_th_emoji_tag_discord_clan_and_loot():
     payload = str(command.render_board(board)[0].build())
     assert str(command.emojis.TH18) in payload
     assert '`#RU00V8UP`' in payload
-    assert '<@123456789012345678>' in payload
+    assert 'https://discord.com/users/123456789012345678' in payload
+    assert '<@123456789012345678>' not in payload
     assert 'Warriors United' in payload and '1,665,325' in payload
     assert 'clashk.ing' not in payload
+
+
+def test_explicit_name_and_id_do_not_depend_on_mentions():
+    board = dict(session={'started': '2026-10-08T13:47:41+00:00'}, count=551,
+                 rows=[dict(tag='#ABC', name='Player', looted=1)],
+                 owners={'#ABC': '123456789012345678'}, warning=None,
+                 discord_labels={'123456789012345678': 'Luke'})
+    payload = str(command.render_board(board)[0].build())
+    assert '[Luke](https://discord.com/users/123456789012345678)' in payload
+    assert '`123456789012345678`' in payload
+    assert '<@' not in payload

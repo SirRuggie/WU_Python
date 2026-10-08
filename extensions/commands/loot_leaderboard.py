@@ -21,6 +21,7 @@ from utils.recruit_links import resolve_players
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board, load_town_halls
 from utils.emoji import emojis
+from utils import bot_data
 
 loader = lightbulb.Loader()
 _log = logging.getLogger(__name__)
@@ -39,13 +40,39 @@ def safe_name(value):
     return re.sub(r'([\\`*_~|\[\]()])', r'\\\1', value)
 
 
+async def load_discord_labels(owners, *, rest=None):
+    """Fetch names for explicit profile links; no dependence on viewer caches."""
+    if rest is None:
+        bot = bot_data.data.get('bot')
+        if bot is None:
+            return {}
+        rest = bot.rest
+    semaphore = asyncio.Semaphore(3)
+    async def fetch(owner):
+        async with semaphore:
+            try:
+                async with asyncio.timeout(10):
+                    try:
+                        user = await rest.fetch_member(WARRIORS_UNITED_GUILD_ID, int(owner))
+                    except (hikari.NotFoundError, hikari.ForbiddenError):
+                        user = await rest.fetch_user(int(owner))
+                    return owner, user.display_name
+            except (hikari.HTTPError, asyncio.TimeoutError):
+                return owner, None
+    return {owner: name for owner, name in await asyncio.gather(
+        *(fetch(owner) for owner in set(owners.values()))
+    ) if name}
+
+
 def render_board(board):
     session = board['session']
     lines = []
     for rank, row in enumerate(board['rows'], 1):
         medal = ('🥇', '🥈', '🥉')[rank - 1] if rank <= 3 else f'**{rank}.**'
         owner = (board.get('owners') or {}).get(row['tag'])
-        linked = f'<@{owner}>' if owner and str(owner).isdigit() else (
+        label = board.get('discord_labels', {}).get(owner)
+        linked = (f'[{safe_name(label)}](https://discord.com/users/{owner}) · `{owner}`'
+                  if label else f'[Discord ID {owner}](https://discord.com/users/{owner})') if owner and str(owner).isdigit() else (
             'Link conflict' if row['tag'] in board.get('link_conflicts', ()) else
             'Link unavailable' if board.get('owners') is None or board.get('link_unavailable') else
             'No linked Discord account'
@@ -86,6 +113,7 @@ async def load_board(*, force=False):
             links, town_halls = await asyncio.gather(resolve_players(tags), load_town_halls(tags))
             board['town_halls'] = town_halls
             board['owners'] = links.owners
+            board['discord_labels'] = await load_discord_labels(links.owners)
             board['link_conflicts'] = links.conflicts
             board['link_unavailable'] = links.unavailable
             _cached = board

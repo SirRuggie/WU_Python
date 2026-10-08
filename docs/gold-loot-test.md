@@ -85,3 +85,9 @@ player tag, linked Discord account and clan. The displayed players' current
 Town Hall levels are fetched from the official API during refresh, in parallel
 with Discord link resolution. An unavailable level shows `TH ?`; it never
 changes the stored loot totals.
+
+Discord identities are rendered as explicit profile links with fetched display
+names and numeric IDs, rather than mention markup. This avoids viewer-side
+`@unknown-user` rendering. The bot fetches the guild member first, falling back
+to the Discord user when unavailable in the guild. If lookup fails, the linked
+numeric ID remains visible. This does not force or modify Discord client caches.
