@@ -109,6 +109,8 @@ def render(data):
     footer = f"-# {data['entrants']} joined • {data['accounts']} accounts • Tie: first to reach the score."
     if data.get('refreshed'):
         footer += f"\n-# Last refreshed: <t:{stamp(data['refreshed'])}:f>"
+    if not final:
+        footer += '\n-# Auto-refresh: every 10 min'
     parts += [Separator(divider=True),Text(content=footer),ActionRow(components=[
         Button(style=hikari.ButtonStyle.SUCCESS,label='Join Gold Rush',emoji='💰',
                custom_id=f"goldrush_join:{event['id']}",is_disabled=bool(ended or final)),
@@ -282,7 +284,7 @@ async def loop():
             raise
         except Exception:
             _log.exception('Gold Rush automatic update failed; retrying next cycle')
-        await asyncio.sleep(300)
+        await asyncio.sleep(600)
 
 
 @loader.listener(hikari.StartedEvent)

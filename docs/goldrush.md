@@ -31,7 +31,7 @@ tie, the earlier last positive-loot battle wins (when that account first reached
 the final score). Exact timestamp ties remain unresolved for prize review;
 join time, Discord ID, and player tag provide a stable display order only.
 
-Panels auto-update every five minutes after a refresh; the Update button can
+Panels auto-update every ten minutes after a refresh; the Update button can
 refresh sooner. The stored panel IDs and signup records survive restart. The
 collector continues recording family loot independently of participation.
 
