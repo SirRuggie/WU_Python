@@ -84,7 +84,7 @@ def start_event(db, event_id, *, at=None):
 
 
 def join_event(db, event_id, user_id, player_tags, *, at=None):
-    """Caller verifies fresh CK/CP ownership before entering this transaction."""
+    """Caller obtains linked accounts from CK or CP before this transaction."""
     at = at or utcnow()
     tags = sorted(set(player_tags))
     with db:
@@ -100,9 +100,11 @@ def join_event(db, event_id, user_id, player_tags, *, at=None):
             'SELECT player_tag FROM goldrush_entries WHERE event_id=? AND user_id=? ORDER BY player_tag',
             (event_id, str(user_id)))]
         if existing:
-            if existing == tags:
+            if set(tags).issubset(existing):
                 return False
-            raise ValueError('You have already joined. Your selected accounts are locked for this event.')
+            if event['account_mode'] != 'per_account':
+                raise ValueError('You have already joined. Your selected accounts are locked for this event.')
+            tags = sorted(set(tags) - set(existing))
         for tag in tags:
             if not db.execute('SELECT 1 FROM players WHERE tag=?', (tag,)).fetchone():
                 raise ValueError('Only accounts in the tracked Warriors United family roster can join.')

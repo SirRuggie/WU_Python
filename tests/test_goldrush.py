@@ -153,3 +153,11 @@ def test_conversion_does_not_change_final_results(db):
 
 def test_initial_event_ranks_accounts_separately(db):
     assert goldrush.ensure_current(db,123)['account_mode']=='per_account'
+
+
+def test_per_account_rejoin_adds_missing_accounts_without_removing_existing(db):
+    e=event(db,mode='per_account')
+    goldrush.join_event(db,e['id'],1,['#ONE'],at=START)
+    assert goldrush.join_event(db,e['id'],1,['#TWO'],at=START)
+    assert not goldrush.join_event(db,e['id'],1,['#ONE','#TWO'],at=START)
+    assert [r[0] for r in db.execute('SELECT player_tag FROM goldrush_entries ORDER BY player_tag')]==['#ONE','#TWO']

@@ -52,7 +52,7 @@ def test_join_only_accepts_clickers_resolved_tracked_accounts(db,monkeypatch):
     monkeypatch.setattr(command,'sync_messages',AsyncMock())
     ctx=SimpleNamespace(user=SimpleNamespace(id=123),interaction=SimpleNamespace(guild_id=WARRIORS_UNITED_GUILD_ID),respond=AsyncMock())
     asyncio.run(command.join(ctx,event['id']))
-    resolver.assert_awaited_once_with(123)
+    resolver.assert_awaited_once_with(123,verify_owners=False)
     assert [r[0] for r in db.execute('SELECT player_tag FROM goldrush_entries ORDER BY player_tag')]==['#ONE','#TWO']
     assert ctx.respond.call_args.kwargs['ephemeral'] is True
 
@@ -107,5 +107,20 @@ def test_join_keeps_valid_accounts_when_another_link_is_disputed(db,monkeypatch,
     assert [r[0] for r in db.execute('SELECT player_tag FROM goldrush_entries ORDER BY player_tag')]==['#ONE','#TWO']
     message=ctx.respond.call_args.args[0]
     assert 'You joined' in message
-    assert ('Not entered:' in message)==(conflict=='#THREE')
+    assert 'Not entered:' not in message
     assert ctx.respond.call_args.kwargs['ephemeral'] is True
+
+
+def test_join_accepts_one_available_link_provider(db,monkeypatch):
+    event=store.create_event(db,guild_id=WARRIORS_UNITED_GUILD_ID,account_mode='per_account',allow_late_join=True,at=START)
+    store.start_event(db,event['id'],at=START)
+    monkeypatch.setattr(store,'utcnow',lambda:START)
+    async def database(fn,*args,**kwargs): return fn(db,*args,**kwargs)
+    monkeypatch.setattr(command,'database',database)
+    monkeypatch.setattr(command.recruit_links,'resolve',AsyncMock(return_value=recruit_links.LinksResult(
+        sources={'#ONE':('ClashPerk',)},unavailable=('ClashKing',))))
+    monkeypatch.setattr(command,'sync_messages',AsyncMock())
+    ctx=SimpleNamespace(user=SimpleNamespace(id=123),interaction=SimpleNamespace(guild_id=WARRIORS_UNITED_GUILD_ID),respond=AsyncMock())
+    asyncio.run(command.join(ctx,event['id']))
+    assert db.execute('SELECT player_tag FROM goldrush_entries').fetchone()[0]=='#ONE'
+    assert 'You joined' in ctx.respond.call_args.args[0]

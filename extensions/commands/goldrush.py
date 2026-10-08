@@ -170,19 +170,17 @@ async def join(ctx,action_id,**kwargs):
         event=await database(store.get_event,action_id)
         if event['guild_id'] != str(ctx.interaction.guild_id):
             raise ValueError('This event belongs to another server.')
-        links=await recruit_links.resolve(int(ctx.user.id))
-        if links.unavailable:
+        links=await recruit_links.resolve(int(ctx.user.id),verify_owners=False)
+        if len(links.unavailable)==2:
             raise ValueError('Account lookup is temporarily unavailable. Please try Join again shortly.')
         tags=await database(lambda db: [row[0] for row in db.execute('SELECT tag FROM players') if row[0] in links.sources])
-        skipped=await database(lambda db: [row[0] for row in db.execute('SELECT tag FROM players') if row[0] in links.conflicts])
-        notice=('\nNot entered: '+', '.join(f'`{tag}`' for tag in skipped)+'. These accounts are linked to different Discord users; ask staff to check them.') if skipped else ''
-        if not tags and skipped:
-            raise ValueError('No accounts could be entered.'+notice)
         if not tags:
             raise ValueError('No eligible linked account found. Link your Clash account and ask staff to check the family roster.')
         added=await database(store.join_event,action_id,str(ctx.user.id),tags)
+        count=await database(lambda db: db.execute('SELECT count(*) FROM goldrush_entries WHERE event_id=? AND user_id=?',(action_id,str(ctx.user.id))).fetchone()[0])
+        notice='\nSome links could not load. Tap Join again later to add them.' if links.unavailable else ''
         await ctx.respond(f"{'✅ You joined Gold Rush!' if added else '✅ You are already entered.'}\n"
-                          f"**{len(tags)} accounts entered.** Each ranks separately.\n"
+                          f"**{count} accounts entered.** Each ranks separately.\n"
                           'Gold counts from the event start.'+notice,ephemeral=True,
                           user_mentions=False,role_mentions=False,mentions_everyone=False)
         await sync_messages(action_id)

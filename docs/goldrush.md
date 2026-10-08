@@ -16,12 +16,13 @@ The initial event uses the existing tracker start and lasts 24 hours. Its prize
 is one Gold Pass. No event prize is automatically purchased, awarded, or sent.
 
 **Join Gold Rush** reads the clicker's account links through both ClashKing and
-ClashPerk, checks for conflicting ownership, and enters all matching accounts
-in the captured Warriors United family roster. Unavailable link services block signup with a private explanation. Disputed
-accounts are excluded with a private notice; valid accounts can still join. Untracked/outside-family accounts are
-excluded. Each player tag can belong to only one entrant per event. Entered
-accounts are locked; repeated joins are idempotent. New linked accounts do not
-automatically alter an existing entry.
+ClashPerk and enters the union of their linked accounts in the captured
+Warriors United family roster. Either provider is sufficient, including when
+the other provider reports another owner or is unavailable. Recruitment identity
+checks remain strict; this relaxed policy applies only to Gold Rush signup.
+Untracked/outside-family accounts are excluded. Each player tag can belong to
+only one entrant per event. Repeating Join adds newly available linked accounts
+without removing existing entries. Already-entered accounts are not reassigned.
 
 Late signup is allowed until the end. Scores count battle timestamps from the
 event start, not signup time. Farming and ranked battle gold count (including Legend within ranked); screenshots

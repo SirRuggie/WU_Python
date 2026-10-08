@@ -202,3 +202,20 @@ def test_login_cache_and_key_rotation(monkeypatch):
         assert await clashperk_links._login(session)=='two'
     asyncio.run(run())
     assert len(session.calls)==2
+
+
+def test_goldrush_union_accepts_either_provider_without_reverse_owner_checks(monkeypatch):
+    from unittest.mock import AsyncMock
+    ck=AsyncMock(return_value=[{'player_tag':'#PYY','user_id':'123'}])
+    cp=AsyncMock(return_value=[{'tag':'#QCC','userId':'123'}])
+    monkeypatch.setattr(recruit_links.clash_links,'_lookup_shared_links',ck)
+    monkeypatch.setattr(recruit_links.clashperk_links,'lookup',cp)
+    result=asyncio.run(recruit_links.resolve(123,verify_owners=False))
+    assert set(result.sources)=={'#PYY','#QCC'}
+    assert not result.conflicts
+    ck.assert_awaited_once_with(discord_ids=['123'])
+    cp.assert_awaited_once_with(discord_ids=['123'])
+    ck.return_value=None
+    result=asyncio.run(recruit_links.resolve(123,verify_owners=False))
+    assert set(result.sources)=={'#QCC'}
+    assert result.unavailable==('ClashKing',)

@@ -21,7 +21,8 @@ class LinksResult:
     disputed_sources: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-async def resolve(discord_id: int) -> LinksResult:
+async def resolve(discord_id: int, *, verify_owners: bool = True) -> LinksResult:
+    """Union forward links; optional reverse checks for strict identity workflows."""
     wanted = str(int(discord_id))
     providers = {"ClashKing": clash_links._lookup_shared_links, "ClashPerk": clashperk_links.lookup}
     results = await asyncio.gather(*(call(discord_ids=[wanted]) for call in providers.values()))
@@ -51,7 +52,7 @@ async def resolve(discord_id: int) -> LinksResult:
                     verified[tag] = row.get("verified") is True
     # Check the union against both providers, including tags returned only by
     # the other service. A foreign owner must never silently become this user.
-    if sources:
+    if sources and verify_owners:
         reverse = await asyncio.gather(*(call(player_tags=list(sources)) for call in providers.values()))
         for provider, rows in zip(providers, reverse):
             if rows is None:
