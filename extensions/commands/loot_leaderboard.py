@@ -50,13 +50,18 @@ def render_board(board):
         lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {linked} • {row['tag']}")
     components = [
         Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United • Top 10**'),
-        Text(content=f"Since <t:{stamp(session['started'])}:f> • **{board['count']}** tracked players"),
         Separator(divider=True),
         Text(content='\n\n'.join(lines) or 'No player samples are available yet.'),
         Separator(divider=True),
     ]
     if board['warning']:
         components.append(Text(content=f"⚠️ {board['warning']}"))
+    refreshed = board.get('newest')
+    components.append(Text(content=(
+        f"-# Tracking started: <t:{stamp(session['started'])}:f>\n"
+        + (f"-# Last refreshed: <t:{stamp(refreshed)}:f> • {board['count']} tracked players"
+           if refreshed else f"-# Last refreshed: unavailable • {board['count']} tracked players")
+    )))
     components.append(ActionRow(components=[Button(
         style=hikari.ButtonStyle.SECONDARY,
         custom_id='loot_leaderboard_update:main', label='Update', emoji='🔄',

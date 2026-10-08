@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sqlite3
 import sys
+import tempfile
 
 import aiohttp
 from dotenv import load_dotenv
@@ -23,6 +24,7 @@ def connect(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, timeout=30)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA synchronous=FULL")
     db.executescript('''
         CREATE TABLE IF NOT EXISTS session (clan TEXT PRIMARY KEY, name TEXT, started TEXT);
         CREATE TABLE IF NOT EXISTS players (
@@ -31,6 +33,41 @@ def connect(path):
         );
     ''')
     return db
+
+
+def backup_database(db):
+    """Keep the original baseline and an atomic latest snapshot outside checkout."""
+    source = Path(db.execute('PRAGMA database_list').fetchone()[2])
+    directory = (Path.home() / '.local/state/wu-bot/gold-loot-backups'
+                 if source.resolve() == DEFAULT_DB.resolve()
+                 else source.parent / (source.name + '.backups'))
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Never back up an empty session or replace the first recovery baseline.
+    if not db.execute('SELECT 1 FROM session').fetchone():
+        return
+    fd, temporary = tempfile.mkstemp(prefix='.snapshot-', dir=directory)
+    os.close(fd)
+    try:
+        with sqlite3.connect(temporary) as destination:
+            db.backup(destination)
+            if destination.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                raise sqlite3.DatabaseError('Gold-loot backup integrity check failed')
+        with open(temporary, 'rb') as snapshot:
+            os.fsync(snapshot.fileno())
+        # Atomic no-overwrite creation, even if two processes refresh together.
+        try:
+            os.link(temporary, directory / 'baseline.sqlite3')
+        except FileExistsError:
+            pass
+        os.replace(temporary, directory / 'latest.sqlite3')
+        directory_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def gold(player):
@@ -115,6 +152,8 @@ async def collect(db, command, *, display=True):
                     print(f'{tag}: {type(result).__name__}: {result}', file=sys.stderr)
             raise ValueError('Could not fetch every starting player; no baseline saved. Retry start.')
         with db:
+            # Serialize writers before reading previous counters.
+            db.execute("BEGIN IMMEDIATE")
             if starting:
                 db.execute('INSERT INTO session VALUES (?, ?, ?)', (CLAN, clan['name'], began))
             for tag, result in zip(tags, results):
@@ -133,6 +172,7 @@ async def collect(db, command, *, display=True):
                     except ValueError as error:
                         print(f'Skipped {tag}: {error}', file=sys.stderr)
                         failures += 1
+        backup_database(db)
         if display:
             leaderboard(db)
         if failures and display:

@@ -51,3 +51,25 @@ when deploying to a different host, transfer a SQLite backup of that file to
 preserve the original start time. Do not run `start` to replace this test.
 The console and Discord command use the same shared tracker in
 `utils/gold_loot.py`. No separate watcher is needed for command-driven refreshes.
+
+
+## Restart safety and recovery
+
+The baseline, roster, and samples persist in SQLite, not in the Discord cache.
+A bot restart clears only the 60-second display cache. The next refresh computes
+lifetime Gold Grab minus the same original baseline, catching up over downtime.
+Writes use a transaction with full SQLite synchronization; incomplete writes
+roll back. Refreshes never reset the baseline.
+
+After each successful collection, the production default database is backed up
+outside the checkout to `~/.local/state/wu-bot/gold-loot-backups/` (under the
+botrunner account). `baseline.sqlite3` is kept unchanged; `latest.sqlite3` is
+replaced atomically with an integrity-checked SQLite snapshot. Custom `--db`
+paths use an adjacent `<database filename>.backups/` directory.
+
+For recovery, stop the bot and any console watcher, preserve the damaged file,
+and copy `latest.sqlite3` to `.local/gold-loot.sqlite3`, owned by botrunner with
+mode 600. Verify `PRAGMA integrity_check` before restarting. If necessary use
+`baseline.sqlite3`; refreshing catches up totals from the original baseline.
+Never run `start` as recovery. These backups protect against loss of the working
+file or checkout, but are on the same host: they do not cover loss of its disk.

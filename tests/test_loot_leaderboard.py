@@ -107,3 +107,18 @@ def test_force_refresh_bypasses_recent_cache(monkeypatch):
         assert result['owners'] == {'#ABC': '123'}
     asyncio.run(run())
     links.assert_awaited_once_with(['#ABC'])
+
+
+def test_tracking_times_are_small_footer_below_rankings():
+    board = dict(session={'started': '2026-10-08T13:47:41+00:00'}, count=44,
+                 newest='2026-10-08T14:00:00+00:00',
+                 rows=[dict(tag='#ABC', name='Player', looted=12500)],
+                 owners={}, warning=None)
+    panel = command.render_board(board)[0]
+    texts = [c.content for c in panel.components if hasattr(c, 'content')]
+    footer = next(t for t in texts if 'Tracking started:' in t)
+    assert footer.startswith('-# Tracking started:')
+    assert '\n-# Last refreshed:' in footer
+    assert '44 tracked players' in footer
+    assert texts.index(footer) > next(i for i, t in enumerate(texts) if '12,500' in t)
+    assert 'tracked players' not in texts[0]
