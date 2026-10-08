@@ -127,3 +127,25 @@ def test_bad_battle_response_does_not_partially_write(tmp_path):
         save_battles(db, '#ABC', items, 'later')
     assert db.execute('SELECT count(*) FROM loot_events').fetchone()[0] == 0
     db.close()
+
+
+def test_family_expansion_preserves_scores_and_deduplicates(tmp_path):
+    from utils.gold_loot import expand_rosters, RANKING_SQL
+    db = connect(tmp_path / 'loot.db')
+    start = '2026-10-08T13:47:41+00:00'
+    with db:
+        db.execute('INSERT INTO session VALUES (?, ?, ?)', ('#MAIN', 'Main', start))
+        db.execute('INSERT INTO players VALUES (?, ?, ?, ?, ?, ?)', ('#ABC', 'Player', 2000000000, 2000000000, start, start))
+        db.execute('INSERT INTO loot_events VALUES (?, ?, ?, ?)', ('#ABC', start, 'farming', 652325))
+    clans = [dict(tag='#MAIN', name='Main', memberList=[dict(tag='#ABC', name='Player')]),
+             dict(tag='#FAMILY', name='Family', memberList=[dict(tag='#NEW', name='New'), dict(tag='#ABC', name='Player')])]
+    expand_rosters(db, clans)
+    expand_rosters(db, clans)
+    assert db.execute('SELECT count(*) FROM players').fetchone()[0] == 2
+    assert db.execute('SELECT count(*) FROM tracked_clans').fetchone()[0] == 2
+    assert db.execute('SELECT baseline_at FROM players WHERE tag=?', ('#NEW',)).fetchone()[0] == start
+    leader = db.execute(RANKING_SQL).fetchone()
+    assert leader['tag'] == '#ABC' and leader['looted'] == 652325
+    assert leader['baseline'] == 2000000000
+    assert leader['clan_name'] == 'Main'
+    db.close()

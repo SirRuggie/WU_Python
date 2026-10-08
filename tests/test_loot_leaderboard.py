@@ -121,6 +121,6 @@ def test_tracking_times_are_small_footer_below_rankings():
     footer = next(t for t in texts if 'Tracking started:' in t)
     assert footer.startswith('-# Tracking started:')
     assert '\n-# Last refreshed:' in footer
-    assert '44 tracked players' in footer
+    assert '44 players' in footer
     assert texts.index(footer) > next(i for i, t in enumerate(texts) if '12,500' in t)
     assert 'tracked players' not in texts[0]

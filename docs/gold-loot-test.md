@@ -47,3 +47,26 @@ latest.sqlite3 into its place with runtime-user ownership and mode 600. Verify
 PRAGMA integrity_check before restarting. The original baseline backup preserves
 the roster and start but may lack subsequent battles, whose recovery depends on
 upstream retention. These backups share the disk and do not cover disk loss.
+
+## Family-wide expansion
+
+`/loot-leaderboard` ranks individual Clash accounts across the captured linked
+clan rosters; it does not merge multiple accounts belonging to one Discord user.
+Each row shows the captured clan and linked Discord account. The compact footer
+shows the player and clan counts.
+
+Run `tools/gold_loot.py expand-family` with the runtime interpreter to capture
+all clans registered in the bot's clan collection, including CWL and untyped
+clans. Every clan must load successfully before any roster changes are saved.
+Existing players, start times and scores are preserved. Newly captured players
+use the original session start time so available ClashKing history can be
+backfilled on the next refresh. Duplicate player tags are inserted only once.
+
+This remains a roster-snapshot test: future joiners and newly linked clans need
+another `expand-family` run. Previously captured players and clans stay tracked,
+including departures. Clan labels reflect the last captured roster. These totals
+do not establish where a player was a member at the time of each attack.
+
+A history refresh is limited to two minutes, retaining completed samples and
+warning about unfinished players. The next refresh prioritizes older samples.
+All saved battle records and backups remain durable across restarts.

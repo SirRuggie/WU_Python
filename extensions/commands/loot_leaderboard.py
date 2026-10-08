@@ -47,9 +47,10 @@ def render_board(board):
         linked = f'<@{owner}>' if owner and str(owner).isdigit() else (
             'Link unavailable' if board.get('owners') is None else 'No linked Discord account'
         )
-        lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {linked} • {row['tag']}")
+        clan = safe_name(row.get('clan_name') or 'Warriors United')
+        lines.append(f"{medal} **{safe_name(row['name'])}** — **{row['looted']:,}** gold\n-# {linked} • {clan}")
     components = [
-        Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United • Top 10** • [ClashKing](https://clashk.ing)'),
+        Text(content='## 🏆 Gold Loot Leaderboard\n**Warriors United Family • Top 10** • [ClashKing](https://clashk.ing)'),
         Separator(divider=True),
         Text(content='\n\n'.join(lines) or 'No player samples are available yet.'),
         Separator(divider=True),
@@ -59,8 +60,8 @@ def render_board(board):
     refreshed = board.get('newest')
     components.append(Text(content=(
         f"-# Tracking started: <t:{stamp(session['started'])}:f>\n"
-        + (f"-# Last refreshed: <t:{stamp(refreshed)}:f> • {board['count']} tracked players"
-           if refreshed else f"-# Last refreshed: unavailable • {board['count']} tracked players")
+        + (f"-# Last refreshed: <t:{stamp(refreshed)}:f> • {board['count']} players • {board.get('clan_count', 1)} clans"
+           if refreshed else f"-# Last refreshed: unavailable • {board['count']} players • {board.get('clan_count', 1)} clans")
     )))
     components.append(ActionRow(components=[Button(
         style=hikari.ButtonStyle.SECONDARY,
@@ -122,7 +123,7 @@ async def update_leaderboard(ctx, action_id, **kwargs):
 class LootLeaderboard(
     lightbulb.SlashCommand,
     name='loot-leaderboard',
-    description='Show Warriors United’s top 10 gold looters since the test began',
+    description='Show the top 10 gold looters across Warriors United’s linked clans',
     contexts=[hikari.ApplicationContextType.GUILD],
     integration_types=[hikari.ApplicationIntegrationType.GUILD_INSTALL],
 ):

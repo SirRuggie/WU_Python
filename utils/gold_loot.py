@@ -26,6 +26,10 @@ def connect(path):
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA synchronous=FULL")
     db.executescript('''
+        CREATE TABLE IF NOT EXISTS tracked_clans (tag TEXT PRIMARY KEY, name TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS player_clans (
+            tag TEXT PRIMARY KEY, clan_tag TEXT NOT NULL, clan_name TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS loot_events (
             tag TEXT NOT NULL, battle_time TEXT NOT NULL, mode TEXT NOT NULL,
             gold INTEGER NOT NULL CHECK (gold >= 0),
@@ -95,9 +99,76 @@ def save_sample(db, player, timestamp):
                (player['name'], value, timestamp, player['tag']))
 
 
-RANKING_SQL = """SELECT p.*, COALESCE(e.looted, 0) AS looted FROM players p
+RANKING_SQL = """SELECT p.*, c.clan_name, COALESCE(e.looted, 0) AS looted FROM players p
     LEFT JOIN (SELECT tag, SUM(gold) AS looted FROM loot_events GROUP BY tag) e
-    ON e.tag=p.tag ORDER BY looted DESC, p.tag ASC LIMIT 10"""
+    ON e.tag=p.tag LEFT JOIN player_clans c ON c.tag=p.tag ORDER BY looted DESC, p.tag ASC LIMIT 10"""
+
+
+def expand_rosters(db, clans):
+    """Add a family roster snapshot without resetting existing players or loot."""
+    session = db.execute('SELECT * FROM session').fetchone()
+    if session is None:
+        raise ValueError('Start the main-clan test before expanding it.')
+    # Validate everything before changing the existing roster.
+    members = {}
+    for clan in clans:
+        if not clan.get('tag') or not isinstance(clan.get('memberList'), list):
+            raise ValueError('Invalid clan roster')
+        for member in clan['memberList']:
+            if not member.get('tag') or not member.get('name'):
+                raise ValueError('Invalid clan member')
+            members.setdefault(member['tag'], (member['name'], clan['tag'], clan['name']))
+    with db:
+        db.execute('BEGIN IMMEDIATE')
+        db.execute('INSERT OR IGNORE INTO tracked_clans VALUES (?, ?)',
+                   (session['clan'], session['name']))
+        db.execute('INSERT OR IGNORE INTO player_clans SELECT tag, ?, ? FROM players',
+                   (session['clan'], session['name']))
+        for clan in clans:
+            db.execute('INSERT INTO tracked_clans VALUES (?, ?) ON CONFLICT(tag) DO UPDATE SET name=excluded.name',
+                       (clan['tag'], clan['name']))
+        for tag, (name, clan_tag, clan_name) in members.items():
+            db.execute('INSERT OR IGNORE INTO players VALUES (?, ?, 0, 0, ?, ?)',
+                       (tag, name, session['started'], session['started']))
+            db.execute('UPDATE players SET name=? WHERE tag=?', (name, tag))
+            db.execute("""INSERT INTO player_clans VALUES (?, ?, ?) ON CONFLICT(tag)
+                DO UPDATE SET clan_tag=excluded.clan_tag, clan_name=excluded.clan_name""",
+                       (tag, clan_tag, clan_name))
+    backup_database(db)
+    return len(members)
+
+
+async def expand_family(db):
+    """Read the same registered clan collection as the bot's family tracker."""
+    from utils.mongo import MongoClient
+    load_dotenv(ROOT / '.env')
+    if not os.getenv('MONGODB_URI') or not os.getenv('COC_API_TOKEN'):
+        raise ValueError('MONGODB_URI and COC_API_TOKEN must be configured')
+    mongo = MongoClient(uri=os.environ['MONGODB_URI'], serverSelectionTimeoutMS=10000)
+    try:
+        docs = await mongo.clans.find({'tag': {'$type': 'string'}}, {'tag': 1}).to_list(length=None)
+    finally:
+        await mongo.close()
+    tags = sorted({d['tag'].strip().upper() for d in docs if d['tag'].strip()})
+    if not tags:
+        raise ValueError('No registered family clans were found; existing roster unchanged')
+    semaphore = asyncio.Semaphore(5)
+    async with aiohttp.ClientSession(
+        headers={'Authorization': 'Bearer ' + os.environ['COC_API_TOKEN'].strip()},
+        timeout=aiohttp.ClientTimeout(total=20),
+    ) as http:
+        async def fetch(tag):
+            async with semaphore:
+                async with http.get('https://api.clashofclans.com/v1/clans/' + tag.replace('#', '%23')) as response:
+                    if response.status != 200:
+                        raise ValueError(f'{tag}: clan lookup HTTP {response.status}; roster unchanged')
+                    return await response.json()
+        clans = await asyncio.gather(*(fetch(tag) for tag in tags), return_exceptions=True)
+    failures = [result for result in clans if isinstance(result, Exception)]
+    if failures:
+        raise ValueError(f'{len(failures)} clan rosters could not load; existing roster unchanged')
+    count = expand_rosters(db, clans)
+    print(f'Family expansion saved: {len(clans)} clans, {count} unique current members. Existing totals preserved.')
 
 
 def save_battles(db, tag, items, timestamp):
@@ -124,7 +195,7 @@ def save_battles(db, tag, items, timestamp):
 
 async def collect_battles(db, *, display=True):
     """ClashKing returns observed farming, ranked and legend attacks, not defenses."""
-    rows = db.execute('SELECT tag,baseline_at FROM players').fetchall()
+    rows = db.execute('SELECT tag,baseline_at FROM players ORDER BY updated ASC, tag ASC').fetchall()
     if not db.execute('SELECT 1 FROM session').fetchone():
         raise ValueError('No baseline yet. Run start first.')
     semaphore = asyncio.Semaphore(5)
@@ -137,7 +208,14 @@ async def collect_battles(db, *, display=True):
                         raise ValueError(f'Battle history HTTP {response.status}')
                     data = await response.json()
                     return data['items'], now()
-        results = await asyncio.gather(*(sample(row) for row in rows), return_exceptions=True)
+        # Bound family-wide refresh time; older samples go first on the next run.
+        tasks = [asyncio.create_task(sample(row)) for row in rows]
+        done, pending = await asyncio.wait(tasks, timeout=120)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        results = [task.exception() or task.result() if task in done else TimeoutError()
+                   for task in tasks]
     failures = 0
     with db:
         db.execute('BEGIN IMMEDIATE')
@@ -268,7 +346,8 @@ def refresh_board(path=DEFAULT_DB):
         )]
         stats = db.execute('SELECT count(*), min(updated), max(updated) FROM players').fetchone()
         return dict(session=session, rows=rows, count=stats[0], oldest=stats[1],
-                    newest=stats[2], warning=warning)
+                    newest=stats[2], warning=warning,
+                    clan_count=db.execute('SELECT count(*) FROM tracked_clans').fetchone()[0] or 1)
     finally:
         db.close()
 
@@ -276,6 +355,9 @@ def refresh_board(path=DEFAULT_DB):
 async def run(args):
     db = connect(args.db)
     try:
+        if args.command == 'expand-family':
+            await expand_family(db)
+            return 0
         if args.command == 'show':
             leaderboard(db)
             return 0
@@ -295,7 +377,7 @@ async def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('start', 'show', 'refresh', 'watch'))
+    parser.add_argument('command', choices=('start', 'show', 'refresh', 'watch', 'expand-family'))
     parser.add_argument('--db', type=Path, default=DEFAULT_DB)
     parser.add_argument('--interval', type=int, default=300, help='Watch refresh seconds (minimum 60)')
     args = parser.parse_args()
