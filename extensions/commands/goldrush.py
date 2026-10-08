@@ -66,7 +66,7 @@ async def panel_data(event_id):
     from extensions.commands.loot_leaderboard import load_discord_labels
     data = await database(store.snapshot,event_id)
     owners = {row['user_id']:row['user_id'] for row in data['rows']}
-    # Show one representative account per entrant; score includes every entered account.
+    # Each ranked account has its own town hall and score.
     tags = [row['accounts'][0]['tag'] for row in data['rows'] if row['accounts']]
     labels, levels = await asyncio.gather(load_discord_labels(owners),load_town_halls(tags))
     data.update(labels=labels, levels=levels, warning=_last_warning)
@@ -84,11 +84,11 @@ def render(data):
     parts = [
         Text(content=f"# 💰 GOLD RUSH\n**{event['duration_hours']} hours • {event['prize']} • {status}**"),
         Separator(divider=True),
-        Text(content='**1 · JOIN** — Enter your linked family accounts.\n'
-                     '**2 · RAID** — Gold from Farming + Ranked battles counts.\n'
-                     '**3 · WIN** — Most total gold wins the Gold Pass.\n\n'
-                     '**Automatic tracking. No screenshots.**\n'
-                     'All your eligible accounts count together. Late joins count from the start.'),
+        Text(content='**1 · JOIN** — Enter all your linked family accounts.\n'
+                     '**2 · RAID** — Farming + Ranked battles.\n'
+                     '**3 · WIN** — The account with the most gold wins.\n\n'
+                     '**Each account ranks separately.**\n'
+                     'Late joins count from the start.'),
         Text(content=f"**Starts:** <t:{stamp(event['starts_at'])}:f>\n**Ends:** <t:{stamp(event['ends_at'])}:f>"),
     ]
     lines = []
@@ -100,13 +100,13 @@ def render(data):
         level = data.get('levels',{}).get(account['tag'])
         th = str(getattr(emojis,f'TH{level}',f'TH{level}')) if level else '🏰'
         extra = f" +{len(row['accounts'])-1} accounts" if len(row['accounts'])>1 else ''
-        lines.append(f"{rank} {owner} — **{row['gold']:,} gold**\n"
-                     f"-# {th} {safe_name(account['name'])} `{account['tag']}` • {safe_name(account['clan_name'] or 'WU Family')}{extra}")
+        lines.append(f"{rank} {th} **{safe_name(account['name'])}** — **{row['gold']:,} gold**\n"
+                     f"-# `{account['tag']}` • {owner} • {safe_name(account['clan_name'] or 'WU Family')}{extra}")
     parts += [Separator(divider=True),Text(content='## 🏆 TOP 10 • ENTRANTS ONLY'),
               Text(content='\n\n'.join(lines) or '**Be the first to join!** Your gold will appear here.')]
     if data.get('warning'):
         parts.append(Text(content='⚠️ Some battle data could not refresh. Scores may be incomplete.'))
-    footer = f"-# {data['entrants']} entrants • {data['accounts']} accounts • Tie: earliest battle reaching the total."
+    footer = f"-# {data['entrants']} joined • {data['accounts']} accounts • Tie: first to reach the score."
     if data.get('refreshed'):
         footer += f"\n-# Last refreshed: <t:{stamp(data['refreshed'])}:f>"
     parts += [Separator(divider=True),Text(content=footer),ActionRow(components=[
@@ -179,11 +179,9 @@ async def join(ctx,action_id,**kwargs):
         if not tags:
             raise ValueError('No eligible linked account found. Link your Clash account and ask staff to check the family roster.')
         added=await database(store.join_event,action_id,str(ctx.user.id),tags)
-        own=next((row for row in await database(store.standings,action_id) if row['user_id']==str(ctx.user.id)),None)
-        gold=own['gold'] if own else 0
         await ctx.respond(f"{'✅ You joined Gold Rush!' if added else '✅ You are already entered.'}\n"
-                          f"**{len(tags)} accounts • {gold:,} gold** from the event start.\n"
-                          'Your accounts are locked for this event.',ephemeral=True,
+                          f"**{len(tags)} accounts entered.** Each ranks separately.\n"
+                          'Gold counts from the event start.',ephemeral=True,
                           user_mentions=False,role_mentions=False,mentions_everyone=False)
         await sync_messages(action_id)
     except ValueError as error:

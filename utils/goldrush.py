@@ -39,8 +39,8 @@ def event_tables(db):
 
 def create_event(db, *, guild_id, account_mode, allow_late_join, duration_hours=24,
                  prize='1 Gold Pass', at=None):
-    if account_mode not in ('single', 'combined'):
-        raise ValueError('Choose single or combined account scoring.')
+    if account_mode not in ('single', 'combined', 'per_account'):
+        raise ValueError('Choose single, combined, or per-account scoring.')
     if not 1 <= duration_hours <= 168:
         raise ValueError('Event duration must be between 1 and 168 hours.')
     at = at or utcnow()
@@ -124,7 +124,8 @@ def standings(db, event_id):
         WHERE e.event_id=? ORDER BY e.user_id, e.player_tag''', (event_id,)).fetchall()
     rows = {}
     for entry in entries:
-        row = rows.setdefault(entry['user_id'], dict(user_id=entry['user_id'], gold=0,
+        key = entry['player_tag'] if event['account_mode'] == 'per_account' else entry['user_id']
+        row = rows.setdefault(key, dict(user_id=entry['user_id'], gold=0,
             reached_at=None, joined_at=entry['joined_at'], accounts=[]))
         row['accounts'].append(dict(tag=entry['player_tag'], name=entry['name'], clan_name=entry['clan_name']))
         if event['starts_at']:
@@ -135,7 +136,7 @@ def standings(db, event_id):
             row['gold'] += score[0]
             if score[1] and (row['reached_at'] is None or score[1] > row['reached_at']):
                 row['reached_at'] = score[1]
-    return sorted(rows.values(), key=lambda row: (-row['gold'], row['reached_at'] or '9999', row['joined_at'], row['user_id']))
+    return sorted(rows.values(), key=lambda row: (-row['gold'], row['reached_at'] or '9999', row['joined_at'], row['user_id'], row['accounts'][0]['tag']))
 
 
 def finalize_event(db, event_id, *, at=None):
@@ -161,6 +162,18 @@ def open_store(path=DEFAULT_DB):
     return db
 
 
+def use_per_account_scoring(db, guild_id):
+    """Switch the current unfinalized event without changing entries or history."""
+    with db:
+        db.execute('BEGIN IMMEDIATE')
+        event = current_event(db, guild_id)
+        if not event or event['final_results'] is not None or event['account_mode'] == 'per_account':
+            return event
+        db.execute("UPDATE goldrush_events SET account_mode='per_account' WHERE id=?", (event['id'],))
+    backup_database(db)
+    return get_event(db, event['id'])
+
+
 def ensure_current(db, guild_id):
     event = current_event(db, guild_id)
     if event:
@@ -168,7 +181,7 @@ def ensure_current(db, guild_id):
     session = db.execute('SELECT started FROM session').fetchone()
     if session is None:
         raise ValueError('Start the gold tracker first.')
-    event = create_event(db, guild_id=guild_id, account_mode='combined', allow_late_join=True)
+    event = create_event(db, guild_id=guild_id, account_mode='per_account', allow_late_join=True)
     return start_event(db, event['id'], at=datetime.fromisoformat(session['started']))
 
 

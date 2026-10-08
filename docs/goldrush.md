@@ -1,7 +1,8 @@
 # Gold Rush giveaway
 
-Gold Rush is opt-in. Its leaderboard ranks Discord entrants by the combined
-recorded gold from all their eligible linked Clash accounts. Family members who
+Gold Rush is opt-in. Its leaderboard ranks each entered Clash account separately by recorded gold.
+One signup enters all eligible linked accounts; the same Discord owner can
+appear multiple times. Account totals are never added together. Family members who
 have not joined are not ranked. The existing family battle ledger is preserved.
 
 ## Public panel
@@ -25,9 +26,9 @@ automatically alter an existing entry.
 Late signup is allowed until the end. Scores count battle timestamps from the
 event start, not signup time. Farming and ranked battle gold count (including Legend within ranked); screenshots
 are never requested. Only `[start, end)` battle timestamps are included. For a
-tie, the earlier last positive-loot battle wins (when that entrant first reached
+tie, the earlier last positive-loot battle wins (when that account first reached
 the final score). Exact timestamp ties remain unresolved for prize review;
-join time and Discord ID provide a stable display order only.
+join time, Discord ID, and player tag provide a stable display order only.
 
 Panels auto-update every five minutes after a refresh; the Update button can
 refresh sooner. The stored panel IDs and signup records survive restart. The

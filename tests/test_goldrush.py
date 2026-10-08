@@ -113,3 +113,43 @@ def test_reopen_preserves_event_signups_and_scores(db):
     assert goldrush.current_event(other,123)['id']==e['id']
     assert goldrush.standings(other,e['id'])[0]['gold']==500
     other.close()
+
+
+def test_per_account_conversion_preserves_signup_loot_and_reopen(db):
+    e=event(db,mode='combined')
+    goldrush.start_event(db,e['id'],at=START)
+    loot(db,'#ONE',START,10_000_000)
+    loot(db,'#TWO',START,8_000_000)
+    loot(db,'#THREE',START,99_000_000)
+    goldrush.join_event(db,e['id'],1,['#ONE','#TWO'],at=START+timedelta(hours=1))
+    assert goldrush.standings(db,e['id'])[0]['gold']==18_000_000
+    goldrush.use_per_account_scoring(db,123)
+    path=__import__('pathlib').Path(db.execute('PRAGMA database_list').fetchone()[2])
+    other=goldrush.open_store(path)
+    try:
+        rows=goldrush.standings(other,e['id'])
+        assert [(r['user_id'],r['accounts'][0]['tag'],r['gold']) for r in rows]==[
+            ('1','#ONE',10_000_000),('1','#TWO',8_000_000)]
+        assert other.execute('SELECT count(*) FROM loot_events').fetchone()[0]==3
+        assert other.execute('SELECT count(*) FROM goldrush_entries').fetchone()[0]==2
+        assert goldrush.get_event(other,e['id'])['starts_at']==START.isoformat()
+        goldrush.use_per_account_scoring(other,123)
+        assert goldrush.standings(other,e['id'])==rows
+    finally:
+        other.close()
+
+
+def test_conversion_does_not_change_final_results(db):
+    e=event(db,mode='combined')
+    goldrush.start_event(db,e['id'],at=START)
+    goldrush.join_event(db,e['id'],1,['#ONE','#TWO'],at=START)
+    loot(db,'#ONE',START,10)
+    loot(db,'#TWO',START,8)
+    goldrush.finalize_event(db,e['id'],at=START+timedelta(days=1))
+    goldrush.use_per_account_scoring(db,123)
+    assert goldrush.get_event(db,e['id'])['account_mode']=='combined'
+    assert goldrush.standings(db,e['id'])[0]['gold']==18
+
+
+def test_initial_event_ranks_accounts_separately(db):
+    assert goldrush.ensure_current(db,123)['account_mode']=='per_account'
