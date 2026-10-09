@@ -442,9 +442,9 @@ def test_named_voter_view_is_the_only_renderer_that_lists_voters():
 
     text = _payload_text(poll_command.build_named_voter_components(document, labels={"111":"Alice", "222":"Bob", "333":"Chris"}))
 
-    assert "Named voters" in text
+    assert "Poll voters" in text
     assert "[Alice](https://discord.com/users/111)" in text
-    assert "[Bob](https://discord.com/users/222), [Chris](https://discord.com/users/333)" in text
+    assert "1. [Bob](https://discord.com/users/222)\n2. [Chris](https://discord.com/users/333)" in text
     assert "Super Mini P.E.K.K.A — 0" in text
     assert "No votes" in text
 
@@ -1203,3 +1203,22 @@ def test_index_failure_does_not_block_deadline_recovery(monkeypatch):
 
     assert scheduler.started == 1
     assert scheduled == [open_poll]
+
+
+
+def test_voter_pages_include_every_voter_once_with_bounded_text():
+    document = _poll(votes={str(100000000000000000+i): 1 for i in range(53)})
+    labels = {uid: 'N' * 64 for uid in document['votes']}
+    seen = []
+    _, _, pages = poll_command._voter_page(document)
+    for page in range(pages):
+        rows, actual, _ = poll_command._voter_page(document, page)
+        seen.extend(str(uid) for _, uid, _ in rows if uid is not None)
+        text = _payload_text(poll_command.build_named_voter_components(document, labels=labels, page=page))
+        assert len(text) < 4000
+        assert f'Page {actual + 1} of {pages}' in text
+        assert '…and' not in text
+    assert len(seen) == len(set(seen)) == 53
+    assert set(seen) == set(document['votes'])
+    assert poll_command._voter_page(document, 999)[1] == pages - 1
+    assert poll_command._voter_page(document, -1)[1] == 0

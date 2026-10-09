@@ -318,49 +318,64 @@ def build_poll_components(document: dict) -> list[Container]:
     )]
 
 
-def _visible_voter_ids(document, option_id):
-    # Profile links are longer than mentions; reserve room for all option headings.
-    limit = min(MAX_NAMED_VOTERS_PER_OPTION, max(1, 2400 // max(1, len(document.get('options', ()))) // 135))
-    ids = sorted(int(uid) for uid, choice in (document.get('votes') or {}).items()
-                 if str(choice) == str(option_id) and str(uid).isdigit())
-    return ids[:limit], len(ids)
+VOTERS_PER_PAGE = 12
 
 
-async def named_voter_components(document):
+def _voter_page(document, page=0):
+    rows = []
+    for option in document.get('options', ()):
+        ids = sorted(int(uid) for uid, choice in (document.get('votes') or {}).items()
+                     if str(choice) == str(option['id']) and str(uid).isdigit())
+        rows.extend((option, uid, index) for index, uid in enumerate(ids, 1))
+        if not ids:
+            rows.append((option, None, 0))
+    pages = max(1, (len(rows) + VOTERS_PER_PAGE - 1) // VOTERS_PER_PAGE)
+    page = min(max(0, page), pages - 1)
+    return rows[page * VOTERS_PER_PAGE:(page + 1) * VOTERS_PER_PAGE], page, pages
+
+
+async def named_voter_components(document, *, page=0):
     from extensions.commands.loot_leaderboard import load_discord_labels
-    owners = {str(uid): str(uid) for option in document.get('options', ())
-              for uid in _visible_voter_ids(document, option['id'])[0]}
+    rows, page, _ = _voter_page(document, page)
+    owners = {str(uid): str(uid) for _, uid, _ in rows if uid is not None}
     labels = await load_discord_labels(owners, guild_id=int(document['guild_id']))
-    return build_named_voter_components(document, labels=labels)
+    return build_named_voter_components(document, labels=labels, page=page)
 
 
-def build_named_voter_components(document: dict, *, labels=None) -> list[Container]:
+def build_named_voter_components(document: dict, *, labels=None, page=0) -> list[Container]:
     from extensions.commands.loot_leaderboard import profile_label
     labels = labels or {}
     counts, total = _option_counts(document)
-    votes = document.get("votes") or {}
-    sections: list = [
-        Text(content=f"## Named voters — {_escape_user_text(document.get('title', 'Poll'))}"),
-        Text(content=(
-            f"Poll `{document['_id']}` • **{total}** voter{'s' if total != 1 else ''} • "
-            f"{'Open until ' + _discord_timestamp(document['ends_at']) if document.get('active') else 'Closed'}"
-        )),
+    rows, page, pages = _voter_page(document, page)
+    sections = [
+        Text(content=f"## Poll voters\n**{_escape_user_text(document.get('title', 'Poll'))}**"),
+        Text(content=f"{total} voter{'s' if total != 1 else ''} • {'Open' if document.get('active') else 'Closed'}"),
         Separator(divider=True),
     ]
-    for option in document.get("options", ()):
-        option_id = int(option["id"])
-        visible, count = _visible_voter_ids(document, option_id)
-        names = ", ".join(
-            f"[{profile_label(labels.get(str(user_id), 'Discord profile'))}](https://discord.com/users/{user_id})"
-            for user_id in visible
-        ) or "No votes"
-        hidden = count - len(visible)
-        if hidden:
-            names += f"\n…and {hidden} more."
-        sections.append(Text(content=(
-            f"**{option_id}. {_escape_user_text(option['text'])} — "
-            f"{counts.get(option_id, 0)}**\n{names}"
-        )))
+    previous = None
+    lines = []
+    for option, uid, number in rows:
+        if option['id'] != previous:
+            if lines:
+                sections.append(Text(content='\n'.join(lines)))
+                sections.append(Separator(divider=True))
+            lines = [f"**{_escape_user_text(option['text'])} — {counts.get(int(option['id']), 0)}**"]
+            previous = option['id']
+        if uid is None:
+            lines.append('No votes')
+        else:
+            label = profile_label(labels.get(str(uid), 'Discord profile'))
+            lines.append(f"{number}. [{label}](https://discord.com/users/{uid})")
+    if lines:
+        sections.append(Text(content='\n'.join(lines)))
+    sections += [Separator(divider=True), Text(content=f"-# Page {page + 1} of {pages} • Tap a name to view their profile")]
+    if pages > 1:
+        sections.append(ActionRow(components=[
+            Button(style=hikari.ButtonStyle.SECONDARY, label='Previous',
+                   custom_id=f"poll_voters_page:{document['_id']}|{page - 1}", is_disabled=page == 0),
+            Button(style=hikari.ButtonStyle.SECONDARY, label='Next',
+                   custom_id=f"poll_voters_page:{document['_id']}|{page + 1}", is_disabled=page == pages - 1),
+        ]))
     return [Container(accent_color=BLUE_ACCENT, components=sections)]
 
 
@@ -1057,6 +1072,23 @@ async def poll_details(
         role_mentions=False,
         mentions_everyone=False,
     )
+
+
+@register_action("poll_voters_page", no_return=True, preload_state=False)
+@lightbulb.di.with_di
+async def poll_voters_page(ctx, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_kwargs):
+    if not await _require_admin(ctx):
+        return
+    try:
+        poll_id, raw_page = action_id.rsplit('|', 1)
+        page = int(raw_page)
+    except ValueError:
+        return
+    document = await poll_store.get_poll(mongo, guild_id=_guild_id(ctx), poll_id=poll_id)
+    components = (await named_voter_components(document, page=page) if document is not None
+                  else _notice('Poll not found', 'This poll is no longer retained in this server.'))
+    await ctx.interaction.edit_initial_response(components=components,
+        user_mentions=False, role_mentions=False, mentions_everyone=False)
 
 
 @register_action("poll_end", no_return=True)
