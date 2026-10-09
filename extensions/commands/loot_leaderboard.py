@@ -61,7 +61,7 @@ def profile_label(value):
     return ' '.join(label.replace('@', '@\u200b').split()) or 'Discord profile'
 
 
-async def load_discord_labels(owners, *, rest=None):
+async def load_discord_labels(owners, *, rest=None, guild_id=WARRIORS_UNITED_GUILD_ID):
     """Fetch names for explicit profile links; no dependence on viewer caches."""
     if rest is None:
         bot = bot_data.data.get('bot')
@@ -74,7 +74,7 @@ async def load_discord_labels(owners, *, rest=None):
             try:
                 async with asyncio.timeout(10):
                     try:
-                        user = await rest.fetch_member(WARRIORS_UNITED_GUILD_ID, int(owner))
+                        user = await rest.fetch_member(guild_id, int(owner))
                     except (hikari.NotFoundError, hikari.ForbiddenError):
                         user = await rest.fetch_user(int(owner))
                     return owner, user.display_name

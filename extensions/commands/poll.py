@@ -318,7 +318,25 @@ def build_poll_components(document: dict) -> list[Container]:
     )]
 
 
-def build_named_voter_components(document: dict) -> list[Container]:
+def _visible_voter_ids(document, option_id):
+    # Profile links are longer than mentions; reserve room for all option headings.
+    limit = min(MAX_NAMED_VOTERS_PER_OPTION, max(1, 2400 // max(1, len(document.get('options', ()))) // 135))
+    ids = sorted(int(uid) for uid, choice in (document.get('votes') or {}).items()
+                 if str(choice) == str(option_id) and str(uid).isdigit())
+    return ids[:limit], len(ids)
+
+
+async def named_voter_components(document):
+    from extensions.commands.loot_leaderboard import load_discord_labels
+    owners = {str(uid): str(uid) for option in document.get('options', ())
+              for uid in _visible_voter_ids(document, option['id'])[0]}
+    labels = await load_discord_labels(owners, guild_id=int(document['guild_id']))
+    return build_named_voter_components(document, labels=labels)
+
+
+def build_named_voter_components(document: dict, *, labels=None) -> list[Container]:
+    from extensions.commands.loot_leaderboard import profile_label
+    labels = labels or {}
     counts, total = _option_counts(document)
     votes = document.get("votes") or {}
     sections: list = [
@@ -331,14 +349,12 @@ def build_named_voter_components(document: dict) -> list[Container]:
     ]
     for option in document.get("options", ()):
         option_id = int(option["id"])
-        voter_ids = sorted(
-            int(user_id)
-            for user_id, raw_choice in votes.items()
-            if str(raw_choice) == str(option_id) and str(user_id).isdigit()
-        )
-        visible = voter_ids[:MAX_NAMED_VOTERS_PER_OPTION]
-        names = ", ".join(f"<@{user_id}>" for user_id in visible) or "No votes"
-        hidden = len(voter_ids) - len(visible)
+        visible, count = _visible_voter_ids(document, option_id)
+        names = ", ".join(
+            f"[{profile_label(labels.get(str(user_id), 'Discord profile'))}](https://discord.com/users/{user_id})"
+            for user_id in visible
+        ) or "No votes"
+        hidden = count - len(visible)
         if hidden:
             names += f"\n…and {hidden} more."
         sections.append(Text(content=(
@@ -763,7 +779,7 @@ class ViewPoll(
                 mongo, guild_id=guild_id, poll_id=requested,
             )
             components = (
-                build_named_voter_components(document)
+                await named_voter_components(document)
                 if document is not None
                 else _notice(
                     "Poll not found",
@@ -1035,7 +1051,7 @@ async def poll_details(
         )
         return
     await ctx.respond(
-        components=build_named_voter_components(document),
+        components=await named_voter_components(document),
         ephemeral=True,
         user_mentions=False,
         role_mentions=False,

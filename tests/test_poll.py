@@ -440,11 +440,11 @@ def test_closed_poll_keeps_results_admin_details_and_quiet_footer_only():
 def test_named_voter_view_is_the_only_renderer_that_lists_voters():
     document = _poll(votes={"333": 2, "111": 1, "222": 2})
 
-    text = _payload_text(poll_command.build_named_voter_components(document))
+    text = _payload_text(poll_command.build_named_voter_components(document, labels={"111":"Alice", "222":"Bob", "333":"Chris"}))
 
     assert "Named voters" in text
-    assert "<@111>" in text
-    assert "<@222>, <@333>" in text
+    assert "[Alice](https://discord.com/users/111)" in text
+    assert "[Bob](https://discord.com/users/222), [Chris](https://discord.com/users/333)" in text
     assert "Super Mini P.E.K.K.A — 0" in text
     assert "No votes" in text
 
