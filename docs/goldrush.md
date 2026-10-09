@@ -37,10 +37,13 @@ collector continues recording family loot independently of participation.
 
 ## Admin schedule configuration
 
-`/goldrush configure start:2026-10-09T18:00:00-04:00 hours:24`
+`/goldrush configure`
 
-Use an ISO timestamp with an explicit timezone offset. The private preview
-shows viewer-local start/end timestamps and a confirmation button. Only the
+The command opens a form: date (MM/DD/YYYY), Eastern time (6:00 PM or 18:00),
+and duration in hours. Eastern time follows America/New_York daylight saving
+rules. The panel and private confirmation show explicit EST/EDT timestamps.
+Nonexistent or ambiguous daylight-saving transition times are rejected.
+The private preview includes a confirmation button. Only the
 requesting administrator can confirm, within ten minutes. An outdated preview
 cannot overwrite a more recent configuration.
 

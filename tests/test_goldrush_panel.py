@@ -126,3 +126,27 @@ def test_join_accepts_one_available_link_provider(db,monkeypatch):
     asyncio.run(command.join(ctx,event['id']))
     assert db.execute('SELECT player_tag FROM goldrush_entries').fetchone()[0]=='#ONE'
     assert 'You joined' in ctx.respond.call_args.args[0]
+
+
+@pytest.mark.parametrize('date,time,offset', [('10/10/2026','6:00 PM',-4),('01/10/2027','18:00',-5)])
+def test_eastern_schedule_handles_seasonal_offset(date,time,offset):
+    start=command.parse_eastern_start(date,time)
+    assert start.hour==18
+    assert start.utcoffset()==timedelta(hours=offset)
+    assert ('EDT' if offset==-4 else 'EST') in command.eastern_time(start.isoformat())
+
+
+@pytest.mark.parametrize('date,time', [('03/14/2027','2:30 AM'),('11/01/2026','1:30 AM'),('bad','6 PM')])
+def test_eastern_schedule_rejects_invalid_or_ambiguous_times(date,time):
+    with pytest.raises(ValueError):
+        command.parse_eastern_start(date,time)
+
+
+def test_banner_is_first_and_dates_are_eastern(db,monkeypatch):
+    event=store.ensure_current(db,WARRIORS_UNITED_GUILD_ID)
+    monkeypatch.setattr(store,'utcnow',lambda:START)
+    panel=command.render(store.snapshot(db,event['id']))[0]
+    payload,attachments=panel.build()
+    assert payload['components'][0]['type']==hikari.ComponentType.MEDIA_GALLERY
+    assert len(attachments)==1
+    assert 'EDT' in str(payload)

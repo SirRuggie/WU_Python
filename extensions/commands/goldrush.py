@@ -1,7 +1,8 @@
 """Opt-in Gold Rush panels, automatic updates and administrator configuration."""
 import asyncio
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import logging
 import time
 
@@ -11,6 +12,8 @@ from hikari.impl import (
     ContainerComponentBuilder as Container, TextDisplayComponentBuilder as Text,
     SeparatorComponentBuilder as Separator, MessageActionRowBuilder as ActionRow,
     InteractiveButtonBuilder as Button,
+    ModalActionRowBuilder as ModalRow,
+    MediaGalleryComponentBuilder as Media, MediaGalleryItemBuilder as MediaItem,
 )
 
 from extensions.components import register_action
@@ -29,6 +32,31 @@ _refresh_lock = asyncio.Lock()
 _last_refresh = 0.0
 _last_warning = None
 _task = None
+
+
+EASTERN = ZoneInfo('America/New_York')
+
+
+def eastern_time(value):
+    return datetime.fromisoformat(value).astimezone(EASTERN).strftime('%b %d, %Y • %I:%M %p %Z')
+
+
+def parse_eastern_start(date, time):
+    try:
+        day = datetime.strptime(date.strip(), '%m/%d/%Y')
+        try:
+            clock = datetime.strptime(time.strip().upper(), '%I:%M %p')
+        except ValueError:
+            clock = datetime.strptime(time.strip(), '%H:%M')
+        naive = day.replace(hour=clock.hour, minute=clock.minute)
+    except ValueError:
+        raise ValueError('Use a date like 10/10/2026 and a time like 6:00 PM.') from None
+    start = naive.replace(tzinfo=EASTERN)
+    if start.astimezone(timezone.utc).astimezone(EASTERN).replace(tzinfo=None) != naive:
+        raise ValueError('That time is skipped by daylight saving. Choose another time.')
+    if start.utcoffset() != start.replace(fold=1).utcoffset():
+        raise ValueError('That time occurs twice when daylight saving ends. Choose a time before 1 AM or after 2 AM.')
+    return start
 
 
 async def database(fn, *args, **kwargs):
@@ -82,6 +110,7 @@ def render(data):
     final = event['final_results'] is not None
     status = 'FINAL RESULTS' if final else 'ENDED • RESULTS PENDING' if ended else 'LIVE' if started else 'SIGNUP OPEN'
     parts = [
+        Media(items=[MediaItem(media="assets/Gold_Rush.png")]),
         Text(content=f"# 💰 GOLD RUSH\n**{event['duration_hours']} hours • {event['prize']} • {status}**"),
         Separator(divider=True),
         Text(content='**1 · JOIN** — Enter all your linked family accounts.\n'
@@ -89,7 +118,7 @@ def render(data):
                      '**3 · WIN** — The account with the most gold wins.\n\n'
                      '**Each account ranks separately.**\n'
                      'Late joins count from the start.'),
-        Text(content=f"**Starts:** <t:{stamp(event['starts_at'])}:f>\n**Ends:** <t:{stamp(event['ends_at'])}:f>"),
+        Text(content=f"**Starts:** {eastern_time(event['starts_at'])}\n**Ends:** {eastern_time(event['ends_at'])}"),
     ]
     lines = []
     for index,row in enumerate(data['rows'],1):
@@ -108,7 +137,7 @@ def render(data):
         parts.append(Text(content='⚠️ Some battle data could not refresh. Scores may be incomplete.'))
     footer = f"-# {data['entrants']} joined • {data['accounts']} accounts • Tie: first to reach the score."
     if data.get('refreshed'):
-        footer += f"\n-# Last refreshed: <t:{stamp(data['refreshed'])}:f>"
+        footer += f"\n-# Last refreshed: {eastern_time(data['refreshed'])}"
     if not final:
         footer += '\n-# Auto-refresh: every 10 min'
     parts += [Separator(divider=True),Text(content=footer),ActionRow(components=[
@@ -228,22 +257,39 @@ class Post(lightbulb.SlashCommand,name='post',description='Post the Gold Rush si
 
 @group.register()
 class Configure(lightbulb.SlashCommand,name='configure',description='Preview and confirm a Gold Rush time change'):
-    start=lightbulb.string('start','Start with timezone, e.g. 2026-10-09T18:00:00-04:00')
-    hours=lightbulb.integer('hours','Event duration in hours',default=24,min_value=1,max_value=168)
     @lightbulb.invoke
     async def invoke(self,ctx:lightbulb.Context):
         if not await require_admin(ctx):
             return
+        await ctx.respond_with_modal(title='Gold Rush • Eastern Time', custom_id=f'goldrush_schedule:{ctx.user.id}', components=[
+            ModalRow().add_text_input('date','Start date (MM/DD/YYYY)',placeholder='10/10/2026',value=store.utcnow().astimezone(EASTERN).strftime('%m/%d/%Y'),required=True),
+            ModalRow().add_text_input('time','Start time (Eastern)',placeholder='6:00 PM',required=True),
+            ModalRow().add_text_input('hours','Duration in hours',value='24',required=True),
+        ])
+
+
+@register_action('goldrush_schedule',is_modal=True,no_return=True,preload_state=False)
+async def schedule(ctx,action_id,**kwargs):
+        if not await require_admin(ctx):
+            return
+        if str(ctx.user.id) != action_id:
+            await ctx.respond('Open your own configure form.',ephemeral=True)
+            return
         await ctx.defer(ephemeral=True)
         try:
-            start=datetime.fromisoformat(self.start.replace('Z','+00:00'))
+            fields={c.custom_id:c.value for row in ctx.interaction.components for c in row}
+            start=parse_eastern_start(fields.get('date',''),fields.get('time',''))
+            try:
+                hours=int(fields.get('hours',''))
+            except ValueError:
+                raise ValueError('Duration must be a number from 1 to 168 hours.') from None
             event=await database(store.ensure_current,WARRIORS_UNITED_GUILD_ID)
-            change=await database(store.propose_schedule,event['id'],str(ctx.user.id),start,self.hours)
+            change=await database(store.propose_schedule,event['id'],str(ctx.user.id),start,hours)
             from extensions.commands.loot_leaderboard import stamp
             future=start>store.utcnow() if start.tzinfo else False
             await ctx.interaction.edit_initial_response(components=[Container(accent_color=GOLDENROD_ACCENT,components=[
                 Text(content='## ⚙️ Confirm Gold Rush schedule'),
-                Text(content=f"**Start:** <t:{stamp(change['starts_at'])}:F>\n**End:** <t:{stamp(change['ends_at'])}:F>\n\n"
+                Text(content=f"**Start:** {eastern_time(change['starts_at'])}\n**End:** {eastern_time(change['ends_at'])}\n\n"
                      + ('**All current event scores will reset to 0 until the new start.**\n' if future else '**Scores will be recalculated for this time window.**\n')
                      + 'Signups stay. Saved battle history stays. Only gold inside this window counts.\nThis confirmation expires in 10 minutes.'),
                 ActionRow(components=[Button(style=hikari.ButtonStyle.DANGER,label='Confirm schedule & reset scores',
