@@ -142,14 +142,16 @@ def test_eastern_schedule_rejects_invalid_or_ambiguous_times(date,time):
         command.parse_eastern_start(date,time)
 
 
-def test_banner_is_first_and_dates_are_eastern(db,monkeypatch):
+def test_banner_is_first_and_dates_use_discord_local_time(db,monkeypatch):
     event=store.ensure_current(db,WARRIORS_UNITED_GUILD_ID)
     monkeypatch.setattr(store,'utcnow',lambda:START)
     panel=command.render(store.snapshot(db,event['id']))[0]
     payload,attachments=panel.build()
     assert payload['components'][0]['type']==hikari.ComponentType.MEDIA_GALLERY
     assert len(attachments)==1
-    assert 'EDT' in str(payload)
+    assert command.discord_time(event['starts_at']) in str(payload)
+    assert command.discord_time(event['ends_at']) in str(payload)
+    assert 'EDT' not in str(payload)
 
 
 def test_scheduled_panel_prominently_explains_signup_before_scoring(db,monkeypatch):
@@ -162,3 +164,10 @@ def test_scheduled_panel_prominently_explains_signup_before_scoring(db,monkeypat
     assert 'JOIN NOW' in text and 'Gold starts counting at the start time' in text
     assert 'before the start does not count' in text
     assert not panel.components[-1].components[0].is_disabled
+
+
+
+def test_discord_timestamp_preserves_configured_eastern_instant():
+    start=command.parse_eastern_start('10/12/2026','10:00 AM')
+    assert start.astimezone(__import__('datetime').timezone.utc).hour==14
+    assert command.discord_time(start.isoformat())==f'<t:{int(start.timestamp())}:f>'

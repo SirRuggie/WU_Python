@@ -41,6 +41,10 @@ def eastern_time(value):
     return datetime.fromisoformat(value).astimezone(EASTERN).strftime('%b %d, %Y • %I:%M %p %Z')
 
 
+def discord_time(value):
+    return f"<t:{int(datetime.fromisoformat(value).timestamp())}:f>"
+
+
 def parse_eastern_start(date, time):
     try:
         day = datetime.strptime(date.strip(), '%m/%d/%Y')
@@ -121,7 +125,7 @@ def render(data):
         Text(content="💰 **Warriors, it's time to raid for gold!**\nLoot the most gold in Farming + Ranked battles to win the Gold Pass."),
         Separator(divider=True),
         Text(content=signup),
-        Text(content=f"**Starts:** {eastern_time(event['starts_at'])}\n**Ends:** {eastern_time(event['ends_at'])}"),
+        Text(content=f"**Starts:** {discord_time(event['starts_at'])}\n**Ends:** {discord_time(event['ends_at'])}"),
         Text(content='**Each account ranks separately.**\n🔥 Raid hard. Collect gold. Claim the crown!'),
     ]
     lines = []
@@ -141,7 +145,7 @@ def render(data):
         parts.append(Text(content='⚠️ Some battle data could not refresh. Scores may be incomplete.'))
     footer = f"-# {data['entrants']} joined • {data['accounts']} accounts • Tie: first to reach the score."
     if data.get('refreshed'):
-        footer += f"\n-# Last refreshed: {eastern_time(data['refreshed'])}"
+        footer += f"\n-# Last refreshed: {discord_time(data['refreshed'])}"
     if not final:
         footer += '\n-# Auto-refresh: every 10 min'
     parts += [Separator(divider=True),Text(content=footer),ActionRow(components=[
@@ -216,7 +220,7 @@ async def join(ctx,action_id,**kwargs):
         notice='\nSome links could not load. Tap Join again later to add them.' if links.unavailable else ''
         await ctx.respond(f"{'✅ You joined Gold Rush!' if added else '✅ You are already entered.'}\n"
                           f"**{count} accounts entered.** Each ranks separately.\n"
-                          + ('You are entered. Gold starts counting at '+eastern_time(event['starts_at'])+'.' if event['starts_at'] and store.utcnow()<datetime.fromisoformat(event['starts_at']) else 'Gold counts from the event start.')+notice,ephemeral=True,
+                          + ('You are entered. Gold starts counting at '+discord_time(event['starts_at'])+'.' if event['starts_at'] and store.utcnow()<datetime.fromisoformat(event['starts_at']) else 'Gold counts from the event start.')+notice,ephemeral=True,
                           user_mentions=False,role_mentions=False,mentions_everyone=False)
         await sync_messages(action_id)
     except ValueError as error:
@@ -293,7 +297,7 @@ async def schedule(ctx,action_id,**kwargs):
             future=start>store.utcnow() if start.tzinfo else False
             await ctx.interaction.edit_initial_response(components=[Container(accent_color=GOLDENROD_ACCENT,components=[
                 Text(content='## ⚙️ Confirm Gold Rush schedule'),
-                Text(content=f"**Start:** {eastern_time(change['starts_at'])}\n**End:** {eastern_time(change['ends_at'])}\n\n"
+                Text(content=f"**Start:** {discord_time(change['starts_at'])}\n**End:** {discord_time(change['ends_at'])}\n\n"
                      + ('**All current event scores will reset to 0 until the new start.**\n' if future else '**Scores will be recalculated for this time window.**\n')
                      + 'Signups stay. Saved battle history stays. Only gold inside this window counts.\nThis confirmation expires in 10 minutes.'),
                 ActionRow(components=[Button(style=hikari.ButtonStyle.DANGER,label='Confirm schedule & reset scores',

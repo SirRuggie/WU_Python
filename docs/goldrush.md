@@ -41,7 +41,8 @@ collector continues recording family loot independently of participation.
 
 The command opens a form: date (MM/DD/YYYY), Eastern time (6:00 PM or 18:00),
 and duration in hours. Eastern time follows America/New_York daylight saving
-rules. The panel and private confirmation show explicit EST/EDT timestamps.
+rules. The entered time is Eastern; the panel, signup receipt, and confirmation use
+Discord timestamps so every viewer sees the configured moment in their own timezone.
 Nonexistent or ambiguous daylight-saving transition times are rejected.
 The private preview includes a confirmation button. Only the
 requesting administrator can confirm, within ten minutes. An outdated preview
