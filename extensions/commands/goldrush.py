@@ -35,6 +35,7 @@ _task = None
 
 
 EASTERN = ZoneInfo('America/New_York')
+ANNOUNCEMENT_ROLE_ID = 1080521665584308286
 
 
 def eastern_time(value):
@@ -178,8 +179,9 @@ async def post(ctx,event):
     await ctx.defer(ephemeral=True)
     await refresh()
     components=render(await panel_data(event['id']))
-    message=await ctx.interaction.app.rest.create_message(ctx.channel_id,components=components,
-        user_mentions=False,role_mentions=False,mentions_everyone=False)
+    message=await ctx.interaction.app.rest.create_message(ctx.channel_id,
+        components=[Text(content=f'<@&{ANNOUNCEMENT_ROLE_ID}>'), *components],
+        user_mentions=False,role_mentions=[ANNOUNCEMENT_ROLE_ID],mentions_everyone=False)
     await database(store.register_message,event['id'],ctx.channel_id,message.id)
     await ctx.interaction.delete_initial_response()
 

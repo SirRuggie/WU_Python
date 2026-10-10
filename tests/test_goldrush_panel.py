@@ -171,3 +171,19 @@ def test_discord_timestamp_preserves_configured_eastern_instant():
     start=command.parse_eastern_start('10/12/2026','10:00 AM')
     assert start.astimezone(__import__('datetime').timezone.utc).hour==14
     assert command.discord_time(start.isoformat())==f'<t:{int(start.timestamp())}:f>'
+
+
+
+def test_new_post_pings_only_announcement_role(monkeypatch):
+    monkeypatch.setattr(command,'refresh',AsyncMock())
+    monkeypatch.setattr(command,'panel_data',AsyncMock(return_value={}))
+    monkeypatch.setattr(command,'render',lambda data: [])
+    monkeypatch.setattr(command,'database',AsyncMock())
+    rest=SimpleNamespace(create_message=AsyncMock(return_value=SimpleNamespace(id=456)))
+    interaction=SimpleNamespace(app=SimpleNamespace(rest=rest),delete_initial_response=AsyncMock())
+    ctx=SimpleNamespace(channel_id=123,interaction=interaction,defer=AsyncMock())
+    asyncio.run(command.post(ctx,{'id':'event'}))
+    args=rest.create_message.call_args.kwargs
+    assert args['components'][0].content=='<@&1080521665584308286>'
+    assert args['role_mentions']==[1080521665584308286]
+    assert args['user_mentions'] is False and args['mentions_everyone'] is False
