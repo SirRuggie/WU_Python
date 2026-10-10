@@ -131,7 +131,7 @@ def render(data):
                   f"**Starts:** {discord_time(event['starts_at'])}\n"
                   f"**Ends:** {discord_time(event['ends_at'])}")
     parts = [
-        Media(items=[MediaItem(media="assets/Gold_Rush.png")]),
+        Media(items=[MediaItem(media="assets/Gold_Rush.jpg")]),
         Text(content=f"# 🚨 {event['duration_hours']} HR GOLD RUSH EVENT!\n**{event['prize']} • {status}**"),
         Separator(divider=True),
         Text(content=signup),
