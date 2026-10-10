@@ -198,3 +198,15 @@ def test_signup_heading_matches_configured_start(db,monkeypatch,hours,expected,u
     assert expected in text and unexpected not in text
     if hours<24:
         assert ':R>' in text
+
+
+def test_repeated_refresh_uses_cooldown(monkeypatch):
+    calls=[]
+    monkeypatch.setattr(command,'refresh_board',lambda: calls.append(1) or {'warning':None})
+    monkeypatch.setattr(command,'_last_refresh',0)
+    async def run():
+        monkeypatch.setattr(command,'_refresh_lock',asyncio.Lock())
+        await asyncio.gather(command.refresh(),command.refresh(),command.refresh())
+        await command.refresh()
+    asyncio.run(run())
+    assert len(calls)==1

@@ -179,10 +179,14 @@ def save_battles(db, tag, items, timestamp):
     began = datetime.fromisoformat(row['baseline_at'])
     records = []
     for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get('battleTime'), str) or not isinstance(item.get('lootedResources'), dict):
+            raise ValueError('Malformed battle history entry')
         mode = item.get('battleMode')
         if mode not in ('farming', 'ranked', 'legend'):
             raise ValueError('Unknown battle mode')
         moment = datetime.fromisoformat(item['battleTime'].replace('Z', '+00:00'))
+        if moment.tzinfo is None:
+            raise ValueError('Battle time must include a timezone')
         amount = item.get('lootedResources', {}).get('gold')
         if type(amount) is not int or amount < 0:
             raise ValueError('Invalid battle gold amount')

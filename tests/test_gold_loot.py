@@ -149,3 +149,17 @@ def test_family_expansion_preserves_scores_and_deduplicates(tmp_path):
     assert leader['baseline'] == 2000000000
     assert leader['clan_name'] == 'Main'
     db.close()
+
+
+@pytest.mark.parametrize('bad',[None,{}, {'battleMode':'farming','battleTime':'2026-10-08T12:00:00','lootedResources':{'gold':10}}, {'battleMode':'farming','battleTime':'2026-10-08T12:00:00Z','lootedResources':None}])
+def test_malformed_history_preserves_saved_loot(tmp_path,bad):
+    from utils.gold_loot import save_battles
+    db=connect(tmp_path/'malformed.db')
+    with db:
+        db.execute("INSERT INTO players VALUES ('#ONE','One',0,0,'2026-10-08T00:00:00+00:00','old')")
+        db.execute("INSERT INTO loot_events VALUES ('#ONE','2026-10-08T01:00:00+00:00','farming',42)")
+    with pytest.raises(ValueError):
+        save_battles(db,'#ONE',[bad],'new')
+    assert db.execute('SELECT gold FROM loot_events').fetchone()[0]==42
+    assert db.execute('SELECT updated FROM players').fetchone()[0]=='old'
+    db.close()

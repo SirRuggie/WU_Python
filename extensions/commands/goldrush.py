@@ -203,7 +203,7 @@ async def route_existing(ctx, *, edit=False):
     if event is None:
         return False
     if edit:
-        await refresh(force=True)
+        await refresh()
         components=render(await panel_data(event['id']))
         await ctx.interaction.edit_initial_response(components=components,
             user_mentions=False,role_mentions=False,mentions_everyone=False)
@@ -247,7 +247,7 @@ async def update(ctx,action_id,**kwargs):
     event=await database(store.get_event,action_id)
     if event['guild_id'] != str(ctx.interaction.guild_id):
         return
-    await refresh(force=True)
+    await refresh()
     components=render(await panel_data(action_id))
     await ctx.interaction.edit_initial_response(components=components,
         user_mentions=False,role_mentions=False,mentions_everyone=False)

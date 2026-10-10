@@ -92,7 +92,7 @@ def join_event(db, event_id, user_id, player_tags, *, at=None):
         event = get_event(db, event_id)
         if event['final_results'] is not None or (event['ends_at'] and at >= datetime.fromisoformat(event['ends_at'])):
             raise ValueError('Gold Rush signup is closed.')
-        if event['starts_at'] and not event['allow_late_join']:
+        if event['starts_at'] and at >= datetime.fromisoformat(event['starts_at']) and not event['allow_late_join']:
             raise ValueError('Signup closed when Gold Rush started.')
         if not tags or (event['account_mode'] == 'single' and len(tags) != 1):
             raise ValueError('Select one eligible account.' if event['account_mode'] == 'single' else 'No eligible accounts found.')

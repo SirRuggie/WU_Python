@@ -175,3 +175,39 @@ def test_snapshot_only_displays_positive_gold_and_keeps_zero_accounts_entered(db
     assert data['accounts']==2 and data['entrants']==1
     loot(db,'#TWO',START,200)
     assert [r['gold'] for r in goldrush.snapshot(db,e['id'])['rows']]==[200,100]
+
+
+def test_scheduled_signup_allowed_before_start_when_late_join_disabled(db):
+    e=event(db,late=False)
+    goldrush.start_event(db,e['id'],at=START+timedelta(hours=1))
+    assert goldrush.join_event(db,e['id'],1,['#ONE'],at=START)
+    with pytest.raises(ValueError,match='Signup closed'):
+        goldrush.join_event(db,e['id'],2,['#TWO'],at=START+timedelta(hours=1))
+
+
+def test_abrupt_exit_and_backup_restore_preserve_event_state(db,tmp_path):
+    import subprocess,sys,shutil
+    from pathlib import Path
+    e=event(db,mode='per_account')
+    goldrush.start_event(db,e['id'],at=START)
+    goldrush.join_event(db,e['id'],1,['#ONE','#TWO'],at=START)
+    loot(db,'#ONE',START,123)
+    goldrush.register_message(db,e['id'],123,456)
+    proposal=goldrush.propose_schedule(db,e['id'],7,START+timedelta(days=1),48,at=START)
+    path=Path(db.execute('PRAGMA database_list').fetchone()[2])
+    code="import sqlite3,os,sys; c=sqlite3.connect(sys.argv[1]); c.execute('BEGIN IMMEDIATE'); c.execute('DELETE FROM goldrush_entries'); os._exit(0)"
+    subprocess.run([sys.executable,'-c',code,str(path)],check=True)
+    restored=tmp_path/'restored.db'
+    shutil.copy2(path.parent/(path.name+'.backups')/'latest.sqlite3',restored)
+    for source in (path,restored):
+        other=goldrush.open_store(source)
+        try:
+            assert other.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
+            assert goldrush.snapshot(other,e['id'])['accounts']==2
+            assert goldrush.standings(other,e['id'])[0]['gold']==123
+            assert other.execute('SELECT message_id FROM goldrush_messages').fetchone()[0]=='456'
+            goldrush.confirm_schedule(other,proposal['id'],7,123,at=START)
+            assert goldrush.standings(other,e['id'])[0]['gold']==0
+            assert other.execute('SELECT count(*) FROM loot_events').fetchone()[0]==1
+        finally:
+            other.close()
