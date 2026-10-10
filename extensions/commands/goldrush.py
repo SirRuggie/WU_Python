@@ -114,20 +114,31 @@ def render(data):
     ended = event['ends_at'] and current >= datetime.fromisoformat(event['ends_at'])
     final = event['final_results'] is not None
     status = 'FINAL RESULTS' if final else 'ENDED • RESULTS PENDING' if ended else 'LIVE' if started else 'SIGNUP OPEN'
-    signup = ('## ✅ JOIN NOW • BE READY AT THE START\n'
-              '**Gold starts counting at the start time below.**\n'
-              'Join now to enter your linked family accounts. Gold looted before the start does not count.'
-              if not started else
-              '**Gold counts only between the start and end times below.**\n'
-              + ('Join to enter your linked family accounts. Late joins count from the event start.' if not ended else 'Signup is closed.'))
+    if ended or final:
+        signup = '## 🏁 GOLD RUSH ENDED\nSignup is closed.'
+        timing = f"**Started:** {discord_time(event['starts_at'])}\n**Ended:** {discord_time(event['ends_at'])}"
+    elif started:
+        signup = ('## ✅ JOIN NOW • GOLD RUSH IS LIVE\n'
+                  'Enter your linked family accounts. Gold counts from the event start.')
+        timing = (f"## ⏳ Ends <t:{stamp(event['ends_at'])}:R>\n"
+                  f"**Started:** {discord_time(event['starts_at'])} • <t:{stamp(event['starts_at'])}:R>\n"
+                  f"**Ends:** {discord_time(event['ends_at'])}")
+    else:
+        signup = ('## ✅ JOIN NOW • BE READY AT THE START\n'
+                  '**Gold starts counting at the start time below.**\n'
+                  'Join now to enter your linked family accounts. Gold looted before the start does not count.')
+        timing = (f"## ⏰ Starts <t:{stamp(event['starts_at'])}:R>\n"
+                  f"**Starts:** {discord_time(event['starts_at'])}\n"
+                  f"**Ends:** {discord_time(event['ends_at'])}")
     parts = [
         Media(items=[MediaItem(media="assets/Gold_Rush.png")]),
         Text(content=f"# 🚨 {event['duration_hours']} HR GOLD RUSH EVENT!\n**{event['prize']} • {status}**"),
-        Text(content="💰 **Warriors, it's time to raid for gold!**\nLoot the most gold in Farming + Ranked battles to win the Gold Pass."),
         Separator(divider=True),
         Text(content=signup),
-        Text(content=f"**Starts:** {discord_time(event['starts_at'])}\n**Ends:** {discord_time(event['ends_at'])}"),
-        Text(content='**Each account ranks separately.**\n🔥 Raid hard. Collect gold. Claim the crown!'),
+        Text(content=timing),
+        Separator(divider=True),
+        Text(content='💰 Loot the most gold in Farming + Ranked battles to win the Gold Pass.\n'
+                     '**Each account ranks separately.**'),
     ]
     lines = []
     for index,row in enumerate(data['rows'],1):

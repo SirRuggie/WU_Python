@@ -187,3 +187,14 @@ def test_new_post_pings_only_announcement_role(monkeypatch):
     assert args['components'][0].content=='<@&1080521665584308286>'
     assert args['role_mentions']==[1080521665584308286]
     assert args['user_mentions'] is False and args['mentions_everyone'] is False
+
+
+
+@pytest.mark.parametrize('hours,expected,unexpected', [(-1,'BE READY AT THE START','GOLD RUSH IS LIVE'),(1,'GOLD RUSH IS LIVE','BE READY AT THE START'),(25,'GOLD RUSH ENDED','JOIN NOW')])
+def test_signup_heading_matches_configured_start(db,monkeypatch,hours,expected,unexpected):
+    event=store.ensure_current(db,WARRIORS_UNITED_GUILD_ID)
+    monkeypatch.setattr(store,'utcnow',lambda:START+timedelta(hours=hours))
+    text=str(command.render(store.snapshot(db,event['id']))[0].build())
+    assert expected in text and unexpected not in text
+    if hours<24:
+        assert ':R>' in text
