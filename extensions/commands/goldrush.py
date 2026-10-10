@@ -109,16 +109,20 @@ def render(data):
     ended = event['ends_at'] and current >= datetime.fromisoformat(event['ends_at'])
     final = event['final_results'] is not None
     status = 'FINAL RESULTS' if final else 'ENDED • RESULTS PENDING' if ended else 'LIVE' if started else 'SIGNUP OPEN'
+    signup = ('## ✅ JOIN NOW • BE READY AT THE START\n'
+              '**Gold starts counting at the start time below.**\n'
+              'Join now to enter your linked family accounts. Gold looted before the start does not count.'
+              if not started else
+              '**Gold counts only between the start and end times below.**\n'
+              + ('Join to enter your linked family accounts. Late joins count from the event start.' if not ended else 'Signup is closed.'))
     parts = [
         Media(items=[MediaItem(media="assets/Gold_Rush.png")]),
-        Text(content=f"# 💰 GOLD RUSH\n**{event['duration_hours']} hours • {event['prize']} • {status}**"),
+        Text(content=f"# 🚨 {event['duration_hours']} HR GOLD RUSH EVENT!\n**{event['prize']} • {status}**"),
+        Text(content="💰 **Warriors, it's time to raid for gold!**\nLoot the most gold in Farming + Ranked battles to win the Gold Pass."),
         Separator(divider=True),
-        Text(content='**1 · JOIN** — Enter all your linked family accounts.\n'
-                     '**2 · RAID** — Farming + Ranked battles.\n'
-                     '**3 · WIN** — The account with the most gold wins.\n\n'
-                     '**Each account ranks separately.**\n'
-                     'Late joins count from the start.'),
+        Text(content=signup),
         Text(content=f"**Starts:** {eastern_time(event['starts_at'])}\n**Ends:** {eastern_time(event['ends_at'])}"),
+        Text(content='**Each account ranks separately.**\n🔥 Raid hard. Collect gold. Claim the crown!'),
     ]
     lines = []
     for index,row in enumerate(data['rows'],1):
@@ -212,7 +216,7 @@ async def join(ctx,action_id,**kwargs):
         notice='\nSome links could not load. Tap Join again later to add them.' if links.unavailable else ''
         await ctx.respond(f"{'✅ You joined Gold Rush!' if added else '✅ You are already entered.'}\n"
                           f"**{count} accounts entered.** Each ranks separately.\n"
-                          'Gold counts from the event start.'+notice,ephemeral=True,
+                          + ('You are entered. Gold starts counting at '+eastern_time(event['starts_at'])+'.' if event['starts_at'] and store.utcnow()<datetime.fromisoformat(event['starts_at']) else 'Gold counts from the event start.')+notice,ephemeral=True,
                           user_mentions=False,role_mentions=False,mentions_everyone=False)
         await sync_messages(action_id)
     except ValueError as error:

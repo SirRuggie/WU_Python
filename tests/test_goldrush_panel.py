@@ -150,3 +150,15 @@ def test_banner_is_first_and_dates_are_eastern(db,monkeypatch):
     assert payload['components'][0]['type']==hikari.ComponentType.MEDIA_GALLERY
     assert len(attachments)==1
     assert 'EDT' in str(payload)
+
+
+def test_scheduled_panel_prominently_explains_signup_before_scoring(db,monkeypatch):
+    event=store.create_event(db,guild_id=WARRIORS_UNITED_GUILD_ID,account_mode='per_account',allow_late_join=True,at=START,duration_hours=48)
+    store.start_event(db,event['id'],at=START+timedelta(days=1))
+    monkeypatch.setattr(store,'utcnow',lambda:START)
+    panel=command.render(store.snapshot(db,event['id']))[0]
+    text=str(panel.build())
+    assert '48 HR GOLD RUSH' in text
+    assert 'JOIN NOW' in text and 'Gold starts counting at the start time' in text
+    assert 'before the start does not count' in text
+    assert not panel.components[-1].components[0].is_disabled
