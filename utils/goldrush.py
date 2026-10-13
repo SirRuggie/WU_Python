@@ -251,3 +251,24 @@ def register_message(db,event_id,channel_id,message_id):
     with db:
         db.execute('INSERT OR REPLACE INTO goldrush_messages VALUES (?, ?, ?)',(event_id,str(channel_id),str(message_id)))
     backup_database(db)
+
+
+
+def personal_scores(db, event_id, user_id, linked_tags):
+    """Read personal account scores without joining or changing event state."""
+    event = get_event(db, event_id)
+    entered = {r['player_tag']: r['user_id'] for r in db.execute(
+        'SELECT player_tag,user_id FROM goldrush_entries WHERE event_id=?', (event_id,))}
+    tags = set(linked_tags) | {tag for tag, owner in entered.items() if owner == str(user_id)}
+    frozen = {a['tag']: row['gold'] for row in standings(db,event_id) for a in row['accounts']} if event['final_results'] is not None else None
+    rows = []
+    for player in db.execute('SELECT tag,name,updated FROM players'):
+        if player['tag'] not in tags:
+            continue
+        tag = player['tag']
+        score = (frozen.get(tag, 0) if frozen is not None else db.execute(
+            'SELECT COALESCE(SUM(gold),0) FROM loot_events WHERE tag=? AND julianday(battle_time)>=julianday(?) AND julianday(battle_time)<julianday(?)',
+            (tag,event['starts_at'],event['ends_at'])).fetchone()[0])
+        status = 'Entered' if entered.get(tag) == str(user_id) else 'Entered by another user' if tag in entered else 'Not entered'
+        rows.append(dict(tag=tag,name=player['name'],gold=score,status=status,updated=player['updated']))
+    return dict(event=event,rows=sorted(rows,key=lambda row:(-row['gold'],row['tag'])))

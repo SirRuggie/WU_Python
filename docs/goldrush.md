@@ -72,3 +72,12 @@ predates the event and is not a replacement for the latest backup.
 Only an administrator can post through the goldrush command group, configure
 or finalize an event. Signup and Update are available to members in Warriors
 United. Buttons are persistent and do not rely on expiring in-memory state.
+
+## Private account check
+
+`/goldrush check` is available to members and replies privately with each linked
+family account’s event gold, including zero scores and entry status. It uses CK
+or CP links plus saved entries, and does not sign anyone up. Results use the
+existing collector; checking does not trigger another family-wide refresh.
+Private page buttons are bound to the requesting user. Admin management commands
+remain protected by runtime administrator checks.

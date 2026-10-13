@@ -24,7 +24,6 @@ from utils.emoji import emojis
 
 loader = lightbulb.Loader()
 group = lightbulb.Group('goldrush', 'Manage the Gold Rush giveaway',
-    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     contexts=[hikari.ApplicationContextType.GUILD],
     integration_types=[hikari.ApplicationIntegrationType.GUILD_INSTALL])
 _log = logging.getLogger(__name__)
@@ -264,6 +263,66 @@ async def confirm(ctx,action_id,**kwargs):
         await sync_messages(event['id'])
     except ValueError as error:
         await ctx.respond(str(error),ephemeral=True)
+
+
+def render_personal(data, user_id, page=0):
+    from extensions.commands.loot_leaderboard import safe_name
+    rows = data['rows']
+    pages = max(1,(len(rows)+11)//12)
+    page = max(0,min(page,pages-1))
+    event = data['event']
+    parts = [Text(content='# 💰 Your Gold Rush\nEach account ranks separately.'),
+             Text(content=f"**Starts:** {discord_time(event['starts_at'])}\n**Ends:** {discord_time(event['ends_at'])}"),Separator(divider=True)]
+    lines = [f"**{safe_name(r['name'])} — {r['gold']:,} gold**\n-# `{r['tag']}` • {r['status']}" for r in rows[page*12:(page+1)*12]]
+    parts.append(Text(content='\n\n'.join(lines) or 'No linked family accounts found.'))
+    if any(r['status']=='Not entered' for r in rows):
+        parts.append(Text(content='Tap **Join Gold Rush** on the event post to enter.'))
+    if data.get('unavailable'):
+        parts.append(Text(content='Some account links could not load. Showing available accounts.'))
+    if rows:
+        parts.append(Text(content=f"-# Last checked: {discord_time(min(r['updated'] for r in rows))}"))
+    parts.append(Text(content=f'-# {len(rows)} accounts • Page {page+1} of {pages}'))
+    if pages>1:
+        parts.append(ActionRow(components=[Button(style=hikari.ButtonStyle.SECONDARY,label=label,
+            custom_id=f"goldrush_check_page:{event['id']}|{user_id}|{target}",is_disabled=disabled)
+            for label,target,disabled in [('Previous',page-1,page==0),('Next',page+1,page==pages-1)]]))
+    return [Container(accent_color=GOLDENROD_ACCENT,components=parts)]
+
+
+async def personal_data(event_id,user_id):
+    links = await recruit_links.resolve(int(user_id),verify_owners=False)
+    data = await database(store.personal_scores,event_id,str(user_id),list(links.sources))
+    data['unavailable'] = links.unavailable
+    return data
+
+
+@group.register()
+class Check(lightbulb.SlashCommand,name='check',description='Privately check gold for each of your linked family accounts'):
+    @lightbulb.invoke
+    async def invoke(self,ctx:lightbulb.Context):
+        if ctx.interaction.guild_id != WARRIORS_UNITED_GUILD_ID:
+            await ctx.respond('Use this in Warriors United.',ephemeral=True)
+            return
+        await ctx.defer(ephemeral=True)
+        event = await database(store.current_event,WARRIORS_UNITED_GUILD_ID)
+        if event is None:
+            await ctx.respond('No Gold Rush event is configured.',ephemeral=True)
+            return
+        await ctx.respond(components=render_personal(await personal_data(event['id'],ctx.user.id),ctx.user.id),
+            ephemeral=True,user_mentions=False,role_mentions=False,mentions_everyone=False)
+
+
+@register_action('goldrush_check_page',no_return=True,preload_state=False)
+async def personal_page(ctx,action_id,**kwargs):
+    event_id, owner, raw_page = action_id.split('|')
+    if str(ctx.user.id) != owner or ctx.interaction.guild_id != WARRIORS_UNITED_GUILD_ID:
+        await ctx.respond('Run /goldrush check to view your accounts.',ephemeral=True)
+        return
+    event = await database(store.get_event,event_id)
+    if event['guild_id'] != str(ctx.interaction.guild_id):
+        return
+    await ctx.interaction.edit_initial_response(components=render_personal(await personal_data(event_id,owner),owner,int(raw_page)),
+        user_mentions=False,role_mentions=False,mentions_everyone=False)
 
 
 @group.register()

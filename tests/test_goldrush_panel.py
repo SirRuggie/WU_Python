@@ -210,3 +210,25 @@ def test_repeated_refresh_uses_cooldown(monkeypatch):
         await command.refresh()
     asyncio.run(run())
     assert len(calls)==1
+
+
+def test_private_pages_cover_all_accounts_and_fit_limits(db):
+    event=store.ensure_current(db,WARRIORS_UNITED_GUILD_ID)
+    data=dict(event=event,rows=[dict(tag=f'#TAG{i}',name='N'*32,gold=i,status='Entered',updated=START.isoformat()) for i in range(30)])
+    text=''
+    for page in range(3):
+        panel=command.render_personal(data,123,page)[0]
+        contents='\n'.join(c.content for c in panel.components if hasattr(c,'content'))
+        assert len(contents)<4000
+        text+=contents
+        assert all('|123|' in b.custom_id for b in panel.components[-1].components)
+    assert all(text.count(f'`#TAG{i}`')==1 for i in range(30))
+
+
+def test_private_page_rejects_another_user(monkeypatch):
+    database=AsyncMock()
+    monkeypatch.setattr(command,'database',database)
+    ctx=SimpleNamespace(user=SimpleNamespace(id=999),interaction=SimpleNamespace(guild_id=WARRIORS_UNITED_GUILD_ID),respond=AsyncMock())
+    asyncio.run(command.personal_page(ctx,'event|123|1'))
+    database.assert_not_called()
+    assert ctx.respond.call_args.kwargs['ephemeral'] is True

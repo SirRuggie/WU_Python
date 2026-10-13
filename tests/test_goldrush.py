@@ -211,3 +211,20 @@ def test_abrupt_exit_and_backup_restore_preserve_event_state(db,tmp_path):
             assert other.execute('SELECT count(*) FROM loot_events').fetchone()[0]==1
         finally:
             other.close()
+
+
+def test_personal_scores_include_linked_and_entered_accounts_without_joining(db):
+    e=event(db,mode='per_account')
+    goldrush.start_event(db,e['id'],at=START)
+    goldrush.join_event(db,e['id'],1,['#ONE'],at=START)
+    loot(db,'#ONE',START,10_000_000)
+    loot(db,'#TWO',START,8_000_000)
+    loot(db,'#TWO',START-timedelta(seconds=1),999)
+    loot(db,'#THREE',START,999_999_999)
+    data=goldrush.personal_scores(db,e['id'],1,['#TWO','#OUTSIDE'])
+    assert [(r['tag'],r['gold'],r['status']) for r in data['rows']]==[
+        ('#ONE',10_000_000,'Entered'),('#TWO',8_000_000,'Not entered')]
+    assert db.execute('SELECT count(*) FROM goldrush_entries').fetchone()[0]==1
+    goldrush.finalize_event(db,e['id'],at=START+timedelta(days=1))
+    loot(db,'#ONE',START+timedelta(hours=1),100)
+    assert goldrush.personal_scores(db,e['id'],1,[])['rows'][0]['gold']==10_000_000
