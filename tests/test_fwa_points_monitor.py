@@ -912,3 +912,37 @@ def test_run_catchup_skips_the_sleep_when_stagger_is_zero(monkeypatch):
     # Single-attempt failure (MAX_CONSECUTIVE_FAILURES=1) returns before the
     # retry-interval sleep, so a zero stagger means no sleep call at all.
     assert sleeps == []
+
+
+
+def test_maintenance_extension_refreshes_matching_verdict_for_todo(monkeypatch):
+    from types import SimpleNamespace
+    from extensions.commands import todo
+    old='2026-10-13T17:00:56'
+    new='2026-10-13T17:35:23'
+    record={'current_war_key':'OPP:PREP','coc_war_key':'OPP:PREP',
+            'current_war_end_time':old,'coc_war_end_time':old,'our_outcome':'win',
+            'coc_opponent_name':'Opponent','current_opponent_name':'Opponent'}
+    collection=_PointsCollection(find_result=record)
+    monkeypatch.setattr(monitor,'mongo_client',_Mongo(collection))
+    monkeypatch.setattr(monitor,'request_points_board_publish',lambda:None)
+    row=SimpleNamespace(clan_tag='#AAA',ends_at=datetime.fromisoformat(new).replace(tzinfo=timezone.utc).timestamp())
+    assert todo._fwa_header(row,{'#AAA':record})==('','')
+    changed=asyncio.run(monitor.note_current_war('AAA',war_key='OPP:PREP',opponent_tag='OPP',opponent_name='Opponent',war_end_time=new))
+    assert changed is False
+    record.update(collection.updates[-1][1]['$set'])
+    assert record['current_war_end_time']==record['coc_war_end_time']==new
+    assert 'WIN' in todo._fwa_header(row,{'#AAA':record})[0]
+    assert collection.updates[-1][0]['coc_war_key']=='OPP:PREP'
+    collection.updates.clear()
+    asyncio.run(monitor.note_current_war('AAA',war_key='OPP:PREP',opponent_tag='OPP',opponent_name='Opponent',war_end_time=new))
+    assert not collection.updates
+
+
+def test_timer_refresh_never_relabels_a_previous_war_verdict(monkeypatch):
+    collection=_PointsCollection(find_result={'current_war_key':'NEW','coc_war_key':'OLD','coc_war_end_time':'old'})
+    monkeypatch.setattr(monitor,'mongo_client',_Mongo(collection))
+    monkeypatch.setattr(monitor,'request_points_board_publish',lambda:None)
+    asyncio.run(monitor.note_current_war('AAA',war_key='NEW',opponent_tag='OPP',war_end_time='new'))
+    fields=collection.updates[-1][1]['$set']
+    assert fields=={'current_war_end_time':'new'}

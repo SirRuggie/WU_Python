@@ -667,10 +667,30 @@ def request_points_board_publish():
 async def note_current_war(
     our_tag, *, war_key, opponent_tag, opponent_name=None, war_end_time=None,
 ):
-    """Persist a newly observed war before catch-up so stale verdicts vanish."""
+    """Track war identity and refresh timing when maintenance extends a war."""
     rec = await mongo_client.fwa_points.find_one({"_id": our_tag}) or {}
     if rec.get("current_war_key") == war_key:
-        return False
+        # Preparation start + opponent identify the war. End time can move
+        # during maintenance; keep the matching verdict usable by /todo.
+        fields = {}
+        if war_end_time:
+            fields["current_war_end_time"] = war_end_time
+        if opponent_name:
+            fields["current_opponent_name"] = opponent_name
+        if rec.get("coc_war_key") == war_key:
+            if war_end_time:
+                fields["coc_war_end_time"] = war_end_time
+            if opponent_name:
+                fields["coc_opponent_name"] = opponent_name
+        fields = {key: value for key, value in fields.items() if rec.get(key) != value}
+        if fields:
+            await mongo_client.fwa_points.update_one(
+                {"_id": our_tag, "current_war_key": war_key,
+                 "coc_war_key": rec.get("coc_war_key")},
+                {"$set": fields},
+            )
+            request_points_board_publish()
+        return False  # Same war: no new catch-up or verdict scrape needed.
     await mongo_client.fwa_points.update_one(
         {"_id": our_tag},
         {"$set": {
