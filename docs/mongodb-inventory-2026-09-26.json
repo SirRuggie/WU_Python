@@ -1,0 +1,2370 @@
+{
+  "captured_at": "2026-09-26T21:47:57.690925+00:00",
+  "scope": "Metadata only; no document contents; database visibility limited by credential",
+  "databases": [
+    {
+      "name": "database",
+      "collections": [
+        {
+          "name": "cwl_pending_reminders",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 32768,
+            "totalIndexSize": 32768,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "cwl_reminder",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1,
+            "size": 739,
+            "storageSize": 36864,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "settings",
+      "collections": [
+        {
+          "name": "bot_config",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 26,
+            "size": 159950,
+            "storageSize": 81920,
+            "totalIndexSize": 110592,
+            "nindexes": 3
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "guild_id": 1,
+                "status": 1,
+                "due_at": 1
+              },
+              "name": "gauntlet_help_due_v1"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "guild_id": 1,
+                "delete_at": 1
+              },
+              "name": "gauntlet_help_delete_v1"
+            }
+          ]
+        },
+        {
+          "name": "button_store",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 390,
+            "size": 128979,
+            "storageSize": 98304,
+            "totalIndexSize": 77824,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "channel_id": 1,
+                "challenge_type": 1,
+                "status": 1
+              },
+              "name": "goblin_challenge_lookup",
+              "partialFilterExpression": {
+                "challenge_type": "goblin_ping"
+              }
+            }
+          ]
+        },
+        {
+          "name": "card_inventories",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 63,
+            "size": 163627,
+            "storageSize": 110592,
+            "totalIndexSize": 110592,
+            "nindexes": 3
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "guild_id": 1,
+                "confirmed_at": -1
+              },
+              "name": "idx_card_inventories_guild_confirmed"
+            },
+            {
+              "v": 2,
+              "key": {
+                "discord_id": 1
+              },
+              "name": "idx_card_inventories_discord"
+            }
+          ]
+        },
+        {
+          "name": "card_trades",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 92,
+            "size": 102232,
+            "storageSize": 77824,
+            "totalIndexSize": 430080,
+            "nindexes": 12
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "lease_expires_at": 1
+              },
+              "name": "ttl_card_trade_leases",
+              "expireAfterSeconds": 0
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "guild_id": 1,
+                "requester_tag": 1,
+                "status": 1,
+                "updated_at": -1
+              },
+              "name": "idx_card_trades_requester"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "guild_id": 1,
+                "holder_tag": 1,
+                "status": 1,
+                "updated_at": -1
+              },
+              "name": "idx_card_trades_holder"
+            },
+            {
+              "v": 2,
+              "key": {
+                "open_proposal_key": 1
+              },
+              "name": "uniq_open_card_proposal",
+              "unique": true,
+              "sparse": true
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "status": 1,
+                "reservation_until": 1
+              },
+              "name": "idx_card_trades_reserving"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "status": 1,
+                "expires_at": 1
+              },
+              "name": "idx_card_trades_completing"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "trade_id": 1,
+                "owner_token": 1
+              },
+              "name": "idx_card_trade_lease_owner"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "guild_id": 1,
+                "player_tag": 1
+              },
+              "name": "idx_card_proposal_slots"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "guild_id": 1,
+                "cleanup_pending": 1
+              },
+              "name": "idx_card_trade_cleanup"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "guild_id": 1,
+                "status": 1,
+                "expires_at": 1
+              },
+              "name": "idx_card_trades_open_requests"
+            },
+            {
+              "v": 2,
+              "key": {
+                "open_request_key": 1
+              },
+              "name": "uniq_open_card_request",
+              "unique": true,
+              "sparse": true
+            }
+          ]
+        },
+        {
+          "name": "clan_data",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 25,
+            "size": 10967,
+            "storageSize": 45056,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "clan_roster_snapshots",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 25,
+            "size": 12544,
+            "storageSize": 45056,
+            "totalIndexSize": 73728,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "purge_at": 1
+              },
+              "name": "ttl_purge_at",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "component_state",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 32768,
+            "totalIndexSize": 94208,
+            "nindexes": 3
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expires_at": 1
+              },
+              "name": "component_state_expiry",
+              "expireAfterSeconds": 0
+            },
+            {
+              "v": 2,
+              "key": {
+                "type": 1,
+                "user_id": 1,
+                "created_at": -1
+              },
+              "name": "idx_component_card_upload_user"
+            }
+          ]
+        },
+        {
+          "name": "cwl_pending_reminders",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 18,
+            "size": 9048,
+            "storageSize": 36864,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "cwl_reminder",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1,
+            "size": 739,
+            "storageSize": 36864,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "emoji_registry",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 60,
+            "size": 12606,
+            "storageSize": 45056,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "fwa_band_data",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 186,
+            "size": 29529,
+            "storageSize": 53248,
+            "totalIndexSize": 73728,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expire_at": 1
+              },
+              "name": "ttl_expire_at",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "fwa_blacklist",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1957,
+            "size": 960316,
+            "storageSize": 237568,
+            "totalIndexSize": 155648,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "fwa_data",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1,
+            "size": 17135,
+            "storageSize": 45056,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "fwa_points",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 8,
+            "size": 7525,
+            "storageSize": 36864,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "fwa_sync_alerts",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 34,
+            "size": 16904,
+            "storageSize": 36864,
+            "totalIndexSize": 73728,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expire_at": 1
+              },
+              "name": "ttl_expire_at",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "fwa_sync_config",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1,
+            "size": 393,
+            "storageSize": 36864,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "fwa_sync_deliveries",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 24576,
+            "totalIndexSize": 81920,
+            "nindexes": 3
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expire_at": 1
+              },
+              "name": "ttl_fwa_sync_deliveries_expire_at",
+              "expireAfterSeconds": 0
+            },
+            {
+              "v": 2,
+              "key": {
+                "uid": 1,
+                "status": 1
+              },
+              "name": "idx_fwa_sync_deliveries_uid_status"
+            }
+          ]
+        },
+        {
+          "name": "fwa_sync_events",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 32768,
+            "totalIndexSize": 61440,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expire_at": 1
+              },
+              "name": "ttl_fwa_sync_events_expire_at",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "fwa_sync_responses",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 24576,
+            "totalIndexSize": 94208,
+            "nindexes": 3
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expire_at": 1
+              },
+              "name": "ttl_fwa_sync_responses_expire_at",
+              "expireAfterSeconds": 0
+            },
+            {
+              "v": 2,
+              "key": {
+                "uid": 1
+              },
+              "name": "idx_fwa_sync_responses_uid"
+            }
+          ]
+        },
+        {
+          "name": "lazy_cwl_lists",
+          "type": "collection",
+          "options": {
+            "validator": {
+              "$and": [
+                {
+                  "$jsonSchema": {
+                    "bsonType": "object",
+                    "required": [
+                      "schema_version",
+                      "section",
+                      "cwl_season",
+                      "clan_tag",
+                      "clan_name",
+                      "status",
+                      "saved_at",
+                      "saved_by",
+                      "expires_at",
+                      "purge_at",
+                      "players",
+                      "reminders"
+                    ],
+                    "properties": {
+                      "schema_version": {
+                        "bsonType": "int",
+                        "enum": [
+                          2
+                        ]
+                      },
+                      "section": {
+                        "enum": [
+                          "FWA",
+                          "MAIN"
+                        ]
+                      },
+                      "cwl_season": {
+                        "bsonType": "string",
+                        "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+                      },
+                      "clan_tag": {
+                        "bsonType": "string",
+                        "pattern": "^#[A-Z0-9]+$"
+                      },
+                      "clan_name": {
+                        "bsonType": "string",
+                        "minLength": 1
+                      },
+                      "status": {
+                        "enum": [
+                          "active",
+                          "finished",
+                          "expired"
+                        ]
+                      },
+                      "saved_at": {
+                        "bsonType": "date"
+                      },
+                      "saved_by": {
+                        "bsonType": [
+                          "int",
+                          "long"
+                        ],
+                        "minimum": 0
+                      },
+                      "expires_at": {
+                        "bsonType": "date"
+                      },
+                      "purge_at": {
+                        "bsonType": "date"
+                      },
+                      "finished_at": {
+                        "bsonType": "date"
+                      },
+                      "legacy_snapshot_id": {
+                        "bsonType": "string",
+                        "minLength": 1
+                      },
+                      "players": {
+                        "bsonType": "array",
+                        "items": {
+                          "bsonType": "object",
+                          "required": [
+                            "tag",
+                            "name",
+                            "town_hall",
+                            "discord_id",
+                            "added_manually",
+                            "added_at"
+                          ],
+                          "properties": {
+                            "tag": {
+                              "bsonType": "string",
+                              "pattern": "^#[A-Z0-9]+$"
+                            },
+                            "name": {
+                              "bsonType": "string"
+                            },
+                            "town_hall": {
+                              "bsonType": [
+                                "int",
+                                "long"
+                              ],
+                              "minimum": 0
+                            },
+                            "discord_id": {
+                              "bsonType": [
+                                "int",
+                                "long",
+                                "null"
+                              ],
+                              "minimum": 1
+                            },
+                            "added_manually": {
+                              "bsonType": "bool"
+                            },
+                            "added_at": {
+                              "bsonType": "date"
+                            }
+                          }
+                        }
+                      },
+                      "reminders": {
+                        "bsonType": "object",
+                        "required": [
+                          "enabled",
+                          "every_minutes",
+                          "started_at",
+                          "last_sent_at",
+                          "sent_count"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "bsonType": "bool"
+                          },
+                          "every_minutes": {
+                            "bsonType": [
+                              "int",
+                              "long",
+                              "null"
+                            ],
+                            "minimum": 1
+                          },
+                          "started_at": {
+                            "bsonType": [
+                              "date",
+                              "null"
+                            ]
+                          },
+                          "last_sent_at": {
+                            "bsonType": [
+                              "date",
+                              "null"
+                            ]
+                          },
+                          "sent_count": {
+                            "bsonType": [
+                              "int",
+                              "long"
+                            ],
+                            "minimum": 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "$expr": {
+                    "$and": [
+                      {
+                        "$cond": [
+                          {
+                            "$isArray": "$players"
+                          },
+                          {
+                            "$eq": [
+                              {
+                                "$size": "$players"
+                              },
+                              {
+                                "$size": {
+                                  "$setUnion": [
+                                    "$players.tag",
+                                    []
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          false
+                        ]
+                      },
+                      {
+                        "$gt": [
+                          "$expires_at",
+                          "$saved_at"
+                        ]
+                      },
+                      {
+                        "$gte": [
+                          "$purge_at",
+                          "$expires_at"
+                        ]
+                      },
+                      {
+                        "$or": [
+                          {
+                            "$eq": [
+                              "$reminders.enabled",
+                              false
+                            ]
+                          },
+                          {
+                            "$and": [
+                              {
+                                "$eq": [
+                                  "$status",
+                                  "active"
+                                ]
+                              },
+                              {
+                                "$gt": [
+                                  "$reminders.every_minutes",
+                                  0
+                                ]
+                              },
+                              {
+                                "$eq": [
+                                  {
+                                    "$type": "$reminders.started_at"
+                                  },
+                                  "date"
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "$or": [
+                          {
+                            "$eq": [
+                              "$section",
+                              "FWA"
+                            ]
+                          },
+                          {
+                            "$eq": [
+                              "$reminders.enabled",
+                              false
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "validationLevel": "strict",
+            "validationAction": "error"
+          },
+          "stats": {
+            "count": 7,
+            "size": 42459,
+            "storageSize": 61440,
+            "totalIndexSize": 139264,
+            "nindexes": 5
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "purge_at": 1
+              },
+              "name": "lazycwl_ttl_purge_at",
+              "expireAfterSeconds": 0
+            },
+            {
+              "v": 2,
+              "key": {
+                "status": 1,
+                "expires_at": 1
+              },
+              "name": "lazycwl_status_expires"
+            },
+            {
+              "v": 2,
+              "key": {
+                "legacy_snapshot_id": 1
+              },
+              "name": "lazycwl_legacy_snapshot",
+              "unique": true,
+              "sparse": true
+            },
+            {
+              "v": 2,
+              "key": {
+                "section": 1,
+                "clan_tag": 1
+              },
+              "name": "lazycwl_one_active_per_section_clan",
+              "unique": true,
+              "partialFilterExpression": {
+                "status": "active"
+              }
+            }
+          ]
+        },
+        {
+          "name": "lazy_cwl_snapshots",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 94,
+            "size": 484228,
+            "storageSize": 241664,
+            "totalIndexSize": 73728,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "clan_tag": 1
+              },
+              "name": "one_active_lazy_cwl_snapshot_per_clan",
+              "unique": true,
+              "partialFilterExpression": {
+                "active": true,
+                "clan_tag": {
+                  "$type": "string"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "player_clan_candidates",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1137,
+            "size": 360419,
+            "storageSize": 233472,
+            "totalIndexSize": 1531904,
+            "nindexes": 3
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "purge_at": 1
+              },
+              "name": "ttl_purge_at",
+              "expireAfterSeconds": 0
+            },
+            {
+              "v": 2,
+              "key": {
+                "player_tag": 1
+              },
+              "name": "player_tag"
+            }
+          ]
+        },
+        {
+          "name": "player_clan_watches",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 145,
+            "size": 12292,
+            "storageSize": 36864,
+            "totalIndexSize": 81920,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expires_at": 1
+              },
+              "name": "ttl_expires_at",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "recruit_challenges",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 24576,
+            "totalIndexSize": 61440,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expires_at": 1
+              },
+              "name": "family_code_expiry",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "recruit_onboarding",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 80,
+            "size": 15060,
+            "storageSize": 45056,
+            "totalIndexSize": 73728,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "new_recruit_role_removed": 1,
+                "cleanup_terminal": 1,
+                "cleanup_next_attempt_at": 1,
+                "walkthrough_started_at": 1
+              },
+              "name": "recruit_role_cleanup_due_v2"
+            }
+          ]
+        },
+        {
+          "name": "ticket_automation_state",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1576,
+            "size": 790865,
+            "storageSize": 221184,
+            "totalIndexSize": 147456,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "delivery_state": 1,
+                "lease_until": 1,
+                "updated_at": 1
+              },
+              "name": "ticket_staff_context_recovery",
+              "partialFilterExpression": {
+                "kind": "ticket_staff_context"
+              }
+            }
+          ]
+        },
+        {
+          "name": "ticket_creation_state",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 16,
+            "size": 6041,
+            "storageSize": 36864,
+            "totalIndexSize": 73728,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expires_at": 1
+              },
+              "name": "ttl_expires_at",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "ticket_flags",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 230,
+            "size": 57107,
+            "storageSize": 61440,
+            "totalIndexSize": 155648,
+            "nindexes": 4
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "active": 1,
+                "checked_at": -1
+              },
+              "name": "flag_kind_active_checked"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "discord_ids": 1
+              },
+              "name": "active_flag_discord_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "active": true,
+                "discord_ids.0": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "player_tags": 1
+              },
+              "name": "active_flag_player_tag_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "active": true,
+                "player_tags.0": {
+                  "$exists": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "ticket_migration_batches",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 4,
+            "size": 371279,
+            "storageSize": 155648,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "ticket_migrations",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1206,
+            "size": 1823641,
+            "storageSize": 598016,
+            "totalIndexSize": 323584,
+            "nindexes": 5
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "source.guild_id": 1,
+                "source.channel_id": 1
+              },
+              "name": "legacy_source_unique",
+              "unique": true
+            },
+            {
+              "v": 2,
+              "key": {
+                "destination.public_thread_id": 1
+              },
+              "name": "legacy_public_thread_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "destination.public_thread_id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "destination.staff_thread_id": 1
+              },
+              "name": "legacy_staff_thread_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "destination.staff_thread_id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "state": 1,
+                "updated_at": -1
+              },
+              "name": "legacy_state"
+            }
+          ]
+        },
+        {
+          "name": "ticket_open_slots",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 27,
+            "size": 11801,
+            "storageSize": 36864,
+            "totalIndexSize": 147456,
+            "nindexes": 4
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "ticket_id": 1
+              },
+              "name": "ticket_open_slot_ticket_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "ticket_id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "workflow_id": 1
+              },
+              "name": "ticket_open_slot_workflow_unique",
+              "unique": true
+            },
+            {
+              "v": 2,
+              "key": {
+                "state": 1,
+                "updated_at": 1
+              },
+              "name": "ticket_open_slot_reconcile"
+            }
+          ]
+        },
+        {
+          "name": "ticket_rollout",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 2,
+            "size": 896,
+            "storageSize": 36864,
+            "totalIndexSize": 73728,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "phase": 1,
+                "revision": 1
+              },
+              "name": "ticket_rollout_phase_revision"
+            }
+          ]
+        },
+        {
+          "name": "ticket_setup",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 3,
+            "size": 1670,
+            "storageSize": 36864,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "ticket_thread_rename_runs",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 3,
+            "size": 465773,
+            "storageSize": 258048,
+            "totalIndexSize": 36864,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "tickets",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1596,
+            "size": 1507654,
+            "storageSize": 454656,
+            "totalIndexSize": 1081344,
+            "nindexes": 18
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "channel_id": 1
+              },
+              "name": "channel_unique",
+              "unique": true
+            },
+            {
+              "v": 2,
+              "key": {
+                "status": 1,
+                "created_at": -1
+              },
+              "name": "status_created"
+            },
+            {
+              "v": 2,
+              "key": {
+                "location.id": 1
+              },
+              "name": "thread_v2_ticket_location_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "location.id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "location.staff_space_id": 1
+              },
+              "name": "thread_v2_ticket_staff_location_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "location.staff_space_id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "ticket_type": 1,
+                "ticket_number": 1
+              },
+              "name": "thread_v2_ticket_number_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "ticket_type": {
+                  "$exists": true
+                },
+                "ticket_number": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "user_id": 1,
+                "ticket_type": 1
+              },
+              "name": "thread_v2_one_open_ticket_per_applicant_type",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "status": "open",
+                "user_id": {
+                  "$exists": true
+                },
+                "ticket_type": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "source.guild_id": 1,
+                "source.channel_id": 1
+              },
+              "name": "thread_v2_ticket_source_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "source.guild_id": {
+                  "$exists": true
+                },
+                "source.channel_id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "status": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_status_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "ticket_type": 1,
+                "status": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_type_status_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "user_id": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_user_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "player_tags": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_player_tags_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "username_search": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_username_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "linked_accounts.retry_required": 1
+              },
+              "name": "thread_v2_account_recovery_retry_required",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "linked_accounts.retry_required": true
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "linked_accounts.context_refresh_required": 1
+              },
+              "name": "thread_v2_account_recovery_context_refresh_required",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "linked_accounts.context_refresh_required": true
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "linked_accounts.flag_refresh_required": 1
+              },
+              "name": "thread_v2_account_recovery_flag_refresh_required",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "linked_accounts.flag_refresh_required": true
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "linked_accounts.last_attempt_at": 1
+              },
+              "name": "thread_v2_account_recovery_last_attempt",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "created_at": -1,
+                "_id": -1
+              },
+              "name": "thread_v2_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            }
+          ]
+        },
+        {
+          "name": "todo_sessions",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 2,
+            "size": 998,
+            "storageSize": 36864,
+            "totalIndexSize": 110592,
+            "nindexes": 3
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expires_at": 1
+              },
+              "name": "ttl_expires_at",
+              "expireAfterSeconds": 0
+            },
+            {
+              "v": 2,
+              "key": {
+                "active": 1,
+                "next_refresh_at": 1
+              },
+              "name": "due_active_next_refresh"
+            }
+          ]
+        },
+        {
+          "name": "wu_discord_polls",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 32768,
+            "totalIndexSize": 147456,
+            "nindexes": 5
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "guild_id": 1,
+                "active": 1,
+                "ends_at": 1
+              },
+              "name": "polls_guild_active_ends_at"
+            },
+            {
+              "v": 2,
+              "key": {
+                "active": 1,
+                "ends_at": 1
+              },
+              "name": "polls_active_ends_at"
+            },
+            {
+              "v": 2,
+              "key": {
+                "purge_at": 1
+              },
+              "name": "polls_ttl_purge_at",
+              "expireAfterSeconds": 0
+            },
+            {
+              "v": 2,
+              "key": {
+                "message_sync_pending": 1,
+                "updated_at": 1
+              },
+              "name": "polls_message_sync_pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ticket_testing",
+      "collections": [
+        {
+          "name": "component_state",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 32768,
+            "totalIndexSize": 65536,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expires_at": 1
+              },
+              "name": "component_state_expiry",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "ticket_automation_state",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 12,
+            "size": 3034,
+            "storageSize": 36864,
+            "totalIndexSize": 73728,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "delivery_state": 1,
+                "lease_until": 1,
+                "updated_at": 1
+              },
+              "name": "ticket_staff_context_recovery",
+              "partialFilterExpression": {
+                "kind": "ticket_staff_context"
+              }
+            }
+          ]
+        },
+        {
+          "name": "ticket_creation_state",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 32768,
+            "totalIndexSize": 65536,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "expires_at": 1
+              },
+              "name": "ttl_expires_at",
+              "expireAfterSeconds": 0
+            }
+          ]
+        },
+        {
+          "name": "ticket_flags",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 4096,
+            "totalIndexSize": 16384,
+            "nindexes": 4
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "active": 1,
+                "checked_at": -1
+              },
+              "name": "flag_kind_active_checked"
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "discord_ids": 1
+              },
+              "name": "active_flag_discord_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "active": true,
+                "discord_ids.0": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "kind": 1,
+                "player_tags": 1
+              },
+              "name": "active_flag_player_tag_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "active": true,
+                "player_tags.0": {
+                  "$exists": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "ticket_open_slots",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 32768,
+            "totalIndexSize": 131072,
+            "nindexes": 4
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "ticket_id": 1
+              },
+              "name": "ticket_open_slot_ticket_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "ticket_id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "workflow_id": 1
+              },
+              "name": "ticket_open_slot_workflow_unique",
+              "unique": true
+            },
+            {
+              "v": 2,
+              "key": {
+                "state": 1,
+                "updated_at": 1
+              },
+              "name": "ticket_open_slot_reconcile"
+            }
+          ]
+        },
+        {
+          "name": "ticket_rollout",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1,
+            "size": 111,
+            "storageSize": 36864,
+            "totalIndexSize": 40960,
+            "nindexes": 2
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "phase": 1,
+                "revision": 1
+              },
+              "name": "ticket_rollout_phase_revision"
+            }
+          ]
+        },
+        {
+          "name": "ticket_setup",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 1,
+            "size": 272,
+            "storageSize": 36864,
+            "totalIndexSize": 20480,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        },
+        {
+          "name": "tickets",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 32768,
+            "totalIndexSize": 409600,
+            "nindexes": 16
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            },
+            {
+              "v": 2,
+              "key": {
+                "location.id": 1
+              },
+              "name": "thread_v2_ticket_location_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "location.id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "location.staff_space_id": 1
+              },
+              "name": "thread_v2_ticket_staff_location_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "location.staff_space_id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "ticket_type": 1,
+                "ticket_number": 1
+              },
+              "name": "thread_v2_ticket_number_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "ticket_type": {
+                  "$exists": true
+                },
+                "ticket_number": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "user_id": 1,
+                "ticket_type": 1
+              },
+              "name": "thread_v2_one_open_ticket_per_applicant_type",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "status": "open",
+                "user_id": {
+                  "$exists": true
+                },
+                "ticket_type": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "source.guild_id": 1,
+                "source.channel_id": 1
+              },
+              "name": "thread_v2_ticket_source_unique",
+              "unique": true,
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "source.guild_id": {
+                  "$exists": true
+                },
+                "source.channel_id": {
+                  "$exists": true
+                }
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "status": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_status_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "created_at": -1,
+                "_id": -1
+              },
+              "name": "thread_v2_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "ticket_type": 1,
+                "status": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_type_status_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "user_id": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_user_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "player_tags": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_player_tags_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "username_search": 1,
+                "created_at": -1
+              },
+              "name": "thread_v2_username_created",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "linked_accounts.retry_required": 1
+              },
+              "name": "thread_v2_account_recovery_retry_required",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "linked_accounts.retry_required": true
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "linked_accounts.context_refresh_required": 1
+              },
+              "name": "thread_v2_account_recovery_context_refresh_required",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "linked_accounts.context_refresh_required": true
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "linked_accounts.flag_refresh_required": 1
+              },
+              "name": "thread_v2_account_recovery_flag_refresh_required",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2",
+                "linked_accounts.flag_refresh_required": true
+              }
+            },
+            {
+              "v": 2,
+              "key": {
+                "linked_accounts.last_attempt_at": 1
+              },
+              "name": "thread_v2_account_recovery_last_attempt",
+              "partialFilterExpression": {
+                "type": "ticket",
+                "venue": "thread",
+                "runtime": "thread_v2"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wubot_test",
+      "collections": [
+        {
+          "name": "wubot_test",
+          "type": "collection",
+          "options": {},
+          "stats": {
+            "count": 0,
+            "size": 0,
+            "storageSize": 4096,
+            "totalIndexSize": 4096,
+            "nindexes": 1
+          },
+          "indexes": [
+            {
+              "v": 2,
+              "key": {
+                "_id": 1
+              },
+              "name": "_id_"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

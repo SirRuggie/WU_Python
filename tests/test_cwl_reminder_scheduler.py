@@ -391,8 +391,10 @@ def test_startup_restores_current_pending_before_next_base_schedule(monkeypatch)
 
     assert set(scheduler.jobs) == {
         cwl.cwl_base_job_id, "cwl_followup_1", cwl.CAMPAIGN_ROLLOVER_JOB_ID,
+        cwl.WEB_ROSTER_BRIDGE_JOB_ID,
     }
     assert [call[1]["id"] for call in scheduler.add_calls] == [
+        cwl.WEB_ROSTER_BRIDGE_JOB_ID,
         "cwl_followup_1",
         cwl.cwl_base_job_id,
         cwl.CAMPAIGN_ROLLOVER_JOB_ID,
@@ -495,7 +497,11 @@ def test_startup_reconciles_after_temporary_mongo_failure(monkeypatch):
     assert reconciler.health.attempts == 2
     assert set(scheduler.jobs) == {
         cwl.cwl_base_job_id, cwl.CAMPAIGN_ROLLOVER_JOB_ID,
+        cwl.WEB_ROSTER_BRIDGE_JOB_ID,
     }
+    assert [key for key in scheduler.jobs if key == cwl.WEB_ROSTER_BRIDGE_JOB_ID] == [
+        cwl.WEB_ROSTER_BRIDGE_JOB_ID,
+    ]
 
 
 def test_remove_followup_deletes_memory_and_durable_pending_state(monkeypatch):

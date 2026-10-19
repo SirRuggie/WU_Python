@@ -204,12 +204,24 @@ async def save(ctx,mongo,rest,data):
     query={'_id':'config','ticket_target_guild_id':guild(ctx)}
     for k in (*FIELDS,'ticket_settings_revision'):
         query[k]=baseline[k] if k in baseline else {'$exists':False}
+    histories=[]
+    if not getattr(ctx,'dashboard_actor',None):
+        from cwl_web.manage_content import GUILD_ID
+        if guild(ctx)==GUILD_ID:
+            from cwl_web.change_history import begin,finish
+            from cwl_web.manage_tickets import history_values
+            for part in ('timers','main','fwa','viewers'):
+                before=history_values(baseline,part)
+                if set(before).intersection(changes):
+                    token=await begin(mongo,'/api/cwl/manage/ticket-settings/'+part,{'user_id':str(ctx.user.id)},before,'discord_edit')
+                    histories.append((token,part))
     audit=mongo.ticket_setup.database.get_collection('ticket_settings_audit')
     aid=uuid4().hex
     await audit.insert_one({'_id':aid,'guild_id':guild(ctx),'actor_id':int(ctx.user.id),'at':datetime.now(timezone.utc),'state':'pending','before':{k:baseline.get(k) for k in changes},'after':changes})
     result=await mongo.ticket_setup.update_one(query,{'$set':changes,'$inc':{'ticket_settings_revision':1}})
     await audit.update_one({'_id':aid},{'$set':{'state':'committed' if result.matched_count else 'conflict'}})
     if not result.matched_count:raise ValueError('Settings changed while you were editing. Return to Ticket Settings and try again.')
+    for token,part in histories: await finish(mongo,token,history_values(cfg,part))
     return 'Settings validated and saved.'
 
 

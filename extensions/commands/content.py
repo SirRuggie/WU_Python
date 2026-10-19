@@ -775,6 +775,7 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
             except ValueError:
                 await initial_panel(ctx, mongo, state, "That post's structure is not a supported content document."); return
             _template, _media, revision = await template_for(mongo, document, state["guild_id"])
+            destination_row = await mongo.bot_config.find_one({"_id": destination_key(state["guild_id"], document.key)})
             state.update(
                 view="document", document=document.key, sections=sections, revision=revision,
                 media=dict(zip((slot for slot, _label in media_slots(document)), original_media, strict=True)),
@@ -782,7 +783,8 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
                     "channel_id": int(match[2]), "message_id": int(match[3]),
                     "original": sections, "original_media": original_media,
                 },
-                destination_channel_id=await destination_for(mongo, state["guild_id"], document.key),
+                destination_channel_id=(destination_row or {}).get("channel_id"),
+                destination_baseline=destination_row,
             )
             state["saved_snapshot"] = draft_snapshot(state)
         await initial_panel(ctx, mongo, state)
@@ -834,10 +836,9 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
         return panel(state, "Choose one supported document.")
     document = DOCUMENTS[value[0]]
     sections, media, revision = await template_for(mongo, document, state["guild_id"])
-    destination_channel_id = (
-        await destination_for(mongo, state["guild_id"], document.key)
-        if document.key not in {"apply", "rite-of-passage"} else None
-    )
+    destination_row = await mongo.bot_config.find_one({"_id": destination_key(state["guild_id"], document.key)})
+    destination_channel_id = ((destination_row or {}).get("channel_id")
+                              if document.key not in {"apply", "rite-of-passage"} else None)
     target = state.get("target") if state.get("document") == document.key and document.key != "apply" else None
     notice = None
     if target is None:
@@ -856,6 +857,7 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
         state, view="document", document=document.key, sections=sections,
         revision=revision, media=media, target=target,
         destination_channel_id=destination_channel_id, selected_media_slot=None,
+        destination_baseline=destination_row,
     )
     if document.key == "apply" and target is None and notice is None:
         notice = "No active public Apply post is bound. Complete ticket setup before updating the post."
@@ -913,16 +915,29 @@ async def choose_destination(
     if (int(getattr(channel, "guild_id", 0)) != state["guild_id"]
             or getattr(channel, "type", None) not in _DESTINATION_TYPES):
         return panel(state, "Choose a text or announcement channel in this server.")
-    await mongo.bot_config.update_one(
-        {"_id": destination_key(state["guild_id"], document_key)},
-        {"$set": {
-            "guild_id": state["guild_id"], "document": document_key,
-            "channel_id": channel_id, "updated_by": int(ctx.user.id),
-            "updated_at": utcnow(),
-        }},
-        upsert=True,
-    )
-    draft = await new_draft(mongo, dict(state, destination_channel_id=channel_id))
+    if "destination_baseline" not in state:
+        return panel(state, "This edit expired. Choose the message again before changing its channel.")
+    key = destination_key(state["guild_id"], document_key)
+    baseline = state["destination_baseline"]
+    data = {
+        "guild_id": state["guild_id"], "document": document_key,
+        "channel_id": channel_id, "updated_by": int(ctx.user.id),
+        "updated_at": utcnow(),
+    }
+    try:
+        if baseline is None:
+            await mongo.bot_config.insert_one(dict(data, _id=key))
+        else:
+            expected = baseline.get("channel_id", {"$exists": False})
+            result = await mongo.bot_config.update_one(
+                {"_id": key, "channel_id": expected}, {"$set": data},
+            )
+            if not result.matched_count:
+                return panel(state, "The posting channel changed in Discord or the dashboard. Choose the message again to review it.")
+    except DuplicateKeyError:
+        return panel(state, "The posting channel changed in Discord or the dashboard. Choose the message again to review it.")
+    draft = await new_draft(mongo, dict(state, destination_channel_id=channel_id,
+                                      destination_baseline=dict(data, _id=key)))
     return panel(draft, f"Posting channel saved as <#{channel_id}> for {DOCUMENTS[document_key].label}.")
 
 
@@ -1283,7 +1298,14 @@ def update_prompt(state):
     ])]
 
 
-async def _save(ctx, state, mongo):
+async def _save(ctx, state, mongo, *, dashboard=False):
+    if dashboard:return await _save_untracked(ctx,state,mongo)
+    from utils.dashboard_native_history import save_message
+    async def writer(*args):return await _save_untracked(ctx,state,mongo)
+    return await save_message(writer,'gauntlet',mongo,state['guild_id'],state['document'],int(ctx.user.id))
+
+
+async def _save_untracked(ctx, state, mongo):
     key = f"content:{state['document']}:{state['guild_id']}"; revision = state["revision"]
     document = DOCUMENTS[state["document"]]
     update = {

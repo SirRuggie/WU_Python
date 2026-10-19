@@ -41,11 +41,11 @@ _DEFAULT_SECTIONS = {
     "attack_strategies": (
         "## ⚔️ **Attack Strategy Breakdown** · {recruit}",
         "Help us understand your go-to attack strategies!\n\n"
-        f"{emojis.red_arrow_right} **Main Village strategies**\n"
+        f"{emojis.gold_arrow_right} **Main Village strategies**\n"
         f"{emojis.blank}{emojis.white_arrow_right} _e.g. Hybrid, Queen Charge w/ Hydra, Lalo_\n\n"
-        f"{emojis.red_arrow_right} **Clan Capital Attack Strategies**\n"
+        f"{emojis.gold_arrow_right} **Clan Capital Attack Strategies**\n"
         f"{emojis.blank}{emojis.white_arrow_right} _e.g. Super Miners w/ Freeze_\n\n"
-        f"{emojis.red_arrow_right} **Highest Clan Capital Hall level you’ve attacked**\n"
+        f"{emojis.gold_arrow_right} **Highest Clan Capital Hall level you’ve attacked**\n"
         f"{emojis.blank}{emojis.white_arrow_right} _e.g. CH 8, CH 9, etc.\n\n_"
         "*Your detailed breakdown helps us match you to the perfect clan!*",
         "-# Requested by {recruiter}",
@@ -228,11 +228,18 @@ async def reset_template(mongo, guild_id: int, variant: str,
                          expected_revision: int, updated_by: int) -> dict:
     return await save_template(mongo, guild_id, variant, default_template(variant), expected_revision, updated_by)
 
+def _accent_arrows(text: str, accent: int) -> str:
+    # Saved templates can still contain the old arrow after the default changes.
+    if accent == int(GOLDENROD_ACCENT):
+        return text.replace(str(emojis.red_arrow_right), str(emojis.gold_arrow_right))
+    return text
+
+
 def _primary_render_template(template: dict, *, user_id: int, recruiter_id: int, preview: bool = False) -> list:
     variant = template.get("variant")
     validated = validate_template(variant, template)
     values = {"recruit": f"<@{int(user_id)}>", "recruiter": f"<@{int(recruiter_id)}>", "family_codes": FAMILY_CODES_DISPLAY}
-    sections = [_replace(part, values) for part in validated["sections"]]
+    sections = [_accent_arrows(_replace(part, values), validated["accent"]) for part in validated["sections"]]
     if any(len(part) > _MAX_BLOCK for part in sections) or sum(map(len, sections)) > _MAX_TOTAL_TEXT:
         raise ValueError("Rendered question exceeds Discord's display limit.")
     parts = [Text(content=sections[0]), Separator(divider=True), Text(content=sections[1])]
@@ -471,7 +478,7 @@ def _replace_native(items, sections: list[str], media: dict, accent: int,
     def transform(item):
         nonlocal text_index, media_index
         if isinstance(item, Text):
-            value = _replace_extended(sections[text_index], replacements)
+            value = _accent_arrows(_replace_extended(sections[text_index], replacements), accent)
             text_index += 1
             return Text(content=value)
         if isinstance(item, Media):

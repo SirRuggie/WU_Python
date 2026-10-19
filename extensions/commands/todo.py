@@ -804,40 +804,13 @@ def _fwa_header(first, fwa_records: dict | None) -> tuple[str, str]:
     (the site hasn't caught up yet, or we haven't re-scraped) renders nothing
     rather than a stale verdict attached to the wrong war.
     """
-    if not fwa_records:
+    from utils.todo_fwa import matching_outcome
+    outcome = matching_outcome(first, fwa_records)
+    if outcome is None:
         return "", ""
-    record = fwa_records.get(first.clan_tag)
-    if not record:
-        return "", ""
-
-    end_time_raw = record.get("coc_war_end_time")
-    if not end_time_raw or first.ends_at is None:
-        return "", ""
-    try:
-        record_ends_at = todo_data._utc_epoch(datetime.fromisoformat(end_time_raw))
-    except (ValueError, OverflowError, OSError):
-        return "", ""
-    if record_ends_at is None:
-        return "", ""
-    if abs(record_ends_at - first.ends_at) > 60:
-        return "", ""
-
-    outcome = record.get("our_outcome")
-    if record.get("opponent_blacklisted"):
-        verdict = "🚫 BLACKLISTED"
-    elif outcome == "win":
-        verdict = f"{emojis.yes} WIN"
-    elif outcome == "lose":
-        verdict = f"{emojis.no} LOSE"
-    else:
-        verdict = ""
-
-    opponent_name = record.get("opponent_name") or record.get("coc_opponent_name")
-    if opponent_name:
-        vs_bit = f"vs {_escape_markdown(opponent_name)}"
-    else:
-        vs_bit = ""
-    return verdict, vs_bit
+    verdict = {"blacklisted": "🚫 BLACKLISTED", "win": f"{emojis.yes} WIN", "lose": f"{emojis.no} LOSE"}.get(outcome['status'], '')
+    opponent = outcome['opponent']
+    return verdict, f"vs {_escape_markdown(opponent)}" if opponent else ""
 
 
 def _render_rows(rows: list, verb: str = "", stamp_of=None, fwa_records: dict | None = None) -> list:
@@ -1417,56 +1390,8 @@ def _with_account_failures(view_data: todo_data.ViewData, error_count: int) -> t
 
 
 async def _load_fwa_records(mongo, war_rows: list) -> dict:
-    """{Row.clan_tag: fwa_points record} for the distinct clans in the War view.
-
-    One batched find() covers every clan at once. fwa_points documents are
-    keyed by the sanitized tag (no '#'), while Row.clan_tag carries whatever
-    format the CoC API returned, so results are re-keyed back to that original
-    form for a direct row.clan_tag lookup at render time.
-    """
-    if mongo is None:
-        return {}
-    sanitized_to_original: dict[str, str] = {}
-    for row in war_rows:
-        if not row.clan_tag:
-            continue
-        sanitized = sanitize_tag(row.clan_tag)
-        if sanitized:
-            sanitized_to_original[sanitized] = row.clan_tag
-    if not sanitized_to_original:
-        return {}
-    try:
-        docs = await mongo.fwa_points.find(
-            {"_id": {"$in": list(sanitized_to_original)}}
-        ).to_list(length=None)
-    except Exception as exc:  # noqa: BLE001 - a missing suffix must not break the panel
-        print(f"[todo] fwa_points lookup failed: {type(exc).__name__}: {exc}")
-        return {}
-    records = {
-        sanitized_to_original[doc["_id"]]: doc
-        for doc in docs
-        if doc.get("_id") in sanitized_to_original
-    }
-
-    # Re-checked against the blacklist on every load (not just what the
-    # scraper saw at the time) so a clan blacklisted after the record was
-    # scraped still shows as blacklisted here.
-    opponent_tags = {
-        sanitize_tag(doc.get("scraped_opponent_tag") or "") for doc in records.values()
-    }
-    opponent_tags.discard("")
-    if opponent_tags:
-        try:
-            blacklisted = await blacklisted_tags(mongo, opponent_tags)
-        except Exception as exc:  # noqa: BLE001 - a missing suffix must not break the panel
-            print(f"[todo] fwa_blacklist lookup failed: {type(exc).__name__}: {exc}")
-            blacklisted = set()
-        for doc in records.values():
-            opp_tag = sanitize_tag(doc.get("scraped_opponent_tag") or "")
-            if opp_tag:
-                doc["opponent_blacklisted"] = opp_tag in blacklisted
-
-    return records
+    from utils.todo_fwa import load_fwa_records
+    return await load_fwa_records(mongo, war_rows)
 
 
 async def _load(bot, coc_client, discord_id: int, force: bool = False, mongo=None,

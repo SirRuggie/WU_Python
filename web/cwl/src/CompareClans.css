@@ -1,0 +1,30 @@
+/* Keep horizontal movement inside comparison, including on narrow screens. */
+.compare-workspace{min-width:0;max-width:100%}.compare-workspace .compare-pan{display:grid;gap:12px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;padding-bottom:14px;scrollbar-color:#7a9bc6 #202024;scrollbar-width:auto;max-width:100%;align-items:stretch}.compare-workspace .compare-side{display:block;min-width:0;scroll-snap-align:start}.compare-workspace .compare-side select{width:100%;min-width:0;font-size:12px}.compare-workspace .compare-player{font-size:12px;padding:9px;gap:6px}.compare-workspace .compare-player small{font-size:10px}.compare-workspace .compare-clan-summary{min-height:102px;align-content:start}.compare-workspace .compare-pan:focus-visible{outline:3px solid #8fbaff;outline-offset:3px}.compare-pan-controls{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap}.compare-pan-controls>div{display:flex;gap:7px;flex-wrap:wrap}.compare-pan-controls>label{min-width:110px}.compare-workspace .compare-scroll-hint{font-size:12px;color:#b9cae0;margin:12px 0}.compare-workspace .compare-selected>button{margin:0 8px 8px 0}@media(max-width:720px){.compare-workspace.card{padding:14px}.compare-pan-controls{align-items:center}.compare-pan-controls button{padding:8px 11px;font-size:12px}.compare-pan-controls>label{width:100%}.compare-workspace .compare-player-list{max-height:400px}.compare-workspace .compare-pan{gap:10px}}
+
+.compare-picker{margin:14px 0;padding:16px;border:1px solid #52657c;border-radius:12px;background:#1c222b}.compare-picker-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:8px;max-height:320px;overflow-y:auto}.compare-picker-list label{display:flex;align-items:center;gap:10px;padding:10px;background:#14181f;border-radius:8px;min-height:48px}.compare-picker-list input{width:20px;height:20px;flex-shrink:0}.compare-picker-list span{min-width:0;overflow-wrap:anywhere}.compare-picker-list small{display:block}.compare-picker-actions,.compare-column-tools,.compare-jump{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.compare-column-tools button{min-height:44px;padding:8px 10px}.compare-column-tools button:last-child{margin-left:auto}.compare-jump button{min-height:44px;max-width:100%;overflow-wrap:anywhere}.compare-picker input[type=search]{width:100%;min-width:0}.compare-pan-controls>.primary{min-height:44px}
+
+.compare-location-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+/* Compact comparison rows with a separate contact link. */
+.compare-workspace .compare-player-list { gap: 5px; align-content: start; }
+.compare-workspace .compare-account { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: center; border: 1px solid #555; border-radius: 8px; background: #232327; overflow: hidden; }
+.compare-workspace .compare-account-arrived { background: #193728; border-color: #6bad83; }
+.compare-workspace .compare-account-missing { background: #442323; border-color: #c97b7b; }
+.compare-workspace .compare-account-missing .compare-player small { color: #f1c6c6; }
+.compare-workspace .compare-account .compare-player { background: transparent; border: 0; border-radius: 0; outline: none; min-width: 0; min-height: 48px; padding: 5px 6px; gap: 5px; line-height: 1.3; align-items: center; }
+.compare-workspace .compare-account .compare-player small { margin: 1px 0 0; line-height: 1.3; }
+.compare-workspace .compare-account .compare-player > span:last-child { flex-shrink: 0; }
+.compare-contact { min-width: 0; display: flex; align-items: center; justify-content: center; }
+.compare-contact .discord-contact { display: inline-flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; box-sizing: border-box; margin: 0; font-size: 10px; padding: 0; border: 0; background: transparent; white-space: nowrap; }
+.compare-contact .discord-contact:hover { text-decoration: underline; }
+.compare-contact > small { font-size: 9px; line-height: 1.2; text-align: center; padding: 2px; overflow-wrap: anywhere; }
+
+/* Keep metadata together below the name and Town Hall. */
+.compare-workspace .compare-account .compare-player { display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; }
+.compare-workspace .compare-account .compare-player-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; text-align: left; white-space: normal; }
+.compare-player-heading strong { min-width: 0; }
+.compare-player-heading > span { flex-shrink: 0; white-space: nowrap; }
+.compare-workspace .compare-account .compare-player-meta { text-align: left; white-space: nowrap; font-size: 10px; letter-spacing: -.1px; }
+.compare-contact .discord-contact { width: 40px; min-height: 36px; background: #242428; border: 1px solid #777780; border-radius: 6px; color: #fff; -webkit-text-fill-color: #fff; }
+.compare-contact .discord-contact:hover { background: #343439; }
+
+.compare-workspace .compare-account .compare-player { box-sizing: border-box; font-weight: 600; cursor: default; }

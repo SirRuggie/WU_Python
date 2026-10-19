@@ -59,6 +59,10 @@ async def on_questionnaire_response(event: hikari.GuildMessageCreateEvent):
     if not mongo_client or not bot_instance or not is_initialized:
         return
 
+    from utils.text_commands import handle
+    if await handle(event, mongo_client, bot_instance):
+        return
+
     # Check for how to ping FIRST (highest priority)
     if await how_to_ping.check_how_to_ping(event):
         print("[Message Events] Message handled by how to ping system")

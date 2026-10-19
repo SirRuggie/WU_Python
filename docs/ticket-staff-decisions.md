@@ -19,3 +19,11 @@ thread and simulated wording, with the same isolated ticket storage.
 
 This applies to decisions made after deployment. Previously completed decisions
 are not backfilled or reannounced.
+
+An authorized recruiter's Approve click is the account review confirmation.
+At least one current linked Clash account is required. Newly discovered links,
+provider warnings, and pending staff-context or identity refreshes do not require
+a second click. A failed lookup may use the retained current linked snapshot;
+a successful lookup returning no accounts still blocks approval. Historical
+player tags alone do not count as linked accounts. Permission, blacklist, and
+concurrent-decision checks still apply. Staff-context delivery retries separately.

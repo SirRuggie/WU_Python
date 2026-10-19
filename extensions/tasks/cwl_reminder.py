@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 import pendulum
 
 from hikari.impl import (
@@ -20,7 +21,7 @@ from hikari.impl import (
 )
 
 from utils.mongo import MongoClient
-from utils import cwl_campaign
+from utils import cwl_campaign, cwl_web_bridge
 from utils.startup_reconciler import StartupReconciler
 from utils.constants import GOLDENROD_ACCENT, GREEN_ACCENT, RED_ACCENT, BLUE_ACCENT
 
@@ -46,6 +47,7 @@ cwl_followup_job_prefix = "cwl_followup_"
 cwl_initial_retry_job_id = "cwl_initial_retry"
 CAMPAIGN_JOB_PREFIX = "cwl_campaign:"
 CAMPAIGN_ROLLOVER_JOB_ID = "cwl_campaign_rollover"
+WEB_ROSTER_BRIDGE_JOB_ID = "cwl_web_roster_bridge"
 # Kept only for importing historic timing and sent markers. Production
 # delivery and command control belong exclusively to /manage section:CWL.
 LEGACY_RUNTIME_DISABLED = True
@@ -359,6 +361,8 @@ async def _claim_campaign_occurrence(
 ) -> bool:
     """Atomically claim one audience delivery before calling Discord."""
     loaded = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
+    if occurrence in loaded.get("uncertain_occurrences", []):
+        return False
     if occurrence in loaded.get("skipped", []) or occurrence in set(loaded.get("sent_occurrences", [])) | {
         item.get("occurrence_id") for item in loaded.get("deliveries", [])
         if item.get("status") == "sent"
@@ -381,6 +385,8 @@ async def _claim_campaign_occurrence(
         {
             "_id": cwl_campaign.cycle_id(guild_id, cycle),
             f"delivery_claims.{claim_key}.at": existing.get("at") if isinstance(existing, dict) else {"$exists": False},
+            "sent_occurrences": {"$ne": occurrence},
+            "uncertain_occurrences": {"$ne": occurrence},
         },
         {"$set": {f"delivery_claims.{claim_key}": {
             "at": now.isoformat(), "generation": generation,
@@ -545,6 +551,14 @@ async def send_campaign_message(
             if _sequence_delivery_blocked(loaded, message_id, pendulum.now(DEFAULT_TIMEZONE)):
                 await _release_campaign_claim(guild_id, cycle, occurrence)
                 continue
+            if message_id == "roster":
+                # Mark an attempted roster POST before entering the network.
+                # If Discord's response is lost, neither Manage nor the web
+                # worker may blindly create a second announcement.
+                await mongo_client.bot_config.update_one(
+                    {"_id": cwl_campaign.cycle_id(guild_id, cycle)},
+                    {"$addToSet": {"uncertain_occurrences": occurrence}},
+                )
             result = await bot_instance.rest.create_message(
                 channel=channel_id, components=components,
                 role_mentions=item.get("role_ids", []),
@@ -555,6 +569,23 @@ async def send_campaign_message(
             discord_message_id = getattr(result, "id", None)
             sent_any = True
         except Exception as exc:
+            if message_id == "roster" and not _is_permanent_delivery_error(exc):
+                try:
+                    await cwl_campaign.record_delivery(mongo_client, guild_id, cycle, {
+                        "occurrence_id": occurrence, "message_key": message_id,
+                        "variant": variant, "status": "uncertain",
+                        "error": _delivery_error_detail(exc),
+                        "error_type": type(exc).__name__,
+                        "revision": current_generation,
+                    })
+                except Exception:
+                    pass
+                continue
+            if message_id == "roster":
+                await mongo_client.bot_config.update_one(
+                    {"_id": cwl_campaign.cycle_id(guild_id, cycle)},
+                    {"$pull": {"uncertain_occurrences": occurrence}},
+                )
             failures.append((variant, exc))
             await _release_campaign_claim(guild_id, cycle, occurrence)
             continue
@@ -598,6 +629,11 @@ async def send_campaign_message(
             except Exception:
                 pass
             continue
+        if message_id == "roster":
+            await mongo_client.bot_config.update_one(
+                {"_id": cwl_campaign.cycle_id(guild_id, cycle)},
+                {"$pull": {"uncertain_occurrences": occurrence}},
+            )
         await _release_campaign_claim(guild_id, cycle, occurrence)
     if failures and manual:
         for variant, exc in failures:
@@ -1495,10 +1531,48 @@ async def schedule_cwl_reminder(
     return True
 
 
+async def _poll_web_roster_requests() -> None:
+    """Deliver reviewed web requests through the native campaign sender."""
+    if mongo_client is None or bot_instance is None:
+        return
+    try:
+        try:
+            await cwl_web_bridge.reconcile_campaign_changes(
+                mongo_client, _sync_all_campaigns, guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+            )
+        except Exception as exc:
+            # A bad schedule must not block the independent reviewed roster queue.
+            # No acknowledgement is written; the next poll retries reconciliation.
+            print(f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}")
+        await cwl_web_bridge.process_pending_roster_requests(
+            mongo_client, send_campaign_message,
+            guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
+        )
+    except Exception as exc:
+        # Leave pending or sending rows in place for inspection. In particular,
+        # never auto-reset a possibly posted sending row after an outage.
+        print(f"[CWL Web Bridge] Poll failed: {type(exc).__name__}")
+    # Independent bot-owned management queue: a CWL reconciliation failure must
+    # not prevent staff from managing tickets, templates, or FWA settings.
+    try:
+        from utils.manage_web_worker import poll as poll_management
+        await poll_management(bot_instance, mongo_client)
+    except Exception as exc:
+        print(f"[Manage Web Bridge] Poll failed: {type(exc).__name__}")
+
+
 async def _reconcile_cwl_startup() -> None:
     """Idempotently restore durable CWL jobs after dependencies are ready."""
     if not getattr(scheduler, "running", True):
         scheduler.start()
+    scheduler.add_job(
+        _poll_web_roster_requests,
+        trigger=IntervalTrigger(seconds=10),
+        id=WEB_ROSTER_BRIDGE_JOB_ID,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
 
     if LEGACY_RUNTIME_DISABLED:
         # APScheduler currently uses an in-memory job store, but clearing every

@@ -499,3 +499,19 @@ def test_tracker_retries_link_expansion_after_roster_is_already_stable(monkeypat
         if "$unset" in operation._doc
     ]
     assert len(completion_updates) == 1
+
+
+def test_dashboard_history_read_does_not_create_indexes_and_reports_outage(monkeypatch):
+    from unittest.mock import AsyncMock
+    mongo = _Mongo()
+    indexes = AsyncMock()
+    monkeypatch.setattr(clan_history, 'ensure_indexes', indexes)
+    asyncio.run(clan_history.load_candidates(mongo, ['#PLAYER'], create_indexes=False, raise_errors=True))
+    indexes.assert_not_awaited()
+    class Broken:
+        def find(self, *args, **kwargs):
+            raise RuntimeError('offline')
+    mongo.player_clan_candidates = Broken()
+    with pytest.raises(RuntimeError):
+        asyncio.run(clan_history.load_candidates(mongo, ['#PLAYER'], create_indexes=False, raise_errors=True))
+    assert asyncio.run(clan_history.load_candidates(mongo, ['#PLAYER'], create_indexes=False)) == {}

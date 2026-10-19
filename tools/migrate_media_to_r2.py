@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from utils.mongo_routes import RoutedCollections
 from dotenv import load_dotenv  # noqa: E402
 from pymongo import MongoClient  # noqa: E402
 
@@ -109,7 +110,7 @@ def migrate_clans(db, store: MediaStore, *, dry_run: bool, tally: Tally) -> None
     query = {"$or": [{"logo": {"$regex": host, "$options": "i"}},
                      {"banner": {"$regex": host, "$options": "i"}}]}
     projection = {"tag": 1, "name": 1, "logo": 1, "banner": 1}
-    for doc in db.clan_data.find(query, projection):
+    for doc in db.clans.find(query, projection):
         folder = clan_folder(str(doc.get("name") or doc.get("tag") or "clan"))
         print(f"clan {doc.get('name')} ({doc.get('tag')})")
         for field, name in CLAN_FIELDS:
@@ -120,7 +121,7 @@ def migrate_clans(db, store: MediaStore, *, dry_run: bool, tally: Tally) -> None
             new_url = copy_to_r2(store, url, folder, name,
                                  dry_run=dry_run, tally=tally, label=field)
             if new_url:
-                db.clan_data.update_one({"_id": doc["_id"]}, {"$set": {field: new_url}})
+                db.clans.update_one({"_id": doc["_id"]}, {"$set": {field: new_url}})
 
 
 def migrate_fwa(db, store: MediaStore, *, dry_run: bool, tally: Tally) -> None:
@@ -164,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         print("MONGODB_URI is not set")
         return 2
 
-    db = MongoClient(uri)["settings"]   # the database utils/mongo.py uses
+    db = RoutedCollections(MongoClient(uri, connect=False))
     tally = Tally()
     if args.dry_run:
         print("DRY RUN: nothing will be uploaded or written\n")

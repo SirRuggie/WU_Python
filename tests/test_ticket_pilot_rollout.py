@@ -1075,7 +1075,7 @@ def test_copied_or_stale_pilot_panel_fails_before_slot_claim(monkeypatch):
         handlers.handle_create_ticket(
             _pilot_context(edits),
             "pilot:main",
-            bot=SimpleNamespace(),
+            bot=SimpleNamespace(rest=SimpleNamespace(create_message=AsyncMock())),
             mongo=SimpleNamespace(),
         )
     )
@@ -1312,7 +1312,7 @@ def test_config_read_failure_exactly_cancels_untouched_slot(monkeypatch):
         handlers.handle_create_ticket(
             _pilot_context(edits),
             "pilot:main",
-            bot=SimpleNamespace(),
+            bot=SimpleNamespace(rest=SimpleNamespace(create_message=AsyncMock())),
             mongo=SimpleNamespace(ticket_setup=Setup()),
         )
     )
@@ -1323,7 +1323,8 @@ def test_config_read_failure_exactly_cancels_untouched_slot(monkeypatch):
         "workflow_id": "thread:50:main",
     }]
     assert handlers.user_cooldowns == {}
-    assert edits[-1]["content"].endswith("Nothing was created.")
+    assert "Nothing was created." in edits[-1]["content"]
+    assert "Server Dev has been notified" in edits[-1]["content"]
 
 
 class _Cursor:

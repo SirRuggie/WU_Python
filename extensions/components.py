@@ -264,6 +264,12 @@ async def _dispatch(ctx, mongo):
     """Test-prefixed controls enter isolation before any state or action lookup."""
     from utils.ticket_testing_context import PREFIX, test_dependencies
     raw = ctx.interaction.custom_id
+    if raw.startswith('cr:'):
+        from utils.text_command_recipients import handle
+        return await handle(ctx.interaction, mongo)
+    if raw.startswith('ct:'):
+        from utils.text_command_actions import handle
+        return await handle(ctx.interaction, mongo)
     if not raw.startswith(PREFIX):
         return await _dispatch_impl(ctx, mongo)
     inner = raw[len(PREFIX):]

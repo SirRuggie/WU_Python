@@ -62,9 +62,7 @@ No active items.
 
 ### P2 — deferred validation
 
-- **`TODO-001` — Validate `/todo` Raid Weekend data during a live weekend.** The
-  non-raid paths and clan-history war discovery have automated coverage, but
-  live raid data needs event-time verification.
+- **`TODO-001` — Completed 2026-09-26.** The operator confirmed live Raid Weekend behavior works.
 
 ### P2 — future ticket features
 
@@ -94,6 +92,10 @@ No active items.
   prepare a backed-up migration, verification, and rollback plan before any
   production change. Keep this separate from test database setup and preserve
   ticket numbers, migration checkpoints, and existing records.
+  See the [2026-09-26 source review](mongodb-organization-review-2026-09-26.md).
+  Phase 1 completed: [fresh local backup and verified restore](mongodb-phase1-recovery-2026-09-26.md).
+  Phase 2 implemented locally: [routing and clan audit](mongodb-phase2-routing-2026-09-26.md).
+  Deployment, migration, and off-machine recurring backups remain outstanding.
 
 ## Completed hardening
 

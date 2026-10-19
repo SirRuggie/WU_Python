@@ -1,6 +1,7 @@
 """Manage Main/FWA staff-thread talking points without altering applicant questions."""
 
 from copy import deepcopy
+from utils.dashboard_native_history import save_message as save_with_history
 from datetime import timedelta
 from uuid import uuid4
 import hikari
@@ -262,7 +263,7 @@ async def action(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_
                 mongo, {k: v for k, v in data.items() if k not in ("kind", "template")}
             )
         elif verb == "save":
-            saved = await content.save(
+            saved = await save_with_history(content.save, 'staff',
                 mongo, data["guild_id"], data["kind"], data["template"], ctx.user.id
             )
             data = await new_state(mongo, data, template=saved)

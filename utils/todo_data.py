@@ -113,8 +113,23 @@ TTL_ERROR = 60               # coalesce a brief outage without hiding it for lon
 FETCH_CONCURRENCY = 8
 
 
+_bypass_cache = contextvars.ContextVar("todo_bypass_cache", default=False)
+
+
+@contextlib.contextmanager
+def fresh_reads():
+    """Bypass derived snapshots for timing-sensitive push checks, task locally."""
+    token = _bypass_cache.set(True)
+    try:
+        yield
+    finally:
+        _bypass_cache.reset(token)
+
+
 def cache_get(key: str):
     """Cached value, or None if absent or expired."""
+    if _bypass_cache.get():
+        return None
     hit = _cache.get(key)
     if hit is None:
         return None

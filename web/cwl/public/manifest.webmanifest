@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "Warriors United Dashboard",
+  "short_name": "Warriors United",
+  "description": "Your accounts, activities and opt-in war reminders.",
+  "start_url": "/?view=todo",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111113",
+  "theme_color": "#111113",
+  "icons": [
+    {
+      "src": "/icons/wu-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/wu-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -53,12 +53,9 @@ class FakeCollection:
 
 def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     paths = command_paths()
-    expected_catalog_total = 61
+    expected_catalog_total = 32
 
-    # /cards is retired along with the Clash of Cards event (see
-    # utils.startup.RETIRED_EXTENSIONS) and hidden from the catalog, so the
-    # count is one lower than the registered slash paths and the row is
-    # asserted absent rather than present.
+    # Retired event and management commands are absent; management lives in /manage.
     assert len(paths) == expected_catalog_total
     assert (
         sum(len(category["commands"]) for category in HELP_CATEGORIES.values())

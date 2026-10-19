@@ -766,10 +766,10 @@ async def recruit_questions_page(
             components=[
                 Text(content=(
                     "An all-in-one toolkit to efficiently recruit candidates into Warriors United\n\n"
-                    f"{emojis.red_arrow_right} Primary Questions: Send tailored candidate questions.\n"
-                    f"{emojis.red_arrow_right} Explanations: Summarise FWA\n"
-                    f"{emojis.red_arrow_right} FWA Questions: Send core FWA questions.\n"
-                    f"{emojis.red_arrow_right} Keep It Moving: Send quick “hurry up” GIFs.\n\n"
+                    f"{emojis.gold_arrow_right} Primary Questions: Send tailored candidate questions.\n"
+                    f"{emojis.gold_arrow_right} Explanations: Summarise FWA\n"
+                    f"{emojis.gold_arrow_right} FWA Questions: Send core FWA questions.\n"
+                    f"{emojis.gold_arrow_right} Keep It Moving: Send quick “hurry up” GIFs.\n\n"
                     "Stay organized, efficient, and aligned with Warriors United recruitment standards.\n\n"
                 )),
                 ActionRow(

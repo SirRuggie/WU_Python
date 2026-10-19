@@ -38,6 +38,16 @@ def _guild(ctx):
 
 
 async def _admin(ctx, mongo):
+    # Only the web worker supplies this internal context after live authorization.
+    actor = getattr(ctx, "dashboard_actor", None)
+    if isinstance(actor, dict) and actor.get('dashboard'):
+        from cwl_web.access_control import dashboard_allowed
+        cfg = await mongo.ticket_setup.find_one({'_id': 'config'}) or {}
+        if int(cfg.get('ticket_target_guild_id') or 0) != _guild(ctx):
+            raise ValueError("Ticket settings belong to a different server.")
+        if await dashboard_allowed(actor, 'ticket_testing', mongo):
+            return
+        raise ValueError("Your dashboard ticket access changed. Reload before trying again.")
     if not await perms.is_target_admin(_member(ctx), mongo):
         raise ValueError("Administrator permission is required in the ticket server.")
 

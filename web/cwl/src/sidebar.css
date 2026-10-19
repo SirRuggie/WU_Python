@@ -1,0 +1,26 @@
+/* Keep every navigation item reachable without scrolling the main workspace. */
+.shell .sidebar{position:sticky;top:0;align-self:start;height:100vh;height:100dvh;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#858b98 #151517;padding-bottom:env(safe-area-inset-bottom,0px)}
+.shell .sidebar>.brand-wrap,.shell .sidebar>.community,.shell .sidebar>nav,.shell .sidebar>.sidebar-foot{flex-shrink:0}
+.shell .sidebar>nav{padding-bottom:12px}
+.shell .sidebar::-webkit-scrollbar{width:8px}
+.shell .sidebar::-webkit-scrollbar-track{background:#151517}
+.shell .sidebar::-webkit-scrollbar-thumb{background:#858b98;border:2px solid #151517;border-radius:8px}
+@media(max-width:900px){.shell .sidebar{position:fixed;inset:0 auto 0 0}}
+@media(max-width:900px){body:has(.sidebar.open){overflow:hidden}}
+/* Feature groups grow without adding every page to the top level. */
+.shell .sidebar .navigation-section{margin:7px 0}
+.shell .sidebar .navigation-toggle{min-height:44px;font-size:13px;font-weight:700;text-align:left;gap:9px;color:#dedee5}
+.shell .sidebar .navigation-icon{width:20px;flex:none;text-align:center}
+.shell .sidebar .navigation-chevron{margin-left:auto;font-size:20px;color:#aeb6c6}
+.shell .sidebar .navigation-section.contains-current>.navigation-toggle{color:#a9ccff}
+.shell .sidebar .navigation-children{margin:2px 0 8px 12px;padding-left:9px;border-left:1px solid #414653}
+.shell .sidebar .navigation-children[hidden]{display:none}
+.shell .sidebar .navigation-children button{min-height:44px;font-size:12px;gap:7px;padding:10px 8px;text-align:left;line-height:1.4}
+.shell .sidebar nav button:focus-visible{outline:2px solid #a9ccff;outline-offset:2px}
+.cwl-workspace-nav{display:flex;align-items:start;gap:12px;margin-bottom:20px;min-width:0}
+.cwl-roster-tabs{display:flex;gap:8px;flex:1;min-width:0}
+.cwl-roster-tabs button{flex:1;min-height:48px;white-space:normal}
+.cwl-roster-tabs button.active{background:#194a98;border:1px solid #8bb9ff;color:#fff}
+.cwl-more{flex:none}.cwl-more summary{cursor:pointer;padding:12px}.cwl-more button{display:block;margin:6px 0}
+.cwl-result-nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+@media(max-width:600px){.cwl-workspace-nav{flex-wrap:wrap;gap:4px}.cwl-roster-tabs{flex-basis:100%}.cwl-roster-tabs button{font-size:13px;padding:10px 6px}.cwl-more{margin-left:auto}}

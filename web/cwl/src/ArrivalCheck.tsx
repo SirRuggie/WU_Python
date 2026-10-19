@@ -1,0 +1,29 @@
+import CwlPoolTabs, {useCwlPool} from './CwlPoolTabs'
+import StaffPlayerButton from './StaffPlayerButton'
+import DiscordContact from './DiscordContact'
+import {useEffect, useRef, useState} from 'react'
+import {api} from './api'
+import TownHallIcon from './TownHallIcon'
+import './ArrivalCheck.css'
+type Account={hosting_pool:'main'|'lazy';pool:'main'|'lazy';tag:string;user_id?:string|null;player_name:string;town_hall:number|null;assigned_clan_tag:string|null;assigned_clan_name:string|null;current_clan_tag:string|null;current_clan_name:string|null;current_clan_checked_at?:string;location_updating?:boolean;arrival_status:'arrived'|'missing'|'unknown'|'unassigned';outside_family:boolean}
+type Result={updating?:boolean;source:'published'|'draft';version:number|null;accounts:Account[]}
+export default function ArrivalCheck({seasonId}:{seasonId:string}){
+ const [data,setData]=useState<Result|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[source,setSource]=useState('published'),[onlyMissing,setOnlyMissing]=useState(false)
+ const [pool,setPool]=useCwlPool()
+ const [now,setNow]=useState(Date.now())
+ useEffect(()=>{const timer=window.setInterval(()=>setNow(Date.now()),30000);return()=>window.clearInterval(timer)},[])
+ const generation=useRef(0)
+ async function load(refresh=false){
+  const id=++generation.current;setBusy(true);setError('')
+  try{const result=await api<Result>(`/seasons/${encodeURIComponent(seasonId)}/arrival-check?background=1&source=${source}${refresh?'&refresh=1':''}`);if(id===generation.current)setData(result)}
+  catch(e){if(id===generation.current)setError(e instanceof Error?e.message:'Could not check clans.')}
+  finally{if(id===generation.current)setBusy(false)}
+ }
+ useEffect(()=>{setData(null);void load(true);return()=>{generation.current++}},[seasonId,source])
+ useEffect(()=>{if(!data?.updating || busy)return;const timer=window.setTimeout(()=>void load(),2000);return()=>window.clearTimeout(timer)},[data,busy,seasonId,source])
+ const clans=new Map<string,Account[]>()
+ for(const saved of data?.accounts||[]){if(saved.hosting_pool!==pool)continue;const expired = saved.current_clan_checked_at && now-Date.parse(saved.current_clan_checked_at)>120000; const account:Account = expired && saved.arrival_status !== 'unassigned' ? {...saved,arrival_status:'unknown',outside_family:false} : saved; const key=account.assigned_clan_tag||'';clans.set(key,[...(clans.get(key)||[]),account])}
+ return <section className="arrival-check"><div className="card-heading"><div><h2>Are all accounts in their CWL clans?</h2><p>Check who has reached their assigned clan.</p></div><button className="primary" disabled={busy || data?.updating} onClick={()=>void load(true)}>{busy || data?.updating?'Updating…':'Refresh clan locations'}</button></div><CwlPoolTabs value={pool} onChange={setPool}/><div className="arrival-controls"><label>Compare with<select value={source} disabled={busy} onChange={e=>setSource(e.target.value)}><option value="published">Published roster</option><option value="draft">Working roster</option></select></label><label><input type="checkbox" checked={onlyMissing} onChange={e=>setOnlyMissing(e.target.checked)}/> Show accounts needing attention</label></div>{error&&<p role="alert">{error}</p>}{data?.updating&&<p role="status">Updating clan locations… Failed checks retry automatically.</p>}{data&&<p className="small">{data.source==='published'?`Published roster · Version ${data.version}`:'Working roster · Not a published roster'} · Green: arrived · Red: not arrived · Gray: not checked. Refresh checks Clash again.</p>}
+ {[...clans].map(([tag,accounts])=>{const arrived=accounts.filter(a=>a.arrival_status==='arrived').length;const unknown=accounts.filter(a=>a.arrival_status==='unknown').length;const ready=!!tag&&accounts.length>=15&&arrived===accounts.length&&!busy&&!error&&!accounts.some(a=>a.location_updating);const visible=onlyMissing?accounts.filter(a=>a.arrival_status!=='arrived'):accounts;return <details className={`card arrival-clan ${ready?'arrival-ready':''}`} key={tag} open={!ready}><summary><strong>{accounts[0].assigned_clan_name||tag||'No assigned clan'}</strong><span>{tag?`${arrived}/${accounts.length} arrived`:`${accounts.length} accounts`}</span>{ready&&<b>✓ CWL declaration ready</b>}{unknown>0&&<small>{unknown} not checked</small>}</summary>{tag&&arrived===accounts.length&&accounts.length<15&&<p>All assigned accounts arrived. At least 15 are needed for CWL.</p>}{visible.map(a=><div key={a.tag} className={`arrival-account arrival-${a.arrival_status}`}><div><strong><StaffPlayerButton seasonId={seasonId} tag={a.tag} onChanged={()=>load(true)}><TownHallIcon level={a.town_hall}/>{a.player_name}</StaffPlayerButton></strong><small>{a.tag}</small><DiscordContact userId={a.user_id}/></div><div><strong>{a.location_updating?'Updating…':a.arrival_status==='arrived'?'✓ Arrived':a.arrival_status==='missing'?'Not arrived':a.arrival_status==='unknown'?'Not checked':'Needs assignment'}</strong><small>Current clan: {a.current_clan_name||a.current_clan_tag||(a.arrival_status==='unknown'?'Unavailable':'No clan')}</small>{a.outside_family&&a.arrival_status!=='arrived'&&<small>Outside family clans</small>}{a.current_clan_checked_at&&<small>Last checked: {new Date(a.current_clan_checked_at).toLocaleTimeString()}</small>}</div></div>)}</details>})}
+ {data&&!clans.size&&<p>No {pool==='main'?'Main':'Lazy'} CWL accounts in this roster.</p>}<p className="small">This checks clan location only. Staff still start CWL in Clash of Clans.</p></section>
+}

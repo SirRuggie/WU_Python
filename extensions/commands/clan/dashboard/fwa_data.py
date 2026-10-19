@@ -12,6 +12,7 @@ import asyncio
 
 from extensions.components import register_action
 from utils.mongo import MongoClient
+from utils.manage_field_drafts import remember, consume, save_fields
 from utils.manage_ui import breadcrumb, button_emoji
 from utils.media_store import FWA_ACTIVE_BASE_NAME, FWA_WAR_BASE_NAME, MediaStore, fwa_base_folder
 from utils.media_urls import DETAIL, optimized
@@ -479,9 +480,11 @@ async def fwa_th_select(
 
 
 @register_action("fwa_update_link", no_return=True, opens_modal=True)
+@lightbulb.di.with_di
 async def fwa_update_link(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
     if not await _require_fwa_representative(ctx):
@@ -489,18 +492,22 @@ async def fwa_update_link(
     """Modal for updating base link"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
+    snapshot = await get_fwa_data(mongo)
+    token = remember(ctx.user.id, "fwa_link_submit:" + th_level, snapshot,
+                     [f"{field}.{th_level}" for field in ['fwa_base_links']])
 
     link_input = ModalActionRow().add_text_input(
         "base_link",
         f"TH{th_num} Base Link",
         placeholder="https://link.clashofclans.com/?action=OpenLayout&id=...",
         required=True,
-        max_length=500
+        max_length=500,
+        value=snapshot.get("fwa_base_links", {}).get(th_level, "")
     )
 
     await ctx.respond_with_modal(
         title=f"Update TH{th_num} Base Link",
-        custom_id=f"fwa_link_submit:{th_level}",
+        custom_id=f"fwa_link_submit:{th_level}|{token}",
         components=[link_input]
     )
 
@@ -516,7 +523,11 @@ async def fwa_link_submit(
     if not await _require_fwa_representative(ctx):
         return
     """Process base link update"""
-    th_level = action_id
+    th_level, _, token = action_id.partition("|")
+    baseline = consume(token, ctx.user.id, "fwa_link_submit:" + th_level)
+    if baseline is None:
+        await ctx.respond("This edit expired. Open it again before saving.", ephemeral=True)
+        return
     th_num = th_level.upper().replace("TH", "")
 
     def get_value(custom_id: str) -> str:
@@ -539,11 +550,9 @@ async def fwa_link_submit(
     await ctx.interaction.create_initial_response(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
 
     # Update in database
-    await mongo.fwa_data.update_one(
-        {"_id": "fwa_config"},
-        {"$set": {f"fwa_base_links.{th_level}": base_link}},
-        upsert=True
-    )
+    if not await save_fields(mongo.fwa_data, "fwa_config", baseline, {f"fwa_base_links.{th_level}": base_link}):
+        await ctx.interaction.edit_initial_response(content="This link changed in Discord or the dashboard. Open it again and review the latest value.", components=[])
+        return
 
     # Success response
     await ctx.interaction.edit_initial_response(
@@ -631,9 +640,11 @@ async def fwa_update_images(
 
 
 @register_action("fwa_image_urls", no_return=True, opens_modal=True)
+@lightbulb.di.with_di
 async def fwa_image_urls(
         ctx: lightbulb.components.MenuContext,
         action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
     if not await _require_fwa_representative(ctx):
@@ -641,6 +652,9 @@ async def fwa_image_urls(
     """Modal for updating image URLs"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
+    snapshot = await get_fwa_data(mongo)
+    token = remember(ctx.user.id, "fwa_images_submit:" + th_level, snapshot,
+                     [f"{field}.{th_level}" for field in ['war_base_images', 'active_base_images']])
 
     war_input = ModalActionRow().add_text_input(
         "war_image",
@@ -660,7 +674,7 @@ async def fwa_image_urls(
 
     await ctx.respond_with_modal(
         title=f"Update TH{th_num} Images",
-        custom_id=f"fwa_images_submit:{th_level}",
+        custom_id=f"fwa_images_submit:{th_level}|{token}",
         components=[war_input, active_input]
     )
 
@@ -677,7 +691,11 @@ async def fwa_images_submit(
     if not await _require_fwa_representative(ctx):
         return
     """Process image URL updates"""
-    th_level = action_id
+    th_level, _, token = action_id.partition("|")
+    baseline = consume(token, ctx.user.id, "fwa_images_submit:" + th_level)
+    if baseline is None:
+        await ctx.respond("This edit expired. Open it again before saving.", ephemeral=True)
+        return
     th_num = th_level.upper().replace("TH", "")
 
     def get_value(custom_id: str) -> str:
@@ -728,25 +746,17 @@ async def fwa_images_submit(
 
     try:
         updates = []
+        image_changes = {}
 
         # Upload war base image
         if war_url:
             war_stored_url = await media.upload_from_url(
                 war_url,
                 folder=fwa_base_folder(th_level),
-                name=FWA_WAR_BASE_NAME
+                name=FWA_WAR_BASE_NAME + "-" + token
             )
 
-            # Update the constant in memory (for this session),
-            # delivery-optimized; Mongo below keeps the raw URL
-            FWA_WAR_BASE[th_level] = optimized(war_stored_url, width=DETAIL)
-
-            # Update in database
-            await mongo.fwa_data.update_one(
-                {"_id": "fwa_config"},
-                {"$set": {f"war_base_images.{th_level}": war_stored_url}},
-                upsert=True
-            )
+            image_changes[f"war_base_images.{th_level}"] = war_stored_url
 
             updates.append(f"✅ War base image uploaded")
 
@@ -755,21 +765,19 @@ async def fwa_images_submit(
             active_stored_url = await media.upload_from_url(
                 active_url,
                 folder=fwa_base_folder(th_level),
-                name=FWA_ACTIVE_BASE_NAME
+                name=FWA_ACTIVE_BASE_NAME + "-" + token
             )
 
-            # Update the constant in memory (for this session),
-            # delivery-optimized; Mongo below keeps the raw URL
-            FWA_ACTIVE_WAR_BASE[th_level] = optimized(active_stored_url, width=DETAIL)
-
-            # Update in database
-            await mongo.fwa_data.update_one(
-                {"_id": "fwa_config"},
-                {"$set": {f"active_base_images.{th_level}": active_stored_url}},
-                upsert=True
-            )
+            image_changes[f"active_base_images.{th_level}"] = active_stored_url
 
             updates.append(f"✅ Active base image uploaded")
+
+        if not await save_fields(mongo.fwa_data, "fwa_config", baseline, image_changes):
+            await ctx.interaction.edit_initial_response(content="These images changed in Discord or the dashboard. Open them again before saving.", components=[])
+            return
+        for field, url in image_changes.items():
+            target = FWA_WAR_BASE if field.startswith("war_") else FWA_ACTIVE_WAR_BASE
+            target[th_level] = optimized(url, width=DETAIL)
 
         # Success response
         await ctx.interaction.edit_initial_response(
@@ -836,9 +844,12 @@ async def fwa_update_descriptions(
     """Modal for updating base descriptions"""
     th_level = action_id
     th_num = th_level.upper().replace("TH", "")
+    snapshot = await get_fwa_data(mongo)
+    token = remember(ctx.user.id, "fwa_descriptions_submit:" + th_level, snapshot,
+                     [f"{field}.{th_level}" for field in ['base_information', 'base_upgrade_notes']])
 
     # Fetch existing data from MongoDB
-    fwa_data = await get_fwa_data(mongo)
+    fwa_data = snapshot
     existing_base_info = fwa_data.get("base_information", {}).get(th_level, "")
     existing_upgrade_notes = fwa_data.get("base_upgrade_notes", {}).get(th_level, "")
 
@@ -864,7 +875,7 @@ async def fwa_update_descriptions(
 
     await ctx.respond_with_modal(
         title=f"Update TH{th_num} Descriptions",
-        custom_id=f"fwa_descriptions_submit:{th_level}",
+        custom_id=f"fwa_descriptions_submit:{th_level}|{token}",
         components=[info_input, notes_input]
     )
 
@@ -899,7 +910,11 @@ async def fwa_descriptions_submit(
     if not await _require_fwa_representative(ctx):
         return
     """Process description updates"""
-    th_level = action_id
+    th_level, _, token = action_id.partition("|")
+    baseline = consume(token, ctx.user.id, "fwa_descriptions_submit:" + th_level)
+    if baseline is None:
+        await ctx.respond("This edit expired. Open it again before saving.", ephemeral=True)
+        return
     th_num = th_level.upper().replace("TH", "")
 
     def get_value(custom_id: str) -> str:
@@ -929,11 +944,9 @@ async def fwa_descriptions_submit(
     if upgrade_notes:
         update_fields[f"base_upgrade_notes.{th_level}"] = upgrade_notes
 
-    await mongo.fwa_data.update_one(
-        {"_id": "fwa_config"},
-        {"$set": update_fields},
-        upsert=True
-    )
+    if not await save_fields(mongo.fwa_data, "fwa_config", baseline, update_fields):
+        await ctx.interaction.edit_initial_response(content="These notes changed in Discord or the dashboard. Open them again and review the latest values.", components=[])
+        return
 
     # Initial response - show loading screen immediately
     await ctx.interaction.edit_initial_response(

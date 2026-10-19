@@ -1,3 +1,4 @@
+from utils.clan_dashboard_history import native_snapshot
 import typing
 
 import lightbulb
@@ -116,6 +117,7 @@ async def on_edit_general(
     field, tag = action_id.rsplit("_", 1)
     selected = ctx.interaction.values[0]
 
+    await native_snapshot(mongo, ctx, 'before_edit', tag)
     await mongo.clans.update_one({"tag": tag}, {"$set": {field: selected}})
 
     new_components = await update_general_info_panel(

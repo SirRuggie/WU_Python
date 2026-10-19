@@ -5,7 +5,7 @@
 ObjectId `_id` instead of updating the existing one; reads then picked one
 of the duplicates at random. A unique index on `tag` now prevents new
 duplicates, but if any already exist in this database the index creation
-at startup fails with DuplicateKeyError (logged at ERROR) until they are
+on clan addition fails with DuplicateKeyError (logged at ERROR) until they are
 resolved by hand.
 
 Run it on the host, with the venv interpreter, while the bot is up - it
@@ -24,6 +24,12 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from utils.mongo_routes import RoutedCollections
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
@@ -35,15 +41,15 @@ def _show(value):
 
 
 def main() -> int:
-    load_dotenv()
+    load_dotenv(ROOT / ".env")
     uri = os.getenv("MONGODB_URI")
     if not uri:
         print("MONGODB_URI is not set; run from the bot directory.")
         return 2
-    database = MongoClient(uri).get_database("settings")
+    database = RoutedCollections(MongoClient(uri, connect=False))
 
     by_tag = defaultdict(list)
-    for doc in database.clan_data.find({}, {"tag": 1, "name": 1, "updated_at": 1}):
+    for doc in database.clans.find({}, {"tag": 1, "name": 1, "updated_at": 1}):
         tag = doc.get("tag")
         if tag:
             by_tag[tag].append(doc)

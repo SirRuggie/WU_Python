@@ -1,3 +1,4 @@
+from utils.clan_dashboard_history import native_snapshot
 from logging import exception
 
 import lightbulb
@@ -231,7 +232,7 @@ async def add_clan_modal(
     # Upsert keyed on tag (guarded by the unique index above) so a repeat
     # /clan add for a clan already on file updates it instead of inserting a
     # second document with a fresh ObjectId _id.
-    await mongo.clans.update_one(
+    added = await mongo.clans.update_one(
         {"tag": clan.tag},
         {"$setOnInsert": {
             "announcement_id": 0,
@@ -254,6 +255,8 @@ async def add_clan_modal(
         upsert=True,
     )
 
+    if added.upserted_id:
+        await native_snapshot(mongo, ctx, 'add', clan.tag)
     new_components = await clan_edit_menu(ctx, action_id=clan.tag, mongo=mongo, tag=clan.tag)
     await ctx.interaction.edit_initial_response(components=new_components)
 
@@ -319,15 +322,15 @@ async def clan_remove_menu(
             Separator(divider=True, spacing=hikari.SpacingType.LARGE),
 
             # General Clan Info
-            Text(content=f"Are you positive you want to delete **{db_clan.name}** from our system forever?"),
-            Text(content="This is not reversible!"),
+            Text(content=f"Are you positive you want to delete **{db_clan.name}** from the family directory?"),
+            Text(content="You can restore this clan from Dashboard → Clan management → Activity."),
 
             ActionRow(
                 components=[
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         custom_id=f"remove_clan:confirm_{db_clan.tag}",
-                        label="Yes, Delete Forever!",
+                        label="Remove Clan",
                         emoji=emojis.confirm.partial_emoji,
                     ),
                     Button(
@@ -363,34 +366,21 @@ async def on_remove_clan_field(
         raw = await mongo.clans.find_one({"tag": tag})
         db_clan = Clan(data=raw)
 
-        # Delete the emoji from Discord if it exists
-        if db_clan.emoji:
-            # Parse emoji ID from mention format like <:emoji_name:123456789>
-            match = re.search(r":(\d+)>$", db_clan.emoji)
-            if match:
-                emoji_id = int(match.group(1))
-                application = await bot.rest.fetch_my_user()
-                try:
-                    await bot.rest.delete_application_emoji(
-                        application=application.id,
-                        emoji=emoji_id
-                    )
-                    print(f"[DEBUG] Deleted emoji {emoji_id} for clan {db_clan.name}")
-                except hikari.NotFoundError:
-                    print(f"[DEBUG] Emoji {emoji_id} not found, may have been already deleted")
-                except Exception as e:
-                    print(f"[ERROR] Failed to delete emoji {emoji_id}: {e}")
+        # Keep the saved emoji and other resources available for recovery.
+        await native_snapshot(mongo, ctx, 'before_remove', tag)
 
         # Delete clan from database
-        await mongo.clans.delete_one({"tag": tag})
+        removed = await mongo.clans.delete_one({"_id": raw["_id"], **{k:v for k,v in raw.items() if k != "_id"}})
+        if not removed.deleted_count:
+            raise ValueError("Clan changed. Reopen the clan menu before removing it.")
 
         return [
             Container(
                 accent_color=GREEN_ACCENT,
                 components=[
                     Text(content=f"Welp, `{db_clan.name}` has been deleted! <:SadTrash:1387846121094774854>\n"
-                                 "Hopefully you didn't make an oopsie..."),
-                    Text(content=f"✅ Associated emoji has been removed from the bot." if db_clan.emoji else ""),
+                                 "Restore it from Dashboard → Clan management → Activity."),
+                    Text(content="Channels, roles and artwork were kept."),
                     Separator(divider=True),
                 ]
             )
@@ -597,6 +587,7 @@ async def on_edit_clan_field(
     raw_val = ctx.interaction.values[0]
     selected = int(raw_val) if raw_val.isdigit() else raw_val
 
+    await native_snapshot(mongo, ctx, 'before_edit', tag)
     await mongo.clans.update_one({"tag": tag}, {"$set": {field: selected}})
 
     # Determine which menu to return to based on the field
@@ -633,63 +624,12 @@ async def on_edit_thread_field(
         mongo: MongoClient = lightbulb.di.INJECTED,
         **kwargs
 ):
-    field, tag = action_id.rsplit("_", 1)
-
-    guild_id = ctx.interaction.guild_id
-    PARENT_CH = 1133096989748363294
-
+    _, tag = action_id.rsplit("_", 1)
     raw = await mongo.clans.find_one({"tag": tag})
-
-    active = await bot.rest.fetch_active_threads(guild_id)
-    p_arch = await bot.rest.fetch_public_archived_threads(PARENT_CH)
-
-    threads = [t for t in list(active) + list(p_arch) if t.parent_id == PARENT_CH and t.name == raw["name"]]
-
-    if threads:
-        thread = threads[0]
-    else:
-        # Create public thread
-        thread = await bot.rest.create_thread(
-            PARENT_CH,
-            hikari.ChannelType.GUILD_PUBLIC_THREAD,
-            raw["name"],
-            auto_archive_duration=1440,
-        )
-
-        # Delete the "started a thread" message
-        try:
-            # Small delay to ensure the message is created
-            await asyncio.sleep(0.5)
-
-            # Fetch recent messages from parent channel
-            messages = await bot.rest.fetch_messages(PARENT_CH).limit(5)
-
-            # Find and delete the thread creation message
-            for message in messages:
-                # Thread creation messages have type 18
-                if message.type == 18:  # THREAD_CREATED type
-                    # Additional checks to ensure it's for our thread
-                    # Thread creation messages typically mention the thread name
-                    if raw["name"] in (message.content or ""):
-                        await bot.rest.delete_message(PARENT_CH, message.id)
-                        print(f"Deleted thread creation message for {raw['name']}")
-                        break
-
-                    # Alternative: Check if created around the same time
-                    # (thread.created_at might not be available immediately, so use current time)
-                    if hasattr(thread, 'created_at') and thread.created_at:
-                        time_diff = abs((message.created_at - thread.created_at).total_seconds())
-                        if time_diff < 2:  # Within 2 seconds
-                            await bot.rest.delete_message(PARENT_CH, message.id)
-                            print(f"Deleted thread creation message for {raw['name']}")
-                            break
-
-        except Exception as e:
-            print(f"Error deleting thread creation message: {e}")
-            # Continue even if deletion fails
-            # Continue even if deletion fails
-
-    await mongo.clans.update_one({"tag": tag}, {"$set": {"thread_id": thread.id}})
+    if not raw:raise ValueError('Clan no longer exists.')
+    from utils.clan_dashboard_actions import ensure_thread
+    await native_snapshot(mongo, ctx, 'before_thread', tag)
+    await ensure_thread(bot,mongo,raw,ctx.interaction.guild_id)
 
     # 5) Rebuild the edit menu
     return await clan_edit_menu(
@@ -846,6 +786,7 @@ async def update_logo_modal(
     )
 
     try:
+        await native_snapshot(mongo, ctx, 'before_edit', tag)
         # Update the database with new URL
         await mongo.clans.update_one(
             {"tag": tag},
@@ -1286,96 +1227,12 @@ async def process_emoji_upload(
         await ctx.respond(components=loading_components, edit=True)
 
     try:
-        # Validate the URL BEFORE doing anything destructive. This is the SSRF
-        # guard, and validating first means a bad URL fails cleanly instead of
-        # deleting the clan's current emoji and then erroring on the download.
-        ok, reason = is_safe_public_url(emoji_url)
-        if not ok:
-            raise ValueError(f"Image URL rejected: {reason}")
-
-        # Clean clan name for emoji name (remove spaces, special chars)
-        clan_name = re.sub(r'[^a-zA-Z0-9]', '', db_clan.name)
-        if not clan_name:
-            clan_name = f"clan_{tag.replace('#', '')}"
-
-        # Resize helper (runs off the event loop via asyncio.to_thread).
-        def resize_and_compress_image(image_content, max_size=(128, 128), max_kb=256):
-            image = Image.open(BytesIO(image_content))
-
-            # Convert to RGBA if necessary
-            if image.mode != 'RGBA':
-                image = image.convert('RGBA')
-
-            # Resize with high quality
-            image.thumbnail(max_size, Image.Resampling.LANCZOS)
-
-            # Save as PNG with optimization
-            buffer = BytesIO()
-            image.save(buffer, format="PNG", optimize=True)
-
-            # If still too large, reduce quality
-            if buffer.tell() / 1024 > max_kb:
-                buffer = BytesIO()
-                image.save(buffer, format="PNG", optimize=True, quality=85)
-
-            return buffer.getvalue()
-
-        # Prepare the new image (download + resize) BEFORE deleting the old emoji,
-        # so a download/resize failure leaves the clan's current emoji intact.
-        # Both steps run off the event loop (network + CPU-bound PIL work).
-        raw_bytes = await asyncio.to_thread(download_image_blocking, emoji_url)
-        img_data = await asyncio.to_thread(resize_and_compress_image, raw_bytes)
-
-        application = await bot.rest.fetch_my_user()
-
-        # Check for any existing emoji with the same NAME (not just same clan)
-        print(f"[DEBUG] Checking for existing emojis with name: {clan_name}")
-        try:
-            existing_emojis = await bot.rest.fetch_application_emojis(application.id)
-            for emoji in existing_emojis:
-                if emoji.name.lower() == clan_name.lower():
-                    print(f"[DEBUG] Found duplicate emoji name '{emoji.name}' (ID: {emoji.id}), deleting...")
-                    try:
-                        await bot.rest.delete_application_emoji(
-                            application=application.id,
-                            emoji=emoji.id
-                        )
-                        print(f"[DEBUG] Deleted duplicate emoji {emoji.id}")
-                    except Exception as e:
-                        print(f"[ERROR] Failed to delete duplicate emoji {emoji.id}: {e}")
-        except Exception as e:
-            print(f"[ERROR] Failed to fetch existing emojis: {e}")
-
-        # Also delete old emoji for this specific clan if it exists
-        old_mention = db_clan.emoji or ""
-        match = re.search(r':(\d+)>$', old_mention)
-        if match:
-            old_id = int(match.group(1))
-            # Only try to delete if it's different from any we already deleted
-            try:
-                await bot.rest.delete_application_emoji(
-                    application=application.id,
-                    emoji=old_id
-                )
-                print(f"[DEBUG] Deleted old clan emoji {old_id}")
-            except hikari.NotFoundError:
-                print(f"[DEBUG] Old emoji {old_id} not found (may have been already deleted)")
-            except Exception as e:
-                print(f"[DEBUG] Could not delete old emoji {old_id}: {e}")
-
-        # Upload to Discord
-        new_emoji = await bot.rest.create_application_emoji(
-            application=application.id,
-            name=clan_name,
-            image=img_data
-        )
-        print(f"[DEBUG] Created new emoji '{new_emoji.name}' (ID: {new_emoji.id})")
-
-        # Update database
-        await mongo.clans.update_one(
-            {"tag": tag},
-            {"$set": {"emoji": new_emoji.mention}}
-        )
+        from utils.clan_dashboard_actions import replace_emoji
+        raw=await mongo.clans.find_one({'tag':tag})
+        if not raw:raise ValueError('Clan no longer exists.')
+        await native_snapshot(mongo, ctx, 'before_emoji', tag)
+        new_emoji=await replace_emoji(bot,mongo,raw,emoji_url)
+        clan_name=new_emoji.name
 
         # Success message
         success_components = [

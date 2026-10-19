@@ -232,3 +232,47 @@ def test_private_page_rejects_another_user(monkeypatch):
     asyncio.run(command.personal_page(ctx,'event|123|1'))
     database.assert_not_called()
     assert ctx.respond.call_args.kwargs['ephemeral'] is True
+
+
+def test_final_winner_card_survives_update_and_sync(db, monkeypatch):
+    event=store.ensure_current(db,WARRIORS_UNITED_GUILD_ID)
+    store.join_event(db,event['id'],123,['#ONE'],at=START)
+    with db:
+        db.execute('INSERT INTO loot_events VALUES (?, ?, ?, ?)',('#ONE',START.isoformat(),'farming',12345))
+    store.finalize_event(db,event['id'],at=START+timedelta(days=1))
+    data=store.snapshot(db,event['id'])
+    data.update(labels={'123':'Winner'},levels={'#ONE':18})
+    monkeypatch.setattr(command,'panel_data',AsyncMock(return_value=data))
+    monkeypatch.setattr(command,'refresh',AsyncMock())
+    async def database(fn,*args,**kwargs): return fn(db,*args,**kwargs)
+    monkeypatch.setattr(command,'database',database)
+    ctx=SimpleNamespace(interaction=SimpleNamespace(guild_id=WARRIORS_UNITED_GUILD_ID,edit_initial_response=AsyncMock()))
+    asyncio.run(command.update(ctx,event['id']))
+    panels=ctx.interaction.edit_initial_response.call_args.kwargs['components']
+    assert len(panels)==2
+    assert 'TOP 10' in str(panels[0].build())
+    assert '12,345 gold' in str(panels[0].build())
+    card=str(panels[1].build())
+    assert '<@123>' in card and '#ONE' in card and 'TH_18' in card
+    assert 'Go touch some grasss ffs' in card
+    store.register_message(db,event['id'],111,222)
+    rest=SimpleNamespace(edit_message=AsyncMock())
+    monkeypatch.setitem(command.bot_data.data,'bot',SimpleNamespace(rest=rest))
+    asyncio.run(command.sync_messages(event['id']))
+    synced=rest.edit_message.call_args.kwargs['components']
+    assert str(synced[1].build())==card
+    assert rest.edit_message.call_args.kwargs['user_mentions'] is False
+
+
+@pytest.mark.parametrize('scores', [[], [100,100]])
+def test_final_card_does_not_declare_winner_for_empty_or_tied_results(db,scores):
+    event=store.ensure_current(db,WARRIORS_UNITED_GUILD_ID)
+    for i,score in enumerate(scores):
+        tag=('#ONE','#TWO')[i]
+        store.join_event(db,event['id'],i+1,[tag],at=START)
+        with db:
+            db.execute('INSERT INTO loot_events VALUES (?, ?, ?, ?)',(tag,START.isoformat(),'farming',score))
+    store.finalize_event(db,event['id'],at=START+timedelta(days=1))
+    card=str(command.render(store.snapshot(db,event['id']))[1].build())
+    assert '<@' not in card
+    assert ('Exact tie' if scores else 'no winner') in card

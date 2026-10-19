@@ -82,7 +82,6 @@ CALENDAR_COLORS = {
 }
 FALLBACK_COLOR = 0x5865F2
 
-LEGACY_COLLECTION_NAME = "fwa_sync_alerts"  # pre-panel single collection; read-once, never written
 CONFIG_ID = schema.CONFIG_ID
 
 # ---- Module state ----
@@ -101,10 +100,12 @@ def _legacy_alerts(mongo):
 
     Everything else now reaches Mongo through the four declared attributes on
     MongoClient (fwa_sync_config/events/responses/deliveries, see utils/mongo.py). This
-    ad hoc lookup is the one exception, and it is deliberately narrow: it is called only
-    by _migrate_legacy_config() below, never written to, and never deleted.
+    legacy source has its own explicit route. It is called only by
+    _migrate_legacy_config() below, never written to, and never deleted.
     """
-    return mongo.get_database("settings").get_collection(LEGACY_COLLECTION_NAME)
+    from utils.mongo_routes import collection_for
+
+    return collection_for(mongo, "legacy_fwa_sync_alerts")
 
 
 # ---- Config ----

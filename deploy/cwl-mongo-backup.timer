@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Warriors United mongo backup/recovery check
+
+[Timer]
+OnCalendar=*-*-* *:02/15:00
+Persistent=true
+AccuracySec=15s
+Unit=cwl-mongo-backup.service
+
+[Install]
+WantedBy=timers.target

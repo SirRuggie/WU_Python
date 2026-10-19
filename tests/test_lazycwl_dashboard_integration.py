@@ -114,8 +114,9 @@ def test_bound_confirmation_uses_raw_bson_id_and_is_one_shot(monkeypatch):
     nonce = dashboard._bind(token, "#ABC", [document], operation="send")
     calls = []
 
-    async def remind(tag, *, expected_list_id=None, section=None):
+    async def remind(tag, *, expected_list_id=None, section=None, expected_channel=None):
         assert section == "FWA"
+        assert expected_channel == service.reminder_channel("FWA")
         calls.append((tag, expected_list_id))
         return {"ok": True}
 

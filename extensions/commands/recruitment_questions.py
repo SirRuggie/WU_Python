@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from utils.dashboard_native_history import save_message as save_with_history
+
 import copy
 import re
 import uuid
@@ -452,7 +454,7 @@ async def save(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJEC
     if not _dirty(state):
         return _editor(state, "This template is already saved.")
     try:
-        saved = await content.save_template(
+        saved = await save_with_history(content.save_template, 'question',
             mongo, state["guild_id"], state["variant"], state["template"],
             state["template"]["revision"], state["user_id"],
         )
@@ -487,7 +489,7 @@ async def reset_confirm(ctx: Any, action_id: str, mongo: MongoClient = lightbulb
     if problem:
         return _error(problem)
     try:
-        saved = await content.reset_template(
+        saved = await save_with_history(content.reset_template, 'question',
             mongo, state["guild_id"], state["variant"],
             state["template"]["revision"], state["user_id"],
         )

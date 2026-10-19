@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Warriors United backups every two minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/2:00
+Persistent=true
+AccuracySec=15s
+Unit=cwl-backup-monitor.service
+
+[Install]
+WantedBy=timers.target

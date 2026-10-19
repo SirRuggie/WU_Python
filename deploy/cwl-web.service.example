@@ -1,0 +1,28 @@
+# Template only: not installed. Provision a dedicated OS user and private env file.
+[Unit]
+Description=Warriors United CWL web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cwlweb
+WorkingDirectory=/opt/wu-cwl
+EnvironmentFile=/etc/wu-cwl/web.env
+Environment=CWL_WEB_HOST=127.0.0.1
+Environment=CWL_WEB_PORT=8767
+Environment=CWL_WEB_DEV_FIXTURE=0
+Environment=CWL_WEB_DB_PATH=/var/lib/wu-cwl/cwl.sqlite
+Environment=CWL_WEB_STATIC_DIR=/opt/wu-cwl/web/cwl/dist
+ExecStart=/opt/wu-cwl/.venv/bin/python -m cwl_web
+Restart=on-failure
+RestartSec=3
+StateDirectory=wu-cwl
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

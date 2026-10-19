@@ -165,7 +165,24 @@ def render(data):
         Button(style=hikari.ButtonStyle.SECONDARY,label='Update',emoji='🔄',
                custom_id=f"goldrush_update:{event['id']}"),
     ])]
-    return [Container(accent_color=GOLDENROD_ACCENT,components=parts)]
+    panels = [Container(accent_color=GOLDENROD_ACCENT,components=parts)]
+    if final:
+        # Generate this on every render: Update must not erase the winner card.
+        rows = data['rows']
+        if not rows:
+            result = 'No entered account recorded gold. There is no winner this time.'
+        elif len(rows)>1 and (rows[0]['gold'],rows[0]['reached_at']) == (rows[1]['gold'],rows[1]['reached_at']):
+            result = 'Exact tie! Staff will review the tied accounts before announcing a winner.'
+        else:
+            winner = rows[0]
+            label = data.get('labels',{}).get(winner['user_id'],'Discord profile')
+            owner = f"[{profile_label(label)}](https://discord.com/users/{winner['user_id']})"
+            result = lines[0].replace(owner,f"<@{winner['user_id']}>")
+            result += ('\n\nHe has proven to have no life and got all the gold... '
+                       'Go touch some grasss ffs 😂🌱')
+        panels.append(Container(accent_color=GOLDENROD_ACCENT,components=[
+            Text(content='## 🏆 GOLD RUSH WINNER'),Separator(divider=True),Text(content=result)]))
+    return panels
 
 
 async def sync_messages(event_id, components=None):

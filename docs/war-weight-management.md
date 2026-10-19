@@ -14,3 +14,11 @@ Open **/manage → FWA → War Weight**. Administrator permission is checked bot
 Owner: `utils/war_weight.py`. Permanent `war_weight_settings` collection in the database backing `mongo.fwa_data`; one document per guild, string guild ID as `_id`, schema version 1. Fields: `guild_id`, `ranges` keyed by Town Hall number, `minimum_th`, `revision`, `updated_by`, `updated_at`. No TTL and no `button_store` usage. Defaults are read without writing; the first edit creates the record. Revision-based compare-and-swap prevents stale panels/modals from replacing newer settings.
 
 Private editor sessions use the existing TTL-backed `component_state` collection for 30 minutes and bind the guild, user, editor type, and revision. Durable settings survive restarts independently of these sessions.
+
+## Manual CWL player weights
+
+Dashboard manual weights carry into later signups by normalized player tag. Existing season values and published snapshots are not rewritten. “Restore source” stops carrying the manual override into future signups; previous values remain in history. Staff account details show the first saved manual weight.
+
+`cwl_web/player_weights.py` owns permanent `player_manual_weight_history` in the database backing `mongo.fwa_data`, scoped to the server. Each immutable event records player tag, weight (null when cleared), season, staff ID, and UTC time. No TTL or seasonal deletion. Existing roster edit audit records are migrated once, with current manual entries as fallback. Original weights can only be recovered where historical records still exist.
+
+The roster write and local SQLite outbox commit together. The web service syncs every 30 seconds with majority Mongo acknowledgement, retrying queued events after failures/restarts without duplicates. Mongo events rebuild the local cache after recovery. SQLite and the full Mongo databases are covered by the existing backup jobs. No bot restart or Discord command changes are required.

@@ -1,0 +1,90 @@
+import asyncio
+from types import SimpleNamespace as NS
+from unittest.mock import AsyncMock, patch
+from contextlib import asynccontextmanager
+import pytest
+from aiohttp import web
+from cwl_web import command_image_library as lib
+
+def test_usage_nested_duplicate_disabled_and_legacy():
+    url='https://example.com/photo.png'
+    rows=[{'command':'!one','blocks':[{'type':'container','blocks':[{'type':'image','url':url},{'type':'section','accessory':{'type':'thumbnail','url':url}}]}]}, {'command':'!two','enabled':False,'image_url':url}]
+    result=lib.merge_images([{'url':url,'name':'Welcome'}],rows)
+    assert result==[{'url':url,'name':'Welcome','commands':['!one','!two'],'stored':True,'archived':False,'folder':''}]
+
+def test_unused_and_video_and_external():
+    result=lib.merge_images([{'url':'https://example.com/unused.png','name':'Unused'}],[{'command':'!one','blocks':[{'type':'gallery','items':[{'url':'https://example.com/movie.mp4'},{'url':'https://example.com/pic.png'}]}]}])
+    assert len(result)==2
+    assert next(item for item in result if item['name']=='Unused')['commands']==[]
+    assert next(item for item in result if item['name']=='pic.png')['stored'] is False
+
+def test_library_denied_before_database(monkeypatch):
+    monkeypatch.setattr(lib,'require_manage',AsyncMock(side_effect=web.HTTPForbidden()))
+    with pytest.raises(web.HTTPForbidden):asyncio.run(lib.listing(object()))
+
+def test_catalog_upsert_scoped_and_stable(monkeypatch):
+    target=NS(update_one=AsyncMock())
+    @asynccontextmanager
+    async def mongo(request):yield object()
+    monkeypatch.setattr(lib,'mongo',mongo);monkeypatch.setattr(lib,'collection',lambda db:target)
+    asyncio.run(lib.remember(object(),'https://example.com/a.png','My image',{'user_id':'123'}))
+    query,update=target.update_one.call_args.args
+    assert len(query['_id'])==64
+    assert update['$setOnInsert']['guild_id']==lib.GUILD_ID
+    assert update['$setOnInsert']['name']=='My image'
+    assert target.update_one.call_args.kwargs['upsert'] is True
+
+
+def test_archived_images_retain_usage_and_url():
+    url='https://example.com/art.png'
+    result=lib.merge_images([{'url':url,'name':'Art','archived':True}],[{'command':'!one','image_url':url}])
+    assert result[0]['archived'] is True
+    assert result[0]['url']==url and result[0]['commands']==['!one']
+
+def test_rename_archive_metadata_only(monkeypatch):
+    url='https://example.com/art.png'
+    class Cursor:
+        async def to_list(self,**kwargs):return [{'url':url,'name':'Art'}]
+    target=NS(find=lambda query:Cursor(),update_one=AsyncMock())
+    class Empty:
+        async def to_list(self,**kwargs):return []
+    @asynccontextmanager
+    async def mongo(request):yield object()
+    monkeypatch.setattr(lib,'mongo',mongo);monkeypatch.setattr(lib,'collection',lambda db:target)
+    monkeypatch.setattr(lib,'commands',lambda db:NS(find=lambda query:Empty()))
+    monkeypatch.setattr(lib,'require_manage',AsyncMock(return_value={'user_id':'123'}))
+    response=asyncio.run(lib.update(NS(json=AsyncMock(return_value={'url':url,'name':'Banner','archived':True}))))
+    assert 'Banner' in response.text
+    data=target.update_one.call_args.args[1]['$set']
+    assert data['archived'] is True and data['url']==url and data['updated_by']=='123'
+
+
+def test_sync_indexes_images_only_without_overwriting_names(monkeypatch):
+    from unittest.mock import Mock
+    from cwl_web import command_images
+    target=NS(bulk_write=AsyncMock())
+    @asynccontextmanager
+    async def mongo(request):yield object()
+    media=NS(_require_config=lambda:NS(bucket='public-art'),_s3=lambda:NS(list_objects_v2=Mock(return_value={'Contents':[{'Key':'clans/WU/logo.png'},{'Key':'archive.zip'},{'Key':'static/banner.webp'}],'IsTruncated':True,'NextContinuationToken':'next'})),public_url=lambda key:'https://img.example.com/'+key)
+    monkeypatch.setattr(lib,'require_manage',AsyncMock(return_value={'user_id':'123'}))
+    monkeypatch.setattr(lib,'mongo',mongo);monkeypatch.setattr(lib,'collection',lambda db:target)
+    monkeypatch.setattr(command_images,'store',lambda req:media)
+    response=asyncio.run(lib.sync_r2(NS(json=AsyncMock(return_value={'cursor':None}))))
+    assert '"indexed": 2' in response.text and 'next' in response.text
+    operations=target.bulk_write.call_args.args[0]
+    assert len(operations)==2
+    assert set(operations[0]._doc)=={'$setOnInsert'}
+    assert operations[0]._doc['$setOnInsert']['folder']=='clans/WU'
+    assert operations[0]._doc['$setOnInsert']['guild_id']==lib.GUILD_ID
+
+
+def test_sync_requires_access_before_bucket_lookup(monkeypatch):
+    monkeypatch.setattr(lib,'require_manage',AsyncMock(side_effect=web.HTTPForbidden()))
+    with pytest.raises(web.HTTPForbidden):asyncio.run(lib.sync_r2(object()))
+
+
+def test_folder_metadata_is_preserved_and_validated(monkeypatch):
+    result=lib.merge_images([{'url':'https://example.com/a.png','name':'Welcome','folder':'Announcements'}],[])
+    assert result[0]['folder']=='Announcements'
+    monkeypatch.setattr(lib,'require_manage',AsyncMock(return_value={'user_id':'123'}))
+    with pytest.raises(web.HTTPBadRequest):asyncio.run(lib.update(NS(json=AsyncMock(return_value={'url':result[0]['url'],'name':'Welcome','archived':False,'folder':'bad\nfolder'}))))

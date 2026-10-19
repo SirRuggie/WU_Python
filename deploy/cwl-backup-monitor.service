@@ -1,0 +1,11 @@
+[Unit]
+Description=Warriors United backup failure and recovery monitoring
+
+[Service]
+Type=oneshot
+WorkingDirectory=/nvme0n1-disk/Projects/Bot - Warriors United
+ExecStart="/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python" "/nvme0n1-disk/Projects/Bot - Warriors United/tools/backup/monitor.py"
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStartSec=3min

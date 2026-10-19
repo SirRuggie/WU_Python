@@ -503,6 +503,8 @@ def test_clan_raw_upload_routes_through_dispatcher_and_previews_saved_banner(mon
             find_one=AsyncMock(return_value={"_id": "clan-row", "tag": "#ABC", "name": "Test Clan"}),
             update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
         ))
+        history = SimpleNamespace(insert_one=AsyncMock())
+        mongo.bot_config = SimpleNamespace(database=SimpleNamespace(get_collection=lambda *a, **kw: history))
         media = SimpleNamespace(upload_bytes=AsyncMock(return_value="https://media.example/banner.png"))
         action = components.registered_functions["dashboard_image_submit"]
 
@@ -519,6 +521,7 @@ def test_clan_raw_upload_routes_through_dispatcher_and_previews_saved_banner(mon
             {"_id": "clan-row", "tag": "#ABC", "banner": None},
             {"$set": {"banner": "https://media.example/banner.png"}},
         )
+        history.insert_one.assert_awaited_once()
         payload = interaction.edits[-1]["components"][0].build()[0]
         galleries = [c for c in payload["components"] if c["type"] == 12]
         assert galleries[0]["items"][0]["media"]["url"] == "https://media.example/banner.png"

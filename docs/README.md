@@ -106,6 +106,10 @@ before changing durable documentation.
 
 ## Proposals
 
+- [cwl-web-dashboard-plan.md](cwl-web-dashboard-plan.md) — approved CWL website
+  direction, mobile requirements, roster workflow, production checklist, research,
+  and artifact/hosting locations.
+
 - [todo-dashboard-proposal.md](todo-dashboard-proposal.md) — the pre-build
   research and the layout options for `/todo` (2026-08-02). Superseded as a
   description of the feature by [todo-dashboard.md](todo-dashboard.md); kept

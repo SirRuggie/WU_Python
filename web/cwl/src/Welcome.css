@@ -1,0 +1,11 @@
+.welcome-screen .login-card{width:min(100%,520px);padding:clamp(22px,5vw,36px)}
+.welcome-screen h1{font-size:clamp(30px,6vw,40px);line-height:1.15;letter-spacing:-.035em}
+.welcome-features{list-style:none;padding:0;margin:24px 0;display:grid;gap:16px}
+.welcome-features li{display:flex;gap:14px;align-items:center}
+.welcome-features li>span{font-size:24px;flex:none}
+.welcome-features strong,.welcome-features small{display:block}
+.welcome-features small{margin-top:3px;color:#c2c6d0}
+.welcome-destination{padding:12px;border-left:3px solid #80b5ff;background:#1c293e;border-radius:6px;color:#eef5ff}
+.welcome-screen .primary{background:#2055aa;color:#fff;border-color:#80b5ff;min-height:48px}
+.page-link-row{display:flex;align-items:center;gap:12px;justify-content:flex-end;flex-wrap:wrap;margin-bottom:16px}
+.page-link-row button{font-size:13px;min-height:44px}.page-link-row span{font-size:13px;color:#a4dfc4}

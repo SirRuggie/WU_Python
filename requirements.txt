@@ -84,3 +84,6 @@ beautifulsoup4
 # DST boundary. Needs system tzdata on slim containers: if ZoneInfoNotFoundError shows
 # up in the logs, `pip install tzdata`.
 icalendar
+
+# Standards-based opt-in browser push reminders.
+pywebpush>=2.0,<3

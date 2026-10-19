@@ -555,6 +555,17 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
     # Full cycle snapshots are independent of future monthly defaults,
     # including newly provisioned sequence templates and sequence settings.
     campaign = _deep_merge(default_campaign() if isinstance(override, dict) and "schema_version" in override else base, override)
+    if row is None:
+        # Carry only destinations forward, not old messages, dates or delivery state.
+        previous = await mongo.bot_config.find({"kind": "cwl_campaign_cycle", "guild_id": guild_id}).to_list(length=None)
+        previous = [item for item in previous if item.get("cycle", "") < selected_cycle and isinstance(item.get("campaign"), dict)]
+        candidates = previous + ([saved] if saved and isinstance(saved.get("campaign"), dict) else [])
+        for pool in ("main", "lazy"):
+            for source in sorted(candidates, key=lambda item: str(item.get("updated_at", "")), reverse=True):
+                channel = source["campaign"].get("messages", {}).get("roster", {}).get("variants", {}).get(pool, {}).get("destination_channel_id")
+                if channel:
+                    campaign["messages"]["roster"]["variants"][pool]["destination_channel_id"] = channel
+                    break
     validate_campaign(campaign)
     deliveries = copy.deepcopy((row or {}).get("deliveries", []))
     sent_occurrences = list((row or {}).get("sent_occurrences", []))
@@ -569,6 +580,7 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         "campaign": campaign,
         "deliveries": deliveries,
         "sent_occurrences": sent_occurrences,
+        "uncertain_occurrences": list((row or {}).get("uncertain_occurrences", [])),
         "skipped": skipped,
         "deadline": signup_deadline(campaign, selected_cycle).isoformat(),
     }
@@ -748,7 +760,7 @@ def monthly_campaign(campaign: dict, cycle: str) -> dict:
     return result
 
 
-async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | None = None, *, keep_draft: bool = False, require_future_signup: bool = False, repeat_monthly: bool = False, candidate_campaign: dict | None = None, preserve_editor_campaign: bool = False) -> dict:
+async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | None = None, *, keep_draft: bool = False, require_future_signup: bool = False, repeat_monthly: bool = False, candidate_campaign: dict | None = None, preserve_editor_campaign: bool = False, expected_generation: str | None = None) -> dict:
     row = await load_draft(mongo, draft)
     if not row:
         raise ValueError("Draft expired or does not exist")
@@ -757,6 +769,10 @@ async def apply_draft(mongo, draft: str, user_id: int, expected_revision: int | 
     guild_id, cycle, scope = int(row["guild_id"]), row["cycle"], row["scope"]
     validate_campaign(candidate_campaign if candidate_campaign is not None else row["campaign"])
     live = await load_campaign(mongo, guild_id, cycle)
+    if expected_generation is not None:
+        from utils.cwl_web_bridge import campaign_generation
+        if campaign_generation(live) != expected_generation:
+            raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
     if repeat_monthly and row.get("recurring_base_version") != live.get("recurring_version"):
         raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
     current_revision = live["defaults_revision"] if scope == "defaults" else live["revision"]
@@ -894,8 +910,12 @@ async def _cycle_update(mongo, guild_id: int, cycle: str, update: dict):
     return await load_campaign(mongo, guild_id, cycle)
 
 
-async def set_paused(mongo, guild_id: int, paused: bool, cycle: str | None = None, user_id: int | None = None):
+async def set_paused(mongo, guild_id: int, paused: bool, cycle: str | None = None, user_id: int | None = None, *, expected_generation: str | None = None):
     loaded = await load_campaign(mongo, guild_id, cycle)
+    if expected_generation is not None:
+        from utils.cwl_web_bridge import campaign_generation
+        if campaign_generation(loaded) != expected_generation:
+            raise RuntimeError("CWL settings changed. Reload the dashboard before saving.")
     campaign = copy.deepcopy(loaded["campaign"])
     campaign["paused"] = bool(paused)
     now = _utcnow()

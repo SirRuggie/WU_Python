@@ -12,19 +12,6 @@ def document():
         'conflict_review':{'conflict_key':'exact','tags':['#PYY'],'user_id':30,'reason':'Reviewed old links','reviewed_by':99}}}
 
 
-@pytest.mark.parametrize('change', ['none','new_tag','key','user','unavailable','conflicts','no_reason','missing_current'])
-def test_review_only_covers_exact_confirmed_accounts(change):
-    ticket=document();linked=ticket['linked_accounts'];review={'new_tags':['#PYY']}
-    if change=='new_tag': review['new_tags'].append('#QCC')
-    if change=='key': linked['conflict_key']='changed'
-    if change=='user': linked['conflict_review']['user_id']=31
-    if change=='unavailable': linked['unavailable_sources']=['ClashKing']
-    if change=='conflicts': linked['conflicting_tags']=['#PYY']
-    if change=='no_reason': linked['conflict_review']['reason']=''
-    if change=='missing_current': linked['current_tags']=[]
-    assert resolve._conflict_review_covers_fwa_accounts(ticket,review)==(change=='none')
-
-
 @pytest.mark.parametrize('blacklisted',[False,True])
 def test_confirmed_accounts_continue_without_duplicate_prompt_but_keep_blacklist(monkeypatch,blacklisted):
     transitions=[]
@@ -37,9 +24,51 @@ def test_confirmed_accounts_continue_without_duplicate_prompt_but_keep_blacklist
     async def sync(*a,**k):
         return account_sync.AccountSyncResult(ticket,account_sync.AccountSnapshot(
             state='ready',current_accounts=(account_sync.LinkedAccount('#PYY'),),current_tags=('#PYY',),observed_tags=('#PYY',),retry_required=False,revision=1))
-    async def duplicate(*a,**k): raise AssertionError('Must not ask for the same review again')
     monkeypatch.setattr(account_sync,'sync_ticket_accounts',sync)
-    monkeypatch.setattr(resolve,'_staff_context_is_fresh_for_review',duplicate)
     result=asyncio.run(resolve.approve_ticket(object(),mongo,ticket_id=ticket['_id'],member=SimpleNamespace(id=99),actor_name='Staff'))
     assert result.outcome==(store.BLOCKED if blacklisted else store.WON)
     assert bool(transitions)==(not blacklisted)
+
+
+@pytest.mark.parametrize('linked', [False, True])
+@pytest.mark.parametrize('condition', ['new', 'unavailable', 'conflict', 'lookup_failed', 'context_failed', 'flags_pending'])
+def test_only_missing_links_block_account_approval(monkeypatch, linked, condition):
+    transitions = []
+    mongo, ticket = _patch_approval(
+        monkeypatch, LockCollection(), blacklisted=lambda: False,
+        transitions=transitions,
+    )
+    ticket['ticket_type'] = 'fwa'
+    ticket['linked_accounts'] = {
+        'revision': 1,
+        'approval_review': {'state': 'pending', 'account_revision': 1},
+        'context_refresh_required': condition == 'context_failed',
+        'flag_refresh_required': condition == 'flags_pending',
+    }
+
+    async def sync(*args, **kwargs):
+        return account_sync.AccountSyncResult(ticket, account_sync.AccountSnapshot(
+            state='failed' if condition == 'lookup_failed' else 'ready',
+            current_accounts=(account_sync.LinkedAccount('#PYY'),) if linked else (),
+            current_tags=('#PYY',) if linked else (),
+            observed_tags=('#PYY',), retry_required=condition == 'lookup_failed',
+            revision=1,
+            unavailable_sources=('ClashKing',) if condition == 'unavailable' else (),
+            conflicting_tags=('#QCC',) if condition == 'conflict' else (),
+        ))
+
+    async def context_failed(*args, **kwargs):
+        raise RuntimeError('staff context unavailable')
+
+    monkeypatch.setattr(account_sync, 'sync_ticket_accounts', sync)
+    monkeypatch.setattr(resolve.account_sync, 'confirm_staff_context_queued', context_failed)
+    from extensions.commands.tickets import console
+    monkeypatch.setattr(console, 'queue_staff_identity_context', context_failed)
+    result = asyncio.run(resolve.approve_ticket(
+        object(), mongo, ticket_id=ticket['_id'],
+        member=SimpleNamespace(id=99), actor_name='Staff',
+    ))
+    assert result.outcome == (store.WON if linked else store.BLOCKED)
+    assert bool(transitions) == linked
+    if not linked:
+        assert result.reason == 'approval requires at least one linked Clash account'

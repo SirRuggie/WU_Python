@@ -100,7 +100,7 @@ itself, since the opponent's FWA status is supplementary to our own verdict.
 |---|---|
 | `clan_name`, `our_clan_tag` | Our clan. |
 | `scraped_opponent_tag`, `coc_opponent_tag` | Opponent tag as scraped vs. as reported by the CoC API (should match — this is the hard gate). |
-| `opponent_name`, `opponent_name_scraped` | The opponent's name as scraped (both keys carry the same value; `opponent_name` is the one `/todo` reads). |
+| `opponent_name`, `opponent_name_scraped` | The opponent's scraped name with HTML entities decoded (both keys carry the same value). `/todo` prefers `coc_opponent_name` from the Clash API and falls back to `opponent_name`. |
 | `opponent_active_fwa` | `True`/`False` from the opponent's own page, or `None` if that fetch or field failed. |
 | `war_number`, `sync_number` | From the Win Calculator block. |
 | `point_balance`, `active_fwa` | Our clan's own Point Balance / Active FWA fields. |

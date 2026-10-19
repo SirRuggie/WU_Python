@@ -1180,7 +1180,7 @@ def test_blocked_approval_refreshes_shrunken_snapshot_before_blacklist_result(
 
 
 @pytest.mark.parametrize("opening_failed", [True, False])
-def test_fwa_approval_requires_review_after_final_sync_discovers_accounts(
+def test_fwa_approval_completes_when_final_sync_discovers_accounts(
     monkeypatch,
     opening_failed,
 ):
@@ -1254,25 +1254,15 @@ def test_fwa_approval_requires_review_after_final_sync_discovers_accounts(
         member=SimpleNamespace(id=99), actor_name="Recruiter",
         coc_client=object(),
     ))
-    assert first.outcome == store.BLOCKED
-    assert first.reason == resolve.FWA_IDENTITY_REVIEW_MESSAGE
+    assert first.outcome == store.WON
     expected = ("#NEW123",) if opening_failed else ("#OLD123", "#NEW123")
     assert delivered == [expected]
-    assert mongo.tickets.documents[ticket["_id"]]["status"] == "open"
-
-    second = asyncio.run(resolve.approve_ticket(
-        object(), mongo, ticket_id=ticket["_id"],
-        member=SimpleNamespace(id=99), actor_name="Recruiter",
-        coc_client=object(),
-    ))
-    assert second.outcome == store.WON
     durable = mongo.tickets.documents[ticket["_id"]]
     assert durable["status"] == "approved"
-    assert durable["linked_accounts"]["approval_review"]["state"] == "acknowledged"
-    assert delivered == [expected]
+    assert "approval_review" not in durable["linked_accounts"]
 
 
-def test_terminal_fwa_override_refreshes_new_tags_before_review_block(monkeypatch):
+def test_terminal_fwa_override_approves_newly_linked_accounts(monkeypatch):
     ticket = _ticket(status="denied", source={"guild_id": 1, "channel_id": 2})
     ticket["ticket_type"] = "fwa"
     ticket["rev"] = 1
@@ -1334,17 +1324,7 @@ def test_terminal_fwa_override_refreshes_new_tags_before_review_block(monkeypatc
         expected_status="denied", expected_rev=1, override=override,
         prior_effect_marker=marker, coc_client=object(),
     ))
-    assert first.outcome == store.BLOCKED
-    assert first.reason == resolve.FWA_IDENTITY_REVIEW_MESSAGE
-    assert deliveries == [("#OVR123",)]
-
-    second = asyncio.run(resolve.approve_ticket(
-        object(), mongo, ticket_id=ticket["_id"],
-        member=SimpleNamespace(id=99), actor_name="Recruiter",
-        expected_status="denied", expected_rev=1, override=override,
-        prior_effect_marker=marker, coc_client=object(),
-    ))
-    assert second.outcome == store.WON
+    assert first.outcome == store.WON
     assert mongo.tickets.documents[ticket["_id"]]["status"] == "approved"
     assert deliveries == [("#OVR123",)]
 

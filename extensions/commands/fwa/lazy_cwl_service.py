@@ -33,6 +33,7 @@ from hikari.impl import (
 )
 
 from utils import lazy_cwl_store as store
+from utils import return_reminder_settings
 from utils.mongo import MongoClient
 from utils.startup_reconciler import StartupReconciler
 from utils.constants import GOLD_ACCENT, RED_ACCENT
@@ -40,7 +41,7 @@ from utils.clash_links import resolve_discord_ids
 
 _log = logging.getLogger(__name__)
 
-# Hard-coded ping channel, unchanged from the old feature; out of scope here.
+# Backwards-compatible defaults; actual sends resolve shared Mongo settings.
 PING_CHANNEL = 1424256751913668770
 # Main roster player pings: separate from CWL campaign announcements.
 MAIN_CWL_CHANNEL = 1555939498016374985
@@ -65,6 +66,11 @@ def reminder_channel(section: str = store.DEFAULT_SECTION) -> int | None:
     """Configured return-reminder destination for a roster section."""
     destination = store.SECTION_POLICY[store.normalize_section(section)]["reminder_destination"]
     return {"fwa_return": PING_CHANNEL, "main_cwl": MAIN_CWL_CHANNEL}.get(destination)
+
+
+async def effective_reminder_channel(section: str = store.DEFAULT_SECTION, *, mongo=None) -> int:
+    """Read the live shared destination; database failures must not fall back."""
+    return await return_reminder_settings.destination(mongo if mongo is not None else mongo_client, section)
 
 
 async def get_discord_ids(player_tags: list[str]) -> Optional[dict[str, Optional[str]]]:
@@ -325,10 +331,12 @@ async def reminder_recipients(doc: dict) -> list[dict]:
     ]
 
 
-async def _send_reminder_message(doc: dict, away: list[dict]) -> None:
-    channel = reminder_channel(doc.get("section", store.DEFAULT_SECTION))
+async def _send_reminder_message(doc: dict, away: list[dict], *, expected_channel=None) -> None:
+    channel = await effective_reminder_channel(doc.get("section", store.DEFAULT_SECTION))
     if channel is None:
         raise ValueError("No reminder destination is configured for this section")
+    if expected_channel is not None and channel != expected_channel:
+        raise ValueError("Return channel changed. Review again before sending.")
     clan_data = await mongo_client.clans.find_one({"tag": doc["clan_tag"]})
     role_id = clan_data.get("role_id") if clan_data else None
 
@@ -418,10 +426,10 @@ def _stale_result() -> dict:
     return {"ok": False, "stale": True, "error": "This saved list changed. Refresh and try again."}
 
 
-async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = store.DEFAULT_SECTION, scheduled: bool = False) -> dict:
+async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = store.DEFAULT_SECTION, scheduled: bool = False, expected_channel=None) -> dict:
     """Send an away-players reminder for clan_tag's active saved list."""
     section = store.normalize_section(section)
-    if reminder_channel(section) is None:
+    if await effective_reminder_channel(section) is None:
         return {**_REMIND_NOW_DEFAULTS, "error": "No reminder destination is configured."}
     doc = await store.get_active(mongo_client, clan_tag, section=section)
     if doc is not None and store._utc(doc["expires_at"]) <= datetime.now(timezone.utc):
@@ -457,7 +465,10 @@ async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = sto
 
     # Recipient lookup above can take time; the active-list check immediately
     # before this send prevents a finish or replacement during that lookup.
-    await _send_reminder_message(current, away)
+    if expected_channel is None:
+        await _send_reminder_message(current, away)
+    else:
+        await _send_reminder_message(current, away, expected_channel=expected_channel)
     await store.record_reminder_sent(mongo_client, current["_id"])
 
     return {

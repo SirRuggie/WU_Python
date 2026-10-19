@@ -15,7 +15,7 @@ from tests.test_cwl_navigation import nodes
 from tests.test_lazy_cwl_store import _Mongo, _list_doc, NOW
 
 
-def test_publication_sends_saved_both_without_review_and_retries_only_failure(monkeypatch):
+def test_publication_sends_saved_both_and_blocks_ambiguous_retry(monkeypatch):
     async def scenario():
         mongo = MemoryMongo()
         draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2030-10")
@@ -25,17 +25,17 @@ def test_publication_sends_saved_both_without_review_and_retries_only_failure(mo
         campaign["messages"]["roster"]["variants"]["main"]["body"] = "Fresh saved announcement"
         saved = await ui._save_campaign(mongo, draft, campaign)
         live = await cwl_campaign.load_campaign(mongo, 22, "2030-10")
-        assert live["campaign"]["paused"] is True  # editing never starts reminders
+        assert live["campaign"]["paused"] is True
         panel = await ui.publish_send(modal_context(), saved["token"] + "|both", mongo=mongo)
         rendered = str([c.build()[0] for c in panel])
-        assert "Retry failed announcement" in rendered and "View post" in rendered
+        assert "Delivery uncertain" in rendered and "View post" in rendered
+        assert "Retry failed announcement" not in rendered
         assert len(rest.sent) == 1
         assert "Fresh saved announcement" in str([c.build()[0] for c in rest.sent[0]["components"]])
         rest.failing_channels.clear()
         await ui.publish_retry(modal_context(), saved["token"] + "|both", mongo=mongo)
-        assert [r["channel"] for r in rest.sent] == [1072714594625257502, 865726525990633472]
         await ui.publish_send(modal_context(), saved["token"] + "|both", mongo=mongo)
-        assert len(rest.sent) == 2
+        assert [r["channel"] for r in rest.sent] == [1072714594625257502]
     asyncio.run(scenario())
 
 

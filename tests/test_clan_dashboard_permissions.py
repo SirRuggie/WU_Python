@@ -145,6 +145,7 @@ def test_add_clan_modal_acknowledges_before_coc_or_mongo(monkeypatch):
     class Clans:
         async def update_one(self, *_args, **_kwargs):
             events.append(("mongo",))
+            return SimpleNamespace(upserted_id="new-clan")
 
     async def fake_index(_mongo):
         events.append(("index",))
@@ -154,6 +155,7 @@ def test_add_clan_modal_acknowledges_before_coc_or_mongo(monkeypatch):
 
     monkeypatch.setattr(update_clan_info, "ensure_clan_tag_index", fake_index)
     monkeypatch.setattr(update_clan_info, "clan_edit_menu", fake_menu)
+    monkeypatch.setattr(update_clan_info, "native_snapshot", AsyncMock())
     asyncio.run(update_clan_info.add_clan_modal.__wrapped__._func(
         ctx=ctx,
         coc_client=Coc(),
@@ -190,6 +192,7 @@ def test_fwa_modal_submits_acknowledge_before_database(handler, field_values):
     class FwaCollection:
         async def update_one(self, *_args, **_kwargs):
             events.append(("mongo",))
+            return SimpleNamespace(matched_count=1)
 
         async def find_one(self, *_args, **_kwargs):
             return {"_id": "fwa_config"}
@@ -197,12 +200,16 @@ def test_fwa_modal_submits_acknowledge_before_database(handler, field_values):
     interaction = Interaction()
     ctx = SimpleNamespace(
         interaction=interaction,
+        user=SimpleNamespace(id=123),
         member=interaction.member,
         respond=AsyncMock(),
     )
+    from utils.manage_field_drafts import remember
+    fields = ["fwa_base_links.th16"] if handler == "fwa_link_submit" else ["base_information.th16", "base_upgrade_notes.th16"]
+    token = remember(123, handler + ":th16", {"_id": "fwa_config"}, fields)
     asyncio.run(getattr(fwa_data, handler).__wrapped__._func(
         ctx=ctx,
-        action_id="th16",
+        action_id="th16|" + token,
         mongo=SimpleNamespace(fwa_data=FwaCollection()),
     ))
 

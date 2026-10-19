@@ -25,7 +25,13 @@ def test_expanded_defaults_match_native_and_saved_text_media_are_guild_scoped(va
     template = content.default_template(variant)
     rendered = content.render_template(template, user_id=22, recruiter_id=11, action_id="panel-state")
     native = native_components(variant, recruit_mention="<@22>", recruiter_mention="<@11>", action_id="panel-state")
-    assert [part.build() for part in rendered] == [part.build() for part in native]
+    # The editor normalizes trailing whitespace; Discord renders both identically.
+    def normalized(value):
+        if isinstance(value,str):return value.rstrip()
+        if isinstance(value,dict):return {k:normalized(v) for k,v in value.items()}
+        if isinstance(value,(list,tuple)):return [normalized(v) for v in value]
+        return value
+    assert normalized([part.build() for part in rendered]) == normalized([part.build() for part in native])
     assert content.validate_template(variant, template)["media"] == template["media"]
 
     changed = copy.deepcopy(template)

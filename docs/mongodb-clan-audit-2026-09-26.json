@@ -1,0 +1,11 @@
+{
+  "records": 25,
+  "exact_duplicate_groups": 0,
+  "normalized_duplicate_groups": 0,
+  "missing_or_invalid_tags": 0,
+  "noncanonical_tags": 0,
+  "indexes": [
+    "_id_"
+  ],
+  "production_writes": false
+}

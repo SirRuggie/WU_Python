@@ -257,7 +257,7 @@ class WarCopyTexts:
     @staticmethod
     def lose_copy(opponent: str) -> str:
         return (
-            f"⚠️War vs {opponent} is a LOSE war!\n"
+            f"❌War vs {opponent} is a LOSE war!\n"
             "🔹First Attack: 2⭐️ your mirror.\n"
             "🔹Second Attack:\n"
             "•Option 1: Hit Base #1 or any top base for loot.\n"
@@ -267,7 +267,7 @@ class WarCopyTexts:
     @staticmethod
     def blacklisted_copy(opponent: str) -> str:
         return (
-            f"BLACKLISTED vs {opponent}: Switch to war bases! "
+            f"🛡️BLACKLISTED vs {opponent}: Switch to war bases! "
             f"1st: Mirror (1-3,48-50) or -2 (4-47). "
             f"2nd: Cleanup/3⭐ lower. "
             f"Goal: 3 FWA points (30 war bases, 60% destruction, win)"
@@ -276,7 +276,7 @@ class WarCopyTexts:
     @staticmethod
     def mismatch_copy(opponent: str) -> str:
         return (
-            f"⚔️War vs {opponent} is a MISMATCH war!\n"
+            f"🤦War vs {opponent} is a MISMATCH war!\n"
             "🔹Attacking is optional this war.\n"
             "•Go for a 3⭐️ on your mirror if you'd like.\n"
             "•Or just snipe the top 1–2 bases for loot.\n"

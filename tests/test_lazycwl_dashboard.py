@@ -146,7 +146,7 @@ def test_apply_confirmation_passes_raw_expected_list_ids_and_keeps_per_clan_resu
     async def active(mongo, *, section):
         assert section == "FWA"
         return docs
-    async def remind(tag, *, expected_list_id, section):
+    async def remind(tag, *, expected_list_id, section, expected_channel=None):
         assert section == "FWA"
         sent.append((tag, expected_list_id)); return {"ok": tag == "#A1", "error": "failed"}
     monkeypatch.setattr(dashboard.store, "list_active", active)
@@ -249,7 +249,7 @@ def test_main_send_review_and_confirmation_are_section_scoped(monkeypatch):
     async def recipients(saved):
         return [{"tag": "#P1", "discord_id": 123}]
     calls = []
-    async def remind(tag, *, expected_list_id, section):
+    async def remind(tag, *, expected_list_id, section, expected_channel=None):
         calls.append((tag, expected_list_id, section))
         return {"ok": True, "sent": True}
     async def home(mongo, selected_tag=None, note=None, **kwargs):
@@ -319,3 +319,16 @@ def test_capture_confirmation_skips_clan_that_left_the_reviewed_section(monkeypa
     result = asyncio.run(dashboard.handle_capture_yes(ctx=ctx, action_id=f"{token}|{nonce}", mongo=object()))
     assert calls == []
     assert "Clan assignments changed" in _text(result)
+
+
+def test_send_confirmation_rejects_changed_destination(monkeypatch):
+    from unittest.mock import AsyncMock
+    doc = _doc()
+    token, nonce, ctx = _bound_session("send", [doc])
+    monkeypatch.setattr(dashboard, "_active", AsyncMock(return_value=[doc]))
+    monkeypatch.setattr(dashboard.service, "effective_reminder_channel", AsyncMock(return_value=999))
+    send = AsyncMock()
+    monkeypatch.setattr(dashboard.service, "remind_now", send)
+    result = asyncio.run(dashboard._apply_bound(object(), token, nonce, "send", ctx))
+    assert "Return channel changed" in _text(result)
+    send.assert_not_awaited()

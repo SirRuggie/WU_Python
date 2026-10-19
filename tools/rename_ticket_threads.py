@@ -14,6 +14,7 @@ from pymongo.errors import DuplicateKeyError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from utils.mongo_routes import RoutedCollections  # noqa: E402
 from extensions.commands import ticket_runtime  # noqa: E402
 from extensions.commands.tickets import thread_service  # noqa: E402
 
@@ -178,7 +179,7 @@ async def run(args):
     uri, token = os.getenv("MONGODB_URI", ""), os.getenv("DISCORD_TOKEN", "")
     if not uri or not token:
         print("MONGODB_URI and DISCORD_TOKEN must be set", file=sys.stderr); return 2
-    mongo = AsyncMongoClient(uri); db = mongo["settings"]
+    mongo = AsyncMongoClient(uri); db = RoutedCollections(mongo)
     runs, owner, leased = db[RUN_COLLECTION], uuid.uuid4().hex, False
     try:
         if args.apply:

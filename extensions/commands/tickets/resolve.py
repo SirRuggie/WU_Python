@@ -66,15 +66,6 @@ OVERRIDE_EFFECT_PENDING_MESSAGE = (
     "The earlier decision is still finishing its applicant and console updates. "
     "Nothing was changed. Try this override again in a moment."
 )
-FWA_IDENTITY_REVIEW_MESSAGE = (
-    "New linked account(s) were found. Review the refreshed Chocolate links in "
-    "the staff thread, then click Approve again."
-)
-FWA_IDENTITY_REFRESH_PENDING_MESSAGE = (
-    "The staff account and Chocolate checklist is still refreshing. Review it "
-    "when the update appears, then click Approve again."
-)
-
 KIND_APPROVE = "approve"
 KIND_DENY_FWA = "deny_fwa"
 KIND_DENY_MAIN = "deny_main"
@@ -1201,69 +1192,6 @@ async def stop_resolution_reconciler() -> None:
         )
 
 
-def _pending_fwa_identity_review(ticket: Mapping) -> Mapping | None:
-    linked = ticket.get("linked_accounts") or {}
-    review = linked.get("approval_review") if isinstance(linked, Mapping) else None
-    if not isinstance(review, Mapping) or review.get("state") != "pending":
-        return None
-    return review
-
-
-def _conflict_review_covers_fwa_accounts(ticket: Mapping, review: Mapping) -> bool:
-    """One explicit account review also satisfies the FWA re-review of those tags.
-
-    Never extend that consent to newly discovered accounts or changed ownership.
-    The fresh linked snapshot must still match the saved provider fingerprint.
-    """
-    linked = ticket.get("linked_accounts") or {}
-    confirmed = linked.get("conflict_review") or {}
-    new_tags = set(review.get("new_tags") or ())
-    return bool(
-        new_tags
-        and confirmed.get("reason")
-        and confirmed.get("reviewed_by")
-        and confirmed.get("user_id") == ticket.get("user_id")
-        and confirmed.get("conflict_key")
-        and confirmed.get("conflict_key") == linked.get("conflict_key")
-        and not linked.get("unavailable_sources")
-        and not linked.get("conflicting_tags")
-        and new_tags <= set(confirmed.get("tags") or ())
-        and new_tags <= set(linked.get("current_tags") or ())
-    )
-
-
-async def _staff_context_is_fresh_for_review(
-    bot: hikari.GatewayBot,
-    mongo: MongoClient,
-    ticket: Mapping,
-    review: Mapping,
-) -> bool:
-    requested_review_at = review.get("requested_at")
-    if not isinstance(requested_review_at, datetime):
-        return False
-    state = await mongo.ticket_automation_state.find_one({
-        "_id": f"ticket_staff_context:{ticket.get('_id')}",
-        "kind": "ticket_staff_context",
-    }) or {}
-    refresh_requested_at = state.get("refresh_requested_at")
-    delivered_at = state.get("delivered_at")
-    durable_fresh = bool(
-        state.get("delivery_state") == "delivered"
-        and not state.get("lease_owner")
-        and isinstance(refresh_requested_at, datetime)
-        and isinstance(delivered_at, datetime)
-        and refresh_requested_at >= requested_review_at
-        and delivered_at >= refresh_requested_at
-    )
-    if not durable_fresh:
-        return False
-    from extensions.commands.tickets import console
-
-    return await console.staff_chocolate_context_is_current(
-        bot, mongo, ticket
-    )
-
-
 async def _queue_and_deliver_latest_staff_context(
         bot: hikari.GatewayBot,
         mongo: MongoClient,
@@ -1490,72 +1418,17 @@ async def _resolve_ticket(
                 return store.Transition(store.MISSING, None)
             ticket = synced.ticket
             snapshot = synced.snapshot
-    if kind == KIND_APPROVE and snapshot.unavailable_sources:
-        return store.Transition(store.BLOCKED, ticket, "Account lookup is incomplete. Retry when both link services are available.")
-    if kind == KIND_APPROVE and snapshot.conflicting_tags:
-        return store.Transition(store.BLOCKED, ticket, "linked_account_conflict_review")
-    context_refreshed_this_attempt = False
     if kind == KIND_APPROVE and account_sync.staff_context_refresh_required(ticket):
-        queued = await _queue_and_deliver_latest_staff_context(
-            bot, mongo, ticket, snapshot
-        )
-        if not queued:
-            return store.Transition(
-                store.BLOCKED,
-                ticket,
-                "staff account context could not be queued; approval is blocked",
-            )
-        context_refreshed_this_attempt = True
-    review = (
-        _pending_fwa_identity_review(ticket)
-        if kind == KIND_APPROVE
-        and str(ticket.get("ticket_type") or "").lower() == "fwa"
-        else None
-    )
-    review_acknowledged = bool(
-        review is not None and _conflict_review_covers_fwa_accounts(ticket, review)
-    )
-    if review is not None and not review_acknowledged:
-        review_revision = max(0, int(review.get("account_revision") or 0))
-        context_fresh = await _staff_context_is_fresh_for_review(
-            bot, mongo, ticket, review
-        )
-        if review_revision == snapshot.revision or context_refreshed_this_attempt:
-            return store.Transition(
-                store.BLOCKED,
-                ticket,
-                (
-                    FWA_IDENTITY_REVIEW_MESSAGE
-                    if context_fresh
-                    else FWA_IDENTITY_REFRESH_PENDING_MESSAGE
-                ),
-            )
-        if not context_fresh:
-            await _queue_and_deliver_latest_staff_context(
-                bot, mongo, ticket, snapshot
-            )
-            return store.Transition(
-                store.BLOCKED,
-                ticket,
-                FWA_IDENTITY_REFRESH_PENDING_MESSAGE,
-            )
-        review_acknowledged = True
-    if kind == KIND_APPROVE and not snapshot.has_linked_accounts:
-        reason = (
-            "linked-account lookup failed; approval is blocked until it succeeds"
-            if snapshot.state == account_sync.STATE_FAILED
-            else "approval requires at least one linked Clash account"
-        )
-        return store.Transition(store.BLOCKED, ticket, reason)
-    if kind == KIND_APPROVE and account_sync.flag_identity_refresh_required(ticket):
+        # Context delivery has its own durable retry obligation. The recruiter
+        # has made the decision; a delayed refresh must not veto that decision.
+        await _queue_and_deliver_latest_staff_context(bot, mongo, ticket, snapshot)
+    if kind == KIND_APPROVE and not snapshot.current_tags:
         return store.Transition(
-            store.BLOCKED,
-            ticket,
-            "linked-account flag identities are still refreshing; approval is blocked",
+            store.BLOCKED, ticket, "approval requires at least one linked Clash account"
         )
     target = "approved" if kind == KIND_APPROVE else "denied"
     extra = {}
-    if review_acknowledged:
+    if kind == KIND_APPROVE and (ticket.get("linked_accounts") or {}).get("approval_review", {}).get("state") == "pending":
         extra.update({
             "linked_accounts.approval_review.state": "acknowledged",
             "linked_accounts.approval_review.acknowledged_at": store.utcnow(),

@@ -2083,6 +2083,23 @@ def test_fwa_suffix_falls_back_to_coc_opponent_name_when_scrape_has_none():
     assert "**Edrag Rush · <:Yes:1397096942907166831> WIN**\nvs DevilHarvesters" in text
 
 
+def test_fwa_suffix_prefers_coc_opponent_name_when_both_are_available():
+    row = _war_row()
+    record = {
+        "coc_war_end_time": datetime.fromtimestamp(
+            row.ends_at, tz=timezone.utc
+        ).replace(tzinfo=None).isoformat(),
+        "opponent_name": "--&lt; SAVAGE &gt;--",
+        "coc_opponent_name": "--< SAVAGE >--",
+        "our_outcome": "lose",
+    }
+
+    verdict, opponent = todo._fwa_header(row, {row.clan_tag: record})
+
+    assert verdict == f"{todo.emojis.no} LOSE"
+    assert opponent == "vs --< SAVAGE \\>--"
+
+
 def test_fwa_suffix_hides_raw_verdict_for_unknown_outcome():
     # Unknown points-site text is often a verbose match explanation. Keep the
     # small header clean: the opponent is still useful, but no verdict appears.

@@ -22,6 +22,12 @@ import os
 import sys
 from datetime import datetime
 
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from utils.mongo_routes import RoutedCollections
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
@@ -51,12 +57,12 @@ def main() -> int:
         print("usage: trade_diagnose.py '#PLAYERTAG'")
         return 2
     tag = _tag(sys.argv[1])
-    load_dotenv()
+    load_dotenv(ROOT / ".env")
     uri = os.getenv("MONGODB_URI")
     if not uri:
         print("MONGODB_URI is not set; run from the bot directory.")
         return 2
-    database = MongoClient(uri).get_database("settings")
+    database = RoutedCollections(MongoClient(uri, connect=False))
 
     inventory = database.card_inventories.find_one({"_id": tag})
     print(f"===== inventory {tag} =====")

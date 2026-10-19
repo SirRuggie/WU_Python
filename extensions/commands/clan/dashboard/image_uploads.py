@@ -278,6 +278,11 @@ def _consume(token: str) -> UploadTarget | None:
 
 async def _persist(target: UploadTarget, mongo: MongoClient, url: str) -> bool:
     if target.kind == "clan":
+        from utils.clan_dashboard_history import audit
+        row = await mongo.clans.find_one({"_id": target.clan_id, "tag": target.key})
+        if not row:
+            return False
+        await audit(mongo, {'user_id':str(target.owner_id), 'source':'Discord'}, 'before_edit', row)
         result = await mongo.clans.update_one(
             {"_id": target.clan_id, "tag": target.key, target.slot: target.old_value},
             {"$set": {target.slot: url}},

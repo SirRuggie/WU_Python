@@ -60,6 +60,12 @@ class _FakeCollection:
         self.index_calls: list = []
         self.create_index_error: Exception | None = None
 
+    async def find_one(self, query):
+        return next((doc for doc in self.documents.values() if all(doc.get(k) == v for k, v in query.items())), None)
+
+    async def insert_one(self, document):
+        self.documents[document["_id"]] = document
+
     async def create_index(self, keys, **kwargs):
         self.index_calls.append((keys, kwargs))
         if self.create_index_error is not None:
@@ -85,6 +91,8 @@ class _FakeCollection:
 class _FakeMongo:
     def __init__(self):
         self.clans = _FakeCollection()
+        self.history = _FakeCollection()
+        self.bot_config = SimpleNamespace(database=SimpleNamespace(get_collection=lambda *a, **kw: self.history))
 
 
 class _FakeComponent:
@@ -109,6 +117,7 @@ class _FakeInteraction:
 class _FakeCtx:
     def __init__(self, clan_tag):
         self.interaction = _FakeInteraction(clan_tag)
+        self.user = SimpleNamespace(id=123, username="Staff")
         self.member = SimpleNamespace(get_roles=lambda: (SimpleNamespace(id=update_clan_info.CLAN_MANAGEMENT_ROLE_ID),))
         self.responded = []
 
@@ -189,4 +198,5 @@ def test_repeat_add_clan_upserts_instead_of_duplicating(monkeypatch):
 
     matching = [doc for doc in mongo.clans.documents.values() if doc.get("tag") == "#ABC123"]
     assert len(matching) == 1
+    assert len(mongo.history.documents) == 1  # Only the new clan needs an add snapshot.
     _reset_clan_tag_index_state()

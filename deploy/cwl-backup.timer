@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Warriors United cwl backup/recovery check
+
+[Timer]
+OnCalendar=*-*-* *:00/5:00
+Persistent=true
+AccuracySec=15s
+Unit=cwl-backup.service
+
+[Install]
+WantedBy=timers.target

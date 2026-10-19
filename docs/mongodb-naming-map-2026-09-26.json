@@ -1,0 +1,269 @@
+{
+  "status": "proposal_only_no_migration_authorized_or_executed",
+  "captured_at": "2026-09-26T21:47:57.690925+00:00",
+  "production_database": {
+    "source": "settings",
+    "proposed": "warriors_united"
+  },
+  "collections": [
+    {
+      "source_database": "settings",
+      "source_collection": "bot_config",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "bot_config",
+      "note": "Keep for the naming pass; separate campaign data in a later schema change."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "button_store",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "legacy_button_store",
+      "note": "Mixed legacy state; move whole collection without reclassifying records."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "card_inventories",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "card_inventories",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "card_trades",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "card_trades",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "clan_data",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "clans",
+      "note": "Clan records; preserve document IDs in the naming move."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "clan_roster_snapshots",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "clan_roster_snapshots",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "component_state",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "component_state",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "cwl_pending_reminders",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "cwl_pending_reminders",
+      "note": "Active jobs include current campaigns; retain and migrate with CWL state."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "cwl_reminder",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "legacy_cwl_schedules",
+      "note": "Old schedule source still referenced by CWL compatibility code."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "emoji_registry",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "emoji_registry",
+      "note": "Ownership records, not disposable cached emoji data."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_band_data",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "band_monitor_state",
+      "note": "Mixed BAND checkpoint and response state; no document split in this pass."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_blacklist",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "fwa_blacklist",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_data",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "fwa_config",
+      "note": "FWA configuration and base content."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_points",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "fwa_points",
+      "note": "Config and points rows are mixed; split only in a separate schema migration."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_sync_alerts",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "legacy_fwa_sync_alerts",
+      "note": "Historical sync source; retain until compatibility reads are retired."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_sync_config",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "fwa_sync_config",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_sync_deliveries",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "fwa_sync_deliveries",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_sync_events",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "fwa_sync_events",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "fwa_sync_responses",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "fwa_sync_responses",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "lazy_cwl_lists",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "lazy_cwl_lists",
+      "note": "Preserve validator, unique partial indexes, TTL, and majority write concern."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "lazy_cwl_snapshots",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "legacy_lazy_cwl_snapshots",
+      "note": "Historical migration source; retain until migration dependencies are retired."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "player_clan_candidates",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "player_clan_candidates",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "player_clan_watches",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "player_clan_watches",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "recruit_challenges",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "recruit_challenges",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "recruit_onboarding",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "recruit_onboarding",
+      "note": "Preserve role-cleanup state."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_automation_state",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_automation_state",
+      "note": "Durable workflow/side-effect state; do not add blanket TTL."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_creation_state",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_creation_state",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_flags",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_flags",
+      "note": "Preserve inactive flags and bounded audit history."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_migration_batches",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_migration_batches",
+      "note": "Preserve bulk migration checkpoints."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_migrations",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_migrations",
+      "note": "Preserve resumable checkpoints and IDs."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_open_slots",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_open_slots",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_rollout",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_rollout",
+      "note": "Keep counters and rollout state together unchanged for this pass."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_setup",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_config",
+      "note": "Ticket configuration; preserve every existing row."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "ticket_thread_rename_runs",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "ticket_thread_rename_runs",
+      "note": "Tool-owned checkpoints; not declared in the main client wrapper."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "tickets",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "tickets",
+      "note": "Permanent ticket history; no blanket TTL."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "todo_sessions",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "todo_sessions",
+      "note": "Keep descriptive existing name; preserve current data and index behavior."
+    },
+    {
+      "source_database": "settings",
+      "source_collection": "wu_discord_polls",
+      "proposed_database": "warriors_united",
+      "proposed_collection": "discord_polls",
+      "note": "WU-owned polls only; destination must not contain another bot\u2019s polls."
+    }
+  ]
+}

@@ -88,6 +88,12 @@ class MemoryCollection:
             elif isinstance(expected, dict) and "$lte" in expected:
                 if actual is missing or actual > expected["$lte"]:
                     return False
+            elif isinstance(expected, dict) and "$ne" in expected:
+                if actual is not missing and (
+                    expected["$ne"] in actual if isinstance(actual, list)
+                    else actual == expected["$ne"]
+                ):
+                    return False
             elif actual is missing or actual != expected:
                 return False
         return True
@@ -817,3 +823,28 @@ def test_pinned_hikari_dispatches_raw_upload_and_typed_modal_together():
         cwl_media._pending.clear()
 
     run(scenario())
+
+
+def test_roster_channels_carry_forward_without_copying_messages():
+    async def scenario():
+        mongo = MemoryMongo()
+        draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle='2026-10')
+        candidate = deepcopy(draft['campaign'])
+        candidate['messages']['roster']['variants']['main']['destination_channel_id'] = 123456789012345678
+        candidate['messages']['roster']['variants']['lazy']['destination_channel_id'] = 223456789012345678
+        candidate['messages']['roster']['variants']['main']['body'] = 'October only'
+        await cwl_campaign.apply_draft(mongo, draft['_id'], 11, candidate_campaign=candidate)
+        november = await cwl_campaign.load_campaign(mongo, 22, '2026-11')
+        variants = november['campaign']['messages']['roster']['variants']
+        assert variants['main']['destination_channel_id'] == 123456789012345678
+        assert variants['lazy']['destination_channel_id'] == 223456789012345678
+        assert variants['main']['body'] != 'October only'
+        draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle='2026-11')
+        candidate = deepcopy(draft['campaign'])
+        candidate['messages']['roster']['variants']['main']['destination_channel_id'] = 323456789012345678
+        await cwl_campaign.apply_draft(mongo, draft['_id'], 11, candidate_campaign=candidate)
+        december = await cwl_campaign.load_campaign(mongo, 22, '2026-12')
+        assert december['campaign']['messages']['roster']['variants']['main']['destination_channel_id'] == 323456789012345678
+        october = await cwl_campaign.load_campaign(mongo, 22, '2026-10')
+        assert october['campaign']['messages']['roster']['variants']['main']['destination_channel_id'] == 123456789012345678
+    asyncio.run(scenario())

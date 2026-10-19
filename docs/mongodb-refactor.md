@@ -1,5 +1,9 @@
 # MongoDB refactor: standing reference
 
+> This historical checklist contains stale unchecked entries. Start with the
+> [2026-09-26 source review](mongodb-organization-review-2026-09-26.md).
+> Source verification does not establish deployed database state.
+
 Bot runs on Ruggie's Zone (home Linux box) against MongoDB Atlas M0 (512 MB,
 no continuous backups). Driver is pymongo's `AsyncMongoClient`. The
 thread-ticket system on branch `feature/ticket-console` is being built to

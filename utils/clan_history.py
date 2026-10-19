@@ -365,6 +365,8 @@ async def load_candidates(
     player_tags: Iterable[str],
     *,
     observed_at: datetime | None = None,
+    create_indexes: bool = True,
+    raise_errors: bool = False,
 ) -> dict[str, list[ClanCandidate]]:
     """Bulk-load recent-clan and active-war candidates for linked players."""
     if mongo is None:
@@ -373,7 +375,8 @@ async def load_candidates(
     if not tags:
         return {}
 
-    await ensure_indexes(mongo)
+    if create_indexes:
+        await ensure_indexes(mongo)
     now = _now(observed_at)
     cutoff = now - HISTORY_WINDOW
     query = {
@@ -387,6 +390,8 @@ async def load_candidates(
     try:
         documents = await mongo.player_clan_candidates.find(query).to_list(length=None)
     except Exception as exc:  # noqa: BLE001
+        if raise_errors:
+            raise
         print(f"[clan-history] candidate read failed: {type(exc).__name__}: {exc}")
         return {}
 
@@ -489,3 +494,6 @@ def presences_from_accounts(accounts: Iterable[object]) -> list[ClanPresence]:
             clan_badge=getattr(account, "clan_badge", None),
         ))
     return result
+
+# Compatibility for deployed dashboard callers; storage is kept separate.
+from utils.clan_dashboard_history import audit, collection, native_snapshot

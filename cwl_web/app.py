@@ -1,0 +1,1718 @@
+from .ticket_browser import routes as ticket_browser_routes
+"""Aiohttp CWL foundation. Read-only bot directory; no bot gateway or Discord sends."""
+
+import asyncio
+import hashlib
+import json
+import logging
+import os
+import re
+import secrets
+import sqlite3
+import time
+from datetime import datetime, timezone
+from urllib.parse import urlencode, quote, parse_qs
+
+import aiohttp
+from aiohttp import web
+from .access_control import PERMISSIONS, scopes
+from .staff_tag_signups import routes as staff_tag_signup_routes
+
+from .providers import FixtureProviders, LiveProviders, ProviderUnavailable, tag
+from .store import Store
+from .placement_status import explain as explain_placement
+from .clan_metadata import enrich as enrich_clan_metadata
+from .exports import export_csv
+from .announcements import routes as announcement_routes
+from .manage_bridge import routes as manage_bridge_routes
+from .participation import routes as participation_routes
+from .bonuses import routes as bonus_routes
+from .participation_sync import routes as participation_sync_routes, lifecycle as participation_sync_lifecycle
+from .todo import routes as todo_routes, lifecycle as todo_lifecycle
+from .push import routes as push_routes, lifecycle as push_lifecycle
+
+
+GUILD_ID = "644963518025826315"
+PERMANENT_OWNER_ID = "505227988229554179"
+SESSION_SECONDS = 30 * 24 * 60 * 60  # Persistent login; explicit logout revokes it immediately.
+COOKIE = "cwl_session"
+STATE_COOKIE = "cwl_oauth_state"
+API = "/api/cwl"
+DASHBOARD_ACCOUNTS_CACHE_SECONDS = 60
+DASHBOARD_ACCOUNTS_CACHE_MAX_ENTRIES = 1024
+
+
+def _hash(value):
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _discord_avatar_url(user):
+    """Build a CDN URL only from validated Discord identity fields."""
+    user_id = str(user["id"])
+    avatar = user.get("avatar")
+    if isinstance(avatar, str) and re.fullmatch(r"(?:a_)?[0-9a-fA-F]{32}", avatar):
+        extension = "gif" if avatar.startswith("a_") else "png"
+        return f"https://cdn.discordapp.com/avatars/{user_id}/{avatar}.{extension}"
+    discriminator = str(user.get("discriminator") or "0")
+    if discriminator.isdigit() and discriminator != "0":
+        index = int(discriminator) % 5
+    else:
+        index = (int(user_id) >> 22) % 6
+    return f"https://cdn.discordapp.com/embed/avatars/{index}.png"
+
+
+class HTTPLocked(web.HTTPClientError):
+    status_code = 423
+
+
+def _fail(status, message):
+    kinds = {400: web.HTTPBadRequest, 401: web.HTTPUnauthorized,
+             403: web.HTTPForbidden, 404: web.HTTPNotFound,
+             409: web.HTTPConflict, 423: HTTPLocked,
+             503: web.HTTPServiceUnavailable}
+    raise kinds[status](text=message)
+
+
+def _body_bool(body, key):
+    value = body.get(key)
+    if type(value) is not bool:
+        _fail(400, f"{key} must be a boolean")
+    return value
+
+
+async def _json(request):
+    try:
+        body = await request.json()
+    except Exception:
+        _fail(400, "Invalid JSON")
+    if not isinstance(body, dict):
+        _fail(400, "Expected JSON object")
+    return body
+
+
+def _store(request):
+    return request.app["store"]
+
+
+def _session(request):
+    raw = request.cookies.get(COOKIE, "")
+    if not raw:
+        _fail(401, "Sign in required")
+    row = _store(request).one("SELECT * FROM sessions WHERE token_hash=? AND expires_at>?", (_hash(raw), int(time.time())))
+    if not row:
+        _fail(401, "Session expired")
+    return row
+
+
+def _owner(session):
+    return session["user_id"] == PERMANENT_OWNER_ID or bool(session["guild_owner"])
+
+
+def _editor(request, session):
+    from .access_control import scopes
+    return _owner(session) or "cwl" in scopes(_store(request), session["user_id"])
+
+
+def _require(request, level="member"):
+    session = _session(request)
+    if level == "owner" and not _owner(session):
+        _fail(403, "Owner access required")
+    if level == "editor" and not _editor(request, session):
+        _fail(403, "Dashboard access required")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and not secrets.compare_digest(request.headers.get("X-CSRF-Token", ""), session["csrf"]):
+        _fail(403, "Invalid CSRF token")
+    return session
+
+
+def _season(db, sid):
+    row = db.execute("SELECT * FROM seasons WHERE id=?", (sid,)).fetchone()
+    if row is None:
+        _fail(404, "Season not found")
+    return row
+
+
+def _sid(request):
+    try:
+        return int(request.match_info["season_id"])
+    except ValueError:
+        _fail(404, "Season not found")
+
+
+def _season_dict(row):
+    result = dict(row)
+    result["signup_open"] = bool(result["signup_open"])
+    return result
+
+
+def _revision(db, sid):
+    row = db.execute("SELECT revision FROM roster_meta WHERE season_id=?", (sid,)).fetchone()
+    return row["revision"] if row else 0
+
+
+def _bump(db, sid):
+    db.execute("INSERT INTO roster_meta(season_id,revision) VALUES (?,1) "
+               "ON CONFLICT(season_id) DO UPDATE SET revision=revision+1", (sid,))
+    return _revision(db, sid)
+
+
+def _check_revision(db, sid, supplied):
+    if type(supplied) is not int or supplied != _revision(db, sid):
+        _fail(409, "Roster changed; refresh before editing")
+
+
+def _audit(db, sid, tag_value, actor_id, action, before, after):
+    db.execute("INSERT INTO roster_audit(season_id,tag,actor_id,action,before_json,after_json) "
+               "VALUES (?,?,?,?,?,?)", (sid, tag_value, actor_id, action,
+               json.dumps(before, sort_keys=True) if before is not None else None,
+               json.dumps(after, sort_keys=True) if after is not None else None))
+
+
+def _placement(row):
+    return {"assigned_clan_tag": row["assigned_clan_tag"] if row else None,
+            "kept": bool(row["kept"]) if row else False}
+
+
+def _record_undo(db, sid, actor_id, label, revision, changes):
+    changed = [change for change in changes if change["before"] != change["after"]]
+    if not changed:
+        return None
+    cursor = db.execute(
+        "INSERT INTO roster_undo(season_id,actor_id,label,revision,changes_json) VALUES (?,?,?,?,?)",
+        (sid, actor_id, label, revision, json.dumps(changed, sort_keys=True)),
+    )
+    return cursor.lastrowid
+
+
+def _current_undo(db, sid, actor_id):
+    row = db.execute(
+        "SELECT id,label,revision FROM roster_undo WHERE season_id=? AND actor_id=? "
+        "AND revision=? AND consumed_at IS NULL ORDER BY id DESC LIMIT 1",
+        (sid, actor_id, _revision(db, sid)),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+async def config(request):
+    return web.json_response({"dev_fixture": bool(request.app["dev_fixture"])})
+
+
+async def me(request):
+    session = _require(request)
+    return web.json_response({"authenticated": True, "user": {"id": session["user_id"], "username": session["username"], "display_name": session["display_name"] or session["username"], "avatar_url": session["avatar_url"]}, "is_owner": _owner(session), "can_edit": _editor(request, session), "dashboard_permissions": list(PERMISSIONS) if _owner(session) else scopes(_store(request), session["user_id"]), "csrf_token": session["csrf"]})
+
+
+RETURN_COOKIE = "wu_login_page"
+
+
+def login_destination(query):
+    view = query.get("view", "")
+    if view == "signups":
+        view = "signup"
+    if view not in {"home", "todo", "signup", "assignments"}:
+        return ""
+    params = {"view": view}
+    season = query.get("season", "")
+    if view in {"signup", "assignments"} and re.fullmatch(r"[0-9]{1,18}", season):
+        params["season"] = season
+    return "/?" + urlencode(params)
+
+
+def saved_login_destination(request):
+    value = request.cookies.get(RETURN_COOKIE, "")
+    if not value.startswith("/?") or len(value) > 150:
+        return ""
+    return login_destination({key: values[0] for key, values in parse_qs(value[2:]).items()})
+
+
+async def auth_start(request):
+    cfg = request.app["oauth"]
+    if not all(cfg.values()):
+        _fail(503, "Discord OAuth is not configured")
+    state = secrets.token_urlsafe(32)
+    with _store(request).tx() as db:
+        db.execute("DELETE FROM oauth_states WHERE expires_at<=?", (int(time.time()),))
+        db.execute("INSERT INTO oauth_states VALUES (?,?)", (_hash(state), int(time.time()) + 300))
+    params = {"client_id": cfg["client_id"], "redirect_uri": cfg["redirect_uri"], "response_type": "code", "scope": "identify guilds", "state": state, "prompt": "consent" if request.query.get("retry") == "1" else "none"}
+    response = web.HTTPFound("https://discord.com/oauth2/authorize?" + urlencode(params, quote_via=quote))
+    destination = login_destination(request.query)
+    if destination:
+        response.set_cookie(RETURN_COOKIE, destination, max_age=300, httponly=True, secure=request.app["secure_cookies"], samesite="Lax", path=API + "/auth")
+    else:
+        response.del_cookie(RETURN_COOKIE, path=API + "/auth")
+    response.set_cookie(STATE_COOKIE, state, max_age=300, httponly=True, secure=request.app["secure_cookies"], samesite="Lax", path=API + "/auth")
+    raise response
+
+
+async def auth_callback(request):
+    state = request.query.get("state", "")
+    cookie_state = request.cookies.get(STATE_COOKIE, "")
+    if not state or not cookie_state or not secrets.compare_digest(state, cookie_state):
+        _fail(403, "OAuth state mismatch")
+    with _store(request).tx() as db:
+        cursor = db.execute("DELETE FROM oauth_states WHERE state_hash=? AND expires_at>?", (_hash(state), int(time.time())))
+        if cursor.rowcount != 1:
+            _fail(403, "OAuth state expired or already used")
+    if request.query.get("error"):
+        _fail(401, "Discord authorization was not completed")
+    cfg = request.app["oauth"]
+    code = request.query.get("code", "")
+    if not code or not all(cfg.values()):
+        _fail(400, "OAuth callback incomplete")
+    timeout = aiohttp.ClientTimeout(total=10)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as client:
+            data = {"client_id": cfg["client_id"], "client_secret": cfg["client_secret"], "grant_type": "authorization_code", "code": code, "redirect_uri": cfg["redirect_uri"]}
+            async with client.post("https://discord.com/api/v10/oauth2/token", data=data) as response:
+                if response.status != 200:
+                    _fail(401, "Discord sign-in failed")
+                token_data = await response.json()
+            access = token_data.get("access_token")
+            if not isinstance(access, str) or not access:
+                _fail(401, "Discord sign-in failed")
+            headers = {"Authorization": "Bearer " + access}
+            async with client.get("https://discord.com/api/v10/users/@me", headers=headers) as response:
+                if response.status != 200:
+                    _fail(401, "Discord identity unavailable")
+                user = await response.json()
+            guilds = []
+            after = None
+            for _ in range(50):
+                params = {"limit": "200"}
+                if after:
+                    params["after"] = after
+                async with client.get("https://discord.com/api/v10/users/@me/guilds", headers=headers, params=params) as response:
+                    if response.status != 200:
+                        _fail(401, "Discord membership unavailable")
+                    page = await response.json()
+                if not isinstance(page, list):
+                    _fail(401, "Discord membership unavailable")
+                guilds.extend(page)
+                if len(page) < 200:
+                    break
+                after = str(page[-1].get("id", ""))
+                if not after.isdigit():
+                    _fail(401, "Discord membership unavailable")
+            else:
+                _fail(503, "Discord guild list too large to verify")
+    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        raise web.HTTPServiceUnavailable(text="Discord unavailable") from exc
+    if not isinstance(user, dict) or not str(user.get("id", "")).isdigit() or not isinstance(guilds, list):
+        _fail(401, "Invalid Discord identity")
+    guild = next((g for g in guilds if isinstance(g, dict) and str(g.get("id")) == GUILD_ID), None)
+    if guild is None:
+        _fail(403, "Warriors United membership required")
+    raw = secrets.token_urlsafe(48)
+    csrf = secrets.token_urlsafe(32)
+    with _store(request).tx() as db:
+        username = str(user.get("username") or user["id"])
+        global_name = user.get("global_name")
+        display_name = global_name.strip() if isinstance(global_name, str) and global_name.strip() else username
+        db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at,display_name,avatar_url) VALUES (?,?,?,?,?,?,?,?)",
+                   (_hash(raw), str(user["id"]), username, int(guild.get("owner") is True), csrf,
+                    int(time.time()) + SESSION_SECONDS, display_name, _discord_avatar_url(user)))
+    response = web.HTTPFound(saved_login_destination(request) or request.app["after_login"])
+    response.del_cookie(RETURN_COOKIE, path=API + "/auth")
+    response.set_cookie(COOKIE, raw, max_age=SESSION_SECONDS, httponly=True, secure=request.app["secure_cookies"], samesite="Lax", path=API)
+    response.del_cookie(STATE_COOKIE, path=API + "/auth")
+    raise response
+
+
+async def logout(request):
+    session = _require(request)
+    body = await request.json() if request.can_read_body else {}
+    push_id = body.get("push_id") if isinstance(body, dict) else None
+    with _store(request).tx() as db:
+        if isinstance(push_id, str):
+            db.execute("DELETE FROM push_subscriptions WHERE id=? AND user_id=?", (push_id, session["user_id"]))
+        db.execute("DELETE FROM sessions WHERE token_hash=?", (_hash(request.cookies[COOKIE]),))
+    response = web.json_response({"ok": True})
+    response.del_cookie(COOKIE, path=API)
+    return response
+
+
+async def dev_login(request):
+    host = request.headers.get("Host", "").split(":")[0].strip("[]")
+    origin = request.headers.get("Origin")
+    if (not request.app["dev_fixture"] or request.remote not in ("127.0.0.1", "::1")
+            or host not in ("127.0.0.1", "localhost", "::1")
+            or any(key.lower().startswith("x-forwarded-") or key.lower() == "forwarded" for key in request.headers)
+            or (origin and origin not in (f"http://{request.host}", f"https://{request.host}"))):
+        _fail(404, "Not found")
+    identity = request.app["dev_identity"]
+    raw, csrf = secrets.token_urlsafe(48), secrets.token_urlsafe(32)
+    with _store(request).tx() as db:
+        db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at,display_name,avatar_url) VALUES (?,?,?,?,?,?,?,?)",
+                   (_hash(raw), identity["id"], identity["username"], int(identity.get("guild_owner", False)),
+                    csrf, int(time.time()) + SESSION_SECONDS, identity.get("display_name") or identity["username"],
+                    identity.get("avatar_url") or _discord_avatar_url(identity)))
+    response = web.json_response({"ok": True})
+    response.set_cookie(COOKIE, raw, max_age=SESSION_SECONDS, httponly=True, secure=False, samesite="Lax", path=API)
+    return response
+
+
+async def seasons(request):
+    _require(request)
+    return web.json_response({"seasons": [_season_dict(row) for row in _store(request).rows("SELECT * FROM seasons ORDER BY id DESC")]})
+
+
+async def create_season(request):
+    _require(request, "editor")
+    body = await _json(request)
+    label = str(body.get("label", "")).strip()
+    if not 3 <= len(label) <= 80:
+        _fail(400, "Season label must have 3–80 characters")
+    opened = _body_bool(body, "signup_open")
+    try:
+        with _store(request).tx() as db:
+            cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
+            row = _season(db, cursor.lastrowid)
+    except sqlite3.IntegrityError:
+        _fail(409, "Season already exists")
+    return web.json_response(_season_dict(row), status=201)
+
+
+async def update_season(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    if not set(body) <= {"label", "signup_open", "status"} or not body:
+        _fail(400, "Invalid season update")
+    with _store(request).tx() as db:
+        row = _season(db, _sid(request))
+        label = str(body.get("label", row["label"])).strip()
+        if not 3 <= len(label) <= 80:
+            _fail(400, "Invalid season label")
+        opened = _body_bool(body, "signup_open") if "signup_open" in body else bool(row["signup_open"])
+        status = body.get("status", row["status"])
+        if status not in ("draft", "archived"):
+            _fail(400, "Invalid status")
+        try:
+            db.execute("UPDATE seasons SET label=?,signup_open=?,status=? WHERE id=?", (label, int(opened), status, row["id"]))
+        except sqlite3.IntegrityError:
+            _fail(409, "Season already exists")
+        result = _season(db, row["id"])
+        if (label, opened, status) != (row["label"], bool(row["signup_open"]), row["status"]):
+            _bump(db, row["id"])
+            _audit(db, row["id"], None, session["user_id"], "season_update", _season_dict(row), _season_dict(result))
+    return web.json_response(_season_dict(result))
+
+
+async def clans(request):
+    _require(request, "editor")
+    rows = _store(request).rows("SELECT * FROM clans ORDER BY name")
+    return web.json_response({"clans": await enrich_clan_metadata(request, [{**r, "archived": bool(r["archived"])} for r in rows])})
+
+
+async def create_clan(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    if set(body) - {"tag", "pool"} or body.get("pool") not in (None, "main", "lazy"):
+        _fail(400, "Choose Main or Lazy CWL")
+    try:
+        value = tag(body.get("tag"))
+    except ValueError:
+        _fail(400, "Invalid clan tag")
+    clan = await request.app["providers"].clan(value)
+    with _store(request).tx() as db:
+        before_row = db.execute("SELECT * FROM clans WHERE tag=?", (clan["tag"],)).fetchone()
+        before = dict(before_row) if before_row else None
+        pool = body.get("pool", before["pool"] if before else None)
+        db.execute("INSERT INTO clans(tag,name,archived,pool) VALUES (?,?,0,?) ON CONFLICT(tag) DO UPDATE SET name=excluded.name,archived=0,pool=excluded.pool", (clan["tag"], clan["name"], pool))
+        after = {**clan, "archived": False, "pool": pool}
+        if before != after:
+            for season in db.execute("SELECT id FROM seasons"):
+                _bump(db, season["id"])
+                _audit(db, season["id"], clan["tag"], session["user_id"], "directory_add_or_restore", before, after)
+    return web.json_response(after, status=201)
+
+
+async def archive_clan(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    if not body or set(body) - {"archived", "pool"}:
+        _fail(400, "Expected archive status or CWL pool")
+    if "pool" in body and body["pool"] not in ("main", "lazy"):
+        _fail(400, "Choose Main or Lazy CWL")
+    archived = _body_bool(body, "archived") if "archived" in body else None
+    try:
+        value = tag(request.match_info["tag"])
+    except ValueError:
+        _fail(400, "Invalid clan tag")
+    with _store(request).tx() as db:
+        current = db.execute("SELECT * FROM clans WHERE tag=?", (value,)).fetchone()
+        if current is None:
+            _fail(404, "Clan not found")
+        before = dict(current)
+        after = {**before, "archived": bool(current["archived"]) if archived is None else archived,
+                 "pool": body.get("pool", current["pool"])}
+        db.execute("UPDATE clans SET archived=?,pool=? WHERE tag=?", (int(after["archived"]), after["pool"], value))
+        if before != after:
+            for row in db.execute("SELECT id FROM seasons"):
+                _bump(db, row["id"])
+                _audit(db, row["id"], value, session["user_id"], "directory_update", before, after)
+    return web.json_response(after)
+
+
+async def lineup(request):
+    _require(request, "editor")
+    sid = _sid(request)
+    rows = _store(request).rows(
+        "SELECT c.tag,c.name,c.archived FROM clans c WHERE c.archived=0 "
+        "OR EXISTS (SELECT 1 FROM roster_entries e WHERE e.season_id=? AND e.assigned_clan_tag=c.tag) "
+        "ORDER BY c.name,c.tag", (sid,))
+    return web.json_response({"clans": await enrich_clan_metadata(request, [{**r, "archived": bool(r["archived"])} for r in rows])})
+
+
+async def add_lineup(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    try:
+        value = tag(body.get("tag"))
+    except ValueError:
+        _fail(400, "Invalid clan tag")
+    with _store(request).tx() as db:
+        season = _season(db, _sid(request))
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        clan = db.execute("SELECT * FROM clans WHERE tag=?", (value,)).fetchone()
+        if clan is None or clan["archived"]:
+            _fail(409, "Add an active directory clan first")
+        inserted = db.execute("INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)", (season["id"], value))
+        if inserted.rowcount:
+            _bump(db, season["id"])
+            _audit(db, season["id"], value, session["user_id"], "lineup_add", None,
+                   {"tag": value, "name": clan["name"]})
+    return web.json_response({"tag": value, "name": clan["name"]}, status=201)
+
+
+async def remove_lineup(request):
+    session = _require(request, "editor")
+    try:
+        value = tag(request.match_info["tag"])
+    except ValueError:
+        _fail(400, "Invalid clan tag")
+    with _store(request).tx() as db:
+        sid = _sid(request)
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        assigned = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?", (sid, value)).fetchone()["n"]
+        if assigned:
+            _fail(409, "Unassign or move roster accounts before removing this hosting clan")
+        deleted = db.execute("DELETE FROM lineup WHERE season_id=? AND tag=?", (sid, value))
+        if deleted.rowcount:
+            _bump(db, sid)
+            _audit(db, sid, value, session["user_id"], "lineup_remove", {"tag": value}, None)
+    return web.json_response({"ok": True})
+
+
+async def approved_clans(request):
+    _require(request, "editor")
+    result = await request.app["providers"].family_clans()
+    await enrich_clan_metadata(request, result["clans"])
+    return web.json_response(result)
+
+
+async def family_clans_read_only(request):
+    raise web.HTTPMethodNotAllowed(request.method, ["GET"])
+
+
+async def access(request):
+    _require(request, "owner")
+    from .access_control import PERMISSIONS, scopes
+    grants = _store(request).rows("SELECT grants.*, (SELECT COALESCE(NULLIF(display_name,''),username) FROM sessions WHERE sessions.user_id=grants.user_id ORDER BY expires_at DESC LIMIT 1) AS username FROM grants ORDER BY granted_at DESC")
+    for row in grants:
+        row['permissions'] = scopes(_store(request), row['user_id'])
+    return web.json_response({"grants": grants, "permissions": [dict(id=key, label=value[0], description=value[1]) for key, value in PERMISSIONS.items()]})
+
+
+async def grant(request):
+    session = _require(request, "owner")
+    body = await _json(request)
+    user_id = str(body.get("user_id", ""))
+    if not user_id.isdigit() or len(user_id) > 25:
+        _fail(400, "Invalid Discord user ID")
+    from .access_control import PERMISSIONS
+    from .server_management import mongo
+    permissions = body.get('permissions')
+    if not isinstance(permissions, list) or not permissions or any(not isinstance(value, str) or value not in PERMISSIONS for value in permissions):
+        _fail(400, "Choose at least one valid access area")
+    permissions = sorted(set(permissions))
+    async with mongo(request) as shared:
+        await shared.bot_config.update_one({'_id': 'dashboard-access:' + user_id}, {'$set': {'permissions': permissions, 'granted_by': session['user_id']}}, upsert=True)
+    with _store(request).tx() as db:
+        db.execute("INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET granted_by=excluded.granted_by,permissions=excluded.permissions,granted_at=CURRENT_TIMESTAMP", (user_id, session["user_id"], json.dumps(permissions)))
+    return web.json_response({"user_id": user_id, "permissions": permissions}, status=201)
+
+
+async def revoke(request):
+    _require(request, "owner")
+    user_id = request.match_info["user_id"]
+    from .server_management import mongo
+    async with mongo(request) as shared:
+        await shared.bot_config.delete_one({"_id": "dashboard-access:" + user_id})
+    with _store(request).tx() as db:
+        db.execute("DELETE FROM grants WHERE user_id=?", (user_id,))
+    return web.json_response({"ok": True})
+
+
+async def _family_tags(request):
+    """Return None when directory status is unknown; never treat outage as outside."""
+    try:
+        family = await request.app["providers"].family_clans()
+    except ProviderUnavailable:
+        return None
+    return {clan["tag"] for clan in family["clans"]}
+
+
+def _family_status(clan_tag, approved):
+    if approved is None:
+        return "unknown"
+    return "approved" if clan_tag in approved else "outside"
+
+
+async def _accounts(request, user_id):
+    provider = request.app["providers"]
+    links = await provider.linked_tags(user_id)
+    limit = asyncio.Semaphore(5)
+
+    async def fetch(value):
+        async with limit:
+            return await provider.player(value)
+
+    accounts = await asyncio.gather(*(fetch(value) for value in links))
+    approved = await _family_tags(request)
+    for account in accounts:
+        account["verified"] = bool(links[account["tag"]])
+        account["family_clan_status"] = _family_status(account["current_clan_tag"], approved)
+        account["lazy_eligible"] = True
+        account["lazy_ineligible_reason"] = None
+    return accounts
+
+
+async def linked_accounts(request):
+    session = _require(request)
+    return web.json_response({"accounts": await _accounts(request, session["user_id"]), "status": "ok", "link_url": None, "link_instruction": "Link your accounts with ClashKing or ClashPerk in Discord, then refresh."})
+
+
+def _prune_dashboard_accounts(cache, now):
+    for user_id, (expires_at, _) in list(cache.items()):
+        if expires_at <= now:
+            cache.pop(user_id, None)
+    while len(cache) > DASHBOARD_ACCOUNTS_CACHE_MAX_ENTRIES:
+        cache.pop(next(iter(cache)))
+
+
+def _observe_dashboard_account_task(task):
+    if not task.cancelled():
+        task.exception()  # Consume failures when every HTTP waiter has disconnected.
+
+
+async def _dashboard_account_snapshot(request, user_id):
+    try:
+        accounts = await _accounts(request, user_id)
+        payload = {"accounts": accounts, "status": "ok", "link_url": None,
+                   "link_instruction": "Link your accounts with ClashKing or ClashPerk in Discord, then refresh.",
+                   "checked_at": datetime.now(timezone.utc).isoformat()}
+        cache = request.app["dashboard_accounts_cache"]
+        now = time.monotonic()
+        cache[user_id] = (now + DASHBOARD_ACCOUNTS_CACHE_SECONDS, payload)
+        _prune_dashboard_accounts(cache, now)
+        return payload
+    finally:
+        request.app["dashboard_accounts_inflight"].pop(user_id, None)
+
+
+async def dashboard_accounts(request):
+    user_id = _require(request)["user_id"]
+    cache = request.app["dashboard_accounts_cache"]
+    _prune_dashboard_accounts(cache, time.monotonic())
+    cached = cache.get(user_id)
+    if cached is not None:
+        return web.json_response(cached[1])
+    inflight = request.app["dashboard_accounts_inflight"]
+    task = inflight.get(user_id)
+    if task is None:
+        task = asyncio.create_task(_dashboard_account_snapshot(request, user_id))
+        task.add_done_callback(_observe_dashboard_account_task)
+        inflight[user_id] = task
+    return web.json_response(await asyncio.shield(task))
+
+
+async def _dashboard_accounts_lifecycle(app):
+    yield
+    tasks = list(app["dashboard_accounts_inflight"].values())
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    app["dashboard_accounts_inflight"].clear()
+    app["dashboard_accounts_cache"].clear()
+
+
+async def signups(request):
+    session = _require(request)
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        _season(db, sid)
+        if _editor(request, session) and request.query.get("all") == "1":
+            rows = db.execute("SELECT * FROM signups WHERE season_id=? ORDER BY user_id,tag", (sid,)).fetchall()
+        else:
+            rows = db.execute("SELECT * FROM signups WHERE season_id=? AND user_id=? ORDER BY tag", (sid, session["user_id"])).fetchall()
+    approved = await _family_tags(request)
+    result = []
+    for row in rows:
+        entry = dict(row)
+        entry["prefer_crystal_1_or_lower"] = bool(entry["prefer_crystal_1_or_lower"])
+        entry["family_clan_status"] = _family_status(entry["signup_clan_tag"], approved)
+        result.append(entry)
+    return web.json_response({"signups": result})
+
+
+async def submit_signup(request):
+    session = _require(request)
+    body = await _json(request)
+    pool = body.get("pool")
+    selections = body.get("accounts")
+    if pool not in ("main", "lazy") or not isinstance(selections, list) or len(selections) > 100:
+        _fail(400, "Invalid signup")
+    requested = {}
+    for item in selections:
+        if not isinstance(item, dict) or type(item.get("prefer_crystal_1_or_lower")) is not bool:
+            _fail(400, "Invalid account signup")
+        try:
+            value = tag(item.get("tag"))
+        except ValueError:
+            _fail(400, "Invalid player tag")
+        if value in requested:
+            _fail(400, "Duplicate account in submission")
+        move_from_pool = item.get("move_from_pool")
+        if "move_from_pool" in item and move_from_pool not in ("main", "lazy"):
+            _fail(400, "Invalid source pool")
+        requested[value] = (item["prefer_crystal_1_or_lower"], move_from_pool)
+    # Refresh links and current game data immediately before the transaction.
+    available = {a["tag"]: a for a in await _accounts(request, session["user_id"])}
+    if not set(requested) <= set(available):
+        _fail(403, "Account is not linked to your Discord identity")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if not season["signup_open"] or season["status"] != "draft":
+            _fail(423, "Signups are closed")
+        moved = 0
+        # Validate every account before the first write. BEGIN IMMEDIATE keeps
+        # another request from changing source pools between checks and updates.
+        for value, (_, move_from_pool) in requested.items():
+            existing = db.execute("SELECT user_id,pool FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
+            if existing is None:
+                if move_from_pool is not None:
+                    _fail(409, "Pool transfer is stale; refresh signups")
+                continue
+            if existing["user_id"] != session["user_id"]:
+                _fail(409, "Account already registered by another member")
+            if existing["pool"] == pool:
+                if move_from_pool is not None:
+                    _fail(409, "Pool transfer is stale; refresh signups")
+                continue
+            if move_from_pool != existing["pool"]:
+                _fail(409, "Confirm the account's current pool before moving it")
+            assignment = db.execute("SELECT assigned_clan_tag FROM roster_entries "
+                                    "WHERE season_id=? AND tag=?", (sid, value)).fetchone()
+            if assignment and assignment["assigned_clan_tag"]:
+                _fail(409, "Ask staff to unassign this account before changing pools")
+            moved += 1
+        for value, (preference, _) in requested.items():
+            account = available[value]
+            old = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
+            db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET pool=excluded.pool,prefer_crystal_1_or_lower=excluded.prefer_crystal_1_or_lower,player_name=excluded.player_name,town_hall=excluded.town_hall,updated_at=CURRENT_TIMESTAMP", (sid, value, session["user_id"], pool, int(preference), account["name"], account["town_hall"], account["current_clan_tag"], account["current_clan_name"]))
+            after = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
+            _audit(db, sid, value, session["user_id"], "member_signup", dict(old) if old else None, dict(after))
+        if requested:
+            _bump(db, sid)
+    return web.json_response({"ok": True, "count": len(requested), "moved": moved})
+
+
+async def staff_signup_members(request):
+    _require(request, "editor")
+    from .manage_roles import searchable_members, member_option, search_text
+    query = search_text(request.query.get("q", "").strip())
+    if len(query) > 80:
+        _fail(400, "Use a shorter member name")
+    selected = request.query.get("id", "")
+    rows = await searchable_members(request)
+    matches = [row for row in rows if not row.get("user", {}).get("bot") and
+               (not selected or str(row["user"]["id"]) == selected) and
+               (not query or query in search_text(" ".join(str(value or "") for value in
+                (row.get("nick"), row["user"].get("global_name"), row["user"].get("username"), row["user"]["id"]))))]
+    options = [member_option(row) for row in matches[:50]]
+    for option in options:
+        option["role_ids"] = []; option["role_names"] = []
+    return web.json_response({"options": options, "next": None, "truncated": len(matches) > 50})
+
+
+def signup_member_id(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,22}", value):
+        _fail(400, "Select a member")
+    return value
+
+
+async def staff_signup_accounts(request):
+    _require(request, "editor")
+    uid = signup_member_id(request.query.get("user_id"))
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        _season(db, sid)
+        signed = {row["tag"]: row["pool"] for row in db.execute("SELECT tag,pool FROM signups WHERE season_id=?", (sid,))}
+    accounts = await _accounts(request, uid)
+    return web.json_response({"accounts": [{**account, "signed_up_pool": signed.get(account["tag"])} for account in accounts]})
+
+
+async def staff_add_signup(request):
+    actor = _require(request, "editor")
+    body = await _json(request)
+    uid = signup_member_id(body.get("user_id"))
+    pool = body.get("pool")
+    choices = body.get("accounts")
+    if pool not in ("main", "lazy") or not isinstance(choices, list) or not 1 <= len(choices) <= 100:
+        _fail(400, "Choose Main or Lazy and at least one account")
+    requested = {}
+    for choice in choices:
+        if not isinstance(choice, dict) or type(choice.get("prefer_crystal_1_or_lower")) is not bool:
+            _fail(400, "Choose a league preference for each account")
+        try:
+            value = tag(choice.get("tag"))
+        except ValueError:
+            _fail(400, "Invalid player tag")
+        if value in requested:
+            _fail(400, "Account selected twice")
+        requested[value] = choice["prefer_crystal_1_or_lower"] if pool == "lazy" else False
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        if _season(db, sid)["status"] != "draft":
+            _fail(423, "Archived seasons cannot be changed")
+    available = {account["tag"]: account for account in await _accounts(request, uid)}
+    if not set(requested) <= set(available):
+        _fail(409, "An account is no longer linked to this member. Reload their accounts.")
+    with _store(request).tx() as db:
+        if _season(db, sid)["status"] != "draft":
+            _fail(423, "Archived seasons cannot be changed")
+        # Validate the whole batch under the write lock; never replace a signup.
+        for value in requested:
+            if db.execute("SELECT 1 FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone():
+                _fail(409, "An account is already signed up. Reload the list; use Roster builder to move it.")
+        for value, preference in requested.items():
+            account = available[value]
+            db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name) VALUES (?,?,?,?,?,?,?,?,?)",
+                       (sid, value, uid, pool, int(preference), account["name"], account["town_hall"], account["current_clan_tag"], account["current_clan_name"]))
+            after = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
+            _audit(db, sid, value, actor["user_id"], "staff_signup", None, dict(after))
+        _bump(db, sid)
+    return web.json_response({"ok": True, "count": len(requested)}, status=201)
+
+
+async def staff_remove_signup(request):
+    actor = _require(request, "editor")
+    body = await _json(request)
+    if set(body) != {"revision"}:
+        _fail(400, "Expected roster revision")
+    sid = _sid(request)
+    try:
+        value = tag(request.match_info["tag"])
+    except ValueError:
+        _fail(400, "Invalid player tag")
+    with _store(request).tx() as db:
+        if _season(db, sid)["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body["revision"])
+        signup = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
+        if signup is None:
+            _fail(404, "Signup not found")
+        entry = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, value)).fetchone()
+        _audit(db, sid, value, actor["user_id"], "staff_remove_signup",
+               {"signup": dict(signup), "roster": dict(entry) if entry else None}, None)
+        db.execute("DELETE FROM signups WHERE season_id=? AND tag=?", (sid, value))
+        _bump(db, sid)
+    return web.json_response({"ok": True})
+
+
+async def withdraw(request):
+    session = _require(request)
+    sid = _sid(request)
+    try:
+        value = tag(request.match_info["tag"])
+    except ValueError:
+        _fail(400, "Invalid player tag")
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if not season["signup_open"] or season["status"] != "draft":
+            _fail(423, "Signups are closed")
+        before = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"])).fetchone()
+        if before:
+            assigned = db.execute("SELECT assigned_clan_tag FROM roster_entries WHERE season_id=? AND tag=?", (sid, value)).fetchone()
+            if assigned and assigned["assigned_clan_tag"]:
+                _fail(409, "Ask staff to unassign this account before withdrawing")
+            db.execute("DELETE FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"]))
+            _audit(db, sid, value, session["user_id"], "member_withdrawal", dict(before), None)
+            _bump(db, sid)
+    return web.json_response({"ok": True})
+
+
+def _roster_rows(db, sid):
+    rows = db.execute(
+        "SELECT s.*,r.source_weight,r.source_status,r.source_name,r.source_checked_at,r.source_modified_at,"
+        "r.manual_weight,r.assigned_clan_tag,r.kept FROM signups s "
+        "LEFT JOIN roster_entries r ON r.season_id=s.season_id AND r.tag=s.tag "
+        "WHERE s.season_id=? ORDER BY s.tag", (sid,)
+    ).fetchall()
+    result = []
+    for raw in rows:
+        row = dict(raw)
+        row["prefer_crystal_1_or_lower"] = bool(row["prefer_crystal_1_or_lower"])
+        row["source_status"] = row["source_status"] or "missing"
+        row["kept"] = bool(row["kept"])
+        saved_weight = db.execute("SELECT initial_weight FROM player_weights WHERE tag=?", (row["tag"],)).fetchone()
+        row["initial_manual_weight"] = saved_weight["initial_weight"] if saved_weight else None
+        row["effective_weight"] = row["manual_weight"] if row["manual_weight"] is not None else row["source_weight"]
+        result.append(row)
+    return result
+
+
+def _rule_rows(db, sid):
+    rows = db.execute(
+        "SELECT c.tag,c.name,c.archived,COALESCE(r.pool,c.pool) AS pool,r.capacity,r.min_weight,r.max_weight,r.lower_league,"
+        "(SELECT COUNT(*) FROM roster_entries e WHERE e.season_id=? "
+        "AND e.assigned_clan_tag=c.tag) AS assigned_count "
+        "FROM clans c LEFT JOIN lineup_rules r ON r.season_id=? AND r.tag=c.tag "
+        "WHERE c.archived=0 OR EXISTS (SELECT 1 FROM roster_entries e "
+        "WHERE e.season_id=? AND e.assigned_clan_tag=c.tag) "
+        "ORDER BY c.name,c.tag", (sid, sid, sid)
+    ).fetchall()
+    result = []
+    for raw in rows:
+        row = dict(raw)
+        row["lower_league"] = None if row["lower_league"] is None else bool(row["lower_league"])
+        row["archived"] = bool(row["archived"])
+        row["effective_capacity"] = row["capacity"] if row["capacity"] is not None else 50
+        result.append(row)
+    return result
+
+
+async def roster(request):
+    session = _require(request, "editor")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        result = {"revision": _revision(db, sid), "accounts": _roster_rows(db, sid),
+                  "clans": _rule_rows(db, sid),
+                  "undo": _current_undo(db, sid, session["user_id"]) if season["status"] == "draft" else None}
+        placements, blocked = _auto_plan(db, sid)
+        reasons = {item["tag"]: item["reason"] for item in blocked}
+        reasons.update({item["tag"]: "ready" for item in placements})
+        for account in result["accounts"]:
+            reason = reasons.get(account["tag"])
+            account["auto_placement_reason"] = reason
+            account["auto_placement_note"] = explain_placement(account, result["clans"], reason) if reason else None
+    from .roster_locations import enrich as enrich_locations
+    await asyncio.gather(enrich_clan_metadata(request, result["clans"]), enrich_locations(request, result["accounts"]))
+    return web.json_response(result)
+
+
+async def arrival_check(request):
+    _require(request, "editor")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        _season(db, sid)
+        latest = _latest_publication(db, sid)
+        published = latest is not None and request.query.get('source') != 'draft'
+        if published:
+            accounts = [dict(row) for row in db.execute(
+                'SELECT tag,user_id,player_name,town_hall,pool,assigned_clan_tag,assigned_clan_name FROM publication_accounts WHERE publication_id=?', (latest['id'],))]
+        else:
+            accounts = _roster_rows(db, sid)
+            names = {row['tag']:row['name'] for row in db.execute('SELECT tag,name FROM clans')}
+            for account in accounts: account['assigned_clan_name'] = names.get(account['assigned_clan_tag'])
+        clan_pools = {row['tag']: row['pool'] for row in _rule_rows(db, sid)}
+        for account in accounts:
+            account['hosting_pool'] = clan_pools.get(account['assigned_clan_tag']) or account['pool']
+    from .roster_locations import enrich, background_enrich
+    updating = False
+    if request.query.get('background') == '1':
+        updating = await background_enrich(request, accounts, force=request.query.get('refresh') == '1')
+    else:
+        await enrich(request, accounts, force=request.query.get('refresh') == '1')
+    family = await _family_tags(request)
+    for account in accounts:
+        current = account['current_clan_status'] == 'current'
+        account['arrival_status'] = ('unassigned' if not account['assigned_clan_tag'] else
+            'unknown' if not current else 'arrived' if account['current_clan_tag'] == account['assigned_clan_tag'] else 'missing')
+        account['outside_family'] = current and family is not None and account['current_clan_tag'] not in family
+    return web.json_response({'source':'published' if published else 'draft',
+        'version':latest['version'] if published else None, 'accounts':accounts, 'updating':updating})
+
+
+async def update_lineup_rules(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    allowed = {"revision", "pool", "capacity", "min_weight", "max_weight", "lower_league"}
+    if not set(body) <= allowed or not (set(body) - {"revision"}):
+        _fail(400, "Invalid hosting rule update")
+    try:
+        clan_tag = tag(request.match_info["tag"])
+    except ValueError:
+        _fail(400, "Invalid clan tag")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body.get("revision"))
+        clan = db.execute("SELECT archived FROM clans WHERE tag=?", (clan_tag,)).fetchone()
+        if clan is None or clan["archived"]:
+            _fail(404, "Active hosting clan not found")
+        db.execute("INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)", (sid, clan_tag))
+        before_row = db.execute("SELECT * FROM lineup_rules WHERE season_id=? AND tag=?", (sid, clan_tag)).fetchone()
+        before = dict(before_row) if before_row else {"pool": None, "capacity": None, "min_weight": None, "max_weight": None, "lower_league": None}
+        rule = {field: body.get(field, before[field]) for field in ("pool", "capacity", "min_weight", "max_weight", "lower_league")}
+        if rule["pool"] not in (None, "main", "lazy"):
+            _fail(400, "Invalid pool rule")
+        if type(rule["capacity"]) is not int and rule["capacity"] is not None or rule["capacity"] not in (None, 15, 30):
+            _fail(400, "Capacity must be 15 or 30")
+        for field in ("min_weight", "max_weight"):
+            value = rule[field]
+            if value is not None and (type(value) is not int or value <= 0 or value > 1_000_000_000):
+                _fail(400, "Invalid weight range")
+        if rule["min_weight"] is not None and rule["max_weight"] is not None and rule["min_weight"] >= rule["max_weight"]:
+            _fail(400, "Maximum weight must exceed minimum")
+        if rule["lower_league"] is not None and type(rule["lower_league"]) is not bool:
+            _fail(400, "Lower league rule must be yes, no, or unset")
+        assigned = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?", (sid, clan_tag)).fetchone()["n"]
+        if assigned > (rule["capacity"] if rule["capacity"] is not None else 50):
+            _fail(409, "Capacity is below the current roster size")
+        db.execute("INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight,lower_league) "
+                   "VALUES (?,?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET "
+                   "pool=excluded.pool,capacity=excluded.capacity,min_weight=excluded.min_weight,"
+                   "max_weight=excluded.max_weight,lower_league=excluded.lower_league",
+                   (sid, clan_tag, rule["pool"], rule["capacity"], rule["min_weight"], rule["max_weight"],
+                    None if rule["lower_league"] is None else int(rule["lower_league"])))
+        revision = _bump(db, sid)
+        _audit(db, sid, clan_tag, session["user_id"], "hosting_rules", before, rule)
+    return web.json_response({"revision": revision})
+
+
+def _active_destination_capacity(db, sid, clan_tag):
+    row = db.execute(
+        "SELECT c.archived,r.capacity FROM clans c LEFT JOIN lineup_rules r "
+        "ON r.season_id=? AND r.tag=c.tag WHERE c.tag=?", (sid, clan_tag)
+    ).fetchone()
+    if row is None or row["archived"]:
+        _fail(409, "Hosting clan is archived or missing")
+    return row["capacity"] if row["capacity"] is not None else 50
+
+
+async def bulk_assign_roster(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    if set(body) != {"revision", "tags", "assigned_clan_tag"}:
+        _fail(400, "Expected revision, tags, and assigned_clan_tag")
+    supplied = body["tags"]
+    if not isinstance(supplied, list) or not 1 <= len(supplied) <= 50:
+        _fail(400, "Select 1 to 50 accounts")
+    try:
+        tags = [tag(value) for value in supplied]
+    except ValueError:
+        _fail(400, "Invalid player tag")
+    if len(set(tags)) != len(tags):
+        _fail(400, "Duplicate player tag")
+    destination = body["assigned_clan_tag"]
+    if destination is not None:
+        try:
+            destination = tag(destination)
+        except ValueError:
+            _fail(400, "Invalid hosting clan tag")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body["revision"])
+        placeholders = ",".join("?" for _ in tags)
+        rows = db.execute(
+            f"SELECT tag FROM signups WHERE season_id=? AND tag IN ({placeholders})",
+            (sid, *tags),
+        ).fetchall()
+        if len(rows) != len(tags):
+            _fail(404, "One or more signed-up accounts were not found")
+        if destination is not None:
+            capacity = _active_destination_capacity(db, sid, destination)
+            selected_already = db.execute(
+                f"SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? "
+                f"AND assigned_clan_tag=? AND tag IN ({placeholders})",
+                (sid, destination, *tags),
+            ).fetchone()["n"]
+            current = db.execute(
+                "SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?",
+                (sid, destination),
+            ).fetchone()["n"]
+            if current - selected_already + len(tags) > capacity:
+                _fail(409, "Hosting clan is full")
+            db.execute("INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)", (sid, destination))
+        changes = []
+        for player_tag in tags:
+            old = db.execute(
+                "SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)
+            ).fetchone()
+            before = dict(old) if old else None
+            db.execute(
+                "INSERT INTO roster_entries(season_id,tag,assigned_clan_tag,kept) VALUES (?,?,?,?) "
+                "ON CONFLICT(season_id,tag) DO UPDATE SET "
+                "assigned_clan_tag=excluded.assigned_clan_tag,kept=excluded.kept",
+                (sid, player_tag, destination, int(destination is not None)),
+            )
+            after = dict(db.execute(
+                "SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)
+            ).fetchone())
+            _audit(db, sid, player_tag, session["user_id"], "bulk_roster_assign", before, after)
+            changes.append({"tag": player_tag, "before": _placement(before),
+                            "after": _placement(after)})
+        revision = _bump(db, sid)
+        verb = "Assign" if destination is not None else "Unassign"
+        _record_undo(db, sid, session["user_id"],
+                     f"{verb} {len(tags)} account{'s' if len(tags) != 1 else ''}", revision, changes)
+    return web.json_response({"revision": revision, "updated": len(tags)})
+
+
+async def update_roster_account(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    allowed = {"revision", "manual_weight", "assigned_clan_tag", "kept"}
+    if not set(body) <= allowed or not (set(body) - {"revision"}):
+        _fail(400, "Invalid roster update")
+    try:
+        player_tag = tag(request.match_info["tag"])
+    except ValueError:
+        _fail(400, "Invalid player tag")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body.get("revision"))
+        if not db.execute("SELECT 1 FROM signups WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone():
+            _fail(404, "Signed-up account not found")
+        old = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone()
+        before = dict(old) if old else None
+        manual = body.get("manual_weight", old["manual_weight"] if old else None)
+        if manual is not None and (type(manual) is not int or manual <= 0 or manual > 1_000_000_000):
+            _fail(400, "Invalid manual weight")
+        assigned = body.get("assigned_clan_tag", old["assigned_clan_tag"] if old else None)
+        if "assigned_clan_tag" in body and assigned is not None:
+            try:
+                assigned = tag(assigned)
+            except ValueError:
+                _fail(400, "Invalid hosting clan tag")
+            capacity = _active_destination_capacity(db, sid, assigned)
+            count = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? "
+                               "AND assigned_clan_tag=? AND tag<>?", (sid, assigned, player_tag)).fetchone()["n"]
+            if count >= capacity:
+                _fail(409, "Hosting clan is full")
+            db.execute("INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)", (sid, assigned))
+        kept = body.get("kept", True if "assigned_clan_tag" in body else bool(old["kept"]) if old else False)
+        if type(kept) is not bool:
+            _fail(400, "kept must be a boolean")
+        db.execute("INSERT INTO roster_entries(season_id,tag,manual_weight,assigned_clan_tag,kept) "
+                   "VALUES (?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET "
+                   "manual_weight=excluded.manual_weight,assigned_clan_tag=excluded.assigned_clan_tag,kept=excluded.kept",
+                   (sid, player_tag, manual, assigned, int(kept)))
+        after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone())
+        if "manual_weight" in body:
+            from .player_weights import record
+            record(db, player_tag, manual, sid, session["user_id"])
+        revision = _bump(db, sid)
+        _audit(db, sid, player_tag, session["user_id"], "manual_roster_edit", before, after)
+        _record_undo(db, sid, session["user_id"], "Edit account placement", revision,
+                     [{"tag": player_tag, "before": _placement(before),
+                       "after": _placement(after)}])
+    return web.json_response({"revision": revision})
+
+
+async def swap_roster(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    if set(body) != {"revision", "left_tag", "right_tag"}:
+        _fail(400, "Expected revision, left_tag, and right_tag")
+    try:
+        left_tag = tag(body["left_tag"])
+        right_tag = tag(body["right_tag"])
+    except ValueError:
+        _fail(400, "Invalid player tag")
+    if left_tag == right_tag:
+        _fail(400, "Choose two different accounts")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body["revision"])
+        rows = {}
+        for player_tag in (left_tag, right_tag):
+            if not db.execute("SELECT 1 FROM signups WHERE season_id=? AND tag=?",
+                              (sid, player_tag)).fetchone():
+                _fail(404, "Signed-up account not found")
+            row = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?",
+                             (sid, player_tag)).fetchone()
+            if row is None or row["assigned_clan_tag"] is None:
+                _fail(409, "Both accounts must be assigned")
+            rows[player_tag] = dict(row)
+        left_host = rows[left_tag]["assigned_clan_tag"]
+        right_host = rows[right_tag]["assigned_clan_tag"]
+        if left_host == right_host:
+            _fail(409, "Accounts must be in different hosting clans")
+        for host in (left_host, right_host):
+            capacity = _active_destination_capacity(db, sid, host)
+            occupancy = db.execute(
+                "SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?",
+                (sid, host),
+            ).fetchone()["n"]
+            if occupancy > capacity:
+                _fail(409, "Hosting clan exceeds capacity")
+        changes = []
+        for player_tag, target in ((left_tag, right_host), (right_tag, left_host)):
+            before = rows[player_tag]
+            db.execute("UPDATE roster_entries SET assigned_clan_tag=?,kept=1 "
+                       "WHERE season_id=? AND tag=?", (target, sid, player_tag))
+            after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?",
+                                    (sid, player_tag)).fetchone())
+            _audit(db, sid, player_tag, session["user_id"], "roster_swap", before, after)
+            changes.append({"tag": player_tag, "before": _placement(before),
+                            "after": _placement(after)})
+        revision = _bump(db, sid)
+        _record_undo(db, sid, session["user_id"], "Swap two accounts", revision, changes)
+    return web.json_response({"revision": revision})
+
+
+async def undo_roster(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    if set(body) != {"revision", "undo_id"} or type(body["undo_id"]) is not int or body["undo_id"] < 1:
+        _fail(400, "Expected revision and undo_id")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body["revision"])
+        undo = db.execute(
+            "SELECT * FROM roster_undo WHERE id=? AND season_id=? AND actor_id=?",
+            (body["undo_id"], sid, session["user_id"]),
+        ).fetchone()
+        if undo is None:
+            _fail(404, "Undo action not found")
+        if undo["consumed_at"] is not None or undo["revision"] != _revision(db, sid):
+            _fail(409, "Undo is no longer available")
+        changes = json.loads(undo["changes_json"])
+        if not isinstance(changes, list) or not changes:
+            _fail(409, "Invalid undo record")
+        current = {}
+        occupancy_delta = {}
+        restored_hosts = set()
+        seen = set()
+        for change in changes:
+            player_tag = change["tag"]
+            if player_tag in seen:
+                _fail(409, "Invalid undo record")
+            seen.add(player_tag)
+            if not db.execute("SELECT 1 FROM signups WHERE season_id=? AND tag=?",
+                              (sid, player_tag)).fetchone():
+                _fail(409, "Roster account changed")
+            row = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?",
+                             (sid, player_tag)).fetchone()
+            before = dict(row) if row else None
+            if _placement(before) != change["after"]:
+                _fail(409, "Roster placement changed")
+            current[player_tag] = before
+            old_host = change["after"]["assigned_clan_tag"]
+            restored_host = change["before"]["assigned_clan_tag"]
+            if old_host:
+                occupancy_delta[old_host] = occupancy_delta.get(old_host, 0) - 1
+            if restored_host:
+                restored_hosts.add(restored_host)
+                occupancy_delta[restored_host] = occupancy_delta.get(restored_host, 0) + 1
+        for host in restored_hosts:
+            capacity = _active_destination_capacity(db, sid, host)
+            count = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? "
+                               "AND assigned_clan_tag=?", (sid, host)).fetchone()["n"]
+            if count + occupancy_delta[host] > capacity:
+                _fail(409, "Undo would exceed hosting clan capacity")
+        for change in changes:
+            player_tag = change["tag"]
+            restored = change["before"]
+            before = current[player_tag]
+            db.execute(
+                "INSERT INTO roster_entries(season_id,tag,assigned_clan_tag,kept) VALUES (?,?,?,?) "
+                "ON CONFLICT(season_id,tag) DO UPDATE SET "
+                "assigned_clan_tag=excluded.assigned_clan_tag,kept=excluded.kept",
+                (sid, player_tag, restored["assigned_clan_tag"], int(restored["kept"])),
+            )
+            after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?",
+                                    (sid, player_tag)).fetchone())
+            _audit(db, sid, player_tag, session["user_id"], "roster_undo_account", before, after)
+        db.execute("UPDATE roster_undo SET consumed_at=CURRENT_TIMESTAMP WHERE id=?", (undo["id"],))
+        revision = _bump(db, sid)
+        _audit(db, sid, None, session["user_id"], "roster_undo", {"undo_id": undo["id"]},
+               {"revision": revision})
+    return web.json_response({"revision": revision})
+
+
+def _auto_plan(db, sid, pool=None):
+    accounts = _roster_rows(db, sid)
+    clans = _rule_rows(db, sid)
+    counts = {clan["tag"]: clan["assigned_count"] for clan in clans}
+    totals = {clan["tag"]: 0 for clan in clans}
+    for account in accounts:
+        if account["assigned_clan_tag"] in totals and account["effective_weight"] is not None:
+            totals[account["assigned_clan_tag"]] += account["effective_weight"]
+    candidates = sorted((a for a in accounts if a["assigned_clan_tag"] is None and (pool is None or a["pool"] == pool)),
+                        key=lambda a: (-(a["effective_weight"] or 0), a["tag"]))
+    placements = []
+    unassigned = []
+    for account in candidates:
+        if account["kept"]:
+            unassigned.append({"tag": account["tag"], "reason": "kept"})
+            continue
+        weight = account["effective_weight"]
+        if account["manual_weight"] is None and account["source_status"] == "unavailable":
+            unassigned.append({"tag": account["tag"], "reason": "source_unavailable"})
+            continue
+        if weight is None:
+            unassigned.append({"tag": account["tag"], "reason": "missing_weight"})
+            continue
+        eligible = []
+        for clan in clans:
+            if clan["archived"] or clan["pool"] != account["pool"] or clan["capacity"] not in (15, 30):
+                continue
+            if clan["min_weight"] is not None and weight < clan["min_weight"]:
+                continue
+            if clan["max_weight"] is not None and weight >= clan["max_weight"]:
+                continue
+            eligible.append(clan)
+        if not eligible:
+            unassigned.append({"tag": account["tag"], "reason": "no_eligible_rule"})
+            continue
+        available = [clan for clan in eligible if counts[clan["tag"]] < clan["capacity"]]
+        if not available:
+            unassigned.append({"tag": account["tag"], "reason": "full"})
+            continue
+        chosen = min(available, key=lambda clan: (counts[clan["tag"]], totals[clan["tag"]], clan["tag"]))
+        counts[chosen["tag"]] += 1
+        totals[chosen["tag"]] += weight
+        placements.append({"tag": account["tag"], "assigned_clan_tag": chosen["tag"]})
+    return placements, unassigned
+
+
+async def auto_preview(request):
+    _require(request, "editor")
+    body = await _json(request)
+    pool = body.get("pool")
+    if pool not in (None, "main", "lazy"):
+        _fail(400, "Choose Main or Lazy CWL")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body.get("revision"))
+        placements, unassigned = _auto_plan(db, sid, pool)
+        revision = _revision(db, sid)
+    return web.json_response({"revision": revision, "placements": placements, "unassigned": unassigned})
+
+
+async def auto_apply(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    submitted = body.get("placements")
+    if not isinstance(submitted, list):
+        _fail(400, "Preview placements are required")
+    pool = body.get("pool")
+    if pool not in (None, "main", "lazy"):
+        _fail(400, "Choose Main or Lazy CWL")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body.get("revision"))
+        placements, _ = _auto_plan(db, sid, pool)
+        if submitted != placements:
+            _fail(409, "Preview changed; refresh before applying")
+        changes = []
+        for placement in placements:
+            player_tag = placement["tag"]
+            clan_tag = placement["assigned_clan_tag"]
+            old = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone()
+            before = dict(old) if old else None
+            db.execute("INSERT INTO roster_entries(season_id,tag,assigned_clan_tag,kept) VALUES (?,?,?,0) "
+                       "ON CONFLICT(season_id,tag) DO UPDATE SET assigned_clan_tag=excluded.assigned_clan_tag",
+                       (sid, player_tag, clan_tag))
+            after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone())
+            _audit(db, sid, player_tag, session["user_id"], "auto_place", before, after)
+            changes.append({"tag": player_tag, "before": _placement(before),
+                            "after": _placement(after)})
+        revision = _bump(db, sid) if placements else _revision(db, sid)
+        if placements:
+            _record_undo(db, sid, session["user_id"], "Auto-place accounts", revision, changes)
+    return web.json_response({"revision": revision, "applied": len(placements)})
+
+
+async def refresh_weights(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        _check_revision(db, sid, body.get("revision"))
+        tags = [row["tag"] for row in db.execute("SELECT tag FROM signups WHERE season_id=?", (sid,))]
+    try:
+        found = await request.app["providers"].weights(tags)
+    except ProviderUnavailable:
+        with _store(request).tx() as db:
+            _check_revision(db, sid, body.get("revision"))
+            for player_tag in tags:
+                old = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone()
+                before = dict(old) if old else None
+                db.execute("INSERT INTO roster_entries(season_id,tag,source_status) "
+                           "VALUES (?,?,'unavailable') ON CONFLICT(season_id,tag) DO UPDATE SET "
+                           "source_status='unavailable'", (sid, player_tag))
+                after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone())
+                _audit(db, sid, player_tag, session["user_id"], "weight_refresh_failed", before, after)
+            if tags:
+                _bump(db, sid)
+        _fail(503, "FWA weight source unavailable; previous values retained")
+    if not isinstance(found, dict) or not set(found) <= set(tags):
+        _fail(503, "Invalid FWA weight response")
+    for item in found.values():
+        if not isinstance(item, dict) or type(item.get("weight")) is not int or item["weight"] <= 0 or item["weight"] > 1_000_000_000 or not isinstance(item.get("source_name"), str) or (item.get("source_modified_at") is not None and not isinstance(item.get("source_modified_at"), str)):
+            _fail(503, "Invalid FWA weight response")
+    checked_at = getattr(request.app["providers"], "weights_checked_at", None) or datetime.now(timezone.utc).isoformat()
+    with _store(request).tx() as db:
+        _check_revision(db, sid, body.get("revision"))
+        for player_tag in tags:
+            item = found.get(player_tag)
+            old = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone()
+            before = dict(old) if old else None
+            status = "current" if item else "missing"
+            weight = item["weight"] if item else None
+            source_name = item["source_name"] if item else None
+            source_modified_at = item.get("source_modified_at") if item else None
+            item_checked_at = item.get("source_checked_at", checked_at) if item else checked_at
+            db.execute("INSERT INTO roster_entries(season_id,tag,source_weight,source_status,source_name,source_checked_at,source_modified_at) "
+                       "VALUES (?,?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET "
+                       "source_weight=excluded.source_weight,source_status=excluded.source_status,"
+                       "source_name=excluded.source_name,source_checked_at=excluded.source_checked_at,"
+                       "source_modified_at=excluded.source_modified_at",
+                       (sid, player_tag, weight, status, source_name, item_checked_at, source_modified_at))
+            after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone())
+            _audit(db, sid, player_tag, session["user_id"], "weight_refresh", before, after)
+        revision = _bump(db, sid) if tags else _revision(db, sid)
+    return web.json_response({"revision": revision, "refreshed": len(found), "missing": len(tags)-len(found)})
+
+
+def _publication_meta(row):
+    if row is None:
+        return None
+    return {key: row[key] for key in (
+        "version", "revision", "published_at", "published_by",
+        "joining_instructions", "assigned_count", "unassigned_count",
+    )}
+
+
+def _member_publication_meta(row):
+    if row is None:
+        return None
+    return {key: row[key] for key in (
+        "version", "published_at", "joining_instructions",
+    )}
+
+
+def _latest_publication(db, sid):
+    return db.execute(
+        "SELECT * FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1",
+        (sid,),
+    ).fetchone()
+
+
+def _publication_changed(db, sid, latest):
+    """Compare saved roster content; season administration is not a roster edit."""
+    if latest is None:
+        return False
+    if _revision(db, sid) == latest["revision"] + 1:
+        return False
+    fields = (
+        "tag", "user_id", "player_name", "town_hall", "pool",
+        "prefer_crystal_1_or_lower", "signup_clan_tag", "signup_clan_name",
+        "assigned_clan_tag", "assigned_clan_name", "source_weight", "source_status",
+        "source_name", "source_checked_at", "source_modified_at", "manual_weight",
+        "effective_weight", "kept",
+    )
+    names = {row["tag"]: row["name"] for row in db.execute("SELECT tag,name FROM clans")}
+    current = {}
+    for row in _roster_rows(db, sid):
+        row["assigned_clan_name"] = names.get(row["assigned_clan_tag"])
+        current[row["tag"]] = tuple(row.get(field) for field in fields)
+    published = {
+        row["tag"]: tuple(row[field] for field in fields)
+        for row in db.execute("SELECT * FROM publication_accounts WHERE publication_id=?", (latest["id"],))
+    }
+    return current != published
+
+
+async def publication_preview(request):
+    _require(request, "editor")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        _season(db, sid)
+        accounts = _roster_rows(db, sid)
+        clans = _rule_rows(db, sid)
+        assigned = sum(account["assigned_clan_tag"] is not None for account in accounts)
+        latest = _latest_publication(db, sid)
+        revision = _revision(db, sid)
+        result = {
+            "draft_revision": revision,
+            "draft_changed": _publication_changed(db, sid, latest),
+            "preview": {
+                "accounts": accounts,
+                "clans": clans,
+                "assigned_count": assigned,
+                "unassigned_count": len(accounts) - assigned,
+            },
+            "published": _publication_meta(latest),
+        }
+    return web.json_response(result)
+
+
+async def publish_roster(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    if set(body) != {"revision", "acknowledge_unassigned", "joining_instructions"}:
+        _fail(400, "Expected revision, acknowledge_unassigned, and joining_instructions")
+    revision = body["revision"]
+    if type(revision) is not int or revision < 0:
+        _fail(400, "Invalid roster revision")
+    acknowledged = _body_bool(body, "acknowledge_unassigned")
+    instructions = body["joining_instructions"]
+    if not isinstance(instructions, str) or len(instructions) > 2000:
+        _fail(400, "Joining instructions must be at most 2000 characters")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        season = _season(db, sid)
+        if season["status"] != "draft":
+            _fail(423, "Season is archived")
+        latest = _latest_publication(db, sid)
+        if latest and latest["revision"] == revision and latest["joining_instructions"] == instructions:
+            return web.json_response({"published": _publication_meta(latest)})
+        _check_revision(db, sid, revision)
+        accounts = _roster_rows(db, sid)
+        if not accounts:
+            _fail(409, "No signed-up accounts to publish")
+        clans = _rule_rows(db, sid)
+        assigned = sum(account["assigned_clan_tag"] is not None for account in accounts)
+        unassigned = len(accounts) - assigned
+        if unassigned and not acknowledged:
+            _fail(409, "Unassigned accounts require explicit acknowledgement")
+        clan_names = {clan["tag"]: clan["name"] for clan in clans}
+        version = (latest["version"] + 1) if latest else 1
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = db.execute(
+            "INSERT INTO roster_publications(season_id,version,revision,published_by,published_at,"
+            "joining_instructions,assigned_count,unassigned_count,clans_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (sid, version, revision, session["user_id"], now, instructions,
+             assigned, unassigned, json.dumps(clans, sort_keys=True)),
+        )
+        publication_id = cursor.lastrowid
+        for account in accounts:
+            db.execute(
+                "INSERT INTO publication_accounts(publication_id,tag,user_id,player_name,town_hall,pool,"
+                "prefer_crystal_1_or_lower,signup_clan_tag,signup_clan_name,assigned_clan_tag,"
+                "assigned_clan_name,source_weight,source_status,source_name,source_checked_at,"
+                "source_modified_at,manual_weight,effective_weight,kept) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (publication_id, account["tag"], account["user_id"], account["player_name"],
+                 account["town_hall"], account["pool"], int(account["prefer_crystal_1_or_lower"]),
+                 account["signup_clan_tag"], account["signup_clan_name"],
+                 account["assigned_clan_tag"], clan_names.get(account["assigned_clan_tag"]),
+                 account["source_weight"], account["source_status"], account["source_name"],
+                 account["source_checked_at"], account["source_modified_at"],
+                 account["manual_weight"], account["effective_weight"], int(account["kept"])),
+            )
+        published = _publication_meta(_latest_publication(db, sid))
+        _audit(db, sid, None, session["user_id"], "roster_publish",
+               _publication_meta(latest), published)
+        _bump(db, sid)
+    return web.json_response({"published": published}, status=201)
+
+
+async def my_assignments(request):
+    session = _require(request)
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        _season(db, sid)
+        latest = _latest_publication(db, sid)
+        rows = db.execute(
+            "SELECT s.tag,s.player_name,s.town_hall,s.pool,p.assigned_clan_tag,p.assigned_clan_name "
+            "FROM signups s LEFT JOIN publication_accounts p ON p.publication_id=? "
+            "AND p.tag=s.tag AND p.user_id=s.user_id "
+            "WHERE s.season_id=? AND s.user_id=? ORDER BY s.tag",
+            (latest["id"] if latest else None, sid, session["user_id"]),
+        ).fetchall()
+        return web.json_response({
+            "published": _member_publication_meta(latest),
+            "visibility": "current",
+            "draft_changed": False,
+            "accounts": [dict(row) for row in rows],
+        })
+
+
+@web.middleware
+async def auth_diagnostics(request, handler):
+    if request.path not in {API + "/auth/discord", API + "/auth/callback", API + "/auth/me"}:
+        return await handler(request)
+    logger = logging.getLogger("cwl.auth")
+    stage = request.path.rsplit("/", 1)[-1]
+    try:
+        response = await handler(request)
+    except web.HTTPException as exc:
+        # Only application-owned error messages: never URL queries, codes, cookies or tokens.
+        outcome = "redirect" if isinstance(exc, web.HTTPRedirection) else exc.text
+        logger.info("auth stage=%s status=%s outcome=%s", stage, exc.status, outcome)
+        raise
+    except Exception as exc:
+        logger.error("auth stage=%s exception_type=%s", stage, type(exc).__name__)
+        raise
+    logger.info("auth stage=%s status=%s", stage, response.status)
+    return response
+
+
+@web.middleware
+async def errors(request, handler):
+    try:
+        response = await handler(request)
+    except ProviderUnavailable as exc:
+        response = web.json_response({"error": str(exc)}, status=503)
+    except web.HTTPException as exc:
+        if isinstance(exc, web.HTTPRedirection):
+            if request.path.startswith(API):
+                exc.headers["Cache-Control"] = "no-store"
+                exc.headers["X-Content-Type-Options"] = "nosniff"
+            raise
+        if request.path == API + "/auth/callback" and "text/html" in request.headers.get("Accept", ""):
+            destination = saved_login_destination(request)
+            response = web.HTTPFound(destination + "&signin_error=discord" if destination else "/?signin_error=discord")
+            response.del_cookie(RETURN_COOKIE, path=API + "/auth")
+            response.del_cookie(STATE_COOKIE, path=API + "/auth")
+        else:
+            response = web.json_response({"error": exc.text or exc.reason}, status=exc.status)
+    if request.path.startswith(API):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True, after_login="/", dev_fixture=False, dev_identity=None, static_dir=None):
+    """Build an app. Dev fixture requires explicit opt-in and loopback serving."""
+    if db_path is None:
+        db_path = os.getenv("CWL_WEB_DB_PATH", "")
+    if not db_path:
+        raise ValueError("CWL_WEB_DB_PATH is required; never reuse the live Mongo database")
+    if dev_fixture and dev_identity is None:
+        dev_identity = {"id": PERMANENT_OWNER_ID, "username": "Development owner", "guild_owner": False}
+    app = web.Application(middlewares=[errors, auth_diagnostics], client_max_size=32 * 1024)
+    app["store"] = Store(db_path)
+    if dev_fixture and providers is None:
+        providers = FixtureProviders(dev_identity["id"])
+        with app["store"].tx() as db:
+            db.execute("INSERT OR IGNORE INTO seasons(label,signup_open) VALUES ('Development season',1)")
+    app["providers"] = providers or LiveProviders()
+    app["oauth"] = oauth or {"client_id": os.getenv("CWL_DISCORD_CLIENT_ID", ""), "client_secret": os.getenv("CWL_DISCORD_CLIENT_SECRET", ""), "redirect_uri": os.getenv("CWL_DISCORD_REDIRECT_URI", "")}
+    app["secure_cookies"] = secure_cookies
+    app["after_login"] = after_login
+    app["dev_fixture"] = dev_fixture
+    app["dev_identity"] = dev_identity
+    app["participation_sync_locks"] = {}
+    app["dashboard_accounts_cache"] = {}
+    app["dashboard_accounts_inflight"] = {}
+    app["todo_cache"] = {}
+    app["todo_inflight"] = {}
+    app["todo_client"] = None
+    app["todo_client_lock"] = asyncio.Lock()
+    app.cleanup_ctx.append(participation_sync_lifecycle)
+    app.cleanup_ctx.append(_dashboard_accounts_lifecycle)
+    app.cleanup_ctx.append(todo_lifecycle)
+    app.cleanup_ctx.append(push_lifecycle)
+    from .roster_locations import lifecycle as location_lifecycle
+    app.cleanup_ctx.append(location_lifecycle)
+    from .player_weights import lifecycle as player_weights_lifecycle
+    app.cleanup_ctx.append(player_weights_lifecycle)
+    routes = [*ticket_browser_routes, *staff_tag_signup_routes,
+        web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
+        web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
+        web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
+        web.get(API + "/seasons/{season_id}/lineup", lineup), web.post(API + "/seasons/{season_id}/lineup", add_lineup), web.delete(API + "/seasons/{season_id}/lineup/{tag}", remove_lineup),
+        web.patch(API + "/seasons/{season_id}/lineup/{tag}/rules", update_lineup_rules),
+        web.get(API + "/seasons/{season_id}/roster", roster),
+        web.patch(API + "/seasons/{season_id}/roster/assignments", bulk_assign_roster),
+        web.post(API + "/seasons/{season_id}/roster/swap", swap_roster),
+        web.post(API + "/seasons/{season_id}/roster/undo", undo_roster),
+        web.patch(API + "/seasons/{season_id}/roster/{tag}", update_roster_account),
+        web.post(API + "/seasons/{season_id}/roster/auto-preview", auto_preview),
+        web.post(API + "/seasons/{season_id}/roster/auto-apply", auto_apply),
+        web.post(API + "/seasons/{season_id}/roster/refresh-weights", refresh_weights),
+        web.get(API + "/seasons/{season_id}/arrival-check", arrival_check),
+        web.get(API + "/seasons/{season_id}/publication", publication_preview),
+        web.get(API + "/seasons/{season_id}/export.csv", export_csv),
+        web.post(API + "/seasons/{season_id}/publication", publish_roster),
+        web.get(API + "/seasons/{season_id}/my-assignments", my_assignments),
+        web.get(API + "/approved-clans", approved_clans), web.delete(API + "/approved-clans/{tag}", family_clans_read_only),
+        web.get(API + "/access", access), web.post(API + "/access", grant), web.delete(API + "/access/{user_id}", revoke),
+        web.get(API + "/staff-signup-members", staff_signup_members), web.get(API + "/seasons/{season_id}/staff-signups/accounts", staff_signup_accounts), web.post(API + "/seasons/{season_id}/staff-signups", staff_add_signup), web.delete(API + "/seasons/{season_id}/staff-signups/{tag}", staff_remove_signup), web.get(API + "/linked-accounts", linked_accounts), web.get(API + "/dashboard/accounts", dashboard_accounts), web.get(API + "/seasons/{season_id}/signups", signups), web.post(API + "/seasons/{season_id}/signups", submit_signup), web.delete(API + "/seasons/{season_id}/signups/{tag}", withdraw),
+    ]
+    routes.extend(announcement_routes())
+    routes.extend(manage_bridge_routes())
+    from .roster_images import routes as roster_image_routes
+    routes.extend(roster_image_routes())
+    routes.extend(participation_routes())
+    routes.extend(participation_sync_routes())
+    routes.extend(bonus_routes())
+    routes.extend(todo_routes())
+    routes.extend(push_routes())
+    from . import staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history
+    for module in (staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history):
+        routes.extend(module.routes)
+    manage_content.routes(app)
+    app.add_routes(routes)
+    if static_dir is not None:
+        from pathlib import Path
+        root = Path(static_dir).resolve()
+        index = root / "index.html"
+        if not index.is_file():
+            raise ValueError("Frontend build index.html is missing")
+        if (root / "assets").is_dir():
+            app.router.add_static("/assets", root / "assets")
+        if (root / "icons").is_dir():
+            app.router.add_static("/icons", root / "icons")
+        async def push_asset(request):
+            name = request.match_info["asset"]
+            response = web.FileResponse(root / name)
+            response.headers["Cache-Control"] = "no-cache"
+            response.headers["Content-Type"] = "application/javascript" if name == "sw.js" else "application/manifest+json"
+            if name == "sw.js":
+                response.headers["Service-Worker-Allowed"] = "/"
+            return response
+        app.router.add_get("/{asset:sw\\.js|manifest\\.webmanifest}", push_asset)
+        async def index_page(request):
+            response = web.FileResponse(index)
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
+        app.router.add_get("/", index_page)
+        app.router.add_get("/index.html", index_page)
+    return app

@@ -6,6 +6,7 @@ the opponent tag cannot be found, we raise so the caller can fail soft.
 """
 
 import re
+from html import unescape
 from bs4 import BeautifulSoup
 
 
@@ -113,7 +114,7 @@ def parse_clan_points(html: str, our_tag: str) -> dict:
             fragment[start:],
             re.IGNORECASE,
         )
-        return found.group(1).strip() if found else None
+        return unescape(found.group(1).strip()) if found else None
 
     name_map = {}
     if vs_segment is not None and len(box_tags) >= 2:

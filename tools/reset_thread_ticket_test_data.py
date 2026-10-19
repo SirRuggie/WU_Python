@@ -45,6 +45,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from utils.mongo_routes import RoutedCollections
 from dotenv import load_dotenv  # noqa: E402
 from pymongo import MongoClient  # noqa: E402
 
@@ -79,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
         print("MONGODB_URI is not set")
         return 2
 
-    db = MongoClient(uri)["settings"]  # the database utils/mongo.py uses
+    db = RoutedCollections(MongoClient(uri, connect=False))
 
     if args.confirm:
         print("DELETING new-system thread ticket test data\n")

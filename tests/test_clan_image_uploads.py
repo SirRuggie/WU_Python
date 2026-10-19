@@ -72,7 +72,7 @@ def mongo_for(kind, slot, key, old="https://old.example/image.png"):
         "war_base_images": {"th16": old, "th16_new": old},
         "active_base_images": {"th16": old, "th16_new": old},
     })
-    return SimpleNamespace(clans=clan, fwa_data=fwa)
+    return SimpleNamespace(clans=clan, fwa_data=fwa, bot_config=SimpleNamespace(database=SimpleNamespace(get_collection=lambda *a,**kw:Collection())))
 
 
 @pytest.fixture(autouse=True)

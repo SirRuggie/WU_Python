@@ -1527,6 +1527,7 @@ async def publication_panel(draft: dict, mongo: MongoClient, audience: str = "bo
     ]))
     failed = []
     all_sent = True
+    actionable = False
     for variant in selected:
         item = _template(live["campaign"], "roster", variant)
         oid = cwl_campaign.occurrence_id(_cycle(draft), "roster", variant)
@@ -1534,8 +1535,13 @@ async def publication_panel(draft: dict, mongo: MongoClient, audience: str = "bo
         receipt = next((r for r in reversed(receipts) if r.get("status") == "sent"), receipts[-1] if receipts else {})
         sent = receipt.get("status") == "sent" or oid in live.get("sent_occurrences", ())
         status = "Sent" if sent else "Ready to publish"
-        if not sent and (live["campaign"]["messages"]["roster"].get("enabled") is False or item.get("enabled") is False):
+        uncertain = oid in live.get("uncertain_occurrences", ())
+        if not sent and uncertain:
+            status = "Delivery uncertain · Check the channel and resolve the send before retrying."
+        elif not sent and (live["campaign"]["messages"]["roster"].get("enabled") is False or item.get("enabled") is False):
             status = "Not sent · Message disabled. Use Edit message to enable it."
+        elif not sent:
+            actionable = True
         if not sent:
             from extensions.tasks import cwl_reminder
             pending = await mongo.cwl_pending_reminders.find_one({"_id": cwl_reminder._campaign_job_id(int(draft["guild_id"]), _cycle(draft), "roster", variant)})
@@ -1557,8 +1563,8 @@ async def publication_panel(draft: dict, mongo: MongoClient, audience: str = "bo
             (f"cwl_links:{token}|roster|{variant}", "Change link", hikari.ButtonStyle.SECONDARY),
         ))
     rows.append(_button_group((f"cwl_publish_send:{token}|{audience}",
-        "Already published" if all_sent else "Publish to Both Channels" if audience == "both" else "Publish Final Roster",
-        hikari.ButtonStyle.SUCCESS, all_sent)))
+        "Already published" if all_sent else "Delivery needs review" if not actionable else "Publish to Both Channels" if audience == "both" else "Publish Final Roster",
+        hikari.ButtonStyle.SUCCESS, all_sent or not actionable)))
     if failed:
         rows.append(_button(f"cwl_publish_retry:{token}|{audience}", "Retry failed announcement"))
     rows.append(_button(f"cwl_tab:{token}|overview", "Back to CWL"))

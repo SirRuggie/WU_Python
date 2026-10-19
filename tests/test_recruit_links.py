@@ -157,8 +157,8 @@ def test_malformed_response_is_unavailable(monkeypatch,payload):
     assert asyncio.run(clashperk_links.lookup(discord_ids=['123'])) is None
 
 
-@pytest.mark.parametrize('unavailable,conflicts,expected',[((),(),True),(('ClashKing',),(),False),((),('#QCC',),False)])
-def test_approval_uses_combined_completeness(monkeypatch,unavailable,conflicts,expected):
+@pytest.mark.parametrize('unavailable,conflicts,expected',[((),(),True),(('ClashKing',),(),True),((),('#QCC',),True)])
+def test_approval_accepts_known_accounts_despite_provider_warnings(monkeypatch,unavailable,conflicts,expected):
     from extensions.commands.tickets import resolve, store
     from tests.test_ticket_resolution_identity_races import _patch_approval, LockCollection
     transitions=[]

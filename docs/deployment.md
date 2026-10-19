@@ -588,3 +588,108 @@ the `ticket_rollout` counter document -- it never touches `button_store`,
 of them already hold a destination ticket number the tool reports the count
 and refuses `--confirm` (exit 3), because numbering could not restart at 1.
 Run it before the first legacy migration preview.
+
+
+## MongoDB collection routing
+
+Production namespaces are centralized in utils/mongo_routes.py. Leave
+MONGODB_ROUTES unset to retain current destinations. This is for planned,
+verified feature migrations, not selecting test databases. See the
+[Phase 2 routing and clan cutover procedure](mongodb-phase2-routing-2026-09-26.md)
+for configuration, validation, and rollback requirements.
+
+### Dashboard change history (2026-10-15)
+
+Message edits, existing text-command edits, ticket channels/access/wait settings,
+and editable FWA configuration now keep before/after records in `settings.bot_config`
+(`kind=dashboard_history`, `_id=dashboard-history:<uuid>`). This collection is part
+of the existing full Mongo backups. Keep the compound `dashboard_history_target_time`
+index on `kind`, `target`, and descending `at`. No TTL is applied; the UI shows the
+latest 30 entries per editor. History begins with deployment; native `/manage`
+edits are not newly journaled by this dashboard feature, but native edits still
+invalidate stale dashboard revisions.
+
+Restore uses the existing permission checks, validation, and optimistic writes.
+Ticket restores run through the existing bot queue and recheck staff permissions
+at execution time. An incomplete save keeps its before-image and is shown as
+unconfirmed, with restore disabled. A completed restore creates a new entry.
+Restoring saved content does not publish a Discord post. Text-command restored
+content applies to future command replies. Creation/deletion, membership changes,
+role grants, sends, monitoring actions, and external actions are not automatically
+undone. These controls do not change signup links or native command behavior.
+
+Validation: isolated desktop/mobile staff preview exercised opening a saved
+preview, editing, saving, reviewing history, and restoring the original message.
+No live Discord posts or staff permissions were changed during this check.
+
+Release verification: 111 affected backend tests and 95 frontend tests passed;
+production TypeScript/Vite build passed. Public release `index-DPBikTPa.js` is
+served. The history API rejects anonymous requests (401). Web and bot services
+are active, worker heartbeat refreshed, and 36 shared content documents plus FWA
+settings loaded successfully after restart. Rollback snapshot:
+`.local/pre-change-history-20261015-151657` (workspace and bot deployment).
+
+### Text-command Components V2 builder (2026-10-15)
+
+Text commands now send Hikari Components V2 (`IS_COMPONENTS_V2`) with optional
+outside text and a colored container. Ordered blocks support text, images with
+alt descriptions, separators (divider/spacing), and rows of up to five HTTPS link
+buttons. Blocks can be moved, duplicated, and removed. Mobile switches between
+editing and preview; desktop shows both. Existing title/body/image commands are
+converted in memory without a bulk data migration. A save records the normalized
+block layout; history restores legacy and new layouts through the same validator.
+
+`allow_pings` defaults false and explicitly opts into user, role, and everyone/here
+mentions for the whole reply, subject to Discord permissions. No permissions are
+changed. Backend limits: 4,000 combined text-display characters, 40 components,
+15 editor blocks, 80-character button labels and 512-character public HTTPS links.
+Pings and message publishing are never exercised by preview or save.
+
+Validation: 125 backend tests, 98 frontend tests, production build, isolated
+mobile/desktop save/reorder/link/preview checks, and read-only V2 rendering of all
+three existing production commands. No Discord test messages sent. Rollback:
+`.local/pre-command-v2-20261015-152403` on workspace and bot host. Public bundle:
+`index-7UMZoSLN.js`.
+
+### Mention insertion and native editor history (2026-10-15)
+
+Text-command main text and embed text expose Member/Role search. The dedicated
+`/manage/text-command-mentions` endpoint requires text-command scope, a 2–80
+character query and user/role kind; returns only up to 25 matching names and IDs.
+The existing full member-list endpoint and all role-edit permissions are unchanged.
+Search uses the cached directory for substring matches. Insertion preserves Discord
+mention tokens and renders selected names in the current preview; no ping setting
+is changed by selection. Unsaved preview-name labels are session-local.
+
+Connected native `/manage` editors now record `discord_edit` entries in the same
+history as the dashboard: recruitment/gauntlet messages, recruitment questions,
+FWA war messages, Main/FWA staff messages, and ticket settings. They retain their
+native revision checks and writers. Dashboard writes bypass duplicate native
+journaling. Native message history can be restored through the existing scoped
+dashboard restore API. Native FWA configuration tools (weights/bases/monitoring),
+roster operations, role changes and external actions are not covered by these hooks.
+
+Validation: 216 affected backend tests and 100 frontend tests passed; build passed;
+isolated member/role search, insertion, saved values and mobile layout checked.
+No Discord posts, pings, or live permission changes used for testing.
+
+### Text-command builder usability — 2026-10-15
+
+- Editor-only block names (80 characters) persist in Mongo/history and never enter Discord messages.
+- Collapsible Markdown help for main and block text; hex input beside the color picker.
+- dnd-kit pointer/touch-handle and keyboard sorting, with existing arrow controls retained. Stable editor keys preserve field state while reordering.
+- Media galleries (1–10 entries, descriptions/spoilers) and sections (1–3 text fields with thumbnail or link button). Existing command cards remain readable and editable.
+- Server validates all new nested fields, URLs, text budgets and Discord's 40-component budget. Save/preview do not send messages.
+- Isolated-browser verification: custom name, hex color, save, keyboard and pointer reordering, 390px viewport without horizontal overflow. Backend validation/render tests and frontend suite passed.
+- Deliberate remaining limits: file attachments, independently colored multiple containers, and action buttons/select menus are not available. Those need attachment storage and explicit interaction behavior. Media preview is approximate; Discord controls spoiler/video rendering.
+- Research: message.style Components V2 documentation, FaizoKen/DWEEB repository and Discord component reference. Established dnd-kit used for sorting.
+
+### Command triggers: cards, files, interactive controls — 2026-10-15
+
+- Independent message cards with per-card hex colors/spoilers; nested cards are rejected. Compact Add block menu, reorder handles, arrows, collapsible card fields and mobile preview tabs retained.
+- Files upload to `settings.text_command_files` with majority writes and content-addressed IDs. Each message allows up to 10 files / 8 MB total. Files stay private in Mongo until the configured Discord reply is invoked; all-settings Mongo backups include them. Orphaned uploads are retained to preserve history references (no automatic deletion).
+- Buttons and single-choice dropdowns can show an enabled saved reply privately, or add/remove a configured role for the clicker only. Saved-reply mentions never ping. IDs fingerprint the saved configuration; edits/disable/delete invalidate old controls. No runtime dependence on process-memory component state, so restarts preserve valid controls.
+- User explicitly approved any Command triggers editor configuring self-service roles. Save validates the role against fresh bot hierarchy; execution rechecks bot Manage Roles/hierarchy, editor membership/access, privileged permissions and known/configured staff roles. Changes have Discord audit reasons plus durable `settings.text_command_events` records; recent 25 shown in Role activity. The compound activity index is installed.
+- Preview supports small text, underline, text/media/card/file spoilers, direct video controls, file names/sizes and expandable dropdown choices. Preview is approximate; fonts, media codecs and Discord rendering can differ.
+- Validation: 247 backend tests (including native dispatcher regression and role checks), 106 frontend tests; production's three existing commands validated without edits. Isolated browser verified multiple cards, uploads, action settings and role-dropdown save; 390px layout fits without horizontal overflow. Live Discord role choices were read without changing roles. Actual Discord sends/role mutation were mocked, not performed on members.
+- Deployment copies core renderer, file/actions/role modules, API and central component dispatcher together. Static assets retained; index replaced atomically. Rollback copies are created under `.local/pre-builder-full-*` in workspace and bot deployment.

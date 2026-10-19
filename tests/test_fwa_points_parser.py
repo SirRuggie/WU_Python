@@ -78,7 +78,22 @@ def test_our_outcome_win_when_our_clan_is_bolded():
 
 def test_our_outcome_lose_when_opponent_is_bolded():
     d = parse_clan_points(LOSE_FIXTURE, "2PPCL2GYP")
+    assert d["opponent_name"] == "Opponent Clan"
     assert d["predicted_winner_name"] == "Opponent Clan"
+    assert d["our_outcome"] == "lose"
+
+
+@pytest.mark.parametrize("encoded_name,expected_name", [
+    ("--&lt; SAVAGE &gt;--", "--< SAVAGE >--"),
+    ("--&#60; SAVAGE &#x3e;--", "--< SAVAGE >--"),
+    ("A &amp; B", "A & B"),
+    ("A &amp;lt; B", "A &lt; B"),
+])
+def test_encoded_opponent_name_matches_bolded_winner(encoded_name, expected_name):
+    html = LOSE_FIXTURE.replace("Opponent Clan", encoded_name)
+    d = parse_clan_points(html, "2PPCL2GYP")
+    assert d["opponent_name"] == expected_name
+    assert d["predicted_winner_name"] == expected_name
     assert d["our_outcome"] == "lose"
 
 

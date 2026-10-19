@@ -30,5 +30,11 @@ kill_bots.bat
 # Nothing operational, no credentials, no production data belongs in here anyway.
 .claude/scratch/
 
+# Private MongoDB recovery artifacts (data, logs, and temporary credentials)
+.local-backups/
+
 # Local gold-loot console test
 .local/gold-loot.sqlite3*
+
+# Private application state and credentials
+.local/

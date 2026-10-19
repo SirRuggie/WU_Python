@@ -1,0 +1,14 @@
+[Unit]
+Description=Warriors United cwl backup/recovery check
+
+[Service]
+Type=oneshot
+WorkingDirectory=/nvme0n1-disk/Projects/Bot - Warriors United
+ExecStart="/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python" "/nvme0n1-disk/Projects/Bot - Warriors United/tools/backup/cwl_backup.py" cwl
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

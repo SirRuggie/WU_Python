@@ -36,6 +36,8 @@ class Config:
                 return SimpleNamespace(matched_count=0)
             row = {"_id": query["_id"]}
             self.rows[row["_id"]] = row
+        if any(row.get(key) != value for key, value in query.items()):
+            return SimpleNamespace(matched_count=0)
         row.update(copy.deepcopy(update["$set"]))
         return SimpleNamespace(matched_count=1)
 
@@ -85,7 +87,7 @@ def state(monkeypatch, sections):
     initial = {
         "_id": "initial", "user_id": 10, "guild_id": 20, "view": "document",
         "document": "about-us", "sections": sections, "media": {}, "revision": 0,
-        "destination_channel_id": None,
+        "destination_channel_id": None, "destination_baseline": None,
     }
     states[initial["_id"]] = initial
     async def get_state(_mongo, token):
@@ -191,3 +193,20 @@ def test_admin_destination_uses_bot_member_endpoint_and_bypasses_overwrites():
     assert permissions & hikari.Permissions.ADMINISTRATOR
     app.rest.fetch_my_user.assert_awaited_once_with()
     app.rest.fetch_member.assert_awaited_once_with(20, 999)
+
+
+def test_stale_discord_destination_does_not_overwrite_dashboard(monkeypatch):
+    states = state(monkeypatch, [node.content for node in content.text_nodes(run(content.baseline(content.DOCUMENTS["about-us"])))])
+    db = SimpleNamespace(bot_config=Config())
+    key = "content_destination:20:about-us"
+    db.bot_config.rows[key] = {"_id": key, "channel_id": 456}
+    # A dashboard created a destination after this native draft was opened.
+    run(content.choose_destination(context(), "initial", mongo=db, bot=bot()))
+    assert db.bot_config.rows[key]["channel_id"] == 456
+    states["initial"]["destination_baseline"] = {"_id": key, "channel_id": 111}
+    run(content.choose_destination(context(), "initial", mongo=db, bot=bot()))
+    assert db.bot_config.rows[key]["channel_id"] == 456
+    # Unrelated metadata edits do not prevent changing the channel.
+    states["initial"]["destination_baseline"] = {"_id": key, "channel_id": 456, "updated_by": 9}
+    run(content.choose_destination(context(), "initial", mongo=db, bot=bot()))
+    assert db.bot_config.rows[key]["channel_id"] == 123

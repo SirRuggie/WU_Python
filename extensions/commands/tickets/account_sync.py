@@ -303,9 +303,6 @@ def _success_update(
         or prior.unavailable_sources != unavailable
         or prior.conflicting_tags != conflicts
     )
-    approval_review_tags = tuple(
-        tag for tag in current_tags if tag not in set(prior.current_tags)
-    )
     update: dict = {
         "$set": {
             "linked_accounts.version": 2,
@@ -389,32 +386,6 @@ def _success_update(
                 ) or source)[:MAX_SOURCE_LENGTH]
             ),
         })
-    if (
-        source == SOURCE_FINAL_APPROVE
-        and str(ticket.get("ticket_type") or "").lower() == "fwa"
-        and approval_review_tags
-    ):
-        update["$set"]["linked_accounts.approval_review"] = {
-            "state": "pending",
-            "account_revision": revision,
-            "current_tags": list(current_tags),
-            "new_tags": list(approval_review_tags),
-            "requested_at": at,
-        }
-        update["$push"]["account_identity_audit"] = {
-            "$each": [
-                *update["$push"]["account_identity_audit"]["$each"],
-                {
-                    "event": "fwa_approval_identity_review_required",
-                    "at": at,
-                    "source": source,
-                    "current_tags": list(current_tags),
-                    "new_tags": list(approval_review_tags),
-                    "account_revision": revision,
-                },
-            ],
-            "$slice": -store.MAX_AUDIT_ENTRIES,
-        }
     return update, added, no_longer_linked
 
 

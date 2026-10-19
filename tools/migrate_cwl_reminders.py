@@ -53,7 +53,7 @@ async def migrate_collection(mongo, stray_name: str, declared_name: str, *, dry_
 
     Returns (found, copied). `copied` stays 0 on a dry run.
     """
-    stray = mongo.database.get_collection(stray_name)
+    stray = mongo.get_database("database").get_collection(stray_name)  # fixed historical source
     declared = getattr(mongo, declared_name)
 
     documents = await stray.find().to_list(length=None)

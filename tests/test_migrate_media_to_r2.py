@@ -45,7 +45,7 @@ class FakeCollection:
 
 class FakeDB:
     def __init__(self, clan_docs=None, fwa_doc=None):
-        self.clan_data = FakeCollection(find_docs=clan_docs)
+        self.clans = FakeCollection(find_docs=clan_docs)
         self.fwa_data = FakeCollection(find_one_doc=fwa_doc)
 
 
@@ -84,8 +84,8 @@ def test_migrate_clans_query_is_case_insensitive_and_escapes_the_host(store_and_
 
     mig.migrate_clans(db, store, dry_run=False, tally=tally)
 
-    assert len(db.clan_data.find_queries) == 1
-    clauses = db.clan_data.find_queries[0]["$or"]
+    assert len(db.clans.find_queries) == 1
+    clauses = db.clans.find_queries[0]["$or"]
     assert len(clauses) == 2
     for field, clause in zip(("logo", "banner"), clauses):
         assert clause[field]["$options"] == "i"
@@ -109,9 +109,9 @@ def test_migrate_clans_uploads_under_the_agreed_bucket_layout(store_and_fake):
     assert re.fullmatch(rf"clans/Arcane_Angels/banner\.{HASH_RE}\.png", banner_puts[0]["Key"])
     assert tally.migrated == 2
 
-    assert len(db.clan_data.updates) == 2
+    assert len(db.clans.updates) == 2
     sets = {}
-    for filt, update in db.clan_data.updates:
+    for filt, update in db.clans.updates:
         assert filt == {"_id": 1}
         sets.update(update["$set"])
     assert sets["logo"] == store.public_url(logo_puts[0]["Key"])
@@ -139,7 +139,7 @@ def test_migrate_clans_skips_a_value_already_on_r2(store_and_fake):
     mig.migrate_clans(db, store, dry_run=False, tally=tally)
 
     assert fake.puts == []
-    assert db.clan_data.updates == []
+    assert db.clans.updates == []
     assert tally.migrated == 0
     assert tally.skipped == 2   # logo already on R2, banner is None
 
@@ -158,7 +158,7 @@ def test_migrate_clans_skips_an_internal_address_without_downloading(store_and_f
     mig.migrate_clans(db, store, dry_run=False, tally=tally)
 
     assert fake.puts == []
-    assert db.clan_data.updates == []
+    assert db.clans.updates == []
     assert tally.migrated == 0
     assert tally.skipped == 2
 
@@ -186,7 +186,7 @@ def test_migrate_clans_isolates_a_download_failure(store_and_fake, monkeypatch):
     assert tally.migrated == 3
 
     updated_fields = set()
-    for filt, update in db.clan_data.updates:
+    for filt, update in db.clans.updates:
         for field in update["$set"]:
             updated_fields.add((filt["_id"], field))
 
@@ -206,7 +206,7 @@ def test_migrate_clans_dry_run_makes_no_writes(store_and_fake):
     mig.migrate_clans(db, store, dry_run=True, tally=tally)
 
     assert fake.puts == []
-    assert db.clan_data.updates == []
+    assert db.clans.updates == []
     assert tally.migrated == 0
     assert tally.failed == 0
     assert tally.skipped == 0
