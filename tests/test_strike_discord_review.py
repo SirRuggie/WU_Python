@@ -93,6 +93,35 @@ def test_revoked_modal_actor_cannot_change_state_or_publish_result():
             await strikes.replacement_weight_submit(ctx, 'token', mongo=object())
         interaction.create_initial_response.assert_awaited_once_with(hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
         updates.assert_not_awaited()
-        interaction.edit_initial_response.assert_awaited_once()
-        ctx.respond.assert_not_awaited()
+        interaction.edit_initial_response.assert_not_awaited()
+        assert ctx.respond.await_args.kwargs['ephemeral'] is True
+    asyncio.run(run())
+
+
+def test_other_member_cannot_replace_public_panel():
+    from unittest.mock import AsyncMock
+    async def run():
+        ctx = SimpleNamespace(user=SimpleNamespace(id=2),
+                              interaction=SimpleNamespace(guild_id=123), respond=AsyncMock())
+        updates = AsyncMock()
+        with patch.object(strikes, 'get_state', AsyncMock(return_value={
+                'user_id': 1, 'guild_id': 123})), patch.object(strikes, 'update_state', updates):
+            result = await strikes.replacement_clear(ctx, 'token', mongo=object())
+        assert result is None
+        updates.assert_not_awaited()
+        assert ctx.respond.await_args.kwargs['ephemeral'] is True
+    asyncio.run(run())
+
+
+def test_replacement_command_responds_publicly():
+    from unittest.mock import AsyncMock
+    async def run():
+        ctx = SimpleNamespace(user=SimpleNamespace(id=1), guild_id=123,
+                              defer=AsyncMock(), respond=AsyncMock())
+        with patch.object(strikes, 'authorized', AsyncMock(return_value=True)), \
+             patch.object(strikes, 'insert_state', AsyncMock()), \
+             patch.object(strikes, 'replacement_panel', AsyncMock(return_value=[])):
+            await strikes.Replacements().invoke(ctx, mongo=object(), coc_client=object())
+        ctx.defer.assert_awaited_once_with(ephemeral=False)
+        assert ctx.respond.await_args.kwargs['ephemeral'] is False
     asyncio.run(run())

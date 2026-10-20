@@ -414,10 +414,16 @@ async def _replacement_action_state(ctx, mongo, token):
     return state
 
 
+async def _replacement_denied(ctx):
+    # Public panels must not be overwritten by another member's button click.
+    await ctx.respond('Run /strikes replacements to open your own view.', ephemeral=True)
+    return None
+
+
 async def _replacement_update(ctx, mongo, token, changes, *, notice=''):
     state = await _replacement_action_state(ctx, mongo, token)
     if state is None:
-        return panel('Replacements', 'This view expired or access changed. Run /strikes replacements again.')
+        return await _replacement_denied(ctx)
     await update_state(mongo, token, {'$set': changes})
     state.update(changes)
     return await replacement_panel(StrikeService(mongo), state, notice=notice)
@@ -427,7 +433,7 @@ async def _replacement_update(ctx, mongo, token, changes, *, notice=''):
 @lightbulb.di.with_di
 async def replacement_clan(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
     if await _replacement_action_state(ctx, mongo, action_id) is None:
-        return panel('Replacements', 'This view expired or access changed. Run /strikes replacements again.')
+        return await _replacement_denied(ctx)
     selected = ctx.interaction.values[0]
     if selected != 'all':
         try:
@@ -444,7 +450,7 @@ async def replacement_clan(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
 @lightbulb.di.with_di
 async def replacement_th(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
     if await _replacement_action_state(ctx, mongo, action_id) is None:
-        return panel('Replacements', 'This view expired or access changed. Run /strikes replacements again.')
+        return await _replacement_denied(ctx)
     selected = ctx.interaction.values[0]
     try:
         th = None if selected == 'all' else int(selected)
@@ -459,13 +465,13 @@ async def replacement_th(ctx, action_id, mongo: MongoClient = lightbulb.di.INJEC
 @lightbulb.di.with_di
 async def replacement_sort(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
     if await _replacement_action_state(ctx, mongo, action_id) is None:
-        return panel('Replacements', 'This view expired or access changed. Run /strikes replacements again.')
+        return await _replacement_denied(ctx)
     selected = ctx.interaction.values[0]
     if selected not in REPLACEMENT_SORTS:
         return panel('Replacements', 'Choose a sort from the menu.')
     state = await _replacement_action_state(ctx, mongo, action_id)
     if state is None:
-        return panel('Replacements', 'This view expired or access changed. Run /strikes replacements again.')
+        return await _replacement_denied(ctx)
     if selected == 'weight' and state.get('weight') is None:
         return await replacement_panel(StrikeService(mongo), state, notice='Set a weight first.')
     return await _replacement_update(ctx, mongo, action_id, {'sort': selected, 'page': 0})
@@ -527,7 +533,7 @@ async def replacement_weight_submit(ctx, action_id, mongo: MongoClient = lightbu
         await ctx.defer(ephemeral=True)
     state = await _replacement_action_state(ctx, mongo, action_id)
     if state is None:
-        components = panel('Replacements', 'This view expired or access changed. Run /strikes replacements again.')
+        return await _replacement_denied(ctx)
     else:
         try:
             weight = parse_weight(_replacement_modal_value(ctx))
@@ -549,7 +555,7 @@ class Replacements(lightbulb.SlashCommand, name='replacements',
     @lightbulb.di.with_di
     async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED,
                      coc_client: coc.Client = lightbulb.di.INJECTED):
-        await ctx.defer(ephemeral=True)
+        await ctx.defer(ephemeral=False)
         if not await authorized(ctx, mongo):
             await ctx.respond('Staff access required.', ephemeral=True)
             return
@@ -561,7 +567,7 @@ class Replacements(lightbulb.SlashCommand, name='replacements',
             components = await replacement_panel(StrikeService(mongo), state)
         except (RuntimeError, ValueError) as error:
             components = panel('Replacements', safe(error, 250))
-        await ctx.respond(components=components, ephemeral=True, **NO_MENTIONS)
+        await ctx.respond(components=components, ephemeral=False, **NO_MENTIONS)
 
 
 
