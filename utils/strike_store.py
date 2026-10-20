@@ -338,6 +338,7 @@ class StrikeService:
             {'$group': {
                 '_id': '$player_tag', 'player_name': {'$first': '$player_name'},
                 'member_id': {'$first': '$member_id'},
+                'link_status': {'$first': '$link_status'},
                 'total_strikes': {'$sum': {'$cond': [
                     {'$eq': ['$kind', 'strike']}, 1, 0]}},
                 'last_strike_at': {'$max': {'$cond': [
@@ -376,6 +377,7 @@ class StrikeService:
             rows.append({'player_tag': row['_id'],
                          'player_name': display_name,
                          'member_id': searched_member or profile.get('member_id') or row.get('member_id'),
+                         'link_status': row.get('link_status') or ('linked' if row.get('member_id') else 'unlinked'),
                          'current_clan_tag': current_clan,
                          'clan_seen_at': seen, 'clan_is_current': fresh,
                          'active_strikes': int(row['active_strikes']),
@@ -553,7 +555,10 @@ class StrikeService:
         if roles:
             if self.role_resolver is None:
                 return 'pending_role_check'
-            found = await self.role_resolver(int(guild_id), int(member_id))
+            try:
+                found = await self.role_resolver(int(guild_id), int(member_id))
+            except Exception:
+                return 'pending_role_check'
             if found is None:
                 return 'pending_role_check'
             if {int(item) for item in found} & roles:
@@ -598,7 +603,7 @@ class StrikeService:
         from uuid import uuid4
         now = datetime.now(timezone.utc)
         report = {'wars': 0, 'strikes': 0, 'missed': 0, 'exempt': 0,
-                  'existing': 0, 'skipped': [], 'items': []}
+                  'existing': 0, 'skipped': [], 'items': [], 'deferred_accounts': []}
         accepted = []
         owner_cache = {}
         leave_cache = {}
@@ -607,7 +612,8 @@ class StrikeService:
                 validate_war(war, now=now)
                 if stamp(war['end_time']) < now - timedelta(days=STRIKE_DAYS):
                     raise ValueError('Outside the 90-day import window.')
-                rows = await self._war_rows(guild_id, war, owner_cache=owner_cache, leave_cache=leave_cache)
+                rows = await self._war_rows(guild_id, war, owner_cache=owner_cache,
+                                            leave_cache=leave_cache, deferred=report['deferred_accounts'])
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
                 report['skipped'].append({'war': str(war.get('clan_tag', '?')), 'reason': str(error)})
                 continue
@@ -637,10 +643,12 @@ class StrikeService:
             '_id': preview_id, 'guild_id': int(guild_id), 'actor_id': int(actor_id),
             'created_at': now, 'expires_at': now + timedelta(hours=24),
             'wars': accepted, 'approved_rows': {item['_id']: item['kind'] for item in report['items']},
+            'deferred_rows': {item['row_id']: item['reason'] for item in report['deferred_accounts']},
         })
-        return {**report, 'preview_id': preview_id}
+        return {**report, 'deferred_count': len(report['deferred_accounts']), 'preview_id': preview_id}
 
-    async def _war_rows(self, guild_id: int, war: dict, *, owner_cache=None, leave_cache=None) -> list[dict]:
+    async def _war_rows(self, guild_id: int, war: dict, *, owner_cache=None, leave_cache=None,
+                        deferred=None) -> list[dict]:
         validate_war(war)
         clan = tag(war['clan_tag'])
         registered = await self.mongo.clans.find_one({'tag': clan}, {'_id': 1})
@@ -666,17 +674,30 @@ class StrikeService:
         rows = []
         for member in members:
             player = tag(member['tag'])
-            if player in conflicts:
-                raise RuntimeError('Account owner conflict; war scan deferred.')
-            owner = owners.get(player)
             missed = 2 - member['attacks']
-            exemption = await self._exemption(guild_id, player, owner, ended, exempt_roles, leave_cache=leave_cache) if missed else None
-            if exemption == 'pending_role_check':
-                raise RuntimeError('Member roles unavailable; war scan deferred.')
+            row_id = f'war:{int(guild_id)}:{key}:{player}'
+            reason = 'Account owner conflict' if player in conflicts and missed else None
+            owner = owners.get(player)
+            if player in conflicts and not missed:
+                continue
+            exemption = None
+            if missed and reason is None:
+                exemption = await self._exemption(guild_id, player, owner, ended, exempt_roles, leave_cache=leave_cache)
+                if exemption == 'pending_role_check':
+                    reason = 'Discord roles unavailable'
+            if reason is not None:
+                if deferred is not None:
+                    deferred.append({'row_id': row_id, 'player_tag': player,
+                                     'player_name': member.get('name') or player,
+                                     'clan_tag': clan, 'clan_name': war.get('clan_name'),
+                                     'war_end': ended, 'missed_attacks': missed,
+                                     'reason': reason})
+                continue
             kind = 'exempt' if missed and exemption else ('strike' if missed == 2 else ('missed' if missed == 1 else 'completed'))
-            rows.append({'_id': f'war:{int(guild_id)}:{key}:{player}',
+            rows.append({'_id': row_id,
                          'guild_id': int(guild_id), 'player_tag': player,
-                         'member_id': owner, 'player_name': member.get('name') or player,
+                         'member_id': owner, 'link_status': 'linked' if owner is not None else 'unlinked',
+                         'player_name': member.get('name') or player,
                          'clan_tag': clan, 'clan_name': war.get('clan_name'),
                          'opponent_tag': tag(war['opponent_tag']),
                          'opponent_name': war.get('opponent_name'),
@@ -687,7 +708,8 @@ class StrikeService:
         return rows
 
     async def process_war(self, guild_id: int, war: dict) -> dict:
-        rows = await self._war_rows(guild_id, war)
+        deferred = []
+        rows = await self._war_rows(guild_id, war, deferred=deferred)
         applied = existing = strikes = 0
         for row in rows:
             try:
@@ -697,7 +719,8 @@ class StrikeService:
             except DuplicateKeyError:
                 existing += 1
         return {'applied': applied, 'existing': existing,
-                'strikes': strikes, 'war_key': war_key(war)}
+                'strikes': strikes, 'war_key': war_key(war),
+                'deferred_accounts': deferred, 'deferred_count': len(deferred)}
 
     async def apply_import(self, guild_id: int, preview_id: str, actor_id: int,
                            excluded_keys=()) -> dict:
@@ -712,7 +735,7 @@ class StrikeService:
         if not excluded <= set(approved):
             raise ValueError('Excluded incident is not in this preview.')
         results = {'wars': 0, 'applied': 0, 'existing': 0, 'strikes': 0,
-                   'excluded': len(excluded), 'skipped': []}
+                   'excluded': len(excluded), 'skipped': [], 'deferred_accounts': []}
         cutoff = now - timedelta(days=STRIKE_DAYS)
         owner_cache = {}
         leave_cache = {}
@@ -721,14 +744,24 @@ class StrikeService:
                 validate_war(war, now=now)
                 if stamp(war['end_time']) < cutoff:
                     raise ValueError('Outside the 90-day import window.')
-                rows = await self._war_rows(guild_id, war, owner_cache=owner_cache, leave_cache=leave_cache)
+                rows = await self._war_rows(guild_id, war, owner_cache=owner_cache,
+                                            leave_cache=leave_cache, deferred=results['deferred_accounts'])
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
                 results['skipped'].append({'war': str(war.get('clan_tag', '?')), 'reason': str(error)})
                 continue
             results['wars'] += 1
             for row in rows:
                 original = approved.get(row['_id'])
-                if original is None or row['_id'] in excluded:
+                if original is None:
+                    if row['_id'] in preview.get('deferred_rows', {}):
+                        results['deferred_accounts'].append({
+                            'row_id': row['_id'], 'player_tag': row['player_tag'],
+                            'player_name': row['player_name'], 'clan_tag': row['clan_tag'],
+                            'clan_name': row.get('clan_name'), 'war_end': row['occurred_at'],
+                            'missed_attacks': row['missed_attacks'],
+                            'reason': 'Not approved in this preview; create a new preview'})
+                    continue
+                if row['_id'] in excluded:
                     continue
                 # An exemption discovered since preview can lower a strike.
                 # Clearing an exemption cannot promote an originally exempt row.
@@ -743,4 +776,4 @@ class StrikeService:
                     results['strikes'] += row['kind'] == 'strike'
                 except DuplicateKeyError:
                     results['existing'] += 1
-        return results
+        return {**results, 'deferred_count': len(results['deferred_accounts'])}

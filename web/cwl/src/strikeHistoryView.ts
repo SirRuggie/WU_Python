@@ -17,3 +17,13 @@ export function detailQuery(page: number, status: string, playerTag?: string, wa
   if (warKey) params.set('war_key', warKey)
   return params
 }
+
+export function strikeLinkLabel(discordId?: string | null, discordName?: string | null, linkStatus?: string | null): string {
+  if (linkStatus === 'unknown' || linkStatus === 'pending') return 'Link unknown'
+  if (linkStatus === 'unlinked' || !discordId) return 'Not linked'
+  return discordName || `Discord ${discordId}`
+}
+
+export function importEmptyText(entries: unknown[], deferredCount: number, skippedWars = 0): string {
+  return entries.length === 0 && (deferredCount > 0 || skippedWars > 0) ? 'No records ready to import.' : 'No missed attacks found in saved wars.'
+}

@@ -90,7 +90,8 @@ async def service(request, db):
                 member = await shared.discord(request, 'GET', f'/guilds/{guild_id}/members/{member_id}')
                 role_cache[member_id] = member.get('roles', [])
             except web.HTTPNotFound:
-                role_cache[member_id] = None
+                # Confirmed departed Discord members have no server roles.
+                role_cache[member_id] = []
             except web.HTTPException:
                 role_cache[member_id] = None
         return role_cache[member_id]
@@ -170,6 +171,7 @@ def entry(row, clans, profile=None):
     kind = row.get('kind')
     return {'id': row['_id'], 'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
             'discord_id': str(row['member_id']) if row.get('member_id') else None,
+            'link_status': row.get('link_status') or ('linked' if row.get('member_id') else 'unlinked'),
             'discord_name': None, 'current_clan_tag': current_tag,
             'current_clan_name': profile.get('current_clan_name') or clans.get(current_tag),
             'war_clan_tag': row.get('clan_tag'), 'war_clan_name': row.get('clan_name') or clans.get(row.get('clan_tag')),
@@ -249,6 +251,7 @@ async def accounts(request):
     names = {row['tag']: row['name'] for row in clans}
     entries = [{'player_tag': row['player_tag'], 'player_name': row['player_name'],
                 'discord_id': str(row['member_id']) if row.get('member_id') else None,
+                'link_status': row.get('link_status') or ('linked' if row.get('member_id') else 'unlinked'),
                 'current_clan_tag': row.get('current_clan_tag'),
                 'current_clan_name': names.get(row.get('current_clan_tag')),
                 'clan_seen_at': public(row.get('clan_seen_at')),
@@ -752,11 +755,11 @@ async def _preview_work(app, actor_id, days, actor=None):
                 try:
                     report = await fetch_history_report(clan['tag'], days=days)
                     ends = sorted(public(row['end_time']) for row in report['wars'])
-                    return report['wars'], {'clan_name': clan['name'], 'wars': len(report['wars']),
+                    return report['wars'], {'clan_tag': clan['tag'], 'clan_name': clan['name'], 'wars': len(report['wars']),
                         'earliest': ends[0] if ends else None, 'latest': ends[-1] if ends else None,
                         'skipped': len(report['skipped']), 'source_count': report['source_count']}
                 except (RuntimeError, ProviderUnavailable, ValueError, aiohttp.ClientError, asyncio.TimeoutError):
-                    return [], {'clan_name': clan['name'], 'wars': 0, 'skipped': 0,
+                    return [], {'clan_tag': clan['tag'], 'clan_name': clan['name'], 'wars': 0, 'skipped': 0,
                                 'source_count': 0, 'error': 'War history unavailable'}
         reports = await asyncio.gather(*(fetch(clan) for clan in clans))
         wars = [war for found, _coverage in reports for war in found]
@@ -765,11 +768,20 @@ async def _preview_work(app, actor_id, days, actor=None):
         names = {row['tag']: row['name'] for row in clans}
         entries = [{'key': row['_id'], 'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
                     'clan_name': names.get(row.get('clan_tag'), row.get('clan_tag')), 'war_end': public(row['occurred_at']),
-                    'missed_attacks': row.get('missed_attacks'), 'will_strike': row['kind'] == 'strike',
+                    'missed_attacks': row.get('missed_attacks'),
+                    'discord_id': str(row['member_id']) if row.get('member_id') else None,
+                    'link_status': row.get('link_status') or ('linked' if row.get('member_id') else 'unlinked'),
+                    'will_strike': row['kind'] == 'strike',
                     'exempt': row['kind'] == 'exempt', 'duplicate': bool(row.get('existing'))} for row in result['items'] if row.get('missed_attacks')]
+        deferred = result.get('deferred_accounts', [])
+        for item in coverage:
+            item['deferred_accounts'] = sum(1 for row in deferred if row['clan_tag'] == item['clan_tag'])
+            item['processing_skipped_wars'] = sum(1 for row in result.get('skipped', [])
+                                                  if row.get('war') == item['clan_tag'])
         return {'preview_id': result['preview_id'], 'wars_scanned': sum(item['source_count'] for item in coverage), 'complete_wars': result['wars'],
                 'incomplete_wars': len(result.get('skipped', [])) + sum(item['skipped'] for item in coverage), 'entries': entries, 'coverage': coverage,
-                'existing': result.get('existing', 0)}
+                'existing': result.get('existing', 0), 'deferred_accounts': public(deferred),
+                'deferred_count': len(deferred), 'skipped_war_details': result.get('skipped', [])}
 
 
 async def _apply_work(app, actor_id, preview_id, exclusions, actor=None):
@@ -781,7 +793,10 @@ async def _apply_work(app, actor_id, preview_id, exclusions, actor=None):
         result = await ledger.apply_import(GUILD_ID, preview_id, actor_id, excluded_keys=exclusions)
     return {'applied': result['applied'], 'strikes': result.get('strikes', 0),
             'skipped': result.get('excluded', 0) + result.get('existing', 0),
-            'skipped_wars': len(result.get('skipped', []))}
+            'skipped_wars': len(result.get('skipped', [])),
+            'deferred_accounts': public(result.get('deferred_accounts', [])),
+            'deferred_count': len(result.get('deferred_accounts', [])),
+            'skipped_war_details': result.get('skipped', [])}
 
 
 @endpoint(scope='strikes_add')

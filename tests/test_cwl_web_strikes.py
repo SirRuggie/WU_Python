@@ -89,4 +89,61 @@ def test_import_apply_returns_numeric_skipped_count():
 
     response = asyncio.run(run())
     payload = json.loads(response.text)
-    assert payload['result'] == {'applied': 2, 'strikes': 1, 'skipped': 4, 'skipped_wars': 2}
+    assert payload['result'] == {'applied': 2, 'strikes': 1, 'skipped': 4, 'skipped_wars': 2,
+                                 'deferred_accounts': [], 'deferred_count': 0,
+                                 'skipped_war_details': [{'war': 'one'}, {'war': 'two'}]}
+
+
+def test_confirmed_departed_discord_member_has_no_exempt_roles():
+    async def missing(request, method, path):
+        raise web.HTTPNotFound()
+
+    async def run():
+        request = SimpleNamespace(app={})
+        with patch.object(strikes.shared, 'discord', missing):
+            ledger = await strikes.service(request, object())
+            assert await ledger.role_resolver(strikes.GUILD_ID, 123) == []
+    asyncio.run(run())
+
+
+def test_preview_api_separates_deferred_accounts_from_skipped_wars():
+    from datetime import datetime, timezone
+    from utils import strike_wars
+
+    end = datetime(2026, 10, 19, tzinfo=timezone.utc)
+    deferred = {'row_id': 'war:x', 'player_tag': '#PC9YGL0JL',
+                'player_name': 'Player', 'clan_tag': '#2UVGQU9',
+                'clan_name': 'Family', 'war_end': end,
+                'missed_attacks': 2, 'reason': 'Account owner conflict'}
+
+    class Ledger:
+        async def preview_import(self, guild_id, wars, actor_id):
+            return {'preview_id': 'id123', 'wars': 1, 'items': [],
+                    'existing': 0, 'deferred_accounts': [deferred],
+                    'skipped': [{'war': '#2UVGQU9', 'reason': 'Account links unavailable'}]}
+
+    async def fake_service(request, db):
+        return Ledger()
+
+    async def fake_clans(db):
+        return [{'tag': '#2UVGQU9', 'name': 'Family'}]
+
+    async def fake_history(clan_tag, days=90):
+        return {'wars': [{'end_time': end}], 'skipped': [], 'source_count': 1}
+
+    @asynccontextmanager
+    async def fake_mongo(request):
+        yield object()
+
+    async def run():
+        with patch.object(strikes.shared, 'mongo', fake_mongo), \
+             patch.object(strikes, 'service', fake_service), \
+             patch.object(strikes, 'clan_rows', fake_clans), \
+             patch.object(strike_wars, 'fetch_history_report', fake_history):
+            return await strikes._preview_work({}, 123, 90)
+    result = asyncio.run(run())
+    assert result['deferred_count'] == 1
+    assert result['deferred_accounts'][0]['war_end'] == end.isoformat()
+    assert result['incomplete_wars'] == 1
+    assert result['coverage'][0]['deferred_accounts'] == 1
+    assert result['coverage'][0]['processing_skipped_wars'] == 1

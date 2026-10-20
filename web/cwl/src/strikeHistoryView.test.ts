@@ -20,3 +20,20 @@ it('requests all records for an exact war and does not restrict an account to it
   expect(account.has('clan')).toBe(false)
   expect(account.get('offset')).toBe('25')
 })
+
+import { importEmptyText, strikeLinkLabel } from './strikeHistoryView'
+it('shows unlinked and unresolved accounts without implying a Discord link', () => {
+  expect(strikeLinkLabel(null)).toBe('Not linked')
+  expect(strikeLinkLabel('123', null, 'unlinked')).toBe('Not linked')
+  expect(strikeLinkLabel('123', 'Ruggie')).toBe('Ruggie')
+  expect(strikeLinkLabel('123')).toBe('Discord 123')
+  expect(strikeLinkLabel(null, null, 'unknown')).toBe('Link unknown')
+})
+it('distinguishes deferred records from wars with no missed attacks', () => {
+  expect(importEmptyText([], 3)).toBe('No records ready to import.')
+  expect(importEmptyText([], 0)).toBe('No missed attacks found in saved wars.')
+})
+
+it('does not claim no missed attacks when whole wars could not be checked', () => {
+  expect(importEmptyText([], 0, 2)).toBe('No records ready to import.')
+})

@@ -75,7 +75,8 @@ async def roles(guild_id: int, member_id: int, bot: hikari.GatewayBot):
     try:
         member = await bot.rest.fetch_member(guild_id, member_id)
     except hikari.NotFoundError:
-        return None
+        # A confirmed absent member has no roles in this server.
+        return []
     except hikari.HTTPError:
         return None
     return [int(item) for item in member.role_ids]
@@ -106,7 +107,8 @@ async def history_panel(store, state, page=0):
         name = safe(row.get('player_name') or row['player_tag'], 36)
         clan = safe(row.get('clan_tag') or 'Clan unknown', 18)
         current = safe(current_clans.get(row['player_tag']) or 'Unknown', 18)
-        lines.append(f"**{name}** `{row['player_tag']}` · {status}\n"
+        linked = f"Discord {row['member_id']}" if row.get('member_id') else 'Not linked'
+        lines.append(f"**{name}** `{row['player_tag']}` · {status} · {linked}\n"
                      f"War: {clan} · Now: {current} · <t:{when}:d>\n"
                      f"{safe(row.get('reason'), 100)}\n"
                      f"ID: `{row['_id']}`")

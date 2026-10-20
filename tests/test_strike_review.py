@@ -120,20 +120,24 @@ async def _war_retry_is_idempotent_and_records_one_miss_without_strike():
     assert next(iter(mongo.strike_records.rows.values()))['kind'] == 'missed'
 
 
-def test_unknown_member_roles_defer_whole_war():
-    asyncio.run(_unknown_member_roles_defer_whole_war())
+def test_unknown_member_roles_defer_only_that_account():
+    asyncio.run(_unknown_member_roles_defer_only_that_account())
 
 
-async def _unknown_member_roles_defer_whole_war():
+async def _unknown_member_roles_defer_only_that_account():
     mongo = Mongo()
 
     async def links(tags):
         return PlayerOwners(owners={'#PC9YGL0JL': '1234'})
 
+    candidate = war()
+    candidate['members'].append({'tag': '#8GG82', 'name': 'Other', 'attacks': 0})
     service = StrikeService(mongo, link_resolver=links)
-    with pytest.raises(RuntimeError, match='roles unavailable'):
-        await service.process_war(123, war())
-    assert mongo.strike_records.rows == {}
+    result = await service.process_war(123, candidate)
+    assert result['applied'] == 1
+    assert result['deferred_count'] == 1
+    assert result['deferred_accounts'][0]['player_tag'] == '#PC9YGL0JL'
+    assert next(iter(mongo.strike_records.rows.values()))['player_tag'] == '#8GG82'
 
 
 def test_leave_does_not_reach_back_into_import_history():
@@ -324,3 +328,97 @@ async def _import_caches_leave_reads_per_run_but_rechecks_before_apply():
     assert mongo.strike_leaves.reads == 2
     assert mongo.strike_leave_history.reads == 2
     assert {row['kind'] for row in mongo.strike_records.rows.values()} == {'exempt'}
+
+
+def test_confirmed_unlinked_account_gets_its_own_strike():
+    async def run():
+        mongo = Mongo()
+        async def links(tags):
+            return PlayerOwners(owners={})
+        result = await StrikeService(mongo, link_resolver=links).process_war(123, war())
+        assert result['strikes'] == 1 and result['deferred_count'] == 0
+        row = next(iter(mongo.strike_records.rows.values()))
+        assert row['member_id'] is None and row['link_status'] == 'unlinked'
+    asyncio.run(run())
+
+
+def test_link_provider_outage_still_defers_entire_war_without_guessing_unlinked():
+    async def run():
+        mongo = Mongo()
+        async def links(tags):
+            return PlayerOwners(owners={}, unavailable=('ClashKing',))
+        with pytest.raises(RuntimeError, match='Account links unavailable'):
+            await StrikeService(mongo, link_resolver=links).process_war(123, war())
+        assert mongo.strike_records.rows == {}
+    asyncio.run(run())
+
+
+def test_conflict_only_defers_that_missed_account_and_retry_is_idempotent():
+    async def run():
+        mongo = Mongo()
+        disputed = True
+        async def links(tags):
+            if disputed:
+                return PlayerOwners(owners={}, conflicts=('#8GG82',))
+            return PlayerOwners(owners={})
+        candidate = war()
+        candidate['members'].append({'tag': '#8GG82', 'name': 'Other', 'attacks': 0})
+        ledger = StrikeService(mongo, link_resolver=links)
+        first = await ledger.process_war(123, candidate)
+        assert first['strikes'] == 1 and first['deferred_count'] == 1
+        assert first['deferred_accounts'][0]['reason'] == 'Account owner conflict'
+        assert {row['player_tag'] for row in mongo.strike_records.rows.values()} == {'#PC9YGL0JL'}
+        disputed = False
+        retry = await ledger.process_war(123, candidate)
+        assert retry['applied'] == 1 and retry['existing'] == 1
+        assert retry['deferred_count'] == 0
+        assert len(mongo.strike_records.rows) == 2
+    asyncio.run(run())
+
+
+def test_apply_never_promotes_account_deferred_in_preview():
+    async def run():
+        mongo = Mongo()
+        mongo.strike_imports = Collection()
+        disputed = True
+        async def links(tags):
+            if disputed:
+                return PlayerOwners(owners={}, conflicts=('#8GG82',))
+            return PlayerOwners(owners={})
+        candidate = war()
+        candidate['members'].append({'tag': '#8GG82', 'name': 'Other', 'attacks': 0})
+        ledger = StrikeService(mongo, link_resolver=links)
+        preview = await ledger.preview_import(123, [candidate], actor_id=789)
+        assert [row['player_tag'] for row in preview['items']] == ['#PC9YGL0JL']
+        assert preview['items'][0]['link_status'] == 'unlinked'
+        assert preview['deferred_count'] == 1
+        assert preview['deferred_accounts'][0]['player_tag'] == '#8GG82'
+        assert len(mongo.strike_imports.rows[preview['preview_id']]['approved_rows']) == 1
+        disputed = False
+        applied = await ledger.apply_import(123, preview['preview_id'], 789)
+        assert applied['applied'] == 1 and applied['deferred_count'] == 1
+        assert 'new preview' in applied['deferred_accounts'][0]['reason']
+        assert {row['player_tag'] for row in mongo.strike_records.rows.values()} == {'#PC9YGL0JL'}
+        second = await ledger.preview_import(123, [candidate], actor_id=789)
+        assert [row['player_tag'] for row in second['items']] == ['#8GG82']
+        retry = await ledger.apply_import(123, second['preview_id'], 789)
+        assert retry['applied'] == 1
+        assert len(mongo.strike_records.rows) == 2
+    asyncio.run(run())
+
+
+def test_role_resolver_error_defers_only_linked_account():
+    async def run():
+        mongo = Mongo()
+        async def links(tags):
+            return PlayerOwners(owners={'#PC9YGL0JL': '456'})
+        async def roles(guild_id, member_id):
+            raise RuntimeError('Discord outage')
+        candidate = war()
+        candidate['members'].append({'tag': '#8GG82', 'name': 'Other', 'attacks': 0})
+        result = await StrikeService(mongo, link_resolver=links,
+                                     role_resolver=roles).process_war(123, candidate)
+        assert result['applied'] == 1 and result['deferred_count'] == 1
+        assert result['deferred_accounts'][0]['reason'] == 'Discord roles unavailable'
+        assert next(iter(mongo.strike_records.rows.values()))['link_status'] == 'unlinked'
+    asyncio.run(run())
