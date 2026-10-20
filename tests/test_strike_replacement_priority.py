@@ -29,7 +29,8 @@ class Profiles:
         allowed = set(clan['$in']) if isinstance(clan, dict) else {clan}
         return Cursor([row.copy() for row in self.rows.values()
                        if (cutoff is None or row.get('roster_seen_at', cutoff - timedelta(seconds=1)) > cutoff)
-                       and row.get('current_clan_tag') in allowed])
+                       and row.get('current_clan_tag') in allowed
+                       and ('town_hall' not in query or row.get('town_hall') == query['town_hall'])])
 
     async def update_one(self, query, update, upsert=False):
         row = self.rows.setdefault(query['_id'], {'_id': query['_id']})
@@ -166,3 +167,102 @@ def test_replacement_list_crud_routes_are_registered():
     assert ('POST', root) in registered
     assert ('PUT', root + '/{player_tag}') in registered
     assert ('DELETE', root + '/{player_tag}') in registered
+
+
+def test_browse_all_and_family_scope_include_unmarked_main_accounts():
+    async def run():
+        now = datetime.now(timezone.utc)
+        mongo = Mongo([
+            {'player_tag': '#PC9YGL0JL', 'current_clan_tag': '#2UVGQU9',
+             'roster_seen_at': now, 'town_hall': 16, 'weight': 149000},
+            {'player_tag': '#8GG82', 'current_clan_tag': '#8GG82',
+             'roster_seen_at': now, 'town_hall': 17, 'weight': 150000},
+        ])
+        service = StrikeService(mongo)
+        assert await service.replacement(123) == []
+        browsed = await service.replacement(123, browse_all=True)
+        assert {row['player_tag'] for row in browsed} == {'#PC9YGL0JL', '#8GG82'}
+        fwa = await service.replacement(123, 149000)
+        assert [row['player_tag'] for row in fwa] == ['#PC9YGL0JL']
+        family = await service.replacement(123, 149000, family_scope='all')
+        assert {row['player_tag'] for row in family} == {'#PC9YGL0JL', '#8GG82'}
+        th17 = await service.replacement(123, browse_all=True, town_hall=17)
+        assert [row['player_tag'] for row in th17] == ['#8GG82']
+    asyncio.run(run())
+
+
+def test_sync_roster_saves_town_hall_without_guessing_missing_values():
+    async def run():
+        class Profiles:
+            def __init__(self):
+                self.writes = []
+            async def update_many(self, query, update):
+                pass
+            async def update_one(self, query, update, upsert=False):
+                self.writes.append(update['$set'])
+        profiles = Profiles()
+        db = SimpleNamespace(strike_profiles=profiles)
+        await StrikeService(db).sync_roster(123, '#2UVGQU9', [
+            {'tag': '#PC9YGL0JL', 'name': 'Player', 'town_hall': 16},
+            {'tag': '#8GG82', 'name': 'Other'}])
+        assert profiles.writes[0]['town_hall'] == 16
+        assert 'town_hall' not in profiles.writes[1]
+    asyncio.run(run())
+
+
+def test_dashboard_replacement_query_normalizes_weight_and_passes_filters():
+    import json
+    from contextlib import asynccontextmanager
+
+    class Cursor:
+        async def to_list(self, length=None):
+            return [{'player_tag': '#PC9YGL0JL'}]
+
+    class Db:
+        class Profiles:
+            def find(self, query):
+                assert '#8GG82' in query['current_clan_tag']['$in']
+                return Cursor()
+        strike_profiles = Profiles()
+
+    class Provider:
+        async def weights(self, tags):
+            assert tags == ['#PC9YGL0JL']
+            return {'#PC9YGL0JL': {'weight': 149000}}
+
+    class Ledger:
+        async def replacement(self, guild_id, weight, **options):
+            assert weight == 149000
+            assert options['family_scope'] == 'all'
+            assert options['browse_all'] is True
+            assert options['town_hall'] == 16
+            return []
+
+    async def permit(request, section, *, write=False):
+        assert section == 'strikes_read' and not write
+
+    @asynccontextmanager
+    async def mongo(request):
+        yield Db()
+
+    async def create_service(request, db):
+        return Ledger()
+
+    async def clans(db):
+        return [{'tag': '#2UVGQU9', 'name': 'FWA', 'is_fwa': True},
+                {'tag': '#8GG82', 'name': 'Main', 'is_fwa': False}]
+
+    async def run():
+        request = SimpleNamespace(method='GET', query={'weight': '149k', 'scope': 'all',
+                                  'browse_all': 'true', 'town_hall': '16'},
+                                  app={'providers': Provider()})
+        with patch.object(strikes.shared, 'require_manage', permit), \
+             patch.object(strikes.shared, 'mongo', mongo), \
+             patch.object(strikes, 'service', create_service), \
+             patch.object(strikes, 'clan_rows', clans), \
+             patch('cwl_web.app._store', return_value=SimpleNamespace(one=lambda *args: None)):
+            return await strikes.replacements(request)
+    data = json.loads(asyncio.run(run()).text)
+    assert data['matching_weight'] == 149000
+    assert data['matching_weight_label'] == '149k'
+    assert data['scope'] == 'all' and data['town_hall'] == 16

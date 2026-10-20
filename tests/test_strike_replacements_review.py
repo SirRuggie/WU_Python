@@ -36,6 +36,8 @@ class Profiles:
             rows = [row for row in self.rows if row['current_clan_tag'] in allowed['$in']]
         else:
             rows = [row for row in self.rows if row['current_clan_tag'] == allowed]
+        if 'town_hall' in query:
+            rows = [row for row in rows if row.get('town_hall') == query['town_hall']]
         return Cursor(rows)
 
     async def update_one(self, query, update, upsert=False):
@@ -184,3 +186,18 @@ def test_replacement_list_routes_registered_next_to_legacy_toggle():
     assert ('POST', api.API + '/replacement-list') in routes
     assert ('PUT', api.API + '/replacement-list/{player_tag}') in routes
     assert ('DELETE', api.API + '/replacement-list/{player_tag}') in routes
+
+
+def test_town_hall_four_is_exact_and_149_weight_matches_main_when_family_scope_all():
+    from utils.replacement_filters import parse_weight
+    async def run():
+        mongo = Mongo([
+            profile('#PC9YGL0JL', town_hall=4, weight=149000),
+            profile('#8GG82', town_hall=14, weight=149000),
+            profile('#YLC820G', clan='#8GG82', town_hall=4, weight=149500),
+        ], {})
+        rows = await StrikeService(mongo).replacement(
+            123, parse_weight('149'), town_hall=4, family_scope='all', browse_all=True)
+        assert [row['player_tag'] for row in rows] == ['#PC9YGL0JL', '#YLC820G']
+        assert [row['weight_difference'] for row in rows] == [0, 500]
+    asyncio.run(run())

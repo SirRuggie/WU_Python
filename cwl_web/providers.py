@@ -267,7 +267,10 @@ class LiveProviders:
             if player_tag in seen:
                 raise ProviderUnavailable("Duplicate Clash clan roster member")
             seen.add(player_tag)
-            members.append({"tag": player_tag, "name": item["name"]})
+            th = item.get("townHallLevel")
+            if th is not None and (type(th) is not int or not 0 < th < 100):
+                raise ProviderUnavailable("Invalid Clash clan member Town Hall")
+            members.append({"tag": player_tag, "name": item["name"], "town_hall": th})
         return {"tag": clan_tag, "name": body["name"], "members": members}
 
     async def _league_get(self, path):
@@ -449,7 +452,8 @@ class FixtureProviders:
     async def clan_roster(self, value):
         clan_tag = tag(value)
         clan = await self.clan(clan_tag)
-        return {**clan, "members": [{"tag": row["tag"], "name": row["name"]}
+        return {**clan, "members": [{"tag": row["tag"], "name": row["name"],
+                                     "town_hall": row.get("town_hall")}
                                      for row in self.players.values()
                                      if row.get("current_clan_tag") == clan_tag]}
 

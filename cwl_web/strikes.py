@@ -17,6 +17,7 @@ from . import server_management as shared
 from .providers import ProviderUnavailable, tag
 from utils import recruit_links
 from utils.strike_store import StrikeService, utc
+from utils.replacement_filters import parse_weight, compact_weight
 
 API = '/api/cwl/strikes'
 GUILD_ID = shared.GUILD_ID
@@ -435,12 +436,20 @@ async def remove_leave(request):
 @endpoint
 async def replacements(request):
     raw_weight = request.query.get('weight')
-    weight = number(raw_weight, 1, 1000000000) if raw_weight else None
+    weight = parse_weight(raw_weight) if raw_weight else None
     clan = request.query.get('clan') or None
+    scope = request.query.get('scope') or 'fwa'
+    if scope not in ('fwa', 'all'):
+        raise ValueError('Choose FWA or all clans.')
+    raw_browse = request.query.get('browse_all', 'false').lower()
+    if raw_browse not in ('true', 'false', '1', '0'):
+        raise ValueError('Choose whether to browse all accounts.')
+    browse_all = raw_browse in ('true', '1')
+    town_hall = number(request.query['town_hall'], 1, 99) if request.query.get('town_hall') else None
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
         clans = await clan_rows(db)
-        allowed_tags = [row['tag'] for row in clans if row['is_fwa'] or weight is None]
+        allowed_tags = [row['tag'] for row in clans if row['is_fwa'] or weight is None or scope == 'all']
         profiles = await db.strike_profiles.find(
             {'guild_id': GUILD_ID, 'current_clan_tag': {'$in': allowed_tags}}).to_list(length=None)
         tags = [row['player_tag'] for row in profiles]
@@ -457,12 +466,14 @@ async def replacements(request):
             found = manual_weight['weight'] if manual_weight and manual_weight['weight'] is not None else (weights.get(value) or {}).get('weight')
             effective_weights[value] = found
         rows = await ledger.replacement(GUILD_ID, weight, clan_tag=clan,
-                                        limit=5000,
-                                        weights=effective_weights)
+                                        limit=5000, weights=effective_weights,
+                                        browse_all=browse_all, family_scope=scope,
+                                        town_hall=town_hall)
     names = {row['tag']: row['name'] for row in clans}
     candidates = [{'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
                    'clan_tag': row.get('current_clan_tag'), 'clan_name': names.get(row.get('current_clan_tag'), row.get('current_clan_tag')),
-                   'weight': row.get('weight'), 'active_strikes': row['active_strikes'],
+                   'weight': row.get('weight'), 'weight_label': compact_weight(row.get('weight')),
+                   'town_hall': row.get('town_hall'), 'active_strikes': row['active_strikes'],
                    'is_filler': bool(row.get('filler')), 'is_manual': bool(row.get('is_manual')),
                    'priority': row['replacement_priority'], 'note': row.get('replacement_note') or '',
                    'clan_seen_at': public(row.get('clan_seen_at')),
@@ -470,7 +481,8 @@ async def replacements(request):
                    'weight_difference': row['weight_difference'],
                    'discord_id': str(row['member_id']) if row.get('member_id') else None} for row in rows]
     return web.json_response({'candidates': candidates, 'clans': clans, 'total': len(candidates),
-                              'matching_weight': weight})
+                              'matching_weight': weight, 'matching_weight_label': compact_weight(weight),
+                              'scope': scope, 'browse_all': browse_all, 'town_hall': town_hall})
 
 
 async def _verified_replacement_player(request, player_tag):
@@ -512,6 +524,7 @@ async def replacement_roster(request):
     by_tag = {row['player_tag']: row for row in profiles}
     return web.json_response({'clan_tag': roster['tag'], 'clan_name': roster['name'],
         'accounts': [{'player_tag': row['tag'], 'player_name': row['name'],
+                      'town_hall': row.get('town_hall'),
                       'is_manual': bool(((by_tag.get(row['tag']) or {}).get('replacement_listed')
                                          and (by_tag.get(row['tag']) or {}).get('replacement_clan_tag') == roster['tag'])
                                         or ((by_tag.get(row['tag']) or {}).get('filler')
@@ -557,7 +570,8 @@ async def bulk_add_replacement_list(request):
                     continue
                 result = await ledger.set_replacement_preference(
                     GUILD_ID, value, priority, note, actor, clan_tag=roster['tag'],
-                    player_name=members[value]['name'], only_if_unmarked=True)
+                    player_name=members[value]['name'],
+                    town_hall=members[value].get('town_hall'), only_if_unmarked=True)
                 (added if result is not None else skipped).append(value)
         except Exception:
             _job_log.exception('Replacement bulk add stopped after partial write')
@@ -580,7 +594,7 @@ async def add_replacement_list(request):
         saved = await ledger.set_replacement_preference(
             GUILD_ID, profile['tag'], data.get('priority'), data.get('note', ''),
             int(_session(request)['user_id']), clan_tag=profile['current_clan_tag'],
-            player_name=profile.get('name'))
+            player_name=profile.get('name'), town_hall=profile.get('town_hall'))
     return web.json_response({'ok': True, 'player_tag': saved['player_tag'],
                               'priority': saved['replacement_priority'],
                               'clan_tag': saved['replacement_clan_tag']})
@@ -596,7 +610,7 @@ async def update_replacement_list(request):
         saved = await ledger.set_replacement_preference(
             GUILD_ID, profile['tag'], data.get('priority'), data.get('note', ''),
             int(_session(request)['user_id']), clan_tag=profile['current_clan_tag'],
-            player_name=profile.get('name'))
+            player_name=profile.get('name'), town_hall=profile.get('town_hall'))
     return web.json_response({'ok': True, 'player_tag': saved['player_tag'],
                               'priority': saved['replacement_priority'],
                               'clan_tag': saved['replacement_clan_tag']})
@@ -626,7 +640,7 @@ async def save_filler(request):
             ledger = await service(request, db)
             await ledger.set_replacement_preference(GUILD_ID, player, 'replace_first', '',
                 int(_session(request)['user_id']), clan_tag=profile['current_clan_tag'],
-                player_name=profile.get('name'))
+                player_name=profile.get('name'), town_hall=profile.get('town_hall'))
     else:
         async with shared.mongo(request) as db:
             ledger = await service(request, db)

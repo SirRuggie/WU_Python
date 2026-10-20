@@ -25,3 +25,11 @@ export function toggleRosterTag(selected: string[], tag: string, accounts: Roste
 export function bulkSaveMessage(result: { added_count: number; skipped_count: number }): string {
   return `${result.added_count} ${result.added_count === 1 ? 'account' : 'accounts'} added.${result.skipped_count ? ` ${result.skipped_count} already listed.` : ''}`
 }
+
+export function compactWeight(value: number): string {
+  return `${Number((value / 1000).toFixed(3))}k`
+}
+export function enteredWeight(value: string): number {
+  const amount = Number(value)
+  return amount < 1000 ? amount * 1000 : amount
+}

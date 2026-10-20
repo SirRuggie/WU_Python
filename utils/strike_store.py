@@ -201,8 +201,11 @@ class StrikeService:
             changes = {'guild_id': int(guild_id), 'player_tag': player,
                        'current_clan_tag': clan, 'player_name': member.get('name') or player,
                        'roster_seen_at': datetime.now(timezone.utc)}
-            if isinstance(member.get('weight'), int) and member['weight'] > 0:
+            if isinstance(member.get('weight'), int) and not isinstance(member['weight'], bool) and member['weight'] > 0:
                 changes['weight'] = member['weight']
+            th = member.get('town_hall', member.get('townHallLevel'))
+            if isinstance(th, int) and not isinstance(th, bool) and 0 < th < 100:
+                changes['town_hall'] = th
             if member.get('member_id'):
                 changes['member_id'] = int(member['member_id'])
             await self.mongo.strike_profiles.update_one(
@@ -420,7 +423,7 @@ class StrikeService:
 
     async def set_replacement_preference(self, guild_id: int, player_tag: str,
                                          priority: str, note: str, actor_id: int,
-                                         *, clan_tag: str, player_name=None,
+                                         *, clan_tag: str, player_name=None, town_hall=None,
                                          only_if_unmarked=False) -> dict | None:
         """Mark one account for replacement in its verified current family clan."""
         player, clan = tag(player_tag), tag(clan_tag)
@@ -439,6 +442,8 @@ class StrikeService:
                    'filler': priority == 'replace_first', 'filler_clan_tag': clan}
         if player_name:
             changes['player_name'] = str(player_name)
+        if isinstance(town_hall, int) and not isinstance(town_hall, bool) and 0 < town_hall < 100:
+            changes['town_hall'] = town_hall
         query = {'_id': f'{int(guild_id)}:{player}'}
         if only_if_unmarked:
             # A mark in another clan is inactive and may be replaced after transfer.
@@ -468,24 +473,32 @@ class StrikeService:
                       'replacement_updated_at': datetime.now(timezone.utc)}})
 
     async def replacement(self, guild_id: int, recruit_weight: int | None = None, *,
-                          clan_tag=None, limit=100, weights=None) -> list[dict]:
-        """Family replacement list, or FWA weight matching when weight is supplied."""
+                          clan_tag=None, limit=100, weights=None, browse_all=False,
+                          family_scope='fwa', town_hall=None) -> list[dict]:
+        """Family list or weight matching across FWA/all registered clans."""
         matching = recruit_weight is not None
+        if family_scope not in ('fwa', 'all'):
+            raise ValueError('Choose FWA or all clans.')
+        if town_hall is not None and (not isinstance(town_hall, int) or isinstance(town_hall, bool)
+                                      or not 1 <= town_hall < 100):
+            raise ValueError('Choose a valid Town Hall level.')
         if matching and (not isinstance(recruit_weight, int) or isinstance(recruit_weight, bool)
-                         or recruit_weight <= 0):
+                         or not 0 < recruit_weight <= 500000):
             raise ValueError('Enter a positive recruit weight.')
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
         query = {'guild_id': int(guild_id)}
+        if town_hall is not None:
+            query['town_hall'] = town_hall
         if matching:
             query['roster_seen_at'] = {'$gt': cutoff}
         if clan_tag:
             chosen = tag(clan_tag)
             clan = await self.mongo.clans.find_one({'tag': chosen}, {'_id': 1, 'type': 1})
-            if not clan or (matching and clan.get('type') != 'FWA'):
+            if not clan or (matching and family_scope == 'fwa' and clan.get('type') != 'FWA'):
                 raise ValueError('Choose a registered FWA clan.' if matching else 'Choose a registered family clan.')
             query['current_clan_tag'] = chosen
         else:
-            allowed = {'type': 'FWA'} if matching else {}
+            allowed = {'type': 'FWA'} if matching and family_scope == 'fwa' else {}
             clans = await self.mongo.clans.find(allowed, {'tag': 1}).to_list(length=None)
             query['current_clan_tag'] = {'$in': [tag(row['tag']) for row in clans]}
         profiles = await self.mongo.strike_profiles.find(query).to_list(length=None)
@@ -513,7 +526,7 @@ class StrikeService:
             if not isinstance(weight, int) or isinstance(weight, bool) or weight <= 0:
                 weight = None
             count = counts.get(profile['player_tag'], 0)
-            if not matching and not (marked or legacy_filler or count):
+            if not matching and not browse_all and not (marked or legacy_filler or count):
                 continue
             seen = profile.get('roster_seen_at')
             rows.append({**profile, 'weight': weight, 'clan_seen_at': seen,

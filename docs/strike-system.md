@@ -25,7 +25,7 @@ Leave starts when approved and resumes tracking at **00:00 UTC on the selected d
 
 Role `769130325460254740` is excluded by default. Staff can change the list in Exempt roles. Current role membership is used for imports; historical role membership cannot be reconstructed. Missed attacks for exempt accounts are recorded without adding a strike. Unknown roles or conflicting/unavailable links defer processing.
 
-Discord commands use private Components V2 responses: `/strikes view`, `/strikes add`, `/strikes remove`, and `/strikes replacements`. Leave, exempt roles, filler preferences, and import review are managed in the dashboard.
+Discord commands use ephemeral Components V2 responses: `/strikes view`, `/strikes add`, `/strikes remove`, and `/strikes replacements`. The replacements command opens all family roster accounts in a paginated ephemeral message. Clan, Town Hall, weight and sort controls refine that list; reset returns to all accounts. Weight 149 means 149k (149000 also works). Rows show clan names, TH, compact weights and active strikes. Current rosters are refreshed when the panel opens; unknown TH or weight stays labeled unknown. Leave, exempt roles, filler preferences, and import review are managed in the dashboard.
 
 ## Import and monitoring
 

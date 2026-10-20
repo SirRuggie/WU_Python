@@ -61,7 +61,7 @@ class Ledger:
         self.saved = []
 
     async def set_replacement_preference(self, guild_id, tag, priority, note, actor,
-                                         *, clan_tag, player_name, only_if_unmarked):
+                                         *, clan_tag, player_name, town_hall=None, only_if_unmarked):
         assert guild_id == strikes.GUILD_ID and actor == 123
         assert clan_tag == CLAN and only_if_unmarked
         self.saved.append(tag)

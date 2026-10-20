@@ -31,3 +31,11 @@ it('reports actual saved and skipped counts', () => {
   expect(bulkSaveMessage({ added_count: 1, skipped_count: 2 })).toBe('1 account added. 2 already listed.')
   expect(bulkSaveMessage({ added_count: 0, skipped_count: 3 })).toBe('0 accounts added. 3 already listed.')
 })
+
+import { compactWeight, enteredWeight } from './replacementView'
+it('uses thousands for abbreviated weights and preserves full weights', () => {
+  expect(enteredWeight('149')).toBe(149000)
+  expect(enteredWeight('149000')).toBe(149000)
+  expect(compactWeight(149000)).toBe('149k')
+  expect(compactWeight(1500)).toBe('1.5k')
+})
