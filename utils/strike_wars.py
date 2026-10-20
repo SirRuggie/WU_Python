@@ -1,7 +1,7 @@
 """Read saved ClashKing wars and accept only complete ended regular-war rosters.
 
 The public previous-war endpoint is a best-effort source. Its available depth is
-measured for each clan; the importer never claims a full 90 days without rows.
+measured for each clan; the importer never claims a full 60 days without rows.
 """
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def normalize_cwl(raw: dict, clan_tag: str, *, now=None) -> dict:
     return war
 
 
-async def fetch_saved_wars(clan_tag: str, *, days=90, session=None) -> dict:
+async def fetch_saved_wars(clan_tag: str, *, days=60, session=None) -> dict:
     """Return every available validated war plus coverage and skipped reasons."""
     own_session = session is None
     if own_session:
@@ -163,7 +163,7 @@ async def fetch_saved_wars(clan_tag: str, *, days=90, session=None) -> dict:
             await session.close()
 
 
-async def fetch_family_wars(mongo, *, days=90, limit=8) -> dict:
+async def fetch_family_wars(mongo, *, days=60, limit=8) -> dict:
     clans = await mongo.clans.find({'tag': {'$type': 'string'}}, {'tag': 1, 'name': 1}).to_list(length=None)
     semaphore = asyncio.Semaphore(limit)
     async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
@@ -178,7 +178,7 @@ async def fetch_family_wars(mongo, *, days=90, limit=8) -> dict:
     return {'wars': [war for item in coverage for war in item['wars']], 'coverage': coverage}
 
 
-async def fetch_history_report(clan_tag: str, days: int = 90, *, session=None) -> dict:
+async def fetch_history_report(clan_tag: str, days: int = 60, *, session=None) -> dict:
     """Read date-filtered stored wars, reporting gaps and skipped data."""
     own_session = session is None
     if own_session:
@@ -247,5 +247,5 @@ async def fetch_history_report(clan_tag: str, days: int = 90, *, session=None) -
             await session.close()
 
 
-async def fetch_history(clan_tag: str, days: int = 90, *, session=None) -> list[dict]:
+async def fetch_history(clan_tag: str, days: int = 60, *, session=None) -> list[dict]:
     return (await fetch_history_report(clan_tag, days, session=session))['wars']

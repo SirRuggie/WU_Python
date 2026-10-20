@@ -14,7 +14,7 @@ from utils import recruit_links
 
 DEFAULT_EXEMPT_ROLE = 769130325460254740
 STRIKE_DAYS = 60
-IMPORT_DAYS = 90
+IMPORT_DAYS = 60
 
 
 def utc(value: datetime) -> datetime:
@@ -653,7 +653,7 @@ class StrikeService:
             try:
                 validate_war(war, now=now)
                 if stamp(war['end_time']) < now - timedelta(days=IMPORT_DAYS):
-                    raise ValueError('Outside the 90-day import window.')
+                    raise ValueError('Outside the 60-day import window.')
                 rows = await self._war_rows(guild_id, war, owner_cache=owner_cache,
                                             leave_cache=leave_cache, deferred=report['deferred_accounts'])
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
@@ -685,7 +685,7 @@ class StrikeService:
             try:
                 validate_cwl_war(war, now=now)
                 if stamp(war['end_time']) < now - timedelta(days=IMPORT_DAYS):
-                    raise ValueError('Outside the 90-day import window.')
+                    raise ValueError('Outside the 60-day import window.')
                 rows = await self._cwl_rows(guild_id, war, owner_cache=cwl_owner_cache)
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
                 report['skipped'].append({'war': str(war.get('clan_tag', '?')),
@@ -872,7 +872,7 @@ class StrikeService:
             try:
                 validate_war(war, now=now)
                 if stamp(war['end_time']) < cutoff:
-                    raise ValueError('Outside the 90-day import window.')
+                    raise ValueError('Outside the 60-day import window.')
                 rows = await self._war_rows(guild_id, war, owner_cache=owner_cache,
                                             leave_cache=leave_cache, deferred=results['deferred_accounts'])
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
@@ -910,7 +910,7 @@ class StrikeService:
             try:
                 validate_cwl_war(war, now=now)
                 if stamp(war['end_time']) < cutoff:
-                    raise ValueError('Outside the 90-day import window.')
+                    raise ValueError('Outside the 60-day import window.')
                 rows = await self._cwl_rows(guild_id, war, owner_cache=cwl_owner_cache)
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
                 results['skipped'].append({'war': str(war.get('clan_tag', '?')),

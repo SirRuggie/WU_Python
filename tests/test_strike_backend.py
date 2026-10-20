@@ -100,7 +100,7 @@ def test_manual_request_retry_reuses_one_strike_and_rejects_changed_payload():
     asyncio.run(run())
 
 
-def test_manual_strike_expires_at_60_days_and_history_window_stays_90():
+def test_manual_strike_expires_at_60_days_and_history_window_is_60():
     from utils.strike_store import IMPORT_DAYS, status_of
 
     async def run():
@@ -109,5 +109,5 @@ def test_manual_strike_expires_at_60_days_and_history_window_stays_90():
         assert row['expires_at'] == row['occurred_at'] + timedelta(days=60)
         assert status_of(row, now=row['occurred_at'] + timedelta(days=60, microseconds=-1)) == 'active'
         assert status_of(row, now=row['occurred_at'] + timedelta(days=60)) == 'expired'
-        assert IMPORT_DAYS == 90
+        assert IMPORT_DAYS == 60
     asyncio.run(run())

@@ -29,7 +29,7 @@ Discord commands use ephemeral Components V2 responses: `/strikes view`, `/strik
 
 ## Import and monitoring
 
-Check past wars to preview up to 90 days of available saved history. Preview and apply run as background jobs; the dashboard polls short status requests so large imports do not hit the web proxy timeout. Reloading the page resumes the same job. Jobs stop if the web service restarts; retrying is safe because ledger records are deduplicated. Review incidents, uncheck unwanted records, then import. Availability depends on the external archive. The interface reports coverage and unavailable clans; incomplete or ambiguous wars are skipped rather than guessed.
+Check past wars to preview up to 60 days of available saved history. Preview and apply run as background jobs; the dashboard polls short status requests so large imports do not hit the web proxy timeout. Reloading the page resumes the same job. Jobs stop if the web service restarts; retrying is safe because ledger records are deduplicated. Review incidents, uncheck unwanted records, then import. Availability depends on the external archive. The interface reports coverage and unavailable clans; incomplete or ambiguous wars are skipped rather than guessed.
 
 The bot starts a ten-minute monitor through its normal extension lifecycle. A persisted activation time prevents initial startup from silently importing old wars. Historical imports require the preview/apply workflow. Deterministic war/player IDs prevent a repeated scan or import from adding duplicate strikes. Manual submissions use request IDs to protect retries.
 
@@ -53,7 +53,7 @@ Any of these options includes viewing history and replacements. Add does not gra
 
 Deploy through the normal bot and dashboard services. Restart the existing bot service; do not start a second gateway process. Historical imports remain an explicit staff preview/apply action after deployment.
 
-Archived wars are best effort, not a guaranteed 90-day history. A current roster refresh is required before replacement candidates appear. Discord display and live provider behavior still need a production smoke check after release; local UI checks use fixture data.
+Archived wars are best effort, not a guaranteed 60-day history. A current roster refresh is required before replacement candidates appear. Discord display and live provider behavior still need a production smoke check after release; local UI checks use fixture data.
 
 Import eligibility is account-based. Both ClashKing and ClashPerk are checked; an account with no owner in either successful result can receive a strike and displays Not linked. Conflicting owners or failed role checks defer only that account into Needs review, without writing a ledger record. A confirmed Discord member-not-found response means no current server roles; other Discord errors remain unknown. Provider-wide link outages still defer affected wars, preserving role exclusions. Deferred accounts must be checked again in a fresh preview before import; applying an older preview never adds newly resolved accounts without review.
 

@@ -820,7 +820,7 @@ async def _apply_work(app, actor_id, preview_id, exclusions, actor=None):
 @endpoint(scope='strikes_add')
 async def import_preview(request):
     data = await body(request, {'days'})
-    days = number(data.get('days', 90), 1, 90)
+    days = number(data.get('days', 60), 1, 60)
     from .app import _session
     actor_id = int(_session(request)['user_id'])
     actor = getattr(request, 'get', lambda *_: None)('manage_identity')
