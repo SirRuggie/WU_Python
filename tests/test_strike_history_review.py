@@ -121,7 +121,7 @@ def test_grouped_account_active_filter_and_member_snapshot_fallback():
         assert all_accounts['items'][-1]['total_strikes'] == 0
         match = mongo.strike_records.pipeline[0]['$match']
         assert match['player_tag']['$in'] == ['#8GG82', '#PC9YGL0JL', '#YLC820G']
-        assert match['kind'] == {'$in': ['strike', 'missed', 'exempt']}
+        assert match['kind'] == {'$in': ['strike', 'missed', 'exempt', 'cwl']}
         group = mongo.strike_records.pipeline[2]['$group']
         assert group['_id'] == '$player_tag'
         active_condition = group['active_strikes']['$sum']['$cond'][0]['$and']
@@ -150,7 +150,8 @@ def test_repeated_matchups_keep_distinct_exact_war_keys():
     asyncio.run(run())
 
 
-def test_old_import_opponent_name_falls_back_to_tag_if_lookup_unavailable():
+def test_old_import_opponent_name_falls_back_to_tag_if_lookup_unavailable(monkeypatch):
+    monkeypatch.setattr(api, "_OPPONENT_NAME_CACHE", {})
     async def run():
         now = datetime.now(timezone.utc)
         row = {'clan_tag': '#2UVGQU9', 'opponent_tag': '#8GG8',

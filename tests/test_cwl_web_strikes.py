@@ -91,7 +91,8 @@ def test_import_apply_returns_numeric_skipped_count():
     payload = json.loads(response.text)
     assert payload['result'] == {'applied': 2, 'strikes': 1, 'skipped': 4, 'skipped_wars': 2,
                                  'deferred_accounts': [], 'deferred_count': 0,
-                                 'skipped_war_details': [{'war': 'one'}, {'war': 'two'}]}
+                                 'skipped_war_details': [{'war': 'one'}, {'war': 'two'}],
+                                 'cwl_wars': 0, 'cwl_records': 0, 'cwl_missed': 0}
 
 
 def test_confirmed_departed_discord_member_has_no_exempt_roles():
@@ -117,7 +118,7 @@ def test_preview_api_separates_deferred_accounts_from_skipped_wars():
                 'missed_attacks': 2, 'reason': 'Account owner conflict'}
 
     class Ledger:
-        async def preview_import(self, guild_id, wars, actor_id):
+        async def preview_import(self, guild_id, wars, actor_id, *, cwl_wars=()):
             return {'preview_id': 'id123', 'wars': 1, 'items': [],
                     'existing': 0, 'deferred_accounts': [deferred],
                     'skipped': [{'war': '#2UVGQU9', 'reason': 'Account links unavailable'}]}

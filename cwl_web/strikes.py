@@ -175,12 +175,16 @@ def entry(row, clans, profile=None):
             'discord_name': None, 'current_clan_tag': current_tag,
             'current_clan_name': profile.get('current_clan_name') or clans.get(current_tag),
             'war_clan_tag': row.get('clan_tag'), 'war_clan_name': row.get('clan_name') or clans.get(row.get('clan_tag')),
-            'war_key': row.get('war_key'), 'opponent_tag': row.get('opponent_tag'),
+            'war_key': row.get('war_key'), 'war_type': row.get('war_type') or 'regular',
+            'war_tag': row.get('war_tag'), 'attacks_used': row.get('attacks_used'),
+            'attacks_per_member': row.get('attacks_per_member'),
+            'opponent_tag': row.get('opponent_tag'),
             'opponent_name': row.get('opponent_name') or clans.get(row.get('opponent_tag'))
                 or _OPPONENT_NAME_CACHE.get(row.get('opponent_tag'), (0, None))[1]
                 or row.get('opponent_tag'),
             'war_end': public(row['occurred_at']), 'expires_at': public(row.get('expires_at')),
-            'kind': 'strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss'), 'source': row.get('source'),
+            'kind': 'cwl' if kind == 'cwl' else ('strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss')),
+            'source': row.get('source'),
             'status': 'recorded' if row.get('status') == 'missed' else row.get('status'),
             'missed_attacks': row.get('missed_attacks'), 'reason': row.get('reason'),
             'exemption': row.get('exemption'), 'removed_reason': row.get('revoke_reason')}
@@ -192,7 +196,7 @@ async def overview(request):
     if len(query) > 80:
         raise ValueError('Use a shorter name or tag.')
     status = request.query.get('status') or 'strikes'
-    if status not in ('strikes', 'all', 'active', 'expired', 'removed', 'exempt', 'recorded'):
+    if status not in ('strikes', 'all', 'active', 'expired', 'removed', 'exempt', 'recorded', 'cwl'):
         raise ValueError('Choose a history status.')
     if status == 'recorded':
         status = 'missed'
@@ -754,31 +758,43 @@ async def _preview_work(app, actor_id, days, actor=None):
             async with semaphore:
                 try:
                     report = await fetch_history_report(clan['tag'], days=days)
-                    ends = sorted(public(row['end_time']) for row in report['wars'])
-                    return report['wars'], {'clan_tag': clan['tag'], 'clan_name': clan['name'], 'wars': len(report['wars']),
+                    ends = sorted(public(row['end_time']) for row in
+                                  report['wars'] + report.get('cwl_wars', []))
+                    return report['wars'], report.get('cwl_wars', []), {'clan_tag': clan['tag'], 'clan_name': clan['name'],
+                        'wars': len(report['wars']) + len(report.get('cwl_wars', [])),
+                        'regular_wars': len(report['wars']), 'cwl_wars': len(report.get('cwl_wars', [])),
                         'earliest': ends[0] if ends else None, 'latest': ends[-1] if ends else None,
                         'skipped': len(report['skipped']), 'source_count': report['source_count']}
                 except (RuntimeError, ProviderUnavailable, ValueError, aiohttp.ClientError, asyncio.TimeoutError):
-                    return [], {'clan_tag': clan['tag'], 'clan_name': clan['name'], 'wars': 0, 'skipped': 0,
-                                'source_count': 0, 'error': 'War history unavailable'}
+                    return [], [], {'clan_tag': clan['tag'], 'clan_name': clan['name'], 'wars': 0,
+                                    'regular_wars': 0, 'cwl_wars': 0, 'skipped': 0, 'source_count': 0,
+                                    'error': 'War history unavailable'}
         reports = await asyncio.gather(*(fetch(clan) for clan in clans))
-        wars = [war for found, _coverage in reports for war in found]
-        coverage = [item for _found, item in reports]
-        result = await ledger.preview_import(GUILD_ID, wars, actor_id)
+        wars = [war for found, _cwl, _coverage in reports for war in found]
+        cwl_wars = [war for _regular, found, _coverage in reports for war in found]
+        coverage = [item for _regular, _cwl, item in reports]
+        result = await ledger.preview_import(GUILD_ID, wars, actor_id, cwl_wars=cwl_wars)
         names = {row['tag']: row['name'] for row in clans}
         entries = [{'key': row['_id'], 'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
                     'clan_name': names.get(row.get('clan_tag'), row.get('clan_tag')), 'war_end': public(row['occurred_at']),
                     'missed_attacks': row.get('missed_attacks'),
+                    'kind': row.get('kind'), 'source': row.get('source'),
+                    'war_type': row.get('war_type') or 'regular',
+                    'attacks_used': row.get('attacks_used'),
                     'discord_id': str(row['member_id']) if row.get('member_id') else None,
                     'link_status': row.get('link_status') or ('linked' if row.get('member_id') else 'unlinked'),
                     'will_strike': row['kind'] == 'strike',
-                    'exempt': row['kind'] == 'exempt', 'duplicate': bool(row.get('existing'))} for row in result['items'] if row.get('missed_attacks')]
+                    'exempt': row['kind'] == 'exempt', 'duplicate': bool(row.get('existing'))}
+                   for row in result['items'] if row.get('missed_attacks') or row.get('kind') == 'cwl']
         deferred = result.get('deferred_accounts', [])
         for item in coverage:
             item['deferred_accounts'] = sum(1 for row in deferred if row['clan_tag'] == item['clan_tag'])
             item['processing_skipped_wars'] = sum(1 for row in result.get('skipped', [])
                                                   if row.get('war') == item['clan_tag'])
-        return {'preview_id': result['preview_id'], 'wars_scanned': sum(item['source_count'] for item in coverage), 'complete_wars': result['wars'],
+        return {'preview_id': result['preview_id'], 'wars_scanned': sum(item['source_count'] for item in coverage),
+                'complete_wars': result['wars'] + result.get('cwl_wars', 0),
+                'regular_wars': result['wars'], 'cwl_wars': result.get('cwl_wars', 0),
+                'cwl_records': result.get('cwl_records', 0), 'cwl_missed': result.get('cwl_missed', 0),
                 'incomplete_wars': len(result.get('skipped', [])) + sum(item['skipped'] for item in coverage), 'entries': entries, 'coverage': coverage,
                 'existing': result.get('existing', 0), 'deferred_accounts': public(deferred),
                 'deferred_count': len(deferred), 'skipped_war_details': result.get('skipped', [])}
@@ -792,6 +808,8 @@ async def _apply_work(app, actor_id, preview_id, exclusions, actor=None):
         ledger = await service(background, db)
         result = await ledger.apply_import(GUILD_ID, preview_id, actor_id, excluded_keys=exclusions)
     return {'applied': result['applied'], 'strikes': result.get('strikes', 0),
+            'cwl_wars': result.get('cwl_wars', 0), 'cwl_records': result.get('cwl_records', 0),
+            'cwl_missed': result.get('cwl_missed', 0),
             'skipped': result.get('excluded', 0) + result.get('existing', 0),
             'skipped_wars': len(result.get('skipped', [])),
             'deferred_accounts': public(result.get('deferred_accounts', [])),

@@ -38,6 +38,8 @@ def stamp(value: datetime | str) -> datetime:
 def status_of(row: dict, now: datetime | None = None) -> str:
     if row.get('revoked_at'):
         return 'removed'
+    if row.get('kind') == 'cwl':
+        return 'recorded'
     if row.get('kind') == 'missed':
         return 'missed'
     if row.get('kind') == 'exempt':
@@ -81,6 +83,36 @@ def validate_war(war: dict, *, now: datetime | None = None) -> None:
         attacks = member.get('attacks')
         if not isinstance(attacks, int) or not 0 <= attacks <= 2:
             raise ValueError('Attack count is incomplete.')
+
+
+def validate_cwl_war(war: dict, *, now: datetime | None = None) -> None:
+    """CWL history is a separate one-attack record, never a strike source."""
+    if war.get('type') != 'cwl' or war.get('state') != 'warEnded':
+        raise ValueError('Only ended CWL wars are eligible for CWL history.')
+    if war.get('attacks_per_member') != 1 or war.get('complete') is not True:
+        raise ValueError('Complete one-attack CWL data is required.')
+    tag(war['clan_tag'])
+    tag(war['opponent_tag'])
+    tag(war['war_tag'])
+    if stamp(war['end_time']) > utc(now or datetime.now(timezone.utc)):
+        raise ValueError('CWL war has not ended.')
+    members = war.get('members')
+    if not isinstance(members, list) or not members:
+        raise ValueError('CWL roster is incomplete.')
+    seen = set()
+    for member in members:
+        player = tag(member['tag'])
+        if player in seen:
+            raise ValueError('CWL roster has duplicate accounts.')
+        seen.add(player)
+        attacks = member.get('attacks')
+        if not isinstance(attacks, int) or isinstance(attacks, bool) or attacks not in (0, 1):
+            raise ValueError('CWL attack count is incomplete.')
+
+
+def cwl_war_key(war: dict) -> str:
+    validate_cwl_war(war)
+    return f"cwl:{tag(war['clan_tag'])}:{tag(war['war_tag'])}:{stamp(war['end_time']).isoformat()}"
 
 
 class StrikeService:
@@ -290,6 +322,8 @@ class StrikeService:
         if status == 'active':
             query.update(kind='strike', revoked_at={'$exists': False},
                          expires_at={'$gt': utc(now or datetime.now(timezone.utc))})
+        elif status == 'cwl':
+            query['kind'] = 'cwl'
         elif status in ('strikes', 'all', None, 'expired', 'removed', 'missed', 'exempt', 'completed'):
             pass
         elif status is not None:
@@ -315,7 +349,7 @@ class StrikeService:
         if len(search) > 80:
             raise ValueError('Use a shorter account search.')
         match: dict[str, Any] = {'guild_id': int(guild_id),
-            'kind': 'strike' if status == 'active' else {'$in': ['strike', 'missed', 'exempt']}}
+            'kind': 'strike' if status == 'active' else {'$in': ['strike', 'missed', 'exempt', 'cwl']}}
         searched_member = None
         if search.startswith('#'):
             match['player_tag'] = tag(search)
@@ -374,10 +408,11 @@ class StrikeService:
             current_clan = profile.get('current_clan_tag')
             if wanted_clan and current_clan != wanted_clan:
                 continue
+            display_owner = searched_member or profile.get('member_id') or row.get('member_id')
             rows.append({'player_tag': row['_id'],
                          'player_name': display_name,
-                         'member_id': searched_member or profile.get('member_id') or row.get('member_id'),
-                         'link_status': row.get('link_status') or ('linked' if row.get('member_id') else 'unlinked'),
+                         'member_id': display_owner,
+                         'link_status': 'linked' if display_owner else 'unlinked',
                          'current_clan_tag': current_clan,
                          'clan_seen_at': seen, 'clan_is_current': fresh,
                          'active_strikes': int(row['active_strikes']),
@@ -390,9 +425,9 @@ class StrikeService:
 
     async def war_list(self, guild_id: int, *, clan_tag=None, query=None, limit=1000) -> list[dict]:
         """Group saved missed-attack incidents by exact war, without API rescans."""
-        match = {'guild_id': int(guild_id), 'source': 'war',
+        match = {'guild_id': int(guild_id), 'source': {'$in': ['war', 'cwl']},
                  'war_key': {'$exists': True},
-                 'kind': {'$in': ['strike', 'missed', 'exempt']}}
+                 'kind': {'$in': ['strike', 'missed', 'exempt', 'cwl']}}
         if clan_tag:
             match['clan_tag'] = tag(clan_tag)
         pipeline = [
@@ -405,9 +440,13 @@ class StrikeService:
                 'opponent_tag': {'$first': '$opponent_tag'},
                 'opponent_name': {'$first': '$opponent_name'},
                 'war_end': {'$first': '$occurred_at'},
-                'missed_accounts': {'$sum': 1},
+                'war_type': {'$first': '$war_type'},
+                'missed_accounts': {'$sum': {'$cond': [{'$gt': ['$missed_attacks', 0]}, 1, 0]}},
                 'strikes': {'$sum': {'$cond': [{'$eq': ['$kind', 'strike']}, 1, 0]}},
-                'one_missed': {'$sum': {'$cond': [{'$eq': ['$missed_attacks', 1]}, 1, 0]}},
+                'one_missed': {'$sum': {'$cond': [{'$and': [
+                    {'$ne': ['$kind', 'cwl']}, {'$eq': ['$missed_attacks', 1]}]}, 1, 0]}},
+                'cwl_missed': {'$sum': {'$cond': [{'$and': [
+                    {'$eq': ['$kind', 'cwl']}, {'$eq': ['$missed_attacks', 1]}]}, 1, 0]}},
             }},
             {'$sort': {'war_end': -1}},
             {'$limit': max(1, min(2000, int(limit)))},
@@ -420,8 +459,8 @@ class StrikeService:
                 row.get('clan_tag'), row.get('clan_name'), row.get('opponent_tag'),
                 row.get('opponent_name'), utc(row['war_end']).date().isoformat()
             )).casefold()]
-        return [{'war_key': row['_id'], **{key: value for key, value in row.items() if key != '_id'}}
-                for row in rows]
+        return [{'war_key': row['_id'], **{key: value for key, value in row.items() if key != '_id'},
+                 'war_type': row.get('war_type') or 'regular'} for row in rows]
 
     async def set_replacement_preference(self, guild_id: int, player_tag: str,
                                          priority: str, note: str, actor_id: int,
@@ -599,12 +638,14 @@ class StrikeService:
         conflicts = set(getattr(found, 'conflicts', ()))
         return {tag(key): int(value) for key, value in owners.items()}, {tag(item) for item in conflicts}
 
-    async def preview_import(self, guild_id: int, wars: list[dict], actor_id: int = 0) -> dict:
+    async def preview_import(self, guild_id: int, wars: list[dict], actor_id: int = 0,
+                             *, cwl_wars=()) -> dict:
         from uuid import uuid4
         now = datetime.now(timezone.utc)
         report = {'wars': 0, 'strikes': 0, 'missed': 0, 'exempt': 0,
+                  'cwl_wars': 0, 'cwl_records': 0, 'cwl_missed': 0,
                   'existing': 0, 'skipped': [], 'items': [], 'deferred_accounts': []}
-        accepted = []
+        accepted, accepted_cwl = [], []
         owner_cache = {}
         leave_cache = {}
         for war in wars:
@@ -638,11 +679,35 @@ class StrikeService:
                     report['missed'] += 1
                 elif row['kind'] == 'exempt':
                     report['exempt'] += 1
+        cwl_owner_cache = {}
+        for war in cwl_wars:
+            try:
+                validate_cwl_war(war, now=now)
+                if stamp(war['end_time']) < now - timedelta(days=STRIKE_DAYS):
+                    raise ValueError('Outside the 90-day import window.')
+                rows = await self._cwl_rows(guild_id, war, owner_cache=cwl_owner_cache)
+            except (ValueError, RuntimeError, KeyError, TypeError) as error:
+                report['skipped'].append({'war': str(war.get('clan_tag', '?')),
+                                          'reason': str(error), 'war_type': 'cwl'})
+                continue
+            report['cwl_wars'] += 1
+            accepted_cwl.append(war)
+            existing = await self.mongo.strike_records.find(
+                {'_id': {'$in': [row['_id'] for row in rows]}}, {'_id': 1}).to_list(length=None)
+            existing_ids = {row['_id'] for row in existing}
+            for row in rows:
+                if row['_id'] in existing_ids:
+                    report['existing'] += 1
+                    continue
+                report['items'].append({**row, 'status': 'recorded'})
+                report['cwl_records'] += 1
+                report['cwl_missed'] += row['missed_attacks']
         preview_id = uuid4().hex
         await self.mongo.strike_imports.insert_one({
             '_id': preview_id, 'guild_id': int(guild_id), 'actor_id': int(actor_id),
             'created_at': now, 'expires_at': now + timedelta(hours=24),
-            'wars': accepted, 'approved_rows': {item['_id']: item['kind'] for item in report['items']},
+            'wars': accepted, 'cwl_wars': accepted_cwl,
+            'approved_rows': {item['_id']: item['kind'] for item in report['items']},
             'deferred_rows': {item['row_id']: item['reason'] for item in report['deferred_accounts']},
         })
         return {**report, 'deferred_count': len(report['deferred_accounts']), 'preview_id': preview_id}
@@ -707,6 +772,68 @@ class StrikeService:
                          'occurred_at': ended, 'expires_at': ended + timedelta(days=STRIKE_DAYS)})
         return rows
 
+    async def _cwl_rows(self, guild_id: int, war: dict, *, owner_cache=None) -> list[dict]:
+        validate_cwl_war(war)
+        clan = tag(war['clan_tag'])
+        if not await self.mongo.clans.find_one({'tag': clan}, {'_id': 1}):
+            raise ValueError('Clan is not registered.')
+        tags = [tag(member['tag']) for member in war['members']]
+        resolved = {} if owner_cache is None else owner_cache
+        missing = [player for player in tags if player not in resolved]
+        if missing:
+            try:
+                found = await self.link_resolver(missing)
+                owners = getattr(found, 'owners', None)
+                unavailable = getattr(found, 'unavailable', ())
+                conflicts = {tag(value) for value in getattr(found, 'conflicts', ())}
+                if owners is None or unavailable:
+                    raise RuntimeError('Account link providers unavailable.')
+                for player in missing:
+                    if player in conflicts:
+                        resolved[player] = (None, 'unknown', 'owner_conflict')
+                    elif player in owners:
+                        resolved[player] = (int(owners[player]), 'linked', None)
+                    else:
+                        resolved[player] = (None, 'unlinked', None)
+            except Exception:
+                for player in missing:
+                    resolved[player] = (None, 'unknown', 'link_unavailable')
+        ended = stamp(war['end_time'])
+        key = cwl_war_key(war)
+        rows = []
+        for member in war['members']:
+            player = tag(member['tag'])
+            owner, link_status, link_reason = resolved[player]
+            used = member['attacks']
+            rows.append({'_id': f'cwl:{int(guild_id)}:{key}:{player}',
+                         'guild_id': int(guild_id), 'player_tag': player,
+                         'member_id': owner, 'link_status': link_status,
+                         'link_reason': link_reason,
+                         'player_name': member.get('name') or player,
+                         'clan_tag': clan, 'clan_name': war.get('clan_name'),
+                         'opponent_tag': tag(war['opponent_tag']),
+                         'opponent_name': war.get('opponent_name'),
+                         'war_key': key, 'war_type': 'cwl', 'war_tag': tag(war['war_tag']),
+                         'kind': 'cwl', 'source': 'cwl',
+                         'reason': 'CWL attack missed' if used == 0 else 'CWL attack used',
+                         'attacks_used': used, 'attacks_per_member': 1,
+                         'missed_attacks': 1 - used, 'occurred_at': ended})
+        return rows
+
+    async def process_cwl_war(self, guild_id: int, war: dict, *, owner_cache=None) -> dict:
+        """Record CWL participation only; these rows can never count as strikes."""
+        rows = await self._cwl_rows(guild_id, war, owner_cache=owner_cache)
+        added = existing = missed = 0
+        for row in rows:
+            try:
+                await self.mongo.strike_records.insert_one(row)
+                added += 1
+                missed += row['missed_attacks']
+            except DuplicateKeyError:
+                existing += 1
+        return {'records': added, 'existing': existing, 'cwl_missed': missed,
+                'strikes': 0, 'war_key': cwl_war_key(war)}
+
     async def process_war(self, guild_id: int, war: dict) -> dict:
         deferred = []
         rows = await self._war_rows(guild_id, war, deferred=deferred)
@@ -734,7 +861,8 @@ class StrikeService:
         approved = preview['approved_rows']
         if not excluded <= set(approved):
             raise ValueError('Excluded incident is not in this preview.')
-        results = {'wars': 0, 'applied': 0, 'existing': 0, 'strikes': 0,
+        results = {'wars': 0, 'cwl_wars': 0, 'cwl_records': 0, 'cwl_missed': 0,
+                   'applied': 0, 'existing': 0, 'strikes': 0,
                    'excluded': len(excluded), 'skipped': [], 'deferred_accounts': []}
         cutoff = now - timedelta(days=STRIKE_DAYS)
         owner_cache = {}
@@ -774,6 +902,30 @@ class StrikeService:
                     await self.mongo.strike_records.insert_one(row)
                     results['applied'] += 1
                     results['strikes'] += row['kind'] == 'strike'
+                except DuplicateKeyError:
+                    results['existing'] += 1
+        cwl_owner_cache = {}
+        for war in preview.get('cwl_wars', ()):
+            try:
+                validate_cwl_war(war, now=now)
+                if stamp(war['end_time']) < cutoff:
+                    raise ValueError('Outside the 90-day import window.')
+                rows = await self._cwl_rows(guild_id, war, owner_cache=cwl_owner_cache)
+            except (ValueError, RuntimeError, KeyError, TypeError) as error:
+                results['skipped'].append({'war': str(war.get('clan_tag', '?')),
+                                           'reason': str(error), 'war_type': 'cwl'})
+                continue
+            results['cwl_wars'] += 1
+            for row in rows:
+                if approved.get(row['_id']) != 'cwl' or row['_id'] in excluded:
+                    continue
+                row['created_by'] = int(actor_id)
+                row['import_id'] = str(preview_id)
+                try:
+                    await self.mongo.strike_records.insert_one(row)
+                    results['applied'] += 1
+                    results['cwl_records'] += 1
+                    results['cwl_missed'] += row['missed_attacks']
                 except DuplicateKeyError:
                     results['existing'] += 1
         return {**results, 'deferred_count': len(results['deferred_accounts'])}

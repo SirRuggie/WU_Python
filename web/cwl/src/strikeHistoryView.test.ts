@@ -28,6 +28,7 @@ it('shows unlinked and unresolved accounts without implying a Discord link', () 
   expect(strikeLinkLabel('123', 'Ruggie')).toBe('Ruggie')
   expect(strikeLinkLabel('123')).toBe('Discord 123')
   expect(strikeLinkLabel(null, null, 'unknown')).toBe('Link unknown')
+  expect(strikeLinkLabel(null, null, 'conflict')).toBe('Link needs review')
 })
 it('distinguishes deferred records from wars with no missed attacks', () => {
   expect(importEmptyText([], 3)).toBe('No records ready to import.')
@@ -36,4 +37,16 @@ it('distinguishes deferred records from wars with no missed attacks', () => {
 
 it('does not claim no missed attacks when whole wars could not be checked', () => {
   expect(importEmptyText([], 0, 2)).toBe('No records ready to import.')
+})
+
+import { isCwlRecord, warSummary } from './strikeHistoryView'
+it('labels CWL attack records without strike language', () => {
+  expect(strikeBadge('cwl', 'recorded', 0)).toBe('Attack missed')
+  expect(strikeBadge('cwl', 'recorded', 1)).toBe('Attack used')
+  expect(strikeBadge('cwl', 'recorded')).toBe('CWL record')
+  expect(warSummary({ war_type: 'cwl', strikes: 0, one_missed: 0, cwl_missed: 2 })).toBe('CWL · 2 missed · No strikes')
+  expect(warSummary({ war_type: 'regular', strikes: 3, one_missed: 1 })).toBe('3 strikes · 1 one missed')
+  expect(isCwlRecord({ kind: 'cwl' })).toBe(true)
+  expect(isCwlRecord({ war_type: 'cwl' })).toBe(true)
+  expect(isCwlRecord({ kind: 'miss', war_type: 'regular' })).toBe(false)
 })

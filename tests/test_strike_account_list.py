@@ -80,7 +80,7 @@ def test_account_list_default_active_and_all_historical():
     assert all_rows['items'][1]['current_clan_tag'] == '#2UVGQU9'
     assert all_rows['items'][1]['clan_is_current'] is False
     match = records.pipeline[0]['$match']
-    assert match == {'guild_id': 1, 'kind': {'$in': ['strike', 'missed', 'exempt']}}
+    assert match == {'guild_id': 1, 'kind': {'$in': ['strike', 'missed', 'exempt', 'cwl']}}
     assert all_rows['items'][2]['total_strikes'] == 0
     assert all_rows['items'][2]['last_strike_at'] is None
     assert records.pipeline[2]['$group']['_id'] == '$player_tag'

@@ -103,11 +103,12 @@ async def history_panel(store, state, page=0):
     lines = []
     for row in result['items']:
         when = int(row['occurred_at'].replace(tzinfo=timezone.utc).timestamp()) if row['occurred_at'].tzinfo is None else int(row['occurred_at'].timestamp())
-        status = row['status'].title()
+        status = 'CWL · No strikes' if row.get('kind') == 'cwl' else row['status'].title()
         name = safe(row.get('player_name') or row['player_tag'], 36)
         clan = safe(row.get('clan_tag') or 'Clan unknown', 18)
         current = safe(current_clans.get(row['player_tag']) or 'Unknown', 18)
-        linked = f"Discord {row['member_id']}" if row.get('member_id') else 'Not linked'
+        linked = (f"Discord {row['member_id']}" if row.get('member_id') else
+                  'Link needs review' if row.get('link_status') in ('unknown', 'conflict', 'pending') else 'Not linked')
         lines.append(f"**{name}** `{row['player_tag']}` · {status} · {linked}\n"
                      f"War: {clan} · Now: {current} · <t:{when}:d>\n"
                      f"{safe(row.get('reason'), 100)}\n"
@@ -147,7 +148,7 @@ class View(lightbulb.SlashCommand, name='view', description='View strike history
     clan = lightbulb.string('clan', 'Clan tag where strikes happened', default=None)
     status = lightbulb.string('status', 'Records to show', default='strikes', choices=[
         lightbulb.Choice('Strikes', 'strikes'), lightbulb.Choice('All records', 'all'),
-        lightbulb.Choice('One missed', 'missed')])
+        lightbulb.Choice('One missed', 'missed'), lightbulb.Choice('CWL · No strikes', 'cwl')])
 
     @lightbulb.invoke
     @lightbulb.di.with_di
@@ -657,10 +658,18 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
             print(f"[strikes] roster refresh deferred for {clan['tag']}: {type(error).__name__}: {error}")
         try:
             age_days = max(1, math.ceil((datetime.now(timezone.utc) - activation).days) + 1)
-            wars = await strike_wars.fetch_history(clan['tag'], days=age_days)
-            for war in wars:
-                if war['end_time'] >= activation:
-                    await store.process_war(WARRIORS_UNITED_GUILD_ID, war)
+            report = await strike_wars.fetch_history_report(clan['tag'], days=age_days)
+            for wars, process in ((report['wars'], store.process_war),
+                                  (report.get('cwl_wars', []), store.process_cwl_war)):
+                for war in wars:
+                    if war['end_time'] < activation:
+                        continue
+                    try:
+                        await process(WARRIORS_UNITED_GUILD_ID, war)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as error:
+                        print(f"[strikes] war deferred for {clan['tag']}: {type(error).__name__}: {error}")
         except asyncio.CancelledError:
             raise
         except Exception as error:

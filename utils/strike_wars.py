@@ -80,6 +80,57 @@ def normalize(raw: dict, clan_tag: str, *, now=None) -> dict:
     return war
 
 
+def normalize_cwl(raw: dict, clan_tag: str, *, now=None) -> dict:
+    """Accept a tagged, complete, ended one-attack league war for history only."""
+    wanted = tag(clan_tag)
+    war_tag = tag(raw.get('tag'))
+    if raw.get('attacksPerMember') not in (None, 1):
+        raise ValueError('Tagged war has an incompatible attack limit.')
+    kind = raw.get('type', raw.get('warType'))
+    if kind not in (None, 'cwl', 'league'):
+        raise ValueError('Tagged war is not CWL.')
+    if raw.get('state') not in ('warEnded', 'ended'):
+        raise ValueError('CWL war is not ended.')
+    sides = [raw.get('clan'), raw.get('opponent')]
+    our = next((side for side in sides if isinstance(side, dict)
+                and tag(side.get('tag', '')) == wanted), None)
+    other = next((side for side in sides if isinstance(side, dict) and side is not our), None)
+    team_size = raw.get('teamSize')
+    if (our is None or other is None or not isinstance(team_size, int)
+            or isinstance(team_size, bool) or not 1 <= team_size <= 50
+            or not isinstance(our.get('members'), list)
+            or not isinstance(other.get('members'), list)
+            or len(our['members']) != team_size or len(other['members']) != team_size):
+        raise ValueError('Full CWL war roster is unavailable.')
+    for side in (our, other):
+        total = 0
+        seen = set()
+        for member in side['members']:
+            if not isinstance(member, dict):
+                raise ValueError('CWL war member is incomplete.')
+            player = tag(member.get('tag'))
+            if player in seen:
+                raise ValueError('CWL war roster has duplicate accounts.')
+            seen.add(player)
+            attacks = member.get('attacks', [])
+            if not isinstance(attacks, list) or len(attacks) > 1:
+                raise ValueError('CWL attack list is incomplete or exceeds one attack.')
+            total += len(attacks)
+        if isinstance(side.get('attacks'), int) and side['attacks'] != total:
+            raise ValueError('CWL attack totals do not match roster.')
+    war = {'clan_tag': wanted, 'clan_name': our.get('name'),
+           'opponent_tag': tag(other['tag']), 'opponent_name': other.get('name'),
+           'war_tag': war_tag, 'end_time': _date(raw['endTime']),
+           'type': 'cwl', 'state': 'warEnded', 'attacks_per_member': 1,
+           'complete': True,
+           'members': [{'tag': tag(member['tag']), 'name': member.get('name'),
+                        'attacks': len(member.get('attacks', []))}
+                       for member in our['members']]}
+    from utils.strike_store import validate_cwl_war
+    validate_cwl_war(war, now=now)
+    return war
+
+
 async def fetch_saved_wars(clan_tag: str, *, days=90, session=None) -> dict:
     """Return every available validated war plus coverage and skipped reasons."""
     own_session = session is None
@@ -134,7 +185,7 @@ async def fetch_history_report(clan_tag: str, days: int = 90, *, session=None) -
         session = aiohttp.ClientSession(timeout=TIMEOUT)
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=days)
-    found, skipped = {}, []
+    found, cwl_found, skipped = {}, {}, []
     oldest_raw = None
     source_count = 0
     try:
@@ -168,12 +219,16 @@ async def fetch_history_report(clan_tag: str, days: int = 90, *, session=None) -
                     oldest_raw = min(oldest_raw, raw_end) if oldest_raw else raw_end
                     if raw_end < cutoff:
                         continue
-                    war = normalize(raw, clan_tag, now=now)
+                    if raw.get('tag'):
+                        war = normalize_cwl(raw, clan_tag, now=now)
+                        cwl_found[f"{war['clan_tag']}:{war['war_tag']}:{war['end_time'].isoformat()}"] = war
+                    else:
+                        war = normalize(raw, clan_tag, now=now)
+                        found[f"{war['clan_tag']}:{war['opponent_tag']}:{war['end_time'].isoformat()}"] = war
                 except (ValueError, KeyError, TypeError) as error:
                     skipped.append({'end_time': str(raw.get('endTime', 'unknown')),
                                     'reason': str(error)})
                     continue
-                found[f"{war['clan_tag']}:{war['opponent_tag']}:{war['end_time'].isoformat()}"] = war
             if len(raw_wars) < 100 or page_oldest is None or page_oldest >= before:
                 break
             before = page_oldest - timedelta(seconds=1 if endpoint == 'legacy' else 0,
@@ -182,6 +237,7 @@ async def fetch_history_report(clan_tag: str, days: int = 90, *, session=None) -
                 break
         return {'clan_tag': tag(clan_tag),
                 'wars': sorted(found.values(), key=lambda row: row['end_time'], reverse=True),
+                'cwl_wars': sorted(cwl_found.values(), key=lambda row: row['end_time'], reverse=True),
                 'skipped': skipped, 'oldest_available': oldest_raw,
                 'requested_since': cutoff,
                 'complete_90_days': bool(oldest_raw and oldest_raw <= cutoff),
