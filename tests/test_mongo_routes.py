@@ -22,6 +22,10 @@ def clean_routes(monkeypatch):
 def test_defaults_cover_live_inventory_without_changing_names():
     inventory = json.loads((Path(__file__).parents[1] / "docs/mongodb-inventory-2026-09-26.json").read_text())
     expected = {c["name"] for db in inventory["databases"] if db["name"] == "settings" for c in db["collections"]}
+    # Strike storage was introduced after the September inventory snapshot.
+    expected |= {'strike_records', 'strike_settings', 'strike_leaves',
+                 'strike_leave_history', 'strike_profiles', 'strike_imports',
+                 'strike_tracking'}
     routes = load_routes({})
     assert {n.collection for n in routes.values()} == expected
     assert {n.database for n in routes.values()} == {"settings"}

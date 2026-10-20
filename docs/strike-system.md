@@ -58,3 +58,11 @@ Archived wars are best effort, not a guaranteed 60-day history. A current roster
 Import eligibility is account-based. Both ClashKing and ClashPerk are checked; an account with no owner in either successful result can receive a strike and displays Not linked. Conflicting owners or failed role checks defer only that account into Needs review, without writing a ledger record. A confirmed Discord member-not-found response means no current server roles; other Discord errors remain unknown. Provider-wide link outages still defer affected wars, preserving role exclusions. Deferred accounts must be checked again in a fresh preview before import; applying an older preview never adds newly resolved accounts without review.
 
 CWL wars are recorded separately as informational history. They show each account's single attack used or missed, and are labeled CWL · No strikes. They never add active strikes, strike totals, expiry penalties, or replacement priority. Regular wars still require an explicit two-attack limit. CWL history is visible through Find war and All records, while the default active-strike view stays unchanged. CWL records use separate IDs and are safe to load repeatedly.
+
+## Tracking health
+
+The History page has a compact Tracking status section. Each family clan shows its last completed check, last successful check, latest saved war, and any current problem. A failed or partial check preserves the previous successful timestamp. Old checks are shown as delayed rather than healthy; a successful check can contain no new wars. Saved error details use plain, safe messages instead of raw provider responses.
+
+Retry queues a durable clan check for the bot and requires Add strikes access, because checking a war can create strikes. Automatic checks continue normally. Tracking status is shared through MongoDB, so dashboard and bot restarts do not erase the previous result.
+
+Import past wars is a collapsed section under Settings for occasional backfills. It requires Add strikes access; exempt-role settings still require Manage strikes access. Existing import jobs and previews can be resumed there.

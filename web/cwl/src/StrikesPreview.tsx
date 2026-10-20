@@ -23,6 +23,7 @@ const members = [{ id: '123456789012345678', name: 'Fox', accounts: [{ tag: '#P2
 const preview = { preview_id: 'fixture-preview', wars_scanned: 7, complete_wars: 6, incomplete_wars: 1, cwl_records: 1, deferred_count: 1, deferred_accounts: [{ player_tag: '#P77UNKNOWN', player_name: 'UnlinkedWolf', clan_name: 'WU North', war_end: now, missed_attacks: 2, reason: 'Account link needs review.' }], coverage: [{ clan_name: 'Warriors United FWA', wars: 4, earliest: '2026-09-22T12:00:00Z', latest: now }, { clan_name: 'WU North', wars: 3, deferred_accounts: 1, earliest: '2026-10-01T12:00:00Z', latest: now }], entries: [{ key: 'cwl-1-a', player_tag: '#P22ABC', player_name: 'CastleFox', clan_name: 'Warriors United FWA', discord_id: '123456789012345678', link_status: 'linked', war_end: now, kind: 'cwl', source: 'cwl', war_type: 'cwl', attacks_used: 0, attacks_per_member: 1, missed_attacks: 1, will_strike: false }, { key: 'war-1-a', player_tag: '#P22ABC', player_name: 'CastleFox', clan_name: 'Warriors United FWA', discord_id: '123456789012345678', link_status: 'linked', war_end: now, missed_attacks: 2, will_strike: true }, { key: 'war-2-b', player_tag: '#Q99XYZ', player_name: 'BlueDragon', clan_name: 'WU North', discord_id: null, link_status: 'unlinked', war_end: now, missed_attacks: 1, will_strike: false }] }
 
 const fixtureJobs = new Map<string, { reads: number; result: unknown }>()
+let trackingQueued = false
 const realFetch = window.fetch.bind(window)
 window.fetch = async (input, init) => {
   const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.origin)
@@ -30,7 +31,12 @@ window.fetch = async (input, init) => {
   if (!path.startsWith('/api/cwl/strikes/')) return realFetch(input, init)
   const method = init?.method || 'GET'
   let data: unknown = { ok: true }
-  if (path.endsWith('/strikes/accounts')) {
+  if (path.endsWith('/strikes/tracking') && method === 'GET') data = { clans: [
+    { clan_tag: '#FWA', clan_name: 'Warriors United FWA', status: 'healthy', last_checked_at: now, last_success_at: now, latest_recorded_war_at: now, regular_wars: 4, cwl_wars: 1, deferred_accounts: 0, skipped_wars: 0, retry_pending: false },
+    { clan_tag: '#NORTH', clan_name: 'WU North', status: 'needs_review', last_checked_at: now, last_success_at: '2026-10-19T12:00:00Z', latest_recorded_war_at: '2026-10-18T12:00:00Z', regular_wars: 2, cwl_wars: 0, deferred_accounts: 1, skipped_wars: 0, error: 'Account links need review.', retry_pending: trackingQueued },
+  ] }
+  else if (path.endsWith('/strikes/tracking/retry')) { trackingQueued = true; data = { clan_tag: '#NORTH', retry_pending: true, retry_requested_at: now } }
+  else if (path.endsWith('/strikes/accounts')) {
     const accounts = [
       { player_tag: '#P22ABC', player_name: 'CastleFox', discord_id: '123456789012345678', current_clan_tag: '#FWA', current_clan_name: 'Warriors United FWA', clan_is_current: true, active_strikes: 3, total_strikes: 4, last_strike_at: now },
       { player_tag: '#8LQQRT', player_name: 'LittleThunder', discord_id: '123456789012345678', current_clan_tag: '#NORTH', current_clan_name: 'WU North', clan_is_current: false, active_strikes: 0, total_strikes: 1, last_strike_at: '2026-09-03T12:00:00Z' },

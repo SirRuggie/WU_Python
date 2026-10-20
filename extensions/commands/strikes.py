@@ -20,6 +20,7 @@ from utils.component_state import get_state, insert_state, update_state
 from utils.constants import WARRIORS_UNITED_GUILD_ID
 from utils.mongo import MongoClient
 from utils.strike_store import STRIKE_DAYS, StrikeService, tag
+from utils.strike_tracking import StrikeTracking
 from utils.replacement_filters import parse_weight, compact_weight
 from cwl_web.providers import LiveProviders, ProviderUnavailable
 
@@ -640,52 +641,102 @@ async def _warm_weight_cache(mongo):
     except Exception:
         pass
 
-async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.Client):
+async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.Client,
+                    *, clan_tags: set[str] | None = None):
     store = service(mongo, bot)
+    tracking = StrikeTracking(mongo)
     await store.ensure_indexes()
     activation = await store.monitor_activation(WARRIORS_UNITED_GUILD_ID)
     clans = await mongo.clans.find({'tag': {'$type': 'string'}}, {'tag': 1}).to_list(length=None)
     for clan in clans:
+        clan_tag = tag(clan['tag'])
+        if clan_tags is not None and clan_tag not in clan_tags:
+            continue
+        started = await tracking.begin(WARRIORS_UNITED_GUILD_ID, clan_tag)
+        regular_count = cwl_count = deferred_count = skipped_count = 0
+        problem = None
         try:
-            current = await coc_client.get_clan(clan['tag'])
-            roster = [{'tag': member.tag, 'name': member.name,
-                       'town_hall': getattr(member, 'town_hall', None)}
-                      for member in current.members]
-            await store.sync_roster(WARRIORS_UNITED_GUILD_ID, clan['tag'], roster)
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            print(f"[strikes] roster refresh deferred for {clan['tag']}: {type(error).__name__}: {error}")
-        try:
-            age_days = max(1, math.ceil((datetime.now(timezone.utc) - activation).days) + 1)
-            report = await strike_wars.fetch_history_report(clan['tag'], days=age_days)
-            for wars, process in ((report['wars'], store.process_war),
-                                  (report.get('cwl_wars', []), store.process_cwl_war)):
-                for war in wars:
-                    if war['end_time'] < activation:
-                        continue
+            try:
+                current = await coc_client.get_clan(clan_tag)
+                roster = [{'tag': member.tag, 'name': member.name,
+                           'town_hall': getattr(member, 'town_hall', None)}
+                          for member in current.members]
+                await store.sync_roster(WARRIORS_UNITED_GUILD_ID, clan_tag, roster)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                problem = 'Clan roster unavailable'
+                print(f'[strikes] roster refresh deferred for {clan_tag}')
+            try:
+                # Baseline prevents an automatic historical backfill. Retry remains bounded.
+                age_days = min(60, max(1, math.ceil((datetime.now(timezone.utc) - activation).total_seconds() / 86400) + 1))
+                report = await strike_wars.fetch_history_report(clan_tag, days=age_days)
+                for skipped in report.get('skipped', []):
                     try:
-                        await process(WARRIORS_UNITED_GUILD_ID, war)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as error:
-                        print(f"[strikes] war deferred for {clan['tag']}: {type(error).__name__}: {error}")
+                        raw_end = strike_wars._date(skipped['end_time'])
+                    except (ValueError, KeyError, TypeError):
+                        skipped_count += 1
+                    else:
+                        if raw_end >= activation:
+                            skipped_count += 1
+                for wars, process, kind in ((report['wars'], store.process_war, 'regular'),
+                                            (report.get('cwl_wars', []), store.process_cwl_war, 'cwl')):
+                    for war in wars:
+                        if war['end_time'] < activation:
+                            continue
+                        try:
+                            result = await process(WARRIORS_UNITED_GUILD_ID, war)
+                            if kind == 'regular':
+                                regular_count += 1
+                                deferred_count += result.get('deferred_count', 0)
+                            else:
+                                cwl_count += 1
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            problem = 'War processing failed'
+                            print(f'[strikes] war deferred for {clan_tag}')
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                problem = 'War source unavailable'
+                print(f'[strikes] scan deferred for {clan_tag}')
+            await tracking.finish(WARRIORS_UNITED_GUILD_ID, clan_tag, started_at=started,
+                                  regular_wars=regular_count, cwl_wars=cwl_count,
+                                  deferred_accounts=deferred_count, skipped_wars=skipped_count,
+                                  error=problem)
         except asyncio.CancelledError:
+            # A cancelled attempt must never mark this clan healthy.
             raise
-        except Exception as error:
-            print(f"[strikes] scan deferred for {clan['tag']}: {type(error).__name__}: {error}")
-    await _warm_weight_cache(mongo)
+    if clan_tags is None:
+        await _warm_weight_cache(mongo)
 
 
 async def loop(mongo, bot, coc_client):
+    tracking = StrikeTracking(mongo)
+    next_full = 0.0
     while True:
         try:
-            await scan_once(mongo, bot, coc_client)
+            if time.monotonic() >= next_full:
+                pending = await tracking.pending(WARRIORS_UNITED_GUILD_ID)
+                await scan_once(mongo, bot, coc_client)
+                for row in pending:
+                    await tracking.consume_retry(WARRIORS_UNITED_GUILD_ID,
+                                                 row['clan_tag'], row['retry_requested_at'])
+                next_full = time.monotonic() + POLL_SECONDS
+            else:
+                pending = await tracking.pending(WARRIORS_UNITED_GUILD_ID)
+                if pending:
+                    wanted = {row['clan_tag'] for row in pending}
+                    await scan_once(mongo, bot, coc_client, clan_tags=wanted)
+                    for row in pending:
+                        await tracking.consume_retry(WARRIORS_UNITED_GUILD_ID,
+                                                     row['clan_tag'], row['retry_requested_at'])
         except asyncio.CancelledError:
             raise
         except Exception as error:
-            print(f'[strikes] scan deferred: {type(error).__name__}: {error}')
-        await asyncio.sleep(POLL_SECONDS)
+            print(f'[strikes] scan deferred: {type(error).__name__}')
+        await asyncio.sleep(15)
 
 
 @loader.listener(hikari.StartedEvent)

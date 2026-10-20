@@ -12,9 +12,12 @@ def test_monitor_routes_cwl_separately_and_respects_activation(monkeypatch):
     cwl = {'type': 'cwl', 'end_time': activation + timedelta(hours=2)}
     old_cwl = {'type': 'cwl', 'end_time': activation - timedelta(hours=1)}
     store = SimpleNamespace(ensure_indexes=AsyncMock(), monitor_activation=AsyncMock(return_value=activation),
-                            sync_roster=AsyncMock(), process_war=AsyncMock(), process_cwl_war=AsyncMock())
+                            sync_roster=AsyncMock(), process_war=AsyncMock(return_value={"deferred_count": 0}),
+                            process_cwl_war=AsyncMock(return_value={"records": 0}))
     cursor = SimpleNamespace(to_list=AsyncMock(return_value=[{'tag': '#P2Y'}]))
-    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: cursor))
+    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: cursor),
+                            strike_tracking=SimpleNamespace(update_one=AsyncMock(),
+                                find_one=AsyncMock(return_value={"error_history": []})))
     client = SimpleNamespace(get_clan=AsyncMock(return_value=SimpleNamespace(members=[])))
     monkeypatch.setattr(strikes, 'service', lambda *_: store)
     monkeypatch.setattr(strikes.strike_wars, 'fetch_history_report', AsyncMock(return_value={

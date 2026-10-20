@@ -34,6 +34,7 @@ class MongoClient(AsyncMongoClient):
         self.strike_leave_history = collection_for(self, "strike_leave_history", routes=routes)
         self.strike_profiles = collection_for(self, "strike_profiles", routes=routes)
         self.strike_imports = collection_for(self, "strike_imports", routes=routes)
+        self.strike_tracking = collection_for(self, "strike_tracking", routes=routes)
         self.fwa_data = collection_for(self, "fwa_data", routes=routes)
         self.fwa_band_data = collection_for(self, "fwa_band_data", routes=routes)
         self.ticket_setup = collection_for(self, "ticket_setup", routes=routes)

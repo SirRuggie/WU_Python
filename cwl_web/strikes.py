@@ -17,6 +17,7 @@ from . import server_management as shared
 from .providers import ProviderUnavailable, tag
 from utils import recruit_links
 from utils.strike_store import StrikeService, utc
+from utils.strike_tracking import StrikeTracking
 from utils.replacement_filters import parse_weight, compact_weight
 
 API = '/api/cwl/strikes'
@@ -870,7 +871,31 @@ async def import_job(request):
     return web.json_response(response)
 
 
-routes = [web.get(API + '/overview', overview), web.get(API + '/accounts', accounts),
+@endpoint
+async def tracking_status(request):
+    async with shared.mongo(request) as db:
+        clans = await clan_rows(db)
+        rows = await StrikeTracking(db).rows(GUILD_ID, clans)
+    return web.json_response({'clans': public(rows)})
+
+
+@endpoint(scope='strikes_add')
+async def tracking_retry(request):
+    data = await body(request, {'clan_tag'})
+    clan_tag = tag(data.get('clan_tag'))
+    actor = await shared.identity(request)
+    async with shared.mongo(request) as db:
+        registered = await db.clans.find_one({'tag': clan_tag}, {'tag': 1})
+        if registered is None:
+            raise ValueError('Choose a registered family clan.')
+        row = await StrikeTracking(db).queue_retry(GUILD_ID, clan_tag, int(actor['user_id']))
+    return web.json_response({'clan_tag': clan_tag, 'retry_pending': True,
+                              'retry_requested_at': public(row['retry_requested_at'])}, status=202)
+
+
+routes = [web.get(API + '/tracking', tracking_status),
+          web.post(API + '/tracking/retry', tracking_retry),
+          web.get(API + '/overview', overview), web.get(API + '/accounts', accounts),
           web.get(API + '/wars', wars),
           web.get(API + '/members', members),
           web.get(API + '/members/{member_id}/accounts', member_accounts),

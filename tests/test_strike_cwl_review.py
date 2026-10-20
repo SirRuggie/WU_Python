@@ -180,9 +180,11 @@ def test_monitor_regular_failure_does_not_starve_cwl(monkeypatch):
     cwl = {'type': 'cwl', 'end_time': activation + timedelta(hours=2)}
     store = SimpleNamespace(ensure_indexes=AsyncMock(), monitor_activation=AsyncMock(return_value=activation),
                             sync_roster=AsyncMock(), process_war=AsyncMock(side_effect=RuntimeError('links down')),
-                            process_cwl_war=AsyncMock())
+                            process_cwl_war=AsyncMock(return_value={"records": 0}))
     cursor = SimpleNamespace(to_list=AsyncMock(return_value=[{'tag': CLAN}]))
-    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: cursor))
+    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: cursor),
+                            strike_tracking=SimpleNamespace(update_one=AsyncMock(),
+                                find_one=AsyncMock(return_value={"error_history": []})))
     coc_client = SimpleNamespace(get_clan=AsyncMock(return_value=SimpleNamespace(members=[])))
     monkeypatch.setattr(strikes, 'service', lambda *_: store)
     monkeypatch.setattr(strikes.strike_wars, 'fetch_history_report', AsyncMock(return_value={
@@ -203,9 +205,11 @@ def test_monitor_cancellation_is_not_swallowed(monkeypatch):
     regular = {'type': 'regular', 'end_time': activation + timedelta(hours=1)}
     store = SimpleNamespace(ensure_indexes=AsyncMock(), monitor_activation=AsyncMock(return_value=activation),
                             sync_roster=AsyncMock(), process_war=AsyncMock(side_effect=asyncio.CancelledError),
-                            process_cwl_war=AsyncMock())
+                            process_cwl_war=AsyncMock(return_value={"records": 0}))
     cursor = SimpleNamespace(to_list=AsyncMock(return_value=[{'tag': CLAN}]))
-    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: cursor))
+    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: cursor),
+                            strike_tracking=SimpleNamespace(update_one=AsyncMock(),
+                                find_one=AsyncMock(return_value={"error_history": []})))
     coc_client = SimpleNamespace(get_clan=AsyncMock(return_value=SimpleNamespace(members=[])))
     monkeypatch.setattr(strikes, 'service', lambda *_: store)
     monkeypatch.setattr(strikes.strike_wars, 'fetch_history_report', AsyncMock(return_value={
