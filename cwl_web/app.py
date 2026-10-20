@@ -1653,6 +1653,8 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     app.cleanup_ctx.append(location_lifecycle)
     from .player_weights import lifecycle as player_weights_lifecycle
     app.cleanup_ctx.append(player_weights_lifecycle)
+    from .strikes import strike_jobs_lifecycle
+    app.cleanup_ctx.append(strike_jobs_lifecycle)
     routes = [*ticket_browser_routes, *staff_tag_signup_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),

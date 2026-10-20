@@ -60,7 +60,7 @@ def test_import_apply_returns_numeric_skipped_count():
                     'excluded': 1, 'skipped': [{'war': 'one'}, {'war': 'two'}]}
 
     async def permit(request, section, *, write=False):
-        assert section == 'strikes_add' and write is True
+        assert section == 'strikes_add'
 
     async def request_body(request, allowed):
         return {'preview_id': 'preview1234567890', 'excluded_keys': ['row1']}
@@ -73,14 +73,20 @@ def test_import_apply_returns_numeric_skipped_count():
         yield object()
 
     async def run():
-        request = SimpleNamespace(method='POST')
+        app = {}
+        request = SimpleNamespace(method='POST', app=app)
         with patch.object(strikes.shared, 'require_manage', permit), \
              patch.object(strikes.shared, 'mongo', fake_mongo), \
              patch.object(strikes, 'body', request_body), \
              patch.object(strikes, 'service', fake_service), \
              patch('cwl_web.app._session', return_value={'user_id': '123'}):
-            return await strikes.import_apply(request)
+            response = await strikes.import_apply(request)
+            queued = json.loads(response.text)
+            assert response.status == 202
+            await asyncio.gather(*strikes._jobs(app)['tasks'])
+            poll = SimpleNamespace(method='GET', app=app, match_info={'job_id': queued['job_id']})
+            return await strikes.import_job(poll)
 
     response = asyncio.run(run())
     payload = json.loads(response.text)
-    assert payload == {'applied': 2, 'strikes': 1, 'skipped': 4, 'skipped_wars': 2}
+    assert payload['result'] == {'applied': 2, 'strikes': 1, 'skipped': 4, 'skipped_wars': 2}

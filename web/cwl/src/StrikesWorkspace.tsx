@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api } from './api'
+import { api, ApiError } from './api'
 import { strikePermissions } from './strikePermissions'
+import { isStrikeImportJob, StrikeImportFailed, waitForStrikeImport, type StrikeImportJob } from './strikeImportJobs'
 import { defaultLeaveTags, selectedImportEntries, toggleLeaveTag } from './strikeSelections'
 import './StrikesWorkspace.css'
 
@@ -13,6 +14,9 @@ type Overview = { entries: Entry[]; clans: Clan[]; total: number }
 type Candidate = { player_tag: string; player_name: string; clan_tag: string; clan_name: string; weight: number | null; active_strikes: number; is_filler: boolean; weight_difference?: number | null; discord_id?: string | null; discord_name?: string | null }
 type Settings = { excluded_roles: { id: string; name: string }[]; roles: { id: string; name: string }[]; leaves: { discord_id: string; display_name: string; player_tags: string[]; resume_date: string }[] }
 type ImportEntry = { key: string; player_tag: string; player_name: string; clan_name: string; war_end: string; missed_attacks: number; will_strike: boolean; exempt?: boolean; duplicate?: boolean }
+type ImportResult = { applied: number; strikes: number; skipped: number | unknown[] }
+type ActiveImportJob = { job_id: string; phase: 'preview' | 'apply' }
+type ImportDraft = { job: ActiveImportJob | null; preview: ImportPreview | null; excluded: string[] }
 type ImportPreview = { preview_id: string; wars_scanned: number; complete_wars: number; incomplete_wars: number; entries: ImportEntry[]; coverage: { clan_name: string; earliest?: string; latest?: string; wars: number; error?: string; skipped?: number }[] }
 
 const tabs: { id: Tab; label: string }[] = [
@@ -23,11 +27,24 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : '
 const dateText = (value?: string | null) => value ? /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`).toLocaleDateString() : new Date(value).toLocaleDateString() : '—'
 const tagPath = (tag: string) => encodeURIComponent(tag)
 const memberLabel = (member: Member) => `${member.name} · ${member.id}`
+const importStorageKey = (userId: string) => `wu:strikes:import:${userId}`
+function savedImport(userId: string): ImportDraft {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(importStorageKey(userId)) || '{}')
+    return {
+      job: value.job && typeof value.job.job_id === 'string' && ['preview', 'apply'].includes(value.job.phase) ? value.job : null,
+      preview: value.preview && typeof value.preview.preview_id === 'string' && Array.isArray(value.preview.entries) ? value.preview : null,
+      excluded: Array.isArray(value.excluded) ? value.excluded.filter((key: unknown) => typeof key === 'string') : [],
+    }
+  } catch { return { job: null, preview: null, excluded: [] } }
+}
+const importResultText = (result: ImportResult) => `${result.applied} records saved · ${result.strikes} strikes · ${Array.isArray(result.skipped) ? result.skipped.length : result.skipped} skipped.`
 
-export default function StrikesWorkspace({ permissions, isOwner }: { permissions: string[]; isOwner: boolean }) {
+export default function StrikesWorkspace({ permissions, isOwner, userId }: { permissions: string[]; isOwner: boolean; userId: string }) {
   const access = strikePermissions(permissions, isOwner)
   const visibleTabs = tabs.filter(item => item.id === 'import' ? access.add : item.id === 'leave' || item.id === 'settings' ? access.manage : true)
-  const [tab, setTab] = useState<Tab>('history')
+  const initialImport = useRef<ImportDraft>(access.add ? savedImport(userId) : { job: null, preview: null, excluded: [] })
+  const [tab, setTab] = useState<Tab>(initialImport.current.job || initialImport.current.preview ? 'import' : 'history')
   const [overview, setOverview] = useState<Overview>({ entries: [], clans: [], total: 0 })
   const [query, setQuery] = useState('')
   const [historyMember, setHistoryMember] = useState<Member | null>(null)
@@ -57,8 +74,11 @@ export default function StrikesWorkspace({ permissions, isOwner }: { permissions
   const [roleId, setRoleId] = useState('')
   const [resumeDate, setResumeDate] = useState('')
   const [leaveTags, setLeaveTags] = useState<string[]>([])
-  const [preview, setPreview] = useState<ImportPreview | null>(null)
-  const [excluded, setExcluded] = useState<string[]>([])
+  const [preview, setPreview] = useState<ImportPreview | null>(initialImport.current.preview)
+  const [excluded, setExcluded] = useState<string[]>(initialImport.current.excluded)
+  const [importJob, setImportJob] = useState<ActiveImportJob | null>(initialImport.current.job)
+  const [jobRetryPaused, setJobRetryPaused] = useState(false)
+  const [jobRetry, setJobRetry] = useState(0)
 
   const refreshHistory = useCallback(async () => {
     const request = ++historyRequest.current
@@ -109,6 +129,51 @@ export default function StrikesWorkspace({ permissions, isOwner }: { permissions
   const selected = members.find(item => item.id === selectedMember)
   const importSelected = selectedImportEntries(preview?.entries || [], excluded)
   const updateSettings = async () => setSettings(await api<Settings>('/strikes/settings'))
+  useEffect(() => {
+    try {
+      if (!preview && !importJob) sessionStorage.removeItem(importStorageKey(userId))
+      else sessionStorage.setItem(importStorageKey(userId), JSON.stringify({ preview, excluded, job: importJob }))
+    } catch { /* Browser storage is optional; active page still works. */ }
+  }, [userId, preview, excluded, importJob])
+  useEffect(() => {
+    if (!importJob || jobRetryPaused) return
+    const controller = new AbortController()
+    void waitForStrikeImport<ImportPreview | ImportResult>(
+      importJob.job_id,
+      id => api<StrikeImportJob<ImportPreview | ImportResult>>(`/strikes/import/jobs/${encodeURIComponent(id)}`),
+      controller.signal,
+    ).then(result => {
+      if (controller.signal.aborted) return
+      if (importJob.phase === 'preview') { setPreview(result as ImportPreview); setExcluded([]); setNotice('Preview ready.') }
+      else { setPreview(null); setExcluded([]); setNotice(importResultText(result as ImportResult)); void refreshHistory() }
+      setImportJob(null)
+    }).catch(err => {
+      if (controller.signal.aborted) return
+      if (err instanceof StrikeImportFailed || (err instanceof ApiError && err.status === 404)) setImportJob(null)
+      else setJobRetryPaused(true)
+      setError(errorText(err))
+    })
+    return () => controller.abort()
+  }, [importJob?.job_id, importJob?.phase, refreshHistory, jobRetry, jobRetryPaused])
+  const startImportPreview = async () => {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const result = await api<ImportPreview | StrikeImportJob<ImportPreview>>('/strikes/import/preview', 'POST', { days: 90 })
+      if (isStrikeImportJob(result)) { setJobRetryPaused(false); setImportJob({ job_id: result.job_id, phase: 'preview' }) }
+      else { setPreview(result as ImportPreview); setExcluded([]); setNotice('Preview ready.') }
+    } catch (err) { setError(errorText(err)) }
+    finally { setBusy(false) }
+  }
+  const startImportApply = async () => {
+    if (!preview) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const result = await api<ImportResult | StrikeImportJob<ImportResult>>('/strikes/import/apply', 'POST', { preview_id: preview.preview_id, excluded_keys: excluded })
+      if (isStrikeImportJob(result)) { setJobRetryPaused(false); setImportJob({ job_id: result.job_id, phase: 'apply' }) }
+      else { setPreview(null); setExcluded([]); setNotice(importResultText(result as ImportResult)); void refreshHistory() }
+    } catch (err) { setError(errorText(err)) }
+    finally { setBusy(false) }
+  }
   const fetchCandidates = async () => {
     if (!weight || Number(weight) <= 0) return
     setBusy(true); setError(''); setReplacementsLoaded(false)
@@ -138,6 +203,6 @@ export default function StrikesWorkspace({ permissions, isOwner }: { permissions
 
     {tab === 'settings' && access.manage && <div className="card strikes-form"><h2>Exempt roles</h2><p>Members with these roles do not receive automatic war strikes.</p><div className="strikes-role-list">{settings?.excluded_roles.map(item => <div key={item.id}><span>{item.name} <small>{item.id}</small></span><button disabled={busy} onClick={() => void run(() => api('/strikes/settings/roles', 'PUT', { role_ids: settings.excluded_roles.filter(role => role.id !== item.id).map(role => role.id) }), 'Role removed.', updateSettings)}>Remove</button></div>)}</div><div className="strikes-inline"><label>Add role<select value={roleId} onChange={event => setRoleId(event.target.value)}><option value="">Choose role</option>{settings?.roles.filter(item => !settings.excluded_roles.some(role => role.id === item.id)).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><button disabled={busy || !roleId || !settings} onClick={() => void run(() => api('/strikes/settings/roles', 'PUT', { role_ids: [...settings!.excluded_roles.map(item => item.id), roleId] }), 'Role added.', async () => { setRoleId(''); await updateSettings() })}>Add role</button></div></div>}
 
-    {tab === 'import' && access.add && <><div className="card strikes-form"><h2>Import recent wars</h2><p>Check up to 90 days of saved regular wars. Review missed attacks before adding strikes.</p><button className="primary" disabled={busy} onClick={() => void run(async () => { const result = await api<ImportPreview>('/strikes/import/preview', 'POST', { days: 90 }); setPreview(result); setExcluded([]) }, 'Preview ready.')}>{busy ? 'Checking wars…' : preview ? 'Check again' : 'Check past wars'}</button></div>{preview && <><div className="strikes-import-counts"><span><strong>{preview.complete_wars}</strong> complete wars</span><span><strong>{preview.incomplete_wars}</strong> skipped</span><span><strong>{importSelected.filter(item => item.will_strike).length}</strong> new strikes</span><span><strong>{importSelected.filter(item => !item.will_strike && !item.exempt).length}</strong> one missed</span><span><strong>{importSelected.filter(item => item.exempt).length}</strong> exempt</span></div><details className="card strikes-coverage"><summary>Coverage by clan</summary>{preview.coverage.map(item => <div key={item.clan_name}><strong>{item.clan_name}</strong><span>{item.error ? 'Unavailable' : `${item.wars} wars${item.skipped ? ` · ${item.skipped} skipped` : ''} · ${dateText(item.earliest)} to ${dateText(item.latest)}`}</span></div>)}</details><div className="strikes-list-head"><h2>Review incidents</h2><span>{preview.entries.length} found</span></div>{preview.entries.length === 0 && <div className="card strikes-empty">No missed attacks found in saved wars.</div>}<div className="strikes-list">{preview.entries.map(item => <div className="card strikes-import-row" key={item.key}><div><strong>{item.player_name}</strong><small>{item.player_tag} · {item.clan_name} · {dateText(item.war_end)}</small><span>{item.missed_attacks} missed · {item.duplicate ? 'Already recorded' : item.exempt ? 'Exempt' : item.will_strike ? 'Strike' : 'Record only'}</span></div>{!item.duplicate && <label className="strikes-check"><input type="checkbox" checked={!excluded.includes(item.key)} onChange={event => setExcluded(current => event.target.checked ? current.filter(key => key !== item.key) : [...current, item.key])} />{item.exempt ? 'Save exempt record' : item.will_strike ? 'Add strike' : 'Save record'}</label>}</div>)}</div><div className="strikes-import-apply"><span>{importSelected.length} records selected</span><button className="primary" disabled={busy || importSelected.length === 0} onClick={() => { setBusy(true); setError(''); setNotice(''); void api<{ applied: number; strikes: number; skipped: number | unknown[] }>('/strikes/import/apply', 'POST', { preview_id: preview.preview_id, excluded_keys: excluded }).then(result => { setPreview(null); setNotice(`${result.applied} records saved · ${result.strikes} strikes · ${Array.isArray(result.skipped) ? result.skipped.length : result.skipped} skipped.`) }).catch(err => setError(errorText(err))).finally(() => setBusy(false)) }}>{busy ? 'Adding…' : 'Import selected'}</button></div></>}</>}
+    {tab === 'import' && access.add && <><div className="card strikes-form"><h2>Import recent wars</h2><p>Check up to 90 days of saved regular wars. Review missed attacks before adding strikes.</p><button className="primary" disabled={busy || !!importJob} onClick={() => void startImportPreview()}>{busy || importJob?.phase === 'preview' ? 'Checking wars…' : preview ? 'Check again' : 'Check past wars'}</button></div>{importJob && <div className="strikes-job-status" role="status"><span>{jobRetryPaused ? 'Connection paused. Retry status.' : importJob.phase === 'preview' ? 'Checking wars… You can return later.' : 'Importing records… You can return later.'}</span>{jobRetryPaused && <button onClick={() => { setJobRetryPaused(false); setError(''); setJobRetry(value => value + 1) }}>Retry status</button>}</div>}{preview && <><div className="strikes-import-counts"><span><strong>{preview.complete_wars}</strong> complete wars</span><span><strong>{preview.incomplete_wars}</strong> skipped</span><span><strong>{importSelected.filter(item => item.will_strike).length}</strong> new strikes</span><span><strong>{importSelected.filter(item => !item.will_strike && !item.exempt).length}</strong> one missed</span><span><strong>{importSelected.filter(item => item.exempt).length}</strong> exempt</span></div><details className="card strikes-coverage"><summary>Coverage by clan</summary>{preview.coverage.map(item => <div key={item.clan_name}><strong>{item.clan_name}</strong><span>{item.error ? 'Unavailable' : `${item.wars} wars${item.skipped ? ` · ${item.skipped} skipped` : ''} · ${dateText(item.earliest)} to ${dateText(item.latest)}`}</span></div>)}</details><div className="strikes-list-head"><h2>Review incidents</h2><span>{preview.entries.length} found</span></div>{preview.entries.length === 0 && <div className="card strikes-empty">No missed attacks found in saved wars.</div>}<div className="strikes-list">{preview.entries.map(item => <div className="card strikes-import-row" key={item.key}><div><strong>{item.player_name}</strong><small>{item.player_tag} · {item.clan_name} · {dateText(item.war_end)}</small><span>{item.missed_attacks} missed · {item.duplicate ? 'Already recorded' : item.exempt ? 'Exempt' : item.will_strike ? 'Strike' : 'Record only'}</span></div>{!item.duplicate && <label className="strikes-check"><input type="checkbox" checked={!excluded.includes(item.key)} disabled={importJob?.phase === 'apply'} onChange={event => setExcluded(current => event.target.checked ? current.filter(key => key !== item.key) : [...current, item.key])} />{item.exempt ? 'Save exempt record' : item.will_strike ? 'Add strike' : 'Save record'}</label>}</div>)}</div><div className="strikes-import-apply"><span>{importSelected.length} records selected</span><button className="primary" disabled={busy || !!importJob || importSelected.length === 0} onClick={() => void startImportApply()}>{busy || importJob?.phase === 'apply' ? 'Importing…' : 'Import selected'}</button></div></>}</>}
   </section>
 }

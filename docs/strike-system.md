@@ -27,7 +27,7 @@ Discord commands use private Components V2 responses: `/strikes view`, `/strikes
 
 ## Import and monitoring
 
-Check past wars to preview up to 90 days of available saved history. Review incidents, uncheck unwanted records, then import. Availability depends on the external archive. The interface reports coverage and unavailable clans; incomplete or ambiguous wars are skipped rather than guessed.
+Check past wars to preview up to 90 days of available saved history. Preview and apply run as background jobs; the dashboard polls short status requests so large imports do not hit the web proxy timeout. Reloading the page resumes the same job. Jobs stop if the web service restarts; retrying is safe because ledger records are deduplicated. Review incidents, uncheck unwanted records, then import. Availability depends on the external archive. The interface reports coverage and unavailable clans; incomplete or ambiguous wars are skipped rather than guessed.
 
 The bot starts a ten-minute monitor through its normal extension lifecycle. A persisted activation time prevents initial startup from silently importing old wars. Historical imports require the preview/apply workflow. Deterministic war/player IDs prevent a repeated scan or import from adding duplicate strikes. Manual submissions use request IDs to protect retries.
 

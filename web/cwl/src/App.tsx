@@ -344,7 +344,7 @@ function App() {
         {view === 'image-gallery' && <Suspense fallback={<p role="status">Loading images…</p>}><ImageGallery /></Suspense>}
         {view === 'tickets' && <Suspense fallback={<p role="status">Loading tickets…</p>}><TicketBrowser /></Suspense>}
         {view === 'clan-management' && <ClanManagement onDirty={setManageDirty} />}
-        {view === 'strikes' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <StrikesWorkspace permissions={session.dashboard_permissions || []} isOwner={session.is_owner} />}
+        {view === 'strikes' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <StrikesWorkspace permissions={session.dashboard_permissions || []} isOwner={session.is_owner} userId={session.user.id} />}
         {view === 'text-commands' && <TextCommands onDirty={setManageDirty} />}
         {isManagementArea(view) && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}

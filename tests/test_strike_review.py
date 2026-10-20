@@ -58,6 +58,13 @@ class Collection:
             return row
         return None
 
+    def find(self, query):
+        rows = [row for row in self.rows.values() if all(row.get(key) == value for key, value in query.items())]
+        class Cursor:
+            async def to_list(self, length=None):
+                return rows
+        return Cursor()
+
     async def update_one(self, query, update, upsert=False):
         key = query['_id']
         row = self.rows.setdefault(key, {'_id': key})
@@ -253,3 +260,56 @@ async def _replacement_uses_effective_weights_after_filler_and_strikes():
     assert [row['weight'] for row in rows] == [114000, 115000]
     assert [row['weight_difference'] for row in rows] == [1000, 0]
     assert [row['active_strikes'] for row in rows] == [0, 2]
+
+
+def test_import_caches_leave_reads_per_run_but_rechecks_before_apply():
+    asyncio.run(_import_caches_leave_reads_per_run_but_rechecks_before_apply())
+
+
+async def _import_caches_leave_reads_per_run_but_rechecks_before_apply():
+    class CurrentLeaves(Collection):
+        reads = 0
+
+        async def find_one(self, query, projection=None):
+            self.reads += 1
+            return await super().find_one(query, projection)
+
+    class PastLeaves(Collection):
+        reads = 0
+
+        def find(self, query):
+            self.reads += 1
+            return super().find(query)
+
+    mongo = Mongo()
+    mongo.strike_imports = Collection()
+    mongo.strike_leaves = CurrentLeaves()
+    mongo.strike_leave_history = PastLeaves()
+
+    async def links(tags):
+        return PlayerOwners(owners={'#PC9YGL0JL': '456'})
+
+    async def roles(guild_id, member_id):
+        return []
+
+    service = StrikeService(mongo, link_resolver=links, role_resolver=roles)
+    first = war()
+    second = war()
+    second['end_time'] = first['end_time'] - timedelta(hours=1)
+    preview = await service.preview_import(123, [first, second], actor_id=789)
+    assert preview['strikes'] == 2
+    assert mongo.strike_leaves.reads == 1
+    assert mongo.strike_leave_history.reads == 1
+
+    now = datetime.now(timezone.utc)
+    mongo.strike_leaves.rows['123:456'] = {
+        '_id': '123:456', 'guild_id': 123, 'member_id': 456,
+        'starts_at': now - timedelta(hours=4), 'updated_at': now - timedelta(hours=4),
+        'until': now + timedelta(days=1), 'account_tags': ['#PC9YGL0JL'],
+    }
+    applied = await service.apply_import(123, preview['preview_id'], 789)
+    assert applied['applied'] == 2
+    assert applied['strikes'] == 0
+    assert mongo.strike_leaves.reads == 2
+    assert mongo.strike_leave_history.reads == 2
+    assert {row['kind'] for row in mongo.strike_records.rows.values()} == {'exempt'}

@@ -331,7 +331,7 @@ class StrikeService:
         return rows[:max(1, min(100, int(limit)))]
 
     async def _exemption(self, guild_id: int, player: str, member_id: int | None,
-                         occurred_at: datetime, roles: set[int]) -> str | None:
+                         occurred_at: datetime, roles: set[int], *, leave_cache=None) -> str | None:
         if member_id is None:
             return None
         if roles:
@@ -342,6 +342,18 @@ class StrikeService:
                 return 'pending_role_check'
             if {int(item) for item in found} & roles:
                 return 'role'
+        if leave_cache is not None:
+            if member_id not in leave_cache:
+                current = await self.mongo.strike_leaves.find_one({'_id': f'{int(guild_id)}:{int(member_id)}'})
+                history = await self.mongo.strike_leave_history.find({
+                    'guild_id': int(guild_id), 'member_id': int(member_id)}).to_list(length=None)
+                leave_cache[member_id] = ([current] if current else []) + history
+            for leave in leave_cache[member_id]:
+                selected = leave.get('account_tags')
+                if (utc(leave.get('starts_at', leave['updated_at'])) <= occurred_at < utc(leave['until'])
+                        and (selected is None or player in selected)):
+                    return 'leave'
+            return None
         leave = await self.mongo.strike_leaves.find_one({'_id': f'{int(guild_id)}:{int(member_id)}'})
         if leave and utc(leave.get('starts_at', leave['updated_at'])) <= occurred_at < utc(leave['until']):
             selected = leave.get('account_tags')
@@ -372,12 +384,14 @@ class StrikeService:
         report = {'wars': 0, 'strikes': 0, 'missed': 0, 'exempt': 0,
                   'existing': 0, 'skipped': [], 'items': []}
         accepted = []
+        owner_cache = {}
+        leave_cache = {}
         for war in wars:
             try:
                 validate_war(war, now=now)
                 if stamp(war['end_time']) < now - timedelta(days=STRIKE_DAYS):
                     raise ValueError('Outside the 90-day import window.')
-                rows = await self._war_rows(guild_id, war)
+                rows = await self._war_rows(guild_id, war, owner_cache=owner_cache, leave_cache=leave_cache)
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
                 report['skipped'].append({'war': str(war.get('clan_tag', '?')), 'reason': str(error)})
                 continue
@@ -404,14 +418,25 @@ class StrikeService:
         })
         return {**report, 'preview_id': preview_id}
 
-    async def _war_rows(self, guild_id: int, war: dict) -> list[dict]:
+    async def _war_rows(self, guild_id: int, war: dict, *, owner_cache=None, leave_cache=None) -> list[dict]:
         validate_war(war)
         clan = tag(war['clan_tag'])
         registered = await self.mongo.clans.find_one({'tag': clan}, {'_id': 1})
         if not registered:
             raise ValueError('Clan is not registered.')
         members = war['members']
-        owners, conflicts = await self._resolve_members([tag(member['tag']) for member in members])
+        tags = [tag(member['tag']) for member in members]
+        if owner_cache is None:
+            owners, conflicts = await self._resolve_members(tags)
+        else:
+            missing = [player for player in tags if player not in owner_cache]
+            if missing:
+                resolved, disputed = await self._resolve_members(missing)
+                for player in missing:
+                    owner_cache[player] = (resolved.get(player), player in disputed)
+            owners = {player: owner_cache[player][0] for player in tags if owner_cache[player][0] is not None}
+            conflicts = {player for player in tags if owner_cache[player][1]}
+
         settings = await self.settings(guild_id)
         exempt_roles = {int(item) for item in settings['exempt_role_ids']}
         ended = stamp(war['end_time'])
@@ -423,7 +448,7 @@ class StrikeService:
                 raise RuntimeError('Account owner conflict; war scan deferred.')
             owner = owners.get(player)
             missed = 2 - member['attacks']
-            exemption = await self._exemption(guild_id, player, owner, ended, exempt_roles) if missed else None
+            exemption = await self._exemption(guild_id, player, owner, ended, exempt_roles, leave_cache=leave_cache) if missed else None
             if exemption == 'pending_role_check':
                 raise RuntimeError('Member roles unavailable; war scan deferred.')
             kind = 'exempt' if missed and exemption else ('strike' if missed == 2 else ('missed' if missed == 1 else 'completed'))
@@ -465,12 +490,14 @@ class StrikeService:
         results = {'wars': 0, 'applied': 0, 'existing': 0, 'strikes': 0,
                    'excluded': len(excluded), 'skipped': []}
         cutoff = now - timedelta(days=STRIKE_DAYS)
+        owner_cache = {}
+        leave_cache = {}
         for war in preview['wars']:
             try:
                 validate_war(war, now=now)
                 if stamp(war['end_time']) < cutoff:
                     raise ValueError('Outside the 90-day import window.')
-                rows = await self._war_rows(guild_id, war)
+                rows = await self._war_rows(guild_id, war, owner_cache=owner_cache, leave_cache=leave_cache)
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
                 results['skipped'].append({'war': str(war.get('clan_tag', '?')), 'reason': str(error)})
                 continue

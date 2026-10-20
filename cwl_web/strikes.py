@@ -6,6 +6,10 @@ import aiohttp
 from datetime import datetime, timezone
 from functools import wraps
 import re
+import logging
+import time
+import uuid
+from types import SimpleNamespace
 
 from aiohttp import web
 
@@ -368,14 +372,103 @@ async def save_filler(request):
     return web.json_response({'ok': True})
 
 
-@endpoint(scope='strikes_add')
-async def import_preview(request):
-    data = await body(request, {'days'})
-    days = number(data.get('days', 90), 1, 90)
-    from .app import _session
+JOB_TTL_SECONDS = 60 * 60
+JOB_TIMEOUT_SECONDS = 20 * 60
+MAX_JOBS = 200
+_job_log = logging.getLogger(__name__)
+
+
+def _jobs(app):
+    state = app.get('strike_import_jobs')
+    if state is None:
+        state = {'rows': {}, 'tasks': set(), 'lock': asyncio.Lock()}
+        app['strike_import_jobs'] = state
+    return state
+
+
+def _prune_jobs(state):
+    now = time.monotonic()
+    rows = state['rows']
+    for key, row in list(rows.items()):
+        if row['status'] != 'running' and row['expires_at'] <= now:
+            del rows[key]
+
+
+async def _start_job(app, actor_id, kind, fingerprint, operation):
+    state = _jobs(app)
+    async with state['lock']:
+        _prune_jobs(state)
+        for row in state['rows'].values():
+            if row['actor_id'] != actor_id or row['kind'] != kind:
+                continue
+            if row['fingerprint'] == fingerprint and (row['status'] == 'running' or
+                    (kind == 'apply' and row['status'] == 'complete')):
+                return row
+            if row['status'] == 'running':
+                raise web.HTTPConflict(text='Another import is running. Wait for it to finish.')
+        if len(state['rows']) >= MAX_JOBS:
+            raise web.HTTPServiceUnavailable(text='Import jobs are busy. Try again later.')
+        job_id = uuid.uuid4().hex
+        row = {'job_id': job_id, 'actor_id': actor_id, 'kind': kind,
+               'fingerprint': fingerprint, 'status': 'running',
+               'created_at': time.monotonic(),
+               'expires_at': time.monotonic() + JOB_TIMEOUT_SECONDS + JOB_TTL_SECONDS}
+        state['rows'][job_id] = row
+        task = asyncio.create_task(_run_job(row, operation), name=f'strike-import-{kind}-{job_id[:8]}')
+        state['tasks'].add(task)
+        task.add_done_callback(state['tasks'].discard)
+        return row
+
+
+async def _run_job(row, operation):
+    try:
+        row['result'] = await asyncio.wait_for(operation(), timeout=JOB_TIMEOUT_SECONDS)
+        row['status'] = 'complete'
+    except asyncio.CancelledError:
+        row['status'] = 'failed'
+        row['error'] = 'Import stopped. You can retry from the dashboard.'
+        raise
+    except asyncio.TimeoutError:
+        row['status'] = 'failed'
+        row['error'] = 'Import took too long. Try again; existing records will not be duplicated.'
+    except (ValueError, RuntimeError, ProviderUnavailable) as error:
+        row['status'] = 'failed'
+        row['error'] = str(error)[:240]
+    except Exception:
+        _job_log.exception('Strike import %s job failed', row['kind'])
+        row['status'] = 'failed'
+        row['error'] = 'Import could not complete. Try again; existing records will not be duplicated.'
+    finally:
+        row['expires_at'] = time.monotonic() + JOB_TTL_SECONDS
+
+
+async def strike_jobs_lifecycle(app):
+    state = _jobs(app)
+    try:
+        yield
+    finally:
+        tasks = list(state['tasks'])
+        for row in state['rows'].values():
+            if row['status'] == 'running':
+                row['status'] = 'failed'
+                row['error'] = 'Import stopped. You can retry from the dashboard.'
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            try:
+                await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=10)
+            except asyncio.TimeoutError:
+                pass
+        state['rows'].clear()
+
+
+async def _preview_work(app, actor_id, days, actor=None):
     from utils.strike_wars import fetch_history_report
-    async with shared.mongo(request) as db:
-        ledger = await service(request, db)
+    background = SimpleNamespace(app=app)
+    async with shared.mongo(background) as db:
+        if actor is not None and not await shared.allowed(actor, 'strikes_add', db, write=True):
+            raise ValueError('Strike access changed. Start again from the dashboard.')
+        ledger = await service(background, db)
         clans = await clan_rows(db)
         semaphore = asyncio.Semaphore(6)
         async def fetch(clan):
@@ -392,15 +485,41 @@ async def import_preview(request):
         reports = await asyncio.gather(*(fetch(clan) for clan in clans))
         wars = [war for found, _coverage in reports for war in found]
         coverage = [item for _found, item in reports]
-        result = await ledger.preview_import(GUILD_ID, wars, int(_session(request)['user_id']))
+        result = await ledger.preview_import(GUILD_ID, wars, actor_id)
         names = {row['tag']: row['name'] for row in clans}
         entries = [{'key': row['_id'], 'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
                     'clan_name': names.get(row.get('clan_tag'), row.get('clan_tag')), 'war_end': public(row['occurred_at']),
                     'missed_attacks': row.get('missed_attacks'), 'will_strike': row['kind'] == 'strike',
                     'exempt': row['kind'] == 'exempt', 'duplicate': bool(row.get('existing'))} for row in result['items'] if row.get('missed_attacks')]
-        return web.json_response({'preview_id': result['preview_id'], 'wars_scanned': sum(item['source_count'] for item in coverage), 'complete_wars': result['wars'],
-                                  'incomplete_wars': len(result.get('skipped', [])) + sum(item['skipped'] for item in coverage), 'entries': entries, 'coverage': coverage,
-                                  'existing': result.get('existing', 0)})
+        return {'preview_id': result['preview_id'], 'wars_scanned': sum(item['source_count'] for item in coverage), 'complete_wars': result['wars'],
+                'incomplete_wars': len(result.get('skipped', [])) + sum(item['skipped'] for item in coverage), 'entries': entries, 'coverage': coverage,
+                'existing': result.get('existing', 0)}
+
+
+async def _apply_work(app, actor_id, preview_id, exclusions, actor=None):
+    background = SimpleNamespace(app=app)
+    async with shared.mongo(background) as db:
+        if actor is not None and not await shared.allowed(actor, 'strikes_add', db, write=True):
+            raise ValueError('Strike access changed. Start again from the dashboard.')
+        ledger = await service(background, db)
+        result = await ledger.apply_import(GUILD_ID, preview_id, actor_id, excluded_keys=exclusions)
+    return {'applied': result['applied'], 'strikes': result.get('strikes', 0),
+            'skipped': result.get('excluded', 0) + result.get('existing', 0),
+            'skipped_wars': len(result.get('skipped', []))}
+
+
+@endpoint(scope='strikes_add')
+async def import_preview(request):
+    data = await body(request, {'days'})
+    days = number(data.get('days', 90), 1, 90)
+    from .app import _session
+    actor_id = int(_session(request)['user_id'])
+    actor = getattr(request, 'get', lambda *_: None)('manage_identity')
+    actor = dict(actor) if actor is not None else None
+    app = request.app
+    row = await _start_job(app, actor_id, 'preview', str(days),
+                           lambda: _preview_work(app, actor_id, days, actor))
+    return web.json_response({'job_id': row['job_id'], 'status': row['status']}, status=202)
 
 
 @endpoint(scope='strikes_add')
@@ -413,12 +532,33 @@ async def import_apply(request):
     if not isinstance(exclusions, list) or len(exclusions) > 10000 or any(not isinstance(value, str) or len(value) > 250 for value in exclusions):
         raise ValueError('Invalid import selection.')
     from .app import _session
-    async with shared.mongo(request) as db:
-        ledger = await service(request, db)
-        result = await ledger.apply_import(GUILD_ID, preview_id, int(_session(request)['user_id']), excluded_keys=exclusions)
-    return web.json_response({'applied': result['applied'], 'strikes': result.get('strikes', 0),
-                              'skipped': result.get('excluded', 0) + result.get('existing', 0),
-                              'skipped_wars': len(result.get('skipped', []))})
+    actor_id = int(_session(request)['user_id'])
+    actor = getattr(request, 'get', lambda *_: None)('manage_identity')
+    actor = dict(actor) if actor is not None else None
+    exclusions = sorted(set(exclusions))
+    fingerprint = preview_id + ':' + '|'.join(exclusions)
+    app = request.app
+    row = await _start_job(app, actor_id, 'apply', fingerprint,
+                           lambda: _apply_work(app, actor_id, preview_id, exclusions, actor))
+    return web.json_response({'job_id': row['job_id'], 'status': row['status']}, status=202)
+
+
+@endpoint(scope='strikes_add')
+async def import_job(request):
+    from .app import _session
+    actor_id = int(_session(request)['user_id'])
+    state = _jobs(request.app)
+    async with state['lock']:
+        _prune_jobs(state)
+        row = state['rows'].get(request.match_info['job_id'])
+        if row is None or row['actor_id'] != actor_id:
+            raise web.HTTPNotFound(text='Import job not found. Start a new preview if the server restarted.')
+        response = {'job_id': row['job_id'], 'status': row['status']}
+        if row['status'] == 'complete':
+            response['result'] = row['result']
+        elif row['status'] == 'failed':
+            response['error'] = row.get('error', 'Import failed.')
+    return web.json_response(response)
 
 
 routes = [web.get(API + '/overview', overview), web.get(API + '/members', members),
@@ -427,4 +567,5 @@ routes = [web.get(API + '/overview', overview), web.get(API + '/members', member
           web.get(API + '/settings', settings), web.put(API + '/settings/roles', save_roles),
           web.post(API + '/settings/leaves', save_leave), web.delete(API + '/settings/leaves/{member_id}', remove_leave),
           web.get(API + '/replacements', replacements), web.put(API + '/replacements/{player_tag}', save_filler),
-          web.post(API + '/import/preview', import_preview), web.post(API + '/import/apply', import_apply)]
+          web.post(API + '/import/preview', import_preview), web.post(API + '/import/apply', import_apply),
+          web.get(API + '/import/jobs/{job_id}', import_job)]

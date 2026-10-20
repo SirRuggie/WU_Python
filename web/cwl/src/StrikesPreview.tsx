@@ -19,6 +19,7 @@ const settings = { excluded_roles: [{ id: '769130325460254740', name: 'Strike ex
 const members = [{ id: '123456789012345678', name: 'Fox', accounts: [{ tag: '#P22ABC', name: 'CastleFox', current_clan_name: 'Warriors United FWA' }, { tag: '#8LQQRT', name: 'LittleThunder', current_clan_name: 'WU North' }] }]
 const preview = { preview_id: 'fixture-preview', wars_scanned: 7, complete_wars: 6, incomplete_wars: 1, coverage: [{ clan_name: 'Warriors United FWA', wars: 4, earliest: '2026-09-22T12:00:00Z', latest: now }, { clan_name: 'WU North', wars: 3, earliest: '2026-10-01T12:00:00Z', latest: now }], entries: [{ key: 'war-1-a', player_tag: '#P22ABC', player_name: 'CastleFox', clan_name: 'Warriors United FWA', war_end: now, missed_attacks: 2, will_strike: true }, { key: 'war-2-b', player_tag: '#Q99XYZ', player_name: 'BlueDragon', clan_name: 'WU North', war_end: now, missed_attacks: 1, will_strike: false }] }
 
+const fixtureJobs = new Map<string, { reads: number; result: unknown }>()
 const realFetch = window.fetch.bind(window)
 window.fetch = async (input, init) => {
   const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.origin).pathname
@@ -30,11 +31,19 @@ window.fetch = async (input, init) => {
   else if (path.includes('/members/') && path.endsWith('/accounts')) data = { member: members[0] }
   else if (path.endsWith('/settings')) data = settings
   else if (path.endsWith('/replacements')) data = { candidates }
-  else if (path.endsWith('/import/preview')) data = preview
-  else if (path.endsWith('/import/apply')) data = { applied: 1, skipped: 0 }
-  return new Response(JSON.stringify(data), { status: method === 'POST' ? 201 : 200, headers: { 'Content-Type': 'application/json' } })
+  else if (path.endsWith('/import/preview') || path.endsWith('/import/apply')) {
+    const job_id = crypto.randomUUID()
+    fixtureJobs.set(job_id, { reads: 0, result: path.endsWith('/preview') ? preview : { applied: 2, strikes: 1, skipped: 0 } })
+    data = { job_id, status: 'running' }
+  } else if (path.includes('/import/jobs/')) {
+    const job_id = path.split('/').at(-1) || ''
+    const job = fixtureJobs.get(job_id)
+    if (job) { job.reads++; data = job.reads < 2 ? { job_id, status: 'running' } : { job_id, status: 'complete', result: job.result } }
+    else data = { job_id, status: 'failed', error: 'Job unavailable' }
+  }
+  return new Response(JSON.stringify(data), { status: method === 'POST' ? 202 : 200, headers: { 'Content-Type': 'application/json' } })
 }
 
 const fixtureScope = new URLSearchParams(location.search).get('scope')
 const fixturePermissions = fixtureScope === 'add' ? ['strikes_add'] : fixtureScope === 'remove' ? ['strikes_remove'] : fixtureScope === 'manage' ? ['strikes'] : ['strikes', 'strikes_add', 'strikes_remove']
-createRoot(document.getElementById('root')!).render(<React.StrictMode><main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}><StrikesWorkspace permissions={fixturePermissions} isOwner={false} /></main></React.StrictMode>)
+createRoot(document.getElementById('root')!).render(<React.StrictMode><main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}><StrikesWorkspace permissions={fixturePermissions} isOwner={false} userId="fixture" /></main></React.StrictMode>)
