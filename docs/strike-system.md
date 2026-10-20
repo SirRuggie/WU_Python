@@ -8,7 +8,7 @@ Implemented for the Warriors United Discord bot and its existing dashboard. This
 - Only complete, ended, regular wars with an explicit two-attack limit qualify. CWL is deferred.
 - Both attacks missed: one strike. One missed: history only. Both used: no strike.
 - Strikes belong to the player tag. Member lookup includes linked accounts. Moving clans does not clear history.
-- Active strikes expire 90 days after the war ended, or after a manual strike was added. Expired and removed records remain available.
+- Active strikes expire 60 days after the war ended, or after a manual strike was added. Expired and removed records remain available.
 - No automatic punishment.
 
 ## Staff workflow

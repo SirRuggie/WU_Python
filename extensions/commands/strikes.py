@@ -19,7 +19,7 @@ from utils import recruit_links, strike_wars
 from utils.component_state import get_state, insert_state, update_state
 from utils.constants import WARRIORS_UNITED_GUILD_ID
 from utils.mongo import MongoClient
-from utils.strike_store import StrikeService, tag
+from utils.strike_store import STRIKE_DAYS, StrikeService, tag
 from utils.replacement_filters import parse_weight, compact_weight
 from cwl_web.providers import LiveProviders, ProviderUnavailable
 
@@ -208,7 +208,7 @@ class Add(lightbulb.SlashCommand, name='add', description='Give one player accou
                 await ctx.respond('Player lookup is unavailable. Try again later.', ephemeral=True)
                 return
             await ctx.respond(components=panel('Strike added',
-                f"`{row['player_tag']}` · Expires in 90 days\n{safe(row['reason'], 500)}"),
+                f"`{row['player_tag']}` · Expires in {STRIKE_DAYS} days\n{safe(row['reason'], 500)}"),
                 ephemeral=True, **NO_MENTIONS)
             return
         links = await recruit_links.resolve(int(self.member.id))
@@ -258,7 +258,7 @@ async def pick(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
         return panel('Strike', safe(error, 250))
     except Exception:
         return panel('Strike', 'Player lookup is unavailable. Try again later.')
-    return panel('Strike added', f"`{row['player_tag']}` · Expires in 90 days\n{safe(row['reason'], 500)}")
+    return panel('Strike added', f"`{row['player_tag']}` · Expires in {STRIKE_DAYS} days\n{safe(row['reason'], 500)}")
 
 
 @strikes.register()

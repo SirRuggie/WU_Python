@@ -13,7 +13,8 @@ from pymongo.errors import DuplicateKeyError
 from utils import recruit_links
 
 DEFAULT_EXEMPT_ROLE = 769130325460254740
-STRIKE_DAYS = 90
+STRIKE_DAYS = 60
+IMPORT_DAYS = 90
 
 
 def utc(value: datetime) -> datetime:
@@ -135,7 +136,7 @@ class StrikeService:
     async def settings(self, guild_id: int) -> dict:
         saved = await self.mongo.strike_settings.find_one({'_id': str(int(guild_id))})
         return {'guild_id': int(guild_id), 'exempt_role_ids': [DEFAULT_EXEMPT_ROLE],
-                'retention_days': STRIKE_DAYS, **(saved or {})}
+                **(saved or {}), 'retention_days': STRIKE_DAYS}
 
     async def monitor_activation(self, guild_id: int) -> datetime:
         """Persist the live-monitor launch boundary before reading any wars."""
@@ -651,7 +652,7 @@ class StrikeService:
         for war in wars:
             try:
                 validate_war(war, now=now)
-                if stamp(war['end_time']) < now - timedelta(days=STRIKE_DAYS):
+                if stamp(war['end_time']) < now - timedelta(days=IMPORT_DAYS):
                     raise ValueError('Outside the 90-day import window.')
                 rows = await self._war_rows(guild_id, war, owner_cache=owner_cache,
                                             leave_cache=leave_cache, deferred=report['deferred_accounts'])
@@ -683,7 +684,7 @@ class StrikeService:
         for war in cwl_wars:
             try:
                 validate_cwl_war(war, now=now)
-                if stamp(war['end_time']) < now - timedelta(days=STRIKE_DAYS):
+                if stamp(war['end_time']) < now - timedelta(days=IMPORT_DAYS):
                     raise ValueError('Outside the 90-day import window.')
                 rows = await self._cwl_rows(guild_id, war, owner_cache=cwl_owner_cache)
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
@@ -864,7 +865,7 @@ class StrikeService:
         results = {'wars': 0, 'cwl_wars': 0, 'cwl_records': 0, 'cwl_missed': 0,
                    'applied': 0, 'existing': 0, 'strikes': 0,
                    'excluded': len(excluded), 'skipped': [], 'deferred_accounts': []}
-        cutoff = now - timedelta(days=STRIKE_DAYS)
+        cutoff = now - timedelta(days=IMPORT_DAYS)
         owner_cache = {}
         leave_cache = {}
         for war in preview['wars']:
