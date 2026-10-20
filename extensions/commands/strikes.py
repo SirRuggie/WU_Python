@@ -357,10 +357,13 @@ async def replacement_panel(store, state, *, notice=''):
                REPLACEMENT_SORTS.get(sort_mode, 'Priority')]
     children = [Text(content='## Replacements'),
                 Text(content=' · '.join(safe(item, 60) for item in filters))]
+    messages = []
     if state.get('refresh_warning'):
-        children.append(Text(content='Some clans could not refresh; showing last known data.'))
+        messages.append('Some clans could not refresh; showing last known data.')
     if notice:
-        children.append(Text(content=safe(notice, 180)))
+        messages.append(safe(notice, 180))
+    if messages:
+        children.append(Text(content='\n'.join(messages)))
     if showing:
         children.append(Text(content='\n\n'.join(
             replacement_browser_line(start + index, row, clan_names)
