@@ -2,6 +2,9 @@
 import json
 
 PERMISSIONS = {
+    'strikes': ('Strikes · Settings', 'View history and manage leave, exemptions and fillers.'),
+    'strikes_add': ('Strikes · Add', 'Add strikes and import wars in the dashboard; use /strikes add in Discord.'),
+    'strikes_remove': ('Strikes · Remove', 'Remove strikes in the dashboard and Discord.'),
     'clans': ('Clan management', 'Add, remove and update family clans, roles, channels and artwork.'),
     'text_commands': ('Command triggers', 'Create trigger replies and manage Image Gallery.'),
     'cwl': ('CWL management', 'Seasons, clans, rosters, messages, reminders, results and exports.'),
@@ -12,6 +15,9 @@ PERMISSIONS = {
     'server_tools': ('Connections', 'BAND connection status and debug controls.'),
 }
 SECTION_SCOPE = {
+    'strikes': 'strikes',
+    'strikes_add': 'strikes_add',
+    'strikes_remove': 'strikes_remove',
     'clans': 'clans',
     'text_commands': 'text_commands',
     **dict.fromkeys(('recruit', 'recruitment_questions', 'recruitment_staff_thread'), 'recruitment'),
@@ -33,11 +39,13 @@ def scopes(store, user_id):
 
 async def dashboard_allowed(actor, section, db):
     scope = SECTION_SCOPE.get(section)
-    if not scope:
+    if not scope and section != 'strikes_read':
         return False
     if actor.get('guild_owner') or actor.get('user_id') == '505227988229554179':
         return True
     grant = await db.bot_config.find_one({'_id': 'dashboard-access:' + actor['user_id']}) or {}
     permissions = grant.get('permissions', [])
     # Web requests also check local grants; queued actions reread shared grants.
-    return scope in permissions and ('dashboard_scopes' not in actor or scope in actor['dashboard_scopes'])
+    eligible = {'strikes', 'strikes_add', 'strikes_remove'} if section == 'strikes_read' else {scope}
+    effective = set(permissions) & set(actor.get('dashboard_scopes', permissions))
+    return bool(eligible & effective)

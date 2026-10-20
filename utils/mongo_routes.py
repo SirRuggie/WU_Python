@@ -68,6 +68,12 @@ DEFAULT_ROUTES = MappingProxyType({
     'fwa_sync_deliveries': Namespace("settings", 'fwa_sync_deliveries'),
     'legacy_fwa_sync_alerts': Namespace("settings", 'fwa_sync_alerts'),
     'ticket_thread_rename_runs': Namespace("settings", 'ticket_thread_rename_runs'),
+    'strike_records': Namespace("settings", 'strike_records'),
+    'strike_settings': Namespace("settings", 'strike_settings'),
+    'strike_leaves': Namespace("settings", 'strike_leaves'),
+    'strike_leave_history': Namespace("settings", 'strike_leave_history'),
+    'strike_profiles': Namespace("settings", 'strike_profiles'),
+    'strike_imports': Namespace("settings", 'strike_imports'),
 })
 
 

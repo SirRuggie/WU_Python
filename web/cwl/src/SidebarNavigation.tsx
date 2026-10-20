@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export type DashboardView = 'declaration' | 'image-gallery' | 'tickets' | 'staff-overview' | 'clan-management' | 'members-settings' | 'applications-settings' | 'fwa-settings' | 'connections-settings' | 'cwl-returns' | 'text-commands' | 'manage' | 'reminders' | 'todo' | 'home' | 'exports' | 'signup' | 'assignments' | 'roster' | 'publication' | 'participation' | 'bonuses' | 'staff' | 'access'
+export type DashboardView = 'declaration' | 'image-gallery' | 'tickets' | 'staff-overview' | 'clan-management' | 'strikes' | 'members-settings' | 'applications-settings' | 'fwa-settings' | 'connections-settings' | 'cwl-returns' | 'text-commands' | 'manage' | 'reminders' | 'todo' | 'home' | 'exports' | 'signup' | 'assignments' | 'roster' | 'publication' | 'participation' | 'bonuses' | 'staff' | 'access'
 type Item = { view: DashboardView; label: string; icon: string; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: string; items: Item[]; access?: 'staff' | 'owner' }
 // Add future working features here; permission checks still live on the server.
@@ -25,6 +25,7 @@ const sections: Section[] = [
   ] },
   { id: 'clans', label: 'Clan management', icon: '🛡', items: [
     {view:'clan-management',label:'Family clans',icon:'◈',permissions:['clans']},
+    {view:'strikes',label:'Strikes',icon:'⚑',permissions:['strikes','strikes_add','strikes_remove']},
   ] },
   { id: 'tickets', label: 'Tickets', icon: '✉', items: [
     { view: 'tickets', label: 'Browse tickets', icon: '▤', permissions: ['tickets'] },

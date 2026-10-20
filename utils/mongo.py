@@ -27,6 +27,13 @@ class MongoClient(AsyncMongoClient):
         # owned by utils.component_state; durable tickets never enter here.
         self.component_state = collection_for(self, "component_state", routes=routes)
         self.clans = collection_for(self, "clans", routes=routes)
+        # Strike history is permanent; 90-day expiry is a query rule, not TTL.
+        self.strike_records = collection_for(self, "strike_records", routes=routes)
+        self.strike_settings = collection_for(self, "strike_settings", routes=routes)
+        self.strike_leaves = collection_for(self, "strike_leaves", routes=routes)
+        self.strike_leave_history = collection_for(self, "strike_leave_history", routes=routes)
+        self.strike_profiles = collection_for(self, "strike_profiles", routes=routes)
+        self.strike_imports = collection_for(self, "strike_imports", routes=routes)
         self.fwa_data = collection_for(self, "fwa_data", routes=routes)
         self.fwa_band_data = collection_for(self, "fwa_band_data", routes=routes)
         self.ticket_setup = collection_for(self, "ticket_setup", routes=routes)
