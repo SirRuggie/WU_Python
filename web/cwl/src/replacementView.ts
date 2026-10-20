@@ -10,3 +10,18 @@ export function groupReplacements<T extends { clan_tag?: string | null; clan_nam
   }
   return [...groups.values()]
 }
+
+export type RosterAccount = { player_tag: string; player_name: string; is_manual: boolean }
+
+export function selectableTags(accounts: RosterAccount[]): string[] {
+  return accounts.filter(account => !account.is_manual).map(account => account.player_tag)
+}
+
+export function toggleRosterTag(selected: string[], tag: string, accounts: RosterAccount[]): string[] {
+  if (!selectableTags(accounts).includes(tag)) return selected
+  return selected.includes(tag) ? selected.filter(value => value !== tag) : [...selected, tag]
+}
+
+export function bulkSaveMessage(result: { added_count: number; skipped_count: number }): string {
+  return `${result.added_count} ${result.added_count === 1 ? 'account' : 'accounts'} added.${result.skipped_count ? ` ${result.skipped_count} already listed.` : ''}`
+}

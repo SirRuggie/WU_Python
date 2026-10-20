@@ -420,7 +420,8 @@ class StrikeService:
 
     async def set_replacement_preference(self, guild_id: int, player_tag: str,
                                          priority: str, note: str, actor_id: int,
-                                         *, clan_tag: str, player_name=None) -> dict:
+                                         *, clan_tag: str, player_name=None,
+                                         only_if_unmarked=False) -> dict | None:
         """Mark one account for replacement in its verified current family clan."""
         player, clan = tag(player_tag), tag(clan_tag)
         if priority not in ('replace_first', 'high', 'normal'):
@@ -438,8 +439,21 @@ class StrikeService:
                    'filler': priority == 'replace_first', 'filler_clan_tag': clan}
         if player_name:
             changes['player_name'] = str(player_name)
-        await self.mongo.strike_profiles.update_one(
-            {'_id': f'{int(guild_id)}:{player}'}, {'$set': changes}, upsert=True)
+        query = {'_id': f'{int(guild_id)}:{player}'}
+        if only_if_unmarked:
+            # A mark in another clan is inactive and may be replaced after transfer.
+            # A current-clan mark wins even when two staff members submit together.
+            query['$nor'] = [
+                {'replacement_listed': True, 'replacement_clan_tag': clan},
+                {'filler': True, 'filler_clan_tag': clan},
+            ]
+        try:
+            await self.mongo.strike_profiles.update_one(
+                query, {'$set': changes}, upsert=True)
+        except DuplicateKeyError:
+            if only_if_unmarked:
+                return None
+            raise
         return changes
 
     async def clear_replacement_preference(self, guild_id: int, player_tag: str,

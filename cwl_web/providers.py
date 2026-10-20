@@ -246,6 +246,30 @@ class LiveProviders:
                 "cwl_league": (body.get("warLeague") or {}).get("name") or "Unranked"}
 
 
+    async def clan_roster(self, value):
+        """Fetch and validate the current official clan member list."""
+        clan_tag = tag(value)
+        body = await self._coc("clans", clan_tag)
+        raw = body.get("memberList")
+        count = body.get("members")
+        if (not isinstance(raw, list) or type(count) is not int or count != len(raw)
+                or not 0 <= count <= 50 or not isinstance(body.get("name"), str)):
+            raise ProviderUnavailable("Incomplete Clash clan roster")
+        members = []
+        seen = set()
+        for item in raw:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                raise ProviderUnavailable("Incomplete Clash clan roster member")
+            try:
+                player_tag = tag(item.get("tag"))
+            except ValueError as exc:
+                raise ProviderUnavailable("Invalid Clash clan roster member") from exc
+            if player_tag in seen:
+                raise ProviderUnavailable("Duplicate Clash clan roster member")
+            seen.add(player_tag)
+            members.append({"tag": player_tag, "name": item["name"]})
+        return {"tag": clan_tag, "name": body["name"], "members": members}
+
     async def _league_get(self, path):
         if not self.coc_token:
             raise ProviderUnavailable("Clash API is not configured")
@@ -421,6 +445,13 @@ class FixtureProviders:
         value = tag(value)
         names = {"#R2Y": "Fixture Family", "#J2Y": "Other Fixture Clan", "#C2Y": "Fixture Hosting"}
         return {"tag": value, "name": names.get(value, "Fixture Clan")}
+
+    async def clan_roster(self, value):
+        clan_tag = tag(value)
+        clan = await self.clan(clan_tag)
+        return {**clan, "members": [{"tag": row["tag"], "name": row["name"]}
+                                     for row in self.players.values()
+                                     if row.get("current_clan_tag") == clan_tag]}
 
     async def league_group(self, clan_tag):
         raise ProviderUnavailable("League data is unavailable in fixture mode")

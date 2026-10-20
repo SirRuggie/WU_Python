@@ -486,6 +486,88 @@ async def _verified_replacement_player(request, player_tag):
     return profile
 
 
+async def _live_replacement_roster(request, db, clan_value):
+    clan_tag = tag(clan_value)
+    if not await db.clans.find_one({'tag': clan_tag}, {'_id': 1}):
+        raise ValueError('Choose a registered family clan.')
+    try:
+        roster = await request.app['providers'].clan_roster(clan_tag)
+    except ProviderUnavailable as exc:
+        raise web.HTTPServiceUnavailable(text='Current clan members are unavailable. Try again.') from exc
+    if roster.get('tag') != clan_tag or not isinstance(roster.get('members'), list):
+        raise web.HTTPServiceUnavailable(text='Current clan members could not be verified. Try again.')
+    return roster
+
+
+@endpoint(scope='strikes')
+async def replacement_roster(request):
+    clan = request.query.get('clan')
+    if not clan:
+        raise ValueError('Choose a clan.')
+    async with shared.mongo(request) as db:
+        roster = await _live_replacement_roster(request, db, clan)
+        tags = [row['tag'] for row in roster['members']]
+        profiles = await db.strike_profiles.find(
+            {'guild_id': GUILD_ID, 'player_tag': {'$in': tags}}).to_list(length=None)
+    by_tag = {row['player_tag']: row for row in profiles}
+    return web.json_response({'clan_tag': roster['tag'], 'clan_name': roster['name'],
+        'accounts': [{'player_tag': row['tag'], 'player_name': row['name'],
+                      'is_manual': bool(((by_tag.get(row['tag']) or {}).get('replacement_listed')
+                                         and (by_tag.get(row['tag']) or {}).get('replacement_clan_tag') == roster['tag'])
+                                        or ((by_tag.get(row['tag']) or {}).get('filler')
+                                            and (by_tag.get(row['tag']) or {}).get('filler_clan_tag') == roster['tag']))}
+                     for row in roster['members']]})
+
+
+@endpoint
+async def bulk_add_replacement_list(request):
+    data = await body(request, {'clan_tag', 'player_tags', 'priority', 'note'})
+    raw_tags = data.get('player_tags')
+    if not isinstance(raw_tags, list) or not 1 <= len(raw_tags) <= 50:
+        raise ValueError('Choose 1 to 50 accounts.')
+    if any(not isinstance(value, str) for value in raw_tags):
+        raise ValueError('Choose valid player accounts.')
+    selected = [tag(value) for value in raw_tags]
+    if len(set(selected)) != len(selected):
+        raise ValueError('Select each account only once.')
+    priority = data.get('priority')
+    note = data.get('note', '')
+    if priority not in ('replace_first', 'high', 'normal'):
+        raise ValueError('Choose a replacement priority.')
+    if not isinstance(note, str) or len(note.strip()) > 500:
+        raise ValueError('Keep the note under 500 characters.')
+    from .app import _session
+    actor = int(_session(request)['user_id'])
+    async with shared.mongo(request) as db:
+        roster = await _live_replacement_roster(request, db, data.get('clan_tag'))
+        members = {row['tag']: row for row in roster['members']}
+        absent = [value for value in selected if value not in members]
+        if absent:
+            raise web.HTTPConflict(text='Some selected accounts left this clan. Refresh the list and try again.')
+        existing = await db.strike_profiles.find(
+            {'guild_id': GUILD_ID, 'player_tag': {'$in': selected}}).to_list(length=None)
+        already = {row['player_tag'] for row in existing
+                   if (row.get('replacement_listed') and row.get('replacement_clan_tag') == roster['tag'])
+                   or (row.get('filler') and row.get('filler_clan_tag') == roster['tag'])}
+        ledger = await service(request, db)
+        added, skipped = [], [value for value in selected if value in already]
+        try:
+            for value in selected:
+                if value in already:
+                    continue
+                result = await ledger.set_replacement_preference(
+                    GUILD_ID, value, priority, note, actor, clan_tag=roster['tag'],
+                    player_name=members[value]['name'], only_if_unmarked=True)
+                (added if result is not None else skipped).append(value)
+        except Exception:
+            _job_log.exception('Replacement bulk add stopped after partial write')
+            return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,
+                'added_count': len(added), 'skipped_count': len(skipped),
+                'error': 'Bulk add stopped. Retry to finish; saved choices will be skipped.'}, status=503)
+    return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,
+                              'added_count': len(added), 'skipped_count': len(skipped)})
+
+
 @endpoint
 async def add_replacement_list(request):
     data = await body(request, {'player_tag', 'priority', 'note'})
@@ -749,6 +831,8 @@ routes = [web.get(API + '/overview', overview), web.get(API + '/accounts', accou
           web.get(API + '/settings', settings), web.put(API + '/settings/roles', save_roles),
           web.post(API + '/settings/leaves', save_leave), web.delete(API + '/settings/leaves/{member_id}', remove_leave),
           web.get(API + '/replacements', replacements), web.put(API + '/replacements/{player_tag}', save_filler),
+          web.get(API + '/replacement-roster', replacement_roster),
+          web.post(API + '/replacement-list/bulk', bulk_add_replacement_list),
           web.post(API + '/replacement-list', add_replacement_list),
           web.put(API + '/replacement-list/{player_tag}', update_replacement_list),
           web.delete(API + '/replacement-list/{player_tag}', delete_replacement_list),

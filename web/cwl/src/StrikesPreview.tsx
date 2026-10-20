@@ -44,6 +44,7 @@ window.fetch = async (input, init) => {
   else if (path.endsWith('/members')) data = { members: members.map(item => ({ ...item, accounts: [] })) }
   else if (path.includes('/members/') && path.endsWith('/accounts')) data = { member: members[0] }
   else if (path.endsWith('/settings')) data = settings
+  else if (path.endsWith('/replacement-roster')) data = { accounts: (url.searchParams.get('clan') === '#FWA' ? [{ player_tag: '#P22ABC', player_name: 'CastleFox', is_manual: true }, { player_tag: '#P44DEF', player_name: 'MiniWolf', is_manual: false }, { player_tag: '#P88NEW', player_name: 'StoneBird', is_manual: false }] : [{ player_tag: '#P55GHI', player_name: 'GreenOak', is_manual: true }, { player_tag: '#P66JKL', player_name: 'RedRock', is_manual: false }]) }
   else if (path.endsWith('/replacements')) data = { candidates: candidates.filter(item => !url.searchParams.get('clan') || item.clan_tag === url.searchParams.get('clan')), clans: [{ tag: '#FWA', name: 'Warriors United FWA', is_fwa: true }, { tag: '#FWA2', name: 'WU FWA Two', is_fwa: true }, { tag: '#NORTH', name: 'WU North', is_fwa: false }] }
   else if (path.endsWith('/import/preview') || path.endsWith('/import/apply')) {
     const job_id = crypto.randomUUID()

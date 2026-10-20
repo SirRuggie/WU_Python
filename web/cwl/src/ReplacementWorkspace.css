@@ -35,3 +35,19 @@
 .replacement-empty{padding:20px;color:#b9c5d5}
 @media(max-width:760px){.replacement-filters{grid-template-columns:1fr 1fr}.replacement-filters form{grid-column:1/-1}.replacement-row-main{flex-wrap:wrap;gap:8px}.replacement-identity{flex-basis:calc(100% - 90px)}.replacement-stats{order:3;flex-basis:100%}.replacement-more{margin-left:auto}.replacement-priority{order:2}.replacement-editor{display:grid;grid-template-columns:1fr 1fr}.replacement-editor h2,.replacement-editor label:last-of-type{grid-column:1/-1}}
 @media(max-width:440px){.replacement-filters{grid-template-columns:1fr}.replacement-filters form{grid-column:1}.replacement-editor{grid-template-columns:1fr}.replacement-editor label:last-of-type{grid-column:1}.replacement-edit-actions{width:100%}}
+.replacement-editor .replacement-add-mode,.replacement-editor .replacement-clan-choice,.replacement-editor .replacement-tag-choice{flex:1 1 180px}
+.replacement-add-details{display:flex;gap:12px;width:100%}
+.replacement-add-details label:first-child{flex:1 1 180px}
+.replacement-add-details label:last-child{flex:2 1 260px}
+.replacement-roster{width:100%;border:1px solid #414653;border-radius:10px;padding:11px}
+.replacement-roster-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.replacement-roster-head strong{font-size:13px}
+.replacement-roster-head button{font-size:12px;padding:5px 8px}
+.replacement-roster-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:6px;max-height:275px;overflow:auto}
+.replacement-editor .replacement-roster-list label{display:flex;align-items:center;gap:9px;padding:8px;border:1px solid #414653;border-radius:7px;color:inherit;cursor:pointer;font-weight:400}
+.replacement-editor .replacement-roster-list label.is-listed{opacity:.65;cursor:default}
+.replacement-roster-list input[type=checkbox]{width:16px;min-width:16px;height:16px;margin:0}
+.replacement-roster-list label span{display:grid;gap:2px;min-width:0;flex:1}
+.replacement-roster-list label span strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.replacement-roster-list label small{font-size:11px;color:#aeb8c8}
+@media(max-width:440px){.replacement-add-details{display:grid;grid-template-columns:1fr}.replacement-roster-list{grid-template-columns:1fr}}
