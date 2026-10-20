@@ -32,7 +32,7 @@ def test_clan_page_moves_while_other_clan_remains_selected_and_component_bounds_
                  'town_hall': 4, 'weight': 149000, 'sort': 'priority',
                  'page': 0, 'clan_page': 1, 'refresh_warning': True}
         async def weights(_tags): return {}
-        with patch.object(strikes, 'live_weights', weights):
+        with patch.object(strikes, 'cached_weights', lambda _tags: {}):
             panels = await strikes.replacement_panel(Store(clans), state, notice='Test notice')
         payload, attachments = panels[0].build()
         assert attachments == []

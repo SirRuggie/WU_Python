@@ -7,6 +7,7 @@ import math
 import uuid
 import os
 import sqlite3
+import time
 
 import coc
 import hikari
@@ -31,6 +32,14 @@ PAGE_SIZE = 8
 POLL_SECONDS = 10 * 60
 _task = None
 _weight_provider = LiveProviders(coc_token="", mongo_uri="")
+_weight_cache = {}
+_weight_cache_at = 0.0
+_weight_retry_at = 0.0
+_weight_refresh_task = None
+_weight_warm_task = None
+_weight_cached_tags = set()
+_WEIGHT_TTL_SECONDS = 10 * 60
+_WEIGHT_RETRY_SECONDS = 60
 
 
 async def authorized(ctx, mongo, scope='strikes_read') -> bool:
@@ -168,8 +177,7 @@ class Add(lightbulb.SlashCommand, name='add', description='Give one player accou
 
     @lightbulb.invoke
     @lightbulb.di.with_di
-    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED,
-                     coc_client: coc.Client = lightbulb.di.INJECTED):
+    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED):
         await ctx.defer(ephemeral=True)
         if not await authorized(ctx, mongo, 'strikes_add'):
             await ctx.respond('Staff access required.', ephemeral=True)
@@ -340,7 +348,7 @@ async def replacement_panel(store, state, *, notice=''):
     th = state.get('town_hall')
     sort_mode = state.get('sort', 'priority')
     profiles = await store.mongo.strike_profiles.find({'guild_id': guild}, {'player_tag': 1}).to_list(length=None)
-    weights = await live_weights([row['player_tag'] for row in profiles])
+    weights = cached_weights([row['player_tag'] for row in profiles])
     rows = await store.replacement(guild, weight, clan_tag=selected_clan,
                                    town_hall=th, browse_all=True, family_scope='all',
                                    limit=5000, weights=weights)
@@ -484,8 +492,7 @@ async def replacement_clan_page(ctx, action_id, mongo: MongoClient = lightbulb.d
 @lightbulb.di.with_di
 async def replacement_clear(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
     return await _replacement_update(ctx, mongo, action_id,
-        {'clan_tag': None, 'town_hall': None, 'weight': None, 'sort': 'priority', 'page': 0, 'clan_page': 0,
-                 'refresh_warning': refresh_failures > 0})
+        {'clan_tag': None, 'town_hall': None, 'weight': None, 'sort': 'priority', 'page': 0, 'clan_page': 0})
 
 
 @register_action('strike_replace_weight', opens_modal=True, no_return=True, preload_state=False)
@@ -528,27 +535,6 @@ async def replacement_weight_submit(ctx, action_id, mongo: MongoClient = lightbu
     await ctx.interaction.edit_initial_response(components=components, **NO_MENTIONS)
 
 
-async def _refresh_replacement_rosters(mongo, coc_client, guild_id):
-    clans = await mongo.clans.find({'tag': {'$type': 'string'}}, {'tag': 1}).to_list(length=None)
-    semaphore = asyncio.Semaphore(4)
-    failed = 0
-    async def refresh(clan):
-        nonlocal failed
-        async with semaphore:
-            try:
-                current = await coc_client.get_clan(clan['tag'])
-                roster = [{'tag': member.tag, 'name': member.name,
-                           'town_hall': getattr(member, 'town_hall', None)} for member in current.members]
-                await StrikeService(mongo).sync_roster(guild_id, clan['tag'], roster)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                failed += 1
-    try:
-        await asyncio.wait_for(asyncio.gather(*(refresh(clan) for clan in clans)), timeout=12)
-    except asyncio.TimeoutError:
-        failed += 1
-    return failed
 
 
 @strikes.register()
@@ -562,11 +548,9 @@ class Replacements(lightbulb.SlashCommand, name='replacements',
         if not await authorized(ctx, mongo):
             await ctx.respond('Staff access required.', ephemeral=True)
             return
-        refresh_failures = await _refresh_replacement_rosters(mongo, coc_client, int(ctx.guild_id))
         state = {'_id': uuid.uuid4().hex, 'user_id': int(ctx.user.id),
                  'guild_id': int(ctx.guild_id), 'clan_tag': None, 'town_hall': None,
-                 'weight': None, 'sort': 'priority', 'page': 0, 'clan_page': 0,
-                 'refresh_warning': refresh_failures > 0}
+                 'weight': None, 'sort': 'priority', 'page': 0, 'clan_page': 0}
         await insert_state(mongo, state)
         try:
             components = await replacement_panel(StrikeService(mongo), state)
@@ -590,23 +574,67 @@ def replacement_line(index, row):
             f"{row['current_clan_tag']} · {weight_text} · {row['active_strikes']} active strikes{note}")
 
 
-async def live_weights(tags):
-    try:
-        fed = await _weight_provider.weights(tags)
-    except ProviderUnavailable:
-        fed = {}
-    result = {player: item['weight'] for player, item in fed.items()}
+def _manual_weights():
     path = os.getenv('CWL_WEB_DB_PATH', '').strip()
-    if path:
-        def local():
-            try:
-                with sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=2) as db:
-                    return {row[0]: row[1] for row in db.execute(
-                        'SELECT tag,weight FROM player_weights WHERE weight IS NOT NULL')}
-            except (sqlite3.Error, OSError):
-                return {}
-        result.update(await asyncio.to_thread(local))
-    return result
+    if not path:
+        return {}
+    try:
+        with sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=0.2) as db:
+            return {row[0]: row[1] for row in db.execute(
+                'SELECT tag,weight FROM player_weights WHERE weight IS NOT NULL')}
+    except (sqlite3.Error, OSError):
+        return {}
+
+
+async def _provider_weights(tags):
+    feed = await _weight_provider.weights(tags)
+    return {player: item['weight'] for player, item in feed.items()}
+
+
+async def live_weights(tags):
+    """Compatibility helper for callers that explicitly want a fresh feed."""
+    try:
+        result = await _provider_weights(tags)
+    except ProviderUnavailable:
+        result = {}
+    return {**result, **_manual_weights()}
+
+
+async def _refresh_weight_cache(tags):
+    global _weight_cache, _weight_cache_at, _weight_retry_at, _weight_cached_tags
+    try:
+        fresh = await _provider_weights(tags)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        _weight_retry_at = time.monotonic() + _WEIGHT_RETRY_SECONDS
+    else:
+        _weight_cache = fresh
+        _weight_cached_tags = set(tags)
+        _weight_cache_at = time.monotonic()
+        _weight_retry_at = 0.0
+
+
+def cached_weights(tags):
+    """Return available weights immediately; one background request refreshes stale data."""
+    global _weight_refresh_task
+    now = time.monotonic()
+    if tags and now >= _weight_retry_at and (now - _weight_cache_at >= _WEIGHT_TTL_SECONDS or set(tags) - _weight_cached_tags):
+        if _weight_refresh_task is None or _weight_refresh_task.done():
+            _weight_refresh_task = asyncio.create_task(_refresh_weight_cache(list(dict.fromkeys(tags))),
+                                                        name='strike-weight-refresh')
+    return {**_weight_cache, **_manual_weights()}
+
+
+async def _warm_weight_cache(mongo):
+    try:
+        profiles = await mongo.strike_profiles.find(
+            {'guild_id': WARRIORS_UNITED_GUILD_ID}, {'player_tag': 1}).to_list(length=None)
+        cached_weights([row['player_tag'] for row in profiles])
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        pass
 
 async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.Client):
     store = service(mongo, bot)
@@ -634,6 +662,7 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
             raise
         except Exception as error:
             print(f"[strikes] scan deferred for {clan['tag']}: {type(error).__name__}: {error}")
+    await _warm_weight_cache(mongo)
 
 
 async def loop(mongo, bot, coc_client):
@@ -652,19 +681,23 @@ async def loop(mongo, bot, coc_client):
 async def started(event, mongo: MongoClient = lightbulb.di.INJECTED,
                   bot: hikari.GatewayBot = lightbulb.di.INJECTED,
                   coc_client: coc.Client = lightbulb.di.INJECTED):
-    global _task
+    global _task, _weight_warm_task
     _task = asyncio.create_task(loop(mongo, bot, coc_client), name='strike-war-monitor')
+    _weight_warm_task = asyncio.create_task(_warm_weight_cache(mongo), name='strike-weight-warm')
 
 
 @loader.listener(hikari.StoppingEvent)
 async def stopped(event):
-    global _task
-    if _task and not _task.done():
-        _task.cancel()
-        try:
-            await _task
-        except asyncio.CancelledError:
-            pass
+    global _task, _weight_warm_task, _weight_refresh_task
+    tasks = [task for task in (_task, _weight_warm_task, _weight_refresh_task)
+             if task is not None and not task.done()]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    _task = None
+    _weight_warm_task = None
+    _weight_refresh_task = None
 
 
 loader.command(strikes, guilds=[WARRIORS_UNITED_GUILD_ID])

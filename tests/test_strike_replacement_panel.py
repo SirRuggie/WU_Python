@@ -46,7 +46,7 @@ def test_default_panel_queries_all_family_roster_and_th_filter(monkeypatch):
             calls.append((args, kwargs))
             return [candidate('#P2Y2', weight=149000)]
     async def weights(_tags): return {}
-    monkeypatch.setattr(strikes, 'live_weights', weights)
+    monkeypatch.setattr(strikes, 'cached_weights', lambda _tags: {})
     state = {'_id': 'token', 'guild_id': 1, 'clan_tag': '#P2Y', 'town_hall': 4,
              'weight': None, 'sort': 'priority', 'page': 0, 'clan_page': 0}
     panel = asyncio.run(strikes.replacement_panel(Store(), state))
