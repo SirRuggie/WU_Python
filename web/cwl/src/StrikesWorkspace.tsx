@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from './api'
 import { strikePermissions } from './strikePermissions'
+import { detailQuery, strikeBadge, warMatchup } from './strikeHistoryView'
 import { isStrikeImportJob, StrikeImportFailed, waitForStrikeImport, type StrikeImportJob } from './strikeImportJobs'
 import { defaultLeaveTags, selectedImportEntries, toggleLeaveTag } from './strikeSelections'
 import './StrikesWorkspace.css'
@@ -9,8 +10,11 @@ type Tab = 'history' | 'replacements' | 'leave' | 'settings' | 'import'
 type Clan = { tag: string; name: string; is_fwa?: boolean }
 type Account = { tag: string; name: string; current_clan_name?: string | null }
 type Member = { id: string; name: string; accounts: Account[] }
-type Entry = { id: string; player_tag: string; player_name: string; discord_id?: string | null; discord_name?: string | null; current_clan_name?: string | null; current_clan_tag?: string | null; war_clan_name?: string | null; war_clan_tag?: string | null; war_end?: string | null; kind: 'strike' | 'miss'; source: 'war' | 'manual'; status: 'active' | 'expired' | 'removed' | 'exempt' | 'recorded'; reason?: string | null; removed_reason?: string | null }
+type Entry = { id: string; war_key?: string | null; opponent_name?: string | null; player_tag: string; player_name: string; discord_id?: string | null; discord_name?: string | null; current_clan_name?: string | null; current_clan_tag?: string | null; war_clan_name?: string | null; war_clan_tag?: string | null; war_end?: string | null; kind: 'strike' | 'miss' | 'completed'; source: 'war' | 'manual'; status: 'active' | 'expired' | 'removed' | 'exempt' | 'recorded' | 'completed'; reason?: string | null; removed_reason?: string | null }
 type Overview = { entries: Entry[]; clans: Clan[]; total: number }
+type StrikeAccount = { player_tag: string; player_name: string; discord_id?: string | null; current_clan_tag?: string | null; current_clan_name?: string | null; clan_is_current?: boolean; active_strikes: number; total_strikes: number; last_strike_at?: string | null }
+type AccountOverview = { accounts: StrikeAccount[]; total: number; clans: Clan[] }
+type War = { war_key: string; clan_tag: string; clan_name: string; opponent_tag?: string; opponent_name: string; war_end: string; missed_accounts: number; strikes: number; one_missed: number }
 type Candidate = { player_tag: string; player_name: string; clan_tag: string; clan_name: string; weight: number | null; active_strikes: number; is_filler: boolean; weight_difference?: number | null; discord_id?: string | null; discord_name?: string | null }
 type Settings = { excluded_roles: { id: string; name: string }[]; roles: { id: string; name: string }[]; leaves: { discord_id: string; display_name: string; player_tags: string[]; resume_date: string }[] }
 type ImportEntry = { key: string; player_tag: string; player_name: string; clan_name: string; war_end: string; missed_attacks: number; will_strike: boolean; exempt?: boolean; duplicate?: boolean }
@@ -46,14 +50,24 @@ export default function StrikesWorkspace({ permissions, isOwner, userId }: { per
   const initialImport = useRef<ImportDraft>(access.add ? savedImport(userId) : { job: null, preview: null, excluded: [] })
   const [tab, setTab] = useState<Tab>(initialImport.current.job || initialImport.current.preview ? 'import' : 'history')
   const [overview, setOverview] = useState<Overview>({ entries: [], clans: [], total: 0 })
+  const [accountOverview, setAccountOverview] = useState<AccountOverview>({ accounts: [], clans: [], total: 0 })
+  const [selectedAccount, setSelectedAccount] = useState<StrikeAccount | null>(null)
   const [query, setQuery] = useState('')
   const [historyMember, setHistoryMember] = useState<Member | null>(null)
   const [historyMatches, setHistoryMatches] = useState<Member[]>([])
-  const [status, setStatus] = useState('all')
+  const [status, setStatus] = useState('strikes')
+  const [accountStatus, setAccountStatus] = useState<'active' | 'all'>('active')
+  const [showWarSearch, setShowWarSearch] = useState(false)
+  const [warQuery, setWarQuery] = useState('')
+  const [wars, setWars] = useState<War[]>([])
+  const [warLoading, setWarLoading] = useState(false)
+  const [warError, setWarError] = useState('')
+  const [selectedWar, setSelectedWar] = useState<War | null>(null)
   const [clan, setClan] = useState('')
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const historyRequest = useRef(0)
+  const accountRequest = useRef(0)
   const memberRequest = useRef(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -84,29 +98,54 @@ export default function StrikesWorkspace({ permissions, isOwner, userId }: { per
     const request = ++historyRequest.current
     setLoading(true); setError('')
     try {
-      const params = new URLSearchParams({ limit: '25', offset: String(page * 25) })
-      if (historyMember?.id || query.trim()) params.set('query', historyMember?.id || query.trim())
-      if (status !== 'all') params.set('status', status)
-      if (clan) params.set('clan', clan)
+      const params = detailQuery(page, status, selectedAccount?.player_tag, selectedWar?.war_key)
       const data = await api<Overview>(`/strikes/overview?${params}`)
       if (request === historyRequest.current) setOverview(data)
     } catch (err) { if (request === historyRequest.current) setError(errorText(err)) }
     finally { if (request === historyRequest.current) setLoading(false) }
-  }, [page, query, historyMember?.id, status, clan])
-  useEffect(() => { if (tab !== 'history') return; const timer = setTimeout(() => void refreshHistory(), 180); return () => clearTimeout(timer) }, [tab, refreshHistory])
+  }, [page, status, selectedWar?.war_key, selectedAccount?.player_tag])
+  const refreshAccounts = useCallback(async () => {
+    const request = ++accountRequest.current
+    setLoading(true); setError('')
+    try {
+      const params = new URLSearchParams({ limit: '25', offset: String(page * 25), status: accountStatus })
+      if (historyMember?.id || query.trim()) params.set('query', historyMember?.id || query.trim())
+      if (clan) params.set('clan', clan)
+      const data = await api<AccountOverview>(`/strikes/accounts?${params}`)
+      if (request === accountRequest.current) setAccountOverview(data)
+    } catch (err) { if (request === accountRequest.current) setError(errorText(err)) }
+    finally { if (request === accountRequest.current) setLoading(false) }
+  }, [page, query, historyMember?.id, clan, accountStatus])
+  useEffect(() => {
+    if (tab !== 'history') return
+    const timer = setTimeout(() => void (selectedAccount || selectedWar ? refreshHistory() : refreshAccounts()), 180)
+    return () => clearTimeout(timer)
+  }, [tab, selectedAccount, selectedWar, refreshHistory, refreshAccounts])
   useEffect(() => {
     if (!['history', 'leave'].includes(tab) || !memberQuery.trim()) { setMembers([]); return }
     let active = true
     const timer = setTimeout(() => { void api<{ members: Member[] }>(`/strikes/members?query=${encodeURIComponent(memberQuery.trim())}`).then(data => { if (active) setMembers(data.members) }).catch(() => { if (active) setMembers([]) }) }, 250)
     return () => { active = false; clearTimeout(timer) }
   }, [memberQuery, tab])
-  useEffect(() => { setPage(0) }, [query, historyMember?.id, status, clan])
+  useEffect(() => { setPage(0) }, [query, historyMember?.id, status, accountStatus, clan, selectedWar?.war_key, selectedAccount?.player_tag])
   useEffect(() => {
-    if (tab !== 'history' || historyMember || query.trim().length < 2 || query.trim().startsWith('#') || /^\d+$/.test(query.trim())) { setHistoryMatches([]); return }
+    if (tab !== 'history' || !showWarSearch) return
+    let active = true
+    const timer = setTimeout(() => {
+      setWarLoading(true); setWarError('')
+      const params = new URLSearchParams()
+      if (warQuery.trim()) params.set('query', warQuery.trim())
+      if (clan) params.set('clan', clan)
+      void api<{ wars: War[] }>(`/strikes/wars?${params}`).then(data => { if (active) setWars(data.wars) }).catch(err => { if (active) setWarError(errorText(err)) }).finally(() => { if (active) setWarLoading(false) })
+    }, 250)
+    return () => { active = false; clearTimeout(timer) }
+  }, [tab, showWarSearch, warQuery, clan])
+  useEffect(() => {
+    if (tab !== 'history' || selectedAccount || selectedWar || historyMember || query.trim().length < 2 || query.trim().startsWith('#') || /^\d+$/.test(query.trim())) { setHistoryMatches([]); return }
     let active = true
     const timer = setTimeout(() => { void api<{ members: Member[] }>(`/strikes/members?query=${encodeURIComponent(query.trim())}`).then(data => { if (active) setHistoryMatches(data.members) }).catch(() => { if (active) setHistoryMatches([]) }) }, 250)
     return () => { active = false; clearTimeout(timer) }
-  }, [query, historyMember, tab])
+  }, [query, historyMember, tab, selectedAccount, selectedWar])
   useEffect(() => { if (tab !== 'settings' && tab !== 'leave') return; void api<Settings>('/strikes/settings').then(setSettings).catch(err => setError(errorText(err))) }, [tab])
   const run = async (action: () => Promise<unknown>, success: string, after?: () => void | Promise<void>) => {
     setBusy(true); setError(''); setNotice('')
@@ -125,6 +164,19 @@ export default function StrikesWorkspace({ permissions, isOwner, userId }: { per
     setMembers(current => current.map(item => item.id === id ? member : item))
     setPlayerTag(member?.accounts[0]?.tag || '')
     setLeaveTags(defaultLeaveTags(member?.accounts || []))
+  }
+  const clearWar = () => { setSelectedWar(null); setStatus('strikes'); setWarQuery('') }
+  const backToAccounts = () => { setSelectedAccount(null); clearWar(); setQuery(''); setHistoryMember(null) }
+  const chooseAccount = (account: StrikeAccount) => { setSelectedAccount(account); setSelectedWar(null); setStatus(account.total_strikes === 0 ? 'recorded' : 'strikes'); setQuery(''); setHistoryMember(null); setPage(0) }
+  const chooseWar = (war: War) => { setSelectedAccount(null); setSelectedWar(war); setStatus('all'); setQuery(''); setHistoryMember(null); setShowWarSearch(false); setPage(0) }
+  const refreshAfterChange = async () => {
+    if (selectedAccount || selectedWar) await refreshHistory()
+    else await refreshAccounts()
+    if (selectedAccount) {
+      const data = await api<AccountOverview>(`/strikes/accounts?query=${encodeURIComponent(selectedAccount.player_tag)}&status=all`)
+      const updated = data.accounts.find(account => account.player_tag === selectedAccount.player_tag)
+      if (updated) setSelectedAccount(updated)
+    }
   }
   const selected = members.find(item => item.id === selectedMember)
   const importSelected = selectedImportEntries(preview?.entries || [], excluded)
@@ -189,12 +241,29 @@ export default function StrikesWorkspace({ permissions, isOwner, userId }: { per
     {notice && <div className="notice success" role="status">{notice}</div>}
 
     {tab === 'history' && <>
-      <div className="strikes-toolbar"><div className="strikes-history-search"><label>Find player or member<input type="search" value={query} onChange={event => { setQuery(event.target.value); setHistoryMember(null) }} placeholder="Name, tag or Discord ID" /></label>{historyMember && <button className="strikes-picked-member" onClick={() => { setHistoryMember(null); setQuery('') }}>Member: {historyMember.name} ×</button>}{historyMatches.length > 0 && <div className="strikes-search-matches" role="group" aria-label="Matching Discord members">{historyMatches.map(item => <button key={item.id} onClick={() => { setHistoryMember(item); setQuery(item.name); setHistoryMatches([]) }}>{item.name}<small>{item.id}</small></button>)}</div>}</div><label>Status<select value={status} onChange={event => setStatus(event.target.value)}><option value="all">All</option><option value="active">Active</option><option value="recorded">One missed</option><option value="expired">Expired</option><option value="removed">Removed</option><option value="exempt">Exempt</option></select></label><label>Clan<select value={clan} onChange={event => setClan(event.target.value)}><option value="">All clans</option>{overview.clans.map(item => <option key={item.tag} value={item.tag}>{item.name}</option>)}</select></label>{access.add && <button className="primary" onClick={() => { setManualOpen(open => !open); setSelectedMember(''); setPlayerTag('') }}>{manualOpen ? 'Close' : 'Add strike'}</button>}</div>
-      {manualOpen && access.add && <form className="card strikes-form" onSubmit={event => { event.preventDefault(); if (!playerTag || !reason.trim()) return; void run(() => api('/strikes/manual', 'POST', { player_tag: playerTag.trim(), reason: reason.trim(), request_id: manualRequestId }), 'Strike added.', async () => { setManualRequestId(crypto.randomUUID()); setReason(''); setManualOpen(false); await refreshHistory() }) }}><h2>Add a strike</h2><label>Find Discord member<input type="search" value={memberQuery} onChange={event => { setMemberQuery(event.target.value); setSelectedMember('') }} placeholder="Name or Discord ID" /></label>{members.length > 0 && <label>Member<select value={selectedMember} onChange={event => chooseMember(event.target.value)}><option value="">Choose member</option>{members.map(item => <option value={item.id} key={item.id}>{memberLabel(item)}</option>)}</select></label>}{selected && <label>Account<select value={playerTag} onChange={event => setPlayerTag(event.target.value)}>{selected.accounts.map(item => <option key={item.tag} value={item.tag}>{item.name} · {item.tag} {item.current_clan_name ? `· ${item.current_clan_name}` : ''}</option>)}</select></label>}{!selected && <label>Player tag<input value={playerTag} onChange={event => setPlayerTag(event.target.value)} placeholder="#PLAYERTAG" required /></label>}<label>Reason<input value={reason} onChange={event => setReason(event.target.value)} maxLength={300} required placeholder="Why is this strike needed?" /></label><button className="primary" disabled={busy || !playerTag.trim() || !reason.trim()}>{busy ? 'Saving…' : 'Add strike'}</button></form>}
-      <div className="strikes-list-head"><h2>History</h2><span>{loading ? 'Loading…' : `${overview.total} records`}</span></div>
-      {!loading && !error && overview.entries.length === 0 && <div className="card strikes-empty">No records found.</div>}
-      <div className="strikes-list">{overview.entries.map(item => <article className="card strikes-record" key={item.id}><div className="strikes-record-main"><div><strong>{item.player_name || item.player_tag}</strong><small>{item.player_tag} · {item.discord_name || (item.discord_id ? `Discord ${item.discord_id}` : 'No linked member')}</small></div><span className={`strikes-badge ${item.status}`}>{item.kind === 'miss' ? 'One missed' : item.status === 'active' ? 'Active strike' : `${item.status[0].toUpperCase()}${item.status.slice(1)} strike`}</span></div><div className="strikes-record-meta"><span>Current: <strong>{item.current_clan_name || 'No clan'}</strong></span><span>At the time: <strong>{item.war_clan_name || (item.source === 'manual' ? 'Manual' : 'Unknown')}</strong></span><span>{dateText(item.war_end)}</span></div>{item.reason && <p className="strikes-reason">{item.reason}</p>}{item.removed_reason && <p className="strikes-reason">Removed: {item.removed_reason}</p>}{access.remove && item.kind === 'strike' && item.status === 'active' && <div className="strikes-record-actions">{removeId !== item.id ? <button onClick={() => { setRemoveId(item.id); setRemoveReason('') }}>Remove strike</button> : <form onSubmit={event => { event.preventDefault(); if (!removeReason.trim()) return; void run(() => api(`/strikes/${encodeURIComponent(item.id)}/remove`, 'POST', { reason: removeReason.trim() }), 'Strike removed.', async () => { setRemoveId(''); await refreshHistory() }) }}><label>Why remove?<input value={removeReason} onChange={event => setRemoveReason(event.target.value)} required maxLength={300} /></label><button type="button" onClick={() => setRemoveId('')}>Cancel</button><button disabled={busy || !removeReason.trim()}>Confirm removal</button></form>}</div>}</article>)}</div>
+      <div className="strikes-toolbar">
+        {!selectedAccount && !selectedWar && <div className="strikes-history-search"><label>Find player or member<input type="search" value={query} onChange={event => { setQuery(event.target.value); setHistoryMember(null) }} placeholder="Name, tag or Discord ID" /></label>{historyMember && <button className="strikes-picked-member" onClick={() => { setHistoryMember(null); setQuery('') }}>Member: {historyMember.name} ×</button>}{historyMatches.length > 0 && <div className="strikes-search-matches" role="group" aria-label="Matching Discord members">{historyMatches.map(item => <button key={item.id} onClick={() => { setHistoryMember(item); setQuery(item.name); setHistoryMatches([]) }}>{item.name}<small>{item.id}</small></button>)}</div>}</div>}
+        {selectedAccount && <button onClick={backToAccounts}>← Players</button>}
+        {selectedAccount && <label>Status<select value={status} disabled={!!selectedWar} onChange={event => setStatus(event.target.value)}><option value="strikes">Strikes</option><option value="all">All records</option><option value="active">Active</option><option value="recorded">One missed</option><option value="expired">Expired</option><option value="removed">Removed</option><option value="exempt">Exempt</option></select></label>}
+        {!selectedAccount && !selectedWar && <label>Show<select value={accountStatus} onChange={event => setAccountStatus(event.target.value as 'active' | 'all')}><option value="active">Active strikes</option><option value="all">All accounts</option></select></label>}
+        {!selectedAccount && !selectedWar && <label>Clan<select value={clan} onChange={event => setClan(event.target.value)}><option value="">All clans</option>{accountOverview.clans.map(item => <option key={item.tag} value={item.tag}>{item.name}</option>)}</select></label>}
+        {access.add && <button className="primary" onClick={() => { setManualOpen(open => !open); setSelectedMember(''); setPlayerTag('') }}>{manualOpen ? 'Close' : 'Add strike'}</button>}
+      </div>
+      <div className="strikes-war-tools"><button aria-expanded={showWarSearch} onClick={() => setShowWarSearch(open => !open)}>{showWarSearch ? 'Close war search' : 'Find war'}</button>{selectedWar && <div className="strikes-selected-war"><span>{warMatchup(selectedWar.clan_name, selectedWar.opponent_name)} · {dateText(selectedWar.war_end)} · All records</span><button onClick={clearWar}>Clear war</button></div>}</div>
+      {showWarSearch && <div className="card strikes-war-search"><label>Find war<input type="search" value={warQuery} onChange={event => setWarQuery(event.target.value)} placeholder="Opponent, clan, or date" /></label>{warLoading ? <p role="status">Finding wars…</p> : warError ? <p role="alert">{warError}</p> : wars.length === 0 ? <p>No saved wars found.</p> : <div className="strikes-war-results">{wars.map(war => <button key={war.war_key} onClick={() => chooseWar(war)}><strong>{warMatchup(war.clan_name, war.opponent_name)}</strong><span>{dateText(war.war_end)} · {war.strikes} strikes · {war.one_missed} one missed</span></button>)}</div>}</div>}
+      {manualOpen && access.add && <form className="card strikes-form" onSubmit={event => { event.preventDefault(); if (!playerTag || !reason.trim()) return; void run(() => api('/strikes/manual', 'POST', { player_tag: playerTag.trim(), reason: reason.trim(), request_id: manualRequestId }), 'Strike added.', async () => { setManualRequestId(crypto.randomUUID()); setReason(''); setManualOpen(false); await refreshAfterChange() }) }}><h2>Add a strike</h2><label>Find Discord member<input type="search" value={memberQuery} onChange={event => { setMemberQuery(event.target.value); setSelectedMember('') }} placeholder="Name or Discord ID" /></label>{members.length > 0 && <label>Member<select value={selectedMember} onChange={event => chooseMember(event.target.value)}><option value="">Choose member</option>{members.map(item => <option value={item.id} key={item.id}>{memberLabel(item)}</option>)}</select></label>}{selected && <label>Account<select value={playerTag} onChange={event => setPlayerTag(event.target.value)}>{selected.accounts.map(item => <option key={item.tag} value={item.tag}>{item.name} · {item.tag} {item.current_clan_name ? `· ${item.current_clan_name}` : ''}</option>)}</select></label>}{!selected && <label>Player tag<input value={playerTag} onChange={event => setPlayerTag(event.target.value)} placeholder="#PLAYERTAG" required /></label>}<label>Reason<input value={reason} onChange={event => setReason(event.target.value)} maxLength={300} required placeholder="Why is this strike needed?" /></label><button className="primary" disabled={busy || !playerTag.trim() || !reason.trim()}>{busy ? 'Saving…' : 'Add strike'}</button></form>}
+      {selectedAccount || selectedWar ? <>
+      {selectedAccount && <div className="strikes-detail-context">{selectedAccount.player_tag} · {selectedAccount.current_clan_name ? `${selectedAccount.clan_is_current === false ? 'Last known' : 'Current'}: ${selectedAccount.current_clan_name}` : 'No clan'} · {selectedAccount.active_strikes} active strikes</div>}
+      <div className="strikes-list-head"><h2>{selectedAccount ? selectedAccount.player_name : 'War history'}</h2><span>{loading ? 'Loading…' : `${overview.total} records`}</span></div>
+      {!loading && !error && overview.entries.length === 0 && <div className="card strikes-empty">{status === 'strikes' ? 'No strikes found.' : 'No records found.'}</div>}
+      <div className="strikes-list">{overview.entries.map(item => <article className="card strikes-record" key={item.id}><div className="strikes-record-main"><div><strong>{item.player_name || item.player_tag}</strong><small>{item.player_tag} · {item.discord_name || (item.discord_id ? `Discord ${item.discord_id}` : 'No linked member')}</small></div><span className={`strikes-badge ${item.status}`}>{strikeBadge(item.kind, item.status)}</span></div><div className="strikes-record-meta"><span>Current: <strong>{item.current_clan_name || 'No clan'}</strong></span><span>{item.source === 'manual' ? 'Added in: ' : 'War: '}<strong>{item.source === 'manual' ? item.war_clan_name || 'Manual' : warMatchup(item.war_clan_name, item.opponent_name)}</strong></span><span>{dateText(item.war_end)}</span></div>{item.reason && <p className="strikes-reason">{item.reason}</p>}{item.removed_reason && <p className="strikes-reason">Removed: {item.removed_reason}</p>}{access.remove && item.kind === 'strike' && item.status === 'active' && <div className="strikes-record-actions">{removeId !== item.id ? <button onClick={() => { setRemoveId(item.id); setRemoveReason('') }}>Remove strike</button> : <form onSubmit={event => { event.preventDefault(); if (!removeReason.trim()) return; void run(() => api(`/strikes/${encodeURIComponent(item.id)}/remove`, 'POST', { reason: removeReason.trim() }), 'Strike removed.', async () => { setRemoveId(''); await refreshAfterChange() }) }}><label>Why remove?<input value={removeReason} onChange={event => setRemoveReason(event.target.value)} required maxLength={300} /></label><button type="button" onClick={() => setRemoveId('')}>Cancel</button><button disabled={busy || !removeReason.trim()}>Confirm removal</button></form>}</div>}</article>)}</div>
       {overview.total > 25 && <div className="strikes-pages"><button disabled={page === 0 || loading} onClick={() => setPage(value => value - 1)}>Previous</button><span>{page * 25 + 1}–{Math.min((page + 1) * 25, overview.total)} of {overview.total}</span><button disabled={(page + 1) * 25 >= overview.total || loading} onClick={() => setPage(value => value + 1)}>Next</button></div>}
+      </> : <>
+      <div className="strikes-list-head"><h2>Players</h2><span>{loading ? 'Loading…' : `${accountOverview.total} accounts`}</span></div>
+      {!loading && !error && accountOverview.accounts.length === 0 && <div className="card strikes-empty">No players with strike history found.</div>}
+      <div className="strikes-account-list">{accountOverview.accounts.map(account => <button className="card strikes-account-row" key={account.player_tag} onClick={() => chooseAccount(account)}><span className="strikes-account-name"><strong>{account.player_name || account.player_tag}</strong><small>{account.player_tag} · {account.current_clan_name ? `${account.clan_is_current === false ? 'Last known' : 'Current'}: ${account.current_clan_name}` : 'No clan'}</small></span><span className="strikes-account-count"><strong>{account.active_strikes}</strong> active {account.active_strikes === 1 ? 'strike' : 'strikes'}</span><span className="strikes-account-more">{account.total_strikes ? `${account.total_strikes} total · Last ${dateText(account.last_strike_at)}` : 'Missed attacks only'}</span><span aria-hidden="true">›</span></button>)}</div>
+      {accountOverview.total > 25 && <div className="strikes-pages"><button disabled={page === 0 || loading} onClick={() => setPage(value => value - 1)}>Previous</button><span>{page * 25 + 1}–{Math.min((page + 1) * 25, accountOverview.total)} of {accountOverview.total}</span><button disabled={(page + 1) * 25 >= accountOverview.total || loading} onClick={() => setPage(value => value + 1)}>Next</button></div>}
+      </>}
     </>}
 
     {tab === 'replacements' && <><div className="card strikes-form"><h2>Find FWA replacements</h2><p>Fillers first, then more strikes, then closest weight.</p><form className="strikes-inline" onSubmit={event => { event.preventDefault(); void fetchCandidates() }}><label>Recruit total war weight<input type="number" min="1" step="1" value={weight} onChange={event => setWeight(event.target.value)} placeholder="e.g. 115000" required /></label><button className="primary" disabled={busy || !weight || Number(weight) <= 0}>{busy ? 'Finding…' : 'Find matches'}</button></form></div>{replacementsLoaded && <><div className="strikes-list-head"><h2>Potential replacements</h2><span>{candidates.length} players</span></div>{candidates.length === 0 && <div className="card strikes-empty">No FWA players match yet.</div>}<div className="strikes-list">{candidates.map((item, index) => <article className="card strikes-candidate" key={item.player_tag}><div className="strikes-record-main"><div><small>#{index + 1} · {item.clan_name}</small><strong>{item.player_name}</strong><small>{item.player_tag}{item.discord_name ? ` · ${item.discord_name}` : ''}</small></div>{item.is_filler && <span className="strikes-badge filler">Filler</span>}</div><div className="strikes-candidate-facts"><span><strong>{item.active_strikes}</strong> active strikes</span><span><strong>{item.weight == null ? '—' : item.weight.toLocaleString()}</strong> weight</span><span><strong>{item.weight_difference == null ? '—' : item.weight_difference.toLocaleString()}</strong> weight gap</span></div>{access.manage && <label className="strikes-check"><input type="checkbox" checked={item.is_filler} disabled={busy} onChange={event => { const is_filler = event.target.checked; void run(() => api(`/strikes/replacements/${tagPath(item.player_tag)}`, 'PUT', { is_filler }), is_filler ? 'Marked as filler.' : 'Filler mark removed.', fetchCandidates) }} />Replace first (filler)</label>}</article>)}</div></>}</>}

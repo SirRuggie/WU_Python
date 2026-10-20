@@ -251,7 +251,8 @@ class StrikeService:
         return {**result, 'status': 'removed'}
 
     async def history(self, guild_id: int, *, player_tag=None, member_id=None,
-                      clan_tag=None, status=None, limit=50, skip=0, now=None, query=None) -> dict:
+                      clan_tag=None, status='strikes', limit=50, skip=0, now=None,
+                      query=None, war_key=None) -> dict:
         search = str(query or '').strip()
         query: dict[str, Any] = {'guild_id': int(guild_id)}
         if player_tag:
@@ -264,6 +265,10 @@ class StrikeService:
             query['$or'] = [{'member_id': int(member_id)}, {'player_tag': {'$in': linked_tags}}]
         if clan_tag:
             query['clan_tag'] = tag(clan_tag)
+        if war_key is not None:
+            if not isinstance(war_key, str) or not 8 <= len(war_key) <= 160:
+                raise ValueError('Choose a saved war.')
+            query['war_key'] = war_key
         if search:
             import re
             expression = re.escape(search[:80])
@@ -275,19 +280,21 @@ class StrikeService:
                 except ValueError:
                     pass
             query.setdefault('$and', []).append({'$or': terms})
-        if status is None:
+        if status == 'strikes':
+            query['kind'] = 'strike'
+        elif status in (None, 'all'):
             query['kind'] = {'$ne': 'completed'}
         if status == 'active':
             query.update(kind='strike', revoked_at={'$exists': False},
                          expires_at={'$gt': utc(now or datetime.now(timezone.utc))})
-        elif status in ('expired', 'removed', 'missed', 'exempt', 'completed'):
+        elif status in ('strikes', 'all', None, 'expired', 'removed', 'missed', 'exempt', 'completed'):
             pass
         elif status is not None:
             raise ValueError('Unknown history status.')
         limit = max(1, min(100, int(limit)))
         skip = max(0, int(skip))
         # Post-filtered statuses are paged after classification to preserve counts.
-        if status and status != 'active':
+        if status in ('expired', 'removed', 'missed', 'exempt', 'completed'):
             rows = await self.mongo.strike_records.find(query).sort('occurred_at', -1).to_list(length=None)
             classified = [{**row, 'status': status_of(row, now)} for row in rows]
             classified = [row for row in classified if row['status'] == status]
@@ -295,6 +302,121 @@ class StrikeService:
         total = await self.mongo.strike_records.count_documents(query)
         rows = await self.mongo.strike_records.find(query).sort('occurred_at', -1).skip(skip).limit(limit).to_list(length=limit)
         return {'items': [{**row, 'status': status_of(row, now)} for row in rows], 'total': total}
+
+    async def account_list(self, guild_id: int, *, query=None, clan_tag=None,
+                           status='active', limit=25, skip=0) -> dict:
+        """One row per account, with active and lifetime strike counts."""
+        if status not in ('active', 'all'):
+            raise ValueError('Choose active or all accounts.')
+        search = str(query or '').strip()
+        if len(search) > 80:
+            raise ValueError('Use a shorter account search.')
+        match: dict[str, Any] = {'guild_id': int(guild_id),
+            'kind': 'strike' if status == 'active' else {'$in': ['strike', 'missed', 'exempt']}}
+        searched_member = None
+        if search.startswith('#'):
+            match['player_tag'] = tag(search)
+        elif search.isascii() and search.isdigit():
+            searched_member = int(search)
+            linked = await recruit_links.resolve(searched_member)
+            if linked.unavailable or linked.conflicts:
+                raise RuntimeError('Account links unavailable; member history cannot be complete.')
+            linked_tags = {tag(value) for value in linked.sources}
+            saved_tags = await self.mongo.strike_records.distinct(
+                'player_tag', {'guild_id': int(guild_id), 'member_id': searched_member})
+            linked_tags.update(tag(value) for value in saved_tags)
+            if not linked_tags:
+                return {'items': [], 'total': 0}
+            match['player_tag'] = {'$in': sorted(linked_tags)}
+        now = datetime.now(timezone.utc)
+        pipeline = [
+            {'$match': match},
+            {'$sort': {'occurred_at': -1}},
+            {'$group': {
+                '_id': '$player_tag', 'player_name': {'$first': '$player_name'},
+                'member_id': {'$first': '$member_id'},
+                'total_strikes': {'$sum': {'$cond': [
+                    {'$eq': ['$kind', 'strike']}, 1, 0]}},
+                'last_strike_at': {'$max': {'$cond': [
+                    {'$eq': ['$kind', 'strike']}, '$occurred_at', None]}},
+                'last_record_at': {'$first': '$occurred_at'},
+                'active_strikes': {'$sum': {'$cond': [{'$and': [
+                    {'$eq': ['$kind', 'strike']},
+                    {'$gt': ['$expires_at', now]},
+                    {'$eq': [{'$ifNull': ['$revoked_at', None]}, None]},
+                ]}, 1, 0]}},
+            }},
+            {'$sort': {'active_strikes': -1, 'last_strike_at': -1,
+                       'last_record_at': -1, '_id': 1}},
+        ]
+        grouped_cursor = await self.mongo.strike_records.aggregate(pipeline)
+        grouped = await grouped_cursor.to_list(length=None)
+        tags = [row['_id'] for row in grouped]
+        profiles = await self.mongo.strike_profiles.find(
+            {'guild_id': int(guild_id), 'player_tag': {'$in': tags}}).to_list(length=None)
+        profile_by_tag = {row['player_tag']: row for row in profiles}
+        wanted_clan = tag(clan_tag) if clan_tag else None
+        rows = []
+        for row in grouped:
+            if status == 'active' and row['active_strikes'] <= 0:
+                continue
+            profile = profile_by_tag.get(row['_id']) or {}
+            display_name = profile.get('player_name') or row.get('player_name') or row['_id']
+            if search and not search.startswith('#') and searched_member is None:
+                if search.casefold() not in str(display_name).casefold():
+                    continue
+            seen = profile.get('roster_seen_at')
+            fresh = isinstance(seen, datetime) and utc(seen) > now - timedelta(minutes=30)
+            current_clan = profile.get('current_clan_tag')
+            if wanted_clan and current_clan != wanted_clan:
+                continue
+            rows.append({'player_tag': row['_id'],
+                         'player_name': display_name,
+                         'member_id': searched_member or profile.get('member_id') or row.get('member_id'),
+                         'current_clan_tag': current_clan,
+                         'clan_seen_at': seen, 'clan_is_current': fresh,
+                         'active_strikes': int(row['active_strikes']),
+                         'total_strikes': int(row['total_strikes']),
+                         'last_strike_at': row.get('last_strike_at'),
+                         'last_record_at': row.get('last_record_at')})
+        limit = max(1, min(100, int(limit)))
+        skip = max(0, int(skip))
+        return {'items': rows[skip:skip+limit], 'total': len(rows)}
+
+    async def war_list(self, guild_id: int, *, clan_tag=None, query=None, limit=1000) -> list[dict]:
+        """Group saved missed-attack incidents by exact war, without API rescans."""
+        match = {'guild_id': int(guild_id), 'source': 'war',
+                 'war_key': {'$exists': True},
+                 'kind': {'$in': ['strike', 'missed', 'exempt']}}
+        if clan_tag:
+            match['clan_tag'] = tag(clan_tag)
+        pipeline = [
+            {'$match': match},
+            {'$sort': {'occurred_at': -1}},
+            {'$group': {
+                '_id': '$war_key',
+                'clan_tag': {'$first': '$clan_tag'},
+                'clan_name': {'$first': '$clan_name'},
+                'opponent_tag': {'$first': '$opponent_tag'},
+                'opponent_name': {'$first': '$opponent_name'},
+                'war_end': {'$first': '$occurred_at'},
+                'missed_accounts': {'$sum': 1},
+                'strikes': {'$sum': {'$cond': [{'$eq': ['$kind', 'strike']}, 1, 0]}},
+                'one_missed': {'$sum': {'$cond': [{'$eq': ['$missed_attacks', 1]}, 1, 0]}},
+            }},
+            {'$sort': {'war_end': -1}},
+            {'$limit': max(1, min(2000, int(limit)))},
+        ]
+        cursor = await self.mongo.strike_records.aggregate(pipeline)
+        rows = await cursor.to_list(length=None)
+        search = str(query or '').strip().casefold()
+        if search:
+            rows = [row for row in rows if search in ' '.join(str(value or '') for value in (
+                row.get('clan_tag'), row.get('clan_name'), row.get('opponent_tag'),
+                row.get('opponent_name'), utc(row['war_end']).date().isoformat()
+            )).casefold()]
+        return [{'war_key': row['_id'], **{key: value for key, value in row.items() if key != '_id'}}
+                for row in rows]
 
     async def replacement(self, guild_id: int, recruit_weight: int, *, clan_tag=None,
                           limit=50, weights=None) -> list[dict]:
@@ -461,7 +583,9 @@ class StrikeService:
             rows.append({'_id': f'war:{int(guild_id)}:{key}:{player}',
                          'guild_id': int(guild_id), 'player_tag': player,
                          'member_id': owner, 'player_name': member.get('name') or player,
-                         'clan_tag': clan, 'opponent_tag': tag(war['opponent_tag']),
+                         'clan_tag': clan, 'clan_name': war.get('clan_name'),
+                         'opponent_tag': tag(war['opponent_tag']),
+                         'opponent_name': war.get('opponent_name'),
                          'war_key': key, 'kind': kind, 'source': 'war',
                          'reason': 'Both attacks missed' if missed == 2 else ('One attack missed' if missed else 'Both attacks used'),
                          'missed_attacks': missed, 'exemption': exemption,

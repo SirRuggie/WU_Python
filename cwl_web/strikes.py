@@ -20,6 +20,8 @@ from utils.strike_store import StrikeService, utc
 
 API = '/api/cwl/strikes'
 GUILD_ID = shared.GUILD_ID
+_OPPONENT_NAME_CACHE = {}
+
 
 
 def endpoint(fn=None, *, scope=None):
@@ -170,6 +172,10 @@ def entry(row, clans, profile=None):
             'discord_name': None, 'current_clan_tag': current_tag,
             'current_clan_name': profile.get('current_clan_name') or clans.get(current_tag),
             'war_clan_tag': row.get('clan_tag'), 'war_clan_name': row.get('clan_name') or clans.get(row.get('clan_tag')),
+            'war_key': row.get('war_key'), 'opponent_tag': row.get('opponent_tag'),
+            'opponent_name': row.get('opponent_name') or clans.get(row.get('opponent_tag'))
+                or _OPPONENT_NAME_CACHE.get(row.get('opponent_tag'), (0, None))[1]
+                or row.get('opponent_tag'),
             'war_end': public(row['occurred_at']), 'expires_at': public(row.get('expires_at')),
             'kind': 'strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss'), 'source': row.get('source'),
             'status': 'recorded' if row.get('status') == 'missed' else row.get('status'),
@@ -182,17 +188,17 @@ async def overview(request):
     query = request.query.get('query', '').strip()
     if len(query) > 80:
         raise ValueError('Use a shorter name or tag.')
-    status = request.query.get('status') or None
-    if status in ('all', ''):
-        status = None
-    if status not in (None, 'active', 'expired', 'removed', 'exempt', 'recorded'):
+    status = request.query.get('status') or 'strikes'
+    if status not in ('strikes', 'all', 'active', 'expired', 'removed', 'exempt', 'recorded'):
         raise ValueError('Choose a history status.')
     if status == 'recorded':
         status = 'missed'
     clan = request.query.get('clan') or None
+    war_key = request.query.get('war_key') or None
     limit = number(request.query.get('limit', '25'))
     offset = number(request.query.get('offset', '0'), 0, 100000)
-    args = {'status': status, 'clan_tag': clan, 'limit': limit, 'skip': offset}
+    args = {'status': status, 'clan_tag': clan, 'war_key': war_key,
+            'limit': limit, 'skip': offset}
     if query.startswith('#'):
         args['player_tag'] = tag(query)
     elif query.isascii() and query.isdigit():
@@ -204,6 +210,7 @@ async def overview(request):
         data = await ledger.history(GUILD_ID, **args)
         clans = await clan_rows(db)
         names = {row['tag']: row['name'] for row in clans}
+        await _enrich_war_names(request, data['items'], names)
         tags = sorted({row['player_tag'] for row in data['items']})
         profiles = await db.strike_profiles.find({'guild_id': GUILD_ID, 'player_tag': {'$in': tags}}).to_list(length=None)
         by_tag = {row['player_tag']: row for row in profiles}
@@ -220,6 +227,102 @@ async def overview(request):
                 by_tag[value] = profile
         return web.json_response({'entries': [entry(row, names, by_tag.get(row['player_tag'])) for row in data['items']],
                                   'clans': clans, 'members': [], 'total': data['total'], 'limit': limit, 'offset': offset})
+
+
+@endpoint
+async def accounts(request):
+    query = request.query.get('query', '').strip()
+    if len(query) > 80:
+        raise ValueError('Use a shorter account search.')
+    clan = request.query.get('clan') or None
+    status = request.query.get('status') or 'active'
+    if status not in ('active', 'all'):
+        raise ValueError('Choose active or all accounts.')
+    limit = number(request.query.get('limit', '25'))
+    offset = number(request.query.get('offset', '0'), 0, 100000)
+    async with shared.mongo(request) as db:
+        ledger = await service(request, db)
+        result = await ledger.account_list(GUILD_ID, query=query, clan_tag=clan,
+                                           status=status, limit=limit, skip=offset)
+        clans = await clan_rows(db)
+    names = {row['tag']: row['name'] for row in clans}
+    entries = [{'player_tag': row['player_tag'], 'player_name': row['player_name'],
+                'discord_id': str(row['member_id']) if row.get('member_id') else None,
+                'current_clan_tag': row.get('current_clan_tag'),
+                'current_clan_name': names.get(row.get('current_clan_tag')),
+                'clan_seen_at': public(row.get('clan_seen_at')),
+                'clan_is_current': row.get('clan_is_current', False),
+                'active_strikes': row['active_strikes'], 'total_strikes': row['total_strikes'],
+                'last_strike_at': public(row['last_strike_at']),
+                'last_record_at': public(row.get('last_record_at'))}
+               for row in result['items']]
+    return web.json_response({'accounts': entries, 'total': result['total'],
+                              'clans': clans, 'limit': limit, 'offset': offset})
+
+
+async def _enrich_war_names(request, rows, clan_names):
+    """Resolve only missing opponent labels, using bounded cache and time."""
+    now = time.monotonic()
+    missing = set()
+    for row in rows:
+        row['clan_name'] = row.get('clan_name') or clan_names.get(row.get('clan_tag')) or row.get('clan_tag')
+        opponent = row.get('opponent_tag')
+        row['opponent_name'] = row.get('opponent_name') or clan_names.get(opponent)
+        if not row['opponent_name'] and opponent:
+            cached = _OPPONENT_NAME_CACHE.get(opponent)
+            if cached and cached[0] > now:
+                row['opponent_name'] = cached[1]
+            else:
+                missing.add(opponent)
+    semaphore = asyncio.Semaphore(6)
+    async def lookup(opponent):
+        try:
+            async with semaphore:
+                found = await asyncio.wait_for(request.app['providers'].clan(opponent), timeout=4)
+            name = found.get('name') if isinstance(found, dict) else None
+            if not isinstance(name, str) or not name.strip():
+                name = None
+        except (ProviderUnavailable, aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            name = None
+        _OPPONENT_NAME_CACHE[opponent] = (time.monotonic() + (3600 if name else 300), name)
+    if missing:
+        tasks = [asyncio.create_task(lookup(opponent)) for opponent in sorted(missing)]
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks), timeout=8)
+        except asyncio.TimeoutError:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            for opponent in missing:
+                cached = _OPPONENT_NAME_CACHE.get(opponent)
+                if cached is None or cached[0] <= time.monotonic():
+                    _OPPONENT_NAME_CACHE[opponent] = (time.monotonic() + 300, None)
+    for row in rows:
+        opponent = row.get('opponent_tag')
+        if not row.get('opponent_name'):
+            row['opponent_name'] = _OPPONENT_NAME_CACHE.get(opponent, (0, None))[1] or opponent
+    return rows
+
+
+@endpoint
+async def wars(request):
+    query = request.query.get('query', '').strip()
+    if len(query) > 80:
+        raise ValueError('Use a shorter clan, opponent, or date.')
+    clan = request.query.get('clan') or None
+    async with shared.mongo(request) as db:
+        ledger = await service(request, db)
+        rows = await ledger.war_list(GUILD_ID, clan_tag=clan, limit=2000)
+        clans = await clan_rows(db)
+    names = {row['tag']: row['name'] for row in clans}
+    await _enrich_war_names(request, rows, names)
+    if query:
+        folded = query.casefold()
+        rows = [row for row in rows if folded in ' '.join(str(value or '') for value in (
+            row.get('clan_tag'), row.get('clan_name'), row.get('opponent_tag'),
+            row.get('opponent_name'), utc(row['war_end']).date().isoformat(),
+        )).casefold()]
+    return web.json_response({'wars': [public(row) for row in rows]})
 
 
 @endpoint(scope='strikes_add')
@@ -561,7 +664,9 @@ async def import_job(request):
     return web.json_response(response)
 
 
-routes = [web.get(API + '/overview', overview), web.get(API + '/members', members),
+routes = [web.get(API + '/overview', overview), web.get(API + '/accounts', accounts),
+          web.get(API + '/wars', wars),
+          web.get(API + '/members', members),
           web.get(API + '/members/{member_id}/accounts', member_accounts),
           web.post(API + '/manual', manual), web.post(API + '/{strike_id}/remove', remove),
           web.get(API + '/settings', settings), web.put(API + '/settings/roles', save_roles),

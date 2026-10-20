@@ -77,13 +77,13 @@ def service(mongo, bot):
 
 async def history_panel(store, state, page=0):
     result = await store.history(state['guild_id'], member_id=state.get('member_id'),
-        player_tag=state.get('player_tag'), clan_tag=state.get('clan_tag'),
+        player_tag=state.get('player_tag'), clan_tag=state.get('clan_tag'), status=state.get('status', 'strikes'),
         limit=PAGE_SIZE, skip=page*PAGE_SIZE)
     pages = max(1, math.ceil(result['total']/PAGE_SIZE))
     page = min(max(page, 0), pages-1)
     if page*PAGE_SIZE >= result['total'] and result['total']:
         result = await store.history(state['guild_id'], member_id=state.get('member_id'),
-            player_tag=state.get('player_tag'), clan_tag=state.get('clan_tag'),
+            player_tag=state.get('player_tag'), clan_tag=state.get('clan_tag'), status=state.get('status', 'strikes'),
             limit=PAGE_SIZE, skip=page*PAGE_SIZE)
     tags = list({row['player_tag'] for row in result['items']})
     profiles = await store.mongo.strike_profiles.find(
@@ -133,6 +133,9 @@ class View(lightbulb.SlashCommand, name='view', description='View strike history
     member = lightbulb.user('member', 'Discord member', default=None)
     player = lightbulb.string('player', 'Clash player tag', default=None)
     clan = lightbulb.string('clan', 'Clan tag where strikes happened', default=None)
+    status = lightbulb.string('status', 'Records to show', default='strikes', choices=[
+        lightbulb.Choice('Strikes', 'strikes'), lightbulb.Choice('All records', 'all'),
+        lightbulb.Choice('One missed', 'missed')])
 
     @lightbulb.invoke
     @lightbulb.di.with_di
@@ -147,7 +150,7 @@ class View(lightbulb.SlashCommand, name='view', description='View strike history
         state = {'_id': uuid.uuid4().hex, 'user_id': int(ctx.user.id),
                  'guild_id': int(ctx.guild_id), 'member_id': int(self.member.id) if self.member else None,
                  'player_tag': tag(self.player) if self.player else None,
-                 'clan_tag': tag(self.clan) if self.clan else None}
+                 'clan_tag': tag(self.clan) if self.clan else None, 'status': self.status}
         await insert_state(mongo, state)
         try:
             components = await history_panel(StrikeService(mongo), state)

@@ -15,7 +15,7 @@ Implemented for the Warriors United Discord bot and its existing dashboard. This
 
 The **Strikes** dashboard has History, Replacements, Leave, Exempt roles, and Import wars tabs.
 
-History supports player, Discord member, clan, and status searches; add a manual strike with a reason, or remove a strike with a reason. Choosing a member lets staff choose the player account.
+History starts with one row per player account with active strikes, ordered by active strike count. All accounts also shows inactive and missed-only accounts. Accounts linked to the same Discord member remain separate. Open an account to see strike dates, war matchups, and removal history. One-missed records stay hidden unless selected. Find a war by clan or opponent, then choose its date to see that war’s missed attacks. History supports player, Discord member, clan, and status searches; add a manual strike with a reason, or remove a strike with a reason. Choosing a member lets staff choose the player account.
 
 For FWA recruitment, enter the recruit's weight. Results prioritize marked fillers, then most active strikes, then closest weight. Filler preference belongs to the selected clan. Accounts without a usable weight cannot be ranked. Existing roster weights and manual weight overrides are reused.
 

@@ -71,7 +71,8 @@ def normalize(raw: dict, clan_tag: str, *, now=None) -> dict:
                         'attacks': len(attacks)})
     if isinstance(our.get('attacks'), int) and our['attacks'] != sum(row['attacks'] for row in members):
         raise ValueError('War attack totals do not match roster.')
-    war = {'clan_tag': wanted, 'opponent_tag': tag(other['tag']),
+    war = {'clan_tag': wanted, 'clan_name': our.get('name'),
+           'opponent_tag': tag(other['tag']), 'opponent_name': other.get('name'),
            'end_time': _date(raw['endTime']), 'type': 'regular',
            'state': 'warEnded', 'attacks_per_member': raw.get('attacksPerMember'),
            'complete': True, 'members': members}
