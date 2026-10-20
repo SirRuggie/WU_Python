@@ -352,6 +352,7 @@ async def replacement_panel(store, state, *, notice=''):
     rows = await store.replacement(guild, weight, clan_tag=selected_clan,
                                    town_hall=th, browse_all=True, family_scope='all',
                                    limit=5000, weights=weights)
+    rows = [row for row in rows if row.get('active_strikes', 0) > 0 or row.get('is_manual')]
     rows = replacement_sort_rows(rows, sort_mode, weight)
     pages = max(1, math.ceil(len(rows) / REPLACEMENT_PAGE_SIZE))
     page = min(max(0, int(state.get('page', 0))), pages - 1)

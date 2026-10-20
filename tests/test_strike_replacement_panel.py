@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 import asyncio
+import pytest
 
 from extensions.commands import strikes
 
@@ -29,7 +30,8 @@ def test_sort_modes_change_ranking_without_losing_unknown_weights():
     assert tags('th') == ['#C', '#B', '#A']
 
 
-def test_default_panel_queries_all_family_roster_and_th_filter(monkeypatch):
+@pytest.mark.parametrize("weight", [None, 149000])
+def test_panel_only_shows_struck_or_manually_listed_accounts(monkeypatch, weight):
     class Cursor:
         def __init__(self, rows): self.rows = rows
         async def to_list(self, length=None): return self.rows
@@ -44,15 +46,25 @@ def test_default_panel_queries_all_family_roster_and_th_filter(monkeypatch):
         )
         async def replacement(self, *args, **kwargs):
             calls.append((args, kwargs))
-            return [candidate('#P2Y2', weight=149000)]
+            return [candidate('#P2Y2', weight=149000),
+                    candidate('#P2Y8', strikes_count=2),
+                    {**candidate('#P2Y9', priority='replace_first'), 'is_manual': True},
+                    {**candidate('#P2YG'), 'is_manual': True}]
     async def weights(_tags): return {}
     monkeypatch.setattr(strikes, 'cached_weights', lambda _tags: {})
     state = {'_id': 'token', 'guild_id': 1, 'clan_tag': '#P2Y', 'town_hall': 4,
-             'weight': None, 'sort': 'priority', 'page': 0, 'clan_page': 0}
+             'weight': weight, 'sort': 'priority', 'page': 0, 'clan_page': 0}
     panel = asyncio.run(strikes.replacement_panel(Store(), state))
     assert len(panel) == 1
     assert calls[0][1]['browse_all'] is True
     assert calls[0][1]['family_scope'] == 'all'
     assert calls[0][1]['town_hall'] == 4
     assert calls[0][1]['clan_tag'] == '#P2Y'
-    assert calls[0][0][1] is None
+    assert calls[0][0][1] == weight
+    payload, _ = panel[0].build()
+    text = str(payload)
+    assert '#P2Y2' not in text
+    assert '#P2Y8' in text
+    assert '#P2Y9' in text
+    assert '#P2YG' in text
+    assert '3 accounts' in text
