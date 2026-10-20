@@ -1,45 +1,65 @@
-"""Import link lookups are reused within one operation, not across approvals."""
+"""Historical import checks existing incident IDs once per war, not once per player."""
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
-from test_strike_review import Collection, Mongo, war
-from utils.recruit_links import PlayerOwners
 from utils.strike_store import StrikeService
 
 
-def test_preview_reuses_links_but_apply_checks_links_again():
-    async def run():
-        db = Mongo()
-        db.strike_imports = Collection()
-        calls = []
-        async def links(tags):
-            calls.append(tags)
-            return PlayerOwners(owners={})
-        service = StrikeService(db, link_resolver=links)
-        first = war()
-        second = {**first, 'end_time': first['end_time'] - timedelta(days=1)}
-        preview = await service.preview_import(123, [first, second], actor_id=789)
-        assert len(calls) == 1
-        assert preview['strikes'] == 2
-        result = await service.apply_import(123, preview['preview_id'], 789)
-        assert len(calls) == 2
-        assert result['strikes'] == 2
-    asyncio.run(run())
+class Records:
+    def __init__(self, ids):
+        self.ids = set(ids)
+        self.find_calls = []
+
+    def find(self, query, projection=None):
+        self.find_calls.append((query, projection))
+        wanted = query['_id']['$in']
+        result = [{'_id': value} for value in wanted if value in self.ids]
+        return SimpleNamespace(to_list=lambda length=None: ready(result))
 
 
-def test_failed_link_lookup_is_not_cached_as_unlinked():
+async def ready(value):
+    return value
+
+
+class Imports:
+    def __init__(self):
+        self.rows = []
+
+    async def insert_one(self, row):
+        self.rows.append(row)
+
+
+def war(end):
+    return {'clan_tag': '#2UVGQU9', 'opponent_tag': '#8GG8',
+            'end_time': end, 'type': 'regular', 'state': 'warEnded',
+            'attacks_per_member': 2, 'complete': True,
+            'members': [{'tag': '#PC9YGL0JL', 'attacks': 0}]}
+
+
+def test_preview_batches_duplicate_lookup_once_for_each_war():
     async def run():
-        db = Mongo()
-        db.strike_imports = Collection()
-        calls = []
-        async def links(tags):
-            calls.append(tags)
-            return PlayerOwners(unavailable=('ClashKing',)) if len(calls) == 1 else PlayerOwners()
-        service = StrikeService(db, link_resolver=links)
-        first = war()
-        second = {**first, 'end_time': first['end_time'] - timedelta(days=1)}
-        preview = await service.preview_import(123, [first, second], actor_id=789)
-        assert len(calls) == 2
-        assert len(preview['skipped']) == 1
-        assert preview['strikes'] == 1
+        now = datetime.now(timezone.utc)
+        wars = [war(now - timedelta(days=1)), war(now - timedelta(days=2))]
+        records = Records({'old-0-7', 'old-1-3'})
+        imports = Imports()
+        ledger = StrikeService(SimpleNamespace(strike_records=records, strike_imports=imports))
+
+        async def rows(guild_id, current, **kwargs):
+            index = wars.index(current)
+            return [{'_id': f'old-{index}-{offset}', 'guild_id': guild_id,
+                     'kind': 'completed' if offset == 0 else ('missed' if offset % 2 else 'strike'),
+                     'occurred_at': current['end_time'],
+                     'expires_at': current['end_time'] + timedelta(days=90)}
+                    for offset in range(50)]
+
+        ledger._war_rows = rows
+        report = await ledger.preview_import(123, wars, actor_id=5)
+        assert len(records.find_calls) == 2
+        assert all(len(call[0]['_id']['$in']) == 49 for call in records.find_calls)
+        assert all(call[1] == {'_id': 1} for call in records.find_calls)
+        assert report['existing'] == 2
+        assert len(report['items']) == 96
+        assert len(imports.rows) == 1
+        assert len(imports.rows[0]['approved_rows']) == 96
     asyncio.run(run())

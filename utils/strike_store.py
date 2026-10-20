@@ -397,10 +397,16 @@ class StrikeService:
                 continue
             report['wars'] += 1
             accepted.append(war)
-            for row in rows:
-                if row['kind'] == 'completed':
-                    continue
-                if await self.mongo.strike_records.find_one({'_id': row['_id']}, {'_id': 1}):
+            missed_rows = [row for row in rows if row['kind'] != 'completed']
+            existing_ids = set()
+            if missed_rows:
+                existing = await self.mongo.strike_records.find(
+                    {'_id': {'$in': [row['_id'] for row in missed_rows]}},
+                    {'_id': 1},
+                ).to_list(length=None)
+                existing_ids = {row['_id'] for row in existing}
+            for row in missed_rows:
+                if row['_id'] in existing_ids:
                     report['existing'] += 1
                     continue
                 report['items'].append({**row, 'status': status_of(row)})

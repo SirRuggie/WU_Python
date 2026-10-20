@@ -58,8 +58,18 @@ class Collection:
             return row
         return None
 
-    def find(self, query):
-        rows = [row for row in self.rows.values() if all(row.get(key) == value for key, value in query.items())]
+    def find(self, query, projection=None):
+        def matches(row):
+            for key, value in query.items():
+                if key == '_id' and isinstance(value, dict) and '$in' in value:
+                    if row.get('_id') not in value['$in']:
+                        return False
+                elif row.get(key) != value:
+                    return False
+            return True
+        rows = [row for row in self.rows.values() if matches(row)]
+        if projection == {'_id': 1}:
+            rows = [{'_id': row['_id']} for row in rows]
         class Cursor:
             async def to_list(self, length=None):
                 return rows
