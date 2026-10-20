@@ -5,7 +5,7 @@ def test_priority_and_unknown_weight_do_not_claim_a_match():
     text = replacement_line(1, {'player_tag': '#PC9YGL0JL', 'player_name': 'Filler',
         'current_clan_tag': '#2UVGQU9', 'active_strikes': 0, 'priority': 'replace_first',
         'note': 'My filler @everyone', 'weight': None, 'weight_difference': None})
-    assert 'Replace first' in text and 'Weight unknown' in text
+    assert 'Chopping Block' in text and 'Weight unknown' in text
     assert '0 active strikes' in text and 'difference' not in text
     assert '@everyone' not in text
 

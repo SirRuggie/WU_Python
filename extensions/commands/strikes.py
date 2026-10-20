@@ -293,7 +293,7 @@ def replacement_browser_line(index, row, clan_names):
     clan = safe(clan_names.get(row.get('current_clan_tag'), row.get('current_clan_tag') or 'Unknown clan'), 40)
     th = row.get('town_hall')
     th_text = f'TH{th}' if isinstance(th, int) and th > 0 else 'TH?'
-    priority = {'replace_first': 'Replace first', 'high': 'High', 'normal': 'Normal'}.get(
+    priority = {'replace_first': 'Chopping Block', 'high': 'High', 'normal': 'Normal'}.get(
         row.get('replacement_priority'), 'Normal')
     weight = compact_weight(row.get('weight')) if row.get('weight') else 'Weight unknown'
     gap = row.get('weight_difference')
@@ -572,7 +572,7 @@ class Replacements(lightbulb.SlashCommand, name='replacements',
 
 
 def replacement_line(index, row):
-    label = {'replace_first': 'Replace first', 'high': 'High priority'}.get(row.get('priority', row.get('replacement_priority')), '')
+    label = {'replace_first': 'Chopping Block', 'high': 'High priority'}.get(row.get('priority', row.get('replacement_priority')), '')
     priority = f' · {label}' if label else ''
     weight, difference = row.get('weight'), row.get('weight_difference')
     weight_text = f'{weight:,} weight' if isinstance(weight, int) else 'Weight unknown'
