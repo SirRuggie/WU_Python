@@ -24,3 +24,5 @@
 .cwl-more{flex:none}.cwl-more summary{cursor:pointer;padding:12px}.cwl-more button{display:block;margin:6px 0}
 .cwl-result-nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 @media(max-width:600px){.cwl-workspace-nav{flex-wrap:wrap;gap:4px}.cwl-roster-tabs{flex-basis:100%}.cwl-roster-tabs button{font-size:13px;padding:10px 6px}.cwl-more{margin-left:auto}}
+.shell .sidebar .strikes-subnav{margin:0 0 0 16px;padding-left:8px}
+.shell .sidebar .strikes-subnav button{font-size:12px;min-height:38px}

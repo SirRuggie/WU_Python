@@ -2,6 +2,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import StrikesWorkspace from './StrikesWorkspace'
+import ReplacementWorkspace from './ReplacementWorkspace'
 import './style.css'
 
 const now = '2026-10-20T12:00:00Z'
@@ -12,9 +13,9 @@ const entries = [
 ]
 const wars = [{ war_key: 'war-fwa-edrag', clan_tag: '#FWA', clan_name: 'Warriors United FWA', opponent_tag: '#EDRAG', opponent_name: 'Edrag Rush', war_end: now, missed_accounts: 2, strikes: 1, one_missed: 1 }]
 const candidates = [
-  { player_tag: '#P22ABC', player_name: 'CastleFox', clan_tag: '#FWA', clan_name: 'Warriors United FWA', weight: 115000, active_strikes: 1, is_filler: true, weight_difference: 0, discord_name: 'Fox' },
-  { player_tag: '#P44DEF', player_name: 'MiniWolf', clan_tag: '#FWA', clan_name: 'Warriors United FWA', weight: 114000, active_strikes: 3, is_filler: false, weight_difference: 1000 },
-  { player_tag: '#P55GHI', player_name: 'GreenOak', clan_tag: '#FWA2', clan_name: 'WU FWA Two', weight: 115000, active_strikes: 2, is_filler: false, weight_difference: 0 },
+  { player_tag: '#P22ABC', player_name: 'CastleFox', clan_tag: '#FWA', clan_name: 'Warriors United FWA', weight: 115000, active_strikes: 1, is_filler: true, is_manual: true, priority: 'replace_first', note: 'Temporary filler', weight_difference: 0, discord_name: 'Fox' },
+  { player_tag: '#P44DEF', player_name: 'MiniWolf', clan_tag: '#FWA', clan_name: 'Warriors United FWA', weight: 114000, active_strikes: 3, is_filler: false, is_manual: false, priority: 'normal', weight_difference: 1000 },
+  { player_tag: '#P55GHI', player_name: 'GreenOak', clan_tag: '#FWA2', clan_name: 'WU FWA Two', weight: 115000, active_strikes: 2, is_filler: false, is_manual: true, priority: 'high', note: 'Free a space soon', weight_difference: 0 },
 ]
 const settings = { excluded_roles: [{ id: '769130325460254740', name: 'Strike exempt' }], roles: [{ id: '769130325460254740', name: 'Strike exempt' }, { id: '123456789012345600', name: 'Leave team' }], leaves: [{ discord_id: '123456789012345678', display_name: 'Fox', player_tags: ['#P22ABC', '#8LQQRT'], resume_date: '2026-11-01' }] }
 const members = [{ id: '123456789012345678', name: 'Fox', accounts: [{ tag: '#P22ABC', name: 'CastleFox', current_clan_name: 'Warriors United FWA' }, { tag: '#8LQQRT', name: 'LittleThunder', current_clan_name: 'WU North' }] }]
@@ -43,7 +44,7 @@ window.fetch = async (input, init) => {
   else if (path.endsWith('/members')) data = { members: members.map(item => ({ ...item, accounts: [] })) }
   else if (path.includes('/members/') && path.endsWith('/accounts')) data = { member: members[0] }
   else if (path.endsWith('/settings')) data = settings
-  else if (path.endsWith('/replacements')) data = { candidates }
+  else if (path.endsWith('/replacements')) data = { candidates: candidates.filter(item => !url.searchParams.get('clan') || item.clan_tag === url.searchParams.get('clan')), clans: [{ tag: '#FWA', name: 'Warriors United FWA', is_fwa: true }, { tag: '#FWA2', name: 'WU FWA Two', is_fwa: true }, { tag: '#NORTH', name: 'WU North', is_fwa: false }] }
   else if (path.endsWith('/import/preview') || path.endsWith('/import/apply')) {
     const job_id = crypto.randomUUID()
     fixtureJobs.set(job_id, { reads: 0, result: path.endsWith('/preview') ? preview : { applied: 2, strikes: 1, skipped: 0 } })
@@ -59,4 +60,4 @@ window.fetch = async (input, init) => {
 
 const fixtureScope = new URLSearchParams(location.search).get('scope')
 const fixturePermissions = fixtureScope === 'add' ? ['strikes_add'] : fixtureScope === 'remove' ? ['strikes_remove'] : fixtureScope === 'manage' ? ['strikes'] : ['strikes', 'strikes_add', 'strikes_remove']
-createRoot(document.getElementById('root')!).render(<React.StrictMode><main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}><StrikesWorkspace permissions={fixturePermissions} isOwner={false} userId="fixture" /></main></React.StrictMode>)
+createRoot(document.getElementById('root')!).render(<React.StrictMode><main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}>{new URLSearchParams(location.search).get('page') === 'replacements' ? <ReplacementWorkspace permissions={fixturePermissions} isOwner={false} /> : <StrikesWorkspace permissions={fixturePermissions} isOwner={false} userId="fixture" />}</main></React.StrictMode>)

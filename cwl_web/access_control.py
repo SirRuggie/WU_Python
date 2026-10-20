@@ -2,7 +2,7 @@
 import json
 
 PERMISSIONS = {
-    'strikes': ('Strikes · Settings', 'View history and manage leave, exemptions and fillers.'),
+    'strikes': ('Strikes · Settings', 'View history and manage leave, exemptions and replacement priorities.'),
     'strikes_add': ('Strikes · Add', 'Add strikes and import wars in the dashboard; use /strikes add in Discord.'),
     'strikes_remove': ('Strikes · Remove', 'Remove strikes in the dashboard and Discord.'),
     'clans': ('Clan management', 'Add, remove and update family clans, roles, channels and artwork.'),

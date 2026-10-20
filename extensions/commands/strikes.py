@@ -289,16 +289,26 @@ class Replacements(lightbulb.SlashCommand, name='replacements',
             clan_tag=self.clan, limit=12, weights=weight_map)
         lines = []
         for index, row in enumerate(rows, 1):
-            filler = ' · Filler' if row.get('filler') else ''
-            lines.append(f"**{index}. {safe(row.get('player_name') or row['player_tag'], 32)}** "
-                         f"`{row['player_tag']}`{filler}\n"
-                         f"{row['current_clan_tag']} · {row['weight']:,} weight "
-                         f"(difference {row['weight_difference']:,}) · {row['active_strikes']} active strikes")
+            lines.append(replacement_line(index, row))
         await ctx.respond(components=panel('FWA replacements',
             f'Recruit weight: **{self.weight:,}**', '\n\n'.join(lines) or 'No weighted candidates yet.'),
             ephemeral=True, **NO_MENTIONS)
 
 
+
+
+def replacement_line(index, row):
+    label = {'replace_first': 'Replace first', 'high': 'High priority'}.get(row.get('priority', row.get('replacement_priority')), '')
+    priority = f' · {label}' if label else ''
+    weight, difference = row.get('weight'), row.get('weight_difference')
+    weight_text = f'{weight:,} weight' if isinstance(weight, int) else 'Weight unknown'
+    if isinstance(difference, int):
+        weight_text += f' (difference {difference:,})'
+    saved_note = row.get('note', row.get('replacement_note', ''))
+    note = f'\n{safe(saved_note, 100)}' if saved_note else ''
+    return (f"**{index}. {safe(row.get('player_name') or row['player_tag'], 32)}** "
+            f"`{row['player_tag']}`{priority}\n"
+            f"{row['current_clan_tag']} · {weight_text} · {row['active_strikes']} active strikes{note}")
 
 
 async def live_weights(tags):

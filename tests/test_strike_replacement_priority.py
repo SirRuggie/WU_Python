@@ -1,0 +1,168 @@
+"""Replacement preferences are account and clan scoped, not strike mutations."""
+import asyncio
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+from aiohttp import web
+
+from cwl_web import strikes
+from utils.strike_store import StrikeService
+
+
+class Cursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def to_list(self, length=None):
+        return self.rows
+
+
+class Profiles:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def find(self, query):
+        cutoff = query.get('roster_seen_at', {}).get('$gt')
+        clan = query['current_clan_tag']
+        allowed = set(clan['$in']) if isinstance(clan, dict) else {clan}
+        return Cursor([row.copy() for row in self.rows.values()
+                       if (cutoff is None or row.get('roster_seen_at', cutoff - timedelta(seconds=1)) > cutoff)
+                       and row.get('current_clan_tag') in allowed])
+
+    async def update_one(self, query, update, upsert=False):
+        row = self.rows.setdefault(query['_id'], {'_id': query['_id']})
+        row.update(update.get('$set', {}))
+        for key in update.get('$unset', {}):
+            row.pop(key, None)
+
+
+class Clans:
+    def __init__(self):
+        self.rows = {'#2UVGQU9': 'FWA', '#8GG82': 'Competitive'}
+
+    async def find_one(self, query, projection=None):
+        kind = self.rows.get(query['tag'])
+        return {'tag': query['tag'], 'type': kind} if kind else None
+
+    def find(self, query, projection=None):
+        return Cursor([{'tag': tag} for tag, kind in self.rows.items()
+                       if not query or kind == query.get('type')])
+
+
+class Records:
+    def __init__(self, counts):
+        self.counts = counts
+        self.rows = [{'player_tag': tag} for tag, count in counts.items() for _ in range(count)]
+
+    async def aggregate(self, pipeline):
+        assert pipeline[0]['$match']['kind'] == 'strike'
+        allowed = set(pipeline[0]['$match']['player_tag']['$in'])
+        return Cursor([{'_id': tag, 'count': count} for tag, count in self.counts.items()
+                       if tag in allowed])
+
+
+class Mongo:
+    def __init__(self, profiles, counts=None):
+        self.strike_profiles = Profiles({f'123:{row["player_tag"]}': row for row in profiles})
+        self.strike_records = Records(counts or {})
+        self.clans = Clans()
+
+
+def test_zero_strike_marked_account_ranks_before_struck_account():
+    async def run():
+        now = datetime.now(timezone.utc)
+        mongo = Mongo([
+            {'player_tag': '#PC9YGL0JL', 'current_clan_tag': '#2UVGQU9', 'roster_seen_at': now,
+             'replacement_listed': True, 'replacement_clan_tag': '#2UVGQU9',
+             'replacement_priority': 'replace_first', 'weight': 100000},
+            {'player_tag': '#8GG82', 'current_clan_tag': '#2UVGQU9', 'roster_seen_at': now,
+             'weight': 100000},
+        ], {'#8GG82': 3})
+        rows = await StrikeService(mongo).replacement(123)
+        assert [row['player_tag'] for row in rows] == ['#PC9YGL0JL', '#8GG82']
+        assert rows[0]['active_strikes'] == 0 and rows[0]['is_manual']
+        assert rows[1]['active_strikes'] == 3 and not rows[1]['is_manual']
+    asyncio.run(run())
+
+
+def test_clan_transfer_does_not_carry_manual_priority_or_note():
+    async def run():
+        now = datetime.now(timezone.utc)
+        mongo = Mongo([{'player_tag': '#PC9YGL0JL', 'current_clan_tag': '#8GG82',
+                        'roster_seen_at': now, 'replacement_listed': True,
+                        'replacement_clan_tag': '#2UVGQU9',
+                        'replacement_priority': 'replace_first', 'replacement_note': 'Filler'}],
+                      {'#PC9YGL0JL': 1})
+        rows = await StrikeService(mongo).replacement(123)
+        assert len(rows) == 1
+        assert rows[0]['replacement_priority'] == 'normal'
+        assert rows[0]['replacement_note'] == ''
+        assert not rows[0]['is_manual']
+        assert rows[0]['active_strikes'] == 1
+    asyncio.run(run())
+
+
+def test_known_weights_rank_ahead_of_unknown_for_fwa_matching():
+    async def run():
+        now = datetime.now(timezone.utc)
+        mongo = Mongo([
+            {'player_tag': '#PC9YGL0JL', 'current_clan_tag': '#2UVGQU9', 'roster_seen_at': now,
+             'replacement_listed': True, 'replacement_clan_tag': '#2UVGQU9',
+             'replacement_priority': 'replace_first'},
+            {'player_tag': '#8GG82', 'current_clan_tag': '#2UVGQU9', 'roster_seen_at': now,
+             'weight': 100000},
+        ])
+        rows = await StrikeService(mongo).replacement(123, 100000)
+        assert [row['player_tag'] for row in rows] == ['#8GG82', '#PC9YGL0JL']
+        assert rows[-1]['weight'] is None and rows[-1]['weight_difference'] is None
+    asyncio.run(run())
+
+
+def test_add_and_remove_manual_preference_keeps_strikes():
+    async def run():
+        mongo = Mongo([], {'#PC9YGL0JL': 2})
+        service = StrikeService(mongo)
+        await service.set_replacement_preference(123, '#PC9YGL0JL', 'high', 'Needs space', 456,
+                                                 clan_tag='#2UVGQU9', player_name='Player')
+        row = mongo.strike_profiles.rows['123:#PC9YGL0JL']
+        assert row['replacement_priority'] == 'high'
+        assert row['replacement_note'] == 'Needs space'
+        await service.clear_replacement_preference(123, '#PC9YGL0JL', 456)
+        assert 'replacement_priority' not in row
+        assert mongo.strike_records.counts['#PC9YGL0JL'] == 2
+    asyncio.run(run())
+
+
+def test_replacement_mutation_denied_before_player_or_database_lookup():
+    async def deny(request, section, *, write=False):
+        assert section == 'strikes' and write
+        raise web.HTTPForbidden()
+    async def run():
+        with patch.object(strikes.shared, 'require_manage', deny):
+            with pytest.raises(web.HTTPForbidden):
+                await strikes.add_replacement_list(SimpleNamespace(method='POST'))
+    asyncio.run(run())
+
+
+def test_mark_stays_visible_when_roster_scan_is_stale():
+    async def run():
+        mongo = Mongo([{'player_tag': '#PC9YGL0JL', 'current_clan_tag': '#2UVGQU9',
+                        'roster_seen_at': datetime.now(timezone.utc) - timedelta(hours=2),
+                        'replacement_listed': True, 'replacement_clan_tag': '#2UVGQU9',
+                        'replacement_priority': 'high'}])
+        rows = await StrikeService(mongo).replacement(123)
+        assert len(rows) == 1
+        assert rows[0]['is_manual']
+        assert not rows[0]['clan_is_current']
+        assert await StrikeService(mongo).replacement(123, 100000) == []
+    asyncio.run(run())
+
+
+def test_replacement_list_crud_routes_are_registered():
+    registered = {(route.method, route.path) for route in strikes.routes}
+    root = strikes.API + '/replacement-list'
+    assert ('POST', root) in registered
+    assert ('PUT', root + '/{player_tag}') in registered
+    assert ('DELETE', root + '/{player_tag}') in registered

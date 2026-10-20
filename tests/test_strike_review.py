@@ -257,8 +257,9 @@ async def _replacement_uses_effective_weights_after_filler_and_strikes():
             return Cursor(rows)
 
     class Records:
-        async def count_documents(self, query):
-            return 0 if query['player_tag'] == '#PC9YGL0JL' else 2
+        async def aggregate(self, pipeline):
+            assert pipeline[0]['$match']['kind'] == 'strike'
+            return Cursor([{'_id': '#8GG82', 'count': 2}])
 
     mongo = Mongo()
     mongo.clans = Clans()

@@ -418,39 +418,106 @@ class StrikeService:
         return [{'war_key': row['_id'], **{key: value for key, value in row.items() if key != '_id'}}
                 for row in rows]
 
-    async def replacement(self, guild_id: int, recruit_weight: int, *, clan_tag=None,
-                          limit=50, weights=None) -> list[dict]:
-        if not isinstance(recruit_weight, int) or recruit_weight <= 0:
+    async def set_replacement_preference(self, guild_id: int, player_tag: str,
+                                         priority: str, note: str, actor_id: int,
+                                         *, clan_tag: str, player_name=None) -> dict:
+        """Mark one account for replacement in its verified current family clan."""
+        player, clan = tag(player_tag), tag(clan_tag)
+        if priority not in ('replace_first', 'high', 'normal'):
+            raise ValueError('Choose a replacement priority.')
+        if not isinstance(note, str) or len(note.strip()) > 500:
+            raise ValueError('Keep the note under 500 characters.')
+        if not await self.mongo.clans.find_one({'tag': clan}, {'_id': 1}):
+            raise ValueError('This account is not in a registered family clan.')
+        now = datetime.now(timezone.utc)
+        changes = {'guild_id': int(guild_id), 'player_tag': player,
+                   'current_clan_tag': clan, 'roster_seen_at': now,
+                   'replacement_listed': True, 'replacement_priority': priority,
+                   'replacement_note': note.strip(), 'replacement_clan_tag': clan,
+                   'replacement_updated_by': int(actor_id), 'replacement_updated_at': now,
+                   'filler': priority == 'replace_first', 'filler_clan_tag': clan}
+        if player_name:
+            changes['player_name'] = str(player_name)
+        await self.mongo.strike_profiles.update_one(
+            {'_id': f'{int(guild_id)}:{player}'}, {'$set': changes}, upsert=True)
+        return changes
+
+    async def clear_replacement_preference(self, guild_id: int, player_tag: str,
+                                           actor_id: int) -> None:
+        player = tag(player_tag)
+        await self.mongo.strike_profiles.update_one(
+            {'_id': f'{int(guild_id)}:{player}'},
+            {'$unset': {'replacement_listed': '', 'replacement_priority': '',
+                        'replacement_note': '', 'replacement_clan_tag': '',
+                        'filler_clan_tag': ''},
+             '$set': {'filler': False, 'replacement_updated_by': int(actor_id),
+                      'replacement_updated_at': datetime.now(timezone.utc)}})
+
+    async def replacement(self, guild_id: int, recruit_weight: int | None = None, *,
+                          clan_tag=None, limit=100, weights=None) -> list[dict]:
+        """Family replacement list, or FWA weight matching when weight is supplied."""
+        matching = recruit_weight is not None
+        if matching and (not isinstance(recruit_weight, int) or isinstance(recruit_weight, bool)
+                         or recruit_weight <= 0):
             raise ValueError('Enter a positive recruit weight.')
-        query = {'guild_id': int(guild_id),
-                 'roster_seen_at': {'$gt': datetime.now(timezone.utc) - timedelta(minutes=30)}}
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+        query = {'guild_id': int(guild_id)}
+        if matching:
+            query['roster_seen_at'] = {'$gt': cutoff}
         if clan_tag:
             chosen = tag(clan_tag)
-            if not await self.mongo.clans.find_one({'tag': chosen, 'type': 'FWA'}, {'_id': 1}):
-                raise ValueError('Choose a registered FWA clan.')
+            clan = await self.mongo.clans.find_one({'tag': chosen}, {'_id': 1, 'type': 1})
+            if not clan or (matching and clan.get('type') != 'FWA'):
+                raise ValueError('Choose a registered FWA clan.' if matching else 'Choose a registered family clan.')
             query['current_clan_tag'] = chosen
         else:
-            fwa = await self.mongo.clans.find({'type': 'FWA'}, {'tag': 1}).to_list(length=None)
-            query['current_clan_tag'] = {'$in': [tag(row['tag']) for row in fwa]}
+            allowed = {'type': 'FWA'} if matching else {}
+            clans = await self.mongo.clans.find(allowed, {'tag': 1}).to_list(length=None)
+            query['current_clan_tag'] = {'$in': [tag(row['tag']) for row in clans]}
         profiles = await self.mongo.strike_profiles.find(query).to_list(length=None)
         now = datetime.now(timezone.utc)
         rows = []
+        player_tags = [profile['player_tag'] for profile in profiles]
+        counts = {}
+        if player_tags:
+            cursor = await self.mongo.strike_records.aggregate([
+                {'$match': {'guild_id': int(guild_id), 'player_tag': {'$in': player_tags},
+                            'kind': 'strike', 'revoked_at': {'$exists': False},
+                            'expires_at': {'$gt': now}}},
+                {'$group': {'_id': '$player_tag', 'count': {'$sum': 1}}},
+            ])
+            counts = {row['_id']: row['count'] for row in await cursor.to_list(length=None)}
         for profile in profiles:
+            current_clan = profile.get('current_clan_tag')
+            marked_clan = profile.get('replacement_clan_tag')
+            marked = bool(profile.get('replacement_listed') and marked_clan == current_clan)
+            legacy_filler = bool(profile.get('filler') and profile.get('filler_clan_tag') == current_clan)
+            priority = profile.get('replacement_priority') if marked else None
+            if priority not in ('replace_first', 'high', 'normal'):
+                priority = 'replace_first' if legacy_filler else 'normal'
             weight = (weights or {}).get(profile['player_tag'], profile.get('weight'))
-            # Unknown weight cannot be used to claim a closest match.
-            if not isinstance(weight, int) or weight <= 0:
+            if not isinstance(weight, int) or isinstance(weight, bool) or weight <= 0:
+                weight = None
+            count = counts.get(profile['player_tag'], 0)
+            if not matching and not (marked or legacy_filler or count):
                 continue
-            count = await self.mongo.strike_records.count_documents({
-                'guild_id': int(guild_id), 'player_tag': profile['player_tag'],
-                'kind': 'strike', 'revoked_at': {'$exists': False},
-                'expires_at': {'$gt': now}})
-            rows.append({**profile, 'weight': weight, 'filler': bool(profile.get('filler') and
-                         profile.get('filler_clan_tag') == profile.get('current_clan_tag')),
+            seen = profile.get('roster_seen_at')
+            rows.append({**profile, 'weight': weight, 'clan_seen_at': seen,
+                         'clan_is_current': bool(isinstance(seen, datetime) and utc(seen) > cutoff),
+                         'filler': priority == 'replace_first' and (marked or legacy_filler),
+                         'replacement_listed': marked or legacy_filler, 'is_manual': marked or legacy_filler,
+                         'replacement_priority': priority,
+                         'replacement_note': profile.get('replacement_note', '') if marked else '',
                          'active_strikes': count,
-                         'weight_difference': abs(weight - recruit_weight)})
-        rows.sort(key=lambda row: (-int(bool(row.get('filler'))), -row['active_strikes'],
-                                   row['weight_difference'], row['player_tag']))
-        return rows[:max(1, min(100, int(limit)))]
+                         'weight_difference': abs(weight - recruit_weight) if matching and weight is not None else None})
+        priority_rank = {'replace_first': 2, 'high': 1, 'normal': 0}
+        rows.sort(key=lambda row: (row['weight_difference'] is None if matching else False,
+                                   -priority_rank[row['replacement_priority']],
+                                   -row['active_strikes'],
+                                   row['weight'] is None,
+                                   row['weight_difference'] if matching and row['weight_difference'] is not None else 0,
+                                   row['player_tag']))
+        return rows[:max(1, min(5000, int(limit)))]
 
     async def _exemption(self, guild_id: int, player: str, member_id: int | None,
                          occurred_at: datetime, roles: set[int], *, leave_cache=None) -> str | None:

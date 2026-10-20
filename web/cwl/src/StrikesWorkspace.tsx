@@ -6,7 +6,7 @@ import { isStrikeImportJob, StrikeImportFailed, waitForStrikeImport, type Strike
 import { defaultLeaveTags, selectedImportEntries, toggleLeaveTag } from './strikeSelections'
 import './StrikesWorkspace.css'
 
-type Tab = 'history' | 'replacements' | 'leave' | 'settings' | 'import'
+type Tab = 'history' | 'leave' | 'settings' | 'import'
 type Clan = { tag: string; name: string; is_fwa?: boolean }
 type Account = { tag: string; name: string; current_clan_name?: string | null }
 type Member = { id: string; name: string; accounts: Account[] }
@@ -15,7 +15,6 @@ type Overview = { entries: Entry[]; clans: Clan[]; total: number }
 type StrikeAccount = { player_tag: string; player_name: string; discord_id?: string | null; current_clan_tag?: string | null; current_clan_name?: string | null; clan_is_current?: boolean; active_strikes: number; total_strikes: number; last_strike_at?: string | null }
 type AccountOverview = { accounts: StrikeAccount[]; total: number; clans: Clan[] }
 type War = { war_key: string; clan_tag: string; clan_name: string; opponent_tag?: string; opponent_name: string; war_end: string; missed_accounts: number; strikes: number; one_missed: number }
-type Candidate = { player_tag: string; player_name: string; clan_tag: string; clan_name: string; weight: number | null; active_strikes: number; is_filler: boolean; weight_difference?: number | null; discord_id?: string | null; discord_name?: string | null }
 type Settings = { excluded_roles: { id: string; name: string }[]; roles: { id: string; name: string }[]; leaves: { discord_id: string; display_name: string; player_tags: string[]; resume_date: string }[] }
 type ImportEntry = { key: string; player_tag: string; player_name: string; clan_name: string; war_end: string; missed_attacks: number; will_strike: boolean; exempt?: boolean; duplicate?: boolean }
 type ImportResult = { applied: number; strikes: number; skipped: number | unknown[] }
@@ -24,12 +23,11 @@ type ImportDraft = { job: ActiveImportJob | null; preview: ImportPreview | null;
 type ImportPreview = { preview_id: string; wars_scanned: number; complete_wars: number; incomplete_wars: number; entries: ImportEntry[]; coverage: { clan_name: string; earliest?: string; latest?: string; wars: number; error?: string; skipped?: number }[] }
 
 const tabs: { id: Tab; label: string }[] = [
-  { id: 'history', label: 'History' }, { id: 'replacements', label: 'Replacements' },
+  { id: 'history', label: 'History' },
   { id: 'leave', label: 'Leave' }, { id: 'settings', label: 'Exempt roles' }, { id: 'import', label: 'Import wars' },
 ]
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Could not load data. Try again.'
 const dateText = (value?: string | null) => value ? /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`).toLocaleDateString() : new Date(value).toLocaleDateString() : '—'
-const tagPath = (tag: string) => encodeURIComponent(tag)
 const memberLabel = (member: Member) => `${member.name} · ${member.id}`
 const importStorageKey = (userId: string) => `wu:strikes:import:${userId}`
 function savedImport(userId: string): ImportDraft {
@@ -81,9 +79,6 @@ export default function StrikesWorkspace({ permissions, isOwner, userId }: { per
   const [manualRequestId, setManualRequestId] = useState(() => crypto.randomUUID())
   const [removeId, setRemoveId] = useState('')
   const [removeReason, setRemoveReason] = useState('')
-  const [weight, setWeight] = useState('')
-  const [candidates, setCandidates] = useState<Candidate[]>([])
-  const [replacementsLoaded, setReplacementsLoaded] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [roleId, setRoleId] = useState('')
   const [resumeDate, setResumeDate] = useState('')
@@ -226,16 +221,9 @@ export default function StrikesWorkspace({ permissions, isOwner, userId }: { per
     } catch (err) { setError(errorText(err)) }
     finally { setBusy(false) }
   }
-  const fetchCandidates = async () => {
-    if (!weight || Number(weight) <= 0) return
-    setBusy(true); setError(''); setReplacementsLoaded(false)
-    try { const result = await api<{ candidates: Candidate[] }>(`/strikes/replacements?weight=${encodeURIComponent(weight)}`); setCandidates(result.candidates); setReplacementsLoaded(true) }
-    catch (err) { setError(errorText(err)) }
-    finally { setBusy(false) }
-  }
 
   return <section className="strikes-workspace">
-    <div className="page-head"><div><p className="eyebrow">Family clans</p><h1>Strikes</h1><p>War activity and FWA replacements.</p></div></div>
+    <div className="page-head"><div><p className="eyebrow">Family clans</p><h1>Strikes</h1><p>War activity by account.</p></div></div>
     <div className="strikes-tabs" role="group" aria-label="Strike sections">{visibleTabs.map(item => <button key={item.id} aria-pressed={tab === item.id} onClick={() => { setTab(item.id); setError(''); setNotice('') }}>{item.label}</button>)}</div>
     {error && <div className="notice error" role="alert">{error}</div>}
     {notice && <div className="notice success" role="status">{notice}</div>}
@@ -266,7 +254,6 @@ export default function StrikesWorkspace({ permissions, isOwner, userId }: { per
       </>}
     </>}
 
-    {tab === 'replacements' && <><div className="card strikes-form"><h2>Find FWA replacements</h2><p>Fillers first, then more strikes, then closest weight.</p><form className="strikes-inline" onSubmit={event => { event.preventDefault(); void fetchCandidates() }}><label>Recruit total war weight<input type="number" min="1" step="1" value={weight} onChange={event => setWeight(event.target.value)} placeholder="e.g. 115000" required /></label><button className="primary" disabled={busy || !weight || Number(weight) <= 0}>{busy ? 'Finding…' : 'Find matches'}</button></form></div>{replacementsLoaded && <><div className="strikes-list-head"><h2>Potential replacements</h2><span>{candidates.length} players</span></div>{candidates.length === 0 && <div className="card strikes-empty">No FWA players match yet.</div>}<div className="strikes-list">{candidates.map((item, index) => <article className="card strikes-candidate" key={item.player_tag}><div className="strikes-record-main"><div><small>#{index + 1} · {item.clan_name}</small><strong>{item.player_name}</strong><small>{item.player_tag}{item.discord_name ? ` · ${item.discord_name}` : ''}</small></div>{item.is_filler && <span className="strikes-badge filler">Filler</span>}</div><div className="strikes-candidate-facts"><span><strong>{item.active_strikes}</strong> active strikes</span><span><strong>{item.weight == null ? '—' : item.weight.toLocaleString()}</strong> weight</span><span><strong>{item.weight_difference == null ? '—' : item.weight_difference.toLocaleString()}</strong> weight gap</span></div>{access.manage && <label className="strikes-check"><input type="checkbox" checked={item.is_filler} disabled={busy} onChange={event => { const is_filler = event.target.checked; void run(() => api(`/strikes/replacements/${tagPath(item.player_tag)}`, 'PUT', { is_filler }), is_filler ? 'Marked as filler.' : 'Filler mark removed.', fetchCandidates) }} />Replace first (filler)</label>}</article>)}</div></>}</>}
 
     {tab === 'leave' && access.manage && <><div className="card strikes-form"><h2>Approve leave</h2><label>Find Discord member<input type="search" value={memberQuery} onChange={event => { setMemberQuery(event.target.value); setSelectedMember(''); setLeaveTags([]) }} placeholder="Name or Discord ID" /></label>{members.length > 0 && <label>Member<select value={selectedMember} onChange={event => chooseMember(event.target.value)}><option value="">Choose member</option>{members.map(item => <option key={item.id} value={item.id}>{memberLabel(item)}</option>)}</select></label>}{selected && <div className="strikes-account-checks"><span>Accounts on leave</span>{selected.accounts.map(item => <label key={item.tag}><input type="checkbox" checked={leaveTags.includes(item.tag)} onChange={event => setLeaveTags(current => toggleLeaveTag(current, item.tag, event.target.checked))} />{item.name} · {item.tag}</label>)}</div>}<label>Resume on (UTC)<input type="date" value={resumeDate} min={new Date().toISOString().slice(0, 10)} onChange={event => setResumeDate(event.target.value)} /></label><button className="primary" disabled={busy || !selectedMember || !leaveTags.length || !resumeDate} onClick={() => void run(() => api('/strikes/settings/leaves', 'POST', { discord_id: selectedMember, player_tags: leaveTags, resume_date: resumeDate }), 'Leave saved.', async () => { await updateSettings(); setSelectedMember(''); setMemberQuery(''); setLeaveTags([]); setResumeDate('') })}>Save leave</button></div><div className="strikes-list-head"><h2>Approved leave</h2></div>{settings && settings.leaves.length === 0 && <div className="card strikes-empty">No approved leave.</div>}{settings?.leaves.map(item => <div className="card strikes-leave" key={item.discord_id}><div><strong>{item.display_name}</strong><small>{item.player_tags.join(' · ')}</small><span>Resume on: {dateText(item.resume_date)} UTC</span></div><button disabled={busy} onClick={() => void run(() => api(`/strikes/settings/leaves/${encodeURIComponent(item.discord_id)}`, 'DELETE'), 'Leave ended.', updateSettings)}>End leave</button></div>)}</>}
 

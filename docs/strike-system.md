@@ -13,11 +13,13 @@ Implemented for the Warriors United Discord bot and its existing dashboard. This
 
 ## Staff workflow
 
-The **Strikes** dashboard has History, Replacements, Leave, Exempt roles, and Import wars tabs.
+The **Strikes** dashboard has History, Leave, Exempt roles, and Import wars tabs. **Replacements** is a child page beneath Strikes in the sidebar.
 
 History starts with one row per player account with active strikes, ordered by active strike count. All accounts also shows inactive and missed-only accounts. Accounts linked to the same Discord member remain separate. Open an account to see strike dates, war matchups, and removal history. One-missed records stay hidden unless selected. Find a war by clan or opponent, then choose its date to see that war’s missed attacks. History supports player, Discord member, clan, and status searches; add a manual strike with a reason, or remove a strike with a reason. Choosing a member lets staff choose the player account.
 
-For FWA recruitment, enter the recruit's weight. Results prioritize marked fillers, then most active strikes, then closest weight. Filler preference belongs to the selected clan. Accounts without a usable weight cannot be ranked. Existing roster weights and manual weight overrides are reused.
+The Replacements page shows marked accounts and accounts with active strikes, grouped by family clan. Add an account with Replace first, High priority, or Normal and an optional note. Marking or clearing a replacement never adds or removes strikes. Clearing a priority removes its note and manual listing; an account with active strikes still appears as a normal candidate. Preferences apply to the clan where they were set, so moving clans does not transfer that preference. Existing filler marks appear as Replace first.
+
+Enter an optional recruit weight on the same page to find FWA matches. Known weights rank by replacement priority, active strikes, then nearest weight; unknown weights are clearly marked and appear after known matches. Without a recruit weight, accounts remain visible even when their weight is unknown. Existing roster weights and manual weight overrides are reused.
 
 Leave starts when approved and resumes tracking at **00:00 UTC on the selected date**. All currently linked accounts are selected initially; staff can uncheck individual accounts.
 
