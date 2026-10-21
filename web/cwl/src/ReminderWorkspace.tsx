@@ -2,7 +2,7 @@ import SignupDateField from "./reminders/SignupDateField";
 import ConfirmDialog from "./ConfirmDialog";
 import { useReminderLookup } from "./useReminderLookups";
 import DiscordPreview, { type PreviewPart } from "./DiscordMessagePreview";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type Pool } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
 import type { AnnouncementChannel } from "./announcements";
@@ -164,6 +164,14 @@ function TimingEditor({
   );
 }
 
+function MessagePreview({children}: {children: ReactNode}) {
+  const [open, setOpen] = useState(false);
+  return <details className="reminder-disclosure" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>Discord preview</summary>
+    {open && children}
+  </details>;
+}
+
 export default function ReminderWorkspace({
   seasonId,
   archived,
@@ -190,7 +198,7 @@ export default function ReminderWorkspace({
   const channelError = channelLookup.error;
   const acting = useRef(false);
   const [tab, setTab] = useState<"messages" | "schedule" | "history">(
-    "messages",
+    "schedule",
   );
   const [messageId, setMessageId] = useState("signup");
   const [pool, setPool] = useState<Pool>("main");
@@ -302,31 +310,10 @@ export default function ReminderWorkspace({
   const schedule = preview?.schedule || state?.schedule || [];
   return (
     <section className="reminders-workspace">
-      <div className="section-heading">
-        <div>
-          <h2>Messages &amp; reminders</h2>
-          <p>Changes here also update Discord /manage.</p>
-        </div>
-        <button
-          disabled={busy}
-          onClick={() => {
-            if (!dirty) void act(load);
-            else
-              setConfirmation({
-                text: "Discard unsaved reminder edits and refresh from Manage?",
-                action: () => void act(load),
-              });
-          }}
-        >
-          Refresh Manage
-        </button>
-      </div>
-      <div className="notice" role="note">
-        Existing signup links stay unchanged.
-      </div>
       {error && (
         <p className="notice error" role="alert">
           {error}
+          {!state && <button onClick={() => void act(load)} disabled={busy}>Retry loading reminders</button>}
         </p>
       )}
       {notice && (
@@ -337,14 +324,6 @@ export default function ReminderWorkspace({
       {busy && <p role="status">Working…</p>}
       {state && (
         <>
-          <div className="card reminder-month">
-            <h3>Recurring CWL messages &amp; reminders</h3>
-            <p>Messages and times repeat each month until you change them.</p>
-            <small>
-              The schedule preview and delivery history below show {state.cycle}
-              . Previously sent messages will not be resent.
-            </small>
-          </div>
           {draft && (
             <>
               <div className="reminder-status">
@@ -363,6 +342,20 @@ export default function ReminderWorkspace({
                     ? "Bot has loaded this schedule"
                     : "Waiting for the bot to load changes"}
                 </span>
+                <div className="reminder-control-actions">
+                  <button
+                    disabled={busy}
+                    onClick={() => {
+                      if (!dirty) void act(load);
+                      else
+                        setConfirmation({
+                          text: "Discard unsaved reminder edits and refresh from Manage?",
+                          action: () => void act(load),
+                        });
+                    }}
+                  >
+                    Refresh Manage
+                  </button>
                 <button
                   disabled={disabled || dirty}
                   onClick={() => {
@@ -387,7 +380,12 @@ export default function ReminderWorkspace({
                 >
                   {draft.paused ? "Resume reminders" : "Pause reminders"}
                 </button>
+                </div>
               </div>
+              <details className="reminder-disclosure reminder-context">
+                <summary>About this schedule · {state.cycle}</summary>
+                <p>Messages and times repeat monthly and also update Discord /manage. Existing signup links stay unchanged. Previously sent messages are not resent.</p>
+              </details>
               {archived && (
                 <p className="notice">
                   This season is archived. Settings are read-only.
@@ -402,10 +400,10 @@ export default function ReminderWorkspace({
                     onClick={() => setTab(value)}
                   >
                     {value === "messages"
-                      ? "✉ Messages"
+                      ? "Messages"
                       : value === "schedule"
-                        ? "◷ Signup Reminders"
-                        : "↺ Delivery history"}
+                        ? "Schedule"
+                        : "Delivery history"}
                   </button>
                 ))}
               </div>
@@ -479,6 +477,9 @@ export default function ReminderWorkspace({
                             />
                             Enable {pool === "main" ? "Main" : "Lazy"} version
                           </label>
+                          {(channelError || roleLookup.error) && <p role="alert">Delivery settings need attention. Open Delivery settings below to retry the failed lookup.</p>}
+                          <details className="reminder-disclosure">
+                            <summary>Delivery settings · {variant.role_ids.length} {variant.role_ids.length === 1 ? "role" : "roles"} to notify</summary>
                           <ChannelCombobox
                             label="Destination channel"
                             channels={channels}
@@ -599,6 +600,7 @@ export default function ReminderWorkspace({
                               </small>
                             </label>
                           </details>
+                          </details>
                           <label>
                             Title
                             <input
@@ -624,6 +626,8 @@ export default function ReminderWorkspace({
                               {"{signup_deadline}"} for the shared closing date.
                             </small>
                           </label>
+                          <details className="reminder-disclosure">
+                            <summary>Message image</summary>
                           <label>
                             Image URL
                             <input
@@ -634,9 +638,10 @@ export default function ReminderWorkspace({
                               }
                             />
                           </label>
+                          </details>
                         </fieldset>
                       </div>
-                      <DiscordPreview
+                      <MessagePreview key={messageId+pool}><DiscordPreview
                         parts={[
                           {
                             type: "container",
@@ -677,7 +682,7 @@ export default function ReminderWorkspace({
                           },
                         ]}
                         caption="Discord preview. Signup buttons cannot be changed here."
-                      />
+                      /></MessagePreview>
                     </div>
                   )}
                 </>
@@ -878,7 +883,7 @@ export default function ReminderWorkspace({
                 </div>
               )}
               {tab !== "history" && (
-                <div className="reminder-save">
+                <div className={`reminder-save ${dirty ? 'has-changes' : ''}`}>
                   <span>
                     {dirty
                       ? preview
@@ -886,6 +891,7 @@ export default function ReminderWorkspace({
                         : "Unsaved changes — review before saving"
                       : "Edit the fields above, then review and save"}
                   </span>
+                  <div className="reminder-control-actions" role="group" aria-label="Review and save">
                   <button
                     disabled={disabled || !dirty}
                     onClick={() =>
@@ -929,11 +935,12 @@ export default function ReminderWorkspace({
                   >
                     2. Save changes
                   </button>
+                  </div>
                 </div>
               )}
               {tab !== "messages" || preview ? (
-                <div className="card">
-                  <h3>{preview ? "Schedule preview" : "Saved schedule"}</h3>
+                <details className="reminder-disclosure reminder-schedule-panel" key={preview ? "preview" : "saved"} open={!!preview}>
+                  <summary>{preview ? "Review schedule changes" : "View saved schedule"}</summary>
                   <p>
                     Times below use your browser timezone. Schedule timezone:{" "}
                     {draft.timezone}.
@@ -973,7 +980,7 @@ export default function ReminderWorkspace({
                       ))}
                   </div>
                   {!schedule.length && <p>No enabled scheduled messages.</p>}
-                </div>
+                </details>
               ) : null}
             </>
           )}

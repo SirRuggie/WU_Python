@@ -315,3 +315,24 @@ absolute timestamps in the campaign timezone, and collapsed advanced controls.
 Native date fill via the browser tool did not fire the React change; native keyboard
 entry did and was verified. No live campaigns, signup states or Discord messages
 were changed. Existing bundle-size/import and aiohttp AppKey warnings remain.
+
+### Reminder workspace hierarchy and attached actions
+
+Signup reminders now open on Schedule. Messages, Schedule and Delivery history
+share the gold underline rail; it scrolls horizontally on narrow screens rather
+than wrapping into disconnected rows. Refresh and Pause/Resume are grouped inside
+the status bar. Review/Save share one action group, shown only for unsaved changes.
+Repeated introduction panels were removed. About this schedule, saved schedules,
+delivery settings, images and Discord previews start collapsed. A requested
+schedule review opens automatically; message preview content mounts only when its
+section opens. Errors remain visible outside collapsed settings and initial-load
+failure retains a retry action.
+
+Use this approach for future dashboard work: routine status and controls visible,
+secondary content disclosed, and each action group attached to its context. Do
+not style action buttons as navigation tabs or claim unrelated screens were audited.
+Validation: 191 frontend tests, production build, diff check, and isolated desktop
+1280px/mobile 390px/320px browser review. Checked default disclosure state, lazy
+Discord preview opening/closing, draft review auto-expansion, grouped save actions,
+confirmed discard, and retained gold navigation styling. These are presentation
+changes; no scheduler, saved campaign, permissions or live Discord sends changed.

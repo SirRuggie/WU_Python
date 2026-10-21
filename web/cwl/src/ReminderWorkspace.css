@@ -20,7 +20,7 @@
 }
 .reminder-columns {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .reminders-workspace fieldset {
@@ -139,10 +139,9 @@
   margin-top: 0;
 }
 .reminder-editor-intro {
-  padding: 18px;
-  border-left: 4px solid #87b5ff;
-  background: #1c2533;
-  border-radius: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
 }
 .reminder-editor-intro p {
   color: #d5dfed;
@@ -184,3 +183,52 @@
 .signup-date-grid > section { min-width: 0; }
 .signup-date-grid input { min-width: 0; max-width: 100%; }
 @media (max-width: 800px) { .signup-date-grid { grid-template-columns: minmax(0,1fr); gap: 0; } }
+
+/* Keep actions attached to their status or editor; navigation uses the shared rail. */
+.reminder-status {
+  padding: 14px 16px;
+  background: #181818;
+  border: 1px solid #393939;
+  border-radius: 12px;
+}
+.reminder-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-left: auto;
+  border: 1px solid #46433a;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.reminders-workspace .reminder-control-actions > button {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  min-height: 44px;
+}
+.reminders-workspace .reminder-control-actions > button + button { border-left: 1px solid #46433a; }
+.reminder-disclosure {
+  min-width: 0;
+  border: 1px solid #393939;
+  border-radius: 10px;
+  padding: 0 16px;
+  align-self: start;
+}
+.reminder-disclosure[open] { padding-bottom: 16px; }
+.reminder-disclosure + label { margin-top: 16px; }
+.reminder-context { color: #bbb; }
+.reminder-save:not(.has-changes) { position: static; background: transparent; border-width: 1px 0 0; border-radius: 0; }
+.reminder-save:not(.has-changes) .reminder-control-actions { display: none; }
+@media (max-width:800px) {
+  .reminder-status .reminder-control-actions, .reminder-save .reminder-control-actions { width: 100%; margin-left: 0; }
+  .reminder-control-actions > button { flex: 1; }
+}
+.shell .reminders-workspace .workflow-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.shell .reminders-workspace .workflow-tabs > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
