@@ -10,7 +10,6 @@ import {
   editDraft,
   validateDraft,
   warLoot,
-  warSheetRows,
   pasteColumn,
   type Draft,
   type Roster,
@@ -539,34 +538,10 @@ export default function WeightTrial({
             >
               Copy loot for FWA column F
             </button>
-            <button
-              disabled={busy || dirty || !members.length}
-              onClick={async () => {
-                setError("");
-                try {
-                  await navigator.clipboard.writeText(
-                    warSheetRows(members, values, roster?.war_order),
-                  );
-                  setNotice(
-                    "Names through weights copied in war order, without headers. Paste values starting at C17; column G is blank.",
-                  );
-                } catch (cause) {
-                  setError(message(cause));
-                }
-              }}
-            >
-              Copy names & weights (C–H)
-            </button>
             <p className="small">
-              C–H copies name, TH, storages, loot, a blank small-storage column,
-              and full weight. Paste values at C17 in an editable destination.
-              The original FWA sheet has formula-driven columns; use the column
-              F copy there if C–H is protected or would replace its formulas.
-            </p>
-            <p className="small">
-              Save first. The column F copy contains loot only, in war order, without
-              a heading. Confirm the same war and storage counts in the sheet
-              before pasting into F17. If the sheet uses a separate
+              Save first. The column F copy contains loot only, in war order,
+              without a heading. Confirm the same war and storage counts in the
+              sheet before pasting into F17. If the sheet uses a separate
               small-storage adjustment, check those rows manually; this editor
               calculates loot × storages only. It does not submit weights.
               Players outside the war are excluded; missing war players or loot

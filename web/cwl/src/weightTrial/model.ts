@@ -64,7 +64,7 @@ export function editDraft(
   }
   return next;
 }
-function warCopyRows(
+export function warLoot(
   rows: Member[],
   drafts: Record<string, Draft>,
   order: Record<string, number> | null | undefined,
@@ -76,54 +76,19 @@ function warCopyRows(
   const sorted = Object.entries(order).sort((a, b) => a[1] - b[1]);
   if (sorted.some(([, position], i) => position !== i + 1))
     throw new Error("War lineup is incomplete. Refresh members.");
-  return sorted.map(([tag]) => {
-    const row = rows.find((row) => row.tag === tag);
-    if (!row || !drafts[tag])
-      throw new Error(
-        "A war player is no longer in this clan. Match the spreadsheet manually using the full table export.",
-      );
-    const { weight, storages } = validateDraft(drafts[tag]);
-    if (weight === null)
-      throw new Error(
-        `Enter loot for ${row.name} before copying the war column.`,
-      );
-    return { row, weight, storages };
-  });
-}
-
-export function warLoot(
-  rows: Member[],
-  drafts: Record<string, Draft>,
-  order: Roster["war_order"],
-) {
-  return warCopyRows(rows, drafts, order)
-    .map(({ weight, storages }) => String(weight / storages))
-    .join("\n");
-}
-
-export function warSheetRows(
-  rows: Member[],
-  drafts: Record<string, Draft>,
-  order: Roster["war_order"],
-) {
-  return warCopyRows(rows, drafts, order)
-    .map(({ row, weight, storages }) => {
-      if (!row.town_hall)
+  return sorted
+    .map(([tag]) => {
+      const row = rows.find((row) => row.tag === tag);
+      if (!row || !drafts[tag])
         throw new Error(
-          `Town Hall is unavailable for ${row.name}. Refresh members before copying.`,
+          "A war player is no longer in this clan. Match the spreadsheet manually using the full table export.",
         );
-      // Keep names in one literal spreadsheet cell; never paste them as formulas.
-      const name = row.name.replace(/[\t\r\n]/g, " ");
-      const safeName =
-        /^[\s]*[=+@-]/.test(name) || name.startsWith("'") ? "'" + name : name;
-      return [
-        safeName,
-        row.town_hall,
-        storages,
-        weight / storages,
-        "",
-        weight,
-      ].join("\t");
+      const { weight, storages } = validateDraft(drafts[tag]);
+      if (weight === null)
+        throw new Error(
+          `Enter loot for ${row.name} before copying the war column.`,
+        );
+      return String(weight / storages);
     })
     .join("\n");
 }

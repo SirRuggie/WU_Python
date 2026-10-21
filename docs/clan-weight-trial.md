@@ -126,14 +126,7 @@ boundaries, invalid/blank drafts, war gaps, non-war members, live correction and
 390px/desktop reflow with isolated data. All 199 frontend tests, production build
 and the war-reminder gate passed. No live clan weights were edited during QA.
 
-The C–H clipboard option emits six tab-separated values per war member: name,
-TH, storages, loot, blank small-storage cell, full weight. It has no header and
-uses the same complete-war/missing-weight checks as column F. Unknown TH blocks
-copying, names are sanitized against spreadsheet formulas and row/column breaks,
-and non-war members are excluded. It never writes the destination sheet or saved
-weights. The interface explains that the original FWA template has formula-driven
-columns and retains the safer F-only option. Tests verify 50 rows, exact columns,
-blank G, war order, formula-like names and unavailable data. All 201 frontend
-tests and the war-reminder gate passed. Isolated UI verified the control and
-success state; the browser clipboard reader exposed a different clipboard, so
-actual cross-app paste was not validated. No source sheet was edited.
+The C–H copy experiment was removed because SimpleSheet protects its derived
+columns. Column F remains the supported FWA paste format. Saved weights and the
+existing general table/Excel exports are unchanged. Removal validation: frontend
+regressions, production build, and war-reminder gate.
