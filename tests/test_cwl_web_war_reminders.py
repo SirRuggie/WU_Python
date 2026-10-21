@@ -88,3 +88,28 @@ def test_save_persists_normalized_times_and_actor(setup,monkeypatch):
     asyncio.run(api.save(req))
     changes=coll.update_one.await_args.args[1]['$set']
     assert changes['minutes']==[75,30] and changes['updated_by']=='123456789012345678'
+
+
+def test_linked_samples_use_actor_accounts_cache_and_simulated_counts():
+    providers=NS(linked_tags=AsyncMock(return_value={'#B':True,'#A':True}),player=AsyncMock(side_effect=[{'tag':'#A','name':'Real One','town_hall':18},{'tag':'#B','name':'Real Two','town_hall':17}]))
+    req=NS(app={'providers':providers})
+    actor={'user_id':'505227988229554179'}
+    async def run():
+        args=(req,{'tag':'#P0LY','name':'Warriors'},r.settings(),'60',{'use_my_accounts':True,'mention_me':True},actor)
+        first=await api.test_messages(*args)
+        await api.test_messages(*args)
+        return first
+    first=asyncio.run(run())
+    providers.linked_tags.assert_awaited_once_with(actor['user_id'])
+    assert providers.player.await_count==2
+    assert first[0]['allowed_mentions']['users']==[actor['user_id']]
+    assert '<@505227988229554179>' in first[0]['content']
+    assert 'Simulated attacks' in first[0]['content']
+    assert 'Real One' in first[0]['embeds'][0]['description'] and 'Real Two' in first[0]['embeds'][0]['description']
+    assert 'Shield Bearer' not in str(first)
+
+
+def test_no_linked_accounts_does_not_silently_use_fake_players():
+    req=NS(app={'providers':NS(linked_tags=AsyncMock(return_value={}))})
+    with pytest.raises(web.HTTPBadRequest):
+        asyncio.run(api.test_messages(req,{'tag':'#P0LY','name':'Warriors'},r.settings(),'60',{'use_my_accounts':True},{'user_id':'505227988229554179'}))

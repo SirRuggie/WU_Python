@@ -8,7 +8,7 @@ The clan directory has name/tag search, type filtering, and a scrollable list in
 
 A reminder is a standard Discord message with mentions in `content` and one ordinary embed. It does not use Components V2. Mentions are explicitly allowlisted; roles and everyone mentions are disabled. The embed contains the clan name, opponent, end time, player map position, Town Hall, player name, and attacks used. Large rosters are split into groups of 15 to respect Discord limits. Only pending players appear; linked Discord IDs are deduplicated within each message. Unlinked or ambiguously linked players are shown by game name without a ping.
 
-**Send test to selected channel** sends sample data immediately, even with automatic reminders disabled and no active war. It uses the current form channel without saving. **Mention me** pings only the dashboard user; test messages never ping the sample clan members. The dashboard returns a Discord message link and stores a receipt. Recipient Discord settings still control push notifications.
+**Send test to selected channel** sends sample data immediately, even with automatic reminders disabled and no active war. It uses the current form channel without saving. **Use my linked accounts** loads up to 15 accounts linked to the signed-in dashboard user, with real names and Town Hall levels but explicitly simulated attack counts. Account lookups are cached for five minutes. **Mention me** is selected by default and pings only that dashboard user; test messages never ping anyone else. The preview includes the same mention line as the sent message. The dashboard returns a Discord message link and stores a receipt. Recipient Discord settings still control push notifications.
 
 ## Runtime
 

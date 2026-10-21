@@ -2,6 +2,8 @@
 from datetime import datetime, timezone
 from functools import partial
 import json
+import asyncio
+import time
 from uuid import UUID
 from aiohttp import web
 from pymongo.errors import DuplicateKeyError
@@ -66,13 +68,48 @@ async def save(request):
 
 
 async def preview(request):
-    await require_manage(request, 'clans')
+    actor = await require_manage(request, 'clans')
     body = await request.json()
     config = candidate(body)
     event = event_key(body)
     async with mongo(request) as db:
         row = await clan(request, db)
-    return web.json_response({'messages': reminders.messages(reminders.sample(row, event), config, event, test=True)})
+    return web.json_response({'messages': await test_messages(request, row, config, event, body, actor)})
+
+
+async def test_messages(request, row, config, event, body, actor):
+    """Use only the authenticated editor's accounts; attack counts remain simulated."""
+    from .providers import ProviderUnavailable
+    if any(type(body.get(key, False)) is not bool for key in ('use_my_accounts', 'mention_me')):
+        raise web.HTTPBadRequest(text='Check the test options.')
+    sample = reminders.sample(row, event)
+    if body.get('use_my_accounts'):
+        uid = str(actor['user_id'])
+        cache = request.app.setdefault('war_reminder_test_accounts', {})
+        cached = cache.get(uid)
+        if not cached or cached[0] < time.monotonic():
+            providers = request.app['providers']
+            try:
+                tags = await providers.linked_tags(uid)
+                if not tags:
+                    raise web.HTTPBadRequest(text='No linked accounts found for your Discord account. Use sample players or link an account first.')
+                # One compact test message, even for editors with many accounts.
+                profiles = await asyncio.gather(*(providers.player(tag) for tag in sorted(tags)[:15]))
+            except ProviderUnavailable:
+                raise web.HTTPServiceUnavailable(text='Could not load your linked accounts. Try again shortly or use sample players.') from None
+            if len(cache) >= 100:
+                cache.clear()
+            cache[uid] = (time.monotonic()+300, profiles)
+        else:
+            profiles = cached[1]
+        sample['members'] = [dict(tag=p['tag'], name=p['name'], th=p['town_hall'], position=i+1,
+                                  used=i % 2) for i, p in enumerate(profiles)]
+    payloads = reminders.messages(sample, config, event, test=True,
+        tester=str(actor['user_id']) if body.get('mention_me') else None)
+    if body.get('use_my_accounts'):
+        for payload in payloads:
+            payload['content'] = payload['content'].replace('Sample players', 'Your linked accounts · Simulated attacks')
+    return payloads
 
 
 def event_key(body):
@@ -96,6 +133,7 @@ async def test_send(request):
     await channel(request, config['channel_id'])
     async with mongo(request) as db:
         row = await clan(request, db)
+        payload = (await test_messages(request, row, config, event, body, actor))[0]
         coll = reminders.collection(db, 'war_reminder_deliveries')
         key = 'test:'+request_id
         receipt = dict(_id=key, clan_tag=row['tag'], at=datetime.now(timezone.utc), event=event,
@@ -104,7 +142,6 @@ async def test_send(request):
             await coll.insert_one(receipt)
         except DuplicateKeyError:
             raise web.HTTPConflict(text='This test was already submitted. Check delivery history before sending another.') from None
-        payload = reminders.messages(reminders.sample(row, event), config, event, test=True, tester=str(actor['user_id']) if body.get('mention_me') else None)[0]
         try:
             sent = await discord(request, 'POST', f"/channels/{config['channel_id']}/messages", json=payload)
         except Exception:
