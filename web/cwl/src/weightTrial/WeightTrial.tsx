@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import TownHallIcon from "../TownHallIcon";
 import {
-  copyRows,
-  parseWeight,
-  pasteWeights,
-  weightText,
+  copyTable,
+  draftFor,
+  editDraft,
+  validateDraft,
+  warLoot,
+  pasteColumn,
+  type Draft,
   type Roster,
 } from "./model";
 import "./WeightTrial.css";
@@ -21,8 +24,9 @@ export default function WeightTrial({
   const [clans, setClans] = useState<Clan[]>([]);
   const [selected, setSelected] = useState("");
   const [search, setSearch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [roster, setRoster] = useState<Roster | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,12 +35,17 @@ export default function WeightTrial({
   const [notice, setNotice] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [directoryAttempt, setDirectoryAttempt] = useState(0);
+  const errorPanel = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    if (error) errorPanel.current?.focus();
+  }, [error]);
+  const pickerButton = useRef<HTMLButtonElement | null>(null);
   const request = useRef(0);
   const saving = useRef(false);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const members = roster?.members || [];
   const changed = members.filter(
-    (row) => (values[row.tag] ?? "") !== weightText(row.weight),
+    (row) => JSON.stringify(values[row.tag]) !== JSON.stringify(draftFor(row)),
   );
   const dirty = changed.length > 0;
   useEffect(() => {
@@ -87,14 +96,14 @@ export default function WeightTrial({
         if (id !== request.current) return;
         result.members.sort(
           (a, b) =>
-            (b.town_hall || 0) - (a.town_hall || 0) ||
+            (a.clan_position || 99) - (b.clan_position || 99) ||
             a.name.localeCompare(b.name) ||
             a.tag.localeCompare(b.tag),
         );
         setRoster(result);
         setValues(
           Object.fromEntries(
-            result.members.map((row) => [row.tag, weightText(row.weight)]),
+            result.members.map((row) => [row.tag, draftFor(row)]),
           ),
         );
       })
@@ -114,7 +123,12 @@ export default function WeightTrial({
       "Discard unsaved weights? Saved weights will stay unchanged.",
     );
   const select = (tag: string) => {
-    if (!saving.current && discard()) setSelected(tag);
+    if (!saving.current && discard()) {
+      setSelected(tag);
+      setPickerOpen(false);
+      setSearch("");
+      pickerButton.current?.focus();
+    }
   };
   const refresh = () => {
     if (!saving.current && discard()) setAttempt((value) => value + 1);
@@ -126,7 +140,7 @@ export default function WeightTrial({
       changes = changed.map((row) => ({
         tag: row.tag,
         revision: row.revision,
-        weight: parseWeight(values[row.tag]),
+        ...validateDraft(values[row.tag]),
       }));
     } catch (cause) {
       setError(message(cause));
@@ -146,14 +160,14 @@ export default function WeightTrial({
       if (id !== request.current) return;
       result.members.sort(
         (a, b) =>
-          (b.town_hall || 0) - (a.town_hall || 0) ||
+          (a.clan_position || 99) - (b.clan_position || 99) ||
           a.name.localeCompare(b.name) ||
           a.tag.localeCompare(b.tag),
       );
-      setRoster(result);
+      setRoster({ ...result, war_order: roster.war_order });
       setValues(
         Object.fromEntries(
-          result.members.map((row) => [row.tag, weightText(row.weight)]),
+          result.members.map((row) => [row.tag, draftFor(row)]),
         ),
       );
       setNotice(
@@ -217,7 +231,10 @@ export default function WeightTrial({
         <div>
           <p className="eyebrow">Clan management · Temporary test</p>
           <h1>Clan weights</h1>
-          <p>Current members. One weight per account. Enter 149 for 149k.</p>
+          <p>
+            Enter loot or full weight. Changing storages recalculates weight
+            from loot.
+          </p>
         </div>
       </div>
       <p className="weight-trial-note">
@@ -232,59 +249,59 @@ export default function WeightTrial({
         </p>
       )}
       <div className="weight-trial-layout">
-        <aside className="weight-trial-clans">
-          <label>
-            Find a clan
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Clan name or tag"
-            />
-          </label>
-          <p className="small">
-            {filtered.length} of {clans.length} clans
-          </p>
-          <div className="weight-trial-clan-list" aria-label="Family clans">
-            {filtered.map((clan) => (
-              <button
-                key={clan.tag}
-                aria-pressed={selected === clan.tag}
-                disabled={busy}
-                onClick={() => select(clan.tag)}
-              >
-                <strong>{clan.name}</strong>
-                <small>{clan.type || clan.tag}</small>
-              </button>
-            ))}
-          </div>
-          <label className="weight-trial-mobile-select">
-            Clan
-            <select
-              value={selected}
-              disabled={busy}
-              onChange={(event) => select(event.target.value)}
+        <div className="weight-trial-picker">
+          <button
+            ref={pickerButton}
+            aria-expanded={pickerOpen}
+            aria-controls="weight-clan-options"
+            disabled={busy}
+            onClick={() => setPickerOpen(!pickerOpen)}
+          >
+            {clans.find((clan) => clan.tag === selected)?.name ||
+              "Choose a clan"}{" "}
+            ▾
+          </button>
+          {pickerOpen && (
+            <div
+              id="weight-clan-options"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setPickerOpen(false);
+                  pickerButton.current?.focus();
+                }
+              }}
             >
-              <option value="">Choose a clan</option>
-              {clans
-                .filter(
-                  (clan) => clan.tag === selected || filtered.includes(clan),
-                )
-                .map((clan) => (
-                  <option key={clan.tag} value={clan.tag}>
+              <label>
+                Find a clan
+                <input
+                  autoFocus
+                  type="search"
+                  placeholder="Type a name or tag"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+              <div className="weight-trial-clan-list" aria-label="Family clans">
+                {filtered.map((clan) => (
+                  <button
+                    key={clan.tag}
+                    aria-pressed={selected === clan.tag}
+                    disabled={busy}
+                    onClick={() => select(clan.tag)}
+                  >
                     {clan.name}
-                  </option>
+                    <small>{clan.type || clan.tag}</small>
+                  </button>
                 ))}
-            </select>
-          </label>
-          {directoryLoading && <p role="status">Loading clans…</p>}
-          {!directoryLoading && !directoryError && !clans.length && (
-            <p>No family clans configured.</p>
+              </div>
+              {!filtered.length && (
+                <p>
+                  {directoryLoading ? "Loading clans…" : "No matching clans."}
+                </p>
+              )}
+            </div>
           )}
-          {!!clans.length && !filtered.length && (
-            <p>No clans match your search.</p>
-          )}
-        </aside>
+        </div>
         <section className="weight-trial-members" aria-label="Member weights">
           <div className="weight-trial-toolbar">
             <div>
@@ -301,7 +318,12 @@ export default function WeightTrial({
             </button>
           </div>
           {error && (
-            <p className="notice error" role="alert">
+            <p
+              ref={errorPanel}
+              tabIndex={-1}
+              className="notice error"
+              role="alert"
+            >
               {error}
             </p>
           )}
@@ -313,23 +335,34 @@ export default function WeightTrial({
           {loading && <p role="status">Loading current members…</p>}
           {roster && (
             <>
-              <div className="weight-trial-columns">
+              <div className="weight-trial-columns" aria-hidden="true">
+                <span>Clan / War #</span>
                 <span>Player</span>
-                <span>Weight (k)</span>
+                <span>Storages</span>
+                <span>Loot</span>
+                <span>Full weight</span>
               </div>
               {members.map((row, index) => {
-                const value = values[row.tag] ?? "";
-                let invalid = false;
+                const draft = values[row.tag] || draftFor(row);
+                let invalid = "";
                 try {
-                  parseWeight(value);
-                } catch {
-                  invalid = true;
+                  validateDraft(draft);
+                } catch (cause) {
+                  invalid = message(cause);
                 }
                 return (
                   <div
-                    className={`weight-trial-row${value !== weightText(row.weight) ? " is-edited" : ""}`}
+                    className={`weight-trial-row${JSON.stringify(draft) !== JSON.stringify(draftFor(row)) ? " is-edited" : ""}`}
                     key={row.tag}
                   >
+                    <small className="weight-trial-position">
+                      Clan #{row.clan_position ?? "—"}
+                      <br />
+                      War{" "}
+                      {roster.war_order?.[row.tag]
+                        ? `#${roster.war_order[row.tag]}`
+                        : "—"}
+                    </small>
                     <div className="weight-trial-player">
                       <TownHallIcon level={row.town_hall} />
                       <span>
@@ -337,59 +370,84 @@ export default function WeightTrial({
                         <small>{row.tag}</small>
                       </span>
                     </div>
-                    <input
-                      ref={(element) => {
-                        inputs.current[row.tag] = element;
-                      }}
-                      type="text"
-                      inputMode="numeric"
-                      aria-label={`Weight in thousands for ${row.name} ${row.tag}`}
-                      aria-invalid={invalid}
-                      value={value}
-                      placeholder="N/A"
-                      maxLength={12}
-                      disabled={busy}
-                      onFocus={(event) => event.currentTarget.select()}
-                      onChange={(event) => {
-                        setValues((current) => ({
-                          ...current,
-                          [row.tag]: event.target.value,
-                        }));
-                        setNotice("");
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          inputs.current[members[index + 1]?.tag]?.focus();
-                        }
-                      }}
-                      onPaste={(event) => {
-                        const text = event.clipboardData.getData("text");
-                        if (!text.includes("\n") && !text.includes("\t"))
-                          return;
-                        event.preventDefault();
-                        try {
-                          const pasted = pasteWeights(
-                            text,
-                            members.length - index,
-                          );
-                          setValues((current) => ({
-                            ...current,
-                            ...Object.fromEntries(
-                              pasted.map((weight, offset) => [
-                                members[index + offset].tag,
-                                weight,
-                              ]),
-                            ),
-                          }));
-                          setNotice(
-                            `${pasted.length} weights pasted · Not saved yet.`,
-                          );
-                        } catch (cause) {
-                          setError(message(cause));
-                        }
-                      }}
-                    />
+                    {(["storages", "loot", "full"] as const).map((field) => (
+                      <label className="weight-trial-field" key={field}>
+                        <span>
+                          {field === "full"
+                            ? "Full weight"
+                            : field === "loot"
+                              ? "Loot"
+                              : "Storages"}
+                        </span>
+                        <input
+                          ref={(element) => {
+                            inputs.current[`${row.tag}-${field}`] = element;
+                          }}
+                          type="text"
+                          inputMode="numeric"
+                          aria-label={`${field === "full" ? "Full weight" : field} for ${row.name} ${row.tag}`}
+                          aria-invalid={!!invalid}
+                          aria-describedby={
+                            invalid ? `weight-error-${index}` : undefined
+                          }
+                          value={draft[field]}
+                          placeholder={field === "storages" ? "5" : "N/A"}
+                          maxLength={12}
+                          disabled={busy}
+                          onFocus={(event) => event.currentTarget.select()}
+                          onChange={(event) => {
+                            setValues((current) => ({
+                              ...current,
+                              [row.tag]: editDraft(
+                                draft,
+                                field,
+                                event.target.value,
+                              ),
+                            }));
+                            setNotice("");
+                          }}
+                          onPaste={(event) => {
+                            const text = event.clipboardData.getData("text");
+                            if (!/[\n\t]/.test(text)) return;
+                            event.preventDefault();
+                            try {
+                              const updates = pasteColumn(
+                                members,
+                                values,
+                                index,
+                                field,
+                                text,
+                              );
+                              setValues((current) => ({
+                                ...current,
+                                ...updates,
+                              }));
+                              setNotice(
+                                `${Object.keys(updates).length} rows pasted · Not saved yet.`,
+                              );
+                            } catch (cause) {
+                              setError(message(cause));
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              inputs.current[
+                                `${members[index + 1]?.tag}-${field}`
+                              ]?.focus();
+                            }
+                          }}
+                        />
+                      </label>
+                    ))}
+                    {invalid && (
+                      <small
+                        className="weight-trial-row-error"
+                        id={`weight-error-${index}`}
+                      >
+                        {invalid}
+                      </small>
+                    )}
                   </div>
                 );
               })}
@@ -399,7 +457,7 @@ export default function WeightTrial({
                   {dirty
                     ? `${changed.length} unsaved weight${changed.length === 1 ? "" : "s"}`
                     : "All changes saved"}
-                  <small>Enter or Tab moves to the next row.</small>
+                  <small>Enter moves down. Tab moves across.</small>
                 </span>
                 <button
                   className="primary"
@@ -425,7 +483,7 @@ export default function WeightTrial({
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(
-                    copyRows(members, values),
+                    copyTable(members, values),
                   );
                   setNotice("Current member weights copied for Excel.");
                 } catch {
@@ -435,12 +493,33 @@ export default function WeightTrial({
                 }
               }}
             >
-              Copy current clan
+              Copy member table
+            </button>
+            <button
+              disabled={busy || dirty || !members.length}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(
+                    warLoot(members, values, roster?.war_order),
+                  );
+                  setNotice(
+                    "Loot copied in war order. Check the same clan and war in the FWA sheet, then paste into F17.",
+                  );
+                } catch (cause) {
+                  setError(message(cause));
+                }
+              }}
+            >
+              Copy loot for FWA column F
             </button>
             <p className="small">
-              Blank means Not Available. Saved weights stay with the player tag
-              when a member leaves or moves clans. You can paste a single Excel
-              weight column into the first matching row.
+              Save first. The FWA copy contains loot only, in war order, without
+              a heading. Confirm the same war and storage counts in the sheet
+              before pasting into F17. If the sheet uses a separate
+              small-storage adjustment, check those rows manually; this editor
+              calculates loot × storages only. It does not submit weights.
+              Players outside the war are excluded; missing war players or loot
+              block copying.
             </p>
           </details>
         </section>

@@ -2,16 +2,8 @@
   color: #f3ca56;
   font-size: 0.9rem;
 }
-.weight-trial-layout {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 24px;
-}
-.weight-trial-clans {
-  min-width: 0;
-}
 .weight-trial-clan-list {
-  max-height: 70vh;
+  max-height: 240px;
   overflow-y: auto;
 }
 .weight-trial-clan-list button {
@@ -32,9 +24,6 @@
 .weight-trial-clan-list small {
   display: block;
 }
-.weight-trial-mobile-select {
-  display: none;
-}
 .weight-trial-members {
   min-width: 0;
 }
@@ -48,7 +37,7 @@
 .weight-trial-columns,
 .weight-trial-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px;
+  grid-template-columns: 80px minmax(120px, 1fr) 80px 110px 120px;
   gap: 12px;
   align-items: center;
   padding: 7px 10px;
@@ -114,25 +103,9 @@
   margin: 6px 8px 6px 0;
 }
 @media (max-width: 700px) {
-  .weight-trial-layout {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-  .weight-trial-clan-list {
-    display: none;
-  }
-  .weight-trial-mobile-select {
-    display: block;
-  }
   .weight-trial-toolbar {
     align-items: start;
     flex-wrap: wrap;
-  }
-  .weight-trial-columns,
-  .weight-trial-row {
-    grid-template-columns: minmax(0, 1fr) 80px;
-    gap: 8px;
-    padding: 6px 0;
   }
   .weight-trial-save {
     padding: 10px 0;
@@ -141,5 +114,70 @@
 @media (max-height: 500px) {
   .weight-trial-save {
     position: static;
+  }
+}
+/* Compact picker and linked spreadsheet inputs. */
+.weight-trial-layout {
+  display: block;
+}
+.weight-trial-picker {
+  max-width: 440px;
+  margin-bottom: 20px;
+}
+.weight-trial-picker > button {
+  width: 100%;
+  text-align: left;
+}
+#weight-clan-options {
+  padding: 12px;
+  background: #1c1d21;
+  border: 1px solid #45454d;
+  border-radius: 8px;
+}
+.weight-trial-field {
+  margin: 0;
+  min-width: 0;
+}
+.weight-trial-field > span {
+  display: none;
+}
+.weight-trial-position {
+  font-variant-numeric: tabular-nums;
+}
+.weight-trial-row-error {
+  grid-column: 1 / -1;
+  color: #ffb5ae;
+}
+@media (max-width: 800px) {
+  .weight-trial-columns {
+    display: none;
+  }
+  .weight-trial-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 12px 0;
+    gap: 8px;
+  }
+  .weight-trial-position {
+    grid-column: 1;
+  }
+  .weight-trial-player {
+    grid-column: 2 / 4;
+  }
+  .weight-trial-field > span {
+    display: block;
+    font-size: 0.75rem;
+    margin-bottom: 4px;
+  }
+  .weight-trial-save {
+    flex-wrap: wrap;
+  }
+}
+.weight-trial-row input {
+  scroll-margin-block: 120px 190px;
+}
+@media (max-width: 800px) {
+  .weight-trial-player strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }

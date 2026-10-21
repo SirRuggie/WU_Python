@@ -1,29 +1,44 @@
 import { expect, it } from "vitest";
-import { parseWeight, pasteWeights, copyRows } from "./model";
-it("accepts shorthand weights and blank, rejects ambiguous values", () => {
-  expect(parseWeight("149")).toBe(149000);
-  expect(parseWeight("")).toBeNull();
-  for (const value of ["149k", "149000", "0", "-1", "1.5", "=1", "1\t2"])
-    expect(() => parseWeight(value)).toThrow();
+import { draftFor, editDraft, validateDraft, warLoot } from "./model";
+it("links loot and full weight, including changes to storages", () => {
+  const draft = { storages: "5", loot: "29800", full: "149000" };
+  expect(validateDraft(draft)).toEqual({ storages: 5, weight: 149000 });
+  expect(editDraft(draft, "full", "150,000").loot).toBe("30000");
+  expect(editDraft(draft, "storages", "4").full).toBe("119200");
+  expect(() => validateDraft(editDraft(draft, "full", "149001"))).toThrow();
+  expect(() => validateDraft(editDraft(draft, "storages", "0"))).toThrow();
+  expect(validateDraft(editDraft(draft, "loot", "")).weight).toBeNull();
 });
-it("pastes an Excel column without spilling past the roster", () => {
-  expect(pasteWeights("149\r\n150\r\n", 2)).toEqual(["149", "150"]);
-  expect(() => pasteWeights("149\n150", 1)).toThrow();
-  expect(() => pasteWeights("149\t150", 2)).toThrow();
-});
-it("copies player tags and safely quotes external names", () => {
-  expect(
-    copyRows(
-      [
-        {
-          tag: "#P2Y",
-          name: "=bad()",
-          town_hall: 16,
-          weight: 149000,
-          revision: 1,
-        },
-      ],
-      { "#P2Y": "149" },
+it("copies only complete war rows in map order, never clan display order", () => {
+  const rows = [
+    { tag: "#P2Y", name: "First", town_hall: 16, weight: 149000, revision: 0 },
+    { tag: "#Q2Y", name: "Second", town_hall: 16, weight: 150000, revision: 0 },
+  ];
+  const drafts = Object.fromEntries(
+    rows.map((row) => [row.tag, draftFor(row)]),
+  );
+  expect(warLoot(rows, drafts, { "#P2Y": 2, "#Q2Y": 1 })).toBe("30000\n29800");
+  expect(() => warLoot(rows, drafts, null)).toThrow();
+  expect(() => warLoot(rows, drafts, { "#P2Y": 2 })).toThrow();
+  expect(() => warLoot(rows, drafts, { "#G2Y": 1 })).toThrow();
+  expect(() =>
+    warLoot(
+      rows,
+      { ...drafts, "#P2Y": { storages: "5", loot: "", full: "" } },
+      { "#P2Y": 1 },
     ),
-  ).toContain("#P2Y\t'=bad()\t16\t149");
+  ).toThrow();
+});
+import { pasteColumn } from "./model";
+it("pastes loot as one atomic column and rejects overflow or multiple columns", () => {
+  const rows = [
+    { tag: "#P2Y", name: "Test", town_hall: 16, weight: null, revision: 0 },
+  ];
+  const drafts = { "#P2Y": draftFor(rows[0]) };
+  expect(pasteColumn(rows, drafts, 0, "loot", "29,800\n")["#P2Y"].full).toBe(
+    "149000",
+  );
+  expect(() => pasteColumn(rows, drafts, 0, "loot", "29800\n30000")).toThrow();
+  expect(() => pasteColumn(rows, drafts, 0, "loot", "29800\t30000")).toThrow();
+  expect(drafts["#P2Y"].full).toBe("");
 });

@@ -26,6 +26,10 @@ class ClanWeightTrialStore:
         self.path = path
         with self.connect() as db:
             db.executescript(SCHEMA)
+            for table in ('clan_weight_trial', 'clan_weight_trial_history'):
+                columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
+                if 'storages' not in columns:
+                    db.execute(f'ALTER TABLE {table} ADD COLUMN storages INTEGER')
 
     @contextmanager
     def connect(self):
@@ -59,13 +63,15 @@ class ClanWeightTrialStore:
             for change in changes:
                 current = db.execute('SELECT * FROM clan_weight_trial WHERE tag=?', (change['tag'],)).fetchone()
                 revision = current['revision'] if current else 0
-                if revision != change['revision'] and (not current or current['weight'] != change['weight']):
+                storages = change.get('storages', (current['storages'] if current else None))
+                same = current and current['weight'] == change['weight'] and current['storages'] == storages
+                if revision != change['revision'] and not same:
                     raise WeightConflict('A weight changed since you loaded this clan. Refresh members before saving again.')
-                if current and current['weight'] == change['weight']:
+                if same:
                     continue  # Safe replay after a lost response; no duplicate audit event.
                 member = members[change['tag']]
-                db.execute('INSERT OR REPLACE INTO clan_weight_trial VALUES (?,?,?,?,?,?,?,?,?)',
-                           (change['tag'],change['weight'],revision+1,member['name'],member['town_hall'],roster['tag'],roster['name'],now,actor))
-                db.execute('INSERT INTO clan_weight_trial_history(tag,weight,revision,clan_tag,actor_id,updated_at) VALUES (?,?,?,?,?,?)',
-                           (change['tag'],change['weight'],revision+1,roster['tag'],actor,now))
+                db.execute('INSERT OR REPLACE INTO clan_weight_trial(tag,weight,revision,player_name,town_hall,last_clan_tag,last_clan_name,updated_at,actor_id,storages) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                           (change['tag'],change['weight'],revision+1,member['name'],member['town_hall'],roster['tag'],roster['name'],now,actor,storages))
+                db.execute('INSERT INTO clan_weight_trial_history(tag,weight,revision,clan_tag,actor_id,updated_at,storages) VALUES (?,?,?,?,?,?,?)',
+                           (change['tag'],change['weight'],revision+1,roster['tag'],actor,now,storages))
         return self.for_members(members)

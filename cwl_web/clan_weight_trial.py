@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from io import BytesIO
 from aiohttp import web
-from .providers import tag
+from .providers import tag, ProviderUnavailable
 from utils.clan_weight_trial_store import WeightConflict
 
 
@@ -29,13 +29,15 @@ async def current(request):
     clans = await family(request)
     if value not in {row['tag'] for row in clans}:
         _fail(404, 'This clan is no longer in the family. Refresh the clan list.')
-    return await request.app['providers'].clan_roster(value)
+    roster = await request.app['providers'].clan_roster(value)
+    return roster
 
 
 def response(roster, saved):
     return {'clan': {'tag':roster['tag'],'name':roster['name']},
             'checked_at':datetime.now(timezone.utc).isoformat(),
             'members':[{**member,'weight':saved.get(member['tag'],{}).get('weight'),
+                        'storages':saved.get(member['tag'],{}).get('storages') or (5 if (member.get('town_hall') or 18) > 8 else 4),
                         'revision':saved.get(member['tag'],{}).get('revision',0)} for member in roster['members']]}
 
 
@@ -48,7 +50,13 @@ async def members(request):
     authorize(request)
     roster = await current(request)
     saved = request.app['clan_weight_trial'].for_members([row['tag'] for row in roster['members']])
-    return web.json_response(response(roster,saved))
+    result = response(roster,saved)
+    try:
+        order = await request.app['providers'].weight_war_order(roster['tag'])
+        result['war_order'] = order
+    except (ProviderUnavailable, ValueError, TypeError):
+        result['war_order'] = None
+    return web.json_response(result)
 
 
 async def save(request):
@@ -60,7 +68,7 @@ async def save(request):
         _fail(400, 'Choose between 1 and 50 weights to save.')
     seen = set()
     for item in changes:
-        if not isinstance(item,dict) or set(item) != {'tag','weight','revision'}:
+        if not isinstance(item,dict) or set(item) not in ({'tag','weight','revision'}, {'tag','weight','revision','storages'}):
             _fail(400, 'Invalid weight row')
         try:
             item['tag'] = tag(item['tag'])
@@ -70,8 +78,14 @@ async def save(request):
             _fail(400, 'Duplicate player or invalid weight revision')
         seen.add(item['tag'])
         weight = item['weight']
-        if weight is not None and (type(weight) is not int or not 1000 <= weight <= 999000 or weight % 1000):
-            _fail(400, 'Enter a whole weight in thousands: 149 means 149,000. Leave blank for Not Available.')
+        storages = item.get('storages')
+        if 'storages' in item and (type(storages) is not int or not 1 <= storages <= 5):
+            _fail(400, 'Storages must be a whole number from 1 to 5.')
+        if weight is not None and (type(weight) is not int or not 1 <= weight <= 999999 or
+                                   (storages is None and (weight < 1000 or weight % 1000)) or
+                                   (storages is not None and weight % storages)):
+
+            _fail(400, 'Enter a whole full weight divisible by the storage count. Leave blank for Not Available.')
     roster = await current(request)  # Recheck membership before any write.
     if not seen <= {row['tag'] for row in roster['members']}:
         _fail(409, 'A selected member has left this clan. Refresh members; their previously saved weight is retained.')
@@ -89,11 +103,11 @@ def workbook(rows):
     book = Workbook()
     sheet = book.active
     sheet.title = 'Saved test weights'
-    headers = ['Player tag','Player name','Town Hall','Weight (k)','Weight','Clan at last save','Clan tag at last save','Saved at']
+    headers = ['Player tag','Player name','Town Hall','Weight (k)','Weight','Clan at last save','Clan tag at last save','Saved at','Storages','Loot']
     sheet.append(headers)
     for row in rows:
-        values = [row['tag'],row['player_name'],row['town_hall'],row['weight']//1000 if row['weight'] else None,
-                  row['weight'],row['last_clan_name'],row['last_clan_tag'],row['updated_at']]
+        values = [row['tag'],row['player_name'],row['town_hall'],row['weight']/1000 if row['weight'] else None,
+                  row['weight'],row['last_clan_name'],row['last_clan_tag'],row['updated_at'], row.get('storages'), row['weight'] // row['storages'] if row['weight'] is not None and row.get('storages') else None]
         values = [ILLEGAL_CHARACTERS_RE.sub('', value) if isinstance(value,str) else value for value in values]
         sheet.append(values)
         # Never interpret external names as spreadsheet formulas.
@@ -104,7 +118,7 @@ def workbook(rows):
     for cell in sheet[1]:
         cell.font=Font(bold=True,color='FFFFFF')
         cell.fill=PatternFill('solid',fgColor='292929')
-    for letter,width in zip('ABCDEFGH',[18,30,12,14,16,28,24,30]):
+    for letter,width in zip('ABCDEFGHIJ',[18,30,12,14,16,28,24,30,12,14]):
         sheet.column_dimensions[letter].width=width
     data=BytesIO(); book.save(data)
     return data.getvalue()

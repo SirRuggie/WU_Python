@@ -14,6 +14,7 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
     call=foundation.WebFoundationTests.call
 
     def roster(self, clan='#R2Y', members=None):
+        self.providers.weight_war_order=AsyncMock(side_effect=ProviderUnavailable('No war'))
         rows=members if members is not None else [{'tag':'#P2Y','name':'=malicious()','town_hall':16},{'tag':'#Q2Y','name':'Second','town_hall':15}]
         self.providers.clan_roster=AsyncMock(return_value={'tag':clan,'name':'Family','members':rows})
 
@@ -70,3 +71,30 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.call('GET','/weight-trial/clans/%23J2Y',self.owner)).status,503)
         self.assertEqual((await self.save([{'tag':'#P2Y','weight':150000,'revision':2}],clan='%23J2Y')).status,503)
         self.assertIsNone(self.app['clan_weight_trial'].all()[0]['weight'])
+
+    async def test_storage_calculation_persistence_and_conflict(self):
+        self.roster()
+        item={'tag':'#P2Y','weight':149000,'storages':5,'revision':0}
+        self.assertEqual((await self.save([item])).status,200)
+        self.assertEqual(ClanWeightTrialStore(self.app['store'].path).all()[0]['storages'],5)
+        for changes in ({'storages':True},{'storages':0},{'storages':6},{'weight':149001}):
+            self.assertEqual((await self.save([{**item,**changes}])).status,400)
+        self.assertEqual((await self.save([{**item,'storages':4}])).status,409)
+        self.assertEqual((await self.save([{**item,'storages':4,'revision':1}])).status,200)
+        self.assertEqual((await self.save([{**item,'storages':4,'revision':1}])).status,200)
+        row=ClanWeightTrialStore(self.app['store'].path).all()[0]
+        self.assertEqual(row['storages'],4)
+        self.assertEqual(row['revision'],2)
+
+    async def test_war_order_is_optional_and_validated(self):
+        from cwl_web.providers import LiveProviders
+        provider=LiveProviders()
+        provider._league_get=AsyncMock(return_value={'state':'inWar','clan':{'tag':'#R2Y','members':[{'tag':'#P2Y','mapPosition':1}]}})
+        self.assertEqual(await provider.weight_war_order('#R2Y'),{'#P2Y':1})
+        provider._league_get.return_value['clan']['members'].append({'tag':'#Q2Y','mapPosition':1})
+        with self.assertRaises(ProviderUnavailable): await provider.weight_war_order('#R2Y')
+        self.roster()
+        self.providers.weight_war_order=AsyncMock(side_effect=ProviderUnavailable('Private war'))
+        result=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
+        self.assertIsNone(result['war_order'])
+        self.assertEqual(len(result['members']),2)

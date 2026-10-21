@@ -62,3 +62,39 @@ API edits do not invoke Apps Script edit triggers; automated calculation would
 require a supported script entry point or the existing UI operation, not simply
 a tag-cell write. The requested primary weight spreadsheet integration remains
 deferred.
+
+## Storage and loot editor (October 21)
+
+The trial now stores a nullable storage count alongside each player's full integer
+weight, with an additive column on both trial tables. Existing weights remain
+unchanged. Unset counts display a starting value of five (four for TH8 and below);
+counts are editable from one to five and must be checked against the destination
+sheet. Loot is derived from full weight / storages. Editing loot or storages
+recomputes full weight; editing full weight recomputes loot. Fractional or
+inconsistent results cannot be saved. Both fields blank means Not Available.
+There is no separate small-storage adjustment in this trial.
+
+Clan position comes from the live member list, while optional war position comes
+from a validated current-war lineup. Private/unavailable war data never hides
+current members. The FWA copy contains one numeric loot column in war map order,
+with no header, ready for F17; unknown lineup, missing current members or missing
+weights blocks it. Users must verify the same clan/war and storage counts, and
+ensure the sheet has no extra small-storage adjustment, before pasting. Copying
+never submits to FWA. The full table and saved Excel export remain available.
+
+A searchable disclosure replaces the large clan sidebar on all widths. Enter
+moves down the same field; Tab moves across fields. Unsaved navigation guards,
+revision conflicts and membership revalidation remain in effect. All data stays
+isolated from live CWL weights and no Google Sheets connection was added.
+
+Validation for this revision: four backend trial tests cover authorization/CSRF,
+malformed values, removed members, revision conflicts, replay, restart persistence,
+formula-safe exports and optional/malformed war data. Frontend tests cover both
+calculation directions, invalid/fractional values, atomic column paste and safe
+war-order copying. The full frontend suite and production build passed, as did
+the war-reminder regression gate. Isolated 50-member browser checks covered
+substring clan search, focus restoration, calculation/save/reload, blocked copying
+with missing loot, and desktop/390px/320px layouts without page overflow. Errors
+receive focus so failed copying at the bottom is discoverable. No live Sheets,
+FWA submission, or Discord delivery was performed. Existing build-size and aiohttp
+warnings remain. This is not an exhaustive assistive-technology audit.
