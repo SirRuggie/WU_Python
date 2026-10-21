@@ -25,20 +25,26 @@ export default function ManageSignups({season, onDirty, onBusy, onSeasonRefresh,
   const [member, setMember] = useState('')
   const [findMember, setFindMember] = useState(false)
   const [names, setNames] = useState<Record<string,string>>({})
+  const [namesError, setNamesError] = useState(false)
+  const [namesLoading, setNamesLoading] = useState(true)
+  const [nameRefresh, setNameRefresh] = useState(0)
   useEffect(() => {
     let active = true
-    api<{options: MemberOption[]}>('/staff-signup-members').then(data => {
+    setNamesLoading(true)
+    setNamesError(false)
+    setNames({})
+    api<{options: MemberOption[]}>(`/staff-signup-members?season_id=${season.id}`).then(data => {
       if (active) setNames(current => ({...current,...Object.fromEntries(data.options.map(option => [option.id, option.display_name || option.username]))}))
-    }).catch(() => { /* Discord IDs remain usable if display names are unavailable. */ })
+    }).catch(() => { if (active) setNamesError(true) }).finally(() => { if (active) setNamesLoading(false) })
     return () => { active = false }
-  }, [])
+  }, [season.id, nameRefresh])
   const [pool, setPool] = useState('all')
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const [page, setPage] = useState(0)
-  const reload = useCallback(async () => { setRefresh(value => value + 1) }, [])
+  const reload = useCallback(async () => { setRefresh(value => value + 1); setNameRefresh(value => value + 1) }, [])
   useEffect(() => {
     let active = true
     setLoading(true)
@@ -62,6 +68,7 @@ export default function ManageSignups({season, onDirty, onBusy, onSeasonRefresh,
       onChanged={async () => {await onSeasonRefresh(); await reload()}} />
     <section className="card">
       <div className="section-heading"><h2>Saved signups</h2><button onClick={onRoster}>Open roster</button></div>
+      {namesError && <p className="notice" role="status">Discord names could not be loaded.<button onClick={() => setNameRefresh(value => value + 1)}>Retry names</button></p>}
       <p>Accounts are grouped by member. Open an account to manage its placement or remove its signup.</p>
       <button aria-expanded={findMember} onClick={()=>setFindMember(value=>!value)}>Find by Discord member{member ? ' · Filter active' : ''}</button>
       {findMember && <MemberPicker label="Filter signups by member" value={member} disabled={false} endpoint="/staff-signup-members" showRoles={false}
@@ -80,7 +87,7 @@ export default function ManageSignups({season, onDirty, onBusy, onSeasonRefresh,
         {!matching.length && <p>{rows.length ? 'No signups match your search.' : 'No accounts signed up yet.'}</p>}
         {[...groups.entries()].slice(currentPage * 10, (currentPage + 1) * 10).map(([key, accounts]) =>
           <section className="staff-member-signups" key={key}>
-            <div className="section-heading"><h3>{accounts[0].user_id ? names[accounts[0].user_id] || `Discord member ${accounts[0].user_id}` : 'No Discord account'}</h3><DiscordContact userId={accounts[0].user_id} compact/></div>
+            <div className="section-heading"><h3>{accounts[0].user_id ? names[accounts[0].user_id] || (namesLoading ? 'Loading member name…' : 'Name unavailable') : 'No Discord account'}</h3>{accounts[0].user_id && !names[accounts[0].user_id] && <small>Discord ID: {accounts[0].user_id}</small>}<DiscordContact userId={accounts[0].user_id} compact/></div>
             {accounts.map(account => <div className="staff-row" key={account.tag}>
               <div><strong>{account.player_name || account.tag}</strong><small>{account.tag} · {account.pool === 'main' ? 'Main' : 'Lazy'} CWL · {account.has_staff_placement ? 'Placed in working roster' : 'Waiting for placement'}</small>{account.family_clan_status === 'outside' && <small>Outside the family clans</small>}{account.family_clan_status === 'unknown' && <small>Family clan status not available</small>}</div>
               {season.status !== 'archived' && <StaffPlayerButton onDirty={setEditorDirty} onBusy={setEditorBusy} seasonId={String(season.id)} tag={account.tag} onChanged={reload}>Manage account</StaffPlayerButton>}

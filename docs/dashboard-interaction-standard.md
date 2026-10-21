@@ -445,3 +445,15 @@ confirmation responses in the fixture are deterministic, not native-dialog tests
 Desktop and 320px layouts inspected. 195 frontend tests and 38 signup backend
 tests passed, including transfer ownership/rollback and partial withdrawal stop
 coverage. Production build passed. No live member signups changed during testing.
+
+### Signup member-name resolution
+
+Manage signups resolves names through a season-scoped version of the existing
+staff member-directory endpoint. It filters to signup owners before returning
+results and does not apply the member picker's 50-result search cap. Search keeps
+its existing cap. Names refresh after signup changes; unavailable names show a
+clear fallback with a secondary Discord ID, and directory failures offer retry.
+Validation: a 120-member fixture with 65 signup owners beyond the first 50,
+member authorization and malformed season checks; 39 backend and 195 frontend
+tests passed, production build passed. No live signup data changed. Members who
+are absent from the Discord directory can still have unavailable names.

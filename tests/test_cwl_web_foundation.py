@@ -145,6 +145,24 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(found["options"][0]["id"],"100")
         self.assertEqual(found["options"][0]["role_ids"],[])
 
+    async def test_signup_member_names_include_every_signed_up_member_beyond_search_limit(self):
+        sid = await self.season()
+        rows = [{"user": {"id": str(1000+i), "username": f"Member{i}"}, "roles": []} for i in range(120)]
+        with self.app["store"].tx() as db:
+            for i in range(55, 120):
+                db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall) VALUES (?,?,?,?,0,'Test player',18)", (sid, f"#TEST{i}", str(1000+i), "main"))
+        with patch("cwl_web.manage_roles.searchable_members", AsyncMock(return_value=rows)):
+            ordinary = await (await self.call("GET", "/staff-signup-members", self.owner)).json()
+            scoped = await (await self.call("GET", f"/staff-signup-members?season_id={sid}", self.owner)).json()
+            denied = await self.call("GET", f"/staff-signup-members?season_id={sid}", self.member)
+            malformed = await self.call("GET", "/staff-signup-members?season_id=invalid", self.owner)
+        self.assertEqual(len(ordinary["options"]), 50)
+        self.assertTrue(ordinary["truncated"])
+        self.assertEqual({item["id"] for item in scoped["options"]}, {str(1000+i) for i in range(55,120)})
+        self.assertFalse(scoped["truncated"])
+        self.assertEqual(denied.status, 403)
+        self.assertEqual(malformed.status, 400)
+
     async def test_tag_signup_without_discord_and_manual_association(self):
         sid=await self.season()
         self.providers.linked_owner=AsyncMock(return_value=None)

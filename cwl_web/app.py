@@ -752,15 +752,27 @@ async def staff_signup_members(request):
     if len(query) > 80:
         _fail(400, "Use a shorter member name")
     selected = request.query.get("id", "")
+    signup_ids = None
+    if "season_id" in request.query:
+        try:
+            sid = int(request.query["season_id"])
+        except ValueError:
+            _fail(400, "Invalid season")
+        with _store(request).tx() as db:
+            _season(db, sid)
+            signup_ids = {str(row["user_id"]) for row in db.execute(
+                "SELECT DISTINCT user_id FROM signups WHERE season_id=? AND user_id IS NOT NULL", (sid,)
+            )}
     rows = await searchable_members(request)
     matches = [row for row in rows if not row.get("user", {}).get("bot") and
+               (signup_ids is None or str(row["user"]["id"]) in signup_ids) and
                (not selected or str(row["user"]["id"]) == selected) and
                (not query or query in search_text(" ".join(str(value or "") for value in
                 (row.get("nick"), row["user"].get("global_name"), row["user"].get("username"), row["user"]["id"]))))]
-    options = [member_option(row) for row in matches[:50]]
+    options = [member_option(row) for row in (matches if signup_ids is not None else matches[:50])]
     for option in options:
         option["role_ids"] = []; option["role_names"] = []
-    return web.json_response({"options": options, "next": None, "truncated": len(matches) > 50})
+    return web.json_response({"options": options, "next": None, "truncated": signup_ids is None and len(matches) > 50})
 
 
 def signup_member_id(value):
