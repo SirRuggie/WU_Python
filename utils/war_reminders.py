@@ -74,31 +74,67 @@ def clean(value):
     return re.sub(r'([\\`*_~|<>\[\]@])', r'\\\1', str(value).replace('\n', ' '))[:100]
 
 
+def duration(minutes):
+    hours, minutes = divmod(minutes, 60)
+    return ' '.join(text for text in (
+        f"{hours} hour{'s' if hours != 1 else ''}" if hours else '',
+        f"{minutes} minute{'s' if minutes != 1 else ''}" if minutes else '') if text)
+
+
+def discord_length(text):
+    return len(text.encode('utf-16-le')) // 2
+
+
 def messages(war, config, event, owners=None, *, test=False, tester=None):
-    """Chunk by roster, keeping mentions in content and within Discord limits."""
+    """Group accounts under one notifying mention; split safely without repeat pings."""
+    from utils.emoji import emojis
     members = pending(war, config['audience'])
     if not members and not test:
         return []
     owners = owners or {}
-    result = []
-    chunks = [members[i:i+15] for i in range(0, len(members), 15)] or [[]]
-    for index, chunk in enumerate(chunks):
-        users = list(dict.fromkeys(str(owners[m['tag']]) for m in chunk if owners.get(m['tag'])))
-        users = [uid for uid in users if re.fullmatch(r'\d{15,22}', uid)]
-        if test:
-            users = [tester] if tester and re.fullmatch(r'\d{15,22}', tester) else []
-        title = f"{clean(war['name'])} · {'War started' if event == 'start' else 'War reminder'}"
-        lines = []
-        for m in chunk:
-            lines.append(f"`{m['position']:02}` · TH{m['th']} · **{clean(m['name'])}** — {m['used']}/{war['limit']}")
-        ends = int(war['end'].timestamp())
-        description = f"vs **{clean(war['opponent'])}**\nEnds <t:{ends}:R> · <t:{ends}:t>\n\n**Attacks used**\n" + ('\n'.join(lines) or 'All attacks are complete!')
-        remaining = sum(war['limit']-m['used'] for m in members)
-        result.append(dict(content=('**Test reminder** · Sample players' if test else '') + (('\n' if test else '')+' '.join(f'<@{u}>' for u in users) if users else ''),
-            embeds=[dict(title=title, description=description, color=0xE6A640,
-                         footer=dict(text=f"{len(members)} players · {remaining} attacks remaining · Warriors United" + (f' · {index+1}/{len(chunks)}' if len(chunks)>1 else '')))],
-            allowed_mentions=dict(parse=[], users=users, roles=[], replied_user=False)))
-    return result
+    groups = {}
+    for member in members:
+        uid = str(tester or '') if test else str(owners.get(member['tag']) or '')
+        uid = uid if re.fullmatch(r'\d{15,22}', uid) else ''
+        groups.setdefault(uid, []).append(member)
+    # Unlinked accounts remain visible, but never imply a Discord owner.
+    if '' in groups:
+        groups[''] = groups.pop('')
+    label = 'War started' if event == 'start' else duration(int(event))+' left'
+    header = f"🔔 **{clean(war['name'])} war reminder · {label}**\n"
+    header += f"vs {clean(war['opponent'])} · Ends <t:{int(war['end'].timestamp())}:t>"
+    if test:
+        header += '\n-# Test reminder · Sample players · Simulated attacks'
+    remaining = sum(war['limit']-m['used'] for m in members)
+    footer = f"-# {len(members)} accounts · {remaining} attacks remaining · Attacks used / available"
+    budget = 2000 - discord_length(header+'\n\n'+footer+'\n\n')
+    # First split oversized owners into continuation blocks with no second mention.
+    blocks = []
+    for uid, accounts in groups.items():
+        title = f'<@{uid}>' if uid else ('**Sample accounts**' if test else '**Unlinked accounts**')
+        text, mentions = title, [uid] if uid else []
+        for member in accounts:
+            emoji = str(getattr(emojis, f"TH{member['th']}", f"TH{member['th']}"))
+            line = f"> {emoji} **{clean(member['name'])}** · {member['used']}/{war['limit']}"
+            if discord_length(text+'\n'+line) > budget:
+                blocks.append((text, mentions))
+                text, mentions = '**Accounts continued**', []
+            text += '\n'+line
+        blocks.append((text, mentions))
+    if not blocks:
+        blocks = [('All attacks are complete!', [])]
+    pages, text, users = [], '', []
+    for block, mentions in blocks:
+        candidate = text+'\n\n'+block if text else block
+        if discord_length(candidate) > budget:
+            pages.append((text, users))
+            text, users = block, mentions.copy()
+        else:
+            text, users = candidate, users+mentions
+    pages.append((text, users))
+    return [dict(content=header+'\n\n'+text+'\n\n'+footer,
+                 allowed_mentions=dict(parse=[], users=users, roles=[], replied_user=False))
+            for text, users in pages]
 
 
 def sample(clan, event):

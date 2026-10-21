@@ -2,7 +2,6 @@
 from datetime import datetime, timezone
 from functools import partial
 import json
-import asyncio
 import time
 from uuid import UUID
 from aiohttp import web
@@ -86,20 +85,24 @@ async def test_messages(request, row, config, event, body, actor):
     if body.get('use_my_accounts'):
         uid = str(actor['user_id'])
         cache = request.app.setdefault('war_reminder_test_accounts', {})
-        cached = cache.get(uid)
+        cache_key = uid+':'+row['tag']
+        cached = cache.get(cache_key)
         if not cached or cached[0] < time.monotonic():
             providers = request.app['providers']
             try:
                 tags = await providers.linked_tags(uid)
                 if not tags:
                     raise web.HTTPBadRequest(text='No linked accounts found for your Discord account. Use sample players or link an account first.')
-                # One compact test message, even for editors with many accounts.
-                profiles = await asyncio.gather(*(providers.player(tag) for tag in sorted(tags)[:15]))
+                roster = await providers._coc('clans', row['tag'])
+                profiles = [dict(tag=m['tag'], name=m['name'], town_hall=m['townHallLevel'])
+                            for m in roster.get('memberList', []) if m.get('tag') in tags][:5]
+                if not profiles:
+                    raise web.HTTPBadRequest(text='None of your linked accounts are currently in this clan. Choose a clan containing your accounts or use sample players.')
             except ProviderUnavailable:
                 raise web.HTTPServiceUnavailable(text='Could not load your linked accounts. Try again shortly or use sample players.') from None
             if len(cache) >= 100:
                 cache.clear()
-            cache[uid] = (time.monotonic()+300, profiles)
+            cache[cache_key] = (time.monotonic()+300, profiles)
         else:
             profiles = cached[1]
         sample['members'] = [dict(tag=p['tag'], name=p['name'], th=p['town_hall'], position=i+1,
@@ -108,7 +111,7 @@ async def test_messages(request, row, config, event, body, actor):
         tester=str(actor['user_id']) if body.get('mention_me') else None)
     if body.get('use_my_accounts'):
         for payload in payloads:
-            payload['content'] = payload['content'].replace('Sample players', 'Your linked accounts · Simulated attacks')
+            payload['content'] = payload['content'].replace('Sample players', 'Your accounts in this clan').replace('**Sample accounts**', '**Your accounts**')
     return payloads
 
 

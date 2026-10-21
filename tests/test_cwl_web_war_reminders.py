@@ -91,7 +91,7 @@ def test_save_persists_normalized_times_and_actor(setup,monkeypatch):
 
 
 def test_linked_samples_use_actor_accounts_cache_and_simulated_counts():
-    providers=NS(linked_tags=AsyncMock(return_value={'#B':True,'#A':True}),player=AsyncMock(side_effect=[{'tag':'#A','name':'Real One','town_hall':18},{'tag':'#B','name':'Real Two','town_hall':17}]))
+    providers=NS(linked_tags=AsyncMock(return_value={'#B':True,'#A':True}),_coc=AsyncMock(return_value={'memberList':[{'tag':'#A','name':'Real One','townHallLevel':18},{'tag':'#B','name':'Real Two','townHallLevel':17},{'tag':'#OTHER','name':'Someone Else','townHallLevel':16}]}))
     req=NS(app={'providers':providers})
     actor={'user_id':'505227988229554179'}
     async def run():
@@ -101,11 +101,12 @@ def test_linked_samples_use_actor_accounts_cache_and_simulated_counts():
         return first
     first=asyncio.run(run())
     providers.linked_tags.assert_awaited_once_with(actor['user_id'])
-    assert providers.player.await_count==2
+    providers._coc.assert_awaited_once_with('clans','#P0LY')
+    assert 'Someone Else' not in str(first)
     assert first[0]['allowed_mentions']['users']==[actor['user_id']]
     assert '<@505227988229554179>' in first[0]['content']
     assert 'Simulated attacks' in first[0]['content']
-    assert 'Real One' in first[0]['embeds'][0]['description'] and 'Real Two' in first[0]['embeds'][0]['description']
+    assert 'Real One' in first[0]['content'] and 'Real Two' in first[0]['content']
     assert 'Shield Bearer' not in str(first)
 
 

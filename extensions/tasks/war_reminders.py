@@ -58,9 +58,7 @@ async def scan_clan(db, client, bot, providers, config):
             urls = []
             try:
                 for payload in payloads:
-                    data = payload['embeds'][0]
-                    embed = hikari.Embed(title=data['title'], description=data['description'], color=data['color']).set_footer(data['footer']['text'])
-                    sent = await bot.rest.create_message(int(config['channel_id']), content=payload['content'], embed=embed,
+                    sent = await bot.rest.create_message(int(config['channel_id']), content=payload['content'],
                         mentions_everyone=False, role_mentions=False, user_mentions=[int(uid) for uid in payload['allowed_mentions']['users']])
                     urls.append(f"https://discord.com/channels/{reminders.GUILD_ID}/{config['channel_id']}/{sent.id}")
                 if payloads:

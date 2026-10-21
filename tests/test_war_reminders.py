@@ -47,7 +47,7 @@ def test_only_pending_players_pinged_in_content_and_no_cv2():
     assert '123456789012345672' not in str(msg)
     assert msg['allowed_mentions']['parse'] == []
     assert not {'flags', 'components'} & msg.keys()
-    assert '1/2' in msg['embeds'][0]['description']
+    assert '1/2' in msg['content']
     assert len(r.messages(w, config(audience='zero'), '60', owners)[0]['allowed_mentions']['users']) == 1
 
 
@@ -60,7 +60,7 @@ def test_cwl_one_attack_and_all_complete_skip():
 
 def test_unlinked_players_and_sample_do_not_ping_real_members():
     w = war(); uid = '123456789012345678'
-    assert 'Shield Bearer' in r.messages(w, config(), '60')[0]['embeds'][0]['description']
+    assert 'Shield Bearer' in r.messages(w, config(), '60')[0]['content']
     msg = r.messages(w, config(), '60', {'#SAMPLE1': uid}, test=True)[0]
     assert msg['allowed_mentions']['users'] == []
     msg = r.messages(w, config(), '60', test=True, tester=uid)[0]
@@ -71,11 +71,13 @@ def test_large_roster_fits_discord_limits_and_deduplicates_mentions():
     w = war(); w['members'] = [{**w['members'][0], 'tag': f'#{i}', 'name': '*'*100, 'position': i} for i in range(50)]
     owners = {m['tag']: '123456789012345678' for m in w['members']}
     payloads = r.messages(w, config(), '60', owners)
-    assert len(payloads) == 4
+    assert len(payloads) > 1
+    assert sum(m['content'].count('<@123456789012345678>') for m in payloads) == 1
+    assert sum(m['allowed_mentions']['users'].count('123456789012345678') for m in payloads) == 1
     for msg in payloads:
         assert len(msg['content']) <= 2000
-        assert len(msg['embeds'][0]['description']) <= 4096
-        assert msg['allowed_mentions']['users'] == ['123456789012345678']
+        assert r.discord_length(msg['content']) <= 2000
+        assert 'embeds' not in msg
 
 
 def test_scheduler_claim_is_durable_and_duplicate_scan_does_not_send(monkeypatch):
@@ -113,3 +115,33 @@ def test_snapshot_checks_clan_and_cwl_attack_allowance():
     assert snap['name'] == 'Warriors' and snap['limit'] == 1
     assert snap['start'].tzinfo == timezone.utc
     with pytest.raises(ValueError): r.snapshot(w, '#WRONG')
+
+
+def test_five_accounts_group_under_single_owner_and_heading_is_notification_text():
+    w=war(); w['name']='Edrag Rush'
+    w['members']=[dict(tag=f'#{i}',name=f'Account {i}',position=i,th=18,used=i%2) for i in range(5)]
+    uid='505227988229554179'
+    payloads=r.messages(w,config(),'720',{m['tag']:uid for m in w['members']})
+    assert len(payloads)==1
+    text=payloads[0]['content']
+    assert text.startswith('🔔 **Edrag Rush war reminder · 12 hours left**')
+    assert text.count(f'<@{uid}>')==1
+    for i in range(5):assert text.count(f'Account {i}')==1
+    assert text.index(f'<@{uid}>') < text.index('Account 0')
+    assert '<:TH_18:' in text
+    assert 'embeds' not in payloads[0]
+
+
+def test_distinct_owners_have_separate_account_groups():
+    w=war(); a='123456789012345670'; b='123456789012345671'
+    text=r.messages(w,config(),'75',{'#SAMPLE1':a,'#SAMPLE2':b,'#SAMPLE3':a})[0]['content']
+    assert '1 hour 15 minutes left' in text
+    assert text.index('Shield Bearer') < text.index('Iron Guardian') < text.index(f'<@{b}>') < text.index('Night Archer')
+
+
+def test_large_unicode_roster_preserves_every_account_within_discord_limit():
+    w=war(); w['members']=[dict(tag=f'#{i}',name=f'Player{i} '+('⚔️'*30),position=i,th=18,used=0) for i in range(50)]
+    payloads=r.messages(w,config(),'60',{m['tag']:str(123456789012345600+i) for i,m in enumerate(w['members'])})
+    assert all(r.discord_length(p['content'])<=2000 for p in payloads)
+    assert sum(len(p['allowed_mentions']['users']) for p in payloads)==50
+    for m in w['members']:assert sum(p['content'].count(r.clean(m['name'])) for p in payloads)==1
