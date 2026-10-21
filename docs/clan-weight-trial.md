@@ -113,3 +113,15 @@ excluded; reclassification blocks stale editor saves without deleting stored
 player weights. Six feature tests cover the filter, direct non-FWA access and
 reclassification. This changes the existing selector's data only; no controls,
 layout or keyboard behavior changed.
+
+Inline destination-sheet checks are advisory: full weights must end in 000 and
+fall between 42,000 and 180,000 inclusive. A valid weight higher than the preceding
+actual war position gets a double-check warning. Missing, invalid, unavailable or
+non-adjacent war rows are not used for comparisons. These mirror the inspected
+FWA sheet, not independently verified FWA policy; the editor still supports its
+existing save/copy behavior and numeric validation. No data migration or saved
+weight writes occur. Warnings are derived from current drafts, associated with
+inputs by aria-describedby, and use text as well as color. Checks covered limit
+boundaries, invalid/blank drafts, war gaps, non-war members, live correction and
+390px/desktop reflow with isolated data. All 199 frontend tests, production build
+and the war-reminder gate passed. No live clan weights were edited during QA.

@@ -181,3 +181,12 @@
     overflow-wrap: anywhere;
   }
 }
+
+.weight-trial-row-warning {
+  grid-column: 1 / -1;
+  color: #f4cf78;
+  border-left: 3px solid #dba923;
+  padding: 4px 8px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

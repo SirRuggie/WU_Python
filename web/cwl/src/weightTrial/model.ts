@@ -160,3 +160,35 @@ export function orderLabel(roster: Roster): string {
         ? "Last completed war · War order"
         : "War lineup order";
 }
+
+// Advisory checks mirror the destination sheet, not authoritative FWA rules.
+export function sheetWeightWarning(
+  tag: string,
+  rows: Member[],
+  drafts: Record<string, Draft>,
+  order: Roster["war_order"],
+): string {
+  const weightFor = (row: Member) => {
+    try {
+      return validateDraft(drafts[row.tag] ?? draftFor(row)).weight;
+    } catch {
+      return null; // The editor shows its input error instead.
+    }
+  };
+  const row = rows.find((member) => member.tag === tag);
+  if (!row) return "";
+  const weight = weightFor(row);
+  if (weight === null) return "";
+  if (weight % 1000 !== 0) return "Weight must end in 000 for the FWA sheet.";
+  if (weight < 42000)
+    return "Weight is below the FWA sheet’s minimum of 42,000.";
+  if (weight > 180000)
+    return "Weight exceeds the FWA sheet’s maximum of 180,000.";
+  const position = order?.[tag];
+  if (!position || position <= 1) return "";
+  const previous = rows.find((member) => order?.[member.tag] === position - 1);
+  const previousWeight = previous ? weightFor(previous) : null;
+  if (previousWeight !== null && weight > previousWeight)
+    return `Weight is higher than player ${position - 1} above. Double-check; this can sometimes be correct.`;
+  return "";
+}

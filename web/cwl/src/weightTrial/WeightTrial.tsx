@@ -3,6 +3,7 @@ import { api, ApiError } from "../api";
 import TownHallIcon from "../TownHallIcon";
 import {
   copyTable,
+  sheetWeightWarning,
   orderedMembers,
   orderLabel,
   draftFor,
@@ -344,6 +345,12 @@ export default function WeightTrial({
               </div>
               {members.map((row, index) => {
                 const draft = values[row.tag] || draftFor(row);
+                const warning = sheetWeightWarning(
+                  row.tag,
+                  members,
+                  values,
+                  roster.war_order,
+                );
                 let invalid = "";
                 try {
                   validateDraft(draft);
@@ -394,7 +401,11 @@ export default function WeightTrial({
                             aria-label={`${field === "full" ? "Full weight" : field} for ${row.name} ${row.tag}`}
                             aria-invalid={!!invalid}
                             aria-describedby={
-                              invalid ? `weight-error-${index}` : undefined
+                              invalid
+                                ? `weight-error-${index}`
+                                : warning
+                                  ? `weight-warning-${index}`
+                                  : undefined
                             }
                             value={draft[field]}
                             placeholder={field === "storages" ? "5" : "N/A"}
@@ -446,6 +457,14 @@ export default function WeightTrial({
                           />
                         </label>
                       ))}
+                      {!invalid && warning && (
+                        <small
+                          className="weight-trial-row-warning"
+                          id={`weight-warning-${index}`}
+                        >
+                          Check weight: {warning}
+                        </small>
+                      )}
                       {invalid && (
                         <small
                           className="weight-trial-row-error"

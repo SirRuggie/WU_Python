@@ -43,14 +43,79 @@ it("pastes loot as one atomic column and rejects overflow or multiple columns", 
   expect(drafts["#P2Y"].full).toBe("");
 });
 
-import { orderedMembers, orderLabel } from './model';
-it('shows war map order before non-war members regardless of clan rank', () => {
- const rows = [1,2,3].map(n=>({tag:`#P${n}`,name:`Player ${n}`,town_hall:18,weight:null,revision:0,clan_position:n}));
- const roster={clan:{tag:'#P0',name:'Test'},members:rows,checked_at:'',war_order:{'#P2':2,'#P3':1},war_source:{state:'preparation'}};
- expect(orderedMembers(roster).map(row=>row.tag)).toEqual(['#P3','#P2','#P1']);
- expect(rows.map(row=>row.tag)).toEqual(['#P1','#P2','#P3']);
- expect(orderLabel(roster)).toContain('Preparation');
- expect(orderLabel({...roster,war_source:{state:'warEnded'}})).toContain('Last completed');
- expect(orderLabel({...roster,war_order:null})).toContain('War lineup unavailable');
- expect(orderedMembers({...roster,war_order:null}).map(row=>row.tag)).toEqual(['#P1','#P2','#P3']);
+import { orderedMembers, orderLabel } from "./model";
+it("shows war map order before non-war members regardless of clan rank", () => {
+  const rows = [1, 2, 3].map((n) => ({
+    tag: `#P${n}`,
+    name: `Player ${n}`,
+    town_hall: 18,
+    weight: null,
+    revision: 0,
+    clan_position: n,
+  }));
+  const roster = {
+    clan: { tag: "#P0", name: "Test" },
+    members: rows,
+    checked_at: "",
+    war_order: { "#P2": 2, "#P3": 1 },
+    war_source: { state: "preparation" },
+  };
+  expect(orderedMembers(roster).map((row) => row.tag)).toEqual([
+    "#P3",
+    "#P2",
+    "#P1",
+  ]);
+  expect(rows.map((row) => row.tag)).toEqual(["#P1", "#P2", "#P3"]);
+  expect(orderLabel(roster)).toContain("Preparation");
+  expect(
+    orderLabel({ ...roster, war_source: { state: "warEnded" } }),
+  ).toContain("Last completed");
+  expect(orderLabel({ ...roster, war_order: null })).toContain(
+    "War lineup unavailable",
+  );
+  expect(
+    orderedMembers({ ...roster, war_order: null }).map((row) => row.tag),
+  ).toEqual(["#P1", "#P2", "#P3"]);
+});
+
+import { sheetWeightWarning } from "./model";
+it("matches sheet limits and thousand checks without changing weights", () => {
+  const row = {
+    tag: "#P2Y",
+    name: "Test",
+    town_hall: 18,
+    weight: 149000,
+    revision: 1,
+  };
+  const check = (weight: number | null) =>
+    sheetWeightWarning(row.tag, [{ ...row, weight }], {}, null);
+  expect(check(1000)).toContain("42,000");
+  expect(check(181000)).toContain("180,000");
+  expect(check(149005)).toContain("000");
+  for (const weight of [null, 42000, 149000, 180000])
+    expect(check(weight)).toBe("");
+  expect(row.weight).toBe(149000);
+});
+it("compares adjacent actual war positions and reacts to unsaved edits", () => {
+  const rows = [
+    { tag: "A", name: "First", town_hall: 18, weight: 150000, revision: 1 },
+    { tag: "B", name: "Next", town_hall: 18, weight: 149000, revision: 1 },
+  ];
+  const order = { A: 1, B: 2 };
+  const drafts = { A: { storages: "5", loot: "200", full: "1000" } };
+  expect(sheetWeightWarning("B", rows, drafts, order)).toContain("player 1");
+  expect(sheetWeightWarning("B", rows, {}, order)).toBe("");
+  expect(sheetWeightWarning("B", rows, drafts, null)).toBe("");
+  expect(sheetWeightWarning("B", rows, drafts, { A: 1, B: 3 })).toBe("");
+  expect(sheetWeightWarning("B", rows, drafts, { A: 1 })).toBe("");
+  for (const full of ["", "=123", "abc"])
+    expect(
+      sheetWeightWarning(
+        "B",
+        rows,
+        { A: { storages: "5", loot: "", full } },
+        order,
+      ),
+    ).toBe("");
+  expect(rows[0].weight).toBe(150000);
 });
