@@ -333,7 +333,7 @@ export default function ReminderWorkspace({
         </button>
       </div>
       <div className="notice" role="note">
-        🔒 Existing signup links stay unchanged.
+        Existing signup links stay unchanged.
       </div>
       {error && (
         <p className="notice error" role="alert">

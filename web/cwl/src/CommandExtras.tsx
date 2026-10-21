@@ -1,3 +1,4 @@
+import DashboardIcon from './DashboardIcon'
 import {useState} from 'react'
 import {apiUpload} from './api'
 export type ReplyAction={kind:'reply';command:string}|{kind:'add_role'|'remove_role';role_id:string}
@@ -8,7 +9,7 @@ export function HexColor({value,onChange,label='Card color'}:{value:string;onCha
 export function FileUpload({value,onChange,onBusy}:{value:FileInfo;onChange:(value:FileInfo)=>void;onBusy:(busy:boolean)=>void}){
  const [error,setError]=useState(''),[uploading,setUploading]=useState(false)
  async function upload(file?:File){if(!file)return;if(!file.size||file.size>8*1024*1024){setError('Choose a file between 1 byte and 8 MB.');return}setError('');setUploading(true);onBusy(true);try{onChange(await apiUpload<FileInfo>('/manage/text-command-files?name='+encodeURIComponent(file.name),file))}catch(e){setError(e instanceof Error?e.message:'File upload failed.')}finally{setUploading(false);onBusy(false)}}
- return <div className="command-file"><label>{value.file_id?'Replace file':'Upload file'}<input type="file" disabled={uploading} onChange={e=>{void upload(e.target.files?.[0]);e.target.value=''}}/></label>{uploading?<p role="status">Uploading…</p>:value.file_id?<p>📎 {value.filename} · {value.size<1024?value.size+' B':(value.size/1024).toFixed(1)+' KB'}</p>:<small>Up to 8 MB total per reply. Files are sent to everyone who uses this command.</small>}{error&&<p role="alert">{error}</p>}</div>
+ return <div className="command-file"><label>{value.file_id?'Replace file':'Upload file'}<input type="file" disabled={uploading} onChange={e=>{void upload(e.target.files?.[0]);e.target.value=''}}/></label>{uploading?<p role="status">Uploading…</p>:value.file_id?<p><DashboardIcon name="attachment"/> {value.filename} · {value.size<1024?value.size+' B':(value.size/1024).toFixed(1)+' KB'}</p>:<small>Up to 8 MB total per reply. Files are sent to everyone who uses this command.</small>}{error&&<p role="alert">{error}</p>}</div>
 }
 export function ActionFields({item,onChange,commands,roles=[],select=false}:{item:ActionItem;onChange:(item:ActionItem)=>void;commands:string[];roles?:RoleChoice[];select?:boolean}){
  const [search,setSearch]=useState('');const roleId=item.action.kind==='reply'?'':item.action.role_id

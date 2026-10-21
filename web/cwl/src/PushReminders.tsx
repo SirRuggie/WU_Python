@@ -1,3 +1,4 @@
+import DashboardIcon from './DashboardIcon'
 import { useEffect, useState } from 'react'
 import { api, type Account } from './api'
 import { pushSupport, getBrowserSubscription, enableBrowserPush, disableBrowserPush } from './webPush'
@@ -53,14 +54,14 @@ export default function PushReminders({ accounts }: { accounts: Account[] }) {
   }
   const visible=accounts.filter(account=>`${account.name} ${account.tag} ${account.current_clan_name||''}`.toLowerCase().includes(search.trim().toLowerCase()))
   const dirty=!!current&&(JSON.stringify([...tags].sort())!==JSON.stringify([...current.tags].sort())||war!==current.war||cwl!==current.cwl||JSON.stringify([...offsets].sort())!==JSON.stringify([...current.offsets].sort()))
-  return <details className="card push-reminders"><summary><span>🔔 Phone reminders</span><span className="badge">{current?.enabled?'On for this device':'Off for this device'}</span></summary>
+  return <details className="card push-reminders"><summary><span><DashboardIcon name="bell"/> Phone reminders</span><span className="badge">{current?.enabled?'On for this device':'Off for this device'}</span></summary>
     <p>Get one reminder per clan at each chosen time. It lists your selected accounts with attacks left.</p>
     <p className="small">Reminders can arrive while the app is closed. Phone settings, connection issues or delayed game data can affect delivery. Unavailable war data is skipped.</p>
     {install ? <button onClick={()=>void install.prompt().then(()=>install.userChoice).then(()=>setInstall(null))}>Install Warriors United app ↗</button> : <p className="small">Install from your browser menu: Install app / Add to Home Screen. On iPhone, open the Home Screen app before enabling notifications.</p>}
     {!support.supported&&<p className="notice">{support.reason}</p>}{support.permission==='denied'&&<p className="notice">Notifications are blocked. Allow notifications for this site in your browser settings, then return here.</p>}
     {status&&!status.available&&<p className="notice">Phone reminders are not ready yet. Your choices have not been enabled.</p>}
     {error&&<p className="notice error" role="alert">{error}<button disabled={busy} onClick={()=>void act(load)}>Retry settings</button></p>}{notice&&<p className="notice success" role="status">{notice}</p>}
-    <fieldset disabled={busy}><legend>Remind me about</legend><div className="push-options"><label><input type="checkbox" checked={war} onChange={event=>setWar(event.target.checked)}/>⚔️ War</label><label><input type="checkbox" checked={cwl} onChange={event=>setCwl(event.target.checked)}/>🏆 CWL</label></div></fieldset>
+    <fieldset disabled={busy}><legend>Remind me about</legend><div className="push-options"><label><input type="checkbox" checked={war} onChange={event=>setWar(event.target.checked)}/>War</label><label><input type="checkbox" checked={cwl} onChange={event=>setCwl(event.target.checked)}/>CWL</label></div></fieldset>
     <fieldset disabled={busy}><legend>Remind me before war ends</legend>
       <p className="small">Choose hours and minutes. Add up to five different times; each sends one reminder per clan.</p>
       <div className="push-times">{offsets.map((value,index)=><div className="push-time-row" key={index}>

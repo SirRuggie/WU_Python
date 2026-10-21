@@ -157,3 +157,23 @@ Back/Forward steps, and no image requests while closed. Viewports included 1280,
 outcomes were simulated in the fixture after the in-app browser could not operate
 one native dialog; this is not an assistive-technology certification. No live
 Discord sends, pings, clan edits, or roster mutations were used for validation.
+
+## Dashboard icons
+
+Use `DashboardIcon` (Lucide outline SVGs) for interface navigation and supporting
+symbols. Keep one stroke weight and consistent 18px sizing, with 24px icons only
+for larger feature treatments. Icons inherit text/selection color; preserve the
+WU gold theme. Always pair decorative icons with visible labels and hide them
+from assistive technology. Remove redundant decoration instead of adding an icon
+to every label. Keep real clan badges, Town Hall artwork, and Discord message
+content separate from this interface convention. Import only the required Lucide
+icons; do not use an entire dynamic icon bundle.
+
+Reference: [Lucide React](https://lucide.dev/guide/react) provides typed,
+tree-shakable SVG components with configurable stroke and sizing.
+
+The October 21 icon pass was reviewed in an isolated desktop/member-home and
+staff-navigation fixture at 1280px and narrow 320/390px viewport settings. Expanded
+navigation, long labels, card alignment, accessible text, and page overflow were
+checked. The fixture was removed after verification. This visual pass does not
+represent a new audit of backend or Discord delivery behavior.

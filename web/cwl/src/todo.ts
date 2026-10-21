@@ -1,14 +1,15 @@
+import type { DashboardIconName } from './DashboardIcon'
 import type { Account } from './api'
 export type TodoKind = 'war' | 'cwl' | 'raid' | 'games' | 'private'
 export type TodoRow = { tag: string; name: string; town_hall: number | null; clan_tag: string | null; clan_name: string | null; badge_url?: string | null; used: number | null; total: number | null; remaining: number | null; starts_at: number | null; ends_at: number | null; state: string; detail: string | null; fwa_outcome?: { status: 'win' | 'lose' | 'blacklisted' | 'unknown'; opponent: string } | null }
 export type TodoView = { ok: boolean; note: string; notes: string[]; unavailable: string; incomplete: string; rows: TodoRow[] }
 export type TodoSnapshot = { checked_at: string; accounts: Account[]; views: Record<TodoKind, TodoView> }
-export const todoTabs: { key: TodoKind; icon: string; label: string; description: string }[] = [
-  { key: 'war', icon: '⚔️', label: 'War', description: 'Regular-war attacks still to use, including upcoming preparation days.' },
-  { key: 'cwl', icon: '🏆', label: 'CWL', description: 'CWL attacks still to use. This is your live war activity, separate from season signups.' },
-  { key: 'raid', icon: '🏕️', label: 'Raids', description: 'Capital Raid attacks still to use for the current raid weekend.' },
-  { key: 'games', icon: '🎯', label: 'Clan Games', description: 'Recorded Clan Games points this month. Tracking can lag behind the game.' },
-  { key: 'private', icon: '🔒', label: 'Cannot check', description: 'Accounts whose war activity needs checking in-game because a log is private or unavailable.' },
+export const todoTabs: { key: TodoKind; icon: DashboardIconName; label: string; description: string }[] = [
+  { key: 'war', icon: 'war', label: 'War', description: 'Regular-war attacks still to use, including upcoming preparation days.' },
+  { key: 'cwl', icon: 'trophy', label: 'CWL', description: 'CWL attacks still to use. This is your live war activity, separate from season signups.' },
+  { key: 'raid', icon: 'raid', label: 'Raids', description: 'Capital Raid attacks still to use for the current raid weekend.' },
+  { key: 'games', icon: 'games', label: 'Clan Games', description: 'Recorded Clan Games points this month. Tracking can lag behind the game.' },
+  { key: 'private', icon: 'locked', label: 'Cannot check', description: 'Accounts whose war activity needs checking in-game because a log is private or unavailable.' },
 ]
 export function visibleTodoRows(rows: TodoRow[], selected: string[] | null, search: string, sort: string) {
   const query = search.trim().toLocaleLowerCase()

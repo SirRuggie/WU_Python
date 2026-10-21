@@ -1,3 +1,4 @@
+import DashboardIcon from './DashboardIcon'
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -495,7 +496,7 @@ function TicketConversation({
                     {m.attachments.map((a, i) => (
                       <li key={i}>
                         <a href={a.url} target="_blank" rel="noreferrer">
-                          📎 {a.name} ↗
+                          <DashboardIcon name="attachment"/> {a.name} ↗
                         </a>
                       </li>
                     ))}

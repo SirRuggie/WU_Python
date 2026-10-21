@@ -1,0 +1,5 @@
+.dashboard-icon { display:inline-block; width:18px; height:18px; flex:none; vertical-align:-3px; color:inherit; }
+.shell .sidebar .navigation-icon { display:inline-flex; align-items:center; justify-content:center; }
+.shell .sidebar .navigation-chevron { display:inline-flex; align-items:center; }
+.welcome-features .dashboard-icon,.hub-next-symbol .dashboard-icon,.todo-home-link > .dashboard-icon { width:24px; height:24px; }
+.hub-clan-fallback .dashboard-icon { width:28px; height:28px; }
