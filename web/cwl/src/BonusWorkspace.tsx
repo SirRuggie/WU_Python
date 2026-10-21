@@ -1,9 +1,10 @@
+import useUnsavedWork from './useUnsavedWork'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, type Season } from './api'
 import { PAGE_SIZE, pageItems, parseNullableWhole, selectionReasonError, selectionsChanged, selectionsFromAccounts, selectionsPayload, type BonusData, type BonusPolicy, type BonusPreview } from './bonus'
 import './BonusWorkspace.css'
 
-type Props = { seasonId: string; seasons: Season[]; onSeasonChange: (id: string) => void }
+type Props = { seasonId: string; seasons: Season[]; onDirty?: (dirty: boolean) => void; onSeasonChange: (id: string) => void }
 type Tab = 'review' | 'history' | 'rules'
 type RuleDraft = { min_attacks: string; min_stars: string; cooldown_months: string; slots: Record<string, string> }
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Bonus review could not be loaded. Try again.'
@@ -20,7 +21,7 @@ const rulePayload = (draft: RuleDraft, data: BonusData): { policy: BonusPolicy; 
   return { policy: { min_attacks, min_stars, cooldown_months }, clans: clans as { tag: string; slots: number | null }[] }
 }
 
-export default function BonusWorkspace({ seasonId, seasons, onSeasonChange }: Props) {
+export default function BonusWorkspace({ seasonId, seasons, onSeasonChange, onDirty }: Props) {
   const [data, setData] = useState<BonusData | null>(null)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -41,6 +42,7 @@ export default function BonusWorkspace({ seasonId, seasons, onSeasonChange }: Pr
   activeSeason.current = seasonId
   const selectionDirty = data ? selectionsChanged(data.accounts, selected) : false
   const rulesDirty = !!(data && rules && JSON.stringify(rules) !== JSON.stringify(ruleDraft(data)))
+  useUnsavedWork(selectionDirty || rulesDirty || !!voiding?.reason || busy, onDirty)
   const archived = seasons.find(season => String(season.id) === seasonId)?.status.toLowerCase() === 'archived'
   const applyData = (next: BonusData, resetSelections = true, resetRules = true) => {
     setData(next)

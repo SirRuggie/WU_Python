@@ -5,6 +5,7 @@ from .server_management import API, mongo, require_manage, queue_action
 from .manage_content import fingerprint
 from utils import lazy_cwl_store as store
 from utils import return_reminder_settings
+from utils.return_reminder_status import return_status
 from .providers import tag
 
 
@@ -23,12 +24,13 @@ async def page(request):
             documents.extend(dict(id='return-bulk-'+operation,label='Multiple clans · '+label,endpoint='/manage/return-bulk/'+operation) for operation,label in LABELS.items())
             for section in ('MAIN','FWA'):
                 active=await store.list_active(db,section=section)
+                saved={r['clan_tag']:r for r in active}
                 available={r['clan_tag']:r.get('clan_name',r['clan_tag']) for r in active}
                 for clan in clans:
                     if (section=='FWA') == (clan.get('type')=='FWA'):
                         available[tag(clan['tag'])]=clan.get('name') or clan['tag']
                 for clan,name in sorted(available.items(),key=lambda item:item[1].casefold()):
-                    documents.append({'id':section+clan,'label':f'{name} · {section}', 'endpoint':f'/manage/return-reminders/{section}/{quote(clan,safe="")}'})
+                    documents.append({'id':section+clan,'label':f'{name} · {section}', 'return_status':return_status(saved.get(clan),section), 'endpoint':f'/manage/return-reminders/{section}/{quote(clan,safe="")}'})
             return web.json_response({'id':'cwl_rosters','label':'CWL return reminders','description':'Saved home-clan members. These are separate from CWL signup placements.','group':'War','revision':'index','fields':[],'documents':documents})
         try:pool=store.normalize_section(pool);clan_tag=tag(clan_tag)
         except ValueError as exc:raise web.HTTPBadRequest(text='Choose a valid clan.') from exc
@@ -45,8 +47,9 @@ async def page(request):
         actions=[('away','Check who is away','Check current clan locations? No reminders are sent.'),('add','Add player','Add this player to the saved list?'),('remove','Remove selected players','Remove these players from the return list?'),('send','Send return reminder now','Send a Discord return reminder for this clan now?'),('replace','Replace saved list','Replace this list with current clan members? The previous list’s reminders stop.'),('clear','Close saved list','Close this saved list and stop its reminders?')]
         if pool=='FWA':actions[4:4]=[('start','Start or update reminders','Start reminders with the selected interval?'),('pause','Pause reminders','Pause this clan’s return reminders?'),('resume','Resume reminders','Resume reminders? This does not restart the seven-day limit.')]
     return web.json_response({'id':pool+clan_tag,'label':(current or {}).get('clan_name') or clan_tag,'description':'Manage the home-clan return list.','group':'War','revision':fingerprint(current),'fields':fields,'action_only':True,
+        'return_status':return_status(current,pool),
         'warning':f"{len((current or {}).get('players',[]))} saved players. Main reminders are manual. FWA reminders stop after seven days or at the seasonal cutoff.",
-        'actions':[dict(id=k,label=l,confirm=c,endpoint=base+'/actions/'+k) for k,l,c in actions]})
+        'actions':[dict(id=k,label=l,confirm=c,advanced=k in ('replace','clear','add','remove'),endpoint=base+'/actions/'+k) for k,l,c in actions]})
 
 
 async def action(request):

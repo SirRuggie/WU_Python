@@ -33,3 +33,11 @@ describe('Clan directory recovery and filtering', () => {
     expect((html.match(/disabled=""/g) || []).length).toBe(2)
   })
 })
+
+it('groups farming under FWA without losing other stored categories', () => {
+  const clans = [{...clan,type:'Farming'}, {...clan,tag:'#OTHER',name:'Other clan',type:'Events'}]
+  const html = renderToStaticMarkup(<ClanDirectory {...defaults} clans={clans} clanType="FWA" />)
+  expect(html).toContain('<strong>Edrag Rush</strong>')
+  expect(html).not.toContain('<strong>Other clan</strong>')
+  for (const label of ['Tactical','Flexible Fun','FWA','CWL','Events']) expect(html).toContain(label)
+})

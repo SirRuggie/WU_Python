@@ -1,3 +1,4 @@
+import ClanCategories, { clanCategory } from "./ClanCategories";
 import { useEffect, useRef } from "react";
 
 type Row = { tag: string; name: string; type: string; logo: string };
@@ -20,7 +21,7 @@ type Props<T extends Row> = {
 
 export default function ClanDirectory<T extends Row>({
   clans,
-  types,
+  types: _types,
   selected,
   query,
   onQuery,
@@ -38,7 +39,7 @@ export default function ClanDirectory<T extends Row>({
   const toggle = useRef<HTMLButtonElement>(null);
   const filtered = clans.filter(
     (clan) =>
-      (!clanType || clan.type === clanType) &&
+      (!clanType || clanCategory(clan.type) === clanType) &&
       `${clan.name} ${clan.tag} ${clan.type}`
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
@@ -82,18 +83,7 @@ export default function ClanDirectory<T extends Row>({
             onChange={(event) => onQuery(event.target.value)}
           />
         </label>
-        <label>
-          Clan type
-          <select
-            value={clanType}
-            onChange={(event) => onType(event.target.value)}
-          >
-            <option value="">All types</option>
-            {types.map((type) => (
-              <option key={type}>{type}</option>
-            ))}
-          </select>
-        </label>
+        <ClanCategories clans={clans} value={clanType} onChange={onType} />
         {loading ? (
           <p role="status">Loading clans…</p>
         ) : error ? (
@@ -119,7 +109,7 @@ export default function ClanDirectory<T extends Row>({
                   <span>
                     <strong>{row.name}</strong>
                     <small>
-                      {row.tag} · {row.type || "Type not set"}
+                      {row.tag} · {clanCategory(row.type) || "Type not set"}
                     </small>
                   </span>
                 </button>

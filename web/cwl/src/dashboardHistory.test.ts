@@ -105,3 +105,11 @@ describe("dashboard browser history", () => {
     expect(f.controller.pop(f.travel(-1), () => true)).toBe(true);
   });
 });
+
+it('preserves announcement steps while rejecting arbitrary step values', () => {
+  expect(dashboardTarget('?view=publication&season=12&step=announce')).toEqual({view:'publication',season:'12',step:'announce'})
+  expect(dashboardTarget('?view=publication&step=unsafe')).toEqual({view:'publication',season:''})
+  const history = fixture()
+  history.controller.write({view:'publication',season:'12',step:'announce'},true)
+  expect(history.current().url).toBe('/?view=publication&step=announce&season=12')
+})

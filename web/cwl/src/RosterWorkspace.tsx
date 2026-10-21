@@ -1,3 +1,5 @@
+import useWorkspacePreference from './useWorkspacePreference'
+import useUnsavedWork from './useUnsavedWork'
 import ClanDestinationOptions from './ClanDestinationOptions'
 import CwlPoolTabs, {useCwlPool} from './CwlPoolTabs'
 import RosterPlayerDialog from './RosterPlayerDialog'
@@ -13,35 +15,41 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type Pool, type Season } from './api'
 import { assignmentOptions, filterRosterAccounts, sortRosterAccounts, parseManualWeightK, parseWeightK, weightInputText, weightText, type AutoPreview, type RosterAccount, type RosterClan, type RosterSnapshot, type RosterSort } from './roster'
 
-type Props = { seasonId: string; seasons: Season[]; onSeasonChange: (id: string) => void; initialReadiness?: ReadinessFilter; onReviewPublication?: () => void }
+type Props = { seasonId: string; seasons: Season[]; onDirty?: (dirty: boolean) => void; onSeasonChange: (id: string) => void; initialReadiness?: ReadinessFilter; onReviewPublication?: () => void }
 type Feedback = { kind: 'success' | 'error'; text: string }
 const poolName = (pool: Pool | null) => pool === 'lazy' ? 'Lazy CWL' : pool === 'main' ? 'Main Clan CWL' : 'Pool not set'
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'The roster request failed. Try again.'
 const statusText = (status: RosterAccount['source_status']) => status === 'current' ? 'Current' : status === 'unavailable' ? 'Source unavailable; prior value may be stale' : 'Missing weight'
 const encoded = (value: string) => encodeURIComponent(value)
 
-export default function RosterWorkspace({ seasonId, seasons, onSeasonChange, initialReadiness = 'all', onReviewPublication }: Props) {
+export default function RosterWorkspace({ seasonId, seasons, onSeasonChange, initialReadiness = 'all', onReviewPublication, onDirty }: Props) {
   const [editingTag,setEditingTag] = useState<string|null>(null)
   const [roster, setRoster] = useState<RosterSnapshot | null>(null)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [preview, setPreview] = useState<AutoPreview | null>(null)
-  const [mode,setMode] = useState<'assign'|'compare'|'rules'|'weights'>('assign')
-  const [page,setPage] = useState(0)
+  const [mode,setMode] = useWorkspacePreference<'assign'|'compare'|'rules'|'weights'>(`wu-roster-${seasonId}-mode`, 'assign')
+  const [page,setPage] = useWorkspacePreference(`wu-roster-${seasonId}-page`, 0)
   const [manualTag,setManualTag] = useState<string|null>(null)
   const [manualClan,setManualClan] = useState('')
-  const [ruleTag, setRuleTag] = useState('')
-  const [leagues,setLeagues] = useState<string[]>([])
-  const [townHalls,setTownHalls] = useState<string[]>([])
-  const [search, setSearch] = useState('')
+  const [ruleTag, setRuleTag] = useWorkspacePreference(`wu-roster-${seasonId}-clan`, '')
+  const [leagues,setLeagues] = useWorkspacePreference<string[]>(`wu-roster-${seasonId}-leagues`, [])
+  const [townHalls,setTownHalls] = useWorkspacePreference<string[]>(`wu-roster-${seasonId}-townhalls`, [])
+  const [search, setSearch] = useWorkspacePreference(`wu-roster-${seasonId}-search`, '')
   const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>(initialReadiness)
   const [poolFilter, setPoolFilter] = useCwlPool()
-  const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
-  const [sort, setSort] = useState<RosterSort>('name')
+  const [assignmentFilter, setAssignmentFilter] = useWorkspacePreference<'all' | 'assigned' | 'unassigned'>(`wu-roster-${seasonId}-assignment`, 'all')
+  const [sort, setSort] = useWorkspacePreference<RosterSort>(`wu-roster-${seasonId}-sort`, 'name')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [bulkDestination, setBulkDestination] = useState('')
   const [weightEdit, setWeightEdit] = useState<{ tag: string; value: string } | null>(null)
+  const [rulesDirty, setRulesDirty] = useState(false)
+  const [weightsDirty, setWeightsDirty] = useState(false)
+  const [playerDirty, setPlayerDirty] = useState(false)
+  const dirty = rulesDirty || weightsDirty || playerDirty || !!weightEdit || !!manualTag || selectedTags.length > 0
+  useUnsavedWork(dirty || busy, onDirty)
+  const mayLeaveEditor = () => !busy && (!dirty || window.confirm('Discard unsaved roster edits and selections?'))
   const listHeading = useRef<HTMLDivElement>(null)
   const requestId = useRef(0)
   const activeSeason = useRef(seasonId)
@@ -56,10 +64,12 @@ export default function RosterWorkspace({ seasonId, seasons, onSeasonChange, ini
     return snapshot
   }, [seasonId])
   useEffect(() => {
-    setEditingTag(null); setMode('assign'); setPage(0); setManualTag(null); setRoster(null); setPreview(null); setWeightEdit(null); setFeedback(null); setSelectedTags([]); setBulkDestination('')
+    setEditingTag(null); setManualTag(null); setRoster(null); setPreview(null); setWeightEdit(null); setFeedback(null); setSelectedTags([]); setBulkDestination('')
     if (!seasonId) return
+    let alive = true
     setLoading(true)
-    void refresh().catch(error => setFeedback({ kind: 'error', text: errorText(error) })).finally(() => { if (activeSeason.current === seasonId) setLoading(false) })
+    void refresh().catch(error => { if (alive) setFeedback({ kind: 'error', text: errorText(error) }) }).finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false; requestId.current++ }
   }, [seasonId, refresh])
 
   const afterWrite = async (success: string) => {
@@ -97,13 +107,14 @@ export default function RosterWorkspace({ seasonId, seasons, onSeasonChange, ini
     finally{setBusy(false)}
   }
   const saveRules = async (clan: RosterClan, rules: { pool: Pool; capacity: number; min_weight: number | null; max_weight: number | null; lower_league: boolean | null }) => {
-    if (!roster || !seasonId || busy) return
+    if (!roster || !seasonId || busy) return false
     const sid = seasonId
     setBusy(true); setFeedback(null)
     try {
       await api(`/seasons/${encoded(sid)}/lineup/${encoded(clan.tag)}/rules`, 'PATCH', { revision: roster.revision, ...rules })
       if (activeSeason.current === sid) await afterWrite(`${clan.name} placement rules saved.`)
-    } catch (error) { if (activeSeason.current === sid) await fail(error) }
+      return true
+    } catch (error) { if (activeSeason.current === sid) await fail(error); return false }
     finally { setBusy(false) }
   }
   const saveWeight = async (account: RosterAccount) => {
@@ -152,7 +163,9 @@ export default function RosterWorkspace({ seasonId, seasons, onSeasonChange, ini
   const lastPage = Math.max(0, Math.ceil(filtered.length / 20) - 1)
   const currentPage = Math.min(page,lastPage)
   const pageAccounts = filtered.slice(currentPage*20,(currentPage+1)*20)
-  useEffect(()=>{setPage(0);setSelectedTags([]);setManualTag(null)},[search,poolFilter,assignmentFilter,readinessFilter,leagues,townHalls])
+  const filterKey = JSON.stringify([search,poolFilter,assignmentFilter,readinessFilter,leagues,townHalls])
+  const previousFilter = useRef(filterKey)
+  useEffect(()=>{if(previousFilter.current !== filterKey) { setPage(0);setSelectedTags([]);setManualTag(null); previousFilter.current = filterKey }},[filterKey])
   const visibleTags = pageAccounts.map(account => account.tag)
   const allVisibleSelected = visibleTags.length > 0 && visibleTags.every(tag => selectedTags.includes(tag))
   const toggleSelected = (tag: string) => setSelectedTags(current => current.includes(tag) ? current.filter(item => item !== tag) : [...current, tag])
@@ -191,19 +204,19 @@ export default function RosterWorkspace({ seasonId, seasons, onSeasonChange, ini
   const clanName = (tag: string | null) => roster?.clans.find(clan => clan.tag === tag)?.name || tag || 'Unassigned'
 
   return <div className="roster-workspace">
-    <div className="page-head"><div><p className="eyebrow">Staff roster</p><h1>Roster builder</h1><p>Select accounts, choose a hosting clan, and assign. Changes save immediately.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => onSeasonChange(event.target.value)}><option value="">Select a season</option>{seasons.map(season => <option key={season.id} value={String(season.id)}>{season.label}</option>)}</select></label></div>
+    <div className="page-head"><div><p className="eyebrow">Staff roster</p><h1>Roster builder</h1><p>Select accounts, choose a hosting clan, and assign. Changes save immediately.</p></div><label className="season-choice">Season<select value={seasonId} disabled={busy} onChange={event => { if (mayLeaveEditor()) onSeasonChange(event.target.value) }}><option value="">Select a season</option>{seasons.map(season => <option key={season.id} value={String(season.id)}>{season.label}</option>)}</select></label></div>
     {!seasonId && <div className="card empty"><p>Select a season to build its CWL roster.</p></div>}
-    {feedback && <div className={`notice ${feedback.kind}`} role={feedback.kind === 'error' ? 'alert' : 'status'}>{feedback.text}<button aria-label="Dismiss message" onClick={() => setFeedback(null)}>×</button></div>}
+    {feedback && <div className={`notice ${feedback.kind}`} role={feedback.kind === 'error' ? 'alert' : 'status'}>{feedback.text}{feedback.kind === 'error' && !roster && <button disabled={loading} onClick={() => { setLoading(true); void refresh().then(() => setFeedback(null)).catch(error => setFeedback({kind: 'error', text: errorText(error)})).finally(() => setLoading(false)) }}>Retry loading roster</button>}<button aria-label="Dismiss message" onClick={() => setFeedback(null)}>×</button></div>}
     {loading && <p role="status">Loading roster…</p>}
     {roster && <>
-      <CwlPoolTabs value={poolFilter} disabled={busy} onChange={pool=>{setPoolFilter(pool);setPreview(null);setBulkDestination('');setRuleTag('');setLeagues([]);setTownHalls([]);setSearch('');setEditingTag(null)}}/>
+      <CwlPoolTabs value={poolFilter} disabled={busy} onChange={pool=>{if (!mayLeaveEditor()) return; setPoolFilter(pool);setPreview(null);setBulkDestination('');setRuleTag('');setLeagues([]);setTownHalls([]);setSearch('');setEditingTag(null)}}/>
       <div className="roster-overview"><div><strong>{poolAccounts.length}</strong><span>signed-up accounts</span></div><div><strong>{assigned}</strong><span>assigned</span></div><div><strong>{poolAccounts.length - assigned}</strong><span>unassigned</span></div><div><strong>{missingWeight}</strong><span>missing effective weight</span></div></div>
-      <div className="roster-workflow-nav" role="group" aria-label="Roster workspace views">{([{id:'assign',label:'Assign accounts'},{id:'compare',label:'Compare clans'},{id:'rules',label:'Clan settings'},{id:'weights',label:`Weights · ${missingWeight} missing`}] as const).map(item=><button key={item.id} disabled={busy} aria-pressed={mode===item.id} className={mode===item.id?'active':''} onClick={()=>{setMode(item.id);setManualTag(null);setSelectedTags([]);setWeightEdit(null)}}>{item.label}</button>)}</div>
-      <div className="roster-toolbar"><span>{mode==='assign'?'1. Find accounts → 2. Select → 3. Assign a clan':mode==='compare'?'Compare up to 10 clans side by side.':mode==='rules'?'Set clan capacity and automatic placement ranges.':'Check missing weights and manage overrides.'}</span><button disabled={busy} onClick={()=>void refresh().catch(error=>setFeedback({kind:'error',text:errorText(error)}))}>Refresh</button>{mode==='assign'&&<button disabled={busy||!activeClans.length} onClick={()=>void previewPlacement()}>Auto-place preview</button>}{onReviewPublication&&<button className="primary" disabled={busy} onClick={onReviewPublication}>Finalize both groups →</button>}</div>
-      {mode==='weights'&&<WeightQueue onEdit={tag=>{setFeedback(null);setEditingTag(tag)}} key={seasonId} accounts={poolAccounts} busy={busy} onRefresh={()=>void refreshWeights()} onClose={()=>setMode('assign')} onSave={(tag,weight)=>edit(tag,{manual_weight:weight},'Manual weight saved. Existing placement preserved.')}/>}
+      <div className="roster-workflow-nav" role="group" aria-label="Roster workspace views">{([{id:'assign',label:'Assign accounts'},{id:'compare',label:'Compare clans'},{id:'rules',label:'Clan settings'},{id:'weights',label:`Weights · ${missingWeight} missing`}] as const).map(item=><button key={item.id} disabled={busy} aria-pressed={mode===item.id} className={mode===item.id?'active':''} onClick={()=>{if (item.id !== mode && !mayLeaveEditor()) return; setMode(item.id);setManualTag(null);setSelectedTags([]);setWeightEdit(null)}}>{item.label}</button>)}</div>
+      <div className="roster-toolbar"><span>{mode==='assign'?'1. Find accounts → 2. Select → 3. Assign a clan':mode==='compare'?'Compare up to 10 clans side by side.':mode==='rules'?'Set clan capacity and automatic placement ranges.':'Check missing weights and manage overrides.'}</span><button disabled={busy} onClick={()=>{if(mayLeaveEditor()) void refresh().catch(error=>setFeedback({kind:'error',text:errorText(error)}))}}>Refresh</button>{mode==='assign'&&<button disabled={busy||!activeClans.length} onClick={()=>void previewPlacement()}>Auto-place preview</button>}{onReviewPublication&&<button className="primary" disabled={busy} onClick={onReviewPublication}>Finalize both groups →</button>}</div>
+      {mode==='weights'&&<WeightQueue onDirty={setWeightsDirty} onEdit={tag=>{setFeedback(null);setEditingTag(tag)}} key={seasonId} accounts={poolAccounts} busy={busy} onRefresh={()=>void refreshWeights()} onClose={()=>{if(mayLeaveEditor())setMode('assign')}} onSave={(tag,weight)=>edit(tag,{manual_weight:weight},'Manual weight saved. Existing placement preserved.')}/>}
       {roster.undo && <div className="roster-undo card"><div><strong>Undo last placement change</strong><small>{roster.undo.label}</small></div><button disabled={busy || roster.undo.revision !== roster.revision} onClick={() => void undoPlacement()}>Undo</button></div>}
-      {mode==='rules' && <section id="clan-range-editor" className="roster-rules card"><div className="card-heading"><h2>Clan ranges & capacity</h2></div><p>Set this season’s weight range and capacity. Automatic placement uses these settings. Existing assignments stay unchanged.</p>{ruleClan ? <><label>Hosting clan<select value={ruleClan.tag} onChange={event => setRuleTag(event.target.value)} disabled={busy}>{activeClans.map(clan => <option key={clan.tag} value={clan.tag}>{clan.name} · {clan.cwl_league || 'League unavailable'} · {clan.tag}</option>)}</select></label><RuleForm key={`${seasonId}-${ruleClan.tag}-${roster.revision}`} clan={ruleClan} busy={busy} onSave={rules => void saveRules(ruleClan, rules)} /></> : <p>Add a hosting clan in Seasons & clans first.</p>}</section>}
-      {editingTag&&roster.accounts.some(a=>a.tag===editingTag)&&<RosterPlayerDialog key={`${seasonId}:${editingTag}`} account={roster.accounts.find(a=>a.tag===editingTag)!} clans={roster.clans} busy={busy} error={feedback?.kind==='error'?feedback.text:undefined} onClose={()=>{if(!busy)setEditingTag(null)}} onSave={body=>edit(editingTag,body,'Account updated.')} onRemove={()=>removeSignup(editingTag)}/>}
+      {mode==='rules' && <section id="clan-range-editor" className="roster-rules card"><div className="card-heading"><h2>Clan ranges & capacity</h2></div><p>Set this season’s weight range and capacity. Automatic placement uses these settings. Existing assignments stay unchanged.</p>{ruleClan ? <><label>Hosting clan<select value={ruleClan.tag} onChange={event => { if (mayLeaveEditor()) setRuleTag(event.target.value) }} disabled={busy}>{activeClans.map(clan => <option key={clan.tag} value={clan.tag}>{clan.name} · {clan.cwl_league || 'League unavailable'} · {clan.tag}</option>)}</select></label><RuleForm onDirty={setRulesDirty} key={`${seasonId}-${ruleClan.tag}`} clan={ruleClan} busy={busy} onSave={rules => saveRules(ruleClan, rules)} /></> : <p>Add a hosting clan in Seasons & clans first.</p>}</section>}
+      {editingTag&&roster.accounts.some(a=>a.tag===editingTag)&&<RosterPlayerDialog onDirty={setPlayerDirty} key={`${seasonId}:${editingTag}`} account={roster.accounts.find(a=>a.tag===editingTag)!} clans={roster.clans} busy={busy} error={feedback?.kind==='error'?feedback.text:undefined} onClose={()=>{if(!busy)setEditingTag(null)}} onSave={body=>edit(editingTag,body,'Account updated.')} onRemove={()=>removeSignup(editingTag)}/>}
       {mode==='compare'&&<CompareClans key={`${seasonId}:${poolFilter}`} pool={poolFilter} seasonId={seasonId} roster={roster} busy={busy} onEdit={tag=>{setFeedback(null);setEditingTag(tag)}} />}
       {mode==='assign'&&preview && <section className="card roster-preview" aria-labelledby="preview-title"><div className="card-heading"><h2 id="preview-title">Automatic placement preview</h2><button onClick={() => setPreview(null)}>Close preview</button></div><p>{preview.placements.length} proposed placement{preview.placements.length === 1 ? '' : 's'} · {preview.unassigned.length} unresolved. Nothing changes until you apply this preview.</p><div className="preview-columns"><div><h3>Proposed placements</h3><div className="preview-scroll">{preview.placements.length ? preview.placements.map(item => <div className="preview-line" key={item.tag}><strong>{roster.accounts.find(account => account.tag === item.tag)?.player_name || item.tag}</strong><small>{item.tag} → {clanName(item.assigned_clan_tag)}</small></div>) : <p>No accounts can be placed with the current rules.</p>}</div></div><div><h3>Accounts still needing a clan</h3><div className="preview-scroll">{preview.unassigned.length ? preview.unassigned.map(item => <div className="preview-line" key={item.tag}><strong>{roster.accounts.find(account => account.tag === item.tag)?.player_name || item.tag}</strong><small>{item.tag} · {roster.accounts.find(account=>account.tag===item.tag)?.auto_placement_note || reasonText(item.reason)}</small></div>) : <p>None.</p>}</div></div></div><div className="roster-preview-actions"><button className="primary" disabled={busy || !preview.placements.length || preview.revision !== roster.revision} onClick={() => void applyPlacement()}>Apply reviewed placements</button></div></section>}
       {mode==='assign'&&<>
@@ -224,14 +237,22 @@ function reasonText(reason: string) {
   const labels: Record<string, string> = { kept: 'Kept placement', missing_weight: 'Missing weight', source_unavailable: 'Weight source unavailable', no_eligible_rule: 'No matching hosting rule', full: 'Matching clans are full' }
   return labels[reason] || reason.replaceAll('_', ' ')
 }
-function RuleForm({ clan, busy, onSave }: { clan: RosterClan; busy: boolean; onSave: (rules: { pool: Pool; capacity: number; min_weight: number | null; max_weight: number | null; lower_league: boolean | null }) => void }) {
+function RuleForm({ clan, busy, onSave, onDirty }: { onDirty: (dirty: boolean) => void; clan: RosterClan; busy: boolean; onSave: (rules: { pool: Pool; capacity: number; min_weight: number | null; max_weight: number | null; lower_league: boolean | null }) => Promise<boolean> }) {
   const [pool, setPool] = useState<Pool | ''>(clan.pool ?? '')
   const [capacity, setCapacity] = useState(clan.capacity === null ? '' : String(clan.capacity))
   const [minWeight, setMinWeight] = useState(weightInputText(clan.min_weight))
   const [maxWeight, setMaxWeight] = useState(weightInputText(clan.max_weight))
   const [error, setError] = useState('')
-  const submit = (event: FormEvent) => {
+  const values = { pool: clan.pool ?? '', capacity: clan.capacity === null ? '' : String(clan.capacity), minWeight: weightInputText(clan.min_weight), maxWeight: weightInputText(clan.max_weight) }
+  const [base, setBase] = useState(values)
+  const changed = pool !== base.pool || capacity !== base.capacity || minWeight !== base.minWeight || maxWeight !== base.maxWeight
+  const stale = JSON.stringify(base) !== JSON.stringify(values)
+  const useLatest = () => { setPool(clan.pool ?? ''); setCapacity(values.capacity); setMinWeight(values.minWeight); setMaxWeight(values.maxWeight); setBase(values) }
+  useEffect(() => { if (!changed && stale) useLatest() }, [clan, changed, stale])
+  useEffect(() => { onDirty(changed); return () => onDirty(false) }, [changed, onDirty])
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (busy || stale) return
     try {
       const min = parseWeightK(minWeight)
       const max = parseWeightK(maxWeight)
@@ -240,8 +261,8 @@ function RuleForm({ clan, busy, onSave }: { clan: RosterClan; busy: boolean; onS
       if (!pool) throw new Error('Choose a signup pool for this hosting clan.')
       if (capacity === '' || (size !== 15 && size !== 30)) throw new Error('Capacity must be 15 or 30.')
       setError('')
-      onSave({ pool, capacity: size, min_weight: min, max_weight: max, lower_league: clan.lower_league })
+      if (await onSave({ pool, capacity: size, min_weight: min, max_weight: max, lower_league: clan.lower_league })) setBase({ pool, capacity, minWeight, maxWeight })
     } catch (error) { setError(errorText(error)) }
   }
-  return <form className="roster-rule-form" onSubmit={submit}><div className="card-heading"><h3>{clan.name}</h3><span className="badge">{clan.assigned_count}/{clan.capacity ?? '—'} assigned</span></div><small>{clan.tag}</small><div className="rule-fields"><label>Signup pool<select value={pool} onChange={event => setPool(event.target.value as Pool)}><option value="">Not set</option><option value="main">Main Clan CWL</option><option value="lazy">Lazy CWL</option></select></label><label>Capacity<select value={capacity} onChange={event => setCapacity(event.target.value)}><option value="">Not set</option><option value="15">15</option><option value="30">30</option></select></label><label>Minimum weight (k, included)<input type="number" min="0" step="0.001" value={minWeight} onChange={event => setMinWeight(event.target.value)} placeholder="No minimum" /></label><label>Maximum weight (k, excluded)<input type="number" min="0" step="0.001" value={maxWeight} onChange={event => setMaxWeight(event.target.value)} placeholder="No maximum" /></label></div><p className="small">Enter weights in thousands: 160 means 160,000. Leave either end blank for no limit. The maximum is excluded, so 160–174 includes 160k up to just below 174k.</p>{error && <p className="inline-reason" role="alert">{error}</p>}<button className="primary" disabled={busy}>Save clan range & rules</button></form>
+  return <form className="roster-rule-form" onSubmit={submit}><fieldset disabled={busy}><div className="card-heading"><h3>{clan.name}</h3><span className="badge">{clan.assigned_count}/{clan.capacity ?? '—'} assigned</span></div><small>{clan.tag}</small><div className="rule-fields"><label>Signup pool<select value={pool} onChange={event => setPool(event.target.value as Pool)}><option value="">Not set</option><option value="main">Main Clan CWL</option><option value="lazy">Lazy CWL</option></select></label><label>Capacity<select value={capacity} onChange={event => setCapacity(event.target.value)}><option value="">Not set</option><option value="15">15</option><option value="30">30</option></select></label><label>Minimum weight (k, included)<input type="number" min="0" step="0.001" value={minWeight} onChange={event => setMinWeight(event.target.value)} placeholder="No minimum" /></label><label>Maximum weight (k, excluded)<input type="number" min="0" step="0.001" value={maxWeight} onChange={event => setMaxWeight(event.target.value)} placeholder="No maximum" /></label></div><p className="small">Enter weights in thousands: 160 means 160,000. Leave either end blank for no limit. The maximum is excluded, so 160–174 includes 160k up to just below 174k.</p>{error && <p className="inline-reason" role="alert">{error}</p>}<button className="primary" disabled={busy || stale || !changed}>Save clan range & rules</button>{stale && changed && <p role="alert">Clan settings changed elsewhere. Your edits are preserved.<button type="button" disabled={busy} onClick={useLatest}>Discard edits and use latest settings</button></p>}</fieldset></form>
 }

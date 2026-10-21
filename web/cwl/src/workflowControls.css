@@ -1,0 +1,53 @@
+/* Shared presentation for existing navigation, without changing its semantics. */
+.shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 0;
+  margin: 12px 0 20px;
+  border: 0;
+  border-bottom: 1px solid #46433a;
+  border-radius: 0;
+  background: transparent;
+}
+.shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button {
+  min-height: 44px;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #d4d0c6;
+  -webkit-text-fill-color: currentColor;
+  white-space: normal;
+}
+.shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:is(.active,[aria-selected="true"],[aria-pressed="true"],[aria-current="page"]) {
+  color: #f4cd64;
+  border-bottom-color: #e7b338;
+  background: #e7b3380b;
+  box-shadow: none;
+  -webkit-text-fill-color: currentColor;
+}
+.shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:focus-visible {
+  outline: 2px solid #f4cd64;
+  outline-offset: -3px;
+}
+.clan-category-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.shell .clan-category-filters button { min-height: 44px; padding: 8px 12px; border-radius: 24px; background: #202020; }
+.shell .clan-category-filters button[aria-pressed="true"] { color: #f4cd64; border-color: #e7b338; background: #332b19; }
+.clan-category-filters span { font-size: 12px; opacity: .8; margin-left: 5px; }
+.participation-editor > summary { cursor: pointer; padding: 12px 0; min-height: 44px; color: #f4cd64; }
+.shell .participation-card { padding: 16px; }
+.shell .participation-card h3 { margin: 0 0 4px; }
+.return-status-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr)); gap: 12px; margin: 16px 0; }
+.return-status-grid article { padding: 16px; border: 1px solid #46433a; border-radius: 12px; }
+.return-status-grid article > * { display: block; margin: 5px 0; overflow-wrap: anywhere; }
+@media(max-width:600px) {
+  .shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button { padding: 10px 12px; }
+}
+.roster-rule-form > fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+#clan-directory-picker .clan-category-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#clan-directory-picker .clan-category-filters button { padding: 8px; overflow-wrap: anywhere; }

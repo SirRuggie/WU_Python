@@ -14,6 +14,7 @@ const dateText = (value: string) => new Date(value).toLocaleString()
 
 export default function PublicationWorkspace({ seasonId, seasons, onSeasonChange, onFix, step, onStepChange: setStep, onDirty }: Props) {
   const [pool,setPool]=useCwlPool()
+  const [imagesOpen, setImagesOpen] = useState(false)
   const [draft, setDraft] = useState<PublicationDraft | null>(null)
   const [rosterSearch, setRosterSearch] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
@@ -108,6 +109,6 @@ export default function PublicationWorkspace({ seasonId, seasons, onSeasonChange
         <section className="card publication-preview"><div className="card-heading"><div><h2>Roster preview by clan</h2><p>{rosterGroups.size} placement group{rosterGroups.size === 1 ? '' : 's'} · expand a clan to check its accounts.</p></div></div><CwlPoolTabs value={pool} onChange={setPool} disabled={busy}/><label className="publication-search">Find an account or clan<input type="search" value={rosterSearch} onChange={event => setRosterSearch(event.target.value)} placeholder="Search name, tag, pool, or clan" /></label>{draft.preview.accounts.length ? <>{query && <p className="small">{visibleCount} matching account{visibleCount === 1 ? '' : 's'}</p>}{visibleGroups.length ? <div className="publication-groups">{visibleGroups.map(group => <details key={`${group.tag}:${query}`} className="publication-group" open={!!query}><summary><strong>{group.name}</strong><span>{group.tag === 'unassigned' ? '' : `${group.tag} · `}{query ? `${group.accounts.length} of ${group.total}` : group.total} account{group.total === 1 ? '' : 's'}</span></summary><div className="publication-list">{group.accounts.map(account => <div key={account.tag} className="publication-row"><div><StaffPlayerButton seasonId={seasonId} tag={account.tag} disabled={busy||archived} onChanged={load}>{account.player_name}</StaffPlayerButton><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.pool === 'main' ? 'Main Clan CWL' : 'Lazy CWL'}</small></div><span className={account.assigned_clan_tag ? '' : 'publication-unassigned'}>{account.assigned_clan_tag ? group.name : 'Awaiting placement'}</span></div>)}</div></details>)}</div> : <p>No accounts in this group match this search.</p>}</> : <p>No signup accounts are in this draft roster.</p>}</section>
       </>}
     </div>
-    {seasonId && <div hidden={step !== 'announce'}><ClanRosterImages key={seasonId} seasonId={seasonId} version={draft?.published?.version??null}/><ManageBridgeWorkspace onDirty={onDirty} seasonId={seasonId} publicationVersion={draft?.published?.version ?? null} /></div>}
+    {seasonId && step === 'announce' && <div><ManageBridgeWorkspace onDirty={onDirty} seasonId={seasonId} publicationVersion={draft?.published?.version ?? null} /><details className="card" onToggle={event => setImagesOpen(event.currentTarget.open)}><summary>Clan roster images &amp; testing</summary>{imagesOpen && <ClanRosterImages key={seasonId} seasonId={seasonId} version={draft?.published?.version??null}/>}</details></div>}
   </div>
 }

@@ -53,7 +53,7 @@ function App() {
   const [fixtureMode, setFixtureMode] = useState(false)
   const [entryTarget] = useState(() => dashboardTarget(window.location.search))
   const [publicationDirty, setPublicationDirty] = useState(false)
-  const [publicationStep, setPublicationStep] = useState<'review' | 'announce'>('review')
+  const [publicationStep, setPublicationStep] = useState<'review' | 'announce'>(entryTarget.step || 'review')
   const [rosterRefresh, setRosterRefresh] = useState(0)
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
   const [view, setView] = useState<View>(entryTarget.view)
@@ -231,8 +231,10 @@ function App() {
   const setDraft = (next: Draft) => { if (!pool) return; setDrafts(current => ({ ...current, [pool]: next })); setReview(false); setNotice(null) }
   const choosePool = (next: Pool) => { setSignupStep(2); if (pool === next) return; setSignupPanel('register'); setPool(next); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false) }
   const [manageDirty, setManageDirty] = useState(false)
+  const [cwlDirty, setCwlDirty] = useState(false)
   const navigation = useRef<DashboardHistory | null>(null)
   const canLeave = () => {
+    if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
     if ((isManagementArea(view) || ['manage','text-commands','clan-management'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
     if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
@@ -247,8 +249,15 @@ function App() {
   const changeView = (next: View) => {
     if (navigation.current?.pending || (next !== view && !canLeave())) return
     const destination = allowedView(next)
-    if (destination !== view) navigation.current?.write({ view: destination, season: seasonId }, true)
+    if (destination !== view) navigation.current?.write({ view: destination, season: seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, true)
     acceptRoute(destination)
+  }
+  const openPublication = (step: 'review' | 'announce') => {
+    if (navigation.current?.pending || (view === 'publication' && publicationStep === step)) return
+    if (!canLeave()) return
+    navigation.current?.write({view: 'publication', season: seasonId, step}, true)
+    setPublicationStep(step)
+    acceptRoute('publication')
   }
   const navigationState = useRef({ canLeave, allowedView })
   navigationState.current = { canLeave, allowedView }
@@ -260,6 +269,7 @@ function App() {
       const target = dashboardTarget(window.location.search)
       const destination = navigationState.current.allowedView(target.view)
       setSeasonId(target.season)
+      setPublicationStep(target.step || 'review')
       acceptRoute(destination)
       controller.write({ ...target, view: destination }, false)
     }
@@ -270,8 +280,8 @@ function App() {
     if (authState !== 'ready') return
     const destination = allowedView(view)
     if (destination !== view) setView(destination)
-    navigation.current?.write({ view: destination, season: seasonId }, false)
-  }, [view, seasonId, authState, session])
+    navigation.current?.write({ view: destination, season: seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, false)
+  }, [view, seasonId, publicationStep, authState, session])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
@@ -368,8 +378,8 @@ function App() {
       <main>
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
         {(view === 'signup' || view === 'assignments') && <div className="member-nav-tabs" role="group" aria-label="Member sections"><button className={view === 'signup' ? 'active' : ''} aria-pressed={view === 'signup'} onClick={() => changeView('signup')}>My signups</button><button className={view === 'assignments' ? 'active' : ''} aria-pressed={view === 'assignments'} onClick={() => changeView('assignments')}>My clan assignments</button></div>}
-        {session.can_edit && ['roster','publication'].includes(view) && <div className="cwl-workspace-nav"><nav className="cwl-roster-tabs" aria-label="Roster sections"><button className={view === 'roster' ? 'active' : ''} aria-current={view === 'roster' ? 'page' : undefined} onClick={() => changeView('roster')}>Build roster</button><button className={view === 'publication' && publicationStep === 'review' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'review' ? 'page' : undefined} onClick={() => { setPublicationStep('review'); changeView('publication') }}>Finalize roster</button><button className={view === 'publication' && publicationStep === 'announce' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'announce' ? 'page' : undefined} onClick={() => { setPublicationStep('announce'); changeView('publication') }}>Announcements</button></nav><details className="cwl-more"><summary>More</summary><button onClick={() => changeView('exports')}>Export season</button><button onClick={() => changeView('staff')}>CWL settings</button></details></div>}
-        {session.can_edit && ['participation','bonuses','exports'].includes(view) && <div className="cwl-result-nav"><button onClick={() => changeView('participation')}>Participation</button><button onClick={() => changeView('bonuses')}>Bonus medals</button><button onClick={() => changeView('exports')}>Export season</button></div>}
+        {session.can_edit && ['roster','publication'].includes(view) && <div className="cwl-workspace-nav"><nav className="cwl-roster-tabs" aria-label="Roster sections"><button className={view === 'roster' ? 'active' : ''} aria-current={view === 'roster' ? 'page' : undefined} onClick={() => changeView('roster')}>Build roster</button><button className={view === 'publication' && publicationStep === 'review' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'review' ? 'page' : undefined} onClick={() => openPublication('review')}>Finalize roster</button><button className={view === 'publication' && publicationStep === 'announce' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'announce' ? 'page' : undefined} onClick={() => openPublication('announce')}>Announcements</button></nav><details className="cwl-more"><summary>More</summary><button onClick={() => changeView('exports')}>Export season</button><button onClick={() => changeView('staff')}>CWL settings</button></details></div>}
+        {session.can_edit && ['participation','bonuses','exports'].includes(view) && <div className="cwl-result-nav"><button aria-current={view === 'participation' ? 'page' : undefined} onClick={() => changeView('participation')}>Participation</button><button aria-current={view === 'bonuses' ? 'page' : undefined} onClick={() => changeView('bonuses')}>Bonus medals</button><button aria-current={view === 'exports' ? 'page' : undefined} onClick={() => changeView('exports')}>Export season</button></div>}
         {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}
         {session.can_edit && season && ['roster','staff','signup'].includes(view) && <StaffSignupControls key={seasonId} season={season} onChanged={async added=>{await loadSeasons();if(added){setRosterRefresh(n=>n+1);if(view==='staff')await loadStaff();if(view==='signup')await loadSignup()}}} />}
         {view === 'staff-overview' && <StaffOverview onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
@@ -436,9 +446,9 @@ function App() {
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} onChange={e=>setSeasonId(e.target.value)}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId}/>}</>}
         {view === 'publication' && session.can_edit && <PublicationWorkspace onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationDirty || window.confirm('Discard unsaved announcement changes?')) setSeasonId(id) }} />}
-        {view === 'participation' && session.can_edit && <ParticipationWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'bonuses' && session.can_edit && <BonusWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'roster' && session.can_edit && <RosterWorkspace key={`${seasonId}-${rosterRefresh}`} initialReadiness={rosterReadiness} onReviewPublication={() => { setPublicationStep('review'); changeView('publication') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { setSeasonId(id); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }} />}
+        {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'roster' && session.can_edit && <RosterWorkspace onDirty={setCwlDirty} key={`${seasonId}-${rosterRefresh}`} initialReadiness={rosterReadiness} onReviewPublication={() => { setPublicationStep('review'); changeView('publication') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { setSeasonId(id); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }} />}
         {view === 'staff' && session.can_edit && <div className="staff-workspace"><div className="page-head"><div><p className="eyebrow">Staff tools</p><h1>Seasons & clans</h1><p>Choose a section to manage this season or its clans.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => { setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>{staffError && <div className="notice error" role="alert">{staffError}<button onClick={() => void loadStaff()}>Retry</button></div>}{staffLoading && <p>Loading clan directory…</p>}
           <div className="staff-section-menu" role="group" aria-label="Seasons and clans sections">
             {([['hosting', 'Hosting clans', clans.filter(clan => !clan.archived).length], ['season', 'Season settings', null], ['family', 'Family clans', approved.length], ['signups', 'Signup pools', staffSignups.length]] as const).map(([key, label, count]) => <button key={key} aria-pressed={staffSection === key} onClick={() => { setStaffSection(key); setStaffSearch(''); setStaffPage(0) }}>{label}{count !== null && <span>{count}</span>}</button>)}

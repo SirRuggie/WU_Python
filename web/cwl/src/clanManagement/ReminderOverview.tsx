@@ -1,3 +1,4 @@
+import ClanCategories, { clanCategory } from "./ClanCategories";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import { timeLabel } from "../warReminders/types";
@@ -36,6 +37,7 @@ export default function ReminderOverview({
     [error, setError] = useState("");
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState<OverviewFilter>("all");
+  const [category, setCategory] = useState("");
   const generation = useRef(0),
     pending = useRef(false),
     heading = useRef<HTMLHeadingElement>(null);
@@ -91,13 +93,13 @@ export default function ReminderOverview({
     ),
     ids = new Set(names.keys());
   const rows = data?.clans || [],
-    visible = visibleRows(rows, query, filter, names, channelsReady);
+    visible = visibleRows(rows.filter(row => !category || clanCategory(row.clan.type) === category), query, filter, names, channelsReady);
   const attention = rows.filter(
     (row) => rowHealth(row, ids, channelsReady).category === "attention",
   ).length;
   const enabled = rows.filter((row) => row.settings.enabled).length;
   const filters: [OverviewFilter, string, number][] = [
-    ["all", "All clans", rows.length],
+    ["all", "All statuses", rows.length],
     ["attention", "Needs attention", attention],
     ["enabled", "Enabled", enabled],
     ["off", "Off / not set up", rows.length - enabled],
@@ -140,6 +142,7 @@ export default function ReminderOverview({
           <button onClick={onRetryChoices}>Retry channel names</button>
         </p>
       )}
+      {data && <ClanCategories clans={rows.map(row => row.clan)} value={category} onChange={setCategory} />}
       {!data ? (
         <p role="status">
           {error
@@ -212,6 +215,7 @@ export default function ReminderOverview({
                 onClick={() => {
                   setQuery("");
                   setFilter("all");
+                  setCategory("");
                 }}
               >
                 Show all clans
@@ -243,7 +247,7 @@ export default function ReminderOverview({
                       <th scope="row">
                         <strong>{row.clan.name}</strong>
                         <small>
-                          {row.clan.tag} · {row.clan.type || "Type not set"}
+                          {row.clan.tag} · {clanCategory(row.clan.type) || "Type not set"}
                         </small>
                       </th>
                       <td>

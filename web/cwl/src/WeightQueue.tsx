@@ -1,12 +1,15 @@
-import { useState } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import TownHallIcon from './TownHallIcon'
 import { parseManualWeightK, type RosterAccount } from './roster'
 import './WeightQueue.css'
 
-type Props = { accounts: RosterAccount[]; busy: boolean; onEdit: (tag: string) => void; onSave: (tag: string, weight: number) => Promise<boolean>; onRefresh: () => void; onClose: () => void }
-export default function WeightQueue({ accounts, busy, onEdit, onSave, onRefresh, onClose }: Props) {
+type Props = { onDirty?: (dirty: boolean) => void; accounts: RosterAccount[]; busy: boolean; onEdit: (tag: string) => void; onSave: (tag: string, weight: number) => Promise<boolean>; onRefresh: () => void; onClose: () => void }
+export default function WeightQueue({ accounts, busy, onEdit, onSave, onRefresh, onClose, onDirty }: Props) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
+  const [dirtyTags, setDirtyTags] = useState<Set<string>>(new Set())
+  const reportDirty = useCallback((tag: string, dirty: boolean) => setDirtyTags(current => { const next = new Set(current); if(dirty)next.add(tag);else next.delete(tag);return next }), [])
+  useEffect(() => { onDirty?.(dirtyTags.size > 0); return () => onDirty?.(false) }, [dirtyTags, onDirty])
   const missing = accounts.filter(account => account.effective_weight === null)
   const query = search.trim().toLocaleLowerCase()
   const matching = missing.filter(account => `${account.player_name} ${account.tag}`.toLocaleLowerCase().includes(query))
@@ -17,13 +20,14 @@ export default function WeightQueue({ accounts, busy, onEdit, onSave, onRefresh,
     <p>Refresh FWA Stats first. If an account is still missing, enter its known war weight below. Saved accounts leave this list automatically.</p>
     <div className="weight-queue-tools"><button disabled={busy} onClick={onRefresh}>↻ Bulk refresh FWA weights</button><label>Find account<input type="search" value={search} onChange={event => { setSearch(event.target.value); setPage(0) }} placeholder="Name or player tag" /></label></div>
     <p className="small">Refresh checks all season signups and preserves manual weights. Enter thousands: 174 = 174,000. Saving a weight does not move the account.</p>
-    {!missing.length ? <div role="status"><h3>All accounts have a weight ✓</h3><p>Return to the roster to preview automatic placement.</p></div> : !matching.length ? <p>No missing-weight accounts match your search.</p> : matching.slice(currentPage * 10, (currentPage + 1) * 10).map(account => <WeightRow key={account.tag} account={account} busy={busy} onEdit={onEdit} onSave={onSave} />)}
+    {!missing.length ? <div role="status"><h3>All accounts have a weight ✓</h3><p>Return to the roster to preview automatic placement.</p></div> : <>{!matching.length && <p>No missing-weight accounts match your search.</p>}{missing.map(account => <div key={account.tag} hidden={!matching.slice(currentPage * 10, (currentPage + 1) * 10).includes(account)}><WeightRow onDirty={reportDirty} account={account} busy={busy} onEdit={onEdit} onSave={onSave} /></div>)}</>}
     {lastPage > 0 && <nav aria-label="Missing weight pages"><button disabled={currentPage===0 || busy} onClick={() => setPage(currentPage-1)}>← Previous</button><span>{currentPage+1} / {lastPage+1}</span><button disabled={currentPage===lastPage || busy} onClick={() => setPage(currentPage+1)}>Next →</button></nav>}
   </section>
 }
-function WeightRow({ account, busy, onEdit, onSave }: Pick<Props, 'busy' | 'onEdit' | 'onSave'> & { account: RosterAccount }) {
+function WeightRow({ account, busy, onEdit, onSave, onDirty }: Pick<Props, 'busy' | 'onEdit' | 'onSave'> & { account: RosterAccount; onDirty: (tag: string, dirty: boolean) => void }) {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
+  useEffect(() => { onDirty(account.tag, !!value); return () => onDirty(account.tag, false) }, [account.tag, value, onDirty])
   return <form className="weight-queue-row" onSubmit={async event => {
     event.preventDefault()
     try {

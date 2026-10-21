@@ -113,3 +113,47 @@ return and disappeared-row fallback. Visual checks covered desktop, 390px and
 Discord messages were sent. These checks cover the changed workflows, not every
 screen or a complete assistive-technology audit. Staff deep links require an
 existing signed-in session; OAuth still returns only to approved member pages.
+
+## CWL workflow and authenticated dashboard comparison — October 21
+
+Read-only inspection of ClashPerk's authenticated clan directory, clan details,
+reminders, and roster creation informed these changes. Keep WU's gold selection
+color and existing data owners. Adopt integrated section navigation, compact
+resource lists, status before settings, and optional detail on demand. This is
+not a copy of its dashboard or an implementation of capital-raid/clan-game
+reminders; those require their own scheduling and delivery work.
+
+- Clan category filters use existing stored types. Tactical, Flexible Fun, FWA,
+  and CWL remain visible, additional types remain reachable, and legacy Farming
+  is displayed/grouped as FWA without rewriting stored records.
+- CWL roster rules, weight edits, player dialogs, participation notes/sync settings,
+  and bonus selections report unsaved work to dashboard navigation. Reload and
+  season/section changes protect drafts; hidden participation/weight rows retain
+  drafts across pagination and filters. Rule conflicts preserve typed values.
+- Announcement saves acknowledge only the saved pool. A simultaneous change to
+  the other pool blocks adoption of its newer generation while preserving the
+  local draft. Main/Lazy tabs support manual keyboard activation and panel labels.
+- Participation uses expandable records and 20 visible accounts per page.
+  Source warnings remain visible outside the disclosure. Sync configuration and
+  roster image/testing tools are optional. Closed roster images are not mounted;
+  announcement polling runs only in the announcement step.
+- Roster search, mode, page, sort, hosting-clan selection and filters are session
+  preferences, not saved drafts. Publication review/announcement steps are encoded
+  in browser history. Initial roster/catalog failures provide read-only retries.
+- Return reminder status is derived from the existing saved list and scheduler
+  limits, never from a second storage system. Scheduled describes configuration,
+  not worker health. Manual, paused, not started, no-list, and expired states are
+  distinct. List expiry and the seven-day window take precedence over enabled.
+
+Validation: 173 frontend tests; 60 affected CWL backend tests; 13 return status/
+settings tests; the required war-reminder gate (149 backend and 32 focused UI
+checks), and production build. Existing aiohttp AppKey/deprecation and Vite bundle
+size/import warnings remain. Browser checks used isolated simulated APIs with
+50 accounts and 28 clans: failed reads/saves, canceled page/section navigation,
+both-pool draft isolation, keyboard tab movement, pagination draft retention,
+bonus protection, category filtering, preserved roster search, publication
+Back/Forward steps, and no image requests while closed. Viewports included 1280,
+390 and 320 pixels with no document overflow on inspected layouts. Native confirm
+outcomes were simulated in the fixture after the in-app browser could not operate
+one native dialog; this is not an assistive-technology certification. No live
+Discord sends, pings, clan edits, or roster mutations were used for validation.

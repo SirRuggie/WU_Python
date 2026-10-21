@@ -1,5 +1,5 @@
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
-export type DashboardRoute = { view: DashboardView; season: string };
+export type DashboardRoute = { view: DashboardView; season: string; step?: "review" | "announce" };
 export function dashboardTarget(search: string): DashboardRoute {
   const params = new URLSearchParams(search);
   const value =
@@ -8,6 +8,7 @@ export function dashboardTarget(search: string): DashboardRoute {
     view: dashboardViews.includes(value as DashboardView)
       ? (value as DashboardView)
       : "home",
+    ...(params.get("view") === "publication" && ["review", "announce"].includes(params.get("step") || "") ? { step: params.get("step") as "review" | "announce" } : {}),
     season: /^\d{1,18}$/.test(params.get("season") || "")
       ? params.get("season")!
       : "",
@@ -15,6 +16,7 @@ export function dashboardTarget(search: string): DashboardRoute {
 }
 export function dashboardPath(route: DashboardRoute) {
   const params = new URLSearchParams({ view: route.view });
+  if (route.view === "publication" && route.step) params.set("step", route.step);
   if (route.season) params.set("season", route.season);
   return `/?${params}`;
 }
