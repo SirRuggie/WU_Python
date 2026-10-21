@@ -1689,8 +1689,8 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     from .strikes import routes as strike_routes
     routes.extend(strike_routes)
     routes.extend(push_routes())
-    from . import staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history
-    for module in (staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history):
+    from . import war_reminders, staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history
+    for module in (war_reminders, staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history):
         routes.extend(module.routes)
     manage_content.routes(app)
     app.add_routes(routes)

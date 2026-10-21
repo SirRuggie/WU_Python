@@ -141,6 +141,7 @@ async def on_starting(_: hikari.StartingEvent) -> None:
         "extensions.tasks.cwl_reminder",
         "extensions.tasks.fwa_points_monitor",
         "extensions.tasks.clan_history_tracker",
+        "extensions.tasks.war_reminders",
         "extensions.tasks.band_sync_ical",
         "extensions.tasks.cards_sticky",
         "extensions.tasks.gauntlet_help",
