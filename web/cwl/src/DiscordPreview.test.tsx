@@ -1,3 +1,4 @@
+import {reminderPreviewText} from './warReminderPreview'
 import {describe,expect,it} from 'vitest'
 import {renderToStaticMarkup} from 'react-dom/server'
 import DiscordPreview,{DiscordText,discordMarkdown,previewUrl,type PreviewPart} from './DiscordPreview'
@@ -37,3 +38,12 @@ describe('Discord preview content safety',()=>{
   expect(html).not.toMatch(/<a\b|href=/)
  })
 })
+
+ it('keeps compact reminder owners outside the preceding account quote',()=>{
+  const html=renderToStaticMarkup(<DiscordText text={reminderPreviewText('<@123>\n> **Account one** `#ONE` · 0/2\n<@456>\n> **Account two** `#TWO` · 1/2\n**Unlinked accounts**\n> **Account three** `#THREE` · 0/2')} />)
+  expect(html.match(/<blockquote>/g)).toHaveLength(3)
+  for(const quote of html.match(/<blockquote>[\s\S]*?<\/blockquote>/g)||[]) {
+   expect(quote).not.toContain('@member')
+   expect(quote).not.toContain('Unlinked accounts')
+  }
+ })

@@ -142,3 +142,14 @@
   color: #c3c8d3;
   margin: 8px 0;
 }
+
+/* Keep owner groups compact without changing row width or quote indentation. */
+.war-discord-preview .discord-markdown p {
+  margin-block: 3px;
+}
+.war-discord-preview .discord-markdown blockquote {
+  margin-block: 3px 7px;
+}
+.war-discord-preview .discord-markdown blockquote p {
+  margin-block: 0;
+}

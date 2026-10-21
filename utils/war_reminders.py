@@ -129,7 +129,7 @@ def messages(war, config, event, owners=None, *, test=False, tester=None, sample
         blocks = [('All attacks are complete!', [])]
     pages, text, users = [], '', []
     for block, mentions in blocks:
-        candidate = text+'\n\n'+block if text else block
+        candidate = text+'\n'+block if text else block
         if discord_length(candidate) > budget:
             pages.append((text, users))
             text, users = block, mentions.copy()
