@@ -1,3 +1,4 @@
+from utils.cwl_dashboard_state import DashboardDurabilityError
 from .ticket_browser import routes as ticket_browser_routes
 """Aiohttp CWL foundation. Read-only bot directory; no bot gateway or Discord sends."""
 
@@ -1684,6 +1685,8 @@ async def auth_diagnostics(request, handler):
 async def errors(request, handler):
     try:
         response = await handler(request)
+    except DashboardDurabilityError as exc:
+        response = web.json_response({"error": str(exc)}, status=503)
     except ProviderUnavailable as exc:
         response = web.json_response({"error": str(exc)}, status=503)
     except web.HTTPException as exc:
@@ -1705,16 +1708,16 @@ async def errors(request, handler):
     return response
 
 
-def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True, after_login="/", dev_fixture=False, dev_identity=None, static_dir=None):
+def create_app(*, db_path=None, durability=None, providers=None, oauth=None, secure_cookies=True, after_login="/", dev_fixture=False, dev_identity=None, static_dir=None):
     """Build an app. Dev fixture requires explicit opt-in and loopback serving."""
     if db_path is None:
         db_path = os.getenv("CWL_WEB_DB_PATH", "")
     if not db_path:
-        raise ValueError("CWL_WEB_DB_PATH is required; never reuse the live Mongo database")
+        raise ValueError("CWL_WEB_DB_PATH is required for the dashboard working copy")
     if dev_fixture and dev_identity is None:
         dev_identity = {"id": PERMANENT_OWNER_ID, "username": "Development owner", "guild_owner": False}
     app = web.Application(middlewares=[errors, auth_diagnostics], client_max_size=32 * 1024)
-    app["store"] = Store(db_path)
+    app["store"] = Store(db_path, durability=durability)
     if dev_fixture and providers is None:
         providers = FixtureProviders(dev_identity["id"])
         with app["store"].tx() as db:
@@ -1732,6 +1735,8 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     app["todo_inflight"] = {}
     app["todo_client"] = None
     app["todo_client_lock"] = asyncio.Lock()
+    from .durability import lifecycle as durability_lifecycle
+    app.cleanup_ctx.append(durability_lifecycle)
     app.cleanup_ctx.append(participation_sync_lifecycle)
     app.cleanup_ctx.append(_dashboard_accounts_lifecycle)
     app.cleanup_ctx.append(todo_lifecycle)
@@ -1746,7 +1751,7 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     app.cleanup_ctx.append(strike_jobs_lifecycle)
     from .clan_weight_trial import routes as weight_trial_routes
     from utils.clan_weight_trial_store import ClanWeightTrialStore
-    app["clan_weight_trial"] = ClanWeightTrialStore(app["store"].path)
+    app["clan_weight_trial"] = ClanWeightTrialStore(app["store"].path, transaction_factory=app["store"].tx)
     from .signup_activity import routes as signup_activity_routes
     routes = [*weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),

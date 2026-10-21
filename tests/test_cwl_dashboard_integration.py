@@ -292,6 +292,11 @@ def modal_context(*, values=None, selections=(), guild_id=22, user_id=11):
 
 
 def test_ui_edit_apply_reload_and_render_share_one_schema(monkeypatch):
+    # Timing saves activate only future announcements; keep this fixture before
+    # its fixed October schedule rather than depending on the machine's date.
+    now = pendulum.datetime(2026, 10, 20, 12, tz="UTC")
+    monkeypatch.setattr(pendulum, "now", lambda tz=None: now.in_timezone(tz or "UTC"))
+
     async def scenario():
         mongo = MemoryMongo()
         monkeypatch.setattr(cwl_reminder, "mongo_client", None)

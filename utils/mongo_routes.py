@@ -42,6 +42,7 @@ DEFAULT_ROUTES = MappingProxyType({
     'ticket_migrations': Namespace("settings", 'ticket_migrations'),
     'ticket_migration_batches': Namespace("settings", 'ticket_migration_batches'),
     'ticket_creation_state': Namespace("settings", 'ticket_creation_state'),
+    'cwl_dashboard_state': Namespace("settings", 'cwl_dashboard_state'),
     'bot_config': Namespace("settings", 'bot_config'),
     'discord_polls': Namespace("settings", 'wu_discord_polls'),
     'ticket_automation_state': Namespace("settings", 'ticket_automation_state'),

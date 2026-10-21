@@ -1,4 +1,4 @@
-"""Durable development store, separate from the live bot database."""
+"""Relational dashboard working copy with optional Mongo commit protection."""
 
 import sqlite3
 from contextlib import contextmanager
@@ -275,7 +275,8 @@ CREATE TABLE IF NOT EXISTS participation_source_results (
 
 
 class Store:
-    def __init__(self, path: str):
+    def __init__(self, path: str, durability=None):
+        self.durability = None
         self.path = str(Path(path).expanduser())
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.tx() as db:
@@ -317,16 +318,27 @@ class Store:
             from utils.cwl_bonus_raffle_store import SCHEMA as RAFFLE_SCHEMA
             db.executescript(RAFFLE_SCHEMA)
             migrate(db)
+        self.durability = durability
 
     @contextmanager
     def tx(self):
+        if self.durability:
+            self.durability.check()
         db = sqlite3.connect(self.path, timeout=15, isolation_level=None)
         db.row_factory = sqlite3.Row
         try:
             db.execute("PRAGMA foreign_keys=ON")
             db.execute("BEGIN IMMEDIATE")
+            before = db.total_changes
             yield db
-            db.commit()
+            if self.durability and db.total_changes != before:
+                self.durability.publish(db)
+            try:
+                db.commit()
+            except Exception:
+                if self.durability:
+                    self.durability.poisoned = True
+                raise
         except Exception:
             db.rollback()
             raise
@@ -334,6 +346,8 @@ class Store:
             db.close()
 
     def rows(self, sql, args=()):
+        if self.durability:
+            self.durability.check()
         with sqlite3.connect(self.path) as db:
             db.row_factory = sqlite3.Row
             return [dict(row) for row in db.execute(sql, args)]

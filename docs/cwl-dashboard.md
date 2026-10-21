@@ -27,3 +27,84 @@ Times are entered in the displayed campaign timezone; Discord timestamps display
 **CWL Return Pings** manages saved clan members and return pings, not the published assignment spreadsheet. See [CWL Return Pings](lazycwl-dashboard.md) and the [agreed War Operations decisions](war-operations-ux-review.md).
 
 The retired `/cwl dashboard` and `/cwl rosters` slash-command entry points remain retired. Use `/manage`.
+
+## Dashboard database recovery (2026-10-21)
+
+Production entrypoint `python -m cwl_web` now requires the Mongo recovery head.
+SQLite is the relational working copy, not the sole durable copy. The storage
+owner is `utils/cwl_dashboard_state.py`; collection alias `cwl_dashboard_state`
+defaults to `settings.cwl_dashboard_state` and follows `MONGODB_ROUTES`. Its one
+head contains a compressed, checksummed SQL image of **every** dashboard table,
+including signups, assignments, publications, bonus draws/delivery reservations,
+trial weights and history, sessions, and pending outboxes. These are recovery
+images, not a migration to individual Mongo documents per signup. No TTL applies.
+
+For changed transactions, publish the candidate image with majority+journal
+acknowledgement and a revision/owner compare-and-set **before** local commit and
+before HTTP success. On acknowledgement uncertainty, fence further local reads
+and writes; restart and recover Mongo's authoritative result before retrying.
+A notification reservation is checkpointed before delivery, so recovery does not
+silently retry an uncertain Discord send. A local commit failure also fences the
+process. A server crash after Mongo acceptance can preserve a change whose HTTP
+response was lost; check the recovered result instead of assuming it failed.
+
+The writer lease is renewed every 20 seconds and expires after 90 seconds.
+A second server must wait for a crashed writer's lease to expire; a clean stop
+releases it. Revision and owner checks fence the old writer. Use synchronized
+system clocks. The local process lock also prevents recovery racing the running
+service. Mongo outages fail saves closed; the service logs a critical error and
+needs restart after connectivity is restored. Do not bypass this by running
+`create_app` directly in production or editing SQLite while the service runs.
+
+### Initial migration
+
+Take a fresh encrypted backup, stop `wu-cwl-demo-web.service`, then run:
+
+```sh
+./.venv/bin/python tools/backup/dashboard_recovery.py initialize --env-file .local/cwl-web.env
+```
+
+Initialization refuses to overwrite an existing Mongo head, rejects empty or
+invalid SQLite, and verifies integrity/foreign keys. Start the service only after
+initialization succeeds. Subsequent starts read Mongo first, restore the working
+copy, run idempotent schema migrations, and checkpoint them before workers start.
+A missing head or unavailable Mongo fails startup; it never creates an empty
+replacement roster. The former local database is retained as `.before-mongo`.
+
+### Replacement server and independent recovery verification
+
+Provision the same code/dependencies, private environment (Mongo credentials,
+Discord credentials, public origin), and VAPID private key from secure backup.
+Set `CWL_WEB_DB_PATH` to a writable local path. Stop the old web service, or wait
+for its lease to expire after a crash, then run the production entrypoint. Do
+**not** run initialization on the replacement host: startup restores from Mongo.
+Keep only one production bot/web deployment active to avoid unrelated bot jobs
+running twice. Domain changes also require OAuth callback/DNS updates.
+
+Verify or export without touching the live working database or acquiring its
+writer lease:
+
+```sh
+./.venv/bin/python tools/backup/dashboard_recovery.py verify --env-file .local/cwl-web.env
+./.venv/bin/python tools/backup/dashboard_recovery.py export --env-file .local/cwl-web.env --output /secure/new-recovered.sqlite
+```
+
+Export refuses an existing destination. Keep exported files private: they contain
+session and subscription data. A Mongo recovery checkpoint is not historical
+backup against mistakes/deletions. Existing encrypted Restic/R2 snapshots remain
+necessary: SQLite every five minutes, Mongo on its configured timer, and daily
+isolated restore verification. Keep the Restic password and service credentials
+accessible independently of this server. A simultaneous loss of Mongo and this
+host has the off-site backup's recovery window, not a zero-loss guarantee.
+
+Current image safety bounds are 64 MiB uncompressed and 12 MiB compressed; an
+oversize image rejects the transaction rather than silently dropping recovery.
+The initial live image was approximately 43 KiB compressed (44 tables). Revisit
+chunked checkpoint storage before growth approaches the limit.
+
+Validation: isolated rollback, unavailable/ambiguous Mongo, post-Mongo/pre-local
+crash, stale writer, active second writer, corrupt image/local file, seed replay,
+missing head, and weight/history recovery tests. Real Mongo drill uses an
+authenticated temporary loopback server via `CWL_RECOVERY_MONGOD`; it never uses
+production credentials. Live source rows were independently round-tripped
+read-only. No frontend controls changed; no live notification test is implied.

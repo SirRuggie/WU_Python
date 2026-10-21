@@ -1,5 +1,9 @@
 # CWL web application development
 
+> Historical development notes below. Production now restores its relational
+> working copy from Mongo and checkpoints saves before acknowledgement; see
+> [current recovery instructions](cwl-dashboard.md#dashboard-database-recovery-2026-10-21).
+
 This application is being developed separately from the live Discord bot and
 from the sample mockup at https://cwl.ruggie.zone/. The confirmed product
 requirements are in [the CWL plan](cwl-web-dashboard-plan.md).

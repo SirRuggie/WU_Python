@@ -76,6 +76,7 @@ class MongoClient(AsyncMongoClient):
         # Short-lived idempotency leases for cross-system ticket creation.
         # Durable ticket history remains in tickets; handlers.py owns this TTL.
         self.ticket_creation_state = collection_for(self, "ticket_creation_state", routes=routes)
+        self.cwl_dashboard_state = collection_for(self, "cwl_dashboard_state", routes=routes)
         self.bot_config = collection_for(self, "bot_config", routes=routes)
         # WU-owned Discord polls and named votes. Keep these separate from
         # Arcane's discord_polls rows: each bot can edit only messages it posted.

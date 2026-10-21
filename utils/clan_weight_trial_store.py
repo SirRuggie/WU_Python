@@ -22,8 +22,9 @@ class WeightConflict(ValueError):
 
 
 class ClanWeightTrialStore:
-    def __init__(self, path):
+    def __init__(self, path, transaction_factory=None):
         self.path = path
+        self.transaction_factory = transaction_factory
         with self.connect() as db:
             db.executescript(SCHEMA)
             for table in ('clan_weight_trial', 'clan_weight_trial_history'):
@@ -37,6 +38,10 @@ class ClanWeightTrialStore:
 
     @contextmanager
     def connect(self):
+        if self.transaction_factory is not None:
+            with self.transaction_factory() as db:
+                yield db
+            return
         db = sqlite3.connect(self.path, timeout=15)
         db.row_factory = sqlite3.Row
         try:
@@ -71,7 +76,8 @@ class ClanWeightTrialStore:
         members = {row['tag']: row for row in roster['members']}
         now = datetime.now(timezone.utc).isoformat()
         with self.connect() as db:
-            db.execute('BEGIN IMMEDIATE')
+            if not db.in_transaction:
+                db.execute('BEGIN IMMEDIATE')
             for change in changes:
                 current = db.execute('SELECT * FROM clan_weight_trial WHERE tag=?', (change['tag'],)).fetchone()
                 revision = current['revision'] if current else 0

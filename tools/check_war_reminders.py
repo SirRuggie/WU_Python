@@ -17,6 +17,7 @@ BACKEND = [
     'tests/test_cwl_web_manage_clans.py',
     'tests/test_war_operations_ux.py',
     'tests/test_cwl_web_foundation.py',
+    'tests/test_cwl_dashboard_state.py',
 ]
 COMMANDS = [
     [sys.executable, '-m', 'pytest', '-q', *BACKEND],

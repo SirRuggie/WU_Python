@@ -22,3 +22,9 @@ Dashboard manual weights carry into later signups by normalized player tag. Exis
 `cwl_web/player_weights.py` owns permanent `player_manual_weight_history` in the database backing `mongo.fwa_data`, scoped to the server. Each immutable event records player tag, weight (null when cleared), season, staff ID, and UTC time. No TTL or seasonal deletion. Existing roster edit audit records are migrated once, with current manual entries as fallback. Original weights can only be recovered where historical records still exist.
 
 The roster write and local SQLite outbox commit together. The web service syncs every 30 seconds with majority Mongo acknowledgement, retrying queued events after failures/restarts without duplicates. Mongo events rebuild the local cache after recovery. SQLite and the full Mongo databases are covered by the existing backup jobs. No bot restart or Discord command changes are required.
+
+## Dashboard recovery coverage
+
+Trial weights and their audit history now participate in the shared Mongo-backed
+dashboard checkpoint before a successful save response. Their business meaning
+remains isolated from production placement weights. See [dashboard recovery](cwl-dashboard.md#dashboard-database-recovery-2026-10-21) for restore steps and limits.
