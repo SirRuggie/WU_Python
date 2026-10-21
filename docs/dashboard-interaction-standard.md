@@ -427,3 +427,21 @@ existing iPhone Home Screen prerequisite and blocked-permission recovery remain.
 This is copy only; delivery, permissions and subscription behavior are unchanged.
 Reviewed button/instruction consistency and existing responsive markup; push
 regression suites and production build passed. No live notification was sent.
+
+### Bulk actions in My signups
+
+Select accounts reveals an inline toolbar with select-all available, clear,
+move-to-Main/Lazy and withdraw. Staff-placed accounts cannot be selected. Moves
+reuse the existing atomic signup transfer API and review screen, preserving
+preferences and source-pool consent; accounts already in the destination stay.
+Withdrawals reuse the existing authorized single-account endpoint, confirm the
+named batch once, stop on the first error and report confirmed progress. This
+operation is intentionally not atomic; uncertain deletions are never retried
+automatically. Refresh saved signups reconciles the server state.
+
+Checked mixed pools, excluded staff placements, successful reviewed batch moves,
+selection cancellation and successful batch withdrawal using isolated fixtures;
+confirmation responses in the fixture are deterministic, not native-dialog tests.
+Desktop and 320px layouts inspected. 195 frontend tests and 38 signup backend
+tests passed, including transfer ownership/rollback and partial withdrawal stop
+coverage. Production build passed. No live member signups changed during testing.

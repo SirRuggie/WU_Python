@@ -1,3 +1,5 @@
+import {withdrawInOrder} from './signupWithdrawal'
+import SavedSignups from './SavedSignups'
 import AccountLinkHelp from './AccountLinkHelp'
 import WarsWorkspace from './activity/WarsWorkspace'
 import EventsWorkspace from './activity/EventsWorkspace'
@@ -94,7 +96,6 @@ function App() {
   const [dataError, setDataError] = useState('')
   const [loadingData, setLoadingData] = useState(false)
   const [pending, setPending] = useState(false)
-  const [withdrawingTag, setWithdrawingTag] = useState<string | null>(null)
   const [review, setReview] = useState(false)
   const [completion, setCompletion] = useState<Completion | null>(null)
   const [jumpTarget, setJumpTarget] = useState<'selection' | 'registered' | null>(null)
@@ -379,28 +380,43 @@ function App() {
     setSignupPanel('saved')
     setJumpTarget('registered')
   }
-  const withdraw = async (tag: string) => {
-    if (!seasonId || pending || loadingData || !window.confirm(`Withdraw ${tag} from this season's CWL signup?`)) return
+  const moveSavedSignups = (rows: Signup[], destination: Pool) => {
+    if (pending || loadingData || !rows.length) return
+    if (signupDirty && !window.confirm('Review this pool change and clear your other unsubmitted selections?')) return
+    setDrafts({main: {}, lazy: {}, [destination]: Object.fromEntries(rows.map(row => [row.tag, row.prefer_crystal_1_or_lower]))})
+    setTransfers({main: {}, lazy: {}, [destination]: Object.fromEntries(rows.map(row => [row.tag, row.pool]))})
+    setPool(destination)
+    setShowSignedUp(true)
+    setSignupPanel('register')
+    setSignupStep(2)
+    setReview(true)
+    setNotice(null)
+  }
+  const withdraw = async (rows: Signup[]) => {
+    if (!seasonId || pending || loadingData || !rows.length) return
+    const names = rows.map(row => `${row.player_name || row.tag} (${row.tag})`).join('\n')
+    if (!window.confirm(`Withdraw ${rows.length} ${rows.length === 1 ? 'account' : 'accounts'} from this season's CWL signup?\n\n${names}`)) return
     const withdrawnSeason = seasonId
+    let removed = new Set<string>()
     setPending(true)
-    setWithdrawingTag(tag)
     setNotice(null)
     try {
-      await api(`/seasons/${encodeURIComponent(withdrawnSeason)}/signups/${tagPath(tag)}`, 'DELETE')
-      if (currentSeason.current !== withdrawnSeason) return
-      // Update only the confirmed deletion; linked-account lookup is unnecessary.
-      // Older reads must not restore a signup that has just been withdrawn.
-      signupRequest.current += 1
-      setLoadingData(false)
-      setSignups(current => current.filter(signup => signup.tag !== tag))
-      setDrafts(current => ({ main: Object.fromEntries(Object.entries(current.main).filter(([key]) => key !== tag)), lazy: Object.fromEntries(Object.entries(current.lazy).filter(([key]) => key !== tag)) }))
-      setTransfers(current => ({ main: Object.fromEntries(Object.entries(current.main).filter(([key]) => key !== tag)), lazy: Object.fromEntries(Object.entries(current.lazy).filter(([key]) => key !== tag)) }))
-      setNotice({ kind: 'success', text: 'Signup withdrawn. Your other signups are unchanged.' })
+      // Reuse the authorized per-account operation. Stop at the first failure;
+      // never silently retry an uncertain deletion or imply all accounts saved.
+      const result = await withdrawInOrder(rows.map(row => row.tag), tag => api(`/seasons/${encodeURIComponent(withdrawnSeason)}/signups/${tagPath(tag)}`, 'DELETE'))
+      removed = result.removed
+      if (result.error) throw result.error
+      setNotice({kind: 'success', text: `${removed.size} ${removed.size === 1 ? 'signup' : 'signups'} withdrawn.`})
     } catch (error) {
-      if (currentSeason.current === withdrawnSeason) setNotice({ kind: 'error', text: message(error) })
+      setNotice({kind: 'error', text: `${removed.size} of ${rows.length} withdrawals confirmed. Stopped: ${message(error)} Refresh saved signups before trying again.`})
     } finally {
+      if (currentSeason.current === withdrawnSeason) {
+        signupRequest.current += 1
+        setSignups(current => current.filter(signup => !removed.has(signup.tag)))
+        setDrafts(current => ({main: Object.fromEntries(Object.entries(current.main).filter(([tag]) => !removed.has(tag))), lazy: Object.fromEntries(Object.entries(current.lazy).filter(([tag]) => !removed.has(tag)))}))
+        setTransfers(current => ({main: Object.fromEntries(Object.entries(current.main).filter(([tag]) => !removed.has(tag))), lazy: Object.fromEntries(Object.entries(current.lazy).filter(([tag]) => !removed.has(tag)))}))
+      }
       setPending(false)
-      setWithdrawingTag(null)
     }
   }
   const staffAction = (action: () => Promise<unknown>, success: string) => void run(action, success, async () => { await Promise.all([loadStaff(), loadSeasons()]) })
@@ -503,7 +519,13 @@ function App() {
             {signupStep === 2 && !review && (!accounts.length || accountError || !season.signup_open) && <button disabled={pending} onClick={() => setSignupStep(1)}>← Back to CWL choice</button>}
             {review && pool && <section className="signup-review card" aria-label="Review selected accounts">{notice?.kind === 'error' && <div className="notice error" role="alert">{notice.text}</div>}<h3>{poolName(pool)} · {season.label}</h3><p>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected. Staff will assign your hosting clans.</p><div className="review-list">{selected.map(item => { const account = accounts.find(candidate => candidate.tag === item.tag)!; return <div className="review-row" key={item.tag}><div><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.current_clan_name || 'No current clan'}</small></div>{item.move_from_pool && <span className="transfer-review">Moving from {poolName(item.move_from_pool)} to {poolName(pool)}</span>}</div> })}</div><div className="signup-actions submit-bar"><button disabled={pending} onClick={() => setReview(false)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !season.signup_open || !!dataError || !!accountError} onClick={submit}>{pending ? 'Saving…' : `Sign up ${selected.length} ${selected.length === 1 ? 'account' : 'accounts'}`}</button></div></section>}
             </div>}
-            {signupPanel === 'saved' && <section className="registered"><div className="section-heading"><div><p className="eyebrow">Saved this season</p><h2 ref={registeredHeadingRef} tabIndex={-1}>Signed Up accounts</h2></div></div>{loadingData ? <p role="status">Loading saved signups…</p> : dataError ? <p>Your saved signups could not be checked. Retry above.</p> : existing.length ? <div className="registered-grid">{existing.map(signup => <div className="card registered-card" key={signup.tag}><div><strong className="signed-up-name"><TownHallIcon level={accounts.find(account => account.tag === signup.tag)?.town_hall ?? signup.town_hall} /><span>{signup.player_name || accounts.find(account => account.tag === signup.tag)?.name || signup.tag}</span></strong><small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small>{signup.has_staff_placement && <p className="inline-reason">Staff have placed this account. Ask staff to change or withdraw its signup.</p>}</div>{season.signup_open && season.status === 'draft' && !signup.has_staff_placement && <div className="registered-actions"><button disabled={pending || loadingData || !!accountError || !accounts.some(account => account.tag === signup.tag)} onClick={() => { if (signupDirty && !window.confirm('Review this pool change and clear your other unsubmitted selections?')) return; const destination = signup.pool === 'main' ? 'lazy' : 'main'; setDrafts({main: {}, lazy: {}, [destination]: {[signup.tag]: signup.prefer_crystal_1_or_lower}}); setTransfers({main: {}, lazy: {}, [destination]: {[signup.tag]: signup.pool}}); setPool(destination); setShowSignedUp(true); setSignupPanel('register'); setSignupStep(2); setReview(true); setNotice(null) }}>Change CWL pool</button><button className="withdraw-button" disabled={pending || loadingData} onClick={() => void withdraw(signup.tag)}>{withdrawingTag === signup.tag ? 'Withdrawing…' : 'Withdraw signup'}</button></div>}</div>)}</div> : <div className="card empty"><p>No signed-up accounts for this season.</p>{season.signup_open && <button onClick={() => { setSignupPanel('register'); setSignupStep(1) }}>Choose accounts</button>}</div>}</section>}
+            {signupPanel === 'saved' && <section className="registered">
+              {loadingData ? <p role="status">Loading saved signups…</p> : dataError ? <p>Your saved signups could not be checked. Retry above.</p> : <>
+                <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={season.signup_open && season.status === 'draft'} busy={pending || loadingData} canMove={!accountError} headingRef={registeredHeadingRef} onMove={moveSavedSignups} onWithdraw={rows => void withdraw(rows)}/>
+                {!existing.length && <div className="card empty"><p>No signed-up accounts for this season.</p>{season.signup_open && <button onClick={() => {setSignupPanel('register');setSignupStep(1)}}>Choose accounts</button>}</div>}
+                <button disabled={pending || loadingData} onClick={() => void loadSignup()}>Refresh saved signups</button>
+              </>}
+            </section>}
           </>}
         </>}
         </>}
