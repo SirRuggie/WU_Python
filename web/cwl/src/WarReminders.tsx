@@ -1,26 +1,111 @@
-import {lazy,Suspense,useEffect,useState} from 'react'
-import {api} from './api'
-import ChannelCombobox from './ChannelCombobox'
-const DiscordText=lazy(()=>import('./DiscordPreview').then(m=>({default:m.DiscordText})))
-import type {AnnouncementChannel} from './announcements'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { api } from './api'
+import type { AnnouncementChannel } from './announcements'
+import ScheduleEditor from './warReminders/ScheduleEditor'
+import TestPanel from './warReminders/TestPanel'
+import DeliveryHistory from './warReminders/DeliveryHistory'
+import type { ReminderData, ReminderSettings } from './warReminders/types'
 import './WarReminders.css'
-import {reminderPreviewText} from './warReminderPreview'
-type Settings={enabled:boolean;channel_id:string;war_started:boolean;minutes:number[];audience:'remaining'|'zero'}
-type Receipt={at:string;event:string;status:string;test:boolean;url?:string;detail?:string}
-type Data={settings:Settings;revision:string;history:Receipt[];status?:{checked_at:string;detail:string}|null}
-type Message={content:string}
-export const timeLabel=(minutes:number)=>minutes%60===0?`${minutes/60}h`:`${Math.floor(minutes/60)?`${Math.floor(minutes/60)}h `:''}${minutes%60}m`
-export default function WarReminders({tag,channels,onDirty}:{tag:string;channels:AnnouncementChannel[];onDirty:(dirty:boolean)=>void}){
- const base='/manage/clans/'+encodeURIComponent(tag)+'/war-reminders'
- const [data,setData]=useState<Data|null>(null),[draft,setDraft]=useState<Settings|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[amount,setAmount]=useState(''),[unit,setUnit]=useState(60),[event,setEvent]=useState('60'),[mentionMe,setMentionMe]=useState(true),[useMyAccounts,setUseMyAccounts]=useState(false),[previewError,setPreviewError]=useState(''),[messages,setMessages]=useState<Message[]>([]),[url,setUrl]=useState('')
- const dirty=!!draft&&JSON.stringify(draft)!==JSON.stringify(data?.settings)
- useEffect(()=>{let active=true;api<Data>(base).then(r=>{if(active){setData(r);setDraft(r.settings)}}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[base])
- useEffect(()=>{onDirty(dirty);return()=>onDirty(false)},[dirty,onDirty])
- useEffect(()=>{if(!draft)return;let active=true;const timer=setTimeout(()=>{api<{messages:Message[]}>(base+'/preview','POST',{settings:{...draft,enabled:false},event,mention_me:mentionMe,use_my_accounts:useMyAccounts}).then(r=>{if(active){setMessages(r.messages);setPreviewError('')}}).catch(e=>{if(active){setMessages([]);setPreviewError(e.message)}})},250);return()=>{active=false;clearTimeout(timer)}},[draft,event,base,mentionMe,useMyAccounts])
- useEffect(()=>{if(!data)return;const timer=setInterval(()=>{api<Data>(base).then(r=>setData(old=>old?{...old,history:r.history,status:r.status}:r)).catch(()=>{})},15000);return()=>clearInterval(timer)},[base,!!data])
- function change(patch:Partial<Settings>){setDraft(v=>v?{...v,...patch}:v)}
- async function save(){if(!draft||!data)return;setBusy(true);setError('');setNotice('');try{const r=await api<Data>(base,'PUT',{settings:draft,revision:data.revision});setData(r);setDraft(r.settings);setNotice('War reminders saved.')}catch(e){setError(e instanceof Error?e.message:'Could not save reminders.')}finally{setBusy(false)}}
- async function test(){if(!draft)return;setBusy(true);setError('');setNotice('');setUrl('');try{const result=await api<{url:string}>(base+'/test','POST',{settings:{...draft,enabled:false},event,mention_me:mentionMe,use_my_accounts:useMyAccounts,request_id:crypto.randomUUID()});setUrl(result.url);setNotice('Test reminder sent.');const r=await api<Data>(base);setData(old=>old?{...old,history:r.history,status:r.status}:r)}catch(e){setError(e instanceof Error?e.message:'Could not send test.')}finally{setBusy(false)}}
- function add(){const value=Number(amount)*unit;if(!Number.isInteger(value)||value<1||value>1440){setError('Enter a time between 1 minute and 24 hours.');return}change({minutes:[...new Set([...(draft?.minutes||[]),value])].sort((a,b)=>b-a)});setAmount('');setError('')}
- return <section className="war-reminders" aria-label="War reminders">{error&&<p className="notice error" role="alert">{error} <button disabled={busy} onClick={()=>{if(dirty&&!confirm('Discard reminder edits and reload?'))return;api<Data>(base).then(r=>{setData(r);setDraft(r.settings);setError('')}).catch(e=>setError(e.message))}}>Reload</button></p>}{notice&&<p className="notice" role="status">{notice} {url&&<a href={url} target="_blank" rel="noreferrer">Open in Discord ↗</a>}</p>}{!draft?<p>Loading reminders…</p>:<><div className="war-intro"><div><h3>War reminders</h3><p>Choose when and where to remind players with unused attacks. Supports regular wars and CWL.</p></div><label className="war-toggle"><input type="checkbox" checked={draft.enabled} disabled={busy} onChange={e=>change({enabled:e.target.checked})}/>{draft.enabled?'Enabled':'Disabled'}</label></div><fieldset disabled={busy}><ChannelCombobox label="Reminder channel" channels={channels.filter(c=>[0,5].includes(c.type))} value={draft.channel_id} disabled={busy} onChange={value=>change({channel_id:value})}/><label>Who needs a reminder?<select value={draft.audience} onChange={e=>change({audience:e.target.value as Settings['audience']})}><option value="remaining">Players with any attacks remaining</option><option value="zero">Only players who have not attacked</option></select></label><div className="war-schedule"><h4>Reminder timeline</h4><label className="war-toggle"><input type="checkbox" checked={draft.war_started} onChange={e=>change({war_started:e.target.checked})}/>When war starts</label><p className="small">Choose any combination of times before war ends.</p><div className="war-chips">{draft.minutes.map(n=><button type="button" key={n} aria-label={`Remove ${timeLabel(n)} reminder`} onClick={()=>change({minutes:draft.minutes.filter(v=>v!==n)})}>{timeLabel(n)} before end <span aria-hidden="true">×</span></button>)}</div><div className="war-time-input"><label>Custom time<input type="number" min={unit===60?1/60:1} max={1440/unit} step="any" placeholder="e.g. 8" value={amount} onChange={e=>setAmount(e.target.value)}/></label><label>Unit<select value={unit} onChange={e=>setUnit(Number(e.target.value))}><option value={60}>Hours</option><option value={1}>Minutes</option></select></label><button type="button" onClick={add} disabled={!amount}>Add time</button></div><div className="war-presets"><small>Quick add</small>{[720,480,60,30].map(n=><button type="button" key={n} disabled={draft.minutes.includes(n)} onClick={()=>change({minutes:[...draft.minutes,n].sort((a,b)=>b-a)})}>+ {timeLabel(n)}</button>)}</div></div></fieldset><div className="clan-actions"><small>{dirty?'Unsaved reminder changes':'Reminder settings saved'}</small><button className="primary" disabled={busy||!dirty} onClick={()=>void save()}>Save reminders</button></div><section className="war-test"><h3>Try it in Discord</h3><p>Test in the channel above without enabling reminders. Each Discord user is mentioned once, with their accounts grouped underneath. The message heading includes the clan and time left. Tests also include a fictional unlinked account. Counts show attacks used out of those available; test counts are simulated.</p><div className="war-test-controls"><label>Preview reminder<select disabled={busy} value={event} onChange={e=>setEvent(e.target.value)}><option value="start">War started</option>{[...new Set([...draft.minutes,60,...(event==='start'?[]:[Number(event)])])].sort((a,b)=>b-a).map(n=><option key={n} value={String(n)}>{timeLabel(n)} before end</option>)}</select></label><label className="war-toggle"><input type="checkbox" disabled={busy} checked={useMyAccounts} onChange={e=>setUseMyAccounts(e.target.checked)}/>Use my accounts in this clan (up to 5)</label><label className="war-toggle"><input type="checkbox" disabled={busy} checked={mentionMe} onChange={e=>setMentionMe(e.target.checked)}/>Mention me to test notifications</label></div>{previewError&&<p role="alert">{previewError}</p>}<Suspense fallback={<p>Loading preview…</p>}><div className="war-discord-preview"><div className="war-bot-name">WU Wizard <span>APP</span><small>Sample preview</small></div>{messages.map((m,i)=><div key={i}><DiscordText text={reminderPreviewText(m.content)}/></div>)}{mentionMe&&<small>Your Discord mention heads your account group and triggers the test notification.</small>}</div></Suspense><button disabled={busy||!draft.channel_id} onClick={()=>void test()}>{busy?'Working…':'Send test to selected channel'}</button></section><section className="war-deliveries"><h3>Tracking & delivery</h3><p>{draft.enabled?data?.status?.detail||'Waiting for the bot’s first check.':'Automatic reminders are disabled.'}</p>{data?.status?.checked_at&&<small>Last checked {new Date(data.status.checked_at).toLocaleString()}</small>}<p className="small">Each Discord user is mentioned once, with only their pending accounts from this war listed beneath them. Unlinked accounts are listed separately. No reminder is sent when everyone is done. After downtime, reminders more than five minutes late are skipped.</p>{data?.history.length?<div className="war-history">{data.history.map((r,i)=><article key={i}><div><strong>{r.test?'Test · ':''}{r.event==='start'?'War started':timeLabel(Number(r.event))+' reminder'}</strong><small>{new Date(r.at).toLocaleString()}</small></div><span>{r.status==='sending'?'Delivery unconfirmed':r.status}</span>{r.url&&<a href={r.url} target="_blank" rel="noreferrer">View ↗</a>}{r.detail&&<p>{r.detail}</p>}</article>)}</div>:<p>No deliveries yet. Send a test to see your first receipt.</p>}</section></>}</section>
+
+type Props = {
+  tag: string
+  channels: AnnouncementChannel[]
+  onDirty: (dirty: boolean) => void
+}
+
+export default function WarReminders({ tag, channels, onDirty }: Props) {
+  const base = '/manage/clans/' + encodeURIComponent(tag) + '/war-reminders'
+  const [data, setData] = useState<ReminderData | null>(null)
+  const [draft, setDraft] = useState<ReminderSettings | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const generation = useRef(0)
+  const saving = useRef(false)
+  const historyGeneration = useRef(0)
+  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(data?.settings)
+
+  const load = useCallback(async () => {
+    const turn = ++generation.current
+    setBusy(true)
+    try {
+      const result = await api<ReminderData>(base)
+      if (turn !== generation.current) return
+      setData(result)
+      setDraft(result.settings)
+      setError('')
+    } catch (e) {
+      if (turn === generation.current) setError((e as Error).message)
+    } finally {
+      if (turn === generation.current) setBusy(false)
+    }
+  }, [base])
+
+  useEffect(() => {
+    void load()
+    return () => { ++generation.current }
+  }, [load])
+
+  useEffect(() => {
+    onDirty(dirty)
+    return () => onDirty(false)
+  }, [dirty, onDirty])
+
+  const refreshHistory = useCallback(async () => {
+    const turn = generation.current
+    const historyTurn = ++historyGeneration.current
+    const result = await api<ReminderData>(base)
+    if (turn === generation.current && historyTurn === historyGeneration.current) {
+      setData(old => old ? { ...old, history: result.history, status: result.status } : old)
+    }
+  }, [base])
+
+  useEffect(() => {
+    if (!data) return
+    const timer = setInterval(() => {
+      if (!document.hidden) void refreshHistory().catch(() => {})
+    }, 15000)
+    return () => clearInterval(timer)
+  }, [!!data, refreshHistory])
+
+  async function save() {
+    if (!draft || !data || saving.current) return
+    saving.current = true
+    const turn = ++generation.current
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await api<ReminderData>(base, 'PUT', { settings: draft, revision: data.revision })
+      if (turn !== generation.current) return
+      setData(result)
+      setDraft(result.settings)
+      setNotice('War reminders saved.')
+    } catch (e) {
+      if (turn === generation.current) setError(e instanceof Error ? e.message : 'Could not save reminders.')
+    } finally {
+      saving.current = false
+      if (turn === generation.current) setBusy(false)
+    }
+  }
+
+  function reload() {
+    if (dirty && !confirm('Discard reminder edits and reload?')) return
+    void load()
+  }
+
+  return <section className="war-reminders" aria-label="War reminders">
+    {error && <p className="notice error" role="alert">{error} <button disabled={busy} onClick={reload}>Reload</button></p>}
+    {notice && <p className="notice" role="status">{notice}</p>}
+    {!draft || !data ? <p>Loading reminders…</p> : <>
+      <ScheduleEditor settings={draft} channels={channels} disabled={busy}
+        onChange={patch => setDraft(current => current ? { ...current, ...patch } : current)} />
+      <div className="clan-actions">
+        <small>{dirty ? 'Unsaved reminder changes' : 'Reminder settings saved'}</small>
+        <button className="primary" disabled={busy || !dirty} onClick={() => void save()}>Save reminders</button>
+      </div>
+      <TestPanel base={base} settings={draft} disabled={busy} onDelivered={refreshHistory} />
+      <DeliveryHistory data={data} enabled={data.settings.enabled} />
+    </>}
+  </section>
 }

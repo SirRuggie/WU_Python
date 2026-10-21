@@ -1,18 +1,16 @@
 """War reminder settings, selection, and standard Discord message rendering."""
 from datetime import datetime, timedelta, timezone
 import re
-from pymongo.write_concern import WriteConcern
 
 GUILD_ID = 644963518025826315
 DEFAULTS = dict(enabled=False, channel_id='', war_started=True, minutes=[720, 480, 60], audience='remaining')
 
 
-def collection(db, name='war_reminder_settings'):
-    return db.bot_config.database.get_collection(name, write_concern=WriteConcern(w='majority', wtimeout=10000))
-
-
 def settings(row=None):
-    return {key: (row or {}).get(key, value) for key, value in DEFAULTS.items()}
+    values = {key: (row or {}).get(key, default) for key, default in DEFAULTS.items()}
+    # Callers may edit their form values without changing defaults or DB records.
+    values['minutes'] = list(values['minutes'])
+    return values
 
 
 def validate(value):
@@ -20,7 +18,7 @@ def validate(value):
         raise ValueError('Check the reminder settings.')
     if type(value['enabled']) is not bool or type(value['war_started']) is not bool:
         raise ValueError('Choose whether reminders and war-start notices are enabled.')
-    if not isinstance(value['channel_id'], str) or (value['channel_id'] and not re.fullmatch(r'\d{15,22}', value['channel_id'])):
+    if not isinstance(value['channel_id'], str) or (value['channel_id'] and not re.fullmatch(r'[0-9]{15,22}', value['channel_id'])):
         raise ValueError('Choose a Discord channel.')
     if value['enabled'] and not value['channel_id']:
         raise ValueError('Choose a channel before enabling reminders.')
@@ -71,7 +69,10 @@ def pending(war, audience):
 
 
 def clean(value):
-    return re.sub(r'([\\`*_~|<>\[\]@])', r'\\\1', str(value).replace('\n', ' '))[:100]
+    # Keep external names on one row; truncate before escaping so a trailing
+    # backslash cannot consume our own closing Markdown delimiters.
+    plain = re.sub(r'[\x00-\x1f\x7f\u2028\u2029\u202a-\u202e\u2066-\u2069]', ' ', str(value))[:100]
+    return re.sub(r'([\\`*_~|<>\[\]@])', r'\\\1', plain)
 
 
 def duration(minutes):
@@ -85,7 +86,7 @@ def discord_length(text):
     return len(text.encode('utf-16-le')) // 2
 
 
-def messages(war, config, event, owners=None, *, test=False, tester=None):
+def messages(war, config, event, owners=None, *, test=False, tester=None, sample_label="Sample players", sample_group="Sample accounts"):
     """Group accounts under one notifying mention; split safely without repeat pings."""
     from utils.emoji import emojis
     members = pending(war, config['audience'])
@@ -95,7 +96,7 @@ def messages(war, config, event, owners=None, *, test=False, tester=None):
     groups = {}
     for member in members:
         uid = str(tester or '') if test else str(owners.get(member['tag']) or '')
-        uid = uid if re.fullmatch(r'\d{15,22}', uid) else ''
+        uid = uid if re.fullmatch(r'[0-9]{15,22}', uid) else ''
         if test:
             uid = '' if member.get('sample_unlinked') else (uid or 'sample')
         groups.setdefault(uid, []).append(member)
@@ -106,14 +107,14 @@ def messages(war, config, event, owners=None, *, test=False, tester=None):
     header = f"🔔 **{clean(war['name'])} war reminder · {label}**\n"
     header += f"vs {clean(war['opponent'])} · Ends <t:{int(war['end'].timestamp())}:t>"
     if test:
-        header += '\n-# Test reminder · Sample players · Simulated attacks'
+        header += f'\n\n-# Test reminder · {sample_label} · Simulated attacks'
     remaining = sum(war['limit']-m['used'] for m in members)
     footer = f"-# {len(members)} accounts · {remaining} attacks remaining · Attacks used / available"
     budget = 2000 - discord_length(header+'\n\n'+footer+'\n\n')
     # First split oversized owners into continuation blocks with no second mention.
     blocks = []
     for uid, accounts in groups.items():
-        title = '**Sample accounts**' if uid == 'sample' else f'<@{uid}>' if uid else '**Unlinked accounts**'
+        title = f'**{sample_group}**' if uid == 'sample' else f'<@{uid}>' if uid else '**Unlinked accounts**'
         text, mentions = title, [uid] if uid and uid != 'sample' else []
         for member in accounts:
             emoji = str(getattr(emojis, f"TH{member['th']}", f"TH{member['th']}"))

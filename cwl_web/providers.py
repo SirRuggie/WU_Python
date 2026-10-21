@@ -13,6 +13,7 @@ from pymongo import AsyncMongoClient
 from pymongo.errors import PyMongoError
 
 from utils.mongo_routes import collection_for, load_routes
+from utils.account_links import lookup_links, LinksUnavailable
 from utils.clash_links import _lookup_shared_links
 from utils.clashperk_links import lookup as _lookup_clashperk_links
 
@@ -173,20 +174,11 @@ class LiveProviders:
                     for player_tag in wanted if player_tag in self._weights_cache}
 
     async def _combined_links(self, **query):
-        results = await asyncio.gather(_lookup_shared_links(**query), _lookup_clashperk_links(**query))
-        if any(rows is None for rows in results):
-            raise ProviderUnavailable("Could not load all linked accounts. Try again shortly.")
-        combined = []
-        for index, rows in enumerate(results):
-            for item in rows:
-                try:
-                    value = tag(item.get("player_tag" if index == 0 else "tag"))
-                except ValueError:
-                    continue
-                uid = str(item.get("user_id" if index == 0 else "userId") or "")
-                if uid.isascii() and uid.isdigit() and 1 <= len(uid) <= 22:
-                    combined.append((value, uid, item.get("is_verified" if index == 0 else "verified") is True))
-        return combined
+        try:
+            return await lookup_links(king=_lookup_shared_links, perk=_lookup_clashperk_links, **query)
+        except LinksUnavailable as exc:
+            raise ProviderUnavailable(str(exc)) from exc
+
 
     async def linked_owner(self, value):
         value = tag(value)

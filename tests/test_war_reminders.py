@@ -4,6 +4,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 import pytest
 from utils import war_reminders as r
+from utils import war_reminder_store as storage
 from extensions.tasks.war_reminders import scan_clan
 
 
@@ -91,12 +92,12 @@ def test_scheduler_claim_is_durable_and_duplicate_scan_does_not_send(monkeypatch
         async def update_one(self, q, update, **kw): self.rows.setdefault(q['_id'], {}).update(update['$set'])
     def coll(db, name='war_reminder_settings'): return collections.setdefault(name, Rows())
     coll(None).rows['#P0LY'] = cfg
-    monkeypatch.setattr(r, 'collection', coll)
+    monkeypatch.setattr(storage, 'collection', coll)
     monkeypatch.setattr(r, 'snapshot', lambda *_: w)
     db = NS(clans=NS(find_one=AsyncMock(return_value={'tag': '#P0LY'})))
     client = NS(get_current_war=AsyncMock())
     bot = NS(rest=NS(fetch_channel=AsyncMock(return_value=NS(guild_id=r.GUILD_ID, type=0)), create_message=AsyncMock(return_value=NS(id=123))))
-    providers = NS(_combined_links=AsyncMock(return_value=[('#SAMPLE1','123456789012345678',True)]))
+    providers = NS(linked_owners=AsyncMock(return_value={'#SAMPLE1':'123456789012345678'}))
     async def run():
         await scan_clan(db, client, bot, providers, cfg)
         await scan_clan(db, client, bot, providers, cfg)
@@ -166,3 +167,30 @@ def test_sample_preview_shows_linked_and_unlinked_groups():
     muted=r.messages(war(),config(),'60',test=True)[0]
     assert '**Sample accounts**' in muted['content'] and '**Unlinked accounts**' in muted['content']
     assert muted['allowed_mentions']['users']==[]
+
+
+def test_hostile_names_cannot_create_mentions_or_break_row_layout():
+    w=war(); uid='505227988229554179'
+    w['members'][0]['name']='@everyone\n<@999999999999999999>\r**fake**\u202e'
+    payload=r.messages(w,config(),'60',{'#SAMPLE1':uid})[0]
+    assert payload['allowed_mentions']['users']==[uid]
+    assert payload['allowed_mentions']['parse']==[]
+    assert '\n<@999' not in payload['content'] and '\u202e' not in payload['content']
+    assert '\\@everyone' in payload['content']
+
+
+def test_long_custom_sample_label_is_budgeted_before_chunking():
+    w=war();w['name']='🛡'*100;w['opponent']='🛡'*100
+    w['members']=[dict(tag=f'#{i}',name='🛡'*100,position=i,th=18,used=0) for i in range(6)]
+    messages=r.messages(w,config(),'60',test=True,tester='505227988229554179',sample_label='Your accounts in this clan + unlinked example')
+    assert all(r.discord_length(p['content'])<=2000 for p in messages)
+    assert sum(p['content'].count('<@505227988229554179>') for p in messages)==1
+
+
+def test_default_times_are_not_shared_mutable_state():
+    first=r.settings();first['minutes'].append(5)
+    assert 5 not in r.settings()['minutes']
+
+
+def test_non_ascii_channel_ids_are_rejected():
+    with pytest.raises(ValueError):r.validate(config(channel_id='１'*18))

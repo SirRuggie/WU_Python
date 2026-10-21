@@ -1,0 +1,28 @@
+import { timeLabel, type ReminderData } from './types'
+
+export default function DeliveryHistory({ data, enabled }: { data: ReminderData; enabled: boolean }) {
+  return <section className="war-deliveries">
+    <h3>Tracking & delivery</h3>
+    <p>{enabled ? data.status?.detail || 'Waiting for the bot’s first check.' : 'Automatic reminders are disabled.'}</p>
+    {data.status?.checked_at && <small>Last checked {new Date(data.status.checked_at).toLocaleString()}</small>}
+    <p className="small">
+      Each Discord user is mentioned once, with only their pending accounts from this war listed beneath them.
+      Unlinked accounts are listed separately. No reminder is sent when everyone is done.
+      After downtime, reminders more than five minutes late are skipped.
+    </p>
+    {data.history.length ? <div className="war-history">
+      {data.history.map((receipt, index) => <article key={`${receipt.at}-${index}`}>
+        <div>
+          <strong>{receipt.test ? 'Test · ' : ''}
+            {receipt.event === 'start' ? 'War started' : `${timeLabel(Number(receipt.event))} reminder`}
+          </strong>
+          <small>{new Date(receipt.at).toLocaleString()}</small>
+        </div>
+        <span>{receipt.status === 'sending' ? 'Delivery unconfirmed' : receipt.status}</span>
+        {(receipt.urls?.length ? receipt.urls : receipt.url ? [receipt.url] : []).map((url, part) =>
+          <a key={url} href={url} target="_blank" rel="noreferrer">View{part ? ` part ${part + 1}` : ''} ↗</a>)}
+        {receipt.detail && <p>{receipt.detail}</p>}
+      </article>)}
+    </div> : <p>No deliveries yet. Send a test to see your first receipt.</p>}
+  </section>
+}
