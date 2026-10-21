@@ -1,7 +1,7 @@
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
 import { useEffect, useState } from 'react'
 
-export const dashboardViews = ['search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access'] as const
+export const dashboardViews = ['manage-signups', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access'] as const
 export type DashboardView = typeof dashboardViews[number]
 type Item = { view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: DashboardIconName; items: Item[]; access?: 'staff' | 'owner' }
@@ -24,6 +24,7 @@ const sections: Section[] = [
     { view: 'staff-overview', label: 'Staff overview', icon: 'overview', permissions: ['cwl','clans','text_commands','recruitment','tickets','member_roles','fwa','server_tools'] },
   ] },
   { id: 'cwl-management', label: 'CWL', icon: 'trophy', access: 'staff', items: [
+    { view: 'manage-signups', label: 'Manage signups', icon: 'signup' },
     { view: 'roster', label: 'Roster', icon: 'roster' },
     { view: 'declaration', label: 'Declaration readiness check', icon: 'tasks' },
     { view: 'cwl-returns', label: 'Return reminders', icon: 'return' },
@@ -97,7 +98,7 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
           <span className="navigation-icon" aria-hidden="true"><DashboardIcon name={section.icon} /></span><span>{section.label}</span><span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded[section.id] ? "chevronDown" : "chevronRight"} /></span>
         </button>
         <div id={`navigation-${section.id}`} className="navigation-children" hidden={!expanded[section.id]}>{section.id === 'cwl-management' ? <>
-          {section.items.filter(item => item.view === 'roster' || item.view === 'declaration').map(itemButton)}
+          {section.items.filter(item => item.view === 'manage-signups' || item.view === 'roster' || item.view === 'declaration').map(itemButton)}
           {[{id:'cwl-reminders',label:'Reminders',icon:'bell' as const,views:['reminders','cwl-returns']},{id:'cwl-results',label:'Results & bonuses',icon:'medal' as const,views:['participation','bonuses']}].map(group => <div key={group.id}><button className="navigation-toggle" aria-expanded={!!expanded[group.id]} aria-controls={group.id} onClick={() => setExpanded(current => ({...current,[group.id]:!current[group.id]}))}><span className="navigation-icon"><DashboardIcon name={group.icon}/></span><span>{group.label}</span><span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded[group.id] ? "chevronDown" : "chevronRight"} /></span></button><div id={group.id} className="navigation-children" hidden={!expanded[group.id]}>{section.items.filter(item => group.views.includes(item.view)).map(itemButton)}</div></div>)}
           {section.items.filter(item => item.view === 'staff').map(itemButton)}
         </> : section.id === 'clans' ? <>

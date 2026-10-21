@@ -4,7 +4,7 @@ export type Session = { authenticated: true; user: { id: string; username: strin
 export type Season = { id: number; label: string; status: string; signup_open: boolean }
 export type FamilyClanStatus = 'approved' | 'outside' | 'unknown'
 export type Account = { war_weight?: number | null; tag: string; name: string; town_hall: number | null; current_clan_tag: string | null; current_clan_name: string | null; current_clan_badge_url?: string | null; verified: boolean; lazy_eligible: boolean; lazy_ineligible_reason: string | null; family_clan_status: FamilyClanStatus }
-export type Signup = { tag: string; user_id: string; pool: Pool; prefer_crystal_1_or_lower: boolean; player_name?: string; town_hall?: number | null; signup_clan_name?: string | null; signup_clan_tag?: string | null; family_clan_status?: FamilyClanStatus }
+export type Signup = { has_staff_placement?: boolean; tag: string; user_id: string; pool: Pool; prefer_crystal_1_or_lower: boolean; player_name?: string; town_hall?: number | null; signup_clan_name?: string | null; signup_clan_tag?: string | null; family_clan_status?: FamilyClanStatus }
 export type Clan = { cwl_league?: string | null; cwl_league_stale?: boolean; tag: string; name: string; archived: boolean; pool?: Pool | null }
 export type Grant = { permissions?: string[]; user_id: string; username?: string; granted_at?: string }
 export class ApiError extends Error { constructor(message: string, public status: number) { super(message) } }

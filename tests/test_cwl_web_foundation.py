@@ -71,6 +71,25 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 201)
         return (await response.json())["id"]
 
+    async def test_signup_restriction_is_visible_without_exposing_unpublished_clan(self):
+        sid = await self.season()
+        body = {"pool": "main", "accounts": [{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}]}
+        self.assertEqual((await self.call("POST", f"/seasons/{sid}/signups", self.member, json=body)).status, 200)
+        with self.app["store"].tx() as db:
+            db.execute("INSERT INTO roster_entries(season_id,tag,assigned_clan_tag) VALUES (?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET assigned_clan_tag=excluded.assigned_clan_tag", (sid, "#P2Y", "#PRIVATE"))
+        response = await self.call("GET", f"/seasons/{sid}/signups", self.member)
+        data = await response.json()
+        self.assertTrue(data["signups"][0]["has_staff_placement"])
+        self.assertNotIn("#PRIVATE", str(data))
+        other = await (await self.call("GET", f"/seasons/{sid}/signups?all=1", self.other)).json()
+        self.assertEqual(other["signups"], [])
+        blocked = await self.call("DELETE", f"/seasons/{sid}/signups/%23P2Y", self.member)
+        self.assertEqual(blocked.status, 409)
+        with self.app["store"].tx() as db:
+            db.execute("UPDATE roster_entries SET assigned_clan_tag=NULL WHERE season_id=?", (sid,))
+        data = await (await self.call("GET", f"/seasons/{sid}/signups", self.member)).json()
+        self.assertFalse(data["signups"][0]["has_staff_placement"])
+
     async def test_staff_can_add_closed_signups_and_member_sees_them(self):
         sid = await self.season()
         await self.call("PATCH", f"/seasons/{sid}", self.owner, json={"signup_open": False})

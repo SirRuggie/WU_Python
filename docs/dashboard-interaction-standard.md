@@ -398,3 +398,23 @@ Validation: 82 backend tests across signup entry, campaign integration, reminder
 API and authentication; 191 frontend tests; production build; desktop/mobile
 isolated signup-entry and closed-state inspection. No live Discord messages sent.
 This change does not complete the remaining member/staff journey redesign.
+
+### Member and staff signup workspace
+
+My CWL keeps the personal signup guide; staff work lives in Manage signups.
+The staff workspace reuses the existing signup APIs and account editor, groups
+saved accounts by member, and offers account search, select-all matching unsigned
+accounts, clear selection, and optional Discord member filtering. Display names
+use the existing member directory; IDs remain usable when names are unavailable.
+Unsaved form/editor work is guarded across navigation, season changes and reload.
+
+Members see a plain-language restriction when an account has a staff placement.
+The API exposes only that boolean, not unpublished clan details, and existing
+server-side authorization and placement checks remain authoritative. Main and
+Lazy descriptions use the owner's supplied wording. The gold walkthrough stays.
+
+Validation: 193 frontend tests, 71 targeted backend tests, production build,
+isolated staff selection/save/discard checks and member mobile layout checks.
+Browser testing used fictional accounts and local SQLite fixtures; no live
+signups or Discord messages were changed. Existing build/aiohttp warnings remain.
+This scope does not finish the later assignment, joining and return journey.

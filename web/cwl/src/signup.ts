@@ -16,7 +16,7 @@ export function selectedEntries(accounts: Account[], draft: Draft, transfers: Tr
   }))
 }
 export function selectedForPool(accounts: Account[], draft: Draft, signups: Signup[], pool: Pool, transfers: TransferConsent): SignupSelection[] {
-  return selectedEntries(accounts.filter(account => selectable(account, pool, signups) || transfers[account.tag] === transferSource(signups, account.tag, pool)), draft, transfers)
+  return selectedEntries(accounts.filter(account => selectable(account, pool, signups) || (!signups.find(signup => signup.tag === account.tag)?.has_staff_placement && transfers[account.tag] === transferSource(signups, account.tag, pool))), draft, transfers)
 }
 export function selectAllAvailable(accounts: Account[], pool: Pool, signups: Signup[], draft: Draft, transfers: TransferConsent): Draft {
   const keptTransfers = Object.fromEntries(Object.entries(draft).filter(([tag]) => transfers[tag] === transferSource(signups, tag, pool) && transfers[tag] !== undefined))
@@ -38,6 +38,7 @@ export function reconcileSelection(draft: Draft, transfers: TransferConsent, acc
   for (const [tag, preference] of Object.entries(draft)) {
     if (!tags.has(tag)) continue
     const source = transferSource(signups, tag, pool)
+    if (source && signups.find(signup => signup.tag === tag)?.has_staff_placement) continue
     if (source && transfers[tag] !== source) continue
     if (transfers[tag] && transfers[tag] !== source) continue
     kept[tag] = preference

@@ -2,8 +2,9 @@ import {useEffect,useRef,useState,type ReactNode} from 'react'
 import {api,ApiError} from './api'
 import type {RosterSnapshot} from './roster'
 import RosterPlayerDialog from './RosterPlayerDialog'
-export default function StaffPlayerButton({seasonId,tag,children,onChanged,disabled=false}:{seasonId:string;tag:string;children:ReactNode;onChanged?:()=>void|Promise<unknown>;disabled?:boolean}){
+export default function StaffPlayerButton({seasonId,tag,children,onChanged,disabled=false,onDirty,onBusy}:{seasonId:string;tag:string;children:ReactNode;onChanged?:()=>void|Promise<unknown>;disabled?:boolean;onDirty?:(dirty:boolean)=>void;onBusy?:(busy:boolean)=>void}){
  const [snapshot,setSnapshot]=useState<RosterSnapshot|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('')
+ useEffect(()=>{onBusy?.(busy);return()=>onBusy?.(false)},[busy,onBusy])
  const generation=useRef(0)
  useEffect(()=>{generation.current++;setSnapshot(null);setError('');setBusy(false);return()=>{generation.current++}},[seasonId,tag])
  const path=`/seasons/${encodeURIComponent(seasonId)}`
@@ -21,5 +22,5 @@ export default function StaffPlayerButton({seasonId,tag,children,onChanged,disab
   finally{if(id===generation.current)setBusy(false)}
  }
  const account=snapshot?.accounts.find(a=>a.tag===tag)
- return <><button type="button" className="roster-player-name" disabled={disabled||busy} onClick={()=>void open()} title="Edit account">{children}</button>{error&&!account&&<small role="alert">{error}</small>}{account&&snapshot&&<RosterPlayerDialog account={account} clans={snapshot.clans} busy={busy} error={error} onClose={()=>{if(!busy)setSnapshot(null)}} onSave={body=>write(false,body)} onRemove={()=>write(true)}/>}</>
+ return <><button type="button" className="roster-player-name" disabled={disabled||busy} onClick={()=>void open()} title="Edit account">{children}</button>{error&&!account&&<small role="alert">{error}</small>}{account&&snapshot&&<RosterPlayerDialog onDirty={onDirty} account={account} clans={snapshot.clans} busy={busy} error={error} onClose={()=>{if(!busy)setSnapshot(null)}} onSave={body=>write(false,body)} onRemove={()=>write(true)}/>}</>
 }

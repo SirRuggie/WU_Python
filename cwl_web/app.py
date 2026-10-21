@@ -664,6 +664,9 @@ async def signups(request):
     sid = _sid(request)
     with _store(request).tx() as db:
         _season(db, sid)
+        placed = {row["tag"] for row in db.execute(
+            "SELECT tag FROM roster_entries WHERE season_id=? AND assigned_clan_tag IS NOT NULL", (sid,)
+        ).fetchall()}
         if _editor(request, session) and request.query.get("all") == "1":
             rows = db.execute("SELECT * FROM signups WHERE season_id=? ORDER BY user_id,tag", (sid,)).fetchall()
         else:
@@ -672,6 +675,7 @@ async def signups(request):
     result = []
     for row in rows:
         entry = dict(row)
+        entry["has_staff_placement"] = entry["tag"] in placed
         entry["prefer_crystal_1_or_lower"] = bool(entry["prefer_crystal_1_or_lower"])
         entry["family_clan_status"] = _family_status(entry["signup_clan_tag"], approved)
         result.append(entry)

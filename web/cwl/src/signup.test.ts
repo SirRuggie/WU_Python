@@ -46,3 +46,9 @@ describe('refreshing a member signup selection', () => {
     expect(reconcileSelection({'#ONE':false}, {'#ONE':'lazy'}, accounts, [], 'main').draft).toEqual({})
   })
 })
+
+it('drops a pool transfer when staff place the account after selection', () => {
+  const placed = signups.map(row => ({...row, has_staff_placement: true}))
+  expect(selectedForPool(accounts, {'#ONE':false}, placed, 'lazy', {'#ONE':'main'})).toEqual([])
+  expect(reconcileSelection({'#ONE':false}, {'#ONE':'main'}, accounts, placed, 'lazy')).toEqual({draft:{},transfers:{}})
+})

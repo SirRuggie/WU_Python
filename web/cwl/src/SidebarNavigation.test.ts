@@ -8,7 +8,7 @@ it('keeps all personal pages together without staff grants',()=>{
 it('keeps CWL work separate from server configuration',()=>{
  const sections=visibleNavigationSections(true,false,['cwl'])
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL'])
- expect(sections.find(section=>section.id==='cwl-management')?.items.map(item=>item.view)).toContain('cwl-returns')
+ expect(sections.find(section=>section.id==='cwl-management')?.items.map(item=>item.view)).toContain('manage-signups')
  expect(navigationSection('cwl-returns')).toBe('CWL')
 })
 it('preserves every explicit scope without exposing other tools',()=>{
@@ -22,11 +22,20 @@ it('shows owners all groups and every destination once',()=>{
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL','Clan management','Tickets','Server tools','Settings'])
  const views=sections.flatMap(section=>section.items.map(item=>item.view))
  expect(new Set(views).size).toBe(views.length)
- expect(views).toHaveLength(28)
+ expect(views).toHaveLength(29)
  expect(sections.find(section=>section.id==='settings')?.items.map(item=>item.view)).toEqual(['image-gallery','connections-settings','access'])
  expect(navigationSection('tickets')).toBe('Tickets')
  expect(navigationSection('applications-settings')).toBe('Server tools')
  expect(navigationSection('clan-management')).toBe('Clan management')
  expect(navigationSection('strikes')).toBe('Clan management')
  expect(navigationSection('replacements')).toBe('Clan management')
+})
+
+it('renders Manage signups in the staff sidebar only', async () => {
+ const {renderToStaticMarkup} = await import('react-dom/server')
+ const {createElement} = await import('react')
+ const {default: SidebarNavigation} = await import('./SidebarNavigation')
+ const props = {userId:'audit',view:'manage-signups' as const,canEdit:true,isOwner:true,onNavigate:()=>{}}
+ expect(renderToStaticMarkup(createElement(SidebarNavigation,props))).toContain('Manage signups')
+ expect(renderToStaticMarkup(createElement(SidebarNavigation,{...props,canEdit:false,isOwner:false}))).not.toContain('Manage signups')
 })
