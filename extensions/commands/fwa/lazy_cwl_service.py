@@ -320,9 +320,9 @@ async def away_players(doc: dict) -> list[dict]:
 
 
 async def reminder_recipients(doc: dict) -> list[dict]:
-    """Refresh away status and Main Discord links before review or send."""
+    """Refresh away status and current Discord links before review or send."""
     away = await away_players(doc)
-    if store.normalize_section(doc.get("section")) != "MAIN" or not away:
+    if not away:
         return away
     links = await get_discord_ids([player["tag"] for player in away])
     if links is None:
@@ -409,6 +409,10 @@ async def _send_reminder_message(doc: dict, away: list[dict], *, expected_channe
                 Separator(),
                 Text(content="**Players currently away:**"),
                 Text(content="\n".join(chunk_lines)),
+                ActionRow(components=[LinkButton(
+                    url=f"https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(doc['clan_tag'], safe='')}",
+                    label=f"Open {doc['clan_name']} in-Game",
+                )]),
             ]
         await bot_instance.rest.create_message(
             channel=channel,

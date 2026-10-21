@@ -533,3 +533,17 @@ account to a CWL clan and ask the member to contact staff to change or withdraw
 its signup. Removed the internal term unassign from these member-facing errors.
 Restrictions are unchanged. Validation: 41 signup backend tests, production
 frontend build and diff checks passed; no live signup changes or messages.
+
+### Return reminder connection fixes
+
+Main return messages now include an Open Clan link built from the saved home-clan
+tag, matching FWA messages. FWA recipient lookup now shares Main's current-link
+resolution before sending: relinked accounts mention their current Discord user,
+unlinked accounts remain listed without an old mention, and lookup failures stop
+the send. Existing active-list/destination checks remain after lookup. Main stays
+manual and FWA scheduling is unchanged.
+
+Validation: 99 return service/scheduler/bulk/destination tests passed, including
+encoded Main home-clan link, fresh FWA links, unlinked recipients, no ping for
+players already home, lookup failure, and list closure during lookup in both
+sections. Tests use fake Discord transport; no live reminder was sent.

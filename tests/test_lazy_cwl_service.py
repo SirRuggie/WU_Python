@@ -332,15 +332,18 @@ def test_main_manual_reminder_refreshes_links_and_never_enables_schedule(monkeyp
     assert parts[4].content == "**Players currently away:**"
     assert parts[5].content == "**Away** · `#AWAY` · <@123456789>"
     assert "Home" not in parts[5].content
+    assert parts[6].components[0].url == "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23ABC"
+    assert parts[6].components[0].label == "Open Alpha in-Game"
     refreshed = asyncio.run(store.get_by_id(mongo, "main-list"))
     assert refreshed["reminders"]["sent_count"] == 1
     assert refreshed["reminders"]["enabled"] is False
     assert service.scheduler.add_job_calls == []
 
 
-def test_main_manual_reminder_does_not_send_if_roster_closes_during_link_lookup(monkeypatch):
+@pytest.mark.parametrize("section", ["MAIN", "FWA"])
+def test_reminder_does_not_send_if_roster_closes_during_link_lookup(monkeypatch, section):
     doc = _list_doc("main-list", clan_tag="ABC", clan_name="Alpha")
-    doc["section"] = "MAIN"
+    doc["section"] = section
     doc["players"] = [{"tag": "#AWAY", "name": "Away", "discord_id": None}]
     mongo = _fake_mongo([doc])
     bot = FakeBot()
@@ -348,25 +351,26 @@ def test_main_manual_reminder_does_not_send_if_roster_closes_during_link_lookup(
           bot=bot, links={})
 
     async def close_during_lookup(tags):
-        await store.finish(mongo, "#ABC", expected_list_id="main-list", section="MAIN")
+        await store.finish(mongo, "#ABC", expected_list_id="main-list", section=section)
         return {"#AWAY": "123456789"}
 
     monkeypatch.setattr(service, "get_discord_ids", close_during_lookup)
-    result = asyncio.run(service.remind_now("#ABC", expected_list_id="main-list", section="MAIN"))
+    result = asyncio.run(service.remind_now("#ABC", expected_list_id="main-list", section=section))
     assert result["ok"] is False and result["stale"] is True
     assert bot.rest.sent == []
 
 
-def test_main_manual_reminder_fails_closed_when_link_lookup_fails(monkeypatch):
+@pytest.mark.parametrize("section", ["MAIN", "FWA"])
+def test_reminder_fails_closed_when_link_lookup_fails(monkeypatch, section):
     doc = _list_doc("main-list", clan_tag="ABC", clan_name="Alpha")
-    doc["section"] = "MAIN"
+    doc["section"] = section
     doc["players"] = [{"tag": "#AWAY", "name": "Away", "discord_id": None}]
     mongo = _fake_mongo([doc])
     bot = FakeBot()
     _wire(monkeypatch, mongo=mongo, coc_client=FakeCoc(clan=FakeClan("#ABC", "Alpha", [])),
           bot=bot, links=None)
     with pytest.raises(RuntimeError, match="link service"):
-        asyncio.run(service.remind_now("#ABC", section="MAIN"))
+        asyncio.run(service.remind_now("#ABC", section=section))
     assert bot.rest.sent == []
 
 
@@ -1187,3 +1191,25 @@ def test_capture_and_start_uses_created_list_and_reports_partial_failure(monkeyp
     result = asyncio.run(service.capture_and_start_returns('#ABC',123,120))
     assert not result['ok']
     assert 'Members were saved' in result['error']
+
+
+def test_fwa_send_uses_current_links_and_drops_stale_mentions(monkeypatch):
+    doc = _list_doc("fwa-relinked", clan_tag="ABC", clan_name="Alpha")
+    doc["section"] = "FWA"
+    doc["players"] = [
+        {"tag": "#HOME", "name": "Home", "discord_id": 111},
+        {"tag": "#AWAY", "name": "Relinked", "discord_id": 222},
+        {"tag": "#UNLINKED", "name": "Unlinked", "discord_id": 333},
+    ]
+    mongo = _fake_mongo([doc])
+    bot = FakeBot()
+    _wire(monkeypatch, mongo=mongo, coc_client=FakeCoc(clan=FakeClan("#ABC", "Alpha", [FakeMember("#HOME", "Home", 16)])), bot=bot, links={"#AWAY": "444"})
+    lookup = AsyncMock(return_value={"#AWAY": "444"})
+    monkeypatch.setattr(service, "get_discord_ids", lookup)
+    result = asyncio.run(service.remind_now("#ABC", section="FWA"))
+    assert result["ok"] and result["sent"]
+    lookup.assert_awaited_once_with(["#AWAY", "#UNLINKED"])
+    assert bot.rest.sent[0]["user_mentions"] == [444]
+    text = bot.rest.sent[0]["components"][0].components[8].content
+    assert "<@444>" in text and "#UNLINKED" in text
+    assert "<@222>" not in text and "<@333>" not in text and "#HOME" not in text
