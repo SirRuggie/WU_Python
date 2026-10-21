@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accountPool, clearSubmittedDraft, seedDraft, selectAllAvailable, selectable, selectedEntries, selectedForPool, submittedSummary, transferSource } from './signup'
+import { reconcileSelection, accountPool, clearSubmittedDraft, seedDraft, selectAllAvailable, selectable, selectedEntries, selectedForPool, submittedSummary, transferSource } from './signup'
 import type { Account, Signup } from './api'
 const accounts: Account[] = [
   { tag: '#ONE', name: 'One', town_hall: 16, current_clan_tag: null, current_clan_name: null, verified: true, lazy_ineligible_reason: null, lazy_eligible: true, family_clan_status: 'approved' },
@@ -30,4 +30,19 @@ describe('signup selection', () => {
     expect(clearSubmittedDraft({ main: { '#TWO': false }, lazy: { '#ONE': true } }, 'lazy')).toEqual({ main: { '#TWO': false }, lazy: {} })
   })
   it('can seed one explicit saved preference for editing', () => { expect(seedDraft(accounts, signups, 'main')).toEqual({ '#ONE': false }) })
+})
+
+describe('refreshing a member signup selection', () => {
+  it('preserves ordinary selections while adding newly linked accounts', () => {
+    expect(reconcileSelection({'#ONE':false}, {}, accounts, [], 'main')).toEqual({draft:{'#ONE':false},transfers:{}})
+  })
+  it('removes an account that is no longer linked', () => {
+    expect(reconcileSelection({'#MISSING':false,'#ONE':true}, {}, accounts, [], 'main').draft).toEqual({'#ONE':true})
+  })
+  it('requires new consent when a saved account changes pool externally', () => {
+    const saved = [{tag:'#ONE',pool:'lazy',user_id:'1',prefer_crystal_1_or_lower:false}] as Signup[]
+    expect(reconcileSelection({'#ONE':false}, {}, accounts, saved, 'main').draft).toEqual({})
+    expect(reconcileSelection({'#ONE':false}, {'#ONE':'lazy'}, accounts, saved, 'main')).toEqual({draft:{'#ONE':false},transfers:{'#ONE':'lazy'}})
+    expect(reconcileSelection({'#ONE':false}, {'#ONE':'lazy'}, accounts, [], 'main').draft).toEqual({})
+  })
 })

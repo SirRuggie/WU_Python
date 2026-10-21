@@ -29,3 +29,19 @@ export function submittedSummary(accounts: Account[], selected: SignupSelection[
   return selected.map(item => ({ tag: item.tag, name: byTag.get(item.tag)?.name || item.tag, prefer_crystal_1_or_lower: item.prefer_crystal_1_or_lower, move_from_pool: item.move_from_pool }))
 }
 export function clearSubmittedDraft(drafts: Record<Pool, Draft>, submittedPool: Pool): Record<Pool, Draft> { return { ...drafts, [submittedPool]: {} } }
+
+/** A refreshed owner/pool must never silently retain consent for an old move. */
+export function reconcileSelection(draft: Draft, transfers: TransferConsent, accounts: Account[], signups: Signup[], pool: Pool) {
+  const tags = new Set(accounts.map(account => account.tag))
+  const kept: Draft = {}
+  const consent: TransferConsent = {}
+  for (const [tag, preference] of Object.entries(draft)) {
+    if (!tags.has(tag)) continue
+    const source = transferSource(signups, tag, pool)
+    if (source && transfers[tag] !== source) continue
+    if (transfers[tag] && transfers[tag] !== source) continue
+    kept[tag] = preference
+    if (source) consent[tag] = source
+  }
+  return { draft: kept, transfers: consent }
+}

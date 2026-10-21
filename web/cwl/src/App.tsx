@@ -1,3 +1,4 @@
+import AccountLinkHelp from './AccountLinkHelp'
 import WarsWorkspace from './activity/WarsWorkspace'
 import EventsWorkspace from './activity/EventsWorkspace'
 import DashboardSearch from './DashboardSearch'
@@ -38,7 +39,7 @@ import BonusWorkspace from './BonusWorkspace'
 import MemberAssignments from './MemberAssignments'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, setCsrfToken, type Account, type Clan, type Pool, type Season, type Session, type Signup } from './api'
-import { accountPool, clearSubmittedDraft, selectAllAvailable, selectable, selectedForPool, submittedSummary, transferSource, type Draft, type TransferConsent } from './signup'
+import { accountPool, reconcileSelection, clearSubmittedDraft, selectAllAvailable, selectable, selectedForPool, submittedSummary, transferSource, type Draft, type TransferConsent } from './signup'
 
 const ImageGallery = lazy(() => import('./CommandImageLibrary').then(module => ({default:module.ImageGallery})))
 const TicketBrowser = lazy(() => import('./TicketBrowser'))
@@ -66,6 +67,9 @@ function App() {
   const [seasons, setSeasons] = useState<Season[]>([])
   const [seasonId, setSeasonId] = useState(entryTarget.season)
   const [pool, setPool] = useState<Pool | null>(null)
+  const [signupSearch, setSignupSearch] = useState('')
+  const [signupPage, setSignupPage] = useState(0)
+  useEffect(() => { setSignupPage(0) }, [signupSearch, pool, seasonId])
   const [showSignedUp, setShowSignedUp] = useState(false)
   useEffect(() => { setShowSignedUp(false) }, [seasonId])
   const [signupPanel, setSignupPanel] = useState<'register' | 'saved'>('register')
@@ -79,11 +83,15 @@ function App() {
   currentSeason.current = seasonId
   const [signupStep, setSignupStep] = useState<1 | 2>(1)
   const stepHeadingRef = useRef<HTMLHeadingElement>(null)
-  useEffect(() => { setSignupStep(1); setPool(null); setReview(false); setCompletion(null) }, [seasonId])
+  useEffect(() => { setSignupStep(1); setPool(null); setReview(false); setCompletion(null); setAccounts([]); setSignups([]); setDrafts({main: {}, lazy: {}}); setTransfers({main: {}, lazy: {}}) }, [seasonId])
   const [drafts, setDrafts] = useState<Record<Pool, Draft>>({ main: {}, lazy: {} })
   const [transfers, setTransfers] = useState<Record<Pool, TransferConsent>>({ main: {}, lazy: {} })
+  const selectionRef = useRef({ drafts, transfers })
+  selectionRef.current = { drafts, transfers }
+  const signupBusy = useRef(false)
   const [accountError, setAccountError] = useState('')
-  const [linkInstruction, setLinkInstruction] = useState('Use ClashKing /link in Discord to link an account.')
+  const [seasonError, setSeasonError] = useState('')
+  const [seasonsLoading, setSeasonsLoading] = useState(true)
   const [dataError, setDataError] = useState('')
   const [loadingData, setLoadingData] = useState(false)
   const [pending, setPending] = useState(false)
@@ -137,23 +145,22 @@ function App() {
   }, [])
 
   const loadSeasons = useCallback(async () => {
+    setSeasonsLoading(true)
     try {
       const result = await api<{ seasons: Season[] }>('/seasons')
       setSeasons(result.seasons)
       if (entryTarget.season && !result.seasons.some(item => String(item.id) === entryTarget.season)) setNotice({kind:'error', text:'The season in this link is not available. Check the season shown before signing up.'})
       setSeasonId(current => result.seasons.some(season => String(season.id) === current) ? current : String(result.seasons[0]?.id || ''))
-      setDataError('')
-    } catch (error) { setDataError(message(error)) }
+      setSeasonError('')
+    } catch (error) { setSeasonError(message(error)) }
+    finally { setSeasonsLoading(false) }
   }, [])
   useEffect(() => { if (session) void loadSeasons() }, [session, loadSeasons])
 
   const loadSignup = useCallback(async () => {
     if (!seasonId) return
     setLoadingData(true)
-    setAccounts([])
-    setSignups([])
-    setDrafts({ main: {}, lazy: {} })
-    setTransfers({ main: {}, lazy: {} })
+    setReview(false)
     const requestId = ++signupRequest.current
     setAccountError('')
     setDataError('')
@@ -164,17 +171,26 @@ function App() {
     if (requestId !== signupRequest.current || currentSeason.current !== seasonId) return { all: false, signups: false }
     let freshAccounts: Account[] | null = null
     let freshSignups: Signup[] | null = null
-    if (accountsResult.status === 'fulfilled') { freshAccounts = accountsResult.value.accounts; setAccounts(freshAccounts); if (accountsResult.value.link_instruction) setLinkInstruction(accountsResult.value.link_instruction) }
+    if (accountsResult.status === 'fulfilled') { freshAccounts = accountsResult.value.accounts; setAccounts(freshAccounts) }
     else { setAccounts([]); setAccountError(message(accountsResult.reason)) }
     if (signupsResult.status === 'fulfilled') { freshSignups = signupsResult.value.signups; setSignups(freshSignups) }
     else { setSignups([]); setDataError(message(signupsResult.reason)) }
+    if (freshAccounts !== null && freshSignups !== null) {
+      const previous = selectionRef.current
+      const main = reconcileSelection(previous.drafts.main, previous.transfers.main, freshAccounts, freshSignups, 'main')
+      const lazy = reconcileSelection(previous.drafts.lazy, previous.transfers.lazy, freshAccounts, freshSignups, 'lazy')
+      setDrafts({ main: main.draft, lazy: lazy.draft })
+      setTransfers({ main: main.transfers, lazy: lazy.transfers })
+      if (Object.keys(main.draft).length + Object.keys(lazy.draft).length < Object.keys(previous.drafts.main).length + Object.keys(previous.drafts.lazy).length) setNotice({kind:'error', text:'Some selections changed because account links or saved pools changed. Check your accounts before continuing.'})
+    }
     setLoadingData(false)
     return { all: freshAccounts !== null && freshSignups !== null, signups: freshSignups !== null }
   }, [seasonId])
   useEffect(() => {
     if (!session || !seasonId || view !== 'signup') return
-    if (dashboardPrefill.current) { dashboardPrefill.current = false; return }
+    if (dashboardPrefill.current) { dashboardPrefill.current = false; return () => { signupRequest.current += 1 } }
     void loadSignup()
+    return () => { signupRequest.current += 1 }
   }, [session, seasonId, view, loadSignup])
 
   const loadStaff = useCallback(async () => {
@@ -228,16 +244,29 @@ function App() {
   const draft = pool ? drafts[pool] : {}
   const transferConsent = pool ? transfers[pool] : {}
   const visibleAccounts = accounts.filter(account => showSignedUp || !accountPool(signups, account.tag))
-  const selected = pool ? selectedForPool(visibleAccounts, draft, signups, pool, transferConsent) : []
-  const available = pool ? visibleAccounts.filter(account => selectable(account, pool, signups)) : []
+  const matchingAccounts = visibleAccounts.filter(account => [account.name, account.tag, account.current_clan_name, account.current_clan_tag].some(value => value?.toLowerCase().includes(signupSearch.trim().toLowerCase())))
+  const lastSignupPage = Math.max(0, Math.ceil(matchingAccounts.length / 12) - 1)
+  const currentSignupPage = Math.min(signupPage, lastSignupPage)
+  const pageAccounts = matchingAccounts.slice(currentSignupPage * 12, (currentSignupPage + 1) * 12)
+  const selected = pool ? selectedForPool(accounts, draft, signups, pool, transferConsent) : []
+  const available = pool ? matchingAccounts.filter(account => selectable(account, pool, signups)) : []
   const existing = signups
   const activeCompletion = completion?.seasonId === seasonId ? completion : null
   const setDraft = (next: Draft) => { if (!pool) return; setDrafts(current => ({ ...current, [pool]: next })); setReview(false); setNotice(null) }
-  const choosePool = (next: Pool) => { setSignupStep(2); if (pool === next) return; setSignupPanel('register'); setPool(next); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false) }
+  const choosePool = (next: Pool) => { if (pool && next !== pool && Object.keys(draft).length && !window.confirm('Change CWL pool and clear your unsubmitted selections? Saved signups stay unchanged.')) return; setSignupStep(2); if (pool === next) return; setSignupPanel('register'); setPool(next); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false) }
   const [manageDirty, setManageDirty] = useState(false)
   const [cwlDirty, setCwlDirty] = useState(false)
   const navigation = useRef<DashboardHistory | null>(null)
+  const signupDirty = Object.values(drafts).some(draft => Object.keys(draft).length > 0)
+  useEffect(() => {
+    if (view !== 'signup' || (!signupDirty && !pending)) return
+    const protect = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', protect)
+    return () => window.removeEventListener('beforeunload', protect)
+  }, [view, signupDirty, pending])
   const canLeave = () => {
+    if (view === 'signup' && (pending || signupBusy.current)) return false
+    if (view === 'signup' && signupDirty && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
     if ((isManagementArea(view) || ['manage','text-commands','clan-management'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
@@ -249,7 +278,7 @@ function App() {
     return visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === next))
       || (next === 'manage' && session.is_owner) ? next : 'home'
   }
-  const acceptRoute = (next: View) => { setView(next); setMenuOpen(false); setNotice(null) }
+  const acceptRoute = (next: View) => { if (next !== 'signup') { setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }) }; setView(next); setMenuOpen(false); setNotice(null) }
   const [searchQuery, setSearchQuery] = useState('')
   const [searchKind, setSearchKind] = useState<'all' | 'player' | 'clan'>('all')
   const [searchPage, setSearchPage] = useState(0)
@@ -312,7 +341,8 @@ function App() {
     finally { setPending(false) }
   }
   const submit = async () => {
-    if (!seasonId || !season || !pool || !selected.length || pending) return
+    if (!seasonId || !season || !pool || !selected.length || pending || signupBusy.current || loadingData || dataError || accountError || !season.signup_open || season.status !== 'draft') return
+    signupBusy.current = true
     const submittedSeason = seasonId
     const submittedPool = pool
     const submittedAccounts = selected.map(item => ({ ...item }))
@@ -324,17 +354,20 @@ function App() {
       summary.moved = result.moved || 0
     } catch (error) {
       setNotice({ kind: 'error', text: message(error) })
+      signupBusy.current = false
       setPending(false)
       return
     }
-    if (currentSeason.current !== submittedSeason) { setPending(false); return }
+    if (currentSeason.current !== submittedSeason) { signupBusy.current = false; setPending(false); return }
     setDrafts(current => clearSubmittedDraft(current, submittedPool))
     setTransfers(current => ({ ...current, [submittedPool]: {} }))
     setReview(false)
     setShowSignedUp(false)
     setCompletion(summary)
+    selectionRef.current = { drafts: {main: {}, lazy: {}}, transfers: {main: {}, lazy: {}} }
     const refreshed = await loadSignup()
     if (!refreshed?.all && currentSeason.current === submittedSeason) setCompletion(current => current?.seasonId === submittedSeason ? { ...current, refreshWarning: true } : current)
+    signupBusy.current = false
     setPending(false)
   }
   const showSavedSignups = async () => {
@@ -393,12 +426,13 @@ function App() {
       <div className="brand-wrap"><Brand /><button className="menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button></div>
       <div className="community"><img className="community-icon discord-server-icon" src={serverIconUrl} alt="Warriors United server icon" width={38} height={38} /><span><strong>Warriors United</strong><small>Member dashboard</small></span></div>
       <SidebarNavigation key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={changeView} />
-      <div className="sidebar-foot"><strong>{session.user.display_name || session.user.username}</strong><small>Discord · {session.user.id}</small><button onClick={() => void run(async () => { const pushId = await stopPushOnSignout(); return api('/auth/logout', 'POST', { push_id: pushId }) }, 'Signed out.', async () => { setSession(null); setAuthState('signed-out') })}>Sign out</button></div>
+      <div className="sidebar-foot"><strong>{session.user.display_name || session.user.username}</strong><small>Discord · {session.user.id}</small><button onClick={() => { if (!canLeave()) return; void run(async () => { const pushId = await stopPushOnSignout(); return api('/auth/logout', 'POST', { push_id: pushId }) }, 'Signed out.', async () => { signupRequest.current += 1; setAccounts([]); setSignups([]); setDrafts({main: {}, lazy: {}}); setTransfers({main: {}, lazy: {}}); setCompletion(null); setSession(null); setAuthState('signed-out') }) }}>Sign out</button></div>
     </aside>
     {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     <div className="workspace">
       <header className="topbar"><button className="menu-open" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button><div><span className="crumb">Warriors United{navigationSection(view) ? ` / ${navigationSection(view)}` : ''}</span><strong>{view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main>
+        {seasonError && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
         {(view === 'signup' || view === 'assignments') && <div className="member-nav-tabs" role="group" aria-label="Member sections"><button className={view === 'signup' ? 'active' : ''} aria-pressed={view === 'signup'} onClick={() => changeView('signup')}>My signups</button><button className={view === 'assignments' ? 'active' : ''} aria-pressed={view === 'assignments'} onClick={() => changeView('assignments')}>My clan assignments</button></div>}
         {session.can_edit && ['roster','publication'].includes(view) && <div className="cwl-workspace-nav"><nav className="cwl-roster-tabs" aria-label="Roster sections"><button className={view === 'roster' ? 'active' : ''} aria-current={view === 'roster' ? 'page' : undefined} onClick={() => changeView('roster')}>Build roster</button><button className={view === 'publication' && publicationStep === 'review' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'review' ? 'page' : undefined} onClick={() => openPublication('review')}>Finalize roster</button><button className={view === 'publication' && publicationStep === 'announce' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'announce' ? 'page' : undefined} onClick={() => openPublication('announce')}>Announcements</button></nav><details className="cwl-more"><summary>More</summary><button onClick={() => changeView('exports')}>Export season</button><button onClick={() => changeView('staff')}>CWL settings</button></details></div>}
@@ -427,11 +461,13 @@ function App() {
           setTransfers({ main: {}, lazy: {} }); setShowSignedUp(false); setPool(nextPool); setSignupPanel('register'); setSignupStep(2); setReview(false); setCompletion(null); changeView('signup')
         }} />}
         {view === 'signup' && <>
-          <div className="page-head"><div><p className="eyebrow">Member signup</p><h1>CWL signups</h1><p>{activeCompletion ? "Your season signup is saved." : "Choose your accounts. Staff will assign them to clans."}</p></div><label className="season-choice">Season<select value={seasonId} disabled={pending} onChange={event => { setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select a season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>
-          {dataError && !activeCompletion && <div className="notice error" role="alert">{dataError}<button onClick={() => void loadSignup()}>Retry</button></div>}
-          {!seasons.length && !dataError && <div className="card empty"><h2>No season yet</h2><p>Staff will open a CWL season before members can sign up.</p></div>}
-          {season && <>{!activeCompletion && loadingData && <p role="status">Loading linked accounts and saved signups…</p>}<div className="season-banner"><div><span className={`status-dot ${season.signup_open ? 'active' : ''}`} /> <strong>{season.label}</strong><span className="badge">{season.signup_open ? 'Signups open' : 'Signups closed'}</span></div><span>{season.status}</span></div>
-            {activeCompletion ? <section className="completion-card card" aria-labelledby="completion-title"><div className="completion-mark" aria-hidden="true">✓</div><p className="eyebrow">Signup complete</p><h1 id="completion-title" ref={completionHeadingRef} tabIndex={-1}>You're signed up</h1><p><strong>{activeCompletion.accounts.length} {activeCompletion.accounts.length === 1 ? 'account is' : 'accounts are'} signed up</strong> for {poolName(activeCompletion.pool)} in {activeCompletion.seasonLabel}.{activeCompletion.moved > 0 && <span> {activeCompletion.moved} {activeCompletion.moved === 1 ? 'account moved' : 'accounts moved'} from the other pool.</span>}</p><div className="completion-accounts">{activeCompletion.accounts.map(account => <div key={account.tag}><strong>{account.name}</strong><small>{account.tag}</small>{account.move_from_pool && <small>Moved from {poolName(account.move_from_pool)} to {poolName(activeCompletion.pool)}</small>}</div>)}</div><p>Your accounts are signed up. Staff will assign your accounts to clans. You can close this page, or sign up more accounts below.</p>{activeCompletion.refreshWarning && <div className="notice error" role="alert">Signup saved, but the latest account list could not be refreshed. You can check your saved signups later.</div>}<div className="completion-actions"><button className="primary" disabled={pending} onClick={() => void showSavedSignups()}>View my signups</button><button disabled={pending} onClick={() => { setCompletion(null); setSignupPanel('register'); setSignupStep(1); setPool(null); setReview(false) }}>Sign up more accounts</button></div></section> : <><div className="signup-panel-tabs" role="group" aria-label="Signup sections"><button className={signupPanel === 'register' ? 'active' : ''} aria-pressed={signupPanel === 'register'} disabled={pending} onClick={() => { if (signupPanel === 'saved') { setSignupStep(1); setPool(null); setReview(false) }; setSignupPanel('register') }}>Sign up</button><button className={signupPanel === 'saved' ? 'active' : ''} aria-pressed={signupPanel === 'saved'} disabled={pending} onClick={() => { setReview(false); setSignupPanel('saved') }}>My signups <span className="count-pill">{existing.length}</span></button></div>
+          <div className="page-head"><div><p className="eyebrow">Member signup</p><h1>CWL signups</h1><p>{activeCompletion ? "Your season signup is saved." : "Choose your accounts. Staff will assign them to clans."}</p></div><label className="season-choice">Season<select value={seasonId} disabled={pending} onChange={event => { if (!canLeave()) return; setAccounts([]); setSignups([]); setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select a season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>
+          {dataError && !activeCompletion && <div className="notice error" role="alert">{dataError}<button disabled={loadingData || pending} onClick={() => void loadSignup()}>Retry</button></div>}
+          {seasonsLoading && <p role="status">Loading seasons…</p>}
+          {!seasonId && seasons.length > 0 && <div className="card empty"><p>Select a season to view or manage your signups.</p></div>}
+          {!seasonsLoading && !seasons.length && !seasonError && <div className="card empty"><h2>No season yet</h2><p>Staff will open a CWL season before members can sign up.</p></div>}
+          {season && <>{!season.signup_open && <div className="card member-compact-status"><p>Signups are closed for this season. You can still view your saved signups and published clan assignments.</p><button onClick={() => changeView('assignments')}>My clan assignments</button></div>}{!activeCompletion && loadingData && <p role="status">Loading linked accounts and saved signups…</p>}<div className="season-banner"><div><span className={`status-dot ${season.signup_open ? 'active' : ''}`} /> <strong>{season.label}</strong><span className="badge">{season.signup_open ? 'Signups open' : 'Signups closed'}</span></div><span>{season.status}</span></div>
+            {activeCompletion ? <section className="completion-card card" aria-labelledby="completion-title"><div className="completion-mark" aria-hidden="true">✓</div><p className="eyebrow">Signup complete</p><h2 id="completion-title" ref={completionHeadingRef} tabIndex={-1}>You're signed up</h2><p><strong>{activeCompletion.accounts.length} {activeCompletion.accounts.length === 1 ? 'account is' : 'accounts are'} signed up</strong> for {poolName(activeCompletion.pool)} in {activeCompletion.seasonLabel}.{activeCompletion.moved > 0 && <span> {activeCompletion.moved} {activeCompletion.moved === 1 ? 'account moved' : 'accounts moved'} from the other pool.</span>}</p><div className="completion-accounts">{activeCompletion.accounts.map(account => <div key={account.tag}><strong>{account.name}</strong><small>{account.tag}</small>{account.move_from_pool && <small>Moved from {poolName(account.move_from_pool)} to {poolName(activeCompletion.pool)}</small>}</div>)}</div><p>Your accounts are signed up. Staff will assign your accounts to clans. You can close this page, or sign up more accounts below.</p>{activeCompletion.refreshWarning && <div className="notice error" role="alert">Signup saved, but the latest account list could not be refreshed. You can check your saved signups later.</div>}<div className="completion-actions"><button className="primary" disabled={pending} onClick={() => void showSavedSignups()}>View my signups</button><button disabled={pending} onClick={() => changeView('assignments')}>My clan assignments</button><button disabled={pending} onClick={() => { setCompletion(null); setSignupPanel('register'); setSignupStep(1); setPool(null); setReview(false) }}>Sign up more accounts</button></div></section> : <><div className="signup-panel-tabs" role="group" aria-label="Signup sections"><button className={signupPanel === 'register' ? 'active' : ''} aria-pressed={signupPanel === 'register'} disabled={pending} onClick={() => setSignupPanel('register')}>Sign up</button><button className={signupPanel === 'saved' ? 'active' : ''} aria-pressed={signupPanel === 'saved'} disabled={pending} onClick={() => { setReview(false); setSignupPanel('saved') }}>My signups <span className="count-pill">{existing.length}</span></button></div>
             {signupPanel === 'register' && <div className="signup-flow">
               <section className="signup-guide" aria-label="Signup walkthrough">
                 <p className="eyebrow">Signup guide · Step {review ? 3 : signupStep} of 3</p>
@@ -441,41 +477,45 @@ function App() {
               </section>
               {signupStep === 1 && !review && <div className="pool-choice"><div className="pool-choice-grid"><button className={pool === 'main' ? 'active' : ''} aria-pressed={pool === 'main'} disabled={pending} onClick={() => choosePool('main')}><span className="pool-choice-symbol">◆</span><strong>Main Clan CWL</strong><small>Choose accounts for the Main Clan roster.</small><span className="pool-next">Choose Main CWL →</span></button><button className={pool === 'lazy' ? 'active' : ''} aria-pressed={pool === 'lazy'} disabled={pending} onClick={() => choosePool('lazy')}><span className="pool-choice-symbol">◇</span><strong>Lazy CWL</strong><small>Choose accounts for the Lazy CWL roster.</small><span className="pool-next">Choose Lazy CWL →</span></button></div><p className="small">You can use different accounts for Main and Lazy CWL.</p></div>}{pool && signupStep === 2 && !review && <>
             <div className="section-heading"><div><p className="eyebrow">{poolName(pool)}</p><h2 ref={selectionHeadingRef} tabIndex={-1}>Select linked accounts</h2><p>{pool === 'lazy' ? 'Linked accounts from any clan can join Lazy CWL. Each account can join one CWL pool per season.' : 'Main Clan CWL signup is separate from Lazy CWL. Each account can join one pool per season.'}</p></div><div className="count-pill">{selected.length} selected</div></div>
-            {accountError && <div className="notice error" role="alert">{accountError}<button onClick={() => void loadSignup()}>Retry accounts</button></div>}
-            {!accountError && !loadingData && accounts.length === 0 && <div className="card empty"><h3>No linked accounts found</h3><p>{linkInstruction} Then refresh this page.</p><button onClick={() => void loadSignup()}>Refresh linked accounts</button></div>}
+            {accountError && <div className="notice error" role="alert">{accountError}<button disabled={loadingData || pending} onClick={() => void loadSignup()}>Retry accounts</button></div>}
+            {!accountError && !loadingData && accounts.length === 0 && <div className="card empty"><h3>No linked accounts found</h3><AccountLinkHelp busy={loadingData || pending} onRefresh={() => void loadSignup()} /></div>}
             {!accountError && accounts.length > 0 && <>
-              <div className="selection-bar"><label className="check-label"><input type="checkbox" checked={showSignedUp} disabled={pending} onChange={event => { setShowSignedUp(event.target.checked); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }) }} />Show signed-up accounts ({signups.length})</label><label className="check-label"><input type="checkbox" checked={available.length > 0 && available.every(account => Object.hasOwn(draft, account.tag))} onChange={event => { if (!pool) return; if (event.target.checked) setDraft(selectAllAvailable(visibleAccounts, pool, signups, draft, transferConsent)); else { setDraft({}); setTransfers(current => ({ ...current, [pool]: {} })) } }} disabled={!season.signup_open || !available.length || pending} />Select all available ({available.length})</label><button onClick={() => void loadSignup()} disabled={loadingData || pending}>Refresh accounts</button></div>
+              <div className="selection-bar"><label className="check-label"><input type="checkbox" checked={showSignedUp} disabled={pending || loadingData} onChange={event => { setShowSignedUp(event.target.checked); setSignupPage(0) }} />Show signed-up accounts ({signups.length})</label><label className="check-label"><input type="checkbox" checked={available.length > 0 && available.every(account => Object.hasOwn(draft, account.tag))} onChange={event => { if (!pool) return; if (event.target.checked) setDraft({...draft, ...selectAllAvailable(matchingAccounts, pool, signups, draft, transferConsent)}); else { const next = {...draft}; for (const account of available) delete next[account.tag]; setDraft(next) } }} disabled={!season.signup_open || season.status !== 'draft' || !available.length || pending || loadingData || !!dataError || !!accountError} />Select all matching accounts ({available.length})</label><button onClick={() => void loadSignup()} disabled={loadingData || pending}>Refresh accounts</button></div>
+              <label className="signup-account-search">Find an account or clan<input type="search" value={signupSearch} onChange={event => setSignupSearch(event.target.value)} placeholder="Name, player tag or clan" /></label>
+              {visibleAccounts.length > 0 && matchingAccounts.length === 0 && <div className="card empty"><p>No accounts match your search.</p><button onClick={() => setSignupSearch('')}>Clear search</button></div>}
               {visibleAccounts.length === 0 && <div className="card empty"><h3>All linked accounts are signed up</h3><p>Turn on “Show signed-up accounts” to change pools or edit a signup.</p></div>}
-              <div className="account-list">{visibleAccounts.map(account => {
+              <details className="hub-help"><summary>Missing an account?</summary><AccountLinkHelp busy={loadingData || pending} onRefresh={() => void loadSignup()} /></details>
+              <div className="account-list">{pageAccounts.map(account => {
                 const signedPool = accountPool(signups, account.tag)
                 const movingFrom = transferSource(signups, account.tag, pool!)
                 const stagedMove = movingFrom && transferConsent[account.tag] === movingFrom
                 const chosen = Object.hasOwn(draft, account.tag)
                 const reason = movingFrom ? stagedMove ? `Move to ${poolName(pool)} is pending. Your ${poolName(movingFrom)} signup stays saved until you submit.` : `Already signed up for ${poolName(movingFrom)}. Select to confirm a move to ${poolName(pool)}.` : ''
                 return <article className={`account-card ${chosen ? 'chosen' : ''}`} key={account.tag}>
-                  <div className="account-top"><label className="account-select"><input type="checkbox" checked={chosen} disabled={!season.signup_open || pending} onChange={event => { if (!pool) return; const source = transferSource(signups, account.tag, pool); if (event.target.checked && source && !window.confirm(`This account is already signed up for ${poolName(source)}. Do you want to sign up for ${poolName(pool)} instead?`)) return; const next = { ...draft }; if (event.target.checked) next[account.tag] = signups.find(signup => signup.tag === account.tag && signup.pool === pool)?.prefer_crystal_1_or_lower ?? false; else delete next[account.tag]; setTransfers(current => { const updated = { ...current[pool] }; if (event.target.checked && source) updated[account.tag] = source; else delete updated[account.tag]; return { ...current, [pool]: updated } }); setDraft(next) }} /><span><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag}</small></span></label></div>
+                  <div className="account-top"><label className="account-select"><input type="checkbox" checked={chosen} disabled={!season.signup_open || season.status !== 'draft' || pending || loadingData || !!dataError || !!accountError} onChange={event => { if (!pool) return; const source = transferSource(signups, account.tag, pool); if (event.target.checked && source && !window.confirm(`This account is already signed up for ${poolName(source)}. Do you want to sign up for ${poolName(pool)} instead?`)) return; const next = { ...draft }; if (event.target.checked) next[account.tag] = signups.find(signup => signup.tag === account.tag && signup.pool === pool)?.prefer_crystal_1_or_lower ?? false; else delete next[account.tag]; setTransfers(current => { const updated = { ...current[pool] }; if (event.target.checked && source) updated[account.tag] = source; else delete updated[account.tag]; return { ...current, [pool]: updated } }); setDraft(next) }} /><span><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag}</small></span></label></div>
                   <div className="account-meta"><span>Current clan <strong>{account.current_clan_name || 'None'}{account.current_clan_tag ? ` · ${account.current_clan_tag}` : ''}</strong></span>{signedPool && <span>Signed Up <strong>{poolName(signedPool)}</strong></span>}</div>
                   {reason && <p className="inline-reason">{reason}</p>}
                 </article>
               })}</div>
-              {season.signup_open && <div className="submit-bar"><div><strong>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected</strong><small>Your choices are not saved yet.</small></div><div className="signup-action-buttons"><button disabled={pending} onClick={() => setSignupStep(1)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !!dataError || !!accountError} onClick={() => setReview(true)}>Continue →</button></div></div>}
+              {lastSignupPage > 0 && <nav className="hub-pagination" aria-label="Signup account pages"><button disabled={currentSignupPage === 0} onClick={() => setSignupPage(currentSignupPage - 1)}>Previous accounts</button><span>Page {currentSignupPage + 1} of {lastSignupPage + 1}</span><button disabled={currentSignupPage === lastSignupPage} onClick={() => setSignupPage(currentSignupPage + 1)}>Next accounts</button></nav>}
+              {season.signup_open && <div className="submit-bar"><div><strong>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected</strong><small>Selections across all pages · Not saved yet.</small></div><div className="signup-action-buttons"><button disabled={pending} onClick={() => setSignupStep(1)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !!dataError || !!accountError} onClick={() => setReview(true)}>Continue →</button></div></div>}
             </>}
             </>}
             {signupStep === 2 && !review && (!accounts.length || accountError || !season.signup_open) && <button disabled={pending} onClick={() => setSignupStep(1)}>← Back to CWL choice</button>}
             {review && pool && <section className="signup-review card" aria-label="Review selected accounts">{notice?.kind === 'error' && <div className="notice error" role="alert">{notice.text}</div>}<h3>{poolName(pool)} · {season.label}</h3><p>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected. Staff will assign your hosting clans.</p><div className="review-list">{selected.map(item => { const account = accounts.find(candidate => candidate.tag === item.tag)!; return <div className="review-row" key={item.tag}><div><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.current_clan_name || 'No current clan'}</small></div>{item.move_from_pool && <span className="transfer-review">Moving from {poolName(item.move_from_pool)} to {poolName(pool)}</span>}</div> })}</div><div className="signup-actions submit-bar"><button disabled={pending} onClick={() => setReview(false)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !season.signup_open || !!dataError || !!accountError} onClick={submit}>{pending ? 'Saving…' : `Sign up ${selected.length} ${selected.length === 1 ? 'account' : 'accounts'}`}</button></div></section>}
             </div>}
-            {signupPanel === 'saved' && <section className="registered"><div className="section-heading"><div><p className="eyebrow">Saved this season</p><h2 ref={registeredHeadingRef} tabIndex={-1}>Signed Up accounts</h2></div></div>{existing.length ? <div className="registered-grid">{existing.map(signup => <div className="card registered-card" key={signup.tag}><div><strong className="signed-up-name"><TownHallIcon level={accounts.find(account => account.tag === signup.tag)?.town_hall ?? signup.town_hall} /><span>{signup.player_name || accounts.find(account => account.tag === signup.tag)?.name || signup.tag}</span></strong><small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small></div>{season.signup_open && <div className="registered-actions"><button className="withdraw-button" disabled={pending || loadingData} onClick={() => void withdraw(signup.tag)}>{withdrawingTag === signup.tag ? 'Withdrawing…' : 'Withdraw signup'}</button></div>}</div>)}</div> : <div className="card empty"><p>No signed-up accounts for this season.</p></div>}</section>}
+            {signupPanel === 'saved' && <section className="registered"><div className="section-heading"><div><p className="eyebrow">Saved this season</p><h2 ref={registeredHeadingRef} tabIndex={-1}>Signed Up accounts</h2></div></div>{loadingData ? <p role="status">Loading saved signups…</p> : dataError ? <p>Your saved signups could not be checked. Retry above.</p> : existing.length ? <div className="registered-grid">{existing.map(signup => <div className="card registered-card" key={signup.tag}><div><strong className="signed-up-name"><TownHallIcon level={accounts.find(account => account.tag === signup.tag)?.town_hall ?? signup.town_hall} /><span>{signup.player_name || accounts.find(account => account.tag === signup.tag)?.name || signup.tag}</span></strong><small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small></div>{season.signup_open && <div className="registered-actions"><button disabled={pending || loadingData || !!accountError || !accounts.some(account => account.tag === signup.tag)} onClick={() => { if (signupDirty && !window.confirm('Review this pool change and clear your other unsubmitted selections?')) return; const destination = signup.pool === 'main' ? 'lazy' : 'main'; setDrafts({main: {}, lazy: {}, [destination]: {[signup.tag]: signup.prefer_crystal_1_or_lower}}); setTransfers({main: {}, lazy: {}, [destination]: {[signup.tag]: signup.pool}}); setPool(destination); setShowSignedUp(true); setSignupPanel('register'); setSignupStep(2); setReview(true); setNotice(null) }}>Change CWL pool</button><button className="withdraw-button" disabled={pending || loadingData} onClick={() => void withdraw(signup.tag)}>{withdrawingTag === signup.tag ? 'Withdrawing…' : 'Withdraw signup'}</button></div>}</div>)}</div> : <div className="card empty"><p>No signed-up accounts for this season.</p>{season.signup_open && <button onClick={() => { setSignupPanel('register'); setSignupStep(1) }}>Choose accounts</button>}</div>}</section>}
           </>}
         </>}
         </>}
-        {view === 'assignments' && <MemberAssignments seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'assignments' && <MemberAssignments onSignup={() => { setSignupPanel('register'); changeView('signup') }} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} onChange={e=>setSeasonId(e.target.value)}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId}/>}</>}
         {view === 'publication' && session.can_edit && <PublicationWorkspace onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationDirty || window.confirm('Discard unsaved announcement changes?')) setSeasonId(id) }} />}
         {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'roster' && session.can_edit && <RosterWorkspace onDirty={setCwlDirty} key={`${seasonId}-${rosterRefresh}`} initialReadiness={rosterReadiness} onReviewPublication={() => { setPublicationStep('review'); changeView('publication') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { setSeasonId(id); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }} />}
-        {view === 'staff' && session.can_edit && <div className="staff-workspace"><div className="page-head"><div><p className="eyebrow">Staff tools</p><h1>Seasons & clans</h1><p>Choose a section to manage this season or its clans.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => { setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>{staffError && <div className="notice error" role="alert">{staffError}<button onClick={() => void loadStaff()}>Retry</button></div>}{staffLoading && <p>Loading clan directory…</p>}
+        {view === 'staff' && session.can_edit && <div className="staff-workspace"><div className="page-head"><div><p className="eyebrow">Staff tools</p><h1>Seasons & clans</h1><p>Choose a section to manage this season or its clans.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!canLeave()) return; setAccounts([]); setSignups([]); setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>{staffError && <div className="notice error" role="alert">{staffError}<button onClick={() => void loadStaff()}>Retry</button></div>}{staffLoading && <p>Loading clan directory…</p>}
           <div className="staff-section-menu" role="group" aria-label="Seasons and clans sections">
             {([['hosting', 'Hosting clans', clans.filter(clan => !clan.archived).length], ['season', 'Season settings', null], ['family', 'Family clans', approved.length], ['signups', 'Signup pools', staffSignups.length]] as const).map(([key, label, count]) => <button key={key} aria-pressed={staffSection === key} onClick={() => { setStaffSection(key); setStaffSearch(''); setStaffPage(0) }}>{label}{count !== null && <span>{count}</span>}</button>)}
           </div>

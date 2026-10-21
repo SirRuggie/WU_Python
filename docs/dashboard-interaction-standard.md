@@ -210,3 +210,30 @@ clan’s war going?” Events answers “When does the next game event start or 
 Do not add a sidebar destination that is merely a preset of another page's task
 filters. Reuse the underlying data service while presenting a genuinely different
 level of information. Unknown/private clan data must remain visible as unknown.
+
+## Member journey — October 21 follow-up
+
+External linking → Home → choose accounts → review → saved signup → published
+assignment now has a scoped follow-up pass. Account lookup still combines both
+existing providers; direct provider linking was researched, not enabled. See
+`dashboard-review-backlog.md` for the provider requirements and the owner's
+explicitly deferred review queue.
+
+Refreshes and filters preserve signup choices. Account lists are searchable and
+paged; selection counts and review include all pages. Changed links/pool ownership
+invalidate stale selection consent. Season-service errors have their own retry,
+closed seasons have useful read-only destinations, and published joining
+instructions are visible. Changes remain subject to existing backend ownership,
+closed-season, assignment, and transaction checks.
+
+Validation: 185 frontend tests, 72 relevant backend tests, production build, and
+`git diff --check`. Isolated browser checks used 25 fictional accounts at desktop,
+390px and 320px: retained refresh/search/page selections, failed-save recovery,
+confirmation and pool-change review, closed-season assignments, season-error retry,
+missing-account linking guidance, escaped names/instructions, and published clan
+links. Narrow inspected layouts had no document overflow. Cancelled navigation
+and season changes used a fixture-controlled native-confirm response because the
+browser automation auto-handled the native dialog; this is not a native-dialog or
+screen-reader certification. Existing Vite bundle/import and aiohttp warnings
+remain. No live Discord messages, actual provider links, or member signup records
+were changed during testing.
