@@ -64,7 +64,7 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
           <small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small>
           {moves[signup.tag] && moves[signup.tag] !== signup.pool && <p className="inline-reason pending-switch" role="status"><strong>Not saved</strong> — switching from {poolName(signup.pool)} to {poolName(moves[signup.tag])}.<small>Select Save changes to finish.</small></p>}
           {(moves[signup.tag] || signup.pool) === 'main' && (signup.signup_clan_type === 'FWA' || accounts.find(account => account.tag === signup.tag)?.current_clan_type === 'FWA') && <p className="inline-reason">FWA accounts should choose Lazy CWL. Main CWL is allowed, but flagged for staff.</p>}
-          {signup.has_staff_placement && <p className="inline-reason">Staff have placed this account. Ask staff to change or withdraw its signup.</p>}
+          {signup.has_staff_placement && <p className="inline-reason">Staff have assigned this account to a CWL clan. Contact staff to change or withdraw your signup.</p>}
         </div>
       </div>
       {!selecting && editable && !signup.has_staff_placement && <div className="registered-actions">

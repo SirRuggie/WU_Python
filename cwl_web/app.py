@@ -743,7 +743,7 @@ async def submit_signup(request):
             assignment = db.execute("SELECT assigned_clan_tag FROM roster_entries "
                                     "WHERE season_id=? AND tag=?", (sid, value)).fetchone()
             if assignment and assignment["assigned_clan_tag"]:
-                _fail(409, "Ask staff to unassign this account before changing pools")
+                _fail(409, "Staff have assigned this account to a CWL clan. Contact staff to change or withdraw your signup.")
             moved += 1
         for value, (preference, _) in requested.items():
             account = available[value]
@@ -890,7 +890,7 @@ async def withdraw(request):
         if before:
             assigned = db.execute("SELECT assigned_clan_tag FROM roster_entries WHERE season_id=? AND tag=?", (sid, value)).fetchone()
             if assigned and assigned["assigned_clan_tag"]:
-                _fail(409, "Ask staff to unassign this account before withdrawing")
+                _fail(409, "Staff have assigned this account to a CWL clan. Contact staff to change or withdraw your signup.")
             db.execute("DELETE FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"]))
             _audit(db, sid, value, session["user_id"], "member_withdrawal", dict(before), None)
             _bump(db, sid)

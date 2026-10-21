@@ -525,3 +525,11 @@ frontend tests; production build; isolated desktop/mobile default, outdated
 warning and return-to-current checks. Existing live signups and publications were
 not modified. Readiness remains a clan-location check, not proof of declaration
 inside Clash of Clans.
+
+### Assigned-account restriction wording
+
+Member signup hints and API errors now explain that staff have assigned the
+account to a CWL clan and ask the member to contact staff to change or withdraw
+its signup. Removed the internal term unassign from these member-facing errors.
+Restrictions are unchanged. Validation: 41 signup backend tests, production
+frontend build and diff checks passed; no live signup changes or messages.
