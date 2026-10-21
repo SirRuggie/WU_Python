@@ -210,7 +210,7 @@ def plan(snapshot, preferences, now):
 
 
 async def fresh(app, uid):
-    from .todo import _clash_client, _history, _view
+    from .todo import get_clash_client, _history, _view
     from utils import todo_data
     links = await asyncio.wait_for(app['providers'].linked_tags(uid), 10)
     with app['store'].tx() as db:
@@ -219,7 +219,7 @@ async def fresh(app, uid):
     tags = [tag for tag in links if tag in selected][:100]
     if not tags:
         return {'views': {}}
-    underlying = await _clash_client(app)
+    underlying = await get_clash_client(app)
     class FreshClient:
         # coc.py supports lookup_cache per request. Do not mutate shared client flags.
         def __getattr__(self, name):

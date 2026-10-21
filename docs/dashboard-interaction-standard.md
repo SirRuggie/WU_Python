@@ -183,8 +183,10 @@ represent a new audit of backend or Discord delivery behavior.
 Home and Search remain directly visible. Activity groups Tasks, Wars, and Events;
 My CWL follows, then authorized staff tools. Search uses the existing linked-account
 endpoint and current clans; only existing editors request the family directory.
-It is not a global player lookup. Events reuses known Raid, Games, and CWL activity
-and timestamps, not an invented event calendar. Existing `/todo` links remain valid.
+It is not a global player lookup. Events now has a recurring UTC-based game calendar, displayed in the viewer’s
+timezone, plus whole-clan raid status. See `activity-calendar.md` for schedule
+sources and limitations. Wars uses full-clan API scores rather than personal task
+rows. Existing `/todo` links remain valid.
 
 Use gold underline strips for sibling sections and a single segmented container
 for short filter sets. Keep actual actions (Save, Retry, Send) as buttons. Narrow
@@ -200,3 +202,11 @@ Search keeps its query/filter/page in the signed-in app session and clears them 
 identity change. Review fixed clan-tag matching, exact player-tag handoff, mobile
 CSS specificity, and duplicate focus borders. Activity and search use existing GET
 APIs; these checks do not assert new live Discord delivery or full-game search.
+
+### Distinct Activity destinations
+
+Tasks answers “What do my accounts still need to do?” Wars answers “How is my
+clan’s war going?” Events answers “When does the next game event start or end?”
+Do not add a sidebar destination that is merely a preset of another page's task
+filters. Reuse the underlying data service while presenting a genuinely different
+level of information. Unknown/private clan data must remain visible as unknown.

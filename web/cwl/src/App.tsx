@@ -1,3 +1,5 @@
+import WarsWorkspace from './activity/WarsWorkspace'
+import EventsWorkspace from './activity/EventsWorkspace'
 import DashboardSearch from './DashboardSearch'
 import DashboardIcon from './DashboardIcon'
 import StaffPlayerButton from './StaffPlayerButton'
@@ -252,12 +254,14 @@ function App() {
   const [searchKind, setSearchKind] = useState<'all' | 'player' | 'clan'>('all')
   const [searchPage, setSearchPage] = useState(0)
   const [activitySearch, setActivitySearch] = useState('')
+  const [activityKind, setActivityKind] = useState<'war'|'cwl'|undefined>()
   useEffect(() => { setSearchQuery(''); setSearchKind('all'); setSearchPage(0); setActivitySearch('') }, [session?.user.id])
-  const changeView = (next: View, filter = '') => {
+  const changeView = (next: View, filter = '', kind?: 'war'|'cwl') => {
     if (navigation.current?.pending || (next !== view && !canLeave())) return
     const destination = allowedView(next)
     if (destination !== view) navigation.current?.write({ view: destination, season: seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, true)
     setActivitySearch(filter)
+    setActivityKind(kind)
     acceptRoute(destination)
   }
   useEffect(() => {
@@ -412,7 +416,9 @@ function App() {
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {view === 'reminders' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL management</p><h1>Messages &amp; reminders</h1></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!reminderDirty || window.confirm('Discard unsaved reminder edits and change season?')) setSeasonId(event.target.value) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}</>}
         {view === 'search' && <DashboardSearch key={session.user.id} includeFamily={session.can_edit} query={searchQuery} onQuery={value => { setSearchQuery(value); setSearchPage(0) }} kind={searchKind} onKind={value => { setSearchKind(value); setSearchPage(0) }} page={searchPage} onPage={setSearchPage} onTasks={tag => changeView('todo', tag)} />}
-        {(view === 'todo' || view === 'wars' || view === 'events') && <TodoWorkspace key={`${session.user.id}:${view}:${activitySearch}`} userId={session.user.id} mode={view} initialSearch={activitySearch} />}
+        {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} />}
+        {view === 'wars' && <WarsWorkspace key={session.user.id} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
+        {view === 'events' && <EventsWorkspace key={session.user.id} canEdit={session.can_edit} onWars={() => changeView('wars', '', 'cwl')} />}
         {view === 'home' && <DashboardHome key={`${session.user.id}:${seasonId}`} session={session} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} onNavigate={next => { if (next === 'signup' || next === 'saved') { setSignupPanel(next === 'saved' ? 'saved' : 'register'); setSignupStep(1); setPool(null); setCompletion(null); setReview(false) }; changeView(next === 'saved' ? 'signup' : next) }} onStart={(nextPool, tags, freshAccounts, freshSignups) => {
           dashboardPrefill.current = true
           signupRequest.current += 1

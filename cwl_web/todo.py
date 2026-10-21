@@ -58,7 +58,8 @@ def _account(account):
             "current_clan_badge_url": account.clan_badge}
 
 
-async def _clash_client(app):
+async def get_clash_client(app):
+    """Return the shared, lifecycle-managed game API client for dashboard reads."""
     client = app["todo_client"]
     if client is not None:
         return client
@@ -120,7 +121,7 @@ async def _section(fn, *args, **kwargs):
 
 
 async def _live_snapshot(app, tags):
-    client = await _clash_client(app)
+    client = await get_clash_client(app)
 
     sem = todo_data.new_semaphore()
     accounts_result, history_result = await asyncio.gather(

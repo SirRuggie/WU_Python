@@ -1553,3 +1553,26 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
 
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows),
                     unavailable=unavailable)
+
+
+async def fetch_clan_overview(client, clan_tag: str, kind: str):
+    """Public clan-level read using the existing coalesced game-data caches.
+
+    Recheck old negative war results after a minute; incomplete data must never
+    be presented as a zero score or a completed war.
+    """
+    from .clan_activity import war_summary, raid_summary
+
+    async def bounded(fetch):
+        try:
+            return await asyncio.wait_for(fetch, 10)
+        except Exception:
+            return 'error', None
+
+    if kind == 'raid':
+        status, raid = await bounded(_get_raid(client, clan_tag))
+        return {'raid': raid_summary(status, raid)}
+    regular_status, regular = await bounded(_get_war(client, clan_tag, recheck_negative_after=60))
+    league_status, league = await bounded(_get_cwl_round(client, clan_tag, recheck_negative_after=60))
+    return {'regular': war_summary(regular_status, regular, clan_tag),
+            'cwl': war_summary(league_status, league, clan_tag)}

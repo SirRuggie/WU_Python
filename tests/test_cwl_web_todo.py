@@ -168,7 +168,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("100", self.app["todo_cache"])
         self.providers.fail = False
         self.app["todo_client"] = None
-        with patch("cwl_web.todo._clash_client", side_effect=ProviderUnavailable("client down")):
+        with patch("cwl_web.todo.get_clash_client", side_effect=ProviderUnavailable("client down")):
             failed_client = await self.client.get("/api/cwl/todo", headers=auth)
         self.assertEqual(failed_client.status, 503)
         self.assertNotIn("100", self.app["todo_cache"])
@@ -185,7 +185,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_links_is_success_without_external_reads(self):
         self.providers.empty = True
-        with patch("cwl_web.todo._clash_client") as clash, \
+        with patch("cwl_web.todo.get_clash_client") as clash, \
              patch("cwl_web.todo._history") as history:
             response = await self.client.get("/api/cwl/todo", headers=self.auth("100"))
         self.assertEqual(response.status, 200)

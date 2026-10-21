@@ -1,0 +1,53 @@
+.clan-activity-workspace { max-width: 1400px; margin: auto; }
+.activity-card-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.activity-card { padding: 22px; border: 1px solid #343434; border-radius: 18px; background: #171717; min-width: 0; }
+.activity-card header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.activity-card :is(h2,h3) { margin: 0 0 5px; font-size: 17px; overflow-wrap: anywhere; }
+.activity-card p { line-height: 1.6; color: #c3bfb6; }
+.activity-card small { color: #b8b3a9; }
+.activity-state { padding: 4px 9px; border-radius: 14px; font-size: 12px; color: #ded8ca; background: #292929; flex: none; }
+.state-inWar { color: #aee4c8; background: #18362a; }
+.state-preparation { color: #f4cd64; background: #332c1d; }
+.state-private,.state-error,.state-awaitingResult { color: #f4cd64; background: #332c1d; }
+.calendar-title { display: flex; align-items: center; gap: 12px; }
+.calendar-title > svg { width: 22px; height: 22px; color: #b8b3a9; }
+.calendar-card { display: flex; flex-direction: column; }
+.calendar-card > p:not(.activity-countdown) { flex: 1; }
+.activity-card .activity-countdown { font-size: 22px; font-weight: 650; color: #f1eee7; margin: 18px 0 12px; }
+.activity-card progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 6px; overflow: hidden; margin: 10px 0 18px; background: #323232; accent-color: #e7b338; }
+.activity-card progress::-webkit-progress-bar { background: #323232; }
+.activity-card progress::-webkit-progress-value { background: #e7b338; }
+.activity-card progress::-moz-progress-bar { background: #e7b338; }
+.activity-dates { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; padding-top: 14px; border-top: 1px solid #333; }
+.activity-dates div { display: grid; gap: 4px; font-size: 13px; overflow-wrap: anywhere; }
+.activity-card footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.activity-card a,.calendar-sources a { color: #f4cd64; }
+.activity-card footer a { display: inline-flex; align-items: center; min-height: 44px; }
+.shell .calendar-link { border: 0; background: transparent; color: #f4cd64; text-align: left; padding: 12px 0 0; min-height: 44px; }
+.activity-timezone { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.activity-timezone input { width: 18px; }
+.calendar-sources { margin: 20px 0 32px; font-size: 13px; color: #b8b3a9; }
+.calendar-sources summary { cursor: pointer; min-height: 44px; padding-top: 12px; }
+.activity-toolbar { display: flex; align-items: end; gap: 16px; margin: 20px 0; }
+.activity-toolbar > label:first-child { flex: 1; }
+.activity-toolbar input { width: 100%; }
+.activity-refresh { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; color: #b8b3a9; font-size: 13px; }
+.war-score { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0; }
+.war-score > div { display: grid; gap: 8px; }
+.war-score strong { font-size: 28px; }
+.war-score span { font-size: 12px; color: #c3bfb6; }
+.war-attacks { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.war-opponent small { display: block; }
+.raid-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.raid-totals dt { font-size: 12px; color: #b8b3a9; }
+.raid-totals dd { margin: 8px 0; font-size: 22px; overflow-wrap: anywhere; }
+@media(max-width:850px) { .activity-card-grid { grid-template-columns: 1fr; } }
+@media(max-width:480px) {
+  .activity-card { padding: 16px; }
+  .activity-card header { flex-wrap: wrap; gap: 8px; }
+  .activity-toolbar { flex-direction: column; align-items: stretch; }
+  .activity-dates { gap: 12px; }
+  .war-score strong { font-size: 24px; }
+}
+.shell .clan-activity-workspace > .workflow-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: thin; scrollbar-color: #807351 #191919; }
+.shell .clan-activity-workspace > .workflow-tabs > button { flex: 0 0 auto; white-space: nowrap; }

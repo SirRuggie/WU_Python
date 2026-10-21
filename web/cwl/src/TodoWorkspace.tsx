@@ -12,11 +12,8 @@ function Badge({ url }: { url?: string | null }) {
   const [failed, setFailed] = useState('')
   return url && failed !== url ? <img src={url} alt="" width={40} height={40} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(url)} /> : <DashboardIcon name="shield"/>
 }
-export default function TodoWorkspace({ userId, mode = 'todo', initialSearch = '' }: { userId: string; mode?: 'todo' | 'wars' | 'events'; initialSearch?: string }) {
-  const preferenceId = mode === 'todo' ? userId : `${userId}:${mode}`
-  const allowedTabs = mode === 'wars' ? ['war', 'cwl', 'private'] : mode === 'events' ? ['raid', 'games', 'cwl'] : ['war', 'cwl', 'raid', 'games', 'private']
-  const title = mode === 'wars' ? 'Wars' : mode === 'events' ? 'Events' : 'Tasks'
-  const description = mode === 'wars' ? 'War and CWL attacks across your linked accounts.' : mode === 'events' ? 'Capital Raids, Clan Games, and CWL activity across your accounts.' : 'See what needs attention across your linked accounts.'
+export default function TodoWorkspace({ userId, initialSearch = '', initialTab }: { userId: string; initialSearch?: string; initialTab?: TodoKind }) {
+  const preferenceId = userId
   const [preferences] = useState(() => { try { return readTodoPreferences(preferenceId, window.localStorage) } catch { return { tab: 'war' as TodoKind, selected: null, sort: 'deadline' } } })
   const cacheKey = `todo:${userId}`
   const [data,setData] = useState<TodoSnapshot | null>(() => readSnapshot<TodoSnapshot>(cacheKey, (value): value is TodoSnapshot => { const v = value as TodoSnapshot; return !!v && Array.isArray(v.accounts) && typeof v.checked_at === 'string' && ['war','cwl','raid','games','private'].every(key => Array.isArray(v.views?.[key as TodoKind]?.rows)) }))
@@ -25,7 +22,7 @@ export default function TodoWorkspace({ userId, mode = 'todo', initialSearch = '
   const [loading,setLoading] = useState(false)
   const [paused,setPaused] = useState(false)
   const [refresh,setRefresh] = useState(0)
-  const [tab,setTab] = useState<TodoKind>(allowedTabs.includes(preferences.tab) ? preferences.tab : allowedTabs[0] as TodoKind)
+  const [tab,setTab] = useState<TodoKind>(initialTab || preferences.tab)
   const [selected,setSelected] = useState<string[] | null>(initialSearch ? null : preferences.selected)
   const [accountSearch,setAccountSearch] = useState('')
   const [search,setSearch] = useState(initialSearch)
@@ -64,12 +61,12 @@ export default function TodoWorkspace({ userId, mode = 'todo', initialSearch = '
   const notes=[...new Set([view?.note,...(view?.notes || [])].filter(Boolean))]
   const unreadable=data?.views.private.rows.length || 0
   return <div className="todo-workspace">
-    <div className="page-head"><div><p className="eyebrow">Activity</p><h1>{title}</h1><p>{description}</p></div><button onClick={()=>setRefresh(value=>value+1)} disabled={loading}>↻ {loading ? 'Checking…' : 'Check now'}</button></div>
+    <div className="page-head"><div><p className="eyebrow">Activity</p><h1>Tasks</h1><p>Your accounts’ remaining attacks and personal progress. For whole-clan scores, open Wars.</p></div><button onClick={()=>setRefresh(value=>value+1)} disabled={loading}>↻ {loading ? 'Checking…' : 'Check now'}</button></div>
     <div className="todo-refresh"><span role="status"><span className={`status-dot ${data && !error ? 'active' : ''}`} />{cached ? (error ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : loading ? 'Checking linked accounts and clan activity…' : error ? 'Refresh needs attention' : data ? `Last checked ${new Date(data.checked_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` : 'Loading your activity…'}</span><button aria-pressed={paused} onClick={()=>setPaused(value=>!value)}>{paused ? '▶ Resume auto-refresh' : 'Ⅱ Pause auto-refresh'}</button></div>
     {error && <div className="notice error" role="alert"><div>{error}{data && <small>Showing your last update. It may be out of date.</small>}</div><button onClick={()=>setRefresh(value=>value+1)}>Retry</button></div>}
     {!data && !error && <div className="card todo-loading" role="status"><strong>Loading your tasks…</strong><p>Checking your linked accounts and clans.</p></div>}
     {data && <>
-      <div className="todo-tabs" role="group" aria-label="Activity types">{allowedTabs.map(key=>todoTabs.find(item=>item.key===key)!).map(item=>{
+      <div className="todo-tabs" role="group" aria-label="Activity types">{todoTabs.map(item=>{
         const activity=data.views[item.key]
         const count=visibleTodoRows(activity.rows,selected,search,'deadline', !!initialSearch && search === initialSearch).length
         return <button key={item.key} aria-pressed={tab===item.key} onClick={()=>setTab(item.key)}><span aria-hidden="true"><DashboardIcon name={item.icon}/></span><strong>{item.label}</strong><small>{!activity.ok ? 'Unavailable' : activity.incomplete ? `${count} · Partial` : activity.unavailable ? 'Not active' : `${count} account${count===1?'':'s'}`}</small></button>
@@ -79,7 +76,7 @@ export default function TodoWorkspace({ userId, mode = 'todo', initialSearch = '
       <label className="todo-search">Search tasks<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Account, tag or clan…"/></label>
       {view && <>
         {(!view.ok || !!view.incomplete) && <div className="todo-warning" role="status"><strong>{view.ok ? 'Some activity could not be checked' : 'This activity is unavailable'}</strong><p>{view.incomplete || view.unavailable || view.note || 'Try again later. Check this activity in-game meanwhile.'}</p></div>}
-        {mode !== 'events' && tab!=='private' && tab!=='games' && unreadable>0 && <div className="todo-warning"><span>Some war logs could not be read. Their attacks may not appear here.</span><button onClick={()=>setTab('private')}>View affected accounts →</button></div>}
+        {tab!=='private' && tab!=='games' && unreadable>0 && <div className="todo-warning"><span>Some war logs could not be read. Their attacks may not appear here.</span><button onClick={()=>setTab('private')}>View affected accounts →</button></div>}
         {notes.length>0 && <div className="todo-notes">{notes.map(note=><p key={note}>{note}</p>)}</div>}
         {!accounts.length ? <div className="card empty"><h3>No linked accounts to show</h3><p>Use ClashKing’s /link command in Discord, then check again.</p></div> : !rows.length ? <div className="card empty"><h3>{!view.ok || view.incomplete ? 'Check in-game' : selectedCount===0 ? 'Choose accounts to see their tasks' : 'Nothing to show here'}</h3><p>{todoEmptyText(view,tab,selected!==null || !!search)}</p></div> : <div className="todo-clan-list">{[...groups.entries()].map(([key,members])=><section className="todo-clan" key={key}><header><Badge url={members[0].badge_url}/><div><h3>{members[0].clan_name || members[0].clan_tag || 'Clan unknown'}</h3>{tab==='war' && members[0].fwa_outcome && <div className={`todo-fwa ${members[0].fwa_outcome.status}`}><strong>{({win:'FWA outcome: WIN',lose:'FWA outcome: LOSE',blacklisted:'BLACKLISTED opponent',unknown:'FWA outcome: Unknown'})[members[0].fwa_outcome.status]}</strong>{members[0].fwa_outcome.opponent && <span>vs {members[0].fwa_outcome.opponent}</span>}</div>}<small>{members.length} account{members.length===1?'':'s'} on this page</small></div>{key!=='none' && <a href={clanDeepLink(key)} target="_blank" rel="noopener noreferrer">Open Clan ↗</a>}</header>{members.map((row,index)=>{
           const privateRow=tab==='private'

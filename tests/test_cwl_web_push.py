@@ -186,7 +186,7 @@ class PushTests(unittest.IsolatedAsyncioTestCase):
     async def test_unlinked_accounts_not_delivered(self):
         await self.save()
         # Fresh lookup excludes an account after unlinking, regardless of saved preferences.
-        with patch('cwl_web.todo._clash_client', new=AsyncMock(return_value=object())), patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), patch('utils.todo_data.fetch_accounts', new=AsyncMock(return_value=([], []))) as fetch, patch('utils.todo_data.build_war_view', new=AsyncMock(return_value=__import__('utils.todo_data', fromlist=['ViewData']).ViewData())), patch('utils.todo_data.build_cwl_view', new=AsyncMock(return_value=__import__('utils.todo_data', fromlist=['ViewData']).ViewData())):
+        with patch('cwl_web.todo.get_clash_client', new=AsyncMock(return_value=object())), patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), patch('utils.todo_data.fetch_accounts', new=AsyncMock(return_value=([], []))) as fetch, patch('utils.todo_data.build_war_view', new=AsyncMock(return_value=__import__('utils.todo_data', fromlist=['ViewData']).ViewData())), patch('utils.todo_data.build_cwl_view', new=AsyncMock(return_value=__import__('utils.todo_data', fromlist=['ViewData']).ViewData())):
             self.app['providers'].linked_tags = AsyncMock(return_value={'#Q2Y': True})
             await push.fresh(self.app, '100')
             self.assertEqual(fetch.call_args.args[1], ['#Q2Y'])

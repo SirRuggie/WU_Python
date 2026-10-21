@@ -1648,6 +1648,8 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     app.cleanup_ctx.append(participation_sync_lifecycle)
     app.cleanup_ctx.append(_dashboard_accounts_lifecycle)
     app.cleanup_ctx.append(todo_lifecycle)
+    from .clan_activity import setup as setup_clan_activity
+    setup_clan_activity(app)
     app.cleanup_ctx.append(push_lifecycle)
     from .roster_locations import lifecycle as location_lifecycle
     app.cleanup_ctx.append(location_lifecycle)
