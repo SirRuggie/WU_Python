@@ -348,7 +348,7 @@ export default function ClanManagement({
           aria-pressed={view === "history"}
           onClick={() => changeView("history")}
         >
-          Activity & recovery
+          Settings history
         </button>
       </div>
       <div hidden={view !== "overview"}>

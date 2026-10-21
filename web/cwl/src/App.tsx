@@ -14,9 +14,10 @@ import { FilterPicker, leagueValue, matchesLeague } from './ClanFilters'
 import { sortClans, clanSortOptions, type ClanSort } from './clanSort'
 import { stopPushOnSignout } from './PushReminders'
 import ReminderWorkspace from './ReminderWorkspace'
-import SidebarNavigation, { navigationSection, type DashboardView } from './SidebarNavigation'
+import SidebarNavigation, { navigationSection, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
 import TodoWorkspace from './TodoWorkspace'
-import { memberTarget, memberPath, loginPath } from './memberLinks'
+import { memberTarget, loginPath } from './memberLinks'
+import { DashboardHistory, dashboardTarget } from './dashboardHistory'
 import './Welcome.css'
 import DashboardHome from './DashboardHome'
 import './SignupFlow.css'
@@ -50,7 +51,7 @@ function App() {
   const [authState, setAuthState] = useState<'loading' | 'signed-out' | 'error' | 'ready'>('loading')
   const [authError, setAuthError] = useState(() => new URLSearchParams(window.location.search).get('signin_error') === 'discord' ? 'Discord sign-in did not finish. Please try again.' : '')
   const [fixtureMode, setFixtureMode] = useState(false)
-  const [entryTarget] = useState(() => memberTarget(window.location.search))
+  const [entryTarget] = useState(() => dashboardTarget(window.location.search))
   const [publicationDirty, setPublicationDirty] = useState(false)
   const [publicationStep, setPublicationStep] = useState<'review' | 'announce'>('review')
   const [rosterRefresh, setRosterRefresh] = useState(0)
@@ -230,17 +231,47 @@ function App() {
   const setDraft = (next: Draft) => { if (!pool) return; setDrafts(current => ({ ...current, [pool]: next })); setReview(false); setNotice(null) }
   const choosePool = (next: Pool) => { setSignupStep(2); if (pool === next) return; setSignupPanel('register'); setPool(next); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false) }
   const [manageDirty, setManageDirty] = useState(false)
-  const changeView = (next: View) => {
-    if (view === 'publication' && next !== view && publicationDirty && !window.confirm('Leave without saving announcement changes?')) return
-    if ((isManagementArea(view) || view === 'manage' || view === 'text-commands' || view === 'clan-management') && next !== view && manageDirty && !window.confirm('Leave without saving your changes?')) return
-    if (view === 'reminders' && next !== view && reminderDirty && !window.confirm('Leave without saving your reminder changes?')) return
-    setView(next); setMenuOpen(false); setNotice(null)
-    window.history.replaceState(null, '', memberPath(next, seasonId))
+  const navigation = useRef<DashboardHistory | null>(null)
+  const canLeave = () => {
+    if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
+    if ((isManagementArea(view) || ['manage','text-commands','clan-management'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
+    if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
+    return true
   }
+  const allowedView = (next: View): View => {
+    if (!session) return 'home'
+    return visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === next))
+      || (next === 'manage' && session.is_owner) ? next : 'home'
+  }
+  const acceptRoute = (next: View) => { setView(next); setMenuOpen(false); setNotice(null) }
+  const changeView = (next: View) => {
+    if (navigation.current?.pending || (next !== view && !canLeave())) return
+    const destination = allowedView(next)
+    if (destination !== view) navigation.current?.write({ view: destination, season: seasonId }, true)
+    acceptRoute(destination)
+  }
+  const navigationState = useRef({ canLeave, allowedView })
+  navigationState.current = { canLeave, allowedView }
   useEffect(() => {
-    if (authState === 'ready' && ['home','todo','signup','assignments'].includes(view))
-      window.history.replaceState(null, '', memberPath(view, seasonId))
-  }, [view, seasonId, authState])
+    const controller = new DashboardHistory(window.history)
+    navigation.current = controller
+    const pop = (event: PopStateEvent) => {
+      if (!controller.pop(event.state, () => navigationState.current.canLeave())) return
+      const target = dashboardTarget(window.location.search)
+      const destination = navigationState.current.allowedView(target.view)
+      setSeasonId(target.season)
+      acceptRoute(destination)
+      controller.write({ ...target, view: destination }, false)
+    }
+    window.addEventListener('popstate', pop)
+    return () => { window.removeEventListener('popstate', pop); navigation.current = null }
+  }, [])
+  useEffect(() => {
+    if (authState !== 'ready') return
+    const destination = allowedView(view)
+    if (destination !== view) setView(destination)
+    navigation.current?.write({ view: destination, season: seasonId }, false)
+  }, [view, seasonId, authState, session])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
@@ -320,7 +351,7 @@ function App() {
   const currentStaffPage = Math.min(staffPage, staffLastPage)
   const staffPageSlice = <T,>(items: T[]) => items.slice(currentStaffPage * 8, (currentStaffPage + 1) * 8)
   if (authState === 'error') return <div className="center-screen"><Brand /><div className="card narrow"><h1>CWL is unavailable</h1><p role="alert">{authError}</p><button onClick={() => void loadAuth()}>Retry connection</button></div></div>
-  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><span aria-hidden="true">⚔️</span><div><strong>To do</strong><small>See attacks and events.</small></div></li><li><span aria-hidden="true">🛡️</span><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><span aria-hidden="true">🏆</span><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{entryTarget.view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' ? 'CWL signups' : entryTarget.view === 'assignments' ? 'My clan assignments' : 'To do'}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}<p className="small">Staff tools appear when you have access.</p></div></main>
+  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><span aria-hidden="true">⚔️</span><div><strong>To do</strong><small>See attacks and events.</small></div></li><li><span aria-hidden="true">🛡️</span><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><span aria-hidden="true">🏆</span><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{memberTarget(window.location.search).view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' ? 'CWL signups' : entryTarget.view === 'assignments' ? 'My clan assignments' : 'To do'}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}<p className="small">Staff tools appear when you have access.</p></div></main>
 
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 

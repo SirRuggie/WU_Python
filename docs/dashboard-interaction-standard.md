@@ -85,3 +85,31 @@ next changed. Audit their landing summaries, empty/error states, save boundaries
 return navigation, and occasional diagnostic tools before redesigning visuals.
 Do not introduce an app-wide component library or bulk rewrite merely to conform
 names: extract a shared component when multiple real uses need the same behavior.
+
+## October 21 follow-up: navigation and recovery
+
+Applied the next five audit fixes to the existing workflows:
+
+- Dashboard page visits use indexed browser history; Back/Forward restores the
+  page and season. Canceling a discard returns to the original history entry,
+  preserving the draft and forward stack. Page URLs use an internal allowlist and
+  navigation grants; the narrower public OAuth redirect allowlist is unchanged.
+- CWL reminder confirmations use a native modal dialog, initial Cancel focus,
+  Tab/Shift+Tab cycling, Escape cancellation, and focus restoration to the opener.
+- Channel and role reads have independent loading, failure, and Retry controls.
+  Retrying options never reloads the campaign or resubmits a notification.
+- Returning from a ticket restores focus to its Read ticket button after the
+  refreshed list arrives, or the Tickets heading if the item disappeared.
+- Selected roles remain visible and removable by name. Raw IDs are under Advanced
+  role settings. Clan “Activity” is now Settings history, with the difference
+  between saved settings and reminder delivery history explained explicitly.
+
+Validation: the full frontend suite, history cancellation/forward-stack regression
+cases, relevant ticket/history/campaign backend tests, and the war-reminder gate.
+An isolated browser fixture exercised retries with a dirty draft, role addition
+and removal, dialog keyboard handling, canceled and accepted Back/Forward, ticket
+return and disappeared-row fallback. Visual checks covered desktop, 390px and
+320px layouts; the inspected pages had no horizontal document overflow. No live
+Discord messages were sent. These checks cover the changed workflows, not every
+screen or a complete assistive-technology audit. Staff deep links require an
+existing signed-in session; OAuth still returns only to approved member pages.

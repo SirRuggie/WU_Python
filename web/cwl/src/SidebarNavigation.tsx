@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
-export type DashboardView = 'declaration' | 'image-gallery' | 'tickets' | 'staff-overview' | 'clan-management' | 'strikes' | 'replacements' | 'members-settings' | 'applications-settings' | 'fwa-settings' | 'connections-settings' | 'cwl-returns' | 'text-commands' | 'manage' | 'reminders' | 'todo' | 'home' | 'exports' | 'signup' | 'assignments' | 'roster' | 'publication' | 'participation' | 'bonuses' | 'staff' | 'access'
+export const dashboardViews = ['declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access'] as const
+export type DashboardView = typeof dashboardViews[number]
 type Item = { view: DashboardView; label: string; icon: string; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: string; items: Item[]; access?: 'staff' | 'owner' }
 // Add future working features here; permission checks still live on the server.
