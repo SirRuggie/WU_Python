@@ -42,3 +42,15 @@ it("pastes loot as one atomic column and rejects overflow or multiple columns", 
   expect(() => pasteColumn(rows, drafts, 0, "loot", "29800\t30000")).toThrow();
   expect(drafts["#P2Y"].full).toBe("");
 });
+
+import { orderedMembers, orderLabel } from './model';
+it('shows war map order before non-war members regardless of clan rank', () => {
+ const rows = [1,2,3].map(n=>({tag:`#P${n}`,name:`Player ${n}`,town_hall:18,weight:null,revision:0,clan_position:n}));
+ const roster={clan:{tag:'#P0',name:'Test'},members:rows,checked_at:'',war_order:{'#P2':2,'#P3':1},war_source:{state:'preparation'}};
+ expect(orderedMembers(roster).map(row=>row.tag)).toEqual(['#P3','#P2','#P1']);
+ expect(rows.map(row=>row.tag)).toEqual(['#P1','#P2','#P3']);
+ expect(orderLabel(roster)).toContain('Preparation');
+ expect(orderLabel({...roster,war_source:{state:'warEnded'}})).toContain('Last completed');
+ expect(orderLabel({...roster,war_order:null})).toContain('War lineup unavailable');
+ expect(orderedMembers({...roster,war_order:null}).map(row=>row.tag)).toEqual(['#P1','#P2','#P3']);
+});

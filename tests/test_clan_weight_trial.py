@@ -14,7 +14,7 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
     call=foundation.WebFoundationTests.call
 
     def roster(self, clan='#R2Y', members=None):
-        self.providers.weight_war_order=AsyncMock(side_effect=ProviderUnavailable('No war'))
+        self.providers.weight_war_lineup=AsyncMock(side_effect=ProviderUnavailable('No war'))
         rows=members if members is not None else [{'tag':'#P2Y','name':'=malicious()','town_hall':16},{'tag':'#Q2Y','name':'Second','town_hall':15}]
         self.providers.clan_roster=AsyncMock(return_value={'tag':clan,'name':'Family','members':rows})
 
@@ -94,7 +94,22 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         provider._league_get.return_value['clan']['members'].append({'tag':'#Q2Y','mapPosition':1})
         with self.assertRaises(ProviderUnavailable): await provider.weight_war_order('#R2Y')
         self.roster()
-        self.providers.weight_war_order=AsyncMock(side_effect=ProviderUnavailable('Private war'))
+        self.providers.weight_war_lineup=AsyncMock(side_effect=ProviderUnavailable('Private war'))
         result=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
         self.assertIsNone(result['war_order'])
         self.assertEqual(len(result['members']),2)
+
+    async def test_preparation_active_and_completed_lineup_sources(self):
+        from cwl_web.providers import LiveProviders
+        provider=LiveProviders()
+        for state in ('preparation','inWar','warEnded'):
+            provider._league_get=AsyncMock(return_value={'state':state,'clan':{'tag':'#R2Y','members':[{'tag':'#P2Y','mapPosition':1}]},'opponent':{'name':'Opponent'}})
+            lineup=await provider.weight_war_lineup('#R2Y')
+            self.assertEqual(lineup['state'],state)
+            self.roster()
+            self.providers.weight_war_lineup=AsyncMock(return_value=lineup)
+            result=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
+            self.assertEqual(result['war_source']['state'],state)
+            self.assertEqual(result['war_order'],{'#P2Y':1})
+        provider._league_get=AsyncMock(return_value={'state':'notInWar'})
+        with self.assertRaises(ProviderUnavailable): await provider.weight_war_lineup('#R2Y')

@@ -11,6 +11,11 @@ export type Roster = {
   clan: { tag: string; name: string };
   members: Member[];
   checked_at: string;
+  war_source?: {
+    state: string;
+    end_time?: string | null;
+    opponent?: string | null;
+  } | null;
   war_order?: Record<string, number> | null;
 };
 export type Draft = { storages: string; loot: string; full: string };
@@ -131,4 +136,27 @@ export function pasteColumn(
     updates[row.tag] = next;
   });
   return updates;
+}
+
+export function orderedMembers(roster: Roster | null): Member[] {
+  if (!roster) return [];
+  const order = roster.war_order;
+  return [...roster.members].sort(
+    (a, b) =>
+      (order?.[a.tag] ?? 1000) - (order?.[b.tag] ?? 1000) ||
+      (a.clan_position ?? 1000) - (b.clan_position ?? 1000) ||
+      a.tag.localeCompare(b.tag),
+  );
+}
+export function orderLabel(roster: Roster): string {
+  if (!roster.war_order)
+    return "Clan order · War lineup unavailable. Positions are not war placements.";
+  const state = roster.war_source?.state;
+  return state === "preparation"
+    ? "Preparation day · Upcoming war order"
+    : state === "inWar"
+      ? "Current war · Battle day order"
+      : state === "warEnded"
+        ? "Last completed war · War order"
+        : "War lineup order";
 }

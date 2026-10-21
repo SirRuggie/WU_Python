@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import TownHallIcon from "../TownHallIcon";
 import {
   copyTable,
+  orderedMembers,
+  orderLabel,
   draftFor,
   editDraft,
   validateDraft,
@@ -43,7 +45,7 @@ export default function WeightTrial({
   const request = useRef(0);
   const saving = useRef(false);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
-  const members = roster?.members || [];
+  const members = orderedMembers(roster);
   const changed = members.filter(
     (row) => JSON.stringify(values[row.tag]) !== JSON.stringify(draftFor(row)),
   );
@@ -94,12 +96,6 @@ export default function WeightTrial({
     void api<Roster>(`/weight-trial/clans/${encodeURIComponent(selected)}`)
       .then((result) => {
         if (id !== request.current) return;
-        result.members.sort(
-          (a, b) =>
-            (a.clan_position || 99) - (b.clan_position || 99) ||
-            a.name.localeCompare(b.name) ||
-            a.tag.localeCompare(b.tag),
-        );
         setRoster(result);
         setValues(
           Object.fromEntries(
@@ -158,13 +154,11 @@ export default function WeightTrial({
         { changes },
       );
       if (id !== request.current) return;
-      result.members.sort(
-        (a, b) =>
-          (a.clan_position || 99) - (b.clan_position || 99) ||
-          a.name.localeCompare(b.name) ||
-          a.tag.localeCompare(b.tag),
-      );
-      setRoster({ ...result, war_order: roster.war_order });
+      setRoster({
+        ...result,
+        war_order: roster.war_order,
+        war_source: roster.war_source,
+      });
       setValues(
         Object.fromEntries(
           result.members.map((row) => [row.tag, draftFor(row)]),
@@ -335,8 +329,14 @@ export default function WeightTrial({
           {loading && <p role="status">Loading current members…</p>}
           {roster && (
             <>
+              <p className="weight-trial-order" role="status">
+                {orderLabel(roster)}
+                {roster.war_source?.opponent
+                  ? ` · vs ${roster.war_source.opponent}`
+                  : ""}
+              </p>
               <div className="weight-trial-columns" aria-hidden="true">
-                <span>Clan / War #</span>
+                <span>#</span>
                 <span>Player</span>
                 <span>Storages</span>
                 <span>Loot</span>
@@ -351,104 +351,111 @@ export default function WeightTrial({
                   invalid = message(cause);
                 }
                 return (
-                  <div
-                    className={`weight-trial-row${JSON.stringify(draft) !== JSON.stringify(draftFor(row)) ? " is-edited" : ""}`}
-                    key={row.tag}
-                  >
-                    <small className="weight-trial-position">
-                      Clan #{row.clan_position ?? "—"}
-                      <br />
-                      War{" "}
-                      {roster.war_order?.[row.tag]
-                        ? `#${roster.war_order[row.tag]}`
-                        : "—"}
-                    </small>
-                    <div className="weight-trial-player">
-                      <TownHallIcon level={row.town_hall} />
-                      <span>
-                        <strong title={row.name}>{row.name}</strong>
-                        <small>{row.tag}</small>
-                      </span>
-                    </div>
-                    {(["storages", "loot", "full"] as const).map((field) => (
-                      <label className="weight-trial-field" key={field}>
+                  <Fragment key={row.tag}>
+                    {roster.war_order &&
+                      !roster.war_order[row.tag] &&
+                      (index === 0 ||
+                        roster.war_order[members[index - 1].tag]) && (
+                        <h3 className="weight-trial-outside">
+                          Current members outside this war
+                        </h3>
+                      )}
+                    <div
+                      className={`weight-trial-row${JSON.stringify(draft) !== JSON.stringify(draftFor(row)) ? " is-edited" : ""}`}
+                      key={row.tag}
+                    >
+                      <strong className="weight-trial-position">
+                        {roster.war_order
+                          ? (roster.war_order[row.tag] ?? "—")
+                          : (row.clan_position ?? "—")}
+                      </strong>
+                      <div className="weight-trial-player">
+                        <TownHallIcon level={row.town_hall} />
                         <span>
-                          {field === "full"
-                            ? "Full weight"
-                            : field === "loot"
-                              ? "Loot"
-                              : "Storages"}
+                          <strong title={row.name}>{row.name}</strong>
+                          <small>{row.tag}</small>
                         </span>
-                        <input
-                          ref={(element) => {
-                            inputs.current[`${row.tag}-${field}`] = element;
-                          }}
-                          type="text"
-                          inputMode="numeric"
-                          aria-label={`${field === "full" ? "Full weight" : field} for ${row.name} ${row.tag}`}
-                          aria-invalid={!!invalid}
-                          aria-describedby={
-                            invalid ? `weight-error-${index}` : undefined
-                          }
-                          value={draft[field]}
-                          placeholder={field === "storages" ? "5" : "N/A"}
-                          maxLength={12}
-                          disabled={busy}
-                          onFocus={(event) => event.currentTarget.select()}
-                          onChange={(event) => {
-                            setValues((current) => ({
-                              ...current,
-                              [row.tag]: editDraft(
-                                draft,
-                                field,
-                                event.target.value,
-                              ),
-                            }));
-                            setNotice("");
-                          }}
-                          onPaste={(event) => {
-                            const text = event.clipboardData.getData("text");
-                            if (!/[\n\t]/.test(text)) return;
-                            event.preventDefault();
-                            try {
-                              const updates = pasteColumn(
-                                members,
-                                values,
-                                index,
-                                field,
-                                text,
-                              );
+                      </div>
+                      {(["storages", "loot", "full"] as const).map((field) => (
+                        <label className="weight-trial-field" key={field}>
+                          <span>
+                            {field === "full"
+                              ? "Full weight"
+                              : field === "loot"
+                                ? "Loot"
+                                : "Storages"}
+                          </span>
+                          <input
+                            ref={(element) => {
+                              inputs.current[`${row.tag}-${field}`] = element;
+                            }}
+                            type="text"
+                            inputMode="numeric"
+                            aria-label={`${field === "full" ? "Full weight" : field} for ${row.name} ${row.tag}`}
+                            aria-invalid={!!invalid}
+                            aria-describedby={
+                              invalid ? `weight-error-${index}` : undefined
+                            }
+                            value={draft[field]}
+                            placeholder={field === "storages" ? "5" : "N/A"}
+                            maxLength={12}
+                            disabled={busy}
+                            onFocus={(event) => event.currentTarget.select()}
+                            onChange={(event) => {
                               setValues((current) => ({
                                 ...current,
-                                ...updates,
+                                [row.tag]: editDraft(
+                                  draft,
+                                  field,
+                                  event.target.value,
+                                ),
                               }));
-                              setNotice(
-                                `${Object.keys(updates).length} rows pasted · Not saved yet.`,
-                              );
-                            } catch (cause) {
-                              setError(message(cause));
-                            }
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
+                              setNotice("");
+                            }}
+                            onPaste={(event) => {
+                              const text = event.clipboardData.getData("text");
+                              if (!/[\n\t]/.test(text)) return;
                               event.preventDefault();
-                              inputs.current[
-                                `${members[index + 1]?.tag}-${field}`
-                              ]?.focus();
-                            }
-                          }}
-                        />
-                      </label>
-                    ))}
-                    {invalid && (
-                      <small
-                        className="weight-trial-row-error"
-                        id={`weight-error-${index}`}
-                      >
-                        {invalid}
-                      </small>
-                    )}
-                  </div>
+                              try {
+                                const updates = pasteColumn(
+                                  members,
+                                  values,
+                                  index,
+                                  field,
+                                  text,
+                                );
+                                setValues((current) => ({
+                                  ...current,
+                                  ...updates,
+                                }));
+                                setNotice(
+                                  `${Object.keys(updates).length} rows pasted · Not saved yet.`,
+                                );
+                              } catch (cause) {
+                                setError(message(cause));
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                inputs.current[
+                                  `${members[index + 1]?.tag}-${field}`
+                                ]?.focus();
+                              }
+                            }}
+                          />
+                        </label>
+                      ))}
+                      {invalid && (
+                        <small
+                          className="weight-trial-row-error"
+                          id={`weight-error-${index}`}
+                        >
+                          {invalid}
+                        </small>
+                      )}
+                    </div>
+                  </Fragment>
                 );
               })}
               {!members.length && <p>This clan has no current members.</p>}

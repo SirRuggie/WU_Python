@@ -265,7 +265,7 @@ class LiveProviders:
             members.append({"tag": player_tag, "name": item["name"], "town_hall": th, "clan_position": item.get("clanRank") if type(item.get("clanRank")) is int and 1 <= item["clanRank"] <= 50 else None})
         return {"tag": clan_tag, "name": body["name"], "members": members}
 
-    async def weight_war_order(self, value):
+    async def weight_war_lineup(self, value):
         """Public current-war ordering for manual spreadsheet exports."""
         clan_tag = tag(value)
         body = await self._league_get(f"/clans/{quote(clan_tag, safe='')}/currentwar")
@@ -286,7 +286,11 @@ class LiveProviders:
             order[player] = position
         if set(order.values()) != set(range(1, len(rows) + 1)):
             raise ProviderUnavailable('Incomplete war positions.')
-        return order
+        return {"order": order, "state": body["state"], "end_time": body.get("endTime"),
+                "opponent": body["opponent"].get("name") if isinstance(body.get("opponent"), dict) else None}
+
+    async def weight_war_order(self, value):
+        return (await self.weight_war_lineup(value))["order"]
 
     async def _league_get(self, path):
         if not self.coc_token:
@@ -464,7 +468,7 @@ class FixtureProviders:
         names = {"#R2Y": "Fixture Family", "#J2Y": "Other Fixture Clan", "#C2Y": "Fixture Hosting"}
         return {"tag": value, "name": names.get(value, "Fixture Clan")}
 
-    async def weight_war_order(self, value):
+    async def weight_war_lineup(self, value):
         raise ProviderUnavailable('No current war lineup is available.')
 
     async def clan_roster(self, value):

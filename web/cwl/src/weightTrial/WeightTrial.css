@@ -37,7 +37,7 @@
 .weight-trial-columns,
 .weight-trial-row {
   display: grid;
-  grid-template-columns: 80px minmax(120px, 1fr) 80px 110px 120px;
+  grid-template-columns: 40px minmax(120px, 1fr) 80px 110px 120px;
   gap: 12px;
   align-items: center;
   padding: 7px 10px;

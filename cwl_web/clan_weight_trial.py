@@ -52,10 +52,12 @@ async def members(request):
     saved = request.app['clan_weight_trial'].for_members([row['tag'] for row in roster['members']])
     result = response(roster,saved)
     try:
-        order = await request.app['providers'].weight_war_order(roster['tag'])
-        result['war_order'] = order
+        lineup = await request.app['providers'].weight_war_lineup(roster['tag'])
+        result['war_order'] = lineup['order']
+        result['war_source'] = {key: value for key, value in lineup.items() if key != 'order'}
     except (ProviderUnavailable, ValueError, TypeError):
         result['war_order'] = None
+        result['war_source'] = None
     return web.json_response(result)
 
 

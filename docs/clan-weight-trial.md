@@ -98,3 +98,11 @@ with missing loot, and desktop/390px/320px layouts without page overflow. Errors
 receive focus so failed copying at the bottom is discoverable. No live Sheets,
 FWA submission, or Discord delivery was performed. Existing build-size and aiohttp
 warnings remain. This is not an exhaustive assistive-technology audit.
+
+War-order follow-up: current preparation/battle lineups and the last completed
+lineup returned by Clash use map position order. The # column shows plain bold
+numbers. Current members outside that war follow in a separate section with no
+war position. If Clash cannot provide a lineup, the editor explicitly labels its
+clan-order fallback; it does not invent historical war placements. Saving retains
+the displayed lineup metadata. Five backend tests and 197 frontend tests passed,
+along with the production build and war-reminder gate.
