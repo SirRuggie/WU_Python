@@ -1,0 +1,60 @@
+.signup-walkthrough {
+  margin-bottom: 24px;
+  border: 1px solid #8b733b;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #1d1b16;
+}
+.signup-walkthrough ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.signup-walkthrough li {
+  min-width: 0;
+  min-height: 190px;
+  padding: 22px;
+  color: #e1d7bd;
+}
+.signup-walkthrough li + li { border-left: 1px solid #8b733b; }
+.signup-walkthrough li.current { background: #f4cd64; color: #241b08; }
+.signup-walkthrough h2 { margin: 0; scroll-margin-top: 90px; }
+.signup-walkthrough h2:focus { outline: none; }
+.signup-walkthrough h2:focus-visible { outline: 2px solid currentColor; outline-offset: 5px; }
+.signup-walkthrough h2 button {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-height: 100px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+  text-align: left;
+  justify-content: stretch;
+  justify-items: start;
+  box-shadow: none;
+}
+.shell .signup-walkthrough h2 button:disabled { opacity: 1; background: transparent; color: inherit; -webkit-text-fill-color: currentColor; cursor: default; }
+.signup-walkthrough h2 button:focus-visible { outline: 2px solid currentColor; outline-offset: 5px; }
+.signup-walkthrough h2 button:hover:not(:disabled) .walkthrough-title { text-decoration: underline; text-underline-offset: 4px; }
+.signup-walkthrough .walkthrough-step { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.signup-walkthrough .walkthrough-title { font-size: 24px; font-weight: 800; line-height: 1.25; }
+.signup-walkthrough .walkthrough-summary { font-size: 13px; font-weight: 500; }
+.signup-walkthrough li p { border-top: 1px solid #b18b36; padding-top: 12px; margin: 12px 0 0; color: inherit; font-size: 14px; line-height: 1.5; }
+@media (max-width: 650px) {
+  .signup-walkthrough ol { grid-template-columns: minmax(0, 1fr); }
+  .signup-walkthrough li { min-height: 0; padding: 16px; }
+  .signup-walkthrough li + li { border-left: 0; border-top: 1px solid #8b733b; }
+  .signup-walkthrough h2 button { min-height: 0; gap: 5px; }
+  .signup-walkthrough .walkthrough-title { font-size: 20px; }
+  .signup-walkthrough li.current { min-height: 180px; }
+  .signup-walkthrough li.current .walkthrough-title { font-size: 24px; }
+}
+@media (forced-colors: active) {
+  .signup-walkthrough li.current { background: Highlight; color: HighlightText; }
+}

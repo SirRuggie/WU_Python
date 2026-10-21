@@ -11,22 +11,17 @@
 /* Informational walkthrough: warm yellow paper, explicitly dark text, no
    button-like pills. Set text fill too so inherited light text cannot win. */
 .shell .signup-guide{padding:18px 22px;margin-bottom:20px;background:#f4cd64;border:1px solid #f8dc8e;border-left:5px solid #b57900;border-radius:10px;color:#241b08;box-shadow:none;cursor:default}
-.shell .signup-guide :is(h2,p,li,span,b),.shell .signup-guide li[aria-current=step]{color:#241b08;-webkit-text-fill-color:#241b08}
+.shell .signup-guide :is(h2,p,span,b){color:#241b08;-webkit-text-fill-color:#241b08}
 .shell .signup-guide h2{font-size:24px;line-height:1.25;margin:0;outline:none}
 .shell .signup-guide .eyebrow{font-size:11px;font-weight:800;letter-spacing:.1em;margin:0 0 8px}
 .shell .signup-guide p{font-size:14px;margin:12px 0 0;line-height:1.5}
-.shell .signup-guide ol{margin:14px 0 0;max-width:680px;gap:12px;padding-top:12px;border-top:1px solid #b18b36}
-.shell .signup-guide li{font-size:12px;font-weight:500;gap:5px}
-.shell .signup-guide li[aria-current=step]{font-weight:800;text-decoration:none}
-.shell .signup-guide li span,.shell .signup-guide li[aria-current=step] span{display:inline;width:auto;height:auto;border:0;border-radius:0;background:transparent;font-weight:800;color:#241b08;-webkit-text-fill-color:#241b08}
-.shell .signup-guide li span::after{content:'.'}
 .shell .signup-guide h2:focus-visible{outline:none}
 /* Keep this light information panel out of browser automatic darkening.
    The rest of the dashboard remains dark. */
 .shell .signup-guide,.shell .signup-guide *{color-scheme:only light}
 @media(forced-colors:active){
+  .shell .signup-guide :is(h2,p,span,b){color:CanvasText;-webkit-text-fill-color:currentColor}
   .shell .signup-guide{background:Canvas;color:CanvasText;border-color:CanvasText}
-  .shell .signup-guide :is(h2,p,li,span,b),.shell .signup-guide li[aria-current=step],.shell .signup-guide li span,.shell .signup-guide li[aria-current=step] span{color:CanvasText;-webkit-text-fill-color:currentColor}
 }
 .shell .signup-flow .pool-choice-grid button{min-height:145px;padding:20px;gap:9px;border-color:#586477;background:#1b2029;color:#fff}
 .shell .signup-flow .pool-choice-grid button:hover{background:#243953;border-color:#a9ceff}
@@ -34,4 +29,4 @@
 .shell .pool-next{display:block;margin-top:7px;font-size:14px;font-weight:800;color:#b9d5ff}
 .shell .pool-choice-symbol{display:none}
 .shell .signup-flow .pool-choice{margin-bottom:16px}
-@media(max-width:650px){.shell .signup-guide{padding:14px}.shell .signup-guide h2{font-size:22px}.shell .signup-guide ol{gap:8px}.shell .signup-guide p{font-size:13px}.shell .signup-flow .pool-choice-grid button{min-height:125px;padding:16px}.shell .signup-guide li{font-size:11px;flex-direction:column;align-items:flex-start;flex-wrap:nowrap;padding-right:10px}.shell .signup-guide li b{top:0;right:0}}
+@media(max-width:650px){.shell .signup-guide{padding:14px}.shell .signup-guide h2{font-size:22px}.shell .signup-guide p{font-size:13px}.shell .signup-flow .pool-choice-grid button{min-height:125px;padding:16px}}

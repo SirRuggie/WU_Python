@@ -583,3 +583,22 @@ tests and production build passed. Reviewed stale-list checks, receipt replay,
 partial capture failure, original stop limits, and Main automation rejection.
 Fresh desktop/mobile visual checks were attempted with isolated fixtures, but the
 in-app browser failed to attach twice. No live lists or Discord sends were used.
+
+### Three-part member signup walkthrough
+
+The large signup guide is now one connected, three-part navigation panel. Each
+stage keeps its title visible; the active stage has the existing gold color and
+expanded instructions. Other stages show the chosen CWL, account count, or the
+explicit not-saved status. Previous-stage navigation preserves drafts; switching
+pools still asks before discarding selections. Review is unavailable without
+selected accounts or while account data is unavailable. All stage controls are
+disabled during saving. Existing signup and server validation remain unchanged.
+
+A dedicated SignupWalkthrough component owns presentation, while App retains
+signup state and navigation. Removed obsolete progress-list CSS, retaining the
+closed-signups guide. Checked isolated desktop, 390px and 320px layouts, unavailable
+future stages, review navigation, returning to CWL choice with selections intact,
+and cancelled pool changes. Native buttons, aria-current, keyboard focus outlines,
+and stacked mobile stages retain readable titles. 191 frontend tests and the
+production build passed; the existing bundle-size advisory remains. No live
+signup or Discord message was created.
