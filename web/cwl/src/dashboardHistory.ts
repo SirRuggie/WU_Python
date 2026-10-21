@@ -1,9 +1,10 @@
+import { memberPaths } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 export type DashboardRoute = { view: DashboardView; season: string; step?: "review" | "announce" };
-export function dashboardTarget(search: string): DashboardRoute {
+export function dashboardTarget(search: string, pathname = '/'): DashboardRoute {
   const params = new URLSearchParams(search);
-  const value =
-    params.get("view") === "signups" ? "signup" : params.get("view");
+  const pathView = Object.entries(memberPaths).find(([, path]) => path !== '/' && path === pathname)?.[0];
+  const value = pathView || (params.get("view") === "signups" ? "signup" : params.get("view"));
   return {
     view: dashboardViews.includes(value as DashboardView)
       ? (value as DashboardView)
@@ -14,10 +15,12 @@ export function dashboardTarget(search: string): DashboardRoute {
       : "",
   };
 }
+export const seasonViews = new Set(['manage-signups', 'reminders', 'exports', 'declaration', 'publication', 'participation', 'bonuses', 'roster', 'staff']);
 export function dashboardPath(route: DashboardRoute) {
+  if (memberPaths[route.view]) return memberPaths[route.view];
   const params = new URLSearchParams({ view: route.view });
   if (route.view === "publication" && route.step) params.set("step", route.step);
-  if (route.season) params.set("season", route.season);
+  if (route.season && seasonViews.has(route.view)) params.set("season", route.season);
   return `/?${params}`;
 }
 type HistoryPort = Pick<History, "state" | "pushState" | "replaceState" | "go">;

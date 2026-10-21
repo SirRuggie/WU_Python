@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DashboardHistory, dashboardTarget } from "./dashboardHistory";
+import { DashboardHistory, dashboardTarget, dashboardPath } from "./dashboardHistory";
 import { loginPath } from "./memberLinks";
 function fixture() {
   const entries = [{ state: null as unknown, url: "/" }];
@@ -112,4 +112,13 @@ it('preserves announcement steps while rejecting arbitrary step values', () => {
   const history = fixture()
   history.controller.write({view:'publication',season:'12',step:'announce'},true)
   expect(history.current().url).toBe('/?view=publication&step=announce&season=12')
+})
+
+it('uses clean member paths and only retains seasons on CWL staff pages', () => {
+ for (const [view,path] of [['signup','/signup'],['assignments','/assignments'],['todo','/tasks'],['home','/'],['events','/events'],['wars','/wars'],['search','/search']] as const) {
+   expect(dashboardPath({view,season:'1'})).toBe(path)
+   expect(dashboardTarget('',path).view).toBe(view)
+ }
+ expect(dashboardPath({view:'clan-management',season:'1'})).toBe('/?view=clan-management')
+ expect(dashboardPath({view:'roster',season:'2'})).toBe('/?view=roster&season=2')
 })

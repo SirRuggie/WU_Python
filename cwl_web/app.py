@@ -134,7 +134,11 @@ def _season(db, sid):
 
 def _sid(request):
     try:
-        return int(request.match_info["season_id"])
+        sid = int(request.match_info["season_id"])
+        session = _session(request)
+        if not _editor(request, session) and _store(request).member_season()['season_id'] != sid:
+            _fail(403, "This season is not available to members. Open Signups for the current season.")
+        return sid
     except ValueError:
         _fail(404, "Season not found")
 
@@ -211,15 +215,13 @@ def login_destination(query):
         view = "signup"
     if view not in {"home", "search", "wars", "events", "todo", "signup", "assignments"}:
         return ""
-    params = {"view": view}
-    season = query.get("season", "")
-    if view in {"signup", "assignments"} and re.fullmatch(r"[0-9]{1,18}", season):
-        params["season"] = season
-    return "/?" + urlencode(params)
+    return {'home':'/', 'todo':'/tasks'}.get(view, '/' + view)
 
 
 def saved_login_destination(request):
     value = request.cookies.get(RETURN_COOKIE, "")
+    if value in {'/', '/signup', '/assignments', '/tasks', '/wars', '/events', '/search'}:
+        return value
     if not value.startswith("/?") or len(value) > 150:
         return ""
     return login_destination({key: values[0] for key, values in parse_qs(value[2:]).items()})
@@ -352,8 +354,27 @@ async def dev_login(request):
 
 
 async def seasons(request):
-    _require(request)
-    return web.json_response({"seasons": [_season_dict(row) for row in _store(request).rows("SELECT * FROM seasons ORDER BY id DESC")]})
+    session = _require(request)
+    selection = _store(request).member_season()
+    rows = _store(request).rows("SELECT * FROM seasons ORDER BY id DESC")
+    if not _editor(request, session):
+        rows = [row for row in rows if row['id'] == selection['season_id']]
+    return web.json_response({"seasons": [_season_dict(row) for row in rows], "member_season": selection})
+
+
+async def set_member_season(request):
+    session = _require(request, 'editor')
+    body = await _json(request)
+    sid, revision = body.get('season_id'), body.get('revision')
+    if set(body) != {'season_id', 'revision'} or type(revision) is not int or (sid is not None and (type(sid) is not int or not 0 < sid < 2**63)):
+        _fail(400, 'Invalid member season selection')
+    try:
+        result = _store(request).set_member_season(sid, revision, session['user_id'])
+    except ValueError as error:
+        _fail(400, str(error))
+    except RuntimeError as error:
+        _fail(409, str(error))
+    return web.json_response(result)
 
 
 async def create_season(request):
@@ -367,6 +388,8 @@ async def create_season(request):
         with _store(request).tx() as db:
             cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
             row = _season(db, cursor.lastrowid)
+            if db.execute('SELECT COUNT(*) FROM seasons').fetchone()[0] == 1:
+                db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1 AND season_id IS NULL', (row['id'],))
     except sqlite3.IntegrityError:
         _fail(409, "Season already exists")
     return web.json_response(_season_dict(row), status=201)
@@ -1671,7 +1694,7 @@ async def errors(request, handler):
             raise
         if request.path == API + "/auth/callback" and "text/html" in request.headers.get("Accept", ""):
             destination = saved_login_destination(request)
-            response = web.HTTPFound(destination + "&signin_error=discord" if destination else "/?signin_error=discord")
+            response = web.HTTPFound(destination + "?signin_error=discord" if destination else "/?signin_error=discord")
             response.del_cookie(RETURN_COOKIE, path=API + "/auth")
             response.del_cookie(STATE_COOKIE, path=API + "/auth")
         else:
@@ -1724,7 +1747,7 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     from .signup_activity import routes as signup_activity_routes
     routes = [*ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
-        web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
+        web.put(API + "/member-season", set_member_season), web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
         web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
         web.get(API + "/seasons/{season_id}/lineup", lineup), web.post(API + "/seasons/{season_id}/lineup", add_lineup), web.delete(API + "/seasons/{season_id}/lineup/{tag}", remove_lineup),
         web.patch(API + "/seasons/{season_id}/lineup/{tag}/rules", update_lineup_rules),
@@ -1787,4 +1810,6 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
             return response
         app.router.add_get("/", index_page)
         app.router.add_get("/index.html", index_page)
+        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search'):
+            app.router.add_get('/' + path, index_page)
     return app

@@ -1,0 +1,10 @@
+.member-season-settings { padding: 16px 0; border-bottom: 1px solid var(--border, #303035); }
+.member-season-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.member-signup-link { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; }
+.member-signup-link div { min-width: 0; }
+.member-signup-link a, .member-signup-link small { display: block; overflow-wrap: anywhere; }
+@media (max-width: 650px) {
+  .member-signup-link { align-items: stretch; flex-direction: column; }
+  .member-season-actions button { width: 100%; white-space: normal; }
+}
+.member-signup-link a { color: #f3ca56; margin: 5px 0; }

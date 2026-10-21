@@ -27,7 +27,8 @@ def test_announcement_destination_is_supported_by_login():
     from urllib.parse import urlsplit, parse_qsl
     url = urlsplit(cwl_campaign.SIGNUP_URL)
     assert url.scheme == 'https'
-    assert login_destination(dict(parse_qsl(url.query))) == '/?view=signup'
+    assert url.path == '/signup'
+    assert login_destination({'view': 'signup'}) == '/signup'
 
 
 def test_saved_message_render_uses_direct_signup_link():

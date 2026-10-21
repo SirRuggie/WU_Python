@@ -5,10 +5,10 @@ import { clanDeepLink, type MyAssignments } from './publication'
 import './MemberAssignments.css'
 import {memberPath} from './memberLinks'
 
-type Props = { seasonId: string; seasons: Season[]; onSeasonChange: (id: string) => void; onSignup?: () => void }
+type Props = { seasonId: string; seasons: Season[]; onSignup?: () => void }
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Assignments could not be loaded. Try again.'
 
-export default function MemberAssignments({ seasonId, seasons, onSeasonChange, onSignup }: Props) {
+export default function MemberAssignments({ seasonId, seasons, onSignup }: Props) {
   const [data, setData] = useState<MyAssignments | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -32,8 +32,8 @@ export default function MemberAssignments({ seasonId, seasons, onSeasonChange, o
   const awaiting = groups.find(group => !group.clanTag)?.accounts.length || 0
   const assignedGroups = groups.filter(group => group.clanTag).length
   return <div className="member-assignments">
-    <div className="page-head"><div><h1>My clan assignments</h1><p>Your accounts, grouped by assigned clan.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => onSeasonChange(event.target.value)}><option value="">Select a season</option>{seasons.map(season => <option key={season.id} value={String(season.id)}>{season.label}</option>)}</select></label></div>
-    {!seasonId && <div className="card empty"><p>Select a season to check assignments.</p></div>}
+    <div className="page-head"><div><h1>My clan assignments</h1><p>Your accounts, grouped by assigned clan.</p></div><p className="season-choice">{seasons.find(item => String(item.id) === seasonId)?.label || 'No CWL season available'}</p></div>
+    {!seasonId && <div className="card empty"><p>Staff will make your CWL season available here.</p></div>}
     {error && <div className="notice error" role="alert">{error}<button onClick={() => void load()}>Retry</button></div>}
     {loading && <p role="status">Loading current assignments…</p>}
     {data && !loading && !error && <>

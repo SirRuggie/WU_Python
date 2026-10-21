@@ -18,6 +18,12 @@ CREATE TABLE IF NOT EXISTS seasons (
  id INTEGER PRIMARY KEY, label TEXT NOT NULL UNIQUE, signup_open INTEGER NOT NULL DEFAULT 1,
  status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','archived'))
 );
+CREATE TABLE IF NOT EXISTS member_season (
+ id INTEGER PRIMARY KEY CHECK(id=1), season_id INTEGER REFERENCES seasons(id),
+ revision INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO member_season(id,season_id)
+ SELECT 1, (SELECT id FROM seasons WHERE status='draft' ORDER BY id DESC LIMIT 1);
 CREATE TABLE IF NOT EXISTS manage_campaign_bindings (
  season_id INTEGER PRIMARY KEY REFERENCES seasons(id), cycle TEXT NOT NULL UNIQUE
 );
@@ -352,3 +358,22 @@ class Store:
                 return False
             db.execute('INSERT OR IGNORE INTO signup_activity_reviews(audit_id,reviewed_by) VALUES (?,?)', (audit_id, actor))
             return True
+
+
+    def member_season(self):
+        return self.one("SELECT season_id,revision FROM member_season WHERE id=1")
+
+    def set_member_season(self, season_id, revision, actor):
+        with self.tx() as db:
+            current = dict(db.execute('SELECT season_id,revision FROM member_season WHERE id=1').fetchone())
+            if current['revision'] != revision:
+                raise RuntimeError('The member season changed. Refresh and try again.')
+            if season_id is not None:
+                season = db.execute('SELECT status FROM seasons WHERE id=?', (season_id,)).fetchone()
+                if not season or season['status'] != 'draft':
+                    raise ValueError('Choose a non-archived season.')
+            db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1', (season_id,))
+            import json
+            db.execute("INSERT INTO roster_audit(season_id,actor_id,action,before_json,after_json) VALUES (?,?,?,?,?)",
+                       (season_id or current['season_id'] or 0, actor, 'member_season_change', json.dumps(current), json.dumps({'season_id':season_id})))
+            return dict(db.execute('SELECT season_id,revision FROM member_season WHERE id=1').fetchone())

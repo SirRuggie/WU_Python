@@ -1,3 +1,4 @@
+import MemberSeasonSettings from './MemberSeasonSettings'
 import FwaSignupDialog from './FwaSignupDialog'
 import {saveSignupMoves, type SignupMove} from './signupMoves'
 import {withdrawInOrder} from './signupWithdrawal'
@@ -27,7 +28,7 @@ import ReminderWorkspace from './ReminderWorkspace'
 import SidebarNavigation, { navigationSection, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
 import TodoWorkspace from './TodoWorkspace'
 import { memberTarget, loginPath } from './memberLinks'
-import { DashboardHistory, dashboardTarget } from './dashboardHistory'
+import { DashboardHistory, dashboardTarget, seasonViews } from './dashboardHistory'
 import './Welcome.css'
 import DashboardHome from './DashboardHome'
 import './SignupFlow.css'
@@ -61,7 +62,7 @@ function App() {
   const [authState, setAuthState] = useState<'loading' | 'signed-out' | 'error' | 'ready'>('loading')
   const [authError, setAuthError] = useState(() => new URLSearchParams(window.location.search).get('signin_error') === 'discord' ? 'Discord sign-in did not finish. Please try again.' : '')
   const [fixtureMode, setFixtureMode] = useState(false)
-  const [entryTarget] = useState(() => dashboardTarget(window.location.search))
+  const [entryTarget] = useState(() => dashboardTarget(window.location.search, window.location.pathname))
   const [publicationDirty, setPublicationDirty] = useState(false)
   const [publicationStep, setPublicationStep] = useState<'review' | 'announce'>(entryTarget.step || 'review')
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
@@ -71,7 +72,9 @@ function App() {
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [seasons, setSeasons] = useState<Season[]>([])
-  const [seasonId, setSeasonId] = useState(entryTarget.season)
+  const [staffSeasonId, setSeasonId] = useState(entryTarget.season)
+  const [memberSeason, setMemberSeason] = useState<{season_id: number | null; revision: number}>({season_id: null, revision: 0})
+  const seasonId = seasonViews.has(view) ? staffSeasonId : String(memberSeason.season_id || '')
   const [fwaBlocked, setFwaBlocked] = useState(false)
   const [pool, setPool] = useState<Pool | null>(null)
   const [signupSearch, setSignupSearch] = useState('')
@@ -130,6 +133,8 @@ function App() {
       const me = await api<Session>('/auth/me')
       setCsrfToken(me.csrf_token)
       setSession(me)
+      setMenuOpen(false)
+      setNotice(null)
       setAuthState('ready')
     } catch (error) {
       setSession(null)
@@ -145,18 +150,30 @@ function App() {
     return () => window.removeEventListener('keydown', close)
   }, [])
 
+  const seasonRequest = useRef(0)
   const loadSeasons = useCallback(async () => {
+    const requestId = ++seasonRequest.current
     setSeasonsLoading(true)
     try {
-      const result = await api<{ seasons: Season[] }>('/seasons')
+      const result = await api<{ seasons: Season[]; member_season: {season_id: number | null; revision: number} }>('/seasons')
+      if (requestId !== seasonRequest.current) return
       setSeasons(result.seasons)
-      if (entryTarget.season && !result.seasons.some(item => String(item.id) === entryTarget.season)) setNotice({kind:'error', text:'The season in this link is not available. Check the season shown before signing up.'})
+      setMemberSeason(result.member_season)
+      if (seasonViews.has(entryTarget.view) && entryTarget.season && !result.seasons.some(item => String(item.id) === entryTarget.season)) setNotice({kind:'error', text:'The season in this link is not available. Check the season shown before signing up.'})
       setSeasonId(current => result.seasons.some(season => String(season.id) === current) ? current : String(result.seasons[0]?.id || ''))
       setSeasonError('')
-    } catch (error) { setSeasonError(message(error)) }
-    finally { setSeasonsLoading(false) }
+    } catch (error) { if (requestId === seasonRequest.current) setSeasonError(message(error)) }
+    finally { if (requestId === seasonRequest.current) setSeasonsLoading(false) }
   }, [])
-  useEffect(() => { if (session) void loadSeasons() }, [session, loadSeasons])
+  useEffect(() => {
+    if (!session) return
+    let pending = false
+    const refresh = async () => { if (pending || document.hidden) return; pending = true; try { await loadSeasons() } finally { pending = false } }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 60000)
+    window.addEventListener('focus', refresh)
+    return () => { seasonRequest.current++; clearInterval(timer); window.removeEventListener('focus', refresh) }
+  }, [session, loadSeasons])
 
   const loadSignup = useCallback(async () => {
     if (!seasonId) return
@@ -288,7 +305,7 @@ function App() {
   const changeView = (next: View, filter = '', kind?: 'war'|'cwl') => {
     if (navigation.current?.pending || (next !== view && !canLeave())) return
     const destination = allowedView(next)
-    if (destination !== view) navigation.current?.write({ view: destination, season: seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, true)
+    if (destination !== view) navigation.current?.write({ view: destination, season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, true)
     setActivitySearch(filter)
     setActivityKind(kind)
     acceptRoute(destination)
@@ -318,9 +335,9 @@ function App() {
     navigation.current = controller
     const pop = (event: PopStateEvent) => {
       if (!controller.pop(event.state, () => navigationState.current.canLeave())) return
-      const target = dashboardTarget(window.location.search)
+      const target = dashboardTarget(window.location.search, window.location.pathname)
       const destination = navigationState.current.allowedView(target.view)
-      setSeasonId(target.season)
+      if (target.season && seasonViews.has(destination)) setSeasonId(target.season)
       setPublicationStep(target.step || 'review')
       acceptRoute(destination)
       controller.write({ ...target, view: destination }, false)
@@ -332,7 +349,7 @@ function App() {
     if (authState !== 'ready') return
     const destination = allowedView(view)
     if (destination !== view) setView(destination)
-    navigation.current?.write({ view: destination, season: seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, false)
+    navigation.current?.write({ view: destination, season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, false)
   }, [view, seasonId, publicationStep, authState, session])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
@@ -438,7 +455,7 @@ function App() {
   const currentStaffPage = Math.min(staffPage, staffLastPage)
   const staffPageSlice = <T,>(items: T[]) => items.slice(currentStaffPage * 8, (currentStaffPage + 1) * 8)
   if (authState === 'error') return <div className="center-screen"><Brand /><div className="card narrow"><h1>CWL is unavailable</h1><p role="alert">{authError}</p><button onClick={() => void loadAuth()}>Retry connection</button></div></div>
-  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><DashboardIcon name="war"/><div><strong>Tasks</strong><small>See attacks and events.</small></div></li><li><DashboardIcon name="shield"/><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><DashboardIcon name="trophy"/><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{memberTarget(window.location.search).view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' ? 'CWL signups' : entryTarget.view === 'assignments' ? 'My clan assignments' : entryTarget.view === 'search' ? 'Search' : entryTarget.view === 'wars' ? 'Wars' : entryTarget.view === 'events' ? 'Events' : 'Tasks'}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}<p className="small">Staff tools appear when you have access.</p></div></main>
+  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><DashboardIcon name="war"/><div><strong>Tasks</strong><small>See attacks and events.</small></div></li><li><DashboardIcon name="shield"/><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><DashboardIcon name="trophy"/><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{memberTarget(window.location.search, window.location.pathname).view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' ? 'CWL signups' : entryTarget.view === 'assignments' ? 'My clan assignments' : entryTarget.view === 'search' ? 'Search' : entryTarget.view === 'wars' ? 'Wars' : entryTarget.view === 'events' ? 'Events' : 'Tasks'}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError, window.location.pathname)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}<p className="small">Staff tools appear when you have access.</p></div></main>
 
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
@@ -475,7 +492,7 @@ function App() {
         {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} />}
         {view === 'wars' && <WarsWorkspace key={session.user.id} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
         {view === 'events' && <EventsWorkspace key={session.user.id} canEdit={session.can_edit} onWars={() => changeView('wars', '', 'cwl')} />}
-        {view === 'home' && <DashboardHome key={`${session.user.id}:${seasonId}`} session={session} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} onNavigate={next => { if (next === 'signup' || next === 'saved') { setSignupPanel(next === 'saved' ? 'saved' : 'register'); setSignupStep(1); setPool(null); setCompletion(null); setReview(false) }; changeView(next === 'saved' ? 'signup' : next) }} onStart={(nextPool, tags, freshAccounts, freshSignups) => {
+        {view === 'home' && <DashboardHome key={`${session.user.id}:${seasonId}`} session={session} seasonId={seasonId} seasons={seasons} onNavigate={next => { if (next === 'signup' || next === 'saved') { setSignupPanel(next === 'saved' ? 'saved' : 'register'); setSignupStep(1); setPool(null); setCompletion(null); setReview(false) }; changeView(next === 'saved' ? 'signup' : next) }} onStart={(nextPool, tags, freshAccounts, freshSignups) => {
           dashboardPrefill.current = true
           signupRequest.current += 1
           setAccounts(freshAccounts); setSignups(freshSignups); setLoadingData(false); setAccountError(''); setDataError('')
@@ -483,11 +500,10 @@ function App() {
           setPool(nextPool); setSignupPanel('register'); setSignupStep(2); setReview(false); setCompletion(null); changeView('signup')
         }} />}
         {view === 'signup' && <>
-          <div className="page-head"><div><p className="eyebrow">Member signup</p><h1>CWL signups</h1><p>{activeCompletion ? "Your season signup is saved." : season && !season.signup_open ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will choose their CWL clans."}</p></div><label className="season-choice">Season<select value={seasonId} disabled={pending} onChange={event => { if (!canLeave()) return; setAccounts([]); setSignups([]); setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select a season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>
+          <div className="page-head"><div><p className="eyebrow">Member signup</p><h1>CWL signups</h1><p>{activeCompletion ? "Your season signup is saved." : season && !season.signup_open ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will choose their CWL clans."}</p></div><p className="season-choice">{season?.label || 'No CWL season available'}</p></div>
           {dataError && !activeCompletion && <div className="notice error" role="alert">{dataError}<button disabled={loadingData || pending} onClick={() => void loadSignup()}>Retry</button></div>}
           {seasonsLoading && <p role="status">Loading seasons…</p>}
-          {!seasonId && seasons.length > 0 && <div className="card empty"><p>Select a season to view or manage your signups.</p></div>}
-          {!seasonsLoading && !seasons.length && !seasonError && <div className="card empty"><h2>No season yet</h2><p>Staff will open a CWL season before members can sign up.</p></div>}
+          {!seasonId && !seasonsLoading && <div className="card empty"><p>Staff will make the next CWL season available here.</p></div>}
           {season && <>{!activeCompletion && loadingData && <p role="status">Loading linked accounts and saved signups…</p>}<div className="season-banner"><div><span className={`status-dot ${season.signup_open ? 'active' : ''}`} /> <strong>{season.label}</strong><span className="badge">{season.signup_open ? 'Signups open' : 'Signups closed'}</span></div><span>{season.status}</span></div>
             {activeCompletion ? <section className="completion-card card" aria-labelledby="completion-title"><div className="completion-mark" aria-hidden="true">✓</div><p className="eyebrow">Signup complete</p><h2 id="completion-title" ref={completionHeadingRef} tabIndex={-1}>You're signed up</h2><p><strong>{activeCompletion.accounts.length} {activeCompletion.accounts.length === 1 ? 'account is' : 'accounts are'} signed up</strong> for {poolName(activeCompletion.pool)} in {activeCompletion.seasonLabel}.</p><div className="completion-accounts">{activeCompletion.accounts.map(account => <div key={account.tag}><strong>{account.name}</strong><small>{account.tag}</small></div>)}</div><p>Your accounts are signed up. Staff will assign your accounts to clans. You can close this page, or sign up more accounts below.</p>{activeCompletion.refreshWarning && <div className="notice error" role="alert">Signup saved, but the latest account list could not be refreshed. You can check your saved signups later.</div>}<div className="completion-actions"><button className="primary" disabled={pending} onClick={() => void showSavedSignups()}>View my signups</button><button disabled={pending} onClick={() => changeView('assignments')}>My clan assignments</button><button disabled={pending} onClick={() => { setCompletion(null); setSignupPanel('register'); setSignupStep(1); setPool(null); setReview(false) }}>Sign up more accounts</button></div></section> : <><div className="signup-panel-tabs" role="group" aria-label="Signup sections"><button className={signupPanel === 'register' ? 'active' : ''} aria-pressed={signupPanel === 'register'} disabled={pending} onClick={() => { if (savedSignupDirty && !canLeave()) return; setSignupPanel('register') }}>{season.signup_open ? 'Sign up' : 'Signup guide'}</button><button className={signupPanel === 'saved' ? 'active' : ''} aria-pressed={signupPanel === 'saved'} disabled={pending} onClick={() => { setReview(false); setSignupPanel('saved') }}>My signups <span className="count-pill">{existing.length}</span></button></div>
             {signupPanel === 'register' && !season.signup_open && <section className="signup-guide" aria-label="Signup walkthrough"><p className="eyebrow">CWL signup guide</p><h2>Signups are closed</h2><p>View your saved signups or check your CWL clan. To make a change, ask staff for help.</p><div className="signup-action-buttons"><button onClick={() => setSignupPanel('saved')}>My signups</button><button onClick={() => changeView('assignments')}>My CWL clans</button></div></section>}
@@ -537,7 +553,7 @@ function App() {
           </>}
         </>}
         </>}
-        {view === 'assignments' && <MemberAssignments onSignup={() => { setSignupPanel('register'); changeView('signup') }} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
+        {view === 'assignments' && <MemberAssignments onSignup={() => { setSignupPanel('register'); changeView('signup') }} seasonId={seasonId} seasons={seasons} />} 
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} onChange={e=>setSeasonId(e.target.value)}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId}/>}</>}
         {view === 'publication' && session.can_edit && <PublicationWorkspace onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationDirty || window.confirm('Discard unsaved announcement changes?')) setSeasonId(id) }} />}
@@ -550,7 +566,7 @@ function App() {
           </div>
           {staffSection !== 'season' && <div className="staff-section-tools"><label>Search {'clans'}<input value={staffSearch} onChange={event => setStaffSearch(event.target.value)} placeholder={'Clan name or tag'} /></label>{(staffSection === 'hosting' || staffSection === 'family') && <label>Sort clans<select value={clanSort} onChange={event=>setClanSort(event.target.value as ClanSort)}>{clanSortOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>}{staffSection === 'hosting' && <label>Show<select value={hostStatus} onChange={event => setHostStatus(event.target.value)}><option value="active">Active clans</option><option value="archived">Archived clans</option><option value="all">All clans</option></select></label>}</div>}
           {(staffSection==='hosting'||staffSection==='family')&&<div className="clan-filter-bar"><FilterPicker label="CWL leagues" options={[...new Set(sortClans(staffSection==='hosting'?clans:approved,'league_desc').map(clan=>leagueValue(clan.cwl_league)))]} selected={clanLeagues} onChange={setClanLeagues}/><button onClick={()=>{setClanLeagues([]);setStaffSearch('');setHostStatus('active')}}>Clear filters</button><small>{staffCount} clans match</small></div>}
-          <div className="staff-section-content"><section className="card" hidden={staffSection !== 'season'}><h2>Season settings</h2>{season && <div className="staff-row"><div><strong>{season.label}</strong><small>{season.signup_open ? 'Members can sign up' : 'Signups closed'}</small></div><button disabled={pending} onClick={() => staffAction(() => api(`/seasons/${encodeURIComponent(season.id)}`, 'PATCH', { signup_open: !season.signup_open }), season.signup_open ? 'Signups closed.' : 'Signups opened.')}>{season.signup_open ? 'Close signups' : 'Open signups'}</button></div>}<details className="staff-create-season"><summary>Create another season</summary><form onSubmit={event => { event.preventDefault(); if (!newSeasonLabel.trim()) return; staffAction(() => api('/seasons', 'POST', { label: newSeasonLabel.trim(), signup_open: false }), 'Season created.'); setNewSeasonLabel('') }}><label>New season label<input value={newSeasonLabel} onChange={event => setNewSeasonLabel(event.target.value)} placeholder="November 2026" required /></label><button className="primary" disabled={pending}>Create season</button></form></details></section>
+          <div className="staff-section-content"><section className="card" hidden={staffSection !== 'season'}><h2>Season settings</h2><MemberSeasonSettings selected={season} active={seasons.find(item => item.id === memberSeason.season_id)} busy={pending} onShow={() => staffAction(() => api('/member-season', 'PUT', {season_id: season?.id, revision: memberSeason.revision}), 'Member season updated.')} onHide={() => staffAction(() => api('/member-season', 'PUT', {season_id: null, revision: memberSeason.revision}), 'CWL season hidden from members.')} />{season && <div className="staff-row"><div><strong>{season.label}</strong><small>{season.signup_open ? 'Members can sign up' : 'Signups closed'}</small></div><button disabled={pending} onClick={() => staffAction(() => api(`/seasons/${encodeURIComponent(season.id)}`, 'PATCH', { signup_open: !season.signup_open }), season.signup_open ? 'Signups closed.' : 'Signups opened.')}>{season.signup_open ? 'Close signups' : 'Open signups'}</button></div>}<details className="staff-create-season"><summary>Create another season</summary><form onSubmit={event => { event.preventDefault(); if (!newSeasonLabel.trim()) return; staffAction(() => api('/seasons', 'POST', { label: newSeasonLabel.trim(), signup_open: false }), 'Season created.'); setNewSeasonLabel('') }}><label>New season label<input value={newSeasonLabel} onChange={event => setNewSeasonLabel(event.target.value)} placeholder="November 2026" required /></label><button className="primary" disabled={pending}>Create season</button></form></details></section>
           <section className="card" hidden={staffSection !== 'family'}><div className="card-heading"><h2>Family clans</h2><button disabled={staffLoading} onClick={() => void loadStaff()}>Refresh</button></div><p className="small">Accounts outside these family clans are marked for staff review. They can still sign up.</p>{approvedError ? <div className="notice error" role="alert">{approvedError}</div> : <p className="small">{approvedSource === 'bot_mongo' ? 'Synced with Discord' : approvedSource === 'fixture' ? 'Demo data' : 'Loading source…'}{approvedCheckedAt ? ` · Checked ${new Date(approvedCheckedAt).toLocaleString()}` : ''}</p>}{!approvedError && approved.length === 0 && !staffLoading && <p className="small">No family clans found.</p>}{staffPageSlice(visibleFamily).map(clan => <div className="staff-row" key={clan.tag}><div><strong>{clan.name}</strong><small>CWL: {clan.cwl_league || 'League unavailable'}{clan.cwl_league_stale && clan.cwl_league ? ' · last known' : ''}</small><small>{clan.tag}</small></div></div>)}</section>
           <section className="card" hidden={staffSection !== 'hosting'}><h2>Hosting clan directory</h2><p className="small">Add a clan and choose its default: Main or Lazy. Season settings can differ. Set weight ranges and capacity in Roster builder → Edit clan ranges. Archiving stops new placements and keeps history.</p><form className="inline-form" onSubmit={event => { event.preventDefault(); if (!newClanTag.trim() || !newClanPool) return; staffAction(() => api('/clans', 'POST', { tag: newClanTag.trim(), pool: newClanPool }), 'Hosting clan added.'); setNewClanTag('') }}><label>Clan tag<input value={newClanTag} onChange={event => setNewClanTag(event.target.value)} placeholder="#CLANTAG" required /></label><label>CWL pool<select required value={newClanPool} onChange={event => setNewClanPool(event.target.value as Pool)}><option value="">Choose Main or Lazy</option><option value="main">Main Clan CWL</option><option value="lazy">Lazy CWL</option></select></label><button className="primary" disabled={pending}>Add clan</button></form>{staffPageSlice(visibleHosts).map(clan => <div className="staff-row" key={clan.tag}><div><strong>{clan.name}</strong><small>CWL: {clan.cwl_league || 'League unavailable'}{clan.cwl_league_stale && clan.cwl_league ? ' · last known' : ''}</small><small>{clan.tag} · {clan.archived ? 'Archived' : 'Active'}</small></div><label>Default CWL pool<select aria-label={`Default CWL pool for ${clan.name}`} value={clan.pool || ''} disabled={pending} onChange={event => staffAction(() => api(`/clans/${tagPath(clan.tag)}`, 'PATCH', { pool: event.target.value }), 'Hosting clan pool saved. Existing season overrides are preserved.')}><option value="" disabled>Not set</option><option value="main">Main Clan CWL</option><option value="lazy">Lazy CWL</option></select></label><button disabled={pending} onClick={() => staffAction(() => api(`/clans/${tagPath(clan.tag)}`, 'PATCH', { archived: !clan.archived }), clan.archived ? 'Clan restored.' : 'Clan archived.')}>{clan.archived ? 'Restore' : 'Archive'}</button></div>)}</section>
 

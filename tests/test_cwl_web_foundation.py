@@ -514,10 +514,10 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
     async def test_oauth_destination_survives_browser_failure(self):
         self.app["oauth"] = {"client_id":"id", "client_secret":"secret", "redirect_uri":"https://example.test/callback"}
         started = await self.call("GET", "/auth/discord?view=signup&season=12", allow_redirects=False)
-        self.assertEqual(started.cookies["wu_login_page"].value, "/?view=signup&season=12")
+        self.assertEqual(started.cookies["wu_login_page"].value, "/signup")
         self.assertTrue(started.cookies["wu_login_page"]["httponly"])
         response = await self.call("GET", "/auth/callback?error=access_denied", {"Accept":"text/html", "Cookie":"wu_login_page=/?view=signup&season=12"}, allow_redirects=False)
-        self.assertEqual(response.headers["Location"], "/?view=signup&season=12&signin_error=discord")
+        self.assertEqual(response.headers["Location"], "/signup?signin_error=discord")
 
     async def test_oauth_state_is_one_time_and_expires_server_side(self):
         self.app["oauth"] = {"client_id": "id", "client_secret": "secret", "redirect_uri": "https://example.test/callback"}
@@ -566,7 +566,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
             response = await self.call("GET", f"/auth/callback?state={state}&code=code",
                                        {"Cookie": "cwl_oauth_state=" + cookie + "; wu_login_page=/?view=signup&season=12"}, allow_redirects=False)
         self.assertEqual(response.status, 302)
-        self.assertEqual(response.headers["Location"], "/?view=signup&season=12")
+        self.assertEqual(response.headers["Location"], "/signup")
         self.assertEqual(response.cookies["wu_login_page"]["max-age"], "0")
         raw = response.cookies["cwl_session"].value
         self.assertEqual(int(response.cookies["cwl_session"]["max-age"]), 30 * 86400)

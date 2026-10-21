@@ -91,7 +91,7 @@ LEGACY_SIGNUP_LAZY = (
         "\"LAZY WAY OR NO WAY!!\" Outside involvement is not permitted.\n\n"
         "Direct all questions and concerns in <#872692009066958879> <:warriorcat:947992348971905035>"
     )
-SIGNUP_URL = "https://cwl.ruggie.zone/?view=signup"
+SIGNUP_URL = "https://cwl.ruggie.zone/signup"
 
 
 def signup_buttons() -> list[dict]:

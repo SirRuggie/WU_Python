@@ -11,7 +11,7 @@ import './DashboardHome.css'
 
 type Snapshot = { season?: Season; accounts: Account[]; signups: Signup[]; assignments: MyAssignments; checkedAt: string; linkInstruction: string }
 type Props = {
-  session: Session; seasonId: string; seasons: Season[]; onSeasonChange: (id: string) => void;
+  session: Session; seasonId: string; seasons: Season[];
   onNavigate: (view: 'search' | 'wars' | 'events' | 'todo' | 'saved' | 'signup' | 'assignments' | 'roster' | 'publication' | 'staff') => void;
   onStart: (pool: Pool, tags: string[], accounts: Account[], signups: Signup[]) => void;
 }
@@ -20,7 +20,7 @@ function ClanBadge({ url, name }: { url?: string | null; name: string }) {
   return url && failed !== url ? <img className="hub-clan-badge" src={url} alt={`${name} badge`} width={40} height={40} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(url)} /> : <span className="hub-clan-fallback" aria-hidden="true"><DashboardIcon name="shield"/></span>
 }
 export default function DashboardHome(props: Props) {
-  const { session, seasonId, seasons, onSeasonChange, onNavigate, onStart } = props
+  const { session, seasonId, seasons, onNavigate, onStart } = props
   const cacheKey = `home:${session.user.id}:${seasonId}`
   const [data, setData] = useState<Snapshot | null>(() => readSnapshot<Snapshot>(cacheKey, (value): value is Snapshot => { const v = value as Snapshot; return !!v && Array.isArray(v.accounts) && Array.isArray(v.signups) && Array.isArray(v.assignments?.accounts) && typeof v.checkedAt === 'string' }))
   const [cached, setCached] = useState(!!data)
@@ -76,7 +76,7 @@ export default function DashboardHome(props: Props) {
   const canSignup = !cached && !error && !refreshing && !!season?.signup_open && season.status === 'draft'
   const selectVisible = () => setSelected(current => [...new Set([...current, ...visible.filter(row => !row.signup).map(row => row.tag)])])
   return <div className="dashboard-home">
-    <div className="page-head"><div><p className="eyebrow">Your Warriors United home</p><h1>Hey, {session.user.display_name || session.user.username}</h1><p>Your accounts, your clans, and what to do next.</p></div><label className="season-choice">CWL season<select value={seasonId} onChange={event => onSeasonChange(event.target.value)}><option value="">Select a season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>
+    <div className="page-head"><div><p className="eyebrow">Your Warriors United home</p><h1>Hey, {session.user.display_name || session.user.username}</h1><p>Your accounts, your clans, and what to do next.</p></div><p className="season-choice">{seasons.find(item => String(item.id) === seasonId)?.label || 'No CWL season available'}</p></div>
     <div className="hub-sync"><span role="status"><span className={`status-dot ${!error && data ? 'active' : ''}`} />{cached ? (error ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : refreshing ? 'Refreshing…' : error ? 'Refresh needs attention' : data ? `Updated ${new Date(data.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Loading your accounts…'}</span><div><small>{paused ? 'Auto-refresh paused' : 'Auto-refresh every 30 seconds'}</small><button onClick={() => setPaused(value => !value)} aria-pressed={paused}>{paused ? 'Resume' : 'Pause'}</button><button disabled={refreshing} onClick={() => setRefreshKey(value => value + 1)} aria-label="Refresh dashboard">↻ Refresh</button></div></div>
     {error && <div className="notice error" role="alert"><div>{error}{data && <small>Showing your last successful update. Saved signups have not been removed.</small>}</div><button onClick={() => setRefreshKey(value => value + 1)}>Retry</button></div>}
     <button className="home-search-entry" onClick={() => onNavigate('search')}><DashboardIcon name="search"/><span>Search players and clans by name or tag</span><kbd>Ctrl / ⌘ K</kbd></button>
