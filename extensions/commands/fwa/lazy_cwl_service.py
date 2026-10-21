@@ -12,6 +12,8 @@ here; a later brief calls start()/stop() from StartedEvent/StoppingEvent.
 
 from __future__ import annotations
 
+from utils.return_schedule import window_end, before_start
+
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -120,10 +122,8 @@ def _reminder_expired(reminders: dict, now: datetime) -> bool:
 
     The one 7-day check shared by reminder_job and restore_reminder_jobs.
     """
-    started_at = reminders.get("started_at")
-    if not started_at:
-        return False
-    return now - store._utc(started_at) >= SEVEN_DAYS
+    end = window_end(reminders)
+    return bool(end and now >= end)
 
 
 def calculate_next_run(doc: dict, now: Optional[datetime] = None) -> datetime:
@@ -136,6 +136,8 @@ def calculate_next_run(doc: dict, now: Optional[datetime] = None) -> datetime:
     """
     now = store._utc(now)
     reminders = doc.get("reminders", {})
+    if before_start(reminders, now):
+        return store._utc(reminders["schedule_start_at"])
     interval_minutes = max(1, int(reminders.get("every_minutes") or 60))
     interval = timedelta(minutes=interval_minutes)
     anchor = (
@@ -460,8 +462,8 @@ async def remind_now(clan_tag: str, *, expected_list_id=None, section: str = sto
     ):
         return {**_REMIND_NOW_DEFAULTS, **_stale_result()}
 
-    if scheduled and (not current.get("reminders", {}).get("enabled") or _reminder_expired(current.get("reminders", {}), datetime.now(timezone.utc))):
-        return {**_REMIND_NOW_DEFAULTS, "error": "Return pings are paused or their seven-day window has ended."}
+    if scheduled and (before_start(current.get("reminders", {}), datetime.now(timezone.utc)) or not current.get("reminders", {}).get("enabled") or _reminder_expired(current.get("reminders", {}), datetime.now(timezone.utc))):
+        return {**_REMIND_NOW_DEFAULTS, "error": "Return pings are paused or outside their scheduled window."}
 
     # Recipient lookup above can take time; the active-list check immediately
     # before this send prevents a finish or replacement during that lookup.
@@ -553,7 +555,7 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None, s
     }
 
 
-async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[int] = None, *, expected_list_id=None, section: str = store.DEFAULT_SECTION) -> dict:
+async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[int] = None, *, expected_list_id=None, section: str = store.DEFAULT_SECTION, schedule: dict | None = None, expected_reminders: dict | None = None) -> dict:
     """Turn a clan's reminders on or off and (un)schedule its job."""
     section = store.normalize_section(section)
     if section == "MAIN":
@@ -563,7 +565,8 @@ async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[in
 
     doc = await store.set_reminders(
         mongo_client, clan_tag, enabled=enabled, every_minutes=every_minutes,
-        expected_list_id=expected_list_id, section=section,
+        expected_list_id=expected_list_id, section=section, **({"schedule": schedule} if schedule is not None else {}),
+        **({"expected_reminders": expected_reminders} if expected_reminders is not None else {}),
     )
     if doc is None:
         if expected_list_id is not None:
@@ -590,7 +593,7 @@ async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[in
         # scheduler could not actually create the job.
         await store.set_reminders(
             mongo_client, clan_tag, enabled=False, every_minutes=every_minutes,
-            expected_list_id=doc["_id"], section=section,
+            expected_list_id=doc["_id"], section=section, expected_reminders=doc.get("reminders"),
         )
         _log.error("lazycwl_service.set_reminders: add_job failed clan_tag=%s error=%s", clan_tag, exc)
         return {"ok": False, "error": "Could not schedule reminders. Try again."}
@@ -623,6 +626,8 @@ async def reminder_job(list_id) -> None:
             _remove_job(job_id)
             return
 
+        if before_start(doc["reminders"], now):
+            return
         await remind_now(doc["clan_tag"], expected_list_id=list_id, scheduled=True)
     except Exception:
         _log.exception("lazycwl_service.reminder_job: unhandled error list_id=%s", list_id)

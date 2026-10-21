@@ -1,0 +1,26 @@
+.return-overview fieldset, .return-batch fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.return-toolbar, .return-toolbar > div:last-child, .return-bulk-bar, .return-bulk-bar > div { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.return-toolbar { justify-content: space-between; }
+.return-toolbar .workflow-tabs { flex: 1; margin: 0; }
+.return-toolbar .workflow-tabs button { display: flex; gap: 10px; }
+.return-filters, .return-date-fields { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin: 20px 0; }
+.return-overview label, .return-batch label { display: grid; gap: 7px; }
+.return-bulk-bar { background: #202020; padding: 14px; border: 1px solid #393939; border-radius: 12px; margin-bottom: 16px; }
+.return-bulk-bar > .primary { margin-left: auto; }
+.return-clan-list { border: 1px solid #393939; border-radius: 12px; overflow: hidden; }
+.return-clan-row { display: grid; grid-template-columns: minmax(180px,1.3fr) minmax(125px,.7fr) minmax(180px,1fr) auto; align-items: center; gap: 18px; padding: 18px; }
+.return-clan-row + .return-clan-row { border-top: 1px solid #393939; }
+.return-clan-row > * { min-width: 0; overflow-wrap: anywhere; }
+.return-clan-row small { display: block; color: #aaa; margin-top: 5px; }
+.return-overview .return-clan-name { display: flex; gap: 12px; align-items: center; }
+.return-clan-name input { width: 22px; height: 22px; flex-shrink: 0; accent-color: #eab63b; }
+.return-row-actions { display: flex; flex-direction: column; gap: 8px; }
+.return-batch { margin: 16px 0; border-color: #eab63b; }
+.return-batch > p { overflow-wrap: anywhere; }
+.return-batch fieldset > button { margin-top: 16px; }
+.return-results { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; }
+.return-maintenance { border-top: 1px solid #393939; padding-top: 16px; }
+.return-maintenance summary { cursor: pointer; min-height: 44px; }
+.return-maintenance > div { display: flex; gap: 10px; flex-wrap: wrap; }
+@media(max-width:1100px) { .return-clan-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .return-row-actions { flex-direction: row; flex-wrap: wrap; } }
+@media(max-width:540px) { .return-filters, .return-date-fields, .return-clan-row { grid-template-columns: minmax(0,1fr); } .return-bulk-bar { align-items: stretch; } .return-bulk-bar > label, .return-bulk-bar > .primary { width: 100%; } .return-toolbar { align-items: stretch; } .return-toolbar > div { width: 100%; } }

@@ -431,6 +431,8 @@ async def set_reminders(
     expected_list_id=None,
     section: str = DEFAULT_SECTION,
     now: datetime | None = None,
+    schedule: dict | None = None,
+    expected_reminders: dict | None = None,
 ) -> dict | None:
     """Save frequency and running state without extending the original window."""
     now = _utc(now)
@@ -443,22 +445,30 @@ async def set_reminders(
     current = await _coll(mongo).find_one(query)
     if current is None:
         return None
+    from utils.return_schedule import validate_window, window_end
     previous = current.get("reminders") or {}
+    if expected_reminders is not None and previous != expected_reminders:
+        return None
+    dates = validate_window(schedule.get("start"), schedule.get("end"), current, now=now) if schedule is not None else None
     started = previous.get("started_at")
     if enabled and now >= _utc(current["expires_at"]):
         raise ValueError("This saved member list has expired; no more pings are allowed.")
-    if enabled and started and now >= _utc(started) + timedelta(days=7):
+    if enabled and not dates and window_end(previous) and now >= window_end(previous):
         raise ValueError("The seven-day return-ping window has ended.")
     update: dict[str, Any] = {
         "reminders.enabled": enabled,
         "reminders.every_minutes": every_minutes or previous.get("every_minutes") or 60,
     }
+    if dates:
+        update["reminders.schedule_start_at"], update["reminders.schedule_end_at"] = dates
+        if not started or _utc(started) > now:
+            update["reminders.started_at"] = dates[0]
     if enabled and not started:
-        update["reminders.started_at"] = now
+        update["reminders.started_at"] = dates[0] if dates else now
         update["reminders.last_sent_at"] = None
         update["reminders.sent_count"] = 0
     # Concurrent starts cannot replace the first start timestamp.
-    query["reminders.started_at"] = started
+    query["reminders"] = current.get("reminders")
     return await _coll(mongo).find_one_and_update(
         query, {"$set": update}, return_document=ReturnDocument.AFTER,
     )

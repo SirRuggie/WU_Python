@@ -228,3 +228,47 @@ def test_retry_network_replay_returns_original_receipt_after_live_changes(monkey
         assert getter.await_count==1
         assert len([row for row in db.bot_config.rows.values() if row.get('retry_of')=='batch'])==1
     asyncio.run(scenario())
+
+
+def test_schedule_replay_preserves_dates_and_rejects_changed_dates(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    async def scenario():
+        db = setup_api(monkeypatch)
+        now = datetime.now(timezone.utc)
+        current = {'_id': 'saved', 'expires_at': now + timedelta(days=10)}
+        items = {'FWA:#P0': dict(section='FWA', tag='#P0', name='Example', revision=fingerprint(current), active=True)}
+        monkeypatch.setattr(api, 'available', AsyncMock(return_value=items))
+        monkeypatch.setattr(api.destinations, 'load', AsyncMock(return_value={}))
+        monkeypatch.setattr(api.store, 'get_active', AsyncMock(return_value=current))
+        values = dict(clans=['FWA:#P0'], every_minutes=60, schedule_start=(now+timedelta(days=1)).isoformat(), schedule_end=(now+timedelta(days=3)).isoformat())
+        body = dict(request_id='5529ece3-9d38-4c0f-9c80-92b5c1e63456', revision=fingerprint({'items':items,'channels':{}}), values=values)
+        first = await api.run(request(body, operation='schedule'))
+        monkeypatch.setattr(api, 'available', AsyncMock(side_effect=AssertionError('Replay must use receipt')))
+        second = await api.run(request(body, operation='schedule'))
+        assert first.text == second.text
+        children = [row for row in db.bot_config.rows.values() if row.get('parent_id')]
+        assert len(children) == 1
+        assert children[0]['values']['schedule_start'] == values['schedule_start']
+        assert children[0]['values']['schedule_end'] == values['schedule_end']
+        body['values']['schedule_end'] = (now+timedelta(days=4)).isoformat()
+        with pytest.raises(web.HTTPConflict): await api.run(request(body, operation='schedule'))
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('pool,invalid', [('MAIN',False), ('FWA',True)])
+def test_schedule_invalid_selection_never_queues(monkeypatch, pool, invalid):
+    from datetime import datetime, timedelta, timezone
+    async def scenario():
+        setup_api(monkeypatch)
+        now = datetime.now(timezone.utc)
+        current = {'_id':'saved','expires_at':now+timedelta(days=2)}
+        all_items = {pool+':#P0':dict(section=pool,tag='#P0',name='Example',revision=fingerprint(current),active=True)}
+        items = api.eligible(all_items,'schedule')
+        monkeypatch.setattr(api,'available',AsyncMock(return_value=all_items))
+        monkeypatch.setattr(api.destinations,'load',AsyncMock(return_value={}))
+        monkeypatch.setattr(api.store,'get_active',AsyncMock(return_value=current))
+        queued = AsyncMock(); monkeypatch.setattr(return_bulk,'queue',queued)
+        body = dict(request_id='5529ece3-9d38-4c0f-9c80-92b5c1e63456',revision=fingerprint({'items':items,'channels':{}}),values=dict(clans=[pool+':#P0'],schedule_start=now.isoformat(),schedule_end=(now+timedelta(days=3)).isoformat()))
+        with pytest.raises(web.HTTPBadRequest): await api.run(request(body,operation='schedule'))
+        queued.assert_not_awaited()
+    asyncio.run(scenario())

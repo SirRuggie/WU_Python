@@ -21,7 +21,7 @@ async def page(request):
                 dict(id='return-history',label='Results · Recent group actions',endpoint='/manage/return-batches'),
             ]
             from .manage_return_bulk import LABELS
-            documents.extend(dict(id='return-bulk-'+operation,label='Multiple clans · '+label,endpoint='/manage/return-bulk/'+operation) for operation,label in LABELS.items())
+            documents.extend(dict(id='return-bulk-'+operation,label='Multiple clans · '+label,endpoint='/manage/return-bulk/'+operation) for operation,label in LABELS.items() if operation != 'schedule')
             for section in ('MAIN','FWA'):
                 active=await store.list_active(db,section=section)
                 saved={r['clan_tag']:r for r in active}
@@ -30,7 +30,7 @@ async def page(request):
                     if (section=='FWA') == (clan.get('type')=='FWA'):
                         available[tag(clan['tag'])]=clan.get('name') or clan['tag']
                 for clan,name in sorted(available.items(),key=lambda item:item[1].casefold()):
-                    documents.append({'id':section+clan,'label':f'{name} · {section}', 'return_status':return_status(saved.get(clan),section), 'endpoint':f'/manage/return-reminders/{section}/{quote(clan,safe="")}'})
+                    documents.append({'id':section+clan,'return_section':section,'clan_tag':clan,'clan_name':name,'label':f'{name} · {section}', 'return_status':return_status(saved.get(clan),section), 'endpoint':f'/manage/return-reminders/{section}/{quote(clan,safe="")}'})
             return web.json_response({'id':'cwl_rosters','label':'CWL return reminders','description':'Saved home-clan members. These are separate from CWL signup placements.','group':'War','revision':'index','fields':[],'documents':documents})
         try:pool=store.normalize_section(pool);clan_tag=tag(clan_tag)
         except ValueError as exc:raise web.HTTPBadRequest(text='Choose a valid clan.') from exc

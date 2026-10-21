@@ -9,7 +9,7 @@ from utils import lazy_cwl_store as store, return_bulk, return_reminder_settings
 from utils.manage_web_worker import WORKER_ID
 
 API=shared.API
-LABELS={'save':'Save current clan members','replace':'Replace saved lists','send':'Send return reminders','start':'Start or update reminders','pause':'Pause reminders','resume':'Resume reminders','clear':'Close saved lists','away':'Check who is away'}
+LABELS={'schedule':'Schedule return reminders','save':'Save current clan members','replace':'Replace saved lists','send':'Send return reminders','start':'Start or update reminders','pause':'Pause reminders','resume':'Resume reminders','clear':'Close saved lists','away':'Check who is away'}
 
 
 async def available(db):
@@ -27,7 +27,7 @@ async def available(db):
 
 
 def eligible(items,operation):
-    return {key:item for key,item in items.items() if (not item['active'] if operation=='save' else item['active']) and (operation not in ('start','pause','resume') or item['section']=='FWA')}
+    return {key:item for key,item in items.items() if (not item['active'] if operation=='save' else item['active']) and (operation not in ('start','pause','resume','schedule') or item['section']=='FWA')}
 
 
 async def page(request):
@@ -43,7 +43,7 @@ async def page(request):
         fields.append(dict(key='every_minutes',label='Reminder interval',type='select',value='60',options=[dict(value='30',label='Every 30 minutes'),dict(value='60',label='Every hour'),dict(value='120',label='Every 2 hours')]))
     effective=destinations.channels(channels)
     return web.json_response(dict(id='return-bulk-'+operation,label=LABELS[operation],description='Each clan has its own result. Completed clans are never included in failed-only retries.'+ (f" Main channel: {effective['MAIN']}. FWA channel: {effective['FWA']}." if operation=='send' else ''),group='War',revision=revision,fields=fields,action_only=True,
-        warning='Select Main or FWA clans below. Main scheduled reminders are not available.' if operation not in ('start','pause','resume') else 'FWA clans only. Resuming keeps the original seven-day limit.',
+        warning='Select Main or FWA clans below. Main scheduled reminders are not available.' if operation not in ('start','pause','resume','schedule') else 'FWA clans only. Resuming keeps the original seven-day limit.',
         actions=[dict(id='run',label=LABELS[operation],confirm=LABELS[operation]+' for the selected clans?'+(' This sends Discord messages.' if operation=='send' else ''),endpoint='/manage/return-bulk/'+operation+'/run')]))
 
 
@@ -68,7 +68,7 @@ async def run(request):
     body=await request.json()
     if not isinstance(body,dict) or not isinstance(body.get('values'),dict):raise web.HTTPBadRequest()
     rid=request_id(body); values=body['values']; selected=values.get('clans')
-    if set(values)-{'clans','every_minutes'} or not isinstance(selected,list) or not 1<=len(selected)<=50 or any(not isinstance(x,str) for x in selected) or len(set(selected))!=len(selected):raise web.HTTPBadRequest(text='Select between 1 and 50 different clans.')
+    if set(values)-{'clans','every_minutes','schedule_start','schedule_end'} or not isinstance(selected,list) or not 1<=len(selected)<=50 or any(not isinstance(x,str) for x in selected) or len(set(selected))!=len(selected):raise web.HTTPBadRequest(text='Select between 1 and 50 different clans.')
     try:minutes=int(values.get('every_minutes',60))
     except (TypeError,ValueError):raise web.HTTPBadRequest(text='Choose a reminder interval.') from None
     if minutes not in (30,60,120):raise web.HTTPBadRequest(text='Choose 30 minutes, 1 hour, or 2 hours.')
@@ -77,7 +77,10 @@ async def run(request):
         # after completed mutations must not fail merely because those mutations worked.
         key='manage-return-batch:'+return_bulk.digest([actor['user_id'],rid])
         existing=await db.bot_config.find_one({'_id':key,'kind':return_bulk.BATCH_KIND})
-        selection_key=return_bulk.digest([operation,sorted(selected),minutes,body.get('revision')])
+        schedule_values = {field:values[field] for field in ('schedule_start','schedule_end') if field in values}
+        if operation != 'schedule' and schedule_values:
+            raise web.HTTPBadRequest(text='Dates apply only to Schedule.')
+        selection_key=return_bulk.digest([operation,sorted(selected),minutes,body.get('revision')] + ([schedule_values] if schedule_values else []))
         if existing:
             if existing.get('selection_key')!=selection_key:raise web.HTTPConflict(text='This request was already used for a different selection.')
             if existing.get("state")=="building":
@@ -90,6 +93,16 @@ async def run(request):
         snapshots=[]
         for key in selected:
             item=dict(items[key])
+            if operation == 'schedule':
+                from utils.return_schedule import validate_window
+                current = await store.get_active(db,item['tag'],section=item['section'])
+                if current is None or fingerprint(current) != item['revision']:
+                    raise web.HTTPConflict(text='A clan list changed. Refresh and review again.')
+                try:
+                    start, end = validate_window(values.get('schedule_start'), values.get('schedule_end'), current)
+                except ValueError as exc:
+                    raise web.HTTPBadRequest(text=f"{item['name']}: {exc}") from exc
+                item.update(schedule_start=start.isoformat(),schedule_end=end.isoformat())
             if operation=='send':item['destination']=destinations.channels(channels)[item['section']]
             snapshots.append(item)
         key=await return_bulk.queue(db,user_id=actor['user_id'],guild_id=shared.GUILD_ID,request_id=rid,operation=operation,items=snapshots,minutes=minutes,selection_key=selection_key)
@@ -150,6 +163,8 @@ async def retry(request):
             if value['operation']=='send':
                 item['destination']=await destinations.destination(db,pool)
                 if item['destination']!=child['values'].get('destination'):raise web.HTTPConflict(text='A return channel changed. Start a new review.')
+            for field in ('schedule_start','schedule_end'):
+                if field in child['values']: item[field] = child['values'][field]
             snapshots.append(item)
         await ready(db)
         key=await return_bulk.queue(db,user_id=actor['user_id'],guild_id=shared.GUILD_ID,request_id=rid,operation=value['operation'],items=snapshots,minutes=value['minutes'],retry_of=value['_id'],selection_key=selection_key)

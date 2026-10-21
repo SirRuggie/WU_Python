@@ -5,7 +5,7 @@ import time
 from pymongo.errors import DuplicateKeyError
 
 BATCH_KIND = 'manage_return_batch'
-OPERATIONS = {'save','replace','send','start','pause','resume','clear','away'}
+OPERATIONS = {'save','replace','send','schedule','start','pause','resume','clear','away'}
 MAX_CLANS = 50
 
 
@@ -29,6 +29,8 @@ async def queue(db, *, user_id, guild_id, request_id, operation, items, minutes=
     created=parent['created_at']
     for index,item in enumerate(items):
         values=dict(clan_tag=item['tag'],section=item['section'],every_minutes=minutes)
+        for field in ('schedule_start', 'schedule_end'):
+            if field in item: values[field] = item[field]
         if 'destination' in item:values['destination']=item['destination']
         child=dict(_id=key+':'+str(index),kind='manage_web_request',parent_id=key,section='cwl_rosters',action=operation,
                    values=values,revision=item['revision'],user_id=str(user_id),guild_id=guild_id,status='held',created_at=created,

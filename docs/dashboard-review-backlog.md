@@ -74,3 +74,8 @@ Clan management, CWL staff workflows, and Activity/navigation already have subst
 scoped coverage recorded in `dashboard-interaction-standard.md`. The event calendar
 is recurring reference data, not a live special-event feed. Search remains scoped
 to the user's accounts/current clans and the authorized family directory.
+
+Return reminders received a focused follow-up: FWA/Main separation, visible batch
+controls, shared dates with per-clan overrides, and scheduling/restart safeguards.
+See `dashboard-interaction-standard.md` for tests and browser limitations. This does
+not complete the deferred strikes/replacements, permissions, or other journeys.

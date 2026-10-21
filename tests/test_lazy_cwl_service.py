@@ -5,6 +5,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import coc
 import pytest
@@ -1094,3 +1095,35 @@ def test_service_module_never_references_collection_or_registers_actions():
     assert "lazy_cwl_lists" not in source
     for marker in ("@loader", "register_action", "listener"):
         assert marker not in source
+
+
+def test_custom_future_window_survives_restart_without_early_sends(monkeypatch):
+    now = datetime.now(timezone.utc)
+    doc = _list_doc('dated', expires_at=now + timedelta(days=12))
+    mongo = _fake_mongo([doc])
+    scheduler = FakeScheduler()
+    _wire(monkeypatch, mongo=mongo, scheduler=scheduler, links={})
+    start, end = now+timedelta(days=1), now+timedelta(days=3)
+    result = asyncio.run(service.set_reminders('#ABC', True, 60, schedule={'start':start.isoformat(),'end':end.isoformat()}))
+    assert result['ok']
+    saved = asyncio.run(store.get_by_id(mongo,'dated'))
+    assert service.calculate_next_run(saved,now)==start
+    scheduler.jobs.clear()
+    asyncio.run(service.restore_reminder_jobs())
+    assert scheduler.jobs['lazycwl_reminder_dated'][1]['next_run_time']==start
+    send = AsyncMock()
+    monkeypatch.setattr(service,'remind_now',send)
+    asyncio.run(service.reminder_job('dated'))
+    send.assert_not_awaited()
+    assert service._reminder_expired(saved['reminders'],end)
+
+
+def test_schedule_edit_rejects_stale_reminder_settings(monkeypatch):
+    now = datetime.now(timezone.utc)
+    doc = _list_doc('dated', expires_at=now+timedelta(days=12))
+    mongo = _fake_mongo([doc])
+    _wire(monkeypatch,mongo=mongo,scheduler=FakeScheduler(),links={})
+    result=asyncio.run(service.set_reminders('#ABC',True,60,expected_list_id='dated',expected_reminders={'enabled':True},schedule={'start':(now+timedelta(days=1)).isoformat(),'end':(now+timedelta(days=2)).isoformat()}))
+    assert result.get('stale')
+    saved=asyncio.run(store.get_by_id(mongo,'dated'))
+    assert not saved['reminders']['enabled']

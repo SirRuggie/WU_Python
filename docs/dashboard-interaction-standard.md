@@ -237,3 +237,31 @@ browser automation auto-handled the native dialog; this is not a native-dialog o
 screen-reader certification. Existing Vite bundle/import and aiohttp warnings
 remain. No live Discord messages, actual provider links, or member signup records
 were changed during testing.
+
+## CWL return reminders — October 21 follow-up
+
+Return reminders now use separate FWA/Main views, searchable clan rows, and one
+visible selection/action toolbar. FWA supports shared start/stop dates applied to
+selected clans; editing one clan uses the same editor as a batch. Main remains
+manual. Existing channel, member-list maintenance, and durable result/retry flows
+are reused. Signup reminders are outside this change.
+
+Scheduling stores UTC dates and displays the viewer’s timezone. Windows cannot
+exceed seven days or a saved list’s seasonal cutoff; editing an already-started
+window cannot extend its original seven-day deadline. Future schedules survive
+restarts and the sender rechecks the current start/stop window before delivery.
+Storage compares the previous reminder settings to reject concurrent edits.
+Reviewing or opening an editor never sends a message or starts a schedule.
+
+Validation: 166 relevant backend tests, 187 frontend tests, production build, and
+`git diff --check`. Isolated browser fixtures contained 25 clans and covered FWA/Main
+separation, bulk selection, individual date prefill, confirmation/cancel, a queued
+receipt with partial failure, retained search on detail return, and failed-refresh
+blocking. Desktop 1280px and mobile 390/320px layouts were inspected; the inspected
+mobile layouts had no horizontal overflow. Shared date payloads, request replay,
+invalid windows, Main automation rejection, restart recovery and stale settings
+were covered by automated tests. The browser’s datetime fill operation did not
+populate blank native inputs; interactive confirmation used an existing schedule’s
+prefilled dates. Native date-picker entry and assistive-technology behavior still
+need real-device verification. No live reminders or actual schedules were changed
+by the fixture. Existing Vite chunk-size/import warnings remain.

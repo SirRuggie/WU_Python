@@ -16,7 +16,7 @@ ACTIONS = {
  ('band_monitor','status'), ('band_monitor','debug_on'), ('band_monitor','debug_off'),
  ('ticket_settings','save'), ('ticket_settings','check'), ('ticket_settings','restore_entry'), ('ticket_settings','restore_console'),
  ('ticket_testing','start'), ('ticket_testing','end'), ('ticket_testing','access'), ('ticket_testing','main'), ('ticket_testing','fwa'), ('ticket_testing','clear'),
- *{('cwl_rosters', x) for x in ('save','replace','clear','add','remove','send','start','pause','resume','away')},
+ *{('cwl_rosters', x) for x in ('save','replace','clear','add','remove','send','schedule','start','pause','resume','away')},
  ('recruit','send'), ('recruit','update'),
 }
 
@@ -69,7 +69,7 @@ async def dispatch(bot, mongo, row, ctx):
                 raise ValueError('Choose up to 25 valid members or roles.')
         if 'allow_admins' in values and type(values['allow_admins']) is not bool:
             raise ValueError('Choose whether administrators are allowed.')
-    if section=='cwl_rosters' and action in {'start','resume'}:
+    if section=='cwl_rosters' and action in {'start','resume','schedule'}:
         if type(values.get('every_minutes',60)) is not int or values.get('every_minutes',60) not in (30,60,120):
             raise ValueError('Choose every 30 minutes, 1 hour, or 2 hours.')
     if section in {'fwa_points','fwa_sync'}:
@@ -150,6 +150,11 @@ async def dispatch(bot, mongo, row, ctx):
         from cwl_web.manage_content import fingerprint
         if fingerprint(current)!=row['revision']:
             raise ValueError('This saved clan changed. Reload and review before trying again.')
+        if action == 'schedule':
+            from utils.return_schedule import validate_window
+            if pool != 'FWA' or current is None:
+                raise ValueError('Only saved FWA lists can be scheduled.')
+            validate_window(values.get('schedule_start'), values.get('schedule_end'), current)
         expected=current['_id'] if current else None
         kwargs=dict(section=pool,expected_list_id=expected)
         if action=='send':
@@ -163,6 +168,7 @@ async def dispatch(bot, mongo, row, ctx):
             elif action=='add':result=await service.add_player_by_tag(tag,values['player_tag'],**kwargs)
             elif action=='remove':result={'removed':await store.remove_players(mongo,tag,values['player_tags'],**kwargs)}
             elif action=='send':result=await service.remind_now(tag,expected_channel=values.get('destination'),**kwargs)
+            elif action=='schedule':result=await service.set_reminders(tag,True,int(values.get('every_minutes',60)),schedule={'start':values['schedule_start'],'end':values['schedule_end']},expected_reminders=current.get('reminders') or {},**kwargs)
             elif action=='away':result={'accounts':await service.away_players(current)} if current else {'accounts':[]}
             else:result=await service.set_reminders(tag,action!='pause',int(values.get('every_minutes',60)),**kwargs)
         except Exception as exc:
