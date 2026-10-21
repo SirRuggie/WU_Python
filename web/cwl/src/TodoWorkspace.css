@@ -3,3 +3,24 @@
 @media(max-width:650px){.todo-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.todo-tabs button{min-height:95px;padding:13px}.todo-tabs button:last-child{grid-column:1/-1;display:grid;grid-template-columns:auto 1fr;gap:4px 12px}.todo-tabs button:last-child>span{grid-row:1/3}.todo-tabs button:last-child small{grid-column:2}.todo-picker-tools{flex-wrap:wrap}.todo-picker-tools>label{flex-basis:100%}.todo-picker-list{grid-template-columns:1fr}.todo-account-picker summary>span{float:none;display:block;padding:6px 0 0 20px}.todo-section-head{display:block}.todo-section-head label{margin-top:14px}.todo-clan>header{padding:14px 12px;gap:8px}.todo-clan h3{font-size:16px}.todo-clan>header small{font-size:10px}.todo-task{padding:16px 12px;gap:14px}.todo-task-time>strong{font-size:14px}.todo-task-time p{font-size:11px}.todo-home-link{flex-wrap:wrap;padding:17px}.todo-home-link>div{min-width:180px}.todo-home-link>button{width:100%}}
 
 .todo-fwa{margin:8px 0;line-height:1.5;overflow-wrap:anywhere}.todo-fwa strong{display:block;font-size:13px;color:#f5d67b}.todo-fwa.win strong{color:#81e2b1}.todo-fwa.lose strong,.todo-fwa.blacklisted strong{color:#ffadad}.todo-fwa span{display:block;font-size:12px;color:#c7d3e2}
+
+.todo-event-timer {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 18px;
+  margin: 12px 0 18px;
+  border: 1px solid #3e3930;
+  border-left: 3px solid #e1b635;
+  border-radius: 10px;
+  background: #191919;
+}
+.todo-event-timer > div { display: grid; gap: 5px; flex: 1; }
+.todo-event-label { color: #d2c29c; font-size: 13px; }
+.todo-event-timer strong { font-size: 22px; color: #f2d36b; }
+.todo-event-timer time, .todo-event-timer small { color: #b6bfcb; font-size: 12px; }
+.todo-event-timer p { flex: 1; margin: 0; line-height: 1.5; }
+.todo-event-timer small { display: block; margin-top: 6px; }
+@media (max-width: 650px) {
+  .todo-event-timer { flex-direction: column; align-items: stretch; gap: 12px; }
+}

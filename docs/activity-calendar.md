@@ -65,3 +65,13 @@ cards, timezone switch across DST, whole-clan score cards, long/escaped names,
 calendar availability during clan-service failure, Retry recovery, denied access
 with no score cards, and correct Events → CWL → personal CWL task handoffs. Mobile
 pages do not overflow horizontally; war-type tabs scroll within their own rail.
+
+Tasks now reuses the Events calendar and visibility-aware clock for selected Clan
+Games and Raids tabs. A compact schedule panel shows Starts/Ends in, the target
+local date/time, and explains that progress requires reported activity. Standard
+calendar dates remain distinct from actual API task rows, failures and cached
+results; the panel never declares accounts complete or promises instant results.
+The in-game timer takes precedence. Tests cover exact start/end transitions and
+next-month/week windows; 201 frontend tests, build and war-reminder gate passed.
+Isolated desktop and 390px browser checks covered both category selections,
+readable status text and no horizontal page overflow. No notifications sent.

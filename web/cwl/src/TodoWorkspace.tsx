@@ -1,4 +1,6 @@
 import DashboardIcon from './DashboardIcon'
+import TaskEventTimer from './activity/TaskEventTimer'
+import { useClock } from './activity/useClock'
 import PushReminders from './PushReminders'
 import { readSnapshot, writeSnapshot } from './snapshotCache'
 import { useEffect, useState } from 'react'
@@ -29,7 +31,7 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
   const [sort,setSort] = useState(preferences.sort)
   useEffect(() => { try { if (!initialSearch) saveTodoPreferences(preferenceId, { tab, selected, sort }, window.localStorage) } catch { /* Storage can be blocked. */ } }, [userId, tab, selected, sort])
   const [page,setPage] = useState(0)
-  const [now,setNow] = useState(Date.now())
+  const now = useClock()
   useEffect(() => {
     let cancelled=false, inFlight=false
     const load = async () => {
@@ -37,7 +39,7 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
       inFlight=true;setLoading(true)
       try {
         const result = await api<TodoSnapshot>('/todo')
-        if (!cancelled) { setData(result);writeSnapshot(cacheKey,result);setCached(false);setError('');setNow(Date.now()) }
+        if (!cancelled) { setData(result);writeSnapshot(cacheKey,result);setCached(false);setError('') }
       } catch (cause) { if (!cancelled) { if (cause instanceof ApiError && [401,403].includes(cause.status)) { setData(null); setCached(false) }; setError(cause instanceof Error ? cause.message : 'Could not update your tasks. Try again.') } }
       finally { inFlight=false;if (!cancelled) setLoading(false) }
     }
@@ -47,7 +49,6 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
     document.addEventListener('visibilitychange',check);window.addEventListener('online',check)
     return () => { cancelled=true;clearInterval(timer);document.removeEventListener('visibilitychange',check);window.removeEventListener('online',check) }
   },[paused,refresh])
-  useEffect(() => { const timer=window.setInterval(()=>setNow(Date.now()),30000);return ()=>clearInterval(timer) },[])
   useEffect(() => { setPage(0) },[tab,selected,search,sort])
   const view=data?.views[tab]
   const config=todoTabs.find(item=>item.key===tab)!
@@ -73,6 +74,7 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
       })}</div>
       <details className="todo-account-picker"><summary>{selected===null ? 'All linked accounts' : `${selectedCount} account${selectedCount===1?'':'s'} selected`} <span>Choose accounts</span></summary><div className="todo-picker-tools"><label>Find linked accounts<input type="search" value={accountSearch} onChange={event=>setAccountSearch(event.target.value)} placeholder="Account or clan name…" /></label><button onClick={()=>setSelected(null)}>All accounts</button><button onClick={()=>setSelected([])}>Clear</button></div><div className="todo-picker-list">{filteredAccounts.map(account=><label key={account.tag}><input type="checkbox" checked={selected===null || selected.includes(account.tag)} onChange={event=>setSelected(current=>{const previous=current===null ? accounts.map(item=>item.tag) : current;return event.target.checked ? [...new Set([...previous,account.tag])] : previous.filter(tag=>tag!==account.tag)})}/><TownHallIcon level={account.town_hall}/><span><strong>{account.name}</strong><small>{account.tag}</small></span></label>)}{!filteredAccounts.length && <p>No matching linked accounts.</p>}</div></details>
       <div className="todo-section-head"><div><h2><DashboardIcon name={config.icon}/> {config.label}</h2><p>{config.description}</p></div><label>Sort tasks<select value={sort} onChange={event=>setSort(event.target.value)}><option value="deadline">Ending soonest</option><option value="th">Town Hall · highest first</option><option value="name">Account name · A–Z</option></select></label></div>
+      {(tab==='raid' || tab==='games') && <TaskEventTimer kind={tab} now={now}/>}
       <label className="todo-search">Search tasks<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Account, tag or clan…"/></label>
       {view && <>
         {(!view.ok || !!view.incomplete) && <div className="todo-warning" role="status"><strong>{view.ok ? 'Some activity could not be checked' : 'This activity is unavailable'}</strong><p>{view.incomplete || view.unavailable || view.note || 'Try again later. Check this activity in-game meanwhile.'}</p></div>}
