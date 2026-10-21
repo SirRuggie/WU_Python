@@ -184,9 +184,14 @@
 
 .weight-trial-row-warning {
   grid-column: 1 / -1;
-  color: #f4cf78;
-  border-left: 3px solid #dba923;
+  color: #ffb5ae;
+  border-left: 3px solid #ef7770;
   padding: 4px 8px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.weight-trial-row.has-weight-issue {
+  background: #d94c4524;
+  box-shadow: inset 3px 0 #ef7770;
 }

@@ -368,7 +368,7 @@ export default function WeightTrial({
                         </h3>
                       )}
                     <div
-                      className={`weight-trial-row${JSON.stringify(draft) !== JSON.stringify(draftFor(row)) ? " is-edited" : ""}`}
+                      className={`weight-trial-row${JSON.stringify(draft) !== JSON.stringify(draftFor(row)) ? " is-edited" : ""}${invalid || warning ? " has-weight-issue" : ""}`}
                       key={row.tag}
                     >
                       <strong className="weight-trial-position">
