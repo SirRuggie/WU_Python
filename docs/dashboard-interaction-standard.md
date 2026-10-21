@@ -566,3 +566,20 @@ Validation: 191 frontend tests and production build passed. Isolated desktop and
 cancelled switching preserving selection, My signups access, and the all-signed-up
 empty state. No live signups or Discord messages were changed. Existing build
 chunk-size advisory remains.
+
+### Return reminder capture-to-start review
+
+Preserve selected clans after a bulk action, so capturing a list does not force
+staff to select the same clans again. After capture, the next action becomes
+Start return reminders for FWA or Send now for Main. Results remain visible until
+Done; failed clans still require review. Existing lists are preserved, capture
+must happen before members leave, and FWA start requires no date. Empty start
+and expiry fields are omitted; unavailable actions explain missing/existing lists.
+Main remains manual; optional future scheduling stays in its disclosure.
+
+Validation: 106 backend return-service, batch, scheduling, status and destination
+tests, including a new multi-clan date-free start/replay regression; 191 frontend
+tests and production build passed. Reviewed stale-list checks, receipt replay,
+partial capture failure, original stop limits, and Main automation rejection.
+Fresh desktop/mobile visual checks were attempted with isolated fixtures, but the
+in-app browser failed to attach twice. No live lists or Discord sends were used.

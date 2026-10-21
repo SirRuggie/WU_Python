@@ -311,3 +311,26 @@ def test_start_worker_captures_only_a_reviewed_missing_list(monkeypatch):
         with pytest.raises(ValueError):await worker.dispatch(None,object(),row,None)
         assert capture.await_count == 1
     asyncio.run(scenario())
+
+
+def test_start_multiple_clans_without_dates_and_replay_keeps_one_batch(monkeypatch):
+    async def scenario():
+        db = setup_api(monkeypatch)
+        items = {
+            'FWA:#P0': dict(section='FWA', tag='#P0', name='Saved clan', revision='saved', active=True),
+            'FWA:#P2': dict(section='FWA', tag='#P2', name='New clan', revision=fingerprint(None), active=False),
+        }
+        monkeypatch.setattr(api, 'available', AsyncMock(return_value=items))
+        monkeypatch.setattr(api.destinations, 'load', AsyncMock(return_value={}))
+        body = dict(request_id='5529ece3-9d38-4c0f-9c80-92b5c1e63456',
+                    revision=fingerprint({'items': items, 'channels': {}}),
+                    values=dict(clans=list(items), every_minutes=60))
+        first = await api.run(request(body, operation='start'))
+        replay = await api.run(request(body, operation='start'))
+        assert first.text == replay.text
+        children = [row for row in db.bot_config.rows.values() if row.get('parent_id')]
+        assert len(children) == 2
+        assert {row['values']['clan_tag'] for row in children} == {'#P0', '#P2'}
+        assert all(row['action'] == 'start' and row['status'] == 'pending' for row in children)
+        assert all('schedule_start' not in row['values'] and 'schedule_end' not in row['values'] for row in children)
+    asyncio.run(scenario())
