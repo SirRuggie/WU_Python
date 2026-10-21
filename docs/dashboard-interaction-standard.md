@@ -292,3 +292,26 @@ window’s deadline, and worker forwarding with stale-settings protection. Isola
 25-clan browser checks covered bulk start/frequency confirmation, partial receipts,
 optional scheduling, Main manual controls, and 1280/390/320px layouts. No live
 Discord messages or production reminder settings were changed during verification.
+
+### Signup reminders: dates before rules
+
+The routine schedule editor displays opening-announcement and advertised-deadline
+calendar dates in the campaign timezone. It no longer exposes numeric month
+relative-to-CWL controls. Existing monthly and month-end rules remain unchanged
+until explicitly edited; choosing a date replaces that rule and the existing
+backend converts it to recurring monthly settings on save. Advanced timing keeps
+manual/custom rules available. Timezone and minimum spacing are disclosed under
+Advanced reminder settings. Copy distinguishes announcements from opening/closing
+website signups, which this scheduler does not control.
+
+This applies [NN/g progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/)
+and [GOV.UK date input guidance](https://design-system.service.gov.uk/components/date-input/):
+show routine choices first, use labeled date controls, and defer exceptional rules.
+Validation: 191 frontend tests, 16 campaign/API regression tests, production build,
+and isolated browser checks at 1280/390/320px. Checks covered no dirty changes on
+view, keyboard date edits, review validation and successful preview, discard
+confirmation, monthly offsets across year boundaries, short months/leap years,
+absolute timestamps in the campaign timezone, and collapsed advanced controls.
+Native date fill via the browser tool did not fire the React change; native keyboard
+entry did and was verified. No live campaigns, signup states or Discord messages
+were changed. Existing bundle-size/import and aiohttp AppKey warnings remain.

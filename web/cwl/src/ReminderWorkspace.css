@@ -176,3 +176,11 @@
 .reminders-workspace :is(input, textarea, select, summary, button) {
   scroll-margin-block: 100px 180px;
 }
+.signup-date-field { margin: 20px 0; }
+.signup-date-field > label { display: grid; gap: 8px; max-width: 32rem; }
+.signup-date-field details { margin-top: 10px; }
+.signup-date-field summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
+.signup-date-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+.signup-date-grid > section { min-width: 0; }
+.signup-date-grid input { min-width: 0; max-width: 100%; }
+@media (max-width: 800px) { .signup-date-grid { grid-template-columns: minmax(0,1fr); gap: 0; } }

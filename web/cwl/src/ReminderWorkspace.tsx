@@ -1,3 +1,4 @@
+import SignupDateField from "./reminders/SignupDateField";
 import ConfirmDialog from "./ConfirmDialog";
 import { useReminderLookup } from "./useReminderLookups";
 import DiscordPreview, { type PreviewPart } from "./DiscordMessagePreview";
@@ -140,19 +141,7 @@ function TimingEditor({
               }}
             />
           </label>
-          <label>
-            Month relative to CWL
-            <input
-              type="number"
-              min={-12}
-              max={12}
-              value={rule.month_offset ?? 0}
-              onChange={(event) =>
-                update({ month_offset: Number(event.target.value) })
-              }
-            />
-            <small>0 = CWL month; −1 = previous month.</small>
-          </label>
+
         </>
       )}
       {["after_open", "before_close", "legacy_chain"].includes(mode) && (
@@ -697,38 +686,26 @@ export default function ReminderWorkspace({
                 <div className="card">
                   <h3>Signup Reminders</h3>
                   <p>
-                    Set when signups open and close, and how often Discord sends
-                    reminders.
+                    Choose when Discord announces signups, the advertised deadline,
+                    and how often reminders are sent.
                   </p>
                   <fieldset disabled={disabled}>
                     <legend>Signup window &amp; reminder timing</legend>
-                    <label>
-                      Schedule timezone
-                      <input
-                        value={draft.timezone}
-                        onChange={(event) =>
-                          edit({ ...draft, timezone: event.target.value })
-                        }
-                        placeholder="America/New_York"
-                      />
-                    </label>
-                    <h3>Signup opening announcement</h3>
-                    <TimingEditor
-                      value={draft.messages.signup.schedule}
-                      onChange={(value) => {
-                        const next = clone(draft);
-                        next.messages.signup.schedule = value;
-                        edit(next);
-                      }}
-                    />
-                    <h3>Signup closing date</h3>
-                    <TimingEditor
-                      deadline
-                      value={draft.signup_deadline}
-                      onChange={(value) =>
-                        edit({ ...draft, signup_deadline: value })
-                      }
-                    />
+                    <p className="small">All dates and times below use {draft.timezone}. Current campaign: {state.cycle}.</p>
+                    <div className="signup-date-grid">
+                    <SignupDateField label="Opening announcement" value={draft.messages.signup.schedule}
+                      cycle={state.cycle} timezone={draft.timezone}
+                      onChange={value => {const next=clone(draft); next.messages.signup.schedule=value; edit(next)}}>
+                      <TimingEditor value={draft.messages.signup.schedule}
+                        onChange={value => {const next=clone(draft); next.messages.signup.schedule=value; edit(next)}}/>
+                    </SignupDateField>
+                    <SignupDateField label="Advertised signup deadline" deadline value={draft.signup_deadline}
+                      cycle={state.cycle} timezone={draft.timezone}
+                      onChange={value => edit({...draft,signup_deadline:value})}>
+                      <TimingEditor deadline value={draft.signup_deadline}
+                        onChange={value => edit({...draft,signup_deadline:value})}/>
+                    </SignupDateField>
+                    </div>
                     <p className="small">
                       Website signups are currently{" "}
                       {state.signup_open ? "open" : "closed"}. Reminders do not
@@ -776,7 +753,6 @@ export default function ReminderWorkspace({
                             "count",
                             "interval_hours",
                             "final_hours",
-                            "min_gap_hours",
                           ] as const
                         )
                           .filter(
@@ -797,7 +773,6 @@ export default function ReminderWorkspace({
                                   interval_hours: "Hours between reminders",
                                   final_hours:
                                     "Final reminder hours before close",
-                                  min_gap_hours: "Minimum gap in hours",
                                 }[key]
                               }
                               <input
@@ -806,9 +781,7 @@ export default function ReminderWorkspace({
                                 max={
                                   key === "count"
                                     ? 10
-                                    : key === "min_gap_hours"
-                                      ? 24
-                                      : 744
+                                    : 744
                                 }
                                 value={draft.reminder_sequence[key] ?? 1}
                                 onChange={(event) =>
@@ -841,6 +814,23 @@ export default function ReminderWorkspace({
                           </details>
                         ))
                     )}
+                    <details>
+                      <summary>Advanced reminder settings</summary>
+                    <label>
+                      Schedule timezone
+                      <input
+                        value={draft.timezone}
+                        onChange={(event) =>
+                          edit({ ...draft, timezone: event.target.value })
+                        }
+                        placeholder="America/New_York"
+                      />
+                    </label>
+                      {draft.reminder_sequence.enabled && <label>Minimum hours between reminders
+                        <input type="number" min={1} max={24} value={draft.reminder_sequence.min_gap_hours ?? 3}
+                          onChange={event=>edit({...draft,reminder_sequence:{...draft.reminder_sequence,min_gap_hours:Number(event.target.value)}})}/>
+                      </label>}
+                    </details>
                     <p className="small">
                       Saved settings repeat every month. Specific dates are
                       converted to monthly rules for future months.
