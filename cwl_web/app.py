@@ -963,7 +963,13 @@ async def arrival_check(request):
     with _store(request).tx() as db:
         _season(db, sid)
         latest = _latest_publication(db, sid)
-        published = latest is not None and request.query.get('source') != 'draft'
+        requested_source = request.query.get('source', 'draft')
+        if requested_source not in ('draft', 'published'):
+            _fail(400, 'Invalid roster source')
+        published = latest is not None and requested_source == 'published'
+        publication_outdated = _publication_changed(db, sid, latest)
+        current_tags = {row['tag'] for row in db.execute('SELECT tag FROM signups WHERE season_id=?', (sid,))}
+        published_tags = {row['tag'] for row in db.execute('SELECT tag FROM publication_accounts WHERE publication_id=?', (latest['id'],))} if latest else set()
         if published:
             accounts = [dict(row) for row in db.execute(
                 'SELECT tag,user_id,player_name,town_hall,pool,assigned_clan_tag,assigned_clan_name FROM publication_accounts WHERE publication_id=?', (latest['id'],))]
@@ -987,7 +993,11 @@ async def arrival_check(request):
             'unknown' if not current else 'arrived' if account['current_clan_tag'] == account['assigned_clan_tag'] else 'missing')
         account['outside_family'] = current and family is not None and account['current_clan_tag'] not in family
     return web.json_response({'source':'published' if published else 'draft',
-        'version':latest['version'] if published else None, 'accounts':accounts, 'updating':updating})
+        'version':latest['version'] if published else None, 'accounts':accounts, 'updating':updating,
+        'publication_available': latest is not None, 'publication_outdated': publication_outdated,
+        'published_at': latest['published_at'] if latest else None,
+        'removed_since_publication': len(published_tags - current_tags),
+        'added_since_publication': len(current_tags - published_tags) if latest else 0})
 
 
 async def update_lineup_rules(request):

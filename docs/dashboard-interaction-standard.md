@@ -506,3 +506,22 @@ actions (Continue, then Sign up); My signups names Save changes. The unselected
 account hint says prepare a change rather than confirm a move. Success remains
 reported only after the save succeeds. Copy-only change; 198 frontend tests,
 production build and diff checks passed. No live signup or notification tests.
+
+### Declaration readiness uses current signups by default
+
+Both the page and arrival-check API now default to current signups / working
+assignments. Published snapshots require explicit selection. The existing
+publication-content comparison supplies an outdated warning, timestamp, and
+added/removed signup counts, with a Use current signups action. Location refresh
+is explicitly distinguished from updating the publication. Snapshot account names
+are read-only rather than opening an editor for potentially removed accounts.
+Outdated snapshots cannot display the CWL declaration ready badge. With no
+publication, the current-roster fallback is explicitly explained.
+
+Validation: 60 backend tests covering declaration/roster, including default source
+with an existing publication, removed/new signups, changed pools, unchanged
+snapshots, missing publication, invalid source and staff authorization; 198
+frontend tests; production build; isolated desktop/mobile default, outdated
+warning and return-to-current checks. Existing live signups and publications were
+not modified. Readiness remains a clan-location check, not proof of declaration
+inside Clash of Clans.
