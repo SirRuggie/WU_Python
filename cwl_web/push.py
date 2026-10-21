@@ -94,7 +94,7 @@ async def save(request):
     from .app import _require
     uid = _require(request)['user_id']
     if not available():
-        raise web.HTTPServiceUnavailable(text='Phone reminders are not configured yet')
+        raise web.HTTPServiceUnavailable(text='Notifications are not configured yet')
     body = await request.json()
     if not isinstance(body, dict):
         raise web.HTTPBadRequest(text='Invalid reminder settings')
@@ -166,7 +166,7 @@ async def test(request):
     from .app import _require
     uid = _require(request)['user_id']
     if not available():
-        raise web.HTTPServiceUnavailable(text='Phone reminders are not configured yet')
+        raise web.HTTPServiceUnavailable(text='Notifications are not configured yet')
     now = int(time.time())
     with request.app['store'].tx() as db:
         row = db.execute('SELECT * FROM push_subscriptions WHERE id=? AND user_id=?', (request.match_info['sid'], uid)).fetchone()
@@ -175,7 +175,7 @@ async def test(request):
         if now - row['test_at'] < 60:
             raise web.HTTPTooManyRequests(text='Wait a minute before another test')
         db.execute('UPDATE push_subscriptions SET test_at=? WHERE id=?', (now, row['id']))
-    result = await asyncio.to_thread(send, json.loads(row['subscription']), {'title': 'Warriors United reminders', 'body': 'Phone reminders are ready. Tap to open Todo.', 'url': '/?view=todo', 'tag': 'wu-push-test'})
+    result = await asyncio.to_thread(send, json.loads(row['subscription']), {'title': 'Warriors United reminders', 'body': 'Notifications are ready. Tap to open Tasks.', 'url': '/?view=todo', 'tag': 'wu-push-test'})
     if result == 'expired':
         with request.app['store'].tx() as db:
             db.execute('DELETE FROM push_subscriptions WHERE id=?', (row['id'],))

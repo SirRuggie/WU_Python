@@ -418,3 +418,12 @@ isolated staff selection/save/discard checks and member mobile layout checks.
 Browser testing used fictional accounts and local SQLite fixtures; no live
 signups or Discord messages were changed. Existing build/aiohttp warnings remain.
 This scope does not finish the later assignment, joining and return journey.
+
+### Notification setup wording
+
+Renamed the personal reminder disclosure/action to Notifications / Enable
+notifications and added account-selection → enable → Allow instructions. The
+existing iPhone Home Screen prerequisite and blocked-permission recovery remain.
+This is copy only; delivery, permissions and subscription behavior are unchanged.
+Reviewed button/instruction consistency and existing responsive markup; push
+regression suites and production build passed. No live notification was sent.
