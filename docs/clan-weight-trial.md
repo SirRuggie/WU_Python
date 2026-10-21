@@ -130,3 +130,14 @@ The C–H copy experiment was removed because SimpleSheet protects its derived
 columns. Column F remains the supported FWA paste format. Saved weights and the
 existing general table/Excel exports are unchanged. Removal validation: frontend
 regressions, production build, and war-reminder gate.
+
+Each selected clan displays its last actual weight save time (viewer-local) and
+Discord actor beneath the member-refresh timestamp. The history storage owner
+supplies the receipt, indexed by clan and history id. An additive nullable
+actor_name column preserves the session display name on new saves; old receipts
+resolve from existing session names, otherwise show an explicit Discord ID or
+unknown-user fallback. Spreadsheet imports are labeled. No existing weights,
+revisions or history timestamps are rewritten. Empty, replayed, or rolled-back
+saves do not advance the receipt; departed members do not erase it. Eight backend
+feature tests, 199 frontend tests, build and war-reminder gate passed. Isolated
+browser checks verified the new status updates after saving and mobile reflow.

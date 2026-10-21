@@ -41,6 +41,24 @@ def response(roster, saved):
                         'revision':saved.get(member['tag'],{}).get('revision',0)} for member in roster['members']]}
 
 
+def last_saved(request, clan_tag):
+    saved = request.app['clan_weight_trial'].last_saved(clan_tag)
+    if not saved:
+        return None
+    actor_id = saved['actor_id'].split(':', 1)[0]
+    name = saved['actor_name']
+    if not name:
+        from .app import _store
+        rows = _store(request).rows(
+            "SELECT COALESCE(NULLIF(display_name,''),username) AS name FROM sessions WHERE user_id=? ORDER BY expires_at DESC LIMIT 1",
+            (actor_id,),
+        )
+        name = rows[0]['name'] if rows else None
+    return {'at': saved['updated_at'], 'discord_id': actor_id,
+            'name': name or ('Discord user ' + actor_id if actor_id.isdigit() else 'Unknown user'),
+            'imported': saved['actor_id'].endswith(':sheet-test-import')}
+
+
 async def directory(request):
     authorize(request)
     return web.json_response({'clans':await family(request)})
@@ -51,6 +69,7 @@ async def members(request):
     roster = await current(request)
     saved = request.app['clan_weight_trial'].for_members([row['tag'] for row in roster['members']])
     result = response(roster,saved)
+    result['last_saved'] = last_saved(request, roster['tag'])
     try:
         lineup = await request.app['providers'].weight_war_lineup(roster['tag'])
         result['war_order'] = lineup['order']
@@ -92,10 +111,12 @@ async def save(request):
     if not seen <= {row['tag'] for row in roster['members']}:
         _fail(409, 'A selected member has left this clan. Refresh members; their previously saved weight is retained.')
     try:
-        saved = request.app['clan_weight_trial'].save(roster,changes,actor['user_id'])
+        saved = request.app['clan_weight_trial'].save(roster,changes,actor['user_id'],actor.get('display_name') or actor.get('username'))
     except WeightConflict as error:
         _fail(409,str(error))
-    return web.json_response(response(roster,saved))
+    result = response(roster,saved)
+    result['last_saved'] = last_saved(request, roster['tag'])
+    return web.json_response(result)
 
 
 def workbook(rows):

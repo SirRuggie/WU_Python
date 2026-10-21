@@ -11,6 +11,12 @@ export type Roster = {
   clan: { tag: string; name: string };
   members: Member[];
   checked_at: string;
+  last_saved?: {
+    at: string;
+    discord_id: string;
+    name: string;
+    imported: boolean;
+  } | null;
   war_source?: {
     state: string;
     end_time?: string | null;

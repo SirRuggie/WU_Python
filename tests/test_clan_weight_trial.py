@@ -133,3 +133,41 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         self.providers.family_clans.return_value={'clans':[{'tag':'#R2Y','name':'Reclassified','type':'Tactical'}]}
         self.assertEqual((await self.save([{'tag':'#P2Y','weight':150000,'revision':1}])).status,404)
         self.assertEqual(self.app['clan_weight_trial'].all()[0]['weight'],149000)
+
+    async def test_last_save_metadata_is_durable_and_not_changed_by_reads_or_replay(self):
+        self.roster()
+        initial=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
+        self.assertIsNone(initial['last_saved'])
+        item={'tag':'#P2Y','weight':149000,'revision':0}
+        saved=await (await self.save([item])).json()
+        stamp=saved['last_saved']
+        self.assertTrue(stamp['at'])
+        self.assertTrue(stamp['name'])
+        self.assertFalse(stamp['imported'])
+        replay=await (await self.save([item])).json()
+        self.assertEqual(replay['last_saved'],stamp)
+        self.assertEqual((await self.save([{**item,'weight':150000}])).status,409)
+        read=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
+        self.assertEqual(read['last_saved'],stamp)
+        persisted=ClanWeightTrialStore(self.app['store'].path)
+        self.assertEqual(persisted.last_saved('#R2Y')['updated_at'],stamp['at'])
+        self.assertIsNone(persisted.last_saved('#J2Y'))
+        # A departed player must not remove the clan's historical save receipt.
+        self.roster(members=[])
+        read=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
+        self.assertEqual(read['last_saved'],stamp)
+
+    async def test_old_import_receipt_resolves_session_name_without_changing_weights(self):
+        self.roster()
+        store=self.app['clan_weight_trial']
+        roster=await self.providers.clan_roster('#R2Y')
+        store.save(roster,[{'tag':'#P2Y','weight':149000,'revision':0}], '100:sheet-test-import')
+        result=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
+        self.assertEqual(result['last_saved']['discord_id'],'100')
+        self.assertTrue(result['last_saved']['imported'])
+        self.assertNotIn('sheet-test-import',result['last_saved']['name'])
+        self.assertEqual(result['members'][0]['weight'],149000)
+        store.save(roster,[{'tag':'#P2Y','weight':150000,'revision':1}], '100', 'Saved Discord name')
+        with self.app['store'].tx() as db:
+            db.execute("DELETE FROM sessions WHERE user_id='100'")
+        self.assertEqual(store.last_saved('#R2Y')['actor_name'],'Saved Discord name')

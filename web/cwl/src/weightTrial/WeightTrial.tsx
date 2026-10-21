@@ -307,6 +307,29 @@ export default function WeightTrial({
                   {new Date(roster.checked_at).toLocaleTimeString()}
                 </small>
               )}
+              {roster && (
+                <p className="small" role="status">
+                  {roster.last_saved ? (
+                    <>
+                      Weights last saved on{" "}
+                      <time dateTime={roster.last_saved.at}>
+                        {new Date(roster.last_saved.at).toLocaleString()}
+                      </time>
+                      {" by "}
+                      <span
+                        title={`Discord ID: ${roster.last_saved.discord_id}`}
+                      >
+                        {roster.last_saved.name}
+                      </span>
+                      {roster.last_saved.imported
+                        ? " · Spreadsheet import"
+                        : ""}
+                    </>
+                  ) : (
+                    "Weights not saved yet"
+                  )}
+                </p>
+              )}
             </div>
             <button disabled={!selected || busy || loading} onClick={refresh}>
               Refresh members
