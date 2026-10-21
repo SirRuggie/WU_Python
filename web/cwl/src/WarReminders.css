@@ -153,3 +153,25 @@
 .war-discord-preview .discord-markdown blockquote p {
   margin-block: 0;
 }
+
+.war-disclosure {
+  margin-top: 12px;
+  border-top: 1px solid #495268;
+  padding-top: 8px;
+}
+.war-disclosure > summary {
+  cursor: pointer;
+  padding-block: 10px;
+  min-height: 24px;
+  font-weight: 600;
+}
+.war-disclosure > summary:focus-visible {
+  outline: 2px solid #e6a640;
+  outline-offset: 2px;
+}
+.war-disclosure > summary[aria-disabled=true] { cursor: progress; }
+.war-disclosure > .war-test {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}

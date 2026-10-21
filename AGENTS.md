@@ -16,6 +16,9 @@ request for organized implementation, cleanup, and adversarial review.
 - Split substantial UI work by responsibility. Format source for humans; do not
   compress an entire editor or stylesheet into one line. Reuse existing public
   helpers before adding another abstraction.
+- Keep routine controls and current status visible. Put occasional testing,
+  verbose history, and explanations behind clearly labeled disclosures; keep
+  errors discoverable and avoid fetching previews while their section is closed.
 - Remove code, styles, imports, and temporary fixtures made obsolete by a change.
   Do not leave an abandoned implementation alongside the replacement.
 

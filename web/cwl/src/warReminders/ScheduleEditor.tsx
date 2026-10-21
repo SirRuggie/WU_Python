@@ -62,6 +62,8 @@ export default function ScheduleEditor({ settings, channels, disabled, onChange 
             {timeLabel(minutes)} before end <span aria-hidden="true">×</span>
           </button>)}
         </div>
+        <details className="war-disclosure">
+          <summary>Add reminder times</summary>
         <div className="war-time-input">
           <label>Custom time
             <input type="number" min={1 / unit} max={1440 / unit} step="any" placeholder="e.g. 8"
@@ -84,6 +86,7 @@ export default function ScheduleEditor({ settings, channels, disabled, onChange 
             + {timeLabel(minutes)}
           </button>)}
         </div>
+        </details>
       </div>
     </fieldset>
   </>

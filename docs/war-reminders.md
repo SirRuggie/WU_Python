@@ -72,3 +72,10 @@ switch; and verify navigation stays locked during a slow test send. Check keyboa
 focus after selection and section navigation. Inspect a 50-player preview with
 multiple owners and unlinked accounts, including all message parts. Use mocked
 requests for this workflow review; live Discord delivery is a separate check.
+
+The routine reminder view shows configured times, channel, audience, save controls,
+and current status. Add reminder times, Preview & send a test, Delivery history,
+and How reminders work are closed disclosures by default. Preview requests only
+run while the testing section is open; closing it retains its choices and send
+receipt. During a send it stays open. Uncertain or failed recent deliveries remain
+flagged in the history summary even when its details are collapsed.

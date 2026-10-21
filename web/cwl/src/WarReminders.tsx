@@ -21,6 +21,7 @@ export default function WarReminders({ tag, channels, onDirty, onBusy, disabled 
   const [draft, setDraft] = useState<ReminderSettings | null>(null)
   const [busy, setBusy] = useState(false)
   const [testBusy, setTestBusy] = useState(false)
+  const [testOpen, setTestOpen] = useState(false)
   useEffect(() => { onBusy?.(busy || testBusy); return () => onBusy?.(false) }, [busy, testBusy, onBusy])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -108,8 +109,13 @@ export default function WarReminders({ tag, channels, onDirty, onBusy, disabled 
         <small>{dirty ? 'Unsaved reminder changes' : 'Reminder settings saved'}</small>
         <button className="primary" disabled={busy || testBusy || disabled || !dirty} onClick={() => void save()}>Save reminders</button>
       </div>
-      <TestPanel base={base} settings={draft} disabled={busy || disabled} onDelivered={refreshHistory} onBusy={setTestBusy} />
       <DeliveryHistory data={data} enabled={data.settings.enabled} />
+      <details className="war-disclosure" onToggle={event => setTestOpen(event.currentTarget.open)}>
+        <summary aria-disabled={testBusy} onClick={event => { if (testBusy) event.preventDefault() }}>
+          Preview &amp; send a test{testBusy ? ' · Sending…' : ''}
+        </summary>
+        <TestPanel base={base} settings={draft} active={testOpen} disabled={busy || disabled} onDelivered={refreshHistory} onBusy={setTestBusy} />
+      </details>
     </>}
   </section>
 }

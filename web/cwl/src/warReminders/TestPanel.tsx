@@ -6,6 +6,7 @@ import { timeLabel, type ReminderMessage, type ReminderSettings } from './types'
 const DiscordText = lazy(() => import('../DiscordPreview').then(module => ({ default: module.DiscordText })))
 
 type Props = {
+  active?: boolean
   base: string
   settings: ReminderSettings
   disabled: boolean
@@ -13,7 +14,7 @@ type Props = {
   onBusy?: (busy: boolean) => void
 }
 
-export default function TestPanel({ base, settings, disabled, onDelivered, onBusy }: Props) {
+export default function TestPanel({ base, settings, disabled, onDelivered, onBusy, active = true }: Props) {
   const [event, setEvent] = useState('60')
   const [mentionMe, setMentionMe] = useState(true)
   const [useMyAccounts, setUseMyAccounts] = useState(false)
@@ -36,17 +37,18 @@ export default function TestPanel({ base, settings, disabled, onDelivered, onBus
   }, [])
 
   useEffect(() => {
-    let active = true
+    if (!active) return
+    let current = true
     setPreviewLoading(true)
     setPreviewError('')
     const timer = setTimeout(() => {
       api<{ messages: ReminderMessage[] }>(base + '/preview', 'POST', JSON.parse(payload))
-        .then(result => { if (active) setMessages(result.messages) })
-        .catch(e => { if (active) { setMessages([]); setPreviewError(e.message) } })
-        .finally(() => { if (active) setPreviewLoading(false) })
+        .then(result => { if (current) setMessages(result.messages) })
+        .catch(e => { if (current) { setMessages([]); setPreviewError(e.message) } })
+        .finally(() => { if (current) setPreviewLoading(false) })
     }, 250)
-    return () => { active = false; clearTimeout(timer) }
-  }, [base, payload])
+    return () => { current = false; clearTimeout(timer) }
+  }, [base, payload, active])
 
   async function sendTest() {
     if (sending.current) return
@@ -77,7 +79,6 @@ export default function TestPanel({ base, settings, disabled, onDelivered, onBus
   const events = [...new Set([...settings.minutes, 60, ...(event === 'start' ? [] : [Number(event)])])].sort((a, b) => b - a)
 
   return <section className="war-test">
-    <h3>Try it in Discord</h3>
     <p>Test in the channel above without enabling reminders. Each Discord user is mentioned once, with their
       accounts grouped underneath. The message heading includes the clan and time left. Tests also include
       a fictional unlinked account. Counts show attacks used out of those available; test counts are simulated.</p>

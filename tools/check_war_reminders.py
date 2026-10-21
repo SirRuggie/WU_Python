@@ -19,7 +19,7 @@ BACKEND = [
 ]
 COMMANDS = [
     [sys.executable, '-m', 'pytest', '-q', *BACKEND],
-    ['npm', '--prefix', 'web/cwl', 'test', '--', 'src/warReminders/types.test.ts',
+    ['npm', '--prefix', 'web/cwl', 'test', '--', 'src/warReminders/types.test.ts', 'src/warReminders/DeliveryHistory.test.tsx',
      'src/warReminderPreview.test.ts', 'src/clanManagement/ClanDirectory.test.tsx', 'src/ClanFilters.test.ts',
      'src/channelSearch.test.ts', 'src/DiscordPreview.test.tsx'],
     ['npm', '--prefix', 'web/cwl', 'run', 'build'],
