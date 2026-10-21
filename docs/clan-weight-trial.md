@@ -106,3 +106,10 @@ war position. If Clash cannot provide a lineup, the editor explicitly labels its
 clan-order fallback; it does not invent historical war placements. Saving retains
 the displayed lineup metadata. Five backend tests and 197 frontend tests passed,
 along with the production build and war-reminder gate.
+
+The clan directory and member read/save routes now include only family clans
+whose stored category is FWA. Other categories and missing categories are
+excluded; reclassification blocks stale editor saves without deleting stored
+player weights. Six feature tests cover the filter, direct non-FWA access and
+reclassification. This changes the existing selector's data only; no controls,
+layout or keyboard behavior changed.

@@ -17,7 +17,7 @@ def authorize(request):
 
 async def family(request):
     result = await request.app['providers'].family_clans()
-    return result['clans']
+    return [clan for clan in result['clans'] if clan.get('type') == 'FWA']
 
 
 async def current(request):
@@ -28,7 +28,7 @@ async def current(request):
         _fail(400, 'Invalid clan tag')
     clans = await family(request)
     if value not in {row['tag'] for row in clans}:
-        _fail(404, 'This clan is no longer in the family. Refresh the clan list.')
+        _fail(404, 'This clan is not an FWA clan in the family. Refresh the clan list.')
     roster = await request.app['providers'].clan_roster(value)
     return roster
 

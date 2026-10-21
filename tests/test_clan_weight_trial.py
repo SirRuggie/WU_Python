@@ -8,7 +8,9 @@ from cwl_web.providers import ProviderUnavailable
 
 
 class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp=foundation.WebFoundationTests.asyncSetUp
+    async def asyncSetUp(self):
+        await foundation.WebFoundationTests.asyncSetUp(self)
+        self.providers.family_clans=AsyncMock(return_value={'clans':[{'tag':'#R2Y','name':'Family','type':'FWA'}]})
     asyncTearDown=foundation.WebFoundationTests.asyncTearDown
     auth=foundation.WebFoundationTests.auth
     call=foundation.WebFoundationTests.call
@@ -61,7 +63,7 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sheet['B2'].data_type,'s')
         self.assertEqual(sheet['D2'].value,149)
         self.assertEqual(sheet['E2'].value,149000)
-        self.providers.family_clans=AsyncMock(return_value={'clans':[{'tag':'#J2Y','name':'Other'}]})
+        self.providers.family_clans=AsyncMock(return_value={'clans':[{'tag':'#J2Y','name':'Other','type':'FWA'}]})
         self.roster('#J2Y')
         current=await (await self.call('GET','/weight-trial/clans/%23J2Y',self.owner)).json()
         self.assertEqual(current['members'][0]['weight'],149000)
@@ -113,3 +115,21 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result['war_order'],{'#P2Y':1})
         provider._league_get=AsyncMock(return_value={'state':'notInWar'})
         with self.assertRaises(ProviderUnavailable): await provider.weight_war_lineup('#R2Y')
+
+    async def test_only_fwa_clans_listed_and_editable(self):
+        self.roster()
+        self.providers.family_clans=AsyncMock(return_value={'clans':[
+            {'tag':'#R2Y','name':'FWA clan','type':'FWA'},
+            {'tag':'#J2Y','name':'Tactical clan','type':'Tactical'},
+            {'tag':'#C2Y','name':'Unknown category'},
+        ]})
+        result=await (await self.call('GET','/weight-trial/clans',self.owner)).json()
+        self.assertEqual([clan['tag'] for clan in result['clans']],['#R2Y'])
+        for clan in ('%23J2Y','%23C2Y'):
+            self.assertEqual((await self.call('GET','/weight-trial/clans/'+clan,self.owner)).status,404)
+            self.assertEqual((await self.save([{'tag':'#P2Y','weight':149000,'revision':0}],clan=clan)).status,404)
+        self.providers.clan_roster.assert_not_awaited()
+        await self.save([{'tag':'#P2Y','weight':149000,'revision':0}])
+        self.providers.family_clans.return_value={'clans':[{'tag':'#R2Y','name':'Reclassified','type':'Tactical'}]}
+        self.assertEqual((await self.save([{'tag':'#P2Y','weight':150000,'revision':1}])).status,404)
+        self.assertEqual(self.app['clan_weight_trial'].all()[0]['weight'],149000)
