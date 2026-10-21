@@ -27,7 +27,7 @@ async def available(db):
 
 
 def eligible(items,operation):
-    return {key:item for key,item in items.items() if (not item['active'] if operation=='save' else item['active']) and (operation not in ('start','pause','resume','schedule') or item['section']=='FWA')}
+    return {key:item for key,item in items.items() if (not item['active'] if operation=='save' else operation=='start' or item['active']) and (operation not in ('start','pause','resume','schedule') or item['section']=='FWA')}
 
 
 async def page(request):

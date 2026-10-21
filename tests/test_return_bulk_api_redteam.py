@@ -288,3 +288,26 @@ def test_start_worker_requests_immediate_start_with_stale_settings_guard(monkeyp
         assert start.call_args.kwargs['expected_reminders'] == current['reminders']
         assert start.call_args.args == ('#P0',True,120)
     asyncio.run(scenario())
+
+
+def test_start_options_include_missing_fwa_lists_but_not_main():
+    items = {pool+str(active):dict(section=pool,active=active) for pool in ('MAIN','FWA') for active in (True,False)}
+    assert set(api.eligible(items,'start')) == {'FWATrue','FWAFalse'}
+    assert set(api.eligible(items,'schedule')) == {'FWATrue'}
+
+
+def test_start_worker_captures_only_a_reviewed_missing_list(monkeypatch):
+    async def scenario():
+        from utils import manage_web_worker as worker
+        from extensions.commands.fwa import lazy_cwl_service as service
+        getter=AsyncMock(return_value=None)
+        monkeypatch.setattr(api.store,'get_active',getter)
+        capture=AsyncMock(return_value={'ok':True,'saved_count':50})
+        monkeypatch.setattr(service,'capture_and_start_returns',capture)
+        row=dict(section='cwl_rosters',action='start',values={'clan_tag':'#P0','section':'FWA','every_minutes':60},revision=fingerprint(None),user_id='123')
+        await worker.dispatch(None,object(),row,None)
+        capture.assert_awaited_once_with('#P0',123,60,section='FWA')
+        getter.return_value={'_id':'someone-else-saved'}
+        with pytest.raises(ValueError):await worker.dispatch(None,object(),row,None)
+        assert capture.await_count == 1
+    asyncio.run(scenario())

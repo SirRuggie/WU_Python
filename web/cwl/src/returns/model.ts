@@ -2,7 +2,7 @@ import type { ManagementSection } from '../serverManagement'
 export type ReturnClan = ManagementSection & { return_section?: 'MAIN'|'FWA'; clan_tag?: string; clan_name?: string }
 export type ReturnAction = 'save'|'start'|'schedule'|'pause'|'resume'|'send'|'away'
 export const actionLabels: Record<ReturnAction,string> = {
-  save:'Save home members', start:'Start return reminders', schedule:'Schedule for later', pause:'Pause',
+  save:'Capture current members', start:'Start return reminders', schedule:'Schedule for later', pause:'Pause',
   resume:'Resume', send:'Send now', away:'Check away players',
 }
 export function clanSection(row: ReturnClan): 'MAIN'|'FWA' {
@@ -12,6 +12,7 @@ export function clanKey(row: ReturnClan) { return `${clanSection(row)}:${row.cla
 export function canApply(row: ReturnClan, action: ReturnAction) {
   const state = row.return_status?.state
   if (action === 'save') return state === 'not_saved'
+  if (action === 'start' && state === 'not_saved') return clanSection(row) === 'FWA'
   if (!state || state === 'not_saved' || state === 'expired') return false
   return !['start','schedule','pause','resume'].includes(action) || clanSection(row) === 'FWA'
 }

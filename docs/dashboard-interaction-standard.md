@@ -336,3 +336,26 @@ Validation: 191 frontend tests, production build, diff check, and isolated deskt
 Discord preview opening/closing, draft review auto-expansion, grouped save actions,
 confirmed discard, and retained gold navigation styling. These are presentation
 changes; no scheduler, saved campaign, permissions or live Discord sends changed.
+
+### Return reminder selection and first-time setup
+
+Select-all operates on visible clans independently of the chosen action. It names
+its scope (all FWA/Main clans or matching clans), preserves hidden selections,
+shows a mixed checkbox state, and provides a separate clear-selection control.
+Selection controls and actions share one toolbar. Long selected-clan lists are
+collapsed in the batch editor; frequency and errors remain visible.
+
+Starting FWA reminders captures current members only when no list exists, then
+starts the existing scheduler at the reviewed frequency. Existing lists are never
+replaced. Main remains manual. The review explains that members already away
+cannot be recovered through a new current-member capture. Snapshot checks reject
+stale selections; capture refuses concurrent existing lists; partial capture/start
+failure is reported rather than silently overwriting or retrying notifications.
+
+Validation: 133 backend regressions and 191 frontend tests, production build,
+diff check, and isolated browser review at 1280/390/320px. Covered missing-list
+select-all, filtered selection preserving hidden selections, mixed checkbox state,
+Main action separation, bulk review and partial-failure receipt, stale worker
+snapshots, preservation of existing lists, and capture/start partial failure.
+No live lists or Discord messages were changed by these tests. Existing bundle-size
+warnings remain. This review covers return reminders, not the entire dashboard.

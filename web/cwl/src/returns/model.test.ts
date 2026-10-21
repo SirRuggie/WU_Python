@@ -6,6 +6,8 @@ describe('return controls', () => {
     for(const action of ['schedule','start','resume','pause'] as const) expect(canApply(row('MAIN','manual'),action)).toBe(false)
     expect(canApply(row('MAIN','manual'),'send')).toBe(true)
     expect(canApply(row('FWA','not_saved'),'save')).toBe(true)
+    expect(canApply(row('FWA','not_saved'),'start')).toBe(true)
+    expect(canApply(row('MAIN','not_saved'),'start')).toBe(false)
     expect(canApply(row('FWA','expired'),'schedule')).toBe(false)
     expect(clanKey(row('FWA','idle'))).toBe('FWA:#P0')
   })

@@ -555,6 +555,28 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None, s
     }
 
 
+async def capture_and_start_returns(clan_tag: str, saved_by: int, every_minutes: int, *, section: str = store.DEFAULT_SECTION) -> dict:
+    """Capture a missing home list and start it; never replace an existing list."""
+    section = store.normalize_section(section)
+    if section != "FWA":
+        return {"ok": False, "error": "Main CWL reminders are manual only."}
+    captured = await save_list(clan_tag, saved_by, section=section)
+    if not captured.get("ok"):
+        return captured
+    current = await store.get_by_id(mongo_client, captured["list_id"])
+    if current is None:
+        return _stale_result()
+    result = await set_reminders(
+        clan_tag, True, every_minutes, section=section,
+        expected_list_id=captured["list_id"],
+        expected_reminders=current.get("reminders") or {}, start_now=True,
+    )
+    if not result.get("ok"):
+        return {**result, "error": "Members were saved, but reminders did not start. " +
+                (result.get("error") or "Refresh and review this clan.")}
+    return {**result, "saved_count": captured["player_count"]}
+
+
 async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[int] = None, *, expected_list_id=None, section: str = store.DEFAULT_SECTION, schedule: dict | None = None, start_now: bool = False, expected_reminders: dict | None = None) -> dict:
     """Turn a clan's reminders on or off and (un)schedule its job."""
     section = store.normalize_section(section)

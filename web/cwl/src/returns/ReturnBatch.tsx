@@ -33,6 +33,7 @@ export default function ReturnBatch({action, clans, onClose, onDone}: Props) {
   const permitted = new Set(document?.fields.find(field => field.key === 'clans')?.options?.map(option => option.value) || [])
   const changed = document ? clans.filter(clan => !permitted.has(clanKey(clan))) : []
   const pending = receipt?.status === 'pending'
+  const captureCount = clans.filter(clan => clan.return_status?.state === 'not_saved').length
   const check = async () => {
     if (!statusUrl.current || busy) return
     setBusy(true); setError('')
@@ -66,7 +67,7 @@ export default function ReturnBatch({action, clans, onClose, onDone}: Props) {
   }
   return <section className="return-batch card" aria-labelledby="return-batch-heading">
     <div className="section-heading"><h3 id="return-batch-heading" tabIndex={-1} ref={heading}>{actionLabels[action]} · {clans.length} {clans.length === 1 ? 'clan' : 'clans'}</h3><button disabled={busy || pending} onClick={onClose}>{receipt ? 'Done' : 'Cancel'}</button></div>
-    <p>{clans.map(clan => clan.clan_name || clan.label).join(' · ')}</p>
+    <details><summary>Selected clans ({clans.length})</summary><p>{clans.map(clan => clan.clan_name || clan.label).join(' · ')}</p></details>
     {error && <div role="alert" className="notice error">{error}{!document && <button onClick={() => setAttempt(attempt+1)}>Retry options</button>}</div>}
     {!document && !error && <p role="status">Checking saved lists…</p>}
     {changed.length > 0 && <p role="alert">{changed.length} selected clans are no longer available for this action. Cancel and refresh the overview.</p>}
@@ -74,7 +75,7 @@ export default function ReturnBatch({action, clans, onClose, onDone}: Props) {
       <fieldset disabled={busy || !document || changed.length > 0}>
         {['schedule','start','resume'].includes(action) && <label>Frequency<select value={minutes} onChange={event => setMinutes(event.target.value)}><option value="30">Every 30 minutes</option><option value="60">Every hour</option><option value="120">Every 2 hours</option></select></label>}
         {action === 'schedule' && <><div className="return-date-fields"><label>Start<input type="datetime-local" value={start} onChange={event => setStart(event.target.value)}/></label><label>Stop<input type="datetime-local" value={end} onChange={event => setEnd(event.target.value)}/></label></div><p className="small">Your timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}. Up to seven days, within each list’s cutoff. These dates replace the selected clans’ schedules; other clans keep theirs.</p><details><summary>Selected clan limits</summary>{clans.map(clan => <p key={clan.id}>{clan.clan_name || clan.label}: list cutoff {clan.return_status?.list_expires_at ? new Date(clan.return_status.list_expires_at).toLocaleString() : 'Checked when saved'}{clan.return_status?.starts_at && ` · Current window ends ${new Date(clan.return_status.expires_at!).toLocaleString()}`}</p>)}</details></>}
-        {action === 'start' && <p>Start the selected FWA clans now, then repeat at this frequency. Any future start is replaced. Reminders stop automatically after up to seven days; existing earlier stop times and list cutoffs still apply.</p>}
+        {action === 'start' && <><p>{captureCount ? `${captureCount} clans: capture their current members first. ` : ''}{clans.length > captureCount && `${clans.length-captureCount} clans: keep their saved member lists. `}{captureCount > 0 && 'Only members currently in a clan can be captured; accounts already away are not included in a new list.'}</p><p>Start the selected FWA clans now, then repeat at this frequency. Any future start is replaced. Reminders stop automatically after up to seven days; existing earlier stop times and list cutoffs still apply.</p></>}
         {action === 'save' && <p>Capture current home-clan members before they leave for CWL. This does not send reminders.</p>}
         {action === 'send' && <p>This sends reminders now to the configured return channels. It does not enable automatic reminders.</p>}
         <button className="primary" onClick={() => {
@@ -83,6 +84,6 @@ export default function ReturnBatch({action, clans, onClose, onDone}: Props) {
         }}>Review {action === 'schedule' ? 'schedule' : 'action'}</button>
       </fieldset>
     </>}
-    {review && <ConfirmDialog onCancel={() => setReview(null)} onConfirm={() => void submit()} text={`${actionLabels[action]} for ${clans.map(clan => clan.clan_name || clan.label).join(', ')}?${action === 'schedule' ? ` Start ${new Date(String(review.schedule_start)).toLocaleString()}; stop ${new Date(String(review.schedule_end)).toLocaleString()}; every ${minutes} minutes.` : ''}${action === 'start' ? ` Start now and repeat every ${minutes} minutes. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ''}${action === 'send' ? ' This sends Discord messages.' : ''}${action === 'schedule' || action === 'start' || action === 'resume' ? ' Automatic reminders will be enabled.' : ''}`}/>}
+    {review && <ConfirmDialog onCancel={() => setReview(null)} onConfirm={() => void submit()} text={`${actionLabels[action]} for ${clans.map(clan => clan.clan_name || clan.label).join(', ')}?${action === 'schedule' ? ` Start ${new Date(String(review.schedule_start)).toLocaleString()}; stop ${new Date(String(review.schedule_end)).toLocaleString()}; every ${minutes} minutes.` : ''}${action === 'start' ? ` Capture current members for ${captureCount} clans without a list; keep all existing lists. Start now and repeat every ${minutes} minutes. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ''}${action === 'send' ? ' This sends Discord messages.' : ''}${action === 'schedule' || action === 'start' || action === 'resume' ? ' Automatic reminders will be enabled.' : ''}`}/>}
   </section>
 }

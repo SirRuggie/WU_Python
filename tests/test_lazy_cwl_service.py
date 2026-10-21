@@ -1157,3 +1157,33 @@ def test_start_now_keeps_original_active_deadline(monkeypatch):
     saved = asyncio.run(store.get_by_id(mongo,'active-window'))
     assert saved['reminders']['started_at'] == now-timedelta(days=6)
     assert saved['reminders']['schedule_end_at'] == now+timedelta(days=1)
+
+
+def test_capture_and_start_keeps_existing_lists_and_main_manual(monkeypatch):
+    capture = AsyncMock(return_value={'ok':False,'error':'Already saved'})
+    start = AsyncMock()
+    monkeypatch.setattr(service,'save_list',capture)
+    monkeypatch.setattr(service,'set_reminders',start)
+    result = asyncio.run(service.capture_and_start_returns('#ABC',123,60,section='MAIN'))
+    assert not result['ok']
+    capture.assert_not_awaited()
+    result = asyncio.run(service.capture_and_start_returns('#ABC',123,60))
+    assert result['error'] == 'Already saved'
+    start.assert_not_awaited()
+    assert 'expected_list_id' not in capture.call_args.kwargs
+
+
+def test_capture_and_start_uses_created_list_and_reports_partial_failure(monkeypatch):
+    capture = AsyncMock(return_value={'ok':True,'list_id':'new','player_count':50})
+    settings = {'enabled':False}
+    monkeypatch.setattr(service,'save_list',capture)
+    monkeypatch.setattr(store,'get_by_id',AsyncMock(return_value={'_id':'new','reminders':settings}))
+    start = AsyncMock(return_value={'ok':True})
+    monkeypatch.setattr(service,'set_reminders',start)
+    result = asyncio.run(service.capture_and_start_returns('#ABC',123,120))
+    assert result['saved_count'] == 50
+    assert start.call_args.kwargs == dict(section='FWA',expected_list_id='new',expected_reminders=settings,start_now=True)
+    start.return_value = {'ok':False,'error':'Stale list'}
+    result = asyncio.run(service.capture_and_start_returns('#ABC',123,120))
+    assert not result['ok']
+    assert 'Members were saved' in result['error']

@@ -47,7 +47,6 @@ export default function ReturnReminderOverview({ onOpen, onDirty, active = true 
   const clans = records.filter(row => row.return_status)
   const group = clans.filter(row => clanSection(row) === section)
   const visible = group.filter(row => (filter === 'all' || row.return_status?.state === filter) && `${row.label} ${row.id}`.toLowerCase().includes(query.trim().toLowerCase()))
-  const eligible = visible.filter(row => canApply(row,action))
   const chosen = group.filter(row => selected.includes(row.id))
   const incompatible = chosen.filter(row => !canApply(row,action)).length
   const utility = (id: string) => { const row = records.find(row => row.id === id); if(row) onOpen(row) }
@@ -56,14 +55,21 @@ export default function ReturnReminderOverview({ onOpen, onDirty, active = true 
     <div className="return-toolbar"><div className="workflow-tabs" role="group" aria-label="Home clan type">
       {(['FWA','MAIN'] as const).map(value => <button key={value} aria-pressed={section === value} disabled={!!batch} onClick={() => {setSection(value);setFilter('all');setSelected([]);setAction(value === 'FWA' ? 'start' : 'send')}}>{value === 'MAIN' ? 'Main' : value}<span>{clans.filter(row => clanSection(row) === value).length}</span></button>)}
     </div><div><button disabled={loading || !!batch} onClick={() => void load()}>Refresh</button><button disabled={loading || !!batch} onClick={() => utility('return-channels')}>Return channels</button></div></div>
-    <p>{section === 'FWA' ? 'After CWL declaration, select your FWA clans and start return reminders. No dates needed.' : 'Main return reminders are manual. Select clans and send when you are ready.'}</p>
+    <p>{section === 'FWA' ? 'Select all your FWA clans or choose individual clans, then start reminders. Missing member lists are captured automatically; existing lists are kept.' : 'Main return reminders are manual. Select clans and send when you are ready.'}</p>
     {error && <div className="notice error" role="alert">{error}{loadedAt && ' Showing the last loaded overview.'}<button disabled={loading} onClick={() => void load()}>Retry</button></div>}
     {loading && <p role="status">Loading return lists…</p>}
     {batch && <ReturnBatch key={batch.action+batch.clans.map(row=>row.id).join(',')} {...batch} onClose={() => {setBatch(null); requestAnimationFrame(() => focusTarget.current?.focus())}} onDone={() => {setSelected([]);void load()}}/>}
     <fieldset disabled={!!batch || loading || !!error}>
       <div className="return-filters"><label>Find a clan<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Clan name or tag"/></label><label>Status<select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All statuses</option>{(section === 'FWA' ? [['scheduled','Running / scheduled'],['paused','Paused'],['idle','Not started'],['not_saved','No saved list'],['expired','Window ended']] : [['manual','Ready for manual sends'],['not_saved','No saved list'],['expired','Window ended']]).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
-      <div className="return-bulk-bar"><label>Action<select value={action} onChange={event => setAction(event.target.value as ReturnAction)}>{actions.map(value => <option key={value} value={value}>{actionLabels[value]}</option>)}</select></label><div><button disabled={!eligible.length} onClick={() => setSelected(eligible.map(row=>row.id))}>Select all eligible ({eligible.length})</button><button disabled={!selected.length} onClick={() => setSelected([])}>Clear</button></div><span>{chosen.length} selected{chosen.filter(row=>!visible.includes(row)).length > 0 && ' · Includes hidden selections'}</span><button className="primary" disabled={!chosen.length || chosen.length > 50 || incompatible > 0} onClick={() => setBatch({action,clans:chosen})}>{actionLabels[action]}{chosen.length ? ` (${chosen.length})` : ''}</button></div>
-      {incompatible > 0 && <p role="status">{incompatible} selected clans are unavailable for this action. Use Select all eligible to update the selection.</p>}
+      <div className="return-bulk-bar"><label>Action<select value={action} onChange={event => setAction(event.target.value as ReturnAction)}>{actions.map(value => <option key={value} value={value}>{actionLabels[value]}</option>)}</select></label><div className="return-selection-controls"><label className="return-select-all"><input type="checkbox"
+        ref={node => {if(node) node.indeterminate = visible.some(row => selected.includes(row.id)) && !visible.every(row => selected.includes(row.id))}}
+        checked={visible.length > 0 && visible.every(row => selected.includes(row.id))}
+        disabled={!visible.length} onChange={event => setSelected(current => event.target.checked
+          ? [...new Set([...current,...visible.map(row=>row.id)])]
+          : current.filter(id => !visible.some(row => row.id === id)))}/>
+        {query.trim() || filter !== 'all' ? 'Select all matching clans' : `Select all ${section === 'MAIN' ? 'Main' : 'FWA'} clans`} ({visible.length})</label>
+        <button disabled={!selected.length} onClick={() => setSelected([])}>Clear selection</button></div><span>{chosen.length} selected{chosen.filter(row=>!visible.includes(row)).length > 0 && ' · Includes hidden selections'}</span><button className="primary" disabled={!chosen.length || chosen.length > 50 || incompatible > 0} onClick={() => setBatch({action,clans:chosen})}>{actionLabels[action]}{chosen.length ? ` (${chosen.length})` : ''}</button></div>
+      {incompatible > 0 && <p role="status">{incompatible} selected clans are unavailable for this action. Change the action or deselect those clans.{section === 'FWA' && ' Starting reminders can capture members for clans without a saved list.'}</p>}
       {chosen.length > 50 && <p role="alert">Choose up to 50 clans per action.</p>}
       {section === 'FWA' && <details className="return-maintenance">
         <summary>Optional scheduling settings</summary>
