@@ -404,7 +404,7 @@ export default function ReminderWorkspace({
                   This season is archived. Settings are read-only.
                 </p>
               )}
-              <div className="tabs" role="group" aria-label="Reminder sections">
+              <div className="tabs workflow-tabs" role="group" aria-label="Reminder sections">
                 {(["messages", "schedule", "history"] as const).map((value) => (
                   <button
                     key={value}
@@ -426,7 +426,7 @@ export default function ReminderWorkspace({
                     <h3>Choose a message to edit</h3>
                     <p>Choose Main or Lazy, then choose a message.</p>
                     <div
-                      className="tabs"
+                      className="tabs workflow-tabs"
                       role="group"
                       aria-label="Message audience"
                     >

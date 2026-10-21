@@ -208,7 +208,7 @@ def login_destination(query):
     view = query.get("view", "")
     if view == "signups":
         view = "signup"
-    if view not in {"home", "todo", "signup", "assignments"}:
+    if view not in {"home", "search", "wars", "events", "todo", "signup", "assignments"}:
         return ""
     params = {"view": view}
     season = query.get("season", "")

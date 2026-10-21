@@ -1,5 +1,5 @@
 /* Shared presentation for existing navigation, without changing its semantics. */
-.shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) {
+.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) {
   display: flex;
   flex-wrap: wrap;
   gap: 0;
@@ -10,7 +10,7 @@
   border-radius: 0;
   background: transparent;
 }
-.shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button {
+.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button {
   min-height: 44px;
   min-width: 0;
   flex: 0 1 auto;
@@ -24,20 +24,17 @@
   -webkit-text-fill-color: currentColor;
   white-space: normal;
 }
-.shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:is(.active,[aria-selected="true"],[aria-pressed="true"],[aria-current="page"]) {
+.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:is(.active,[aria-selected="true"],[aria-pressed="true"],[aria-current="page"]) {
   color: #f4cd64;
   border-bottom-color: #e7b338;
   background: #e7b3380b;
   box-shadow: none;
   -webkit-text-fill-color: currentColor;
 }
-.shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:focus-visible {
+.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:focus-visible {
   outline: 2px solid #f4cd64;
   outline-offset: -3px;
 }
-.clan-category-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
-.shell .clan-category-filters button { min-height: 44px; padding: 8px 12px; border-radius: 24px; background: #202020; }
-.shell .clan-category-filters button[aria-pressed="true"] { color: #f4cd64; border-color: #e7b338; background: #332b19; }
 .clan-category-filters span { font-size: 12px; opacity: .8; margin-left: 5px; }
 .participation-editor > summary { cursor: pointer; padding: 12px 0; min-height: 44px; color: #f4cd64; }
 .shell .participation-card { padding: 16px; }
@@ -46,8 +43,63 @@
 .return-status-grid article { padding: 16px; border: 1px solid #46433a; border-radius: 12px; }
 .return-status-grid article > * { display: block; margin: 5px 0; overflow-wrap: anywhere; }
 @media(max-width:600px) {
-  .shell :is(.clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button { padding: 10px 12px; }
+  .shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button { padding: 10px 12px; }
 }
 .roster-rule-form > fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 #clan-directory-picker .clan-category-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #clan-directory-picker .clan-category-filters button { padding: 8px; overflow-wrap: anywhere; }
+
+/* Activity sections read as one tab strip, rather than separate cards. */
+.shell .todo-tabs > button { flex-direction: row; align-items: center; gap: 7px; }
+.shell .todo-tabs > button > span { display: inline-flex; font-size: inherit; }
+.shell .todo-tabs small { color: inherit; font-size: 11px; font-weight: 400; }
+.shell :is(.overview-filters, .clan-category-filters, .search-kind-filters) {
+  display: flex; flex-wrap: wrap; width: fit-content; max-width: 100%;
+  gap: 2px; padding: 4px; border: 1px solid #343434; border-radius: 24px;
+  background: #191919; margin: 12px 0;
+}
+.shell :is(.overview-filters, .clan-category-filters, .search-kind-filters) button {
+  display: inline-flex; align-items: center; flex-direction: row; gap: 6px; min-height: 44px; border: 0; border-radius: 20px; padding: 8px 14px;
+  background: transparent; box-shadow: none; color: #c6c3bb;
+}
+.shell :is(.overview-filters, .clan-category-filters, .search-kind-filters) button[aria-pressed="true"] {
+  background: #302b20; color: #f4cd64; box-shadow: none;
+}
+.shell :is(.overview-filters, .clan-category-filters, .search-kind-filters) button:focus-visible { outline: 2px solid #f4cd64; outline-offset: -2px; }
+.shell .sidebar .navigation-label { margin: 20px 12px 6px; font-size: 11px; color: #b0aca3; font-weight: 600; }
+.shell .sidebar .navigation-everyday button { min-height: 44px; text-align: left; gap: 9px; }
+.shell .home-search-entry { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border-radius: 24px; margin: 20px 0 8px; background: #191919; color: #c6c3bb; min-height: 48px; }
+.home-search-entry span { flex: 1; }
+.home-search-entry kbd { font-size: 11px; white-space: nowrap; }
+.home-activity-links { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 24px; }
+.shell .home-activity-links button { display: flex; align-items: center; gap: 8px; background: transparent; border-color: transparent; min-height: 44px; }
+.dashboard-search-workspace { max-width: 1100px; margin: auto; }
+.global-search-field { display: flex; align-items: center; gap: 12px; padding: 0 16px; background: #191919; border: 1px solid #444; border-radius: 24px; }
+.shell .global-search-field input { border: 0; background: transparent; min-width: 0; flex: 1; min-height: 48px; }
+.global-search-field:focus-within { outline: 2px solid #f4cd64; outline-offset: 2px; }
+.global-search-field .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.search-results { border-top: 1px solid #363636; }
+.search-result { display: flex; align-items: center; gap: 14px; padding: 18px 0; border-bottom: 1px solid #363636; }
+.search-result > div:first-of-type { flex: 1; min-width: 0; }
+.search-result strong, .search-result small { display: block; overflow-wrap: anywhere; }
+.search-result small { margin-top: 6px; color: #bcb8af; }
+.search-result-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.search-result-actions a { display: inline-flex; align-items: center; min-height: 44px; color: #f4cd64; }
+.search-pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 20px; }
+@media(max-width:600px) {
+  .home-search-entry kbd { display: none; }
+  .search-result { flex-wrap: wrap; }
+  .search-result-actions { flex-basis: 100%; margin-left: 32px; }
+  .shell .todo-tabs > button { flex-wrap: wrap; padding: 10px; }
+  .shell .todo-tabs small { font-size: 10px; }
+}
+.shell .global-search-field input:focus { outline: none; box-shadow: none; }
+.shell .todo-refresh { margin-bottom: 18px; }
+/* Keep activity sections on a single rail; keyboard focus scrolls each tab into view. */
+.shell .todo-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+.shell .todo-tabs > button { flex: 0 0 auto; flex-wrap: nowrap; white-space: nowrap; }
+.shell .todo-tabs { scrollbar-color: #807351 #191919; }
+.shell .todo-tabs::-webkit-scrollbar { height: 6px; }
+.shell .todo-tabs::-webkit-scrollbar-track { background: #191919; }
+.shell .todo-tabs::-webkit-scrollbar-thumb { background: #807351; border-radius: 4px; }
+.shell .overview-filters button strong { font-size: 12px; font-weight: 500; margin: 0; }

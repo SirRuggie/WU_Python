@@ -20,3 +20,10 @@ describe('Todo truthful states',()=>{
   expect(todoTime(3660,0)).toBe('1h 1m')
  })
 })
+
+it('keeps a search handoff exact while allowing normal partial task searches', () => {
+  const rows = [{tag:'#ABC',name:'One',clan_tag:'#CLAN'}, {tag:'#ABC2',name:'Two',clan_tag:'#CLAN'}] as TodoRow[]
+  expect(visibleTodoRows(rows, null, '#ABC', 'name', true)).toHaveLength(1)
+  expect(visibleTodoRows(rows, null, '#CLAN', 'name', true)).toHaveLength(2)
+  expect(visibleTodoRows(rows, null, '#ABC', 'name')).toHaveLength(2)
+})

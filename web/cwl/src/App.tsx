@@ -1,3 +1,4 @@
+import DashboardSearch from './DashboardSearch'
 import DashboardIcon from './DashboardIcon'
 import StaffPlayerButton from './StaffPlayerButton'
 import ArrivalCheck from './ArrivalCheck'
@@ -247,12 +248,29 @@ function App() {
       || (next === 'manage' && session.is_owner) ? next : 'home'
   }
   const acceptRoute = (next: View) => { setView(next); setMenuOpen(false); setNotice(null) }
-  const changeView = (next: View) => {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchKind, setSearchKind] = useState<'all' | 'player' | 'clan'>('all')
+  const [searchPage, setSearchPage] = useState(0)
+  const [activitySearch, setActivitySearch] = useState('')
+  useEffect(() => { setSearchQuery(''); setSearchKind('all'); setSearchPage(0); setActivitySearch('') }, [session?.user.id])
+  const changeView = (next: View, filter = '') => {
     if (navigation.current?.pending || (next !== view && !canLeave())) return
     const destination = allowedView(next)
     if (destination !== view) navigation.current?.write({ view: destination, season: seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, true)
+    setActivitySearch(filter)
     acceptRoute(destination)
   }
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.altKey && !event.repeat && !event.isComposing && session) {
+        event.preventDefault()
+        changeView('search')
+        if (view === 'search') document.getElementById('dashboard-search')?.focus()
+      }
+    }
+    window.addEventListener('keydown', shortcut)
+    return () => window.removeEventListener('keydown', shortcut)
+  })
   const openPublication = (step: 'review' | 'announce') => {
     if (navigation.current?.pending || (view === 'publication' && publicationStep === step)) return
     if (!canLeave()) return
@@ -362,7 +380,7 @@ function App() {
   const currentStaffPage = Math.min(staffPage, staffLastPage)
   const staffPageSlice = <T,>(items: T[]) => items.slice(currentStaffPage * 8, (currentStaffPage + 1) * 8)
   if (authState === 'error') return <div className="center-screen"><Brand /><div className="card narrow"><h1>CWL is unavailable</h1><p role="alert">{authError}</p><button onClick={() => void loadAuth()}>Retry connection</button></div></div>
-  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><DashboardIcon name="war"/><div><strong>To do</strong><small>See attacks and events.</small></div></li><li><DashboardIcon name="shield"/><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><DashboardIcon name="trophy"/><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{memberTarget(window.location.search).view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' ? 'CWL signups' : entryTarget.view === 'assignments' ? 'My clan assignments' : 'To do'}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}<p className="small">Staff tools appear when you have access.</p></div></main>
+  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><DashboardIcon name="war"/><div><strong>Tasks</strong><small>See attacks and events.</small></div></li><li><DashboardIcon name="shield"/><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><DashboardIcon name="trophy"/><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{memberTarget(window.location.search).view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' ? 'CWL signups' : entryTarget.view === 'assignments' ? 'My clan assignments' : entryTarget.view === 'search' ? 'Search' : entryTarget.view === 'wars' ? 'Wars' : entryTarget.view === 'events' ? 'Events' : 'Tasks'}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}<p className="small">Staff tools appear when you have access.</p></div></main>
 
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
@@ -375,7 +393,7 @@ function App() {
     </aside>
     {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     <div className="workspace">
-      <header className="topbar"><button className="menu-open" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button><div><span className="crumb">Warriors United{navigationSection(view) ? ` / ${navigationSection(view)}` : ''}</span><strong>{view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'todo' ? 'To do' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
+      <header className="topbar"><button className="menu-open" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button><div><span className="crumb">Warriors United{navigationSection(view) ? ` / ${navigationSection(view)}` : ''}</span><strong>{view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main>
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
         {(view === 'signup' || view === 'assignments') && <div className="member-nav-tabs" role="group" aria-label="Member sections"><button className={view === 'signup' ? 'active' : ''} aria-pressed={view === 'signup'} onClick={() => changeView('signup')}>My signups</button><button className={view === 'assignments' ? 'active' : ''} aria-pressed={view === 'assignments'} onClick={() => changeView('assignments')}>My clan assignments</button></div>}
@@ -393,7 +411,8 @@ function App() {
         {isManagementArea(view) && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {view === 'reminders' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL management</p><h1>Messages &amp; reminders</h1></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!reminderDirty || window.confirm('Discard unsaved reminder edits and change season?')) setSeasonId(event.target.value) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}</>}
-        {view === 'todo' && <TodoWorkspace key={session.user.id} userId={session.user.id} />}
+        {view === 'search' && <DashboardSearch key={session.user.id} includeFamily={session.can_edit} query={searchQuery} onQuery={value => { setSearchQuery(value); setSearchPage(0) }} kind={searchKind} onKind={value => { setSearchKind(value); setSearchPage(0) }} page={searchPage} onPage={setSearchPage} onTasks={tag => changeView('todo', tag)} />}
+        {(view === 'todo' || view === 'wars' || view === 'events') && <TodoWorkspace key={`${session.user.id}:${view}:${activitySearch}`} userId={session.user.id} mode={view} initialSearch={activitySearch} />}
         {view === 'home' && <DashboardHome key={`${session.user.id}:${seasonId}`} session={session} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} onNavigate={next => { if (next === 'signup' || next === 'saved') { setSignupPanel(next === 'saved' ? 'saved' : 'register'); setSignupStep(1); setPool(null); setCompletion(null); setReview(false) }; changeView(next === 'saved' ? 'signup' : next) }} onStart={(nextPool, tags, freshAccounts, freshSignups) => {
           dashboardPrefill.current = true
           signupRequest.current += 1

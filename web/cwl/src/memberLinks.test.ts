@@ -15,3 +15,11 @@ describe('member page links',()=>{
   expect(memberTarget('?view=todo&season=12')).toEqual({view:'todo',season:''})
  })
 })
+
+it('preserves everyday destinations through sign-in without accepting arbitrary redirects', () => {
+  for (const view of ['search','wars','events']) {
+    expect(memberTarget(`?view=${view}`).view).toBe(view)
+    expect(loginPath(`?view=${view}`, false)).toBe(`/api/cwl/auth/discord?view=${view}`)
+  }
+  expect(memberTarget('?view=https://evil.example').view).toBe('home')
+})

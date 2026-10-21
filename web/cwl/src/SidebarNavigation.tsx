@@ -1,18 +1,27 @@
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
 import { useEffect, useState } from 'react'
 
-export const dashboardViews = ['declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access'] as const
+export const dashboardViews = ['search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access'] as const
 export type DashboardView = typeof dashboardViews[number]
 type Item = { view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: DashboardIconName; items: Item[]; access?: 'staff' | 'owner' }
 // Add future working features here; permission checks still live on the server.
 const sections: Section[] = [
-  { id: 'my-dashboard', label: 'My dashboard', icon: 'home', items: [
-    { view: 'staff-overview', label: 'Staff overview', icon: 'overview', permissions: ['cwl','clans','text_commands','recruitment','tickets','member_roles','fwa','server_tools'] },
+  { id: 'my-dashboard', label: 'Home', icon: 'home', items: [
     { view: 'home', label: 'Home', icon: 'home' },
-    { view: 'todo', label: 'To do', icon: 'tasks' },
+    { view: 'search', label: 'Search', icon: 'search' },
+  ] },
+  { id: 'activity', label: 'Activity', icon: 'tasks', items: [
+    { view: 'todo', label: 'Tasks', icon: 'tasks' },
+    { view: 'wars', label: 'Wars', icon: 'war' },
+    { view: 'events', label: 'Events', icon: 'calendar' },
+  ] },
+  { id: 'my-cwl', label: 'My CWL', icon: 'trophy', items: [
     { view: 'signup', label: 'CWL signups', icon: 'signup' },
     { view: 'assignments', label: 'My clan assignments', icon: 'shield' },
+  ] },
+  { id: 'staff-overview', label: 'Staff', icon: 'overview', items: [
+    { view: 'staff-overview', label: 'Staff overview', icon: 'overview', permissions: ['cwl','clans','text_commands','recruitment','tickets','member_roles','fwa','server_tools'] },
   ] },
   { id: 'cwl-management', label: 'CWL', icon: 'trophy', access: 'staff', items: [
     { view: 'roster', label: 'Roster', icon: 'roster' },
@@ -76,6 +85,12 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
   const itemButton = (item: Item) => <button key={item.view} aria-current={itemActive(item) ? 'page' : undefined} onClick={() => onNavigate(item.view)}><span className="navigation-icon" aria-hidden="true"><DashboardIcon name={item.icon} /></span><span>{item.label}</span></button>
   return <nav aria-label="Warriors United navigation">
     {visibleNavigationSections(canEdit, isOwner, permissions).map(section => {
+      if (['my-dashboard', 'activity', 'my-cwl', 'staff-overview'].includes(section.id)) {
+        return <section className="navigation-section navigation-everyday" key={section.id}>
+          {section.id !== 'my-dashboard' && <h2 className="navigation-label">{section.label}</h2>}
+          {section.items.map(itemButton)}
+        </section>
+      }
       const active = section.items.some(item => item.view === view)
       return <section className={`navigation-section${active ? ' contains-current' : ''}`} key={section.id}>
         <button className="navigation-toggle" aria-expanded={!!expanded[section.id]} aria-controls={`navigation-${section.id}`} onClick={() => setExpanded(current => ({ ...current, [section.id]: !current[section.id] }))}>

@@ -1,9 +1,11 @@
 import {
-  Tent, Target, LockKeyhole, House, LayoutDashboard, ListChecks, ClipboardPen, Shield, Trophy, ClipboardList, CornerUpLeft, Mail, Send, ChartNoAxesCombined, Medal, Download, Settings, Flag, ArrowLeftRight, Ticket, Wrench, Users, Swords, Terminal, Image, Plug, Bell, ChevronDown, ChevronRight, UsersRound, Clock, TriangleAlert, Paperclip,
+  Search, CalendarDays, Tent, Target, LockKeyhole, House, LayoutDashboard, ListChecks, ClipboardPen, Shield, Trophy, ClipboardList, CornerUpLeft, Mail, Send, ChartNoAxesCombined, Medal, Download, Settings, Flag, ArrowLeftRight, Ticket, Wrench, Users, Swords, Terminal, Image, Plug, Bell, ChevronDown, ChevronRight, UsersRound, Clock, TriangleAlert, Paperclip,
 } from 'lucide-react'
 import './dashboardIcons.css'
 
 const icons = {
+  search: Search,
+  calendar: CalendarDays,
   raid: Tent,
   games: Target,
   locked: LockKeyhole,

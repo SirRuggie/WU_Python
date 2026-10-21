@@ -177,3 +177,26 @@ staff-navigation fixture at 1280px and narrow 320/390px viewport settings. Expan
 navigation, long labels, card alignment, accessible text, and page overflow were
 checked. The fixture was removed after verification. This visual pass does not
 represent a new audit of backend or Discord delivery behavior.
+
+## Everyday navigation and integrated controls
+
+Home and Search remain directly visible. Activity groups Tasks, Wars, and Events;
+My CWL follows, then authorized staff tools. Search uses the existing linked-account
+endpoint and current clans; only existing editors request the family directory.
+It is not a global player lookup. Events reuses known Raid, Games, and CWL activity
+and timestamps, not an invented event calendar. Existing `/todo` links remain valid.
+
+Use gold underline strips for sibling sections and a single segmented container
+for short filter sets. Keep actual actions (Save, Retry, Send) as buttons. Narrow
+activity strips scroll within their rail rather than overflowing the page; keyboard
+focus makes off-screen buttons reachable. Do not apply tab roles without tab keyboard
+behavior: current activity filters remain native pressed buttons in a named group.
+
+Validation: 50-account/28-clan isolated browser samples at desktop 1280px and mobile
+320/390px settings; member versus staff navigation; escaped names; player search to
+filtered tasks and Back; Ctrl+K; keyboard activity activation; partial family-directory
+failure, denied access with zero results, failed-load Retry, and no-match recovery.
+Search keeps its query/filter/page in the signed-in app session and clears them on
+identity change. Review fixed clan-tag matching, exact player-tag handoff, mobile
+CSS specificity, and duplicate focus borders. Activity and search use existing GET
+APIs; these checks do not assert new live Discord delivery or full-game search.

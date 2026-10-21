@@ -11,9 +11,9 @@ export const todoTabs: { key: TodoKind; icon: DashboardIconName; label: string; 
   { key: 'games', icon: 'games', label: 'Clan Games', description: 'Recorded Clan Games points this month. Tracking can lag behind the game.' },
   { key: 'private', icon: 'locked', label: 'Cannot check', description: 'Accounts whose war activity needs checking in-game because a log is private or unavailable.' },
 ]
-export function visibleTodoRows(rows: TodoRow[], selected: string[] | null, search: string, sort: string) {
+export function visibleTodoRows(rows: TodoRow[], selected: string[] | null, search: string, sort: string, exactTag = false) {
   const query = search.trim().toLocaleLowerCase()
-  return rows.filter(row => (selected === null || selected.includes(row.tag)) && (!query || [row.name,row.tag,row.clan_name].some(value => value?.toLocaleLowerCase().includes(query))))
+  return rows.filter(row => (selected === null || selected.includes(row.tag)) && (!query || (exactTag ? [row.tag, row.clan_tag].some(value => value?.toLocaleLowerCase() === query) : [row.name,row.tag,row.clan_name,row.clan_tag].some(value => value?.toLocaleLowerCase().includes(query)))))
     .sort((a,b) => sort === 'th' ? (b.town_hall || 0) - (a.town_hall || 0) || a.name.localeCompare(b.name) : sort === 'name' ? a.name.localeCompare(b.name) : (a.ends_at ?? Infinity) - (b.ends_at ?? Infinity) || a.name.localeCompare(b.name))
 }
 export function todoEmptyText(view: TodoView, kind: TodoKind, filtered: boolean) {
