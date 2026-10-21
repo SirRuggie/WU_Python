@@ -290,13 +290,8 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
                                    json={"revision": await self.revision(), "assigned_clan_tag": "#C2Y"})
         self.assertEqual(response.status, 200)
-        response = await self.call("DELETE", f"/seasons/{self.sid}/signups/%23P2Y", self.member)
-        self.assertEqual(response.status, 409)
         response = await self.call("DELETE", f"/seasons/{self.sid}/lineup/%23C2Y", self.owner)
         self.assertEqual(response.status, 409)
-        response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "assigned_clan_tag": None})
-        self.assertEqual(response.status, 200)
         response = await self.call("DELETE", f"/seasons/{self.sid}/signups/%23P2Y", self.member)
         self.assertEqual(response.status, 200)
         self.assertEqual(self.app["store"].rows("SELECT * FROM roster_entries"), [])

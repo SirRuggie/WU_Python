@@ -1,3 +1,4 @@
+import SignupActivity from './SignupActivity'
 import useWorkspacePreference from './useWorkspacePreference'
 import useUnsavedWork from './useUnsavedWork'
 import ClanDestinationOptions from './ClanDestinationOptions'
@@ -205,6 +206,7 @@ export default function RosterWorkspace({ seasonId, seasons, onSeasonChange, ini
 
   return <div className="roster-workspace">
     <div className="page-head"><div><p className="eyebrow">Staff roster</p><h1>Roster builder</h1><p>Select accounts, choose a hosting clan, and assign. Changes save immediately.</p></div><label className="season-choice">Season<select value={seasonId} disabled={busy} onChange={event => { if (mayLeaveEditor()) onSeasonChange(event.target.value) }}><option value="">Select a season</option>{seasons.map(season => <option key={season.id} value={String(season.id)}>{season.label}</option>)}</select></label></div>
+    {seasonId && <SignupActivity key={seasonId} seasonId={seasonId} />}
     {!seasonId && <div className="card empty"><p>Select a season to build its CWL roster.</p></div>}
     {feedback && <div className={`notice ${feedback.kind}`} role={feedback.kind === 'error' ? 'alert' : 'status'}>{feedback.text}{feedback.kind === 'error' && !roster && <button disabled={loading} onClick={() => { setLoading(true); void refresh().then(() => setFeedback(null)).catch(error => setFeedback({kind: 'error', text: errorText(error)})).finally(() => setLoading(false)) }}>Retry loading roster</button>}<button aria-label="Dismiss message" onClick={() => setFeedback(null)}>×</button></div>}
     {loading && <p role="status">Loading roster…</p>}

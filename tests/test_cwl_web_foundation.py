@@ -71,24 +71,22 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 201)
         return (await response.json())["id"]
 
-    async def test_fwa_main_warning_allows_signup_and_survives_clan_move_and_outage(self):
+    async def test_fwa_is_lazy_only_based_on_current_clan_not_historical_clan(self):
         sid = await self.season()
         self.providers.family_clans = AsyncMock(return_value={"clans": [{"tag": "#R2Y", "name": "Family", "type": "FWA"}]})
-        data = await (await self.call("GET", "/linked-accounts", self.member)).json()
-        self.assertEqual(next(a for a in data["accounts"] if a["tag"] == "#P2Y")["current_clan_type"], "FWA")
-        body = {"pool": "main", "accounts": [{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}]}
+        item = {"tag": "#P2Y", "prefer_crystal_1_or_lower": False}
+        body = {"pool": "main", "accounts": [item]}
+        self.assertEqual((await self.call("POST", f"/seasons/{sid}/signups", self.member, json=body)).status, 409)
+        self.assertEqual(self.app['store'].rows('SELECT * FROM signups'), [])
+        body['pool'] = 'lazy'
         self.assertEqual((await self.call("POST", f"/seasons/{sid}/signups", self.member, json=body)).status, 200)
-        self.providers.players["#P2Y"]["current_clan_tag"] = "#OTHER"
-        self.providers.family_clans.side_effect = ProviderUnavailable("offline")
-        rows = (await (await self.call("GET", f"/seasons/{sid}/signups?all=1", self.owner)).json())["signups"]
-        self.assertTrue(rows[0]["fwa_main_warning"])
-        self.assertEqual(rows[0]["signup_clan_type"], "FWA")
-        body["pool"] = "lazy"
-        body["accounts"][0]["move_from_pool"] = "main"
+        body.update(pool='main', accounts=[{**item, 'move_from_pool': 'lazy'}])
+        self.assertEqual((await self.call("POST", f"/seasons/{sid}/signups", self.member, json=body)).status, 409)
+        self.providers.players['#P2Y']['current_clan_tag'] = '#J2Y'
         self.assertEqual((await self.call("POST", f"/seasons/{sid}/signups", self.member, json=body)).status, 200)
-        rows = (await (await self.call("GET", f"/seasons/{sid}/signups", self.member)).json())["signups"]
-        self.assertFalse(rows[0]["fwa_main_warning"])
-        self.assertEqual(rows[0]["signup_clan_type"], "FWA")
+        row = self.app['store'].one('SELECT * FROM signups')
+        self.assertEqual(row['pool'], 'main')
+        self.assertEqual(row['signup_clan_type'], 'FWA')  # History is retained, not a current restriction.
 
     async def test_existing_signup_fwa_category_and_non_fwa_signups(self):
         sid = await self.season()
@@ -112,11 +110,11 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         other = await (await self.call("GET", f"/seasons/{sid}/signups?all=1", self.other)).json()
         self.assertEqual(other["signups"], [])
         blocked = await self.call("DELETE", f"/seasons/{sid}/signups/%23P2Y", self.member)
-        self.assertEqual(blocked.status, 409)
-        with self.app["store"].tx() as db:
-            db.execute("UPDATE roster_entries SET assigned_clan_tag=NULL WHERE season_id=?", (sid,))
+        self.assertEqual(blocked.status, 200)
         data = await (await self.call("GET", f"/seasons/{sid}/signups", self.member)).json()
-        self.assertFalse(data["signups"][0]["has_staff_placement"])
+        self.assertEqual(data['signups'], [])
+        alerts = await (await self.call('GET', f'/seasons/{sid}/signup-activity', self.owner)).json()
+        self.assertEqual(alerts['items'][0]['assigned_clan_tag'], '#PRIVATE')
 
     async def test_staff_can_add_closed_signups_and_member_sees_them(self):
         sid = await self.season()
@@ -668,7 +666,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         for pool, value in (("lazy", "#P2Y"), ("main", "#Q2Y")):
             response = await self.call("POST", f"/seasons/{sid}/signups", self.member,
                                        json={"pool": pool, "accounts": [{"tag": value, "prefer_crystal_1_or_lower": True}]})
-            self.assertEqual(response.status, 200)
+            self.assertEqual(response.status, 200 if pool == "lazy" else 503)
         response = await self.call("GET", f"/seasons/{sid}/signups?all=1", self.owner)
         signups = (await response.json())["signups"]
         self.assertEqual({item["family_clan_status"] for item in signups}, {"unknown"})

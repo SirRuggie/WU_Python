@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS roster_audit (
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS roster_audit_season ON roster_audit(season_id,id);
+CREATE TABLE IF NOT EXISTS signup_activity_reviews (
+ audit_id INTEGER PRIMARY KEY REFERENCES roster_audit(id),
+ reviewed_by TEXT NOT NULL, reviewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS roster_undo (
  id INTEGER PRIMARY KEY,
  season_id INTEGER NOT NULL REFERENCES seasons(id),
@@ -331,3 +335,20 @@ class Store:
     def one(self, sql, args=()):
         rows = self.rows(sql, args)
         return rows[0] if rows else None
+
+
+    def signup_activity(self, season_id):
+        """One durable audit event per change; reviewed events remain in audit history."""
+        with self.tx() as db:
+            return [dict(row) for row in db.execute(
+                "SELECT a.* FROM roster_audit a LEFT JOIN signup_activity_reviews r ON r.audit_id=a.id "
+                "WHERE a.season_id=? AND a.action IN ('member_withdrawal','member_pool_change') "
+                "AND r.audit_id IS NULL ORDER BY a.id DESC LIMIT 100", (season_id,))]
+
+    def review_signup_activity(self, season_id, audit_id, actor):
+        with self.tx() as db:
+            row = db.execute("SELECT id FROM roster_audit WHERE season_id=? AND id=? AND action IN ('member_withdrawal','member_pool_change')", (season_id, audit_id)).fetchone()
+            if row is None:
+                return False
+            db.execute('INSERT OR IGNORE INTO signup_activity_reviews(audit_id,reviewed_by) VALUES (?,?)', (audit_id, actor))
+            return True

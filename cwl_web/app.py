@@ -576,6 +576,15 @@ def _family_status(clan_tag, approved):
     return "approved" if clan_tag in approved else "outside"
 
 
+def _check_signup_pool(pool, accounts):
+    from utils.cwl_signup_policy import main_signup_error
+    if pool == 'main':
+        for account in accounts:
+            problem = main_signup_error(account)
+            if problem:
+                _fail(*problem)
+
+
 async def _accounts(request, user_id):
     provider = request.app["providers"]
     links = await provider.linked_tags(user_id)
@@ -719,6 +728,7 @@ async def submit_signup(request):
     available = {a["tag"]: a for a in await _accounts(request, session["user_id"])}
     if not set(requested) <= set(available):
         _fail(403, "Account is not linked to your Discord identity")
+    _check_signup_pool(pool, [available[value] for value in requested])
     sid = _sid(request)
     with _store(request).tx() as db:
         season = _season(db, sid)
@@ -741,10 +751,6 @@ async def submit_signup(request):
                 continue
             if move_from_pool != existing["pool"]:
                 _fail(409, "Confirm the account's current pool before moving it")
-            assignment = db.execute("SELECT assigned_clan_tag FROM roster_entries "
-                                    "WHERE season_id=? AND tag=?", (sid, value)).fetchone()
-            if assignment and assignment["assigned_clan_tag"]:
-                _fail(409, "Staff have assigned this account to a CWL clan. Contact staff to change or withdraw your signup.")
             moved += 1
         for value, (preference, _) in requested.items():
             account = available[value]
@@ -753,7 +759,13 @@ async def submit_signup(request):
             if account.get("current_clan_type"):
                 db.execute("UPDATE signups SET signup_clan_type=CASE WHEN signup_clan_type='FWA' OR ?='FWA' THEN 'FWA' ELSE COALESCE(signup_clan_type,?) END WHERE season_id=? AND tag=?", (account["current_clan_type"], account["current_clan_type"], sid, value))
             after = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
-            _audit(db, sid, value, session["user_id"], "member_signup", dict(old) if old else None, dict(after))
+            before = dict(old) if old else None
+            changed_pool = old is not None and old['pool'] != pool
+            if changed_pool:
+                placement = db.execute('SELECT assigned_clan_tag FROM roster_entries WHERE season_id=? AND tag=?', (sid, value)).fetchone()
+                before['assigned_clan_tag'] = placement['assigned_clan_tag'] if placement else None
+                db.execute('UPDATE roster_entries SET assigned_clan_tag=NULL,kept=0 WHERE season_id=? AND tag=?', (sid, value))
+            _audit(db, sid, value, session["user_id"], "member_pool_change" if changed_pool else "member_signup", before, dict(after))
         if requested:
             _bump(db, sid)
     return web.json_response({"ok": True, "count": len(requested), "moved": moved})
@@ -832,6 +844,7 @@ async def staff_add_signup(request):
     available = {account["tag"]: account for account in await _accounts(request, uid)}
     if not set(requested) <= set(available):
         _fail(409, "An account is no longer linked to this member. Reload their accounts.")
+    _check_signup_pool(pool, [available[value] for value in requested])
     with _store(request).tx() as db:
         if _season(db, sid)["status"] != "draft":
             _fail(423, "Archived seasons cannot be changed")
@@ -890,8 +903,7 @@ async def withdraw(request):
         before = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"])).fetchone()
         if before:
             assigned = db.execute("SELECT assigned_clan_tag FROM roster_entries WHERE season_id=? AND tag=?", (sid, value)).fetchone()
-            if assigned and assigned["assigned_clan_tag"]:
-                _fail(409, "Staff have assigned this account to a CWL clan. Contact staff to change or withdraw your signup.")
+            before = {**dict(before), "assigned_clan_tag": assigned["assigned_clan_tag"] if assigned else None}
             db.execute("DELETE FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"]))
             _audit(db, sid, value, session["user_id"], "member_withdrawal", dict(before), None)
             _bump(db, sid)
@@ -1709,7 +1721,8 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     app.cleanup_ctx.append(player_weights_lifecycle)
     from .strikes import strike_jobs_lifecycle
     app.cleanup_ctx.append(strike_jobs_lifecycle)
-    routes = [*ticket_browser_routes, *staff_tag_signup_routes,
+    from .signup_activity import routes as signup_activity_routes
+    routes = [*ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
         web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),

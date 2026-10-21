@@ -1,3 +1,4 @@
+import FwaSignupDialog from './FwaSignupDialog'
 import useUnsavedWork from './useUnsavedWork'
 import type {SignupMove} from './signupMoves'
 import {useState, type RefObject} from 'react'
@@ -19,27 +20,35 @@ type Props = {
 const poolName = (pool: Pool) => pool === 'main' ? 'Main CWL' : 'Lazy CWL'
 
 export default function SavedSignups({signups, accounts, editable, busy, canMove, headingRef, onSave, onDirty, onWithdraw}: Props) {
+  const [fwaBlocked, setFwaBlocked] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [tags, setTags] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [moves, setMoves] = useState<Record<string, Pool>>({})
   useUnsavedWork(Object.keys(moves).length > 0, onDirty)
   const changes = signups.filter(row => moves[row.tag] && moves[row.tag] !== row.pool).map(signup => ({signup, destination: moves[signup.tag]}))
-  const stage = (rows: Signup[], pool: Pool) => setMoves(current => {
-    const next = {...current}
-    for (const row of rows) { if (row.pool === pool) delete next[row.tag]; else next[row.tag] = pool }
-    return next
-  })
+  const stage = (rows: Signup[], pool: Pool) => {
+    if (pool === 'main' && rows.some(row => row.pool !== pool && accounts.find(account => account.tag === row.tag)?.current_clan_type === 'FWA')) {
+      setFwaBlocked(true)
+      return
+    }
+    setMoves(current => {
+      const next = {...current}
+      for (const row of rows) { if (row.pool === pool) delete next[row.tag]; else next[row.tag] = pool }
+      return next
+    })
+  }
   const save = async () => {
     const result = await onSave(changes)
     setSaveError(result.error)
     setMoves(current => Object.fromEntries(Object.entries(current).filter(([tag]) => !result.saved.includes(tag))))
   }
-  const available = signups.filter(row => !row.has_staff_placement)
+  const available = signups
   const selected = available.filter(row => tags.includes(row.tag))
   const movable = (pool: Pool) => selected.filter(row => (moves[row.tag] || row.pool) !== pool)
   const canMoveRows = (rows: Signup[]) => canMove && rows.length > 0 && rows.every(row => accounts.some(account => account.tag === row.tag))
   return <>
+    {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     <div className="section-heading">
       <div><p className="eyebrow">Saved this season</p><h2 ref={headingRef} tabIndex={-1}>Signed-up accounts</h2></div>
       {editable && signups.length > 0 && <button disabled={busy} aria-pressed={selecting} onClick={() => {setSelecting(!selecting);setTags([])}}>{selecting ? 'Cancel selection' : 'Select accounts'}</button>}
@@ -54,20 +63,20 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
         {(['main','lazy'] as Pool[]).map(pool => <button key={pool} disabled={busy || !canMoveRows(movable(pool))} onClick={() => stage(movable(pool), pool)}>Move to {poolName(pool)} ({movable(pool).length})</button>)}
         <button className="withdraw-button" disabled={busy || !!changes.length || !selected.length} onClick={() => onWithdraw(selected)}>Withdraw selected ({selected.length})</button>
       </div>
-      <small>Changes stay here until you select Save changes. Accounts already in that pool stay there. Staff-placed accounts cannot be selected.</small>
+      <small>Changes stay here until you select Save changes. Accounts already in that pool stay there. Staff will be alerted to withdrawals and pool changes.</small>
       {selected.some(row => !accounts.some(account => account.tag === row.tag)) && <small>Some accounts could not be found in your linked accounts. Refresh accounts before moving them.</small>}
     </div>}
     <div className="registered-grid">{signups.map(signup => <div className={`card registered-card saved-signup-card ${moves[signup.tag] && moves[signup.tag] !== signup.pool ? 'pool-change-pending' : selecting && tags.includes(signup.tag) ? 'account-selected' : ''}`} key={signup.tag}>
       <div className="saved-signup-account">
-        {selecting && editable && <input type="checkbox" aria-label={`Select ${signup.player_name || signup.tag} ${signup.tag}`} disabled={busy || !!signup.has_staff_placement} checked={!signup.has_staff_placement && tags.includes(signup.tag)} onChange={event => setTags(current => event.target.checked ? [...current,signup.tag] : current.filter(tag => tag !== signup.tag))}/>}
+        {selecting && editable && <input type="checkbox" aria-label={`Select ${signup.player_name || signup.tag} ${signup.tag}`} disabled={busy} checked={tags.includes(signup.tag)} onChange={event => setTags(current => event.target.checked ? [...current,signup.tag] : current.filter(tag => tag !== signup.tag))}/>}
         <div><strong className="signed-up-name"><TownHallIcon level={accounts.find(account => account.tag === signup.tag)?.town_hall ?? signup.town_hall}/><span>{signup.player_name || accounts.find(account => account.tag === signup.tag)?.name || signup.tag}</span></strong>
           <small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small>
           {moves[signup.tag] && moves[signup.tag] !== signup.pool && <p className="inline-reason pending-switch" role="status"><strong>Not saved</strong> — switching from {poolName(signup.pool)} to {poolName(moves[signup.tag])}.<small>Select Save changes to finish.</small></p>}
-          {(moves[signup.tag] || signup.pool) === 'main' && (signup.signup_clan_type === 'FWA' || accounts.find(account => account.tag === signup.tag)?.current_clan_type === 'FWA') && <p className="inline-reason">FWA accounts should choose Lazy CWL. Main CWL is allowed, but flagged for staff.</p>}
-          {signup.has_staff_placement && <p className="inline-reason">Staff have assigned this account to a CWL clan. Contact staff to change or withdraw your signup.</p>}
+          {(moves[signup.tag] || signup.pool) === 'main' && accounts.find(account => account.tag === signup.tag)?.current_clan_type === 'FWA' && <p className="inline-reason">This account is currently in FWA and can only choose Lazy CWL.</p>}
+          {signup.has_staff_placement && <p className="inline-reason">Changing pools or withdrawing will remove this working placement and alert staff.</p>}
         </div>
       </div>
-      {!selecting && editable && !signup.has_staff_placement && <div className="registered-actions">
+      {!selecting && editable && <div className="registered-actions">
         <button disabled={busy || !canMoveRows([signup])} onClick={() => stage([signup], (moves[signup.tag] || signup.pool) === 'main' ? 'lazy' : 'main')}>{moves[signup.tag] ? 'Undo change' : 'Change CWL pool'}</button>
         <button className="withdraw-button" disabled={busy || !!changes.length} onClick={() => onWithdraw([signup])}>Withdraw signup</button>
       </div>}
@@ -76,7 +85,7 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
       {saveError && <p className="notice error" role="alert">{saveError}</p>}
       <span>{changes.length} {changes.length === 1 ? 'change' : 'changes'} · Not saved yet</span>
       <button disabled={busy} onClick={() => {setMoves({});setSaveError(null)}}>Cancel</button>
-      <button className="primary" disabled={busy || !editable || !changes.every(change => !change.signup.has_staff_placement && canMoveRows([change.signup]))} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'}</button>
+      <button className="primary" disabled={busy || !editable || !changes.every(change => canMoveRows([change.signup]))} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'}</button>
     </div>}
   </>
 }

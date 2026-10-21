@@ -19,7 +19,7 @@ async def lookup(request):
     return web.json_response({'account': account, 'linked_user_id': owner, 'signed_up_pool': saved['pool'] if saved else None})
 
 async def add(request):
-    from .app import _require, _fail, _json, _store, _sid, _season, _audit, _bump
+    from .app import _require, _fail, _json, _store, _sid, _season, _audit, _bump, _family_directory, _family_status, _check_signup_pool
     actor = _require(request, 'editor')
     body = await _json(request)
     try:
@@ -40,6 +40,10 @@ async def add(request):
             _fail(423, 'Archived seasons cannot be changed')
     provider = request.app['providers']
     account = await provider.player(value)
+    directory = await _family_directory(request)
+    account['current_clan_type'] = (directory or {}).get(account['current_clan_tag'], {}).get('type')
+    account['family_clan_status'] = _family_status(account['current_clan_tag'], None if directory is None else set(directory))
+    _check_signup_pool(pool, [account])
     owner = await provider.linked_owner(value)
     if body.get('expected_linked_user_id') != owner:
         _fail(409, 'The Discord link changed. Look up the player again.')
