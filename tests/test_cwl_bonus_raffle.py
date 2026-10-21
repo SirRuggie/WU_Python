@@ -1,6 +1,7 @@
 """Staff raffle workflow, integrity and durable send failure regressions."""
 import asyncio
 import unittest
+from utils.cwl_working_roster import account_token, working_accounts
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -28,7 +29,8 @@ class RaffleTests(unittest.IsolatedAsyncioTestCase):
         self.transport = Transport()
         self.app['announcement_transport'] = self.transport
         with self.app['store'].tx() as db:
-            db.execute("INSERT INTO participation_source_results VALUES (?,?,'#P2Y',5,12,'complete',1,?,NULL)", (self.sid, '2026-10', datetime.now(timezone.utc).isoformat()))
+            db.execute("INSERT INTO participation_source_results(season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning) VALUES (?,?,'#P2Y',5,12,'complete',1,?,NULL)", (self.sid, '2026-10', datetime.now(timezone.utc).isoformat()))
+            db.execute('UPDATE participation_source_results SET roster_token=? WHERE season_id=?', (account_token(working_accounts(db, self.sid)['#P2Y']), self.sid))
         result = await self.call('PATCH', self.base + '/policy', self.owner, json={'pool': 'main', 'minimum': 5, 'revision': 0})
         self.assertEqual(result.status, 200, await result.text())
 

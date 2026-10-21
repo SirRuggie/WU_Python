@@ -11,3 +11,11 @@ def working_accounts(db, season_id):
             (season_id,),
         )
     }
+
+
+def account_token(account):
+    """Bind edits and source totals to the signup owner, pool and assignment."""
+    import hashlib
+    import json
+    fields = ('tag', 'user_id', 'pool', 'assigned_clan_tag')
+    return hashlib.sha256(json.dumps({key: account[key] for key in fields}, sort_keys=True).encode()).hexdigest()

@@ -654,3 +654,46 @@ and 320px browser checks covered rules, candidate review, draw, approval, channe
 keyboard selection, preview, mocked send receipts and narrow-width overflow.
 No live signup data or Discord messages were changed for tests. This is not a
 claim of live notification delivery or a complete assistive-technology audit.
+
+### Current results and roster-source audit
+
+Results & participation now defaults to current season signups and working
+assignments. Main/Lazy use the shared integrated tabs. One source/status panel
+shows the CWL month, last check, account count, and refresh actions. Attack/star
+totals remain visible; corrections, sync settings, and read-only saved history
+are disclosed separately. History is fetched only while expanded. Record editing
+and history have separate UI components. Current exports and the retained legacy
+bonus API use the same current-account boundary. Explicit history exports retain
+saved records. The sync worker queries only current accounts, leaving historical
+records readable without expanding the active query list.
+
+Edits carry an account identity token (owner, tag, pool, assignment), alongside
+record revision and observed source timestamp. Changed assignments reject stale
+writes even without republishing. Old manual totals are not relabeled as current;
+staff can refresh Clash and explicitly replace corrections with results for the
+current assignment. Notes remain and the prior record is retained in the audit.
+Source totals now persist an additive nullable roster_token column in
+participation_source_results, migrated by Store. Old source values without a token
+are usable only against a matching saved identity; a fresh sync is required to
+reset corrections. A failed fetch after reassignment cannot reuse the former
+assignment's cached totals. No existing participation or publication is deleted.
+
+Roster-source audit: declaration readiness already defaults to current accounts
+and labels explicitly requested outdated publications. Member assignments remain
+published-only, joined to current signups and owners, and now also require the
+same Main/Lazy pool. Official roster announcements, roster images, Manage's roster
+send, and explicit published exports intentionally retain versioned published
+snapshots. They are not substituted for current results or raffle candidates.
+Bonus confirmation and draw history remain historical records. No live reminders
+or announcements were sent in this review.
+
+Validation covers removed signups without republishing across current results,
+legacy bonuses and exports; no-publication edits; pool/assignment races; old source
+rejection; explicit reconciliation with notes and audit retained; member published
+pool isolation; historical accounts excluded from sync queries; existing auth,
+CSRF, archive, source-failure, raffle, publication, image and Manage regressions.
+Isolated browser checks covered Main/Lazy filtering, collapsed corrections/history,
+manual save, desktop and 390px/320px reflow with no horizontal page overflow.
+Frontend regression tests, production build and war-reminder validation run before
+deployment. This is not a guarantee against every future bug or proof of live
+Discord delivery. Existing frontend bundle-size advisory remains.

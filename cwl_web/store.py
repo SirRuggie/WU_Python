@@ -287,6 +287,9 @@ class Store:
                 db.execute("ALTER TABLE sessions ADD COLUMN display_name TEXT")
             if "avatar_url" not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN avatar_url TEXT")
+            source_columns = {row[1] for row in db.execute("PRAGMA table_info(participation_source_results)")}
+            if "roster_token" not in source_columns:
+                db.execute("ALTER TABLE participation_source_results ADD COLUMN roster_token TEXT")
             columns = {row["name"] for row in db.execute("PRAGMA table_info(participation_records)")}
             if "attacks_override" not in columns:
                 db.execute("ALTER TABLE participation_records ADD COLUMN attacks_override INTEGER NOT NULL DEFAULT 0")

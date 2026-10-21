@@ -5,7 +5,7 @@ import secrets
 
 
 def eligibility(account, minimum):
-    if not account.get('in_latest_publication') or account.get('roster_changed'):
+    if not account.get('in_current_roster') or account.get('roster_changed'):
         return 'Roster changed; reconcile results before drawing'
     if not account.get('source_complete') or account.get('source_status') not in ('complete', 'stale', 'historical'):
         return 'Results are not complete'

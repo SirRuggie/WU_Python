@@ -1,0 +1,8 @@
+
+/* Results keep routine totals visible; corrections and history stay secondary. */
+.participation-totals { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; align-items: baseline; }
+.participation-history-row { display: grid; gap: .3rem; padding: 1rem 0; border-top: 1px solid var(--border, #34343b); overflow-wrap: anywhere; }
+.participation-workspace .participation-filter { grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); }
+@media (max-width: 640px) {
+  .participation-workspace .participation-filter { grid-template-columns: minmax(0, 1fr); }
+}

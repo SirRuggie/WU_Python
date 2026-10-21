@@ -47,7 +47,7 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("GET", self.endpoint, self.owner)
         self.assertEqual(response.status, 200)
         data = await response.json()
-        self.assertEqual(data["publication_version"], None)
+        self.assertEqual(data["publication_version"], 0)
         self.assertEqual(data["accounts"], [])
         self.assertEqual(data["sync"]["status"], "never")
         self.assertEqual((await self.call("GET", self.endpoint, self.member)).status, 403)
@@ -131,13 +131,16 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         data = await response.json()
         self.assertEqual(data["publication_version"], 2)
         row = data["accounts"][0]
-        self.assertEqual(row["assigned_clan_tag"], "#C2Y")
+        self.assertEqual(row["assigned_clan_tag"], "#J2Y")
+        self.assertIsNone(row["attacks"])
+        self.assertEqual(row["previous_results"]["assigned_clan_tag"], "#C2Y")
         self.assertEqual(row["recorded_publication_version"], 1)
         self.assertTrue(row["in_latest_publication"])
         self.assertTrue(row["roster_changed"])
         response = await self.save(revision=1, attacks=3, stars=7, notes="Later edit")
-        self.assertEqual(response.status, 200)
-        self.assertEqual((await response.json())["account"]["assigned_clan_tag"], "#C2Y")
+        self.assertEqual(response.status, 409)
+        history = await self.call("GET", self.endpoint + "?source=history", self.owner)
+        self.assertEqual((await history.json())["accounts"][0]["assigned_clan_tag"], "#C2Y")
 
     async def test_withdrawn_saved_account_retained_after_new_publication(self):
         await self.signup("main", "#P2Y")
@@ -151,15 +154,14 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         await self.publish()
         response = await self.call("GET", self.endpoint, self.owner)
         data = await response.json()
-        self.assertEqual([row["tag"] for row in data["accounts"]], ["#P2Y", "#Q2Y"])
-        historical, fresh = data["accounts"]
-        self.assertFalse(historical["in_latest_publication"])
-        self.assertTrue(historical["roster_changed"])
-        self.assertEqual(historical["notes"], "Played")
-        self.assertEqual(historical["recorded_publication_version"], 1)
-        self.assertTrue(fresh["in_latest_publication"])
-        self.assertEqual(fresh["revision"], 0)
-        self.assertEqual((await self.save("#P2Y", revision=1, notes="Final note")).status, 200)
+        self.assertEqual([row['tag'] for row in data['accounts']], ['#Q2Y'])
+        self.assertEqual(data['historical_accounts_count'], 1)
+        history = await self.call('GET', self.endpoint + '?source=history', self.owner)
+        historical = (await history.json())['accounts'][0]
+        self.assertEqual(historical['tag'], '#P2Y')
+        self.assertEqual(historical['notes'], 'Played')
+        self.assertEqual(historical['recorded_publication_version'], 1)
+        self.assertEqual((await self.save('#P2Y', revision=1, notes='Final note')).status, 404)
 
     async def test_archived_season_is_read_only_but_staff_can_view(self):
         await self.signup("main", "#P2Y")
@@ -206,3 +208,41 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
         account = (await fresh.json())["account"]
         self.assertEqual(account["assigned_clan_tag"], "#C2Y")
         self.assertEqual(account["recorded_publication_version"], 2)
+
+    async def test_current_signups_edit_without_publication_and_stale_assignment_rejected(self):
+        await self.signup('main', '#P2Y')
+        response = await self.call('GET', self.endpoint, self.owner)
+        data = await response.json()
+        self.assertEqual(data['roster_source'], 'current_signups')
+        row = data['accounts'][0]
+        body = dict(publication_version=0, roster_token=row['roster_token'],
+                    revision=0, attacks=1, stars=2, notes='Current signup')
+        response = await self.call('PATCH', self.endpoint + '/%23P2Y', self.owner, json=body)
+        self.assertEqual(response.status, 200, await response.text())
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE signups SET pool='lazy' WHERE season_id=? AND tag='#P2Y'", (self.sid,))
+        body['revision'] = 1
+        response = await self.call('PATCH', self.endpoint + '/%23P2Y', self.owner, json=body)
+        self.assertEqual(response.status, 409)
+        current = await self.call('GET', self.endpoint, self.owner)
+        row = (await current.json())['accounts'][0]
+        self.assertEqual(row['pool'], 'lazy')
+        self.assertIsNone(row['attacks'])
+        self.assertTrue(row['roster_changed'])
+        self.assertEqual((await self.call('GET', self.endpoint + '?source=invalid', self.owner)).status, 400)
+        self.assertEqual((await self.call('GET', self.endpoint + '?source=history', self.member)).status, 403)
+
+    async def test_removed_signup_excluded_without_republication_every_current_consumer(self):
+        await self.signup('main', '#P2Y')
+        await self.publish()
+        self.assertEqual((await self.save()).status, 200)
+        self.assertEqual((await self.call('DELETE', f'/seasons/{self.sid}/signups/%23P2Y', self.member)).status, 200)
+        for suffix in ('participation', 'bonuses'):
+            result = await self.call('GET', f'/seasons/{self.sid}/{suffix}', self.owner)
+            self.assertEqual((await result.json())['accounts'], [])
+        response = await self.call('GET', self.endpoint + '?source=history', self.owner)
+        self.assertEqual((await response.json())['accounts'][0]['tag'], '#P2Y')
+        import csv, io
+        for kind in ('accounts', 'participation'):
+            response = await self.call('GET', f'/seasons/{self.sid}/export.csv?kind={kind}', self.owner)
+            self.assertEqual(list(csv.DictReader(io.StringIO((await response.text()).lstrip('\ufeff')))), [])

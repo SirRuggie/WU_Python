@@ -1,6 +1,8 @@
 import type { Pool } from './api'
 
 export type ParticipationAccount = {
+  roster_token?: string
+  previous_results?: { pool: string; assigned_clan_name: string | null; assigned_clan_tag: string | null; attacks: number | null; stars: number | null }
   tag: string
   player_name: string
   town_hall: number | null
@@ -28,7 +30,7 @@ export type ParticipationAccount = {
   stars_origin?: 'source' | 'manual' | 'unknown'
 }
 export type ParticipationSync = { cycle: string | null; cycle_source: 'settings' | 'manage_binding' | 'none'; enabled: boolean; status: string; last_checked_at: string | null; last_success_at: string | null; warning: string | null }
-export type ParticipationData = { publication_version: number | null; accounts: ParticipationAccount[]; sync?: ParticipationSync }
+export type ParticipationData = { historical_accounts_count?: number; roster_source?: string; publication_version: number | null; accounts: ParticipationAccount[]; sync?: ParticipationSync }
 export type ParticipationSort = 'name' | 'attacks-asc' | 'attacks-desc' | 'stars-asc' | 'stars-desc' | 'th-asc' | 'th-desc'
 export type ParticipationFilters = { search: string; pool: Pool | 'all'; clan: string; sort: ParticipationSort }
 
@@ -65,7 +67,7 @@ export function visibleParticipation(accounts: ParticipationAccount[], filters: 
 }
 
 export function canUseSyncedResults(account: ParticipationAccount): boolean {
-  return !!(account.attacks_override || account.stars_override) && (account.source_attacks !== null && account.source_attacks !== undefined || account.source_stars !== null && account.source_stars !== undefined)
+  return !!(account.attacks_override || account.stars_override || account.roster_changed) && (account.source_attacks !== null && account.source_attacks !== undefined || account.source_stars !== null && account.source_stars !== undefined)
 }
 export function validCwlCycle(value: string): boolean { return /^20\d{2}-(0[1-9]|1[0-2])$/.test(value) }
 

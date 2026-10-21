@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from aiohttp import web
 
-from utils.cwl_working_roster import working_accounts
+from utils.cwl_working_roster import working_accounts, account_token
 from .providers import ProviderUnavailable, tag as normalize_tag
 
 INTERVAL_SECONDS = 15 * 60
@@ -70,14 +70,8 @@ def source_row(db, season_id: int, cycle: str | None, player_tag: str):
 
 
 def _participants(db, season_id: int) -> dict:
-    current = working_accounts(db, season_id)
-    saved = {
-        row["tag"]: row for row in db.execute(
-            "SELECT * FROM participation_records WHERE season_id=?",
-            (season_id,),
-        ).fetchall()
-    }
-    return {tag: current.get(tag) or dict(saved[tag]) for tag in set(current) | set(saved)}
+    # Historical records stay readable, but do not expand active API queries.
+    return working_accounts(db, season_id)
 
 
 def _valid_group(group: dict, cycle: str, clan_tag: str) -> tuple[list[list[str]], list[str]]:
@@ -227,7 +221,7 @@ def _aggregate_for_account(
 ):
     clan = identity["assigned_clan_tag"]
     if not clan:
-        return None, None, "unassigned", False, None, "No published hosting clan"
+        return None, None, "unassigned", False, None, "No assigned hosting clan"
     if group is None:
         if prior:
             return prior["attacks"], prior["stars"], "stale", False, prior["checked_at"], "League group unavailable; previous result retained"
@@ -483,6 +477,8 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     "WHERE season_id=? AND cycle=? AND tag=?",
                     (season_id, cycle, player_tag),
                 ).fetchone()
+                if prior is not None and prior['roster_token'] != account_token(identity):
+                    prior = None  # Never retain another assignment's cached totals.
                 values = _aggregate_for_account(
                     identity, group_rows.get(identity["assigned_clan_tag"]),
                     war_rows, fresh_groups, fresh_wars, prior, cycle,
@@ -523,13 +519,13 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                     updated += 1
                 db.execute(
                     "INSERT INTO participation_source_results("
-                    "season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning"
-                    ") VALUES (?,?,?,?,?,?,?,?,?) "
+                    "season_id,cycle,tag,attacks,stars,status,complete,checked_at,warning,roster_token"
+                    ") VALUES (?,?,?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(season_id,cycle,tag) DO UPDATE SET "
                     "attacks=excluded.attacks,stars=excluded.stars,status=excluded.status,"
                     "complete=excluded.complete,checked_at=excluded.checked_at,"
-                    "warning=excluded.warning",
-                    (season_id, cycle, player_tag, attacks, stars, status, int(complete), checked_at, warning),
+                    "warning=excluded.warning,roster_token=excluded.roster_token",
+                    (season_id, cycle, player_tag, attacks, stars, status, int(complete), checked_at, warning, account_token(identity)),
                 )
             if not clans:
                 overall = "unassigned"

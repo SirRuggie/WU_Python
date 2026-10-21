@@ -357,7 +357,8 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(response.status, 201, await response.text())
-        historical, _ = await self.account()
+        response = await self.call('GET', self.base + '?source=history', self.owner)
+        historical = next(row for row in (await response.json())['accounts'] if row['tag'] == '#P2Y')
         self.assertFalse(historical["in_latest_publication"])
         self.assertTrue(historical["roster_changed"])
         self.assertEqual(historical["assigned_clan_tag"], "#C2Y")
@@ -443,3 +444,60 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await lifecycle.aclose()
             participation_sync.INTERVAL_SECONDS = original
+
+    async def test_changed_assignment_cannot_reuse_cached_totals_and_can_reconcile(self):
+        await self.setup_published()
+        self.set_group([['#Y2Y']])
+        self.set_war('#Y2Y')
+        self.assertEqual((await self.sync()).status, 200)
+        row, _ = await self.account()
+        response = await self.call('PATCH', self.base + '/%23P2Y', self.owner, json={
+            'publication_version': 1, 'roster_token': row['roster_token'],
+            'revision': 0, 'attacks': 2, 'stars': 4, 'notes': 'Keep this note',
+        })
+        self.assertEqual(response.status, 200, await response.text())
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE signups SET pool='lazy' WHERE season_id=? AND tag='#P2Y'", (self.sid,))
+        row, _ = await self.account()
+        self.assertTrue(row['roster_changed'])
+        self.assertIsNone(row['attacks'])
+        self.assertIsNone(row['source_attacks'])
+        body = {'publication_version': 1, 'roster_token': row['roster_token'],
+                'revision': row['revision'], 'source_checked_at': row['source_checked_at']}
+        response = await self.call('POST', self.base + '/%23P2Y/reset-to-source', self.owner, json=body)
+        self.assertEqual(response.status, 409)
+        self.assertEqual((await self.sync()).status, 200)
+        row, _ = await self.account()
+        self.assertTrue(row['roster_changed'])
+        self.assertEqual(row['source_attacks'], 1)
+        body.update(source_checked_at=row['source_checked_at'])
+        response = await self.call('POST', self.base + '/%23P2Y/reset-to-source', self.owner, json=body)
+        self.assertEqual(response.status, 200, await response.text())
+        row = (await response.json())['account']
+        self.assertFalse(row['roster_changed'])
+        self.assertEqual(row['pool'], 'lazy')
+        self.assertEqual(row['attacks'], 1)
+        self.assertEqual(row['notes'], 'Keep this note')
+        with self.app['store'].tx() as db:
+            audit = db.execute('SELECT before_json FROM participation_audit WHERE season_id=? ORDER BY id DESC', (self.sid,)).fetchone()
+        self.assertIn('"pool": "main"', audit[0])
+
+    async def test_published_assignment_does_not_follow_new_pool_and_history_is_not_synced(self):
+        await self.setup_published()
+        self.set_group([['#Y2Y']])
+        self.set_war('#Y2Y')
+        self.assertEqual((await self.sync()).status, 200)
+        response = await self.call('GET', f'/seasons/{self.sid}/my-assignments', self.member)
+        self.assertEqual((await response.json())['accounts'][0]['assigned_clan_tag'], '#C2Y')
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE signups SET pool='lazy' WHERE season_id=? AND tag='#P2Y'", (self.sid,))
+        response = await self.call('GET', f'/seasons/{self.sid}/my-assignments', self.member)
+        self.assertIsNone((await response.json())['accounts'][0]['assigned_clan_tag'])
+        with self.app['store'].tx() as db:
+            db.execute("DELETE FROM roster_entries WHERE season_id=?", (self.sid,))
+            db.execute("DELETE FROM signups WHERE season_id=?", (self.sid,))
+        before = len(self.league.group_calls)
+        self.assertEqual((await self.sync()).status, 200)
+        self.assertEqual(len(self.league.group_calls), before)
+        history = await self.call('GET', self.base + '?source=history', self.owner)
+        self.assertEqual((await history.json())['accounts'][0]['source_attacks'], 1)

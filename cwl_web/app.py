@@ -1613,7 +1613,7 @@ async def my_assignments(request):
         rows = db.execute(
             "SELECT s.tag,s.player_name,s.town_hall,s.pool,p.assigned_clan_tag,p.assigned_clan_name "
             "FROM signups s LEFT JOIN publication_accounts p ON p.publication_id=? "
-            "AND p.tag=s.tag AND p.user_id=s.user_id "
+            "AND p.tag=s.tag AND p.user_id=s.user_id AND p.pool=s.pool "
             "WHERE s.season_id=? AND s.user_id=? ORDER BY s.tag",
             (latest["id"] if latest else None, sid, session["user_id"]),
         ).fetchall()

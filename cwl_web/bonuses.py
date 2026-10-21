@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from aiohttp import web
 
-from .participation import _account_view, _latest
+from .participation import historical_account_view, _latest, current_account_view
 from .participation_sync import settings_view, source_row
 from utils.cwl_working_roster import working_accounts
 
@@ -76,7 +76,7 @@ def _history_row(row):
     }
 
 
-def _view(db, season_id, *, current_roster=False):
+def _view(db, season_id, *, current_roster=True):
     season = db.execute("SELECT status FROM seasons WHERE id=?", (season_id,)).fetchone()
     if season is None:
         return None
@@ -123,7 +123,7 @@ def _view(db, season_id, *, current_roster=False):
     clan_names = {}
     configured = all(policy[key] is not None for key in POLICY_KEYS)
     for player_tag in sorted(set(current) if current_roster else set(current) | set(saved)):
-        account = _account_view(
+        account = (current_account_view if current_roster else historical_account_view)(
             current.get(player_tag), saved.get(player_tag),
             source_row(db, season_id, cycle, player_tag),
             archived=season["status"] == "archived",
@@ -132,6 +132,7 @@ def _view(db, season_id, *, current_roster=False):
             # Always display current signup identity; mismatched saved results stay
             # flagged and cannot qualify until reconciled with the actual clan.
             account.update(current[player_tag])
+        account["in_latest_publication"] = player_tag in published_tags
         clan_tag = account["assigned_clan_tag"]
         if clan_tag:
             clan_names[clan_tag] = account["assigned_clan_name"] or clan_tag
@@ -227,6 +228,8 @@ def _preview(db, season_id):
         elif count and count + confirmed > clan["slots"]:
             blocks.append(f"Bonus selections exceed slots for {clan['name']}")
     for account in selected:
+        if account["roster_changed"]:
+            blocks.append(f"{account['player_name']} has results from a previous assignment; reconcile first")
         if account["already_confirmed_this_cycle"]:
             blocks.append(f"{account['player_name']} is already confirmed for this CWL month")
         if not account["assigned_clan_tag"]:
@@ -312,7 +315,7 @@ async def patch_settings(request):
         current = _view(db, sid)
         expected = {clan["tag"] for clan in current["clans"]}
         if set(supplied) != expected:
-            _fail(409, "Published hosting clans changed; refresh bonus settings")
+            _fail(409, "Current hosting clans changed; refresh bonus settings")
         before = {"policy": current["policy"], "clans": current["clans"]}
         _ensure_meta(db, sid)
         db.execute(

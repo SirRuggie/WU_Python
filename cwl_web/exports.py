@@ -27,14 +27,14 @@ async def export_csv(request):
     sid = _sid(request)
     kind = request.query.get("kind", "accounts")
     basis = request.query.get("basis", "current")
-    if kind not in {"accounts", "participation", "bonus-history"} or basis not in {"current", "published"}:
+    if kind not in {"accounts", "participation", "participation-history", "bonus-history"} or basis not in {"current", "published"}:
         raise web.HTTPBadRequest(text="Choose a supported export type and roster version")
     with _store(request).tx() as db:
         season = _season(db, sid)
         latest = _latest_publication(db, sid)
         if basis == "published" and not latest and kind == "accounts":
             raise web.HTTPConflict(text="Publish a roster before exporting its official version")
-        bonus = bonus_view(db, sid)
+        bonus = bonus_view(db, sid, current_roster=kind != "participation-history" and basis != "published")
         stamp = datetime.now(timezone.utc).isoformat()
         meta = {"season_id": sid, "season": season["label"], "season_status": season["status"],
                 "exported_at_utc": stamp, "cwl_month": bonus["cycle"]}
@@ -42,9 +42,11 @@ async def export_csv(request):
         if kind == "bonus-history":
             columns = list(meta) + ["id", "tag", "player_name", "pool", "clan_tag", "clan_name", "cycle", "publication_version", "attacks", "stars", "reason", "warnings", "confirmed_by", "confirmed_at", "voided_by", "voided_at", "void_reason", "record_type"]
             rows = [{**meta, **row} for row in bonus["history"]]
-        elif kind == "participation":
+        elif kind in {"participation", "participation-history"}:
+            meta["roster_basis"] = "saved_history" if kind == "participation-history" else basis
             columns = list(meta) + ["tag", "player_name", "town_hall", "pool", "assigned_clan_tag", "assigned_clan_name", "attacks", "stars", "notes", "attacks_origin", "stars_origin", "source_attacks", "source_stars", "source_status", "source_complete", "source_checked_at", "source_warning", "attacks_override", "stars_override", "recorded_publication_version", "in_latest_publication", "roster_changed", "updated_by", "updated_at"]
-            rows = [{**meta, **row} for row in bonus["accounts"]]
+            saved_tags = {row[0] for row in db.execute("SELECT tag FROM participation_records WHERE season_id=?", (sid,))}
+            rows = [{**meta, **row} for row in bonus["accounts"] if kind != 'participation-history' or row['tag'] in saved_tags]
         else:
             base_rows = ([dict(row) for row in db.execute("SELECT * FROM publication_accounts WHERE publication_id=? ORDER BY tag", (latest["id"],)).fetchall()] if basis == "published" else _roster_rows(db, sid))
             names = {row["tag"]: row["name"] for row in db.execute("SELECT tag,name FROM clans").fetchall()}
