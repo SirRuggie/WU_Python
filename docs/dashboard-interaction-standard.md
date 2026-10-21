@@ -265,3 +265,14 @@ populate blank native inputs; interactive confirmation used an existing schedule
 prefilled dates. Native date-picker entry and assistive-technology behavior still
 need real-device verification. No live reminders or actual schedules were changed
 by the fixture. Existing Vite chunk-size/import warnings remain.
+
+### My accounts war weights
+
+Home account rows show the recorded FWA Stats war weight under the player tag,
+using the existing compact `k` formatter. Missing or unavailable source records
+show `Not Available`; weights are never inferred from Town Hall level. This uses
+the existing cached provider and authenticated per-user dashboard snapshot, with
+a five-second enrichment timeout so an optional weight outage cannot hide accounts.
+Validation: 8 dashboard-account backend tests (including absent/source-failure
+weights), 187 frontend tests, production build, and isolated 390px/1280px visual
+checks with long account names, present weights, and missing weights.

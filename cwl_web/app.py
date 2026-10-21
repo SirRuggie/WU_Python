@@ -610,6 +610,16 @@ def _observe_dashboard_account_task(task):
 async def _dashboard_account_snapshot(request, user_id):
     try:
         accounts = await _accounts(request, user_id)
+        # Optional enrichment must not prevent members viewing their accounts.
+        try:
+            weights = await asyncio.wait_for(
+                request.app["providers"].weights([account["tag"] for account in accounts]),
+                timeout=5,
+            ) if accounts else {}
+        except (ProviderUnavailable, asyncio.TimeoutError):
+            weights = {}
+        for account in accounts:
+            account["war_weight"] = weights.get(account["tag"], {}).get("weight")
         payload = {"accounts": accounts, "status": "ok", "link_url": None,
                    "link_instruction": "Link your accounts with ClashKing or ClashPerk in Discord, then refresh.",
                    "checked_at": datetime.now(timezone.utc).isoformat()}

@@ -34,6 +34,9 @@ class AccountProviders:
                 "current_clan_tag": "#R2Y", "current_clan_name": "Family",
                 "current_clan_badge_url": None}
 
+    async def weights(self, tags):
+        return {"#P2Y": {"weight": 135000}}
+
     async def family_clans(self):
         return {"clans": [{"tag": "#R2Y", "name": "Family"}]}
 
@@ -64,6 +67,20 @@ class DashboardAccountTests(unittest.IsolatedAsyncioTestCase):
 
     async def get(self, headers=None):
         return await self.client.get("/api/cwl/dashboard/accounts", headers=headers)
+
+    async def test_weight_and_missing_weight(self):
+        first = await self.get(self.a)
+        self.assertEqual((await first.json())["accounts"][0]["war_weight"], 135000)
+        missing = await self.get(self.b)
+        self.assertIsNone((await missing.json())["accounts"][0]["war_weight"])
+
+    async def test_weight_outage_does_not_hide_accounts(self):
+        self.providers.weights = AsyncMock(side_effect=ProviderUnavailable("offline"))
+        response = await self.get(self.a)
+        self.assertEqual(response.status, 200)
+        account = (await response.json())["accounts"][0]
+        self.assertEqual(account["tag"], "#P2Y")
+        self.assertIsNone(account["war_weight"])
 
     async def test_auth_and_per_user_cache(self):
         unauth = await self.get()
