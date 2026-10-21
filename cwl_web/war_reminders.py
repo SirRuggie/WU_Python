@@ -105,13 +105,14 @@ async def test_messages(request, row, config, event, body, actor):
             cache[cache_key] = (time.monotonic()+300, profiles)
         else:
             profiles = cached[1]
+        unlinked_example = {**sample['members'][-1], 'name': 'Unlinked example'}
         sample['members'] = [dict(tag=p['tag'], name=p['name'], th=p['town_hall'], position=i+1,
-                                  used=i % 2) for i, p in enumerate(profiles)]
+                                  used=i % 2) for i, p in enumerate(profiles)] + [unlinked_example]
     payloads = reminders.messages(sample, config, event, test=True,
         tester=str(actor['user_id']) if body.get('mention_me') else None)
     if body.get('use_my_accounts'):
         for payload in payloads:
-            payload['content'] = payload['content'].replace('Sample players', 'Your accounts in this clan').replace('**Sample accounts**', '**Your accounts**')
+            payload['content'] = payload['content'].replace('Sample players', 'Your accounts in this clan + unlinked example').replace('**Sample accounts**', '**Your accounts**')
     return payloads
 
 

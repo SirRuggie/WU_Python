@@ -96,6 +96,8 @@ def messages(war, config, event, owners=None, *, test=False, tester=None):
     for member in members:
         uid = str(tester or '') if test else str(owners.get(member['tag']) or '')
         uid = uid if re.fullmatch(r'\d{15,22}', uid) else ''
+        if test:
+            uid = '' if member.get('sample_unlinked') else (uid or 'sample')
         groups.setdefault(uid, []).append(member)
     # Unlinked accounts remain visible, but never imply a Discord owner.
     if '' in groups:
@@ -111,11 +113,12 @@ def messages(war, config, event, owners=None, *, test=False, tester=None):
     # First split oversized owners into continuation blocks with no second mention.
     blocks = []
     for uid, accounts in groups.items():
-        title = f'<@{uid}>' if uid else ('**Sample accounts**' if test else '**Unlinked accounts**')
-        text, mentions = title, [uid] if uid else []
+        title = '**Sample accounts**' if uid == 'sample' else f'<@{uid}>' if uid else '**Unlinked accounts**'
+        text, mentions = title, [uid] if uid and uid != 'sample' else []
         for member in accounts:
             emoji = str(getattr(emojis, f"TH{member['th']}", f"TH{member['th']}"))
-            line = f"> {emoji} **{clean(member['name'])}** · {member['used']}/{war['limit']}"
+            player_tag = re.sub(r'[^#A-Z0-9]', '', str(member['tag']).upper())[:24]
+            line = f"> {emoji} **{clean(member['name'])}** `{player_tag}` · {member['used']}/{war['limit']}"
             if discord_length(text+'\n'+line) > budget:
                 blocks.append((text, mentions))
                 text, mentions = '**Accounts continued**', []
@@ -143,4 +146,4 @@ def sample(clan, event):
     return dict(start=now, end=now+timedelta(minutes=minutes), name=clan['name'], tag=clan['tag'], opponent='Rival Clan', limit=2,
                 members=[dict(tag='#SAMPLE1', name='Shield Bearer', position=1, th=18, used=0),
                          dict(tag='#SAMPLE2', name='Night Archer', position=7, th=17, used=1),
-                         dict(tag='#SAMPLE3', name='Iron Guardian', position=12, th=16, used=0)])
+                         dict(tag='#SAMPLE3', name='Iron Guardian', position=12, th=16, used=0, sample_unlinked=True)])

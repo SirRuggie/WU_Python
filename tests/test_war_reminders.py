@@ -145,3 +145,24 @@ def test_large_unicode_roster_preserves_every_account_within_discord_limit():
     assert all(r.discord_length(p['content'])<=2000 for p in payloads)
     assert sum(len(p['allowed_mentions']['users']) for p in payloads)==50
     for m in w['members']:assert sum(p['content'].count(r.clean(m['name'])) for p in payloads)==1
+
+
+def test_unlinked_row_includes_name_tag_emoji_and_counts_without_ping():
+    w=war();uid='505227988229554179'
+    payload=r.messages(w,config(),'720',{'#SAMPLE1':uid,'#SAMPLE2':uid})[0]
+    text=payload['content']
+    assert '**Shield Bearer** `#SAMPLE1` · 0/2' in text
+    unlinked=text.split('**Unlinked accounts**')[1]
+    assert '<:TH_16:' in unlinked and '**Iron Guardian** `#SAMPLE3` · 0/2' in unlinked
+    assert '<@' not in unlinked
+    assert payload['allowed_mentions']['users']==[uid]
+
+
+def test_sample_preview_shows_linked_and_unlinked_groups():
+    payload=r.messages(war(),config(),'60',test=True,tester='505227988229554179')[0]
+    assert '<@505227988229554179>' in payload['content']
+    unlinked=payload['content'].split('**Unlinked accounts**')[1]
+    assert '`#SAMPLE3`' in unlinked and '<@' not in unlinked
+    muted=r.messages(war(),config(),'60',test=True)[0]
+    assert '**Sample accounts**' in muted['content'] and '**Unlinked accounts**' in muted['content']
+    assert muted['allowed_mentions']['users']==[]
