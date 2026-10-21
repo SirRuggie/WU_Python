@@ -547,3 +547,22 @@ Validation: 99 return service/scheduler/bulk/destination tests passed, including
 encoded Main home-clan link, fresh FWA links, unlinked recipients, no ping for
 players already home, lookup failure, and list closure during lookup in both
 sections. Tests use fake Discord transport; no live reminder was sent.
+
+### New signups and visible CWL choice
+
+Sign up now lists only linked accounts without a signup in the selected season.
+Existing signup changes and withdrawals stay in My signups; removed the duplicate
+show-signed-up/transfer path and its unused selection helpers. Refresh drops draft
+selections that are no longer linked or have become signed up. The all-signed-up
+state points directly to My signups.
+
+Account selection retains the walkthrough and now reuses Main/Lazy tabs with the
+existing gold underline, plus an explicit current-CWL label. Switching with an
+unsaved selection retains the existing discard confirmation. Saved signups are
+not affected by changing this choice.
+
+Validation: 191 frontend tests and production build passed. Isolated desktop and
+390px mobile checks covered unsigned-only lists, visible current pool, switching,
+cancelled switching preserving selection, My signups access, and the all-signed-up
+empty state. No live signups or Discord messages were changed. Existing build
+chunk-size advisory remains.

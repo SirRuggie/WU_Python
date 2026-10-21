@@ -1,54 +1,23 @@
-import { describe, expect, it } from 'vitest'
-import { reconcileSelection, accountPool, clearSubmittedDraft, seedDraft, selectAllAvailable, selectable, selectedEntries, selectedForPool, submittedSummary, transferSource } from './signup'
-import type { Account, Signup } from './api'
-const accounts: Account[] = [
-  { tag: '#ONE', name: 'One', town_hall: 16, current_clan_tag: null, current_clan_name: null, verified: true, lazy_ineligible_reason: null, lazy_eligible: true, family_clan_status: 'approved' },
-  { tag: '#TWO', name: 'Two', town_hall: 15, current_clan_tag: null, current_clan_name: null, verified: true, lazy_ineligible_reason: null, lazy_eligible: false, family_clan_status: 'outside' },
+import {expect, it} from 'vitest'
+import {unsignedAccounts, reconcileNewSignupDraft, selectedEntries, submittedSummary, clearSubmittedDraft} from './signup'
+import type {Account, Signup} from './api'
+const accounts = ['#ONE','#TWO','#THREE'].map(tag => ({tag,name:tag, town_hall:16,current_clan_tag:null,current_clan_name:null,verified:true,lazy_eligible:true,lazy_ineligible_reason:null,family_clan_status:'approved'} as Account))
+const signups: Signup[] = [
+  {tag:'#ONE',user_id:'123',pool:'main',prefer_crystal_1_or_lower:false},
+  {tag:'#TWO',user_id:'123',pool:'lazy',prefer_crystal_1_or_lower:false},
 ]
-const signups: Signup[] = [{ tag: '#ONE', user_id: '123', pool: 'main', prefer_crystal_1_or_lower: false }]
-describe('signup selection', () => {
-  it('requires explicit transfer consent for the same account in another pool', () => {
-    expect(accountPool(signups, '#ONE')).toBe('main')
-    expect(transferSource(signups, '#ONE', 'lazy')).toBe('main')
-    expect(selectable(accounts[0], 'lazy', signups)).toBe(false)
-    expect(selectedForPool(accounts, { '#ONE': true }, signups, 'lazy', {})).toEqual([])
-    expect(selectedForPool(accounts, { '#ONE': true }, signups, 'lazy', { '#ONE': 'main' })).toEqual([{ tag: '#ONE', prefer_crystal_1_or_lower: true, move_from_pool: 'main' }])
-  })
-  it('Select all never stages a cross-pool transfer', () => {
-    expect(selectAllAvailable(accounts, 'lazy', signups, {}, {})).toEqual({ '#TWO': false })
-    expect(selectAllAvailable(accounts, 'lazy', signups, { '#ONE': true }, { '#ONE': 'main' })).toEqual({ '#ONE': true, '#TWO': false })
-  })
-  it('allows outside and unknown family-clan status in either pool', () => {
-    expect(selectable(accounts[1], 'lazy', signups)).toBe(true)
-    expect(selectable({ ...accounts[1], family_clan_status: 'unknown' }, 'main', signups)).toBe(true)
-  })
-  it('allows linked accounts without verification in both pools', () => { expect(selectable({ ...accounts[1], verified: false }, 'main', signups)).toBe(true); expect(selectable({ ...accounts[1], verified: false }, 'lazy', signups)).toBe(true) })
-  it('submits each selected tag once with its preference', () => { expect(selectedEntries(accounts, { '#ONE': true, '#TWO': false })).toEqual([{ tag: '#ONE', prefer_crystal_1_or_lower: true }, { tag: '#TWO', prefer_crystal_1_or_lower: false }]) })
-  it('keeps transfer details in the completion summary and clears selection', () => {
-    const payload = [{ tag: '#ONE', prefer_crystal_1_or_lower: true, move_from_pool: 'main' as const }]
-    expect(submittedSummary(accounts, payload)).toEqual([{ tag: '#ONE', name: 'One', prefer_crystal_1_or_lower: true, move_from_pool: 'main' }])
-    expect(clearSubmittedDraft({ main: { '#TWO': false }, lazy: { '#ONE': true } }, 'lazy')).toEqual({ main: { '#TWO': false }, lazy: {} })
-  })
-  it('can seed one explicit saved preference for editing', () => { expect(seedDraft(accounts, signups, 'main')).toEqual({ '#ONE': false }) })
+it('hides all saved signups, regardless of pool or staff placement', () => {
+  expect(unsignedAccounts(accounts,signups).map(account => account.tag)).toEqual(['#THREE'])
+  expect(unsignedAccounts(accounts,[])).toEqual(accounts)
 })
-
-describe('refreshing a member signup selection', () => {
-  it('preserves ordinary selections while adding newly linked accounts', () => {
-    expect(reconcileSelection({'#ONE':false}, {}, accounts, [], 'main')).toEqual({draft:{'#ONE':false},transfers:{}})
-  })
-  it('removes an account that is no longer linked', () => {
-    expect(reconcileSelection({'#MISSING':false,'#ONE':true}, {}, accounts, [], 'main').draft).toEqual({'#ONE':true})
-  })
-  it('requires new consent when a saved account changes pool externally', () => {
-    const saved = [{tag:'#ONE',pool:'lazy',user_id:'1',prefer_crystal_1_or_lower:false}] as Signup[]
-    expect(reconcileSelection({'#ONE':false}, {}, accounts, saved, 'main').draft).toEqual({})
-    expect(reconcileSelection({'#ONE':false}, {'#ONE':'lazy'}, accounts, saved, 'main')).toEqual({draft:{'#ONE':false},transfers:{'#ONE':'lazy'}})
-    expect(reconcileSelection({'#ONE':false}, {'#ONE':'lazy'}, accounts, [], 'main').draft).toEqual({})
-  })
+it('drops accounts signed up elsewhere or unlinked while retaining unsaved preferences', () => {
+  const draft = {'#ONE':true,'#TWO':false,'#THREE':true,'#UNLINKED':true}
+  expect(reconcileNewSignupDraft(draft,accounts,signups)).toEqual({'#THREE':true})
+  expect(selectedEntries(unsignedAccounts(accounts,signups),draft)).toEqual([{tag:'#THREE',prefer_crystal_1_or_lower:true}])
 })
-
-it('drops a pool transfer when staff place the account after selection', () => {
-  const placed = signups.map(row => ({...row, has_staff_placement: true}))
-  expect(selectedForPool(accounts, {'#ONE':false}, placed, 'lazy', {'#ONE':'main'})).toEqual([])
-  expect(reconcileSelection({'#ONE':false}, {'#ONE':'main'}, accounts, placed, 'lazy')).toEqual({draft:{},transfers:{}})
+it('preserves selected preferences in the saved summary', () => {
+  expect(submittedSummary(accounts, [{tag:'#THREE',prefer_crystal_1_or_lower:true}])).toEqual([{tag:'#THREE',name:'#THREE',prefer_crystal_1_or_lower:true}])
+})
+it('clears only the submitted pool draft', () => {
+  expect(clearSubmittedDraft({main:{'#ONE':false},lazy:{'#TWO':true}},'main')).toEqual({main:{},lazy:{'#TWO':true}})
 })
