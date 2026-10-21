@@ -1,3 +1,4 @@
+import WeightTrial from './weightTrial/WeightTrial'
 import MemberSeasonSettings from './MemberSeasonSettings'
 import FwaSignupDialog from './FwaSignupDialog'
 import {saveSignupMoves, type SignupMove} from './signupMoves'
@@ -286,7 +287,7 @@ function App() {
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
-    if ((isManagementArea(view) || ['manage','text-commands','clan-management'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
+    if ((isManagementArea(view) || ['manage','text-commands','clan-management','weight-trial'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
     if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
     return true
   }
@@ -469,7 +470,7 @@ function App() {
     </aside>
     {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     <div className="workspace">
-      <header className="topbar"><button className="menu-open" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button><div><span className="crumb">Warriors United{navigationSection(view) ? ` / ${navigationSection(view)}` : ''}</span><strong>{view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'manage-signups' ? 'Manage signups' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
+      <header className="topbar"><button className="menu-open" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button><div><span className="crumb">Warriors United{navigationSection(view) ? ` / ${navigationSection(view)}` : ''}</span><strong>{view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'manage-signups' ? 'Manage signups' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Weights · Test' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main>
         {seasonError && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
@@ -481,6 +482,7 @@ function App() {
         {view === 'image-gallery' && <Suspense fallback={<p role="status">Loading images…</p>}><ImageGallery /></Suspense>}
         {view === 'tickets' && <Suspense fallback={<p role="status">Loading tickets…</p>}><TicketBrowser /></Suspense>}
         {view === 'clan-management' && <ClanManagement onDirty={setManageDirty} />}
+        {view === 'weight-trial' && <WeightTrial onDirty={setManageDirty} />}
         {view === 'strikes' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <StrikesWorkspace permissions={session.dashboard_permissions || []} isOwner={session.is_owner} userId={session.user.id} />}
         {view === 'replacements' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <ReplacementWorkspace permissions={session.dashboard_permissions || []} isOwner={session.is_owner} />}
         {view === 'text-commands' && <TextCommands onDirty={setManageDirty} />}

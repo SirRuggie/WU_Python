@@ -1744,8 +1744,11 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     app.cleanup_ctx.append(player_weights_lifecycle)
     from .strikes import strike_jobs_lifecycle
     app.cleanup_ctx.append(strike_jobs_lifecycle)
+    from .clan_weight_trial import routes as weight_trial_routes
+    from utils.clan_weight_trial_store import ClanWeightTrialStore
+    app["clan_weight_trial"] = ClanWeightTrialStore(app["store"].path)
     from .signup_activity import routes as signup_activity_routes
-    routes = [*ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
+    routes = [*weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.put(API + "/member-season", set_member_season), web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
         web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),

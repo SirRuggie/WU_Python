@@ -1,0 +1,145 @@
+.weight-trial-note {
+  color: #f3ca56;
+  font-size: 0.9rem;
+}
+.weight-trial-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+}
+.weight-trial-clans {
+  min-width: 0;
+}
+.weight-trial-clan-list {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.weight-trial-clan-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  border-left: 3px solid transparent;
+  padding: 10px 12px;
+}
+.weight-trial-clan-list button[aria-pressed="true"] {
+  border-left-color: #f3ca56;
+  background: #f3ca5614;
+  color: #f3ca56;
+}
+.weight-trial-clan-list small {
+  display: block;
+}
+.weight-trial-mobile-select {
+  display: none;
+}
+.weight-trial-members {
+  min-width: 0;
+}
+.weight-trial-toolbar {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.weight-trial-columns,
+.weight-trial-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 10px;
+  border-bottom: 1px solid #303035;
+}
+.weight-trial-columns {
+  font-size: 0.8rem;
+  color: #b6bfcb;
+}
+.weight-trial-row.is-edited {
+  background: #f3ca5610;
+  box-shadow: inset 3px 0 #e1b635;
+}
+.weight-trial-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.weight-trial-player > span {
+  min-width: 0;
+}
+.weight-trial-player strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+}
+.weight-trial-player small {
+  display: block;
+  font-size: 0.72rem;
+}
+.weight-trial-row input {
+  width: 100%;
+  min-width: 0;
+  text-align: right;
+  padding: 8px;
+  min-height: 44px;
+}
+.weight-trial-row input[aria-invalid="true"] {
+  border-color: #ef8c85;
+}
+.weight-trial-save {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #1c1d21;
+  border-top: 1px solid #56504a;
+  z-index: 1;
+}
+.weight-trial-save small {
+  display: block;
+}
+.weight-trial-export {
+  margin-top: 20px;
+}
+.weight-trial-export button {
+  margin: 6px 8px 6px 0;
+}
+@media (max-width: 700px) {
+  .weight-trial-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .weight-trial-clan-list {
+    display: none;
+  }
+  .weight-trial-mobile-select {
+    display: block;
+  }
+  .weight-trial-toolbar {
+    align-items: start;
+    flex-wrap: wrap;
+  }
+  .weight-trial-columns,
+  .weight-trial-row {
+    grid-template-columns: minmax(0, 1fr) 80px;
+    gap: 8px;
+    padding: 6px 0;
+  }
+  .weight-trial-save {
+    padding: 10px 0;
+  }
+}
+@media (max-height: 500px) {
+  .weight-trial-save {
+    position: static;
+  }
+}

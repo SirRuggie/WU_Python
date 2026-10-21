@@ -87,3 +87,6 @@ icalendar
 
 # Standards-based opt-in browser push reminders.
 pywebpush>=2.0,<3
+
+# Native Excel exports from the isolated clan-weight trial.
+openpyxl>=3.1,<4

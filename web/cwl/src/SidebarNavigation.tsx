@@ -1,7 +1,7 @@
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
 import { useEffect, useState } from 'react'
 
-export const dashboardViews = ['manage-signups', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access'] as const
+export const dashboardViews = ['weight-trial', 'manage-signups', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access'] as const
 export type DashboardView = typeof dashboardViews[number]
 type Item = { view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: DashboardIconName; items: Item[]; access?: 'staff' | 'owner' }
@@ -37,6 +37,7 @@ const sections: Section[] = [
   ] },
   { id: 'clans', label: 'Clan management', icon: 'shield', items: [
     {view:'clan-management',label:'Family clans',icon:'shield',permissions:['clans']},
+    {view:'weight-trial',label:'Weights · Test',icon:'roster',permissions:['clans']},
     {view:'strikes',label:'Strikes',icon:'flag',permissions:['strikes','strikes_add','strikes_remove']},
     {view:'replacements',label:'Replacements',icon:'replace',permissions:['strikes','strikes_add','strikes_remove']},
   ] },
@@ -102,7 +103,7 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
           {[{id:'cwl-reminders',label:'Reminders',icon:'bell' as const,views:['reminders','cwl-returns']},{id:'cwl-results',label:'Results & bonuses',icon:'medal' as const,views:['participation','bonuses']}].map(group => <div key={group.id}><button className="navigation-toggle" aria-expanded={!!expanded[group.id]} aria-controls={group.id} onClick={() => setExpanded(current => ({...current,[group.id]:!current[group.id]}))}><span className="navigation-icon"><DashboardIcon name={group.icon}/></span><span>{group.label}</span><span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded[group.id] ? "chevronDown" : "chevronRight"} /></span></button><div id={group.id} className="navigation-children" hidden={!expanded[group.id]}>{section.items.filter(item => group.views.includes(item.view)).map(itemButton)}</div></div>)}
           {section.items.filter(item => item.view === 'staff').map(itemButton)}
         </> : section.id === 'clans' ? <>
-          {section.items.filter(item => item.view === 'clan-management').map(itemButton)}
+          {section.items.filter(item => ['clan-management','weight-trial'].includes(item.view)).map(itemButton)}
           {section.items.some(item => item.view === 'strikes') && <div className="strikes-nav-group">
             {section.items.filter(item => item.view === 'strikes').map(itemButton)}
             <div className="navigation-children strikes-subnav">{section.items.filter(item => item.view === 'replacements').map(itemButton)}</div>
