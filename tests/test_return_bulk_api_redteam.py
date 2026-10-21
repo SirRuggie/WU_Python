@@ -272,3 +272,19 @@ def test_schedule_invalid_selection_never_queues(monkeypatch, pool, invalid):
         with pytest.raises(web.HTTPBadRequest): await api.run(request(body,operation='schedule'))
         queued.assert_not_awaited()
     asyncio.run(scenario())
+
+
+def test_start_worker_requests_immediate_start_with_stale_settings_guard(monkeypatch):
+    async def scenario():
+        from utils import manage_web_worker as worker
+        from extensions.commands.fwa import lazy_cwl_service as service
+        current = {'_id':'saved','reminders':{'enabled':False}}
+        monkeypatch.setattr(api.store,'get_active',AsyncMock(return_value=current))
+        start = AsyncMock(return_value={'ok':True})
+        monkeypatch.setattr(service,'set_reminders',start)
+        row = dict(section='cwl_rosters',action='start',values={'clan_tag':'#P0','section':'FWA','every_minutes':120},revision=fingerprint(current),user_id='123')
+        await worker.dispatch(None,object(),row,None)
+        assert start.call_args.kwargs['start_now'] is True
+        assert start.call_args.kwargs['expected_reminders'] == current['reminders']
+        assert start.call_args.args == ('#P0',True,120)
+    asyncio.run(scenario())

@@ -2,7 +2,7 @@ import type { ManagementSection } from '../serverManagement'
 export type ReturnClan = ManagementSection & { return_section?: 'MAIN'|'FWA'; clan_tag?: string; clan_name?: string }
 export type ReturnAction = 'save'|'start'|'schedule'|'pause'|'resume'|'send'|'away'
 export const actionLabels: Record<ReturnAction,string> = {
-  save:'Save home members', start:'Enable reminders', schedule:'Set dates', pause:'Pause',
+  save:'Save home members', start:'Start return reminders', schedule:'Schedule for later', pause:'Pause',
   resume:'Resume', send:'Send now', away:'Check away players',
 }
 export function clanSection(row: ReturnClan): 'MAIN'|'FWA' {

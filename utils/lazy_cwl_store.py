@@ -432,6 +432,7 @@ async def set_reminders(
     section: str = DEFAULT_SECTION,
     now: datetime | None = None,
     schedule: dict | None = None,
+    start_now: bool = False,
     expected_reminders: dict | None = None,
 ) -> dict | None:
     """Save frequency and running state without extending the original window."""
@@ -459,6 +460,15 @@ async def set_reminders(
         "reminders.enabled": enabled,
         "reminders.every_minutes": every_minutes or previous.get("every_minutes") or 60,
     }
+    if start_now and enabled:
+        # Starting now supersedes a future start, but never extends an existing stop.
+        anchor = min(_utc(started), now) if started else now
+        end = min(_utc(current["expires_at"]), anchor + timedelta(days=7))
+        if window_end(previous):
+            end = min(end, window_end(previous))
+        update.update({"reminders.started_at": anchor,
+                       "reminders.schedule_start_at": now,
+                       "reminders.schedule_end_at": end})
     if dates:
         update["reminders.schedule_start_at"], update["reminders.schedule_end_at"] = dates
         if not started or _utc(started) > now:

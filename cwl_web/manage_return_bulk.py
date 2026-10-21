@@ -9,7 +9,7 @@ from utils import lazy_cwl_store as store, return_bulk, return_reminder_settings
 from utils.manage_web_worker import WORKER_ID
 
 API=shared.API
-LABELS={'schedule':'Schedule return reminders','save':'Save current clan members','replace':'Replace saved lists','send':'Send return reminders','start':'Start or update reminders','pause':'Pause reminders','resume':'Resume reminders','clear':'Close saved lists','away':'Check who is away'}
+LABELS={'schedule':'Schedule return reminders','save':'Save current clan members','replace':'Replace saved lists','send':'Send return reminders','start':'Start return reminders now','pause':'Pause reminders','resume':'Resume reminders','clear':'Close saved lists','away':'Check who is away'}
 
 
 async def available(db):
@@ -44,7 +44,7 @@ async def page(request):
     effective=destinations.channels(channels)
     return web.json_response(dict(id='return-bulk-'+operation,label=LABELS[operation],description='Each clan has its own result. Completed clans are never included in failed-only retries.'+ (f" Main channel: {effective['MAIN']}. FWA channel: {effective['FWA']}." if operation=='send' else ''),group='War',revision=revision,fields=fields,action_only=True,
         warning='Select Main or FWA clans below. Main scheduled reminders are not available.' if operation not in ('start','pause','resume','schedule') else 'FWA clans only. Resuming keeps the original seven-day limit.',
-        actions=[dict(id='run',label=LABELS[operation],confirm=LABELS[operation]+' for the selected clans?'+(' This sends Discord messages.' if operation=='send' else ''),endpoint='/manage/return-bulk/'+operation+'/run')]))
+        actions=[dict(id='run',label=LABELS[operation],confirm=LABELS[operation]+' for the selected clans?'+(' This can send Discord messages immediately.' if operation in ('send','start') else ''),endpoint='/manage/return-bulk/'+operation+'/run')]))
 
 
 def request_id(body):

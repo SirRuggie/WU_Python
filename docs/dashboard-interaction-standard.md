@@ -276,3 +276,19 @@ a five-second enrichment timeout so an optional weight outage cannot hide accoun
 Validation: 8 dashboard-account backend tests (including absent/source-failure
 weights), 187 frontend tests, production build, and isolated 390px/1280px visual
 checks with long account names, present weights, and missing weights.
+
+### Return reminders: immediate start is the default
+
+The routine FWA journey is now select clans → Start return reminders → choose
+frequency → confirm. No dates are required. Shared and individual date overrides
+remain behind Optional scheduling settings, while status and automatic stop times
+remain visible. Main stays manual. Explicit Start replaces a future start and
+queues the first check immediately, preserving earlier stop dates, seasonal expiry,
+and an already-started seven-day deadline. Resume retains the saved cadence.
+
+Validation: 129 focused backend tests, 187 frontend tests and production build.
+Added regressions cover future-to-immediate activation, preserving an active
+window’s deadline, and worker forwarding with stale-settings protection. Isolated
+25-clan browser checks covered bulk start/frequency confirmation, partial receipts,
+optional scheduling, Main manual controls, and 1280/390/320px layouts. No live
+Discord messages or production reminder settings were changed during verification.

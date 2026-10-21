@@ -24,3 +24,4 @@
 .return-maintenance > div { display: flex; gap: 10px; flex-wrap: wrap; }
 @media(max-width:1100px) { .return-clan-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .return-row-actions { flex-direction: row; flex-wrap: wrap; } }
 @media(max-width:540px) { .return-filters, .return-date-fields, .return-clan-row { grid-template-columns: minmax(0,1fr); } .return-bulk-bar { align-items: stretch; } .return-bulk-bar > label, .return-bulk-bar > .primary { width: 100%; } .return-toolbar { align-items: stretch; } .return-toolbar > div { width: 100%; } }
+.return-overview fieldset > .return-maintenance { margin-bottom: 16px; }

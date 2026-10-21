@@ -555,7 +555,7 @@ async def add_player_by_tag(clan_tag: str, tag: str, *, expected_list_id=None, s
     }
 
 
-async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[int] = None, *, expected_list_id=None, section: str = store.DEFAULT_SECTION, schedule: dict | None = None, expected_reminders: dict | None = None) -> dict:
+async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[int] = None, *, expected_list_id=None, section: str = store.DEFAULT_SECTION, schedule: dict | None = None, start_now: bool = False, expected_reminders: dict | None = None) -> dict:
     """Turn a clan's reminders on or off and (un)schedule its job."""
     section = store.normalize_section(section)
     if section == "MAIN":
@@ -567,6 +567,7 @@ async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[in
         mongo_client, clan_tag, enabled=enabled, every_minutes=every_minutes,
         expected_list_id=expected_list_id, section=section, **({"schedule": schedule} if schedule is not None else {}),
         **({"expected_reminders": expected_reminders} if expected_reminders is not None else {}),
+        **({"start_now": True} if start_now else {}),
     )
     if doc is None:
         if expected_list_id is not None:
@@ -585,7 +586,7 @@ async def set_reminders(clan_tag: str, enabled: bool, every_minutes: Optional[in
             args=[doc["_id"]],
             id=job_id,
             replace_existing=True,
-            next_run_time=calculate_next_run(doc),
+            next_run_time=datetime.now(timezone.utc) if start_now else calculate_next_run(doc),
             **JOB_DEFAULTS,
         )
     except Exception as exc:

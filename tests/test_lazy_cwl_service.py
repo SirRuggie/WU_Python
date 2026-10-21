@@ -1127,3 +1127,33 @@ def test_schedule_edit_rejects_stale_reminder_settings(monkeypatch):
     assert result.get('stale')
     saved=asyncio.run(store.get_by_id(mongo,'dated'))
     assert not saved['reminders']['enabled']
+
+
+def test_start_now_replaces_future_start_without_extending_stop(monkeypatch):
+    now = datetime.now(timezone.utc)
+    doc = _list_doc('immediate', expires_at=now + timedelta(days=12))
+    doc['reminders'].update(started_at=now+timedelta(days=1),
+                            schedule_start_at=now+timedelta(days=1),
+                            schedule_end_at=now+timedelta(days=3))
+    mongo = _fake_mongo([doc])
+    scheduler = FakeScheduler()
+    _wire(monkeypatch, mongo=mongo, scheduler=scheduler, links={})
+    result = asyncio.run(service.set_reminders('#ABC', True, 60, start_now=True))
+    assert result['ok']
+    saved = asyncio.run(store.get_by_id(mongo, 'immediate'))
+    assert now <= saved['reminders']['started_at'] <= datetime.now(timezone.utc)
+    assert saved['reminders']['schedule_end_at'] == now+timedelta(days=3)
+    assert scheduler.jobs['lazycwl_reminder_immediate'][1]['next_run_time'] <= datetime.now(timezone.utc)
+
+
+def test_start_now_keeps_original_active_deadline(monkeypatch):
+    now = datetime.now(timezone.utc)
+    doc = _list_doc('active-window', expires_at=now+timedelta(days=12))
+    doc['reminders']['started_at'] = now-timedelta(days=6)
+    mongo = _fake_mongo([doc])
+    _wire(monkeypatch,mongo=mongo,scheduler=FakeScheduler(),links={})
+    result = asyncio.run(service.set_reminders('#ABC',True,60,start_now=True))
+    assert result['ok']
+    saved = asyncio.run(store.get_by_id(mongo,'active-window'))
+    assert saved['reminders']['started_at'] == now-timedelta(days=6)
+    assert saved['reminders']['schedule_end_at'] == now+timedelta(days=1)

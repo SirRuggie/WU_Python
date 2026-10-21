@@ -169,6 +169,7 @@ async def dispatch(bot, mongo, row, ctx):
             elif action=='remove':result={'removed':await store.remove_players(mongo,tag,values['player_tags'],**kwargs)}
             elif action=='send':result=await service.remind_now(tag,expected_channel=values.get('destination'),**kwargs)
             elif action=='schedule':result=await service.set_reminders(tag,True,int(values.get('every_minutes',60)),schedule={'start':values['schedule_start'],'end':values['schedule_end']},expected_reminders=current.get('reminders') or {},**kwargs)
+            elif action=='start':result=await service.set_reminders(tag,True,int(values.get('every_minutes',60)),start_now=True,expected_reminders=current.get('reminders') or {} if current else {},**kwargs)
             elif action=='away':result={'accounts':await service.away_players(current)} if current else {'accounts':[]}
             else:result=await service.set_reminders(tag,action!='pause',int(values.get('every_minutes',60)),**kwargs)
         except Exception as exc:

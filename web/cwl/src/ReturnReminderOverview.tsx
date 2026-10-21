@@ -22,7 +22,7 @@ export default function ReturnReminderOverview({ onOpen, onDirty, active = true 
   const [section, setSection] = useState<'FWA'|'MAIN'>('FWA')
   const [filter, setFilter] = useState('all')
   const [selected, setSelected] = useState<string[]>([])
-  const [action, setAction] = useState<ReturnAction>('schedule')
+  const [action, setAction] = useState<ReturnAction>('start')
   const [batch, setBatch] = useState<{action: ReturnAction; clans: ReturnClan[]}|null>(null)
   const [loadedAt, setLoadedAt] = useState('')
   const focusTarget = useRef<HTMLElement|null>(null)
@@ -51,12 +51,12 @@ export default function ReturnReminderOverview({ onOpen, onDirty, active = true 
   const chosen = group.filter(row => selected.includes(row.id))
   const incompatible = chosen.filter(row => !canApply(row,action)).length
   const utility = (id: string) => { const row = records.find(row => row.id === id); if(row) onOpen(row) }
-  const actions: ReturnAction[] = section === 'FWA' ? ['schedule','start','pause','resume','save','send','away'] : ['send','save','away']
+  const actions: ReturnAction[] = section === 'FWA' ? ['start','pause','resume','save','send','away'] : ['send','save','away']
   return <section className="return-overview" aria-label="Return reminder overview" onClickCapture={event => { const target = (event.target as HTMLElement).closest('button'); if(target && !batch) focusTarget.current = target }} >
     <div className="return-toolbar"><div className="workflow-tabs" role="group" aria-label="Home clan type">
-      {(['FWA','MAIN'] as const).map(value => <button key={value} aria-pressed={section === value} disabled={!!batch} onClick={() => {setSection(value);setFilter('all');setSelected([]);setAction(value === 'FWA' ? 'schedule' : 'send')}}>{value === 'MAIN' ? 'Main' : value}<span>{clans.filter(row => clanSection(row) === value).length}</span></button>)}
+      {(['FWA','MAIN'] as const).map(value => <button key={value} aria-pressed={section === value} disabled={!!batch} onClick={() => {setSection(value);setFilter('all');setSelected([]);setAction(value === 'FWA' ? 'start' : 'send')}}>{value === 'MAIN' ? 'Main' : value}<span>{clans.filter(row => clanSection(row) === value).length}</span></button>)}
     </div><div><button disabled={loading || !!batch} onClick={() => void load()}>Refresh</button><button disabled={loading || !!batch} onClick={() => utility('return-channels')}>Return channels</button></div></div>
-    <p>{section === 'FWA' ? 'Schedule return-home reminders for FWA clans. Select several clans to set shared dates, or one clan to give it different dates.' : 'Main return reminders are manual. Select clans and send when you are ready.'}</p>
+    <p>{section === 'FWA' ? 'After CWL declaration, select your FWA clans and start return reminders. No dates needed.' : 'Main return reminders are manual. Select clans and send when you are ready.'}</p>
     {error && <div className="notice error" role="alert">{error}{loadedAt && ' Showing the last loaded overview.'}<button disabled={loading} onClick={() => void load()}>Retry</button></div>}
     {loading && <p role="status">Loading return lists…</p>}
     {batch && <ReturnBatch key={batch.action+batch.clans.map(row=>row.id).join(',')} {...batch} onClose={() => {setBatch(null); requestAnimationFrame(() => focusTarget.current?.focus())}} onDone={() => {setSelected([]);void load()}}/>}
@@ -65,11 +65,17 @@ export default function ReturnReminderOverview({ onOpen, onDirty, active = true 
       <div className="return-bulk-bar"><label>Action<select value={action} onChange={event => setAction(event.target.value as ReturnAction)}>{actions.map(value => <option key={value} value={value}>{actionLabels[value]}</option>)}</select></label><div><button disabled={!eligible.length} onClick={() => setSelected(eligible.map(row=>row.id))}>Select all eligible ({eligible.length})</button><button disabled={!selected.length} onClick={() => setSelected([])}>Clear</button></div><span>{chosen.length} selected{chosen.filter(row=>!visible.includes(row)).length > 0 && ' · Includes hidden selections'}</span><button className="primary" disabled={!chosen.length || chosen.length > 50 || incompatible > 0} onClick={() => setBatch({action,clans:chosen})}>{actionLabels[action]}{chosen.length ? ` (${chosen.length})` : ''}</button></div>
       {incompatible > 0 && <p role="status">{incompatible} selected clans are unavailable for this action. Use Select all eligible to update the selection.</p>}
       {chosen.length > 50 && <p role="alert">Choose up to 50 clans per action.</p>}
+      {section === 'FWA' && <details className="return-maintenance">
+        <summary>Optional scheduling settings</summary>
+        <p>Need a different window? Select one or more clans, then set their start and stop dates.</p>
+        <button disabled={!chosen.length || chosen.length > 50 || chosen.some(row => !canApply(row,'schedule'))}
+          onClick={() => setBatch({action:'schedule',clans:chosen})}>Schedule for later{chosen.length ? ` (${chosen.length})` : ''}</button>
+      </details>}
       <div className="return-clan-list">{visible.map(row => <article key={row.id} className="return-clan-row">
         <label className="return-clan-name"><input type="checkbox" checked={selected.includes(row.id)} aria-label={`Select ${row.clan_name || row.label}`} onChange={event => setSelected(current => event.target.checked ? [...current,row.id] : current.filter(id=>id!==row.id))}/><span><strong>{row.clan_name || row.label}</strong><small>{row.clan_tag || row.id.replace(/^(MAIN|FWA)/,'')} · {row.return_status!.players} saved players</small></span></label>
         <div><strong>{row.return_status!.label}</strong><small>{section === 'FWA' ? row.return_status!.every_minutes ? `Every ${row.return_status!.every_minutes} minutes` : 'No schedule' : 'Manual sends only'}</small></div>
-        <div className="return-window"><small>{section === 'FWA' && `Start: ${displayDate(row.return_status!.starts_at)}`}</small><small>{section === 'FWA' ? 'Stop' : 'List expires'}: {displayDate(row.return_status!.expires_at)}</small><small>Last sent: {row.return_status!.last_sent_at ? displayDate(row.return_status!.last_sent_at) : 'None recorded'}</small></div>
-        <div className="return-row-actions">{section === 'FWA' && canApply(row,'schedule') && <button onClick={() => setBatch({action:'schedule',clans:[row]})}>Edit dates</button>}<button onClick={() => onOpen(row)}>Members &amp; details</button></div>
+        <div className="return-window"><small>{section === 'FWA' && `Start: ${displayDate(row.return_status!.starts_at)}`}</small><small>{section === 'FWA' ? 'Automatically stops' : 'List expires'}: {displayDate(row.return_status!.expires_at)}</small><small>Last sent: {row.return_status!.last_sent_at ? displayDate(row.return_status!.last_sent_at) : 'None recorded'}</small></div>
+        <div className="return-row-actions"><button onClick={() => onOpen(row)}>Members &amp; details</button></div>
       </article>)}</div>
     </fieldset>
     {!loading && !error && !visible.length && <p>{group.length ? 'No clans match these filters.' : 'No home clans are available yet.'}</p>}
