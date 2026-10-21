@@ -77,28 +77,68 @@ def _variant(*, title, body, media_url, channel_id, role_ids, buttons):
     }
 
 
-def default_campaign() -> dict:
-    """Return the native copy formerly hard-coded in both CWL extensions."""
-    role = 1080521665584308286
-    main_channel = 1072714594625257502
-    lazy_channel = 865726525990633472
-    main_form = "https://forms.gle/ntB6qFvstu4gKUXc6"
-    lazy_form = "https://forms.gle/qeow1ygVaJQeRC26A"
-    main_buttons = _buttons(("Main Clan", main_form, "📋"), ("Lazy CWL", lazy_form, "😴"))
-    lazy_buttons = _buttons(("Lazy CWL", lazy_form, "😴"))
-    signup_main = (
+LEGACY_SIGNUP_MAIN = (
         "Below are the two signup forms required to participate here in Warriors United CWL. "
         "LazyCWL is an option for all within the Family but if your in one of our FWA Clans "
         "it's \"Lazy Way or No Way\".\n\nThe forms take less then a couple minutes to complete "
         "and the sooner you sign up the better it is on us making Rosters.\n\n"
         "Direct all questions and concerns to <#801950200133976124> <:warriorcat:947992348971905035>"
     )
-    signup_lazy = (
+LEGACY_SIGNUP_LAZY = (
         "The below form is required to participate within the Warriors United Lazy CWL Operation.\n\n"
         "The form take less then a couple minutes to complete and the sooner you sign up the better "
         "it is on us making Rosters.\n\nRemember...if you are in one of our FWA Clans it's "
         "\"LAZY WAY OR NO WAY!!\" Outside involvement is not permitted.\n\n"
         "Direct all questions and concerns in <#872692009066958879> <:warriorcat:947992348971905035>"
+    )
+SIGNUP_URL = "https://cwl.ruggie.zone/?view=signup"
+
+
+def signup_buttons() -> list[dict]:
+    """One member entry point, preserved through the existing Discord login flow."""
+    return [{"label": "Sign up for CWL", "url": SIGNUP_URL}]
+
+
+def normalize_signup_entry(campaign: dict) -> dict:
+    """Upgrade signup destinations without changing delivery state or custom copy."""
+    result = copy.deepcopy(campaign)
+    defaults = default_campaign()
+    for message_id, message in result.get("messages", {}).items():
+        if message_id != "signup" and not message_id.startswith("reminder:"):
+            continue
+        for pool, item in message.get("variants", {}).items():
+            item["buttons"] = signup_buttons()
+            legacy = LEGACY_SIGNUP_MAIN if pool == "main" else LEGACY_SIGNUP_LAZY
+            replacement = defaults["messages"]["signup"]["variants"].get(pool, {}).get("body")
+            if replacement and legacy in item.get("body", ""):
+                item["body"] = item["body"].replace(legacy, replacement)
+    return result
+
+
+def default_campaign() -> dict:
+    """Return the native copy formerly hard-coded in both CWL extensions."""
+    role = 1080521665584308286
+    main_channel = 1072714594625257502
+    lazy_channel = 865726525990633472
+    main_buttons = signup_buttons()
+    lazy_buttons = signup_buttons()
+    signup_main = (
+        "Sign up for CWL on our website.\n\n"
+        "1. Select **Sign up for CWL** below.\n"
+        "2. Sign in with Discord.\n"
+        "3. Choose Main or Lazy CWL, then select your accounts.\n"
+        "4. Check your choices and select **Sign up**.\n\n"
+        "FWA clan members must choose Lazy CWL.\n"
+        "Need help? Ask in <#801950200133976124>."
+    )
+    signup_lazy = (
+        "Sign up for Lazy CWL on our website.\n\n"
+        "1. Select **Sign up for CWL** below.\n"
+        "2. Sign in with Discord.\n"
+        "3. Choose **Lazy CWL**, then select your accounts.\n"
+        "4. Check your choices and select **Sign up**.\n\n"
+        "FWA clan members must choose Lazy CWL.\n"
+        "Need help? Ask in <#872692009066958879>."
     )
     reminder_media = {
         1: "https://c.tenor.com/6b2bCHLqrUkAAAAd/tenor.gif",
@@ -471,7 +511,7 @@ def validate_campaign(campaign: dict) -> None:
 
 async def render_message(config: dict, message_id: str, variant: str, preview: bool = True):
     """Build the exact Components V2 message used for preview and delivery."""
-    campaign = config.get("campaign", config)
+    campaign = normalize_signup_entry(config.get("campaign", config))
     validate_campaign(campaign)
     try:
         message = campaign["messages"][message_id]
@@ -566,6 +606,7 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
                 if channel:
                     campaign["messages"]["roster"]["variants"][pool]["destination_channel_id"] = channel
                     break
+    campaign = normalize_signup_entry(campaign)
     validate_campaign(campaign)
     deliveries = copy.deepcopy((row or {}).get("deliveries", []))
     sent_occurrences = list((row or {}).get("sent_occurrences", []))

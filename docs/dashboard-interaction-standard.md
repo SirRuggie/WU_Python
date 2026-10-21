@@ -377,3 +377,24 @@ and isolated desktop/mobile browser checks for date editing, immediate Save
 availability, invalid opening/deadline order, successful validation/confirmation,
 and collapsed secondary controls. No live campaigns or Discord sends were changed
 for testing. Existing build and aiohttp warnings remain.
+
+### Announcement-to-signup entry
+
+Signup announcements and signup reminders now use one “Sign up for CWL” button
+targeting https://cwl.ruggie.zone/?view=signup. The existing allowlisted OAuth
+return preserves the signup destination. The link uses the dashboard's selected
+active-season behavior rather than inventing a mapping between campaign month
+and SQLite season IDs. It is not a permanent historical-season link.
+
+Loaded campaigns and rendered older snapshots normalize signup buttons. Exact
+legacy template paragraphs are upgraded to short instructions; custom prose and
+roster messages remain unchanged. Normalization is idempotent and does not mutate
+stored delivery receipts or resend past messages. Already-posted Discord messages
+are not edited. Custom saved prose should still be reviewed before publishing.
+
+The gold guide remains. Signup steps use shorter language; closed seasons show
+saved-signup/assignment next steps instead of an unusable signup invitation.
+Validation: 82 backend tests across signup entry, campaign integration, reminder
+API and authentication; 191 frontend tests; production build; desktop/mobile
+isolated signup-entry and closed-state inspection. No live Discord messages sent.
+This change does not complete the remaining member/staff journey redesign.
