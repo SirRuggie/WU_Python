@@ -75,3 +75,9 @@ The in-game timer takes precedence. Tests cover exact start/end transitions and
 next-month/week windows; 201 frontend tests, build and war-reminder gate passed.
 Isolated desktop and 390px browser checks covered both category selections,
 readable status text and no horizontal page overflow. No notifications sent.
+
+CWL Tasks also uses the shared calendar panel, explicitly labeled as in-game
+clan signup opening/closing rather than a universal battle deadline. Existing
+per-account battle timers and the unreadable-war warning remain unchanged.
+Tests cover signup start, close and rollover; 202 frontend tests, build and
+war-reminder gate passed. Isolated browser verified CWL text and banner presence.

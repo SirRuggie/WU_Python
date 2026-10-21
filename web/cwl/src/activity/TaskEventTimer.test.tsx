@@ -20,3 +20,15 @@ it('shows raid start and end timers using the Events calendar', () => {
   expect(live).toContain('Ends');
   expect(live).toContain('2026-10-26T07:00:00.000Z');
 });
+it('labels CWL signup timing separately from actual clan battles', () => {
+  const upcoming=renderToStaticMarkup(<TaskEventTimer kind="cwl" now={Date.UTC(2026,9,21,12)}/>);
+  expect(upcoming).toContain('Signup opens');
+  expect(upcoming).toContain('2026-11-01T08:00:00.000Z');
+  expect(upcoming).toContain('battle schedule is different');
+  const open=renderToStaticMarkup(<TaskEventTimer kind="cwl" now={Date.UTC(2026,10,1,8)}/>);
+  expect(open).toContain('Signup closes');
+  expect(open).toContain('2026-11-03T08:00:00.000Z');
+  const closed=renderToStaticMarkup(<TaskEventTimer kind="cwl" now={Date.UTC(2026,10,3,8)}/>);
+  expect(closed).toContain('Next clan signup');
+  expect(closed).toContain('2026-12-01T08:00:00.000Z');
+});
