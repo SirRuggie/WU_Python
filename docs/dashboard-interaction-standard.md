@@ -498,3 +498,11 @@ including allowed FWA Main signup, legacy classification, non-FWA accounts,
 clan move/outage persistence and switching to Lazy; 198 frontend tests;
 production build; isolated mobile warning and slogan inspection. No live
 signups or Discord messages changed for testing.
+
+### Explicit unsaved pool-change wording
+
+Switch notices now lead with Not saved. The signup guide names both remaining
+actions (Continue, then Sign up); My signups names Save changes. The unselected
+account hint says prepare a change rather than confirm a move. Success remains
+reported only after the save succeeds. Copy-only change; 198 frontend tests,
+production build and diff checks passed. No live signup or notification tests.
