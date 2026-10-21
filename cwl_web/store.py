@@ -301,6 +301,8 @@ class Store:
             if "snapshot_json" not in columns:
                 db.execute("ALTER TABLE bonus_batches ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}' ")
 
+            from utils.cwl_bonus_raffle_store import SCHEMA as RAFFLE_SCHEMA
+            db.executescript(RAFFLE_SCHEMA)
             migrate(db)
 
     @contextmanager

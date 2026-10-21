@@ -108,6 +108,31 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         data = await response.json()
         return next(row for row in data["accounts"] if row["tag"] == "#P2Y"), data
 
+    async def test_sync_current_signups_without_a_published_roster(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y"]])
+        self.set_war("#Y2Y")
+        with self.app['store'].tx() as db:
+            db.execute('DELETE FROM publication_accounts WHERE publication_id IN (SELECT id FROM roster_publications WHERE season_id=?)', (self.sid,))
+            db.execute('DELETE FROM roster_publications WHERE season_id=?', (self.sid,))
+        response = await self.sync()
+        self.assertEqual(response.status, 200, await response.text())
+        account, _ = await self.account()
+        self.assertEqual(account['attacks'], 1)
+        self.assertTrue(account['source_complete'])
+
+    async def test_twenty_five_hosting_clans_are_not_rejected(self):
+        await self.setup_published()
+        with self.app['store'].tx() as db:
+            original = dict(db.execute("SELECT * FROM publication_accounts WHERE tag='#P2Y'").fetchone())
+            for index in range(24):
+                row = {**original, 'tag': f'#TEST{index}', 'assigned_clan_tag': f'#HOST{index}'}
+                db.execute('INSERT INTO publication_accounts(' + ','.join(row) + ') VALUES (' + ','.join('?' for _ in row) + ')', tuple(row.values()))
+                db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall) VALUES (?,?,'100','main',0,'Fixture',16)", (self.sid, row['tag']))
+                db.execute('INSERT INTO roster_entries(season_id,tag,assigned_clan_tag) VALUES (?,?,?)', (self.sid, row['tag'], row['assigned_clan_tag']))
+        response = await self.sync()
+        self.assertEqual(response.status, 200, await response.text())
+
     async def test_ended_wars_count_real_attacks_dedup_and_side_orientation(self):
         await self.setup_published()
         self.set_group([["#Y2Y", "#J2Y"], ["#L2Y"], ["#0"]])

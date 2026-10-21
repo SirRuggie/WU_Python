@@ -15,32 +15,3 @@ export type BonusHistory = {
   confirmed_by: string; confirmed_at: string; voided_by: string | null; voided_at: string | null; void_reason: string | null; warnings?: string[]
 }
 export type BonusData = { cycle: string | null; revision: number; policy: BonusPolicy; clans: BonusClan[]; accounts: BonusAccount[]; history: BonusHistory[]; cycle_confirmed: { id: number; tag: string; clan_tag: string | null; season_id: number }[]; active_other_cycles: string[]; history_scope: 'dashboard_confirmations_only'; award_status: string }
-export type BonusSelection = { tag: string; reason: string }
-export type BonusPreview = { revision: number; fingerprint: string; selected: BonusAccount[]; warnings: string[]; capacity: { clan_tag: string; clan_name: string; slots: number | null; selected_count: number; confirmed_count: number }[]; blocking_reasons: string[]; can_confirm: boolean; award_status: string }
-export const PAGE_SIZE = 8
-
-export function selectionsFromAccounts(accounts: BonusAccount[]): Record<string, string> {
-  return Object.fromEntries(accounts.filter(account => account.selected).map(account => [account.tag, account.reason || '']))
-}
-export function selectionsPayload(selected: Record<string, string>): BonusSelection[] {
-  return Object.entries(selected).map(([tag, reason]) => ({ tag, reason: reason.trim() })).sort((a, b) => a.tag.localeCompare(b.tag))
-}
-export function selectionsChanged(accounts: BonusAccount[], selected: Record<string, string>): boolean {
-  return JSON.stringify(selectionsPayload(selectionsFromAccounts(accounts))) !== JSON.stringify(selectionsPayload(selected))
-}
-export function selectionReasonError(accounts: BonusAccount[], selected: Record<string, string>): string | null {
-  const byTag = new Map(accounts.map(account => [account.tag, account]))
-  for (const [tag, reason] of Object.entries(selected)) {
-    const account = byTag.get(tag)
-    if (!account) return 'A selected account is no longer in this published roster. Refresh and review.'
-    if (reason.length > 500) return `Keep the reason for ${account.player_name} within 500 characters.`
-  }
-  return null
-}
-export function parseNullableWhole(value: string, min: number, max: number): number | null | undefined {
-  if (!value.trim()) return null
-  if (!/^\d+$/.test(value.trim())) return undefined
-  const parsed = Number(value.trim())
-  return parsed >= min && parsed <= max ? parsed : undefined
-}
-export function pageItems<T>(items: T[], page: number): T[] { return items.slice(Math.max(0, page) * PAGE_SIZE, (Math.max(0, page) + 1) * PAGE_SIZE) }

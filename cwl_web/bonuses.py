@@ -10,6 +10,7 @@ from aiohttp import web
 
 from .participation import _account_view, _latest
 from .participation_sync import settings_view, source_row
+from utils.cwl_working_roster import working_accounts
 
 POLICY_KEYS = {"min_attacks", "min_stars", "cooldown_months"}
 
@@ -75,7 +76,7 @@ def _history_row(row):
     }
 
 
-def _view(db, season_id):
+def _view(db, season_id, *, current_roster=False):
     season = db.execute("SELECT status FROM seasons WHERE id=?", (season_id,)).fetchone()
     if season is None:
         return None
@@ -89,6 +90,9 @@ def _view(db, season_id):
             "SELECT tag,user_id,player_name,town_hall,pool,assigned_clan_tag,assigned_clan_name "
             "FROM publication_accounts WHERE publication_id=?", (latest["id"],),
         ).fetchall()}
+    published_tags = set(current)
+    if current_roster:
+        current = working_accounts(db, season_id)
     saved = {row["tag"]: row for row in db.execute(
         "SELECT * FROM participation_records WHERE season_id=?", (season_id,),
     ).fetchall()}
@@ -118,12 +122,16 @@ def _view(db, season_id):
     accounts = []
     clan_names = {}
     configured = all(policy[key] is not None for key in POLICY_KEYS)
-    for player_tag in sorted(set(current) | set(saved)):
+    for player_tag in sorted(set(current) if current_roster else set(current) | set(saved)):
         account = _account_view(
             current.get(player_tag), saved.get(player_tag),
             source_row(db, season_id, cycle, player_tag),
             archived=season["status"] == "archived",
         )
+        if current_roster:
+            # Always display current signup identity; mismatched saved results stay
+            # flagged and cannot qualify until reconciled with the actual clan.
+            account.update(current[player_tag])
         clan_tag = account["assigned_clan_tag"]
         if clan_tag:
             clan_names[clan_tag] = account["assigned_clan_name"] or clan_tag
@@ -161,9 +169,11 @@ def _view(db, season_id):
         for tag, name in sorted(clan_names.items(), key=lambda item: (item[1].lower(), item[0]))
     ]
     return {
-        "cycle": cycle, "cycle_source": sync["cycle_source"],
+        "cycle": cycle, "cycle_source": sync["cycle_source"], "sync": sync,
         "season_status": season["status"],
-        "publication_version": latest["version"] if latest else None,
+        "publication_version": latest["version"] if latest else (0 if current_roster else None),
+        "roster_source": "current_signups" if current_roster else "published_and_saved",
+        "historical_accounts_count": len((set(saved) | published_tags) - set(current)) if current_roster else 0,
         "revision": revision, "policy": policy, "clans": clans,
         "accounts": accounts, "history": [_history_row(row) for row in history_rows],
         "cycle_confirmed": cycle_confirmed,

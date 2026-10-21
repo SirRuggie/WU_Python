@@ -9,10 +9,11 @@ from datetime import datetime, timezone
 
 from aiohttp import web
 
+from utils.cwl_working_roster import working_accounts
 from .providers import ProviderUnavailable, tag as normalize_tag
 
 INTERVAL_SECONDS = 15 * 60
-MAX_CLANS = 20
+MAX_CLANS = 100
 MAX_WARS = MAX_CLANS * 28
 _CYCLE = re.compile(r"20\d\d-(?:0[1-9]|1[0-2])\Z")
 
@@ -68,22 +69,15 @@ def source_row(db, season_id: int, cycle: str | None, player_tag: str):
     ).fetchone()
 
 
-def _participants(db, season_id: int, publication_id: int) -> dict:
-    current = {
-        row["tag"]: row for row in db.execute(
-            "SELECT tag,user_id,player_name,town_hall,pool,"
-            "assigned_clan_tag,assigned_clan_name FROM publication_accounts "
-            "WHERE publication_id=?",
-            (publication_id,),
-        ).fetchall()
-    }
+def _participants(db, season_id: int) -> dict:
+    current = working_accounts(db, season_id)
     saved = {
         row["tag"]: row for row in db.execute(
             "SELECT * FROM participation_records WHERE season_id=?",
             (season_id,),
         ).fetchall()
     }
-    return {tag: saved.get(tag) or current.get(tag) for tag in set(current) | set(saved)}
+    return {tag: current.get(tag) or dict(saved[tag]) for tag in set(current) | set(saved)}
 
 
 def _valid_group(group: dict, cycle: str, clan_tag: str) -> tuple[list[list[str]], list[str]]:
@@ -343,15 +337,14 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 "WHERE season_id=? ORDER BY version DESC LIMIT 1",
                 (season_id,),
             ).fetchone()
-            if latest is None:
-                _fail(409, "Publish a roster before syncing results")
-            identities = _participants(db, season_id, latest["id"])
+            identities = _participants(db, season_id)
+            working_snapshot = working_accounts(db, season_id)
             clans = sorted({
                 row["assigned_clan_tag"] for row in identities.values()
                 if row["assigned_clan_tag"]
             })
             cycle = settings["cycle"]
-            publication_version = latest["version"]
+            publication_version = latest["version"] if latest else 0
         if len(clans) > MAX_CLANS:
             _fail(400, "Too many hosting clans for one sync")
         group_fetches = await _fetch_groups(app["providers"], clans, cycle)
@@ -416,11 +409,12 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             current = settings_view(db, season_id)
             if (
                 season is None or season["status"] != "draft"
-                or latest is None or latest["version"] != publication_version
+                or (latest["version"] if latest else 0) != publication_version
+                or working_accounts(db, season_id) != working_snapshot
                 or current["cycle"] != cycle
                 or current["enabled"] != settings["enabled"]
             ):
-                _fail(409, "Season, publication, or sync month changed during refresh")
+                _fail(409, "Season, signup assignments, or sync month changed during refresh")
             for clan_tag, state, rounds, members in groups_to_write:
                 db.execute(
                     "INSERT INTO participation_group_observations("
@@ -516,6 +510,12 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                                 None, None, "", 0, "sync", stamp, 0, 0,
                             ),
                         )
+                if complete:
+                    db.execute(
+                        "UPDATE participation_records SET pool=?,assigned_clan_tag=?,assigned_clan_name=?,player_name=?,town_hall=?,user_id=? "
+                        "WHERE season_id=? AND tag=? AND updated_by='sync' AND attacks_override=0 AND stars_override=0",
+                        (identity['pool'], identity['assigned_clan_tag'], identity['assigned_clan_name'], identity['player_name'], identity['town_hall'], identity['user_id'], season_id, player_tag),
+                    )
                 if prior is None or (
                     prior["attacks"], prior["stars"], prior["status"],
                     prior["complete"], prior["checked_at"], prior["warning"]
@@ -533,7 +533,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 )
             if not clans:
                 overall = "unassigned"
-                warning = "No published hosting clans to query"
+                warning = "No assigned hosting clans to query"
             elif "season_mismatch" in failures:
                 overall = "season_mismatch"
                 warning = "Clash CWL month differs from the selected month"

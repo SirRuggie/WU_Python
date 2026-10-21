@@ -1,4 +1,55 @@
-.bonus-workspace{min-width:0}.bonus-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 13px;border:1px solid #38383d;border-radius:10px;background:#19191c;margin-bottom:13px}.bonus-topline strong,.bonus-topline small{display:block}.bonus-topline button{flex:none}.bonus-tabs{display:flex;gap:7px;margin:15px 0}.bonus-tabs button{flex:1}.bonus-tabs button.active{background:#d9a628;color:#211b10;border-color:#d9a628}.bonus-review-controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.bonus-clan-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;margin-bottom:12px}.bonus-clan-summary strong{overflow-wrap:anywhere}.bonus-clan-summary span{font-size:12px;color:#d7c797;text-align:right}.bonus-candidate-list,.bonus-history-list{display:grid;gap:8px}.bonus-candidate{padding:12px 14px}.bonus-candidate-check{display:flex;align-items:start;gap:11px;cursor:pointer;color:#f5f4f0}.bonus-candidate-check input{margin-top:2px}.bonus-candidate-check>span{min-width:0}.bonus-candidate-check strong,.bonus-candidate-check small{display:block;overflow-wrap:anywhere}.bonus-candidate-facts{display:flex;gap:5px 12px;flex-wrap:wrap;margin:9px 0 0 31px;font-size:12px;color:#c9c9cd}.bonus-candidate-facts small{overflow-wrap:anywhere}.bonus-candidate-facts span{color:#e4cd91;font-weight:700}.bonus-warning{color:#edbd9a!important}.bonus-reason{margin:10px 0 0 31px}.bonus-reason textarea{display:block;margin-top:6px}.bonus-review-actions{display:flex;justify-content:flex-end;gap:9px;margin:15px 0}.bonus-pages{display:flex;align-items:center;justify-content:center;gap:13px;margin:13px 0}.bonus-pages span{font-size:12px}.bonus-preview{margin:16px 0;padding:16px}.bonus-preview-list{max-height:230px;overflow:auto;border-top:1px solid #38383d;margin:12px 0}.bonus-preview-list>div{padding:8px 0;border-bottom:1px solid #38383d}.bonus-preview-list strong,.bonus-preview-list small{display:block}.bonus-preview-warnings{padding:12px;background:#312617;border:1px solid #816234;border-radius:9px;margin:13px 0}.bonus-preview-warnings p{font-size:12px;margin:7px 0}.bonus-preview-warnings label{display:flex;gap:9px;align-items:start;cursor:pointer}.bonus-preview>button{width:100%;margin-top:10px}.bonus-history-row{display:flex;align-items:start;justify-content:space-between;gap:13px;padding:13px 15px}.bonus-history-row>div:first-child{min-width:0}.bonus-history-row strong,.bonus-history-row small{display:block;overflow-wrap:anywhere}.bonus-history-row p{font-size:12px;margin:5px 0 0;overflow-wrap:anywhere}.bonus-history-row.is-void{opacity:.75}.bonus-history-row>button{flex:none}.bonus-void{width:100%;padding:12px;border:1px solid #6c5134;border-radius:9px;background:#2a2118}.bonus-void textarea{display:block;margin-top:6px}.bonus-void>div{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.bonus-rules{max-width:900px}.bonus-rule-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin:15px 0 22px}.bonus-slot-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 18px}.bonus-rules>button{margin-top:4px}@media(max-width:700px){.bonus-review-controls,.bonus-rule-fields,.bonus-slot-list{grid-template-columns:1fr}.bonus-topline button{font-size:12px;padding:7px 9px}.bonus-clan-summary{display:block}.bonus-clan-summary span{display:block;text-align:left;margin-top:4px}.bonus-tabs button{min-width:0;padding:8px}.bonus-candidate-facts,.bonus-reason{margin-left:0}.bonus-review-actions{display:grid;grid-template-columns:1fr}.bonus-history-row{display:block}.bonus-history-row>button{margin-top:10px}.bonus-void{margin-top:11px}.bonus-pages{gap:7px}.bonus-pages button{font-size:12px;padding:7px 9px}}
-.bonus-preview-blocks{padding:12px;background:#332220;border:1px solid #7e4a43;border-radius:9px;margin:13px 0;color:#f4bbbb}.bonus-preview-blocks p{font-size:12px;color:#f4bbbb;margin:7px 0}
-.bonus-review>.bonus-review-actions{margin:0 0 12px;padding:10px 12px;background:#221f18;border:1px solid #544527;border-radius:10px}
-.bonus-history-row details{margin-top:7px}.bonus-history-row summary{cursor:pointer;color:#e5cd8c;font-size:12px}
+.bonus-workspace { min-width: 0; }
+.bonus-toolbar, .bonus-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 0;
+}
+.bonus-toolbar h2 { margin: 0; }
+.bonus-action-bar { border-top: 1px solid #38383d; margin-top: 18px; }
+.bonus-action-bar > span { flex: 1 1 220px; color: #bbc0ca; font-size: 14px; }
+.bonus-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid #494337;
+  margin: 16px 0 24px;
+}
+.bonus-steps li { padding: 16px 12px; border-bottom: 3px solid transparent; color: #b6b6bc; }
+.bonus-steps li[aria-current] { color: #f5cc56; border-bottom-color: #e4b529; background: #b88a1410; }
+.bonus-steps li span { display: inline-block; margin-right: 8px; font-weight: 700; }
+.bonus-setup { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; margin-bottom: 24px; }
+.bonus-setup > div { display: flex; align-items: end; gap: 10px; }
+.bonus-setup label { flex: 1; min-width: 0; }
+.bonus-setup input, .bonus-setup select { width: 100%; }
+.bonus-panel { border: 1px solid #38383d; border-radius: 16px; padding: 22px; background: #161618; }
+.bonus-panel h2 { margin-top: 0; }
+.bonus-slots { max-width: 340px; }
+.bonus-slots input { width: 100%; }
+.bonus-account-list { list-style: none; padding: 0; margin: 14px 0; }
+.bonus-account-list li { display: flex; align-items: start; justify-content: space-between; gap: 18px; border-top: 1px solid #333338; padding: 12px 0; }
+.bonus-account-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.bonus-account-list small, .bonus-history-row small { display: block; color: #b7bdc8; margin-top: 4px; }
+.bonus-account-list li > div:last-child { text-align: right; }
+.bonus-workspace details { margin-top: 18px; }
+.bonus-workspace summary { cursor: pointer; min-height: 44px; padding: 12px 0; }
+.bonus-announcement { border-top: 1px solid #38383d; margin-top: 20px; padding-top: 16px; }
+.bonus-message-preview { margin: 18px 0; border-left: 3px solid #e4b529; background: #202024; padding: 14px; border-radius: 4px; }
+.bonus-message-preview .discord-preview { margin: 0; }
+.bonus-check { display: flex; gap: 12px; align-items: center; min-height: 44px; }
+.bonus-check input { flex: none; }
+.bonus-history-row { padding: 12px 0; border-bottom: 1px solid #333338; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .bonus-steps { grid-template-columns: 1fr 1fr; }
+  .bonus-steps li { padding: 12px 8px; }
+  .bonus-setup { grid-template-columns: 1fr; gap: 16px; }
+  .bonus-setup > div { flex-wrap: wrap; }
+  .bonus-setup > div label { flex-basis: 170px; }
+  .bonus-panel { padding: 14px; }
+  .bonus-action-bar > button { width: 100%; }
+  .bonus-account-list li { flex-wrap: wrap; gap: 6px; }
+  .bonus-account-list li > div:last-child { text-align: left; }
+}

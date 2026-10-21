@@ -77,7 +77,7 @@ HELP_CATEGORIES = {
         "emoji": "📅",
         "description": "One CWL announcement dashboard plus the separate bonus lottery",
         "commands": [
-            ("/lazycwl-bonuses", "Randomly select LazyCWL bonus recipients."),
+            ("/lazycwl-bonuses", "Open reviewed CWL bonus draws in the dashboard."),
         ],
     },
     "admin": {

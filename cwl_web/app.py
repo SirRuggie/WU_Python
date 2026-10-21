@@ -27,6 +27,7 @@ from .announcements import routes as announcement_routes
 from .manage_bridge import routes as manage_bridge_routes
 from .participation import routes as participation_routes
 from .bonuses import routes as bonus_routes
+from .bonus_raffle import routes as bonus_raffle_routes
 from .participation_sync import routes as participation_sync_routes, lifecycle as participation_sync_lifecycle
 from .todo import routes as todo_routes, lifecycle as todo_lifecycle
 from .push import routes as push_routes, lifecycle as push_lifecycle
@@ -1738,6 +1739,7 @@ def create_app(*, db_path=None, providers=None, oauth=None, secure_cookies=True,
     routes.extend(participation_routes())
     routes.extend(participation_sync_routes())
     routes.extend(bonus_routes())
+    routes.extend(bonus_raffle_routes())
     routes.extend(todo_routes())
     from .strikes import routes as strike_routes
     routes.extend(strike_routes)

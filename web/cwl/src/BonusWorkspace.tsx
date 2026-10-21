@@ -1,151 +1,192 @@
-import useUnsavedWork from './useUnsavedWork'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, type Season } from './api'
-import { PAGE_SIZE, pageItems, parseNullableWhole, selectionReasonError, selectionsChanged, selectionsFromAccounts, selectionsPayload, type BonusData, type BonusPolicy, type BonusPreview } from './bonus'
+import CwlPoolTabs, { useCwlPool } from './CwlPoolTabs'
+import useUnsavedWork from './useUnsavedWork'
+import BonusAnnouncement from './BonusAnnouncement'
+import { attacksText, type RaffleAccount, type RaffleData, type RafflePreview } from './bonusRaffle'
 import './BonusWorkspace.css'
 
 type Props = { seasonId: string; seasons: Season[]; onDirty?: (dirty: boolean) => void; onSeasonChange: (id: string) => void }
-type Tab = 'review' | 'history' | 'rules'
-type RuleDraft = { min_attacks: string; min_stars: string; cooldown_months: string; slots: Record<string, string> }
-const errorText = (error: unknown) => error instanceof Error ? error.message : 'Bonus review could not be loaded. Try again.'
-const display = (value: number | null) => value === null ? 'Unrecorded' : String(value)
-const dateText = (value: string) => new Date(value).toLocaleString()
-const ruleDraft = (data: BonusData): RuleDraft => ({ min_attacks: data.policy.min_attacks === null ? '' : String(data.policy.min_attacks), min_stars: data.policy.min_stars === null ? '' : String(data.policy.min_stars), cooldown_months: data.policy.cooldown_months === null ? '' : String(data.policy.cooldown_months), slots: Object.fromEntries(data.clans.map(clan => [clan.tag, clan.slots === null ? '' : String(clan.slots)])) })
-const rulePayload = (draft: RuleDraft, data: BonusData): { policy: BonusPolicy; clans: { tag: string; slots: number | null }[] } | null => {
-  const min_attacks = parseNullableWhole(draft.min_attacks, 0, 7)
-  const min_stars = parseNullableWhole(draft.min_stars, 0, 21)
-  const cooldown_months = parseNullableWhole(draft.cooldown_months, 0, 24)
-  if (min_attacks === undefined || min_stars === undefined || cooldown_months === undefined) return null
-  const clans = data.clans.map(clan => ({ tag: clan.tag, slots: parseNullableWhole(draft.slots[clan.tag] || '', 0, 50) }))
-  if (clans.some(clan => clan.slots === undefined)) return null
-  return { policy: { min_attacks, min_stars, cooldown_months }, clans: clans as { tag: string; slots: number | null }[] }
+
+function AccountList({ accounts }: { accounts: RaffleAccount[] }) {
+  return <ul className="bonus-account-list">{accounts.map(account => <li key={account.tag}>
+    <div><strong>{account.player_name}</strong><small>{account.tag}</small></div>
+    <div><span>{attacksText(account)}</span>{account.exclusion && <small>{account.exclusion}</small>}</div>
+  </li>)}</ul>
 }
 
-export default function BonusWorkspace({ seasonId, seasons, onSeasonChange, onDirty }: Props) {
-  const [data, setData] = useState<BonusData | null>(null)
-  const [loading, setLoading] = useState(false)
+export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonChange }: Props) {
+  const [pool, setPool] = useCwlPool()
+  const [data, setData] = useState<RaffleData | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
-  const [tab, setTab] = useState<Tab>('review')
+  const [notice, setNotice] = useState('')
   const [clanTag, setClanTag] = useState('')
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(0)
-  const [historyPage, setHistoryPage] = useState(0)
-  const [selected, setSelected] = useState<Record<string, string>>({})
-  const [rules, setRules] = useState<RuleDraft | null>(null)
-  const [preview, setPreview] = useState<BonusPreview | null>(null)
-  const [acknowledged, setAcknowledged] = useState(false)
-  const [voiding, setVoiding] = useState<{ id: number; reason: string } | null>(null)
-  const requestId = useRef(0)
+  const [minimum, setMinimum] = useState('')
+  const [slots, setSlots] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
+  const [preview, setPreview] = useState<RafflePreview | null>(null)
+  const generation = useRef(0)
+  const working = useRef(false)
   const activeSeason = useRef(seasonId)
   activeSeason.current = seasonId
-  const selectionDirty = data ? selectionsChanged(data.accounts, selected) : false
-  const rulesDirty = !!(data && rules && JSON.stringify(rules) !== JSON.stringify(ruleDraft(data)))
-  useUnsavedWork(selectionDirty || rulesDirty || !!voiding?.reason || busy, onDirty)
-  const archived = seasons.find(season => String(season.id) === seasonId)?.status.toLowerCase() === 'archived'
-  const applyData = (next: BonusData, resetSelections = true, resetRules = true) => {
-    setData(next)
-    if (resetSelections) setSelected(selectionsFromAccounts(next.accounts))
-    if (resetRules) setRules(ruleDraft(next))
-    setClanTag(current => next.clans.some(clan => clan.tag === current) ? current : next.clans[0]?.tag || '')
+  const path = `/seasons/${encodeURIComponent(seasonId)}/bonus-raffle`
+  const dirty = !!data && minimum !== String(data.policies[pool] ?? '')
+  useUnsavedWork(dirty || busy || !!cancelReason, onDirty)
+  const archived = data?.season_status !== 'draft'
+  const currentClans = data?.clans.filter(clan => data.accounts.some(a => a.pool === pool && a.assigned_clan_tag === clan.tag)) || []
+  const clans = [...currentClans]
+  for (const saved of data?.draws || []) {
+    if (saved.pool === pool && saved.cycle === data?.cycle && !saved.cancelled_at && !clans.some(c => c.tag === saved.clan_tag)) {
+      clans.push({ tag: saved.clan_tag, name: `${saved.snapshot.clan_name} · Saved draw`, slots: saved.snapshot.slots })
+    }
   }
+  const selectedClan = clans.find(c => c.tag === clanTag)
+  const draw = data?.draws.find(d => d.pool === pool && d.clan_tag === clanTag && d.cycle === data.cycle && !d.cancelled_at)
+  const changedContext = () => { setPreview(null); setSlots(''); setCancelReason(''); setNotice('') }
+
   const load = useCallback(async () => {
-    if (!seasonId) return
-    const sid = seasonId, id = ++requestId.current
-    setLoading(true); setError('')
+    if (!seasonId || working.current) return
+    working.current = true
+    const request = ++generation.current
+    setBusy(true); setError('')
     try {
-      const result = await api<BonusData>(`/seasons/${encodeURIComponent(sid)}/bonuses`)
-      if (id === requestId.current && activeSeason.current === sid) {
-        setData(result)
-        setSelected(selectionsFromAccounts(result.accounts))
-        setRules(ruleDraft(result))
-        setClanTag(current => result.clans.some(clan => clan.tag === current) ? current : result.clans[0]?.tag || '')
-        setPreview(null); setAcknowledged(false)
-      }
-    } catch (cause) { if (id === requestId.current && activeSeason.current === sid) setError(errorText(cause)) }
-    finally { if (id === requestId.current && activeSeason.current === sid) setLoading(false) }
-  }, [seasonId])
-  useEffect(() => { requestId.current += 1; setData(null); setSelected({}); setRules(null); setPreview(null); setVoiding(null); setNotice(null); setError(''); setTab('review'); setClanTag(''); setSearch(''); setPage(0); setHistoryPage(0); if (seasonId) void load() }, [seasonId, load])
-  const refresh = () => { if ((selectionDirty || rulesDirty) && !window.confirm('Discard unsaved bonus selections or rules and refresh?')) return; void load() }
-  const changeSeason = (id: string) => { if ((selectionDirty || rulesDirty) && !window.confirm('Discard unsaved bonus selections or rules and change season?')) return; onSeasonChange(id) }
-  const setSelection = (tag: string, checked: boolean) => { setSelected(current => { const next = { ...current }; if (checked) next[tag] = next[tag] || ''; else delete next[tag]; return next }); setPreview(null); setAcknowledged(false) }
-  const setReason = (tag: string, reason: string) => { setSelected(current => ({ ...current, [tag]: reason })); setPreview(null); setAcknowledged(false) }
-  const runMutation = async (action: () => Promise<BonusData>, success: string, resetSelections = true, resetRules = true) => {
-    const sid = seasonId
-    setBusy(true); setError(''); setNotice(null)
-    try {
-      const next = await action()
-      if (activeSeason.current !== sid) return
-      applyData(next, resetSelections, resetRules)
-      setNotice({ kind: 'success', text: success })
-      setPreview(null); setAcknowledged(false); setVoiding(null)
+      const result = await api<RaffleData>(path)
+      if (request !== generation.current) return
+      setData(result)
+      setPreview(null)
     } catch (cause) {
-      if (activeSeason.current !== sid) return
-      setError(cause instanceof ApiError && cause.status === 409 ? `${cause.message} Refresh and review the latest bonus draft.` : errorText(cause))
-    } finally { setBusy(false) }
-  }
-  const saveDraft = () => {
-    if (!data || busy || archived || !selectionDirty) return
-    const reasonError = selectionReasonError(data.accounts, selected)
-    if (reasonError) { setError(reasonError); return }
-    void runMutation(() => api<BonusData>(`/seasons/${encodeURIComponent(seasonId)}/bonuses/draft`, 'PATCH', { revision: data.revision, selections: selectionsPayload(selected) }), 'Season-wide bonus draft saved. Review the server preview before confirming.', true, false)
-  }
-  const previewDraft = async () => {
-    if (!data || busy || archived || selectionDirty) return
+      if (request !== generation.current) return
+      if (cause instanceof ApiError && [401, 403].includes(cause.status)) setData(null)
+      setError(cause instanceof Error ? cause.message : 'Could not load bonuses')
+    } finally {
+      if (request === generation.current) { working.current = false; setBusy(false) }
+    }
+  }, [path, seasonId])
+
+  useEffect(() => {
+    generation.current += 1; working.current = false
+    setData(null); setClanTag(''); setPreview(null); setSlots(''); setCancelReason(''); setNotice(''); setError('')
+    void load()
+    return () => { generation.current += 1 }
+  }, [load])
+  useEffect(() => { if (data) setMinimum(String(data.policies[pool] ?? '')) }, [data, pool])
+  useEffect(() => {
+    if (!clans.some(c => c.tag === clanTag)) setClanTag(clans[0]?.tag || '')
+  }, [data, pool, clanTag])
+
+  const mutate = async (suffix: string, body: unknown, success: string, method = 'POST') => {
+    if (working.current || archived) return
+    working.current = true; setBusy(true); setError(''); setNotice('')
+    const request = ++generation.current
     const sid = seasonId
-    setBusy(true); setError(''); setPreview(null); setAcknowledged(false)
     try {
-      const result = await api<BonusPreview>(`/seasons/${encodeURIComponent(sid)}/bonuses/preview`)
-      if (activeSeason.current === sid) setPreview(result)
-    } catch (cause) { if (activeSeason.current === sid) setError(errorText(cause)) }
-    finally { setBusy(false) }
+      const result = await api<RaffleData>(path + suffix, method, body)
+      if (request !== generation.current || activeSeason.current !== sid) return
+      setData(result); setPreview(null); setCancelReason(''); setNotice(success)
+    } catch (cause) {
+      if (request !== generation.current) return
+      if (cause instanceof ApiError && [401, 403].includes(cause.status)) setData(null)
+      setError(cause instanceof Error ? cause.message : 'The action could not be completed. Refresh to check its saved status.')
+    } finally {
+      if (request === generation.current) { working.current = false; setBusy(false) }
+    }
   }
-  const confirm = () => {
-    if (!data || !preview || busy || archived || selectionDirty || !preview.can_confirm || rulesDirty || (preview.warnings.length > 0 && !acknowledged)) return
-    void runMutation(() => api<BonusData>(`/seasons/${encodeURIComponent(seasonId)}/bonuses/confirm`, 'POST', { revision: preview.revision, fingerprint: preview.fingerprint, acknowledge_warnings: acknowledged }), 'Bonus selections confirmed in this dashboard. Award bonuses separately in Clash of Clans.', true, false)
+  const refresh = () => {
+    if ((dirty || cancelReason) && !window.confirm('Discard unsaved bonus edits and refresh?')) return
+    void load()
   }
-  const saveRules = () => {
-    if (!data || !rules || busy || archived || !rulesDirty) return
-    const parsed = rulePayload(rules, data)
-    if (!parsed) { setError('Use whole numbers in the displayed ranges, or leave a rule unset.'); return }
-    void runMutation(() => api<BonusData>(`/seasons/${encodeURIComponent(seasonId)}/bonuses/settings`, 'PATCH', { revision: data.revision, ...parsed }), 'Bonus review rules saved. Existing draft selections remain for review.', false, true)
+  const review = async () => {
+    if (working.current || !selectedClan || dirty || archived) return
+    working.current = true; setBusy(true); setError(''); setPreview(null)
+    const request = ++generation.current
+    try {
+      const result = await api<RafflePreview>(path + '/preview', 'POST', { pool, clan_tag: clanTag, slots: Number(slots) })
+      if (request === generation.current) setPreview(result)
+    } catch (cause) {
+      if (request === generation.current) {
+        if (cause instanceof ApiError && [401, 403].includes(cause.status)) setData(null)
+        setError(cause instanceof Error ? cause.message : 'Could not review accounts')
+      }
+    } finally {
+      if (request === generation.current) { working.current = false; setBusy(false) }
+    }
   }
-  const voidHistory = () => {
-    if (!data || !voiding || busy || archived || !voiding.reason.trim() || voiding.reason.trim().length > 500) return
-    const id = voiding.id, reason = voiding.reason.trim()
-    void runMutation(() => api<BonusData>(`/seasons/${encodeURIComponent(seasonId)}/bonuses/${id}/void`, 'POST', { revision: data.revision, reason }), 'Recorded bonus selection voided. The history entry remains visible.', false, false)
-  }
-  const candidates = (data?.accounts || []).filter(account => account.assigned_clan_tag === clanTag && (!search.trim() || `${account.player_name} ${account.tag}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))).sort((a, b) => a.player_name.localeCompare(b.player_name) || a.tag.localeCompare(b.tag))
-  const candidatePage = Math.min(page, Math.max(0, Math.ceil(candidates.length / PAGE_SIZE) - 1))
-  const history = [...(data?.history || [])].sort((a, b) => b.confirmed_at.localeCompare(a.confirmed_at) || b.id - a.id)
-  const maxHistoryPage = Math.max(0, Math.ceil(history.length / PAGE_SIZE) - 1)
-  const selectedCount = Object.keys(selected).length
-  const clan = data?.clans.find(item => item.tag === clanTag)
-  const clanSelected = data?.accounts.filter(account => account.assigned_clan_tag === clanTag && selected[account.tag] !== undefined).length || 0
-  const clanConfirmed = data?.cycle_confirmed.filter(item => item.clan_tag === clanTag).length || 0
+  const stage = draw?.approved_at ? 3 : draw ? 2 : preview ? 1 : 0
   return <div className="bonus-workspace">
-    <div className="page-head"><div><p className="eyebrow">Staff tools</p><h1>Bonus review &amp; history</h1><p>Choose bonus recipients here. Award bonuses separately in Clash of Clans.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => changeSeason(event.target.value)}><option value="">Select a season</option>{seasons.map(season => <option key={season.id} value={String(season.id)}>{season.label}</option>)}</select></label></div>
-    {!seasonId && <div className="card empty">Select a season to review bonuses.</div>}
-    {error && <div className="notice error" role="alert">{error}<button onClick={refresh}>Refresh</button></div>}
-    {notice && <div className={`notice ${notice.kind}`} role="status">{notice.text}</div>}
-    {loading && <p role="status">Loading bonus review…</p>}
+    <div className="page-head"><div><p className="eyebrow">CWL · Results &amp; bonuses</p><h1>Bonus winners</h1>
+      <p>Review attacks, draw winners, then announce them to your clan.</p></div>
+      <label className="season-choice">Season<select value={seasonId} disabled={busy} onChange={event => {
+        if ((!dirty && !cancelReason) || window.confirm('Discard unsaved bonus edits and change season?')) onSeasonChange(event.target.value)
+      }}><option value="">Select a season</option>{seasons.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label></div>
+    <CwlPoolTabs value={pool} disabled={busy} onChange={next => {
+      if ((!dirty && !cancelReason) || window.confirm('Discard unsaved bonus edits and switch CWL?')) { setPool(next); changedContext() }
+    }} />
+    {error && <div className="notice error" role="alert">{error} <button disabled={busy} onClick={refresh}>Refresh saved status</button></div>}
+    {notice && <p role="status">{notice}</p>}
+    {busy && <p role="status">Working…</p>}
+    {!seasonId && <p>Select a season to begin.</p>}
     {data && <>
-      <div className="bonus-topline"><div><strong>{data.cycle ? `CWL ${data.cycle}` : 'CWL month not set'}</strong><small>{selectedCount} draft selection{selectedCount === 1 ? '' : 's'} · Revision {data.revision}</small></div><button disabled={busy || loading} onClick={refresh}>Refresh</button></div>
-      {archived && <div className="notice">This season is archived. Bonus records are read-only.</div>}
-      {!data.cycle && <p className="inline-reason">Choose a CWL month in Results &amp; participation before confirming selections.</p>}{data.active_other_cycles.length > 0 && <p className="inline-reason">This season has active dashboard bonus selections for {data.active_other_cycles.join(', ')}. Restore that CWL month or create a new season before confirming more.</p>}
-      <div className="bonus-tabs" role="group" aria-label="Bonus sections"><button className={tab === 'review' ? 'active' : ''} aria-pressed={tab === 'review'} onClick={() => setTab('review')}>Review</button><button className={tab === 'history' ? 'active' : ''} aria-pressed={tab === 'history'} onClick={() => setTab('history')}>History</button><button className={tab === 'rules' ? 'active' : ''} aria-pressed={tab === 'rules'} onClick={() => setTab('rules')}>Rules</button></div>
-      {tab === 'review' && <section className="bonus-review">
-        <div className="bonus-review-controls"><label>Hosting clan<select value={clanTag} onChange={event => { setClanTag(event.target.value); setSearch(''); setPage(0); setPreview(null) }}><option value="">Select a clan</option>{data.clans.map(item => <option key={item.tag} value={item.tag}>{item.name} · {item.tag}</option>)}</select></label><label>Find account<input value={search} onChange={event => { setSearch(event.target.value); setPage(0) }} placeholder="Name or tag" /></label></div>
-        {clan && <div className="card bonus-clan-summary"><strong>{clan.name}</strong><span>{clanSelected} selected · {clanConfirmed} already recorded for this CWL month · {clan.slots === null ? 'Slots unset' : `${Math.max(0, clan.slots - clanConfirmed)} of ${clan.slots} slots remaining`}</span></div>}
-        {data.accounts.length > 0 && <div className="bonus-review-actions"><button disabled={busy || archived || !selectionDirty} onClick={saveDraft}>Save selection draft</button><button className="primary" disabled={busy || archived || selectionDirty || rulesDirty || !selectedCount} onClick={() => void previewDraft()}>Review confirmation →</button></div>}
-        {!data.clans.length && <div className="card empty">No hosting clans with published participants are available for bonus review.</div>}
-        {clan && <><div className="bonus-candidate-list">{pageItems(candidates, candidatePage).map(account => <article key={account.tag} className="card bonus-candidate"><label className="bonus-candidate-check"><input type="checkbox" checked={selected[account.tag] !== undefined} disabled={busy || archived || (account.already_confirmed_this_cycle && selected[account.tag] === undefined)} onChange={event => setSelection(account.tag, event.target.checked)} /><span><strong>{account.player_name}</strong><small>{account.tag} · {account.pool === 'main' ? 'Main' : 'Lazy'} · Attacks {display(account.attacks)} · Stars {display(account.stars)}</small></span></label><div className="bonus-candidate-facts"><span>{account.already_confirmed_this_cycle ? 'Already confirmed this CWL month' : account.recommended === true ? 'Meets bonus rules' : account.recommended === false ? 'Outside bonus rules' : 'No recommendation yet'}</span><small>{account.eligibility_reason || 'Bonus rules or results are missing.'}</small><small>{account.last_confirmed_bonus ? `Last saved bonus selection: ${account.last_confirmed_bonus.cycle}` : account.already_confirmed_this_cycle ? 'Already confirmed this CWL month; see History' : 'No recorded bonus selection'}</small>{!account.source_complete && <small className="bonus-warning">Results are incomplete. Add a reason and review the warnings.</small>}{account.source_warning && <small className="bonus-warning">Source: {account.source_warning}</small>}{!account.source_warning && ['stale', 'unavailable', 'partial', 'preparation'].includes(account.source_status) && <small className="bonus-warning">Result source: {account.source_status}</small>}</div>{selected[account.tag] !== undefined && <label className="bonus-reason">Selection reason{account.recommended !== true || !account.source_complete || account.source_status !== 'complete' ? ' · required' : ' · optional'}<textarea rows={2} maxLength={500} value={selected[account.tag]} disabled={busy || archived} onChange={event => setReason(account.tag, event.target.value)} placeholder="Staff review note" /></label>}</article>)}</div>{!candidates.length && <div className="card empty">No accounts match this clan and search.</div>}{candidates.length > PAGE_SIZE && <div className="bonus-pages"><button disabled={candidatePage === 0} onClick={() => setPage(candidatePage - 1)}>Previous</button><span>Page {candidatePage + 1} of {Math.ceil(candidates.length / PAGE_SIZE)}</span><button disabled={candidatePage >= Math.ceil(candidates.length / PAGE_SIZE) - 1} onClick={() => setPage(candidatePage + 1)}>Next</button></div>}</>}
-        {selectionDirty && <p className="inline-reason">Selections changed locally. Save the season-wide draft before requesting a confirmation preview.</p>}{rulesDirty && <p className="inline-reason">Save the rule changes before requesting a confirmation preview.</p>}
-        {preview && <div className="card bonus-preview"><h2>Confirmation preview</h2><p>{preview.selected.length} selected account{preview.selected.length === 1 ? '' : 's'}. This saves your selection. Award bonuses separately in Clash of Clans.</p><div className="bonus-preview-list">{preview.selected.map(account => <div key={account.tag}><strong>{account.player_name}</strong><small>{account.assigned_clan_name || account.assigned_clan_tag} · {account.tag} · Attacks {display(account.attacks)} · Stars {display(account.stars)}</small></div>)}</div>{preview.capacity.map(row => <p className="small" key={row.clan_tag}>{row.clan_name}: {row.selected_count} selected · {row.confirmed_count} already recorded · {row.slots === null ? 'slots unset' : `${Math.max(0, row.slots - row.confirmed_count)} of ${row.slots} slots remaining before this selection`}</p>)}{preview.blocking_reasons.length > 0 && <div className="bonus-preview-blocks" role="alert"><strong>Confirmation is blocked</strong>{preview.blocking_reasons.map((reason, index) => <p key={index}>{reason}</p>)}</div>}{preview.warnings.length > 0 && <div className="bonus-preview-warnings"><strong>Review warnings</strong>{preview.warnings.map((warning, index) => <p key={index}>{warning}</p>)}<label><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} /> I reviewed these warnings and still want to record the selections.</label></div>}<button className="primary" disabled={busy || archived || !preview.can_confirm || rulesDirty || (preview.warnings.length > 0 && !acknowledged)} onClick={confirm}>Confirm selections</button>{!preview.can_confirm && <p className="inline-reason">Fix the issues above, save changes, then preview again.</p>}</div>}
+      <div className="bonus-toolbar"><strong>{pool === 'main' ? 'Main CWL' : 'Lazy CWL'} · {data.cycle || 'CWL month not set'}</strong>
+        <button disabled={busy} onClick={refresh}>Refresh saved status</button></div>
+      {archived && <p className="notice">Archived season · Read only</p>}
+      {!data.cycle && <p className="notice">Choose this season’s CWL month in Results &amp; participation first.</p>}
+      <div className="bonus-source"><strong>Account list: Current signups &amp; working assignments</strong>
+        <p className="small">New draws include only accounts signed up for this season. Attacks come from Clash CWL results for {data.cycle || 'the selected month'}. Publishing is not required for bonus review.</p>
+        <p className="small">Automatic checks: {data.sync.enabled ? 'On · every 15 minutes' : 'Off'} · Last check: {data.sync.last_checked_at ? new Date(data.sync.last_checked_at).toLocaleString() : 'Not checked yet'}</p>
+        {data.sync.warning && <p role="status">{data.sync.warning}</p>}
+        {data.historical_accounts_count > 0 && <p className="small">{data.historical_accounts_count} account{data.historical_accounts_count === 1 ? '' : 's'} from older rosters or saved results excluded from new draws.</p>}
+        <button disabled={busy || archived || dirty || !data.cycle} onClick={() => void mutate('/refresh-results', {}, 'Clash results refreshed. Review any incomplete results before drawing.')}>Refresh attacks from Clash</button>
+      </div>
+      <ol className="bonus-steps" aria-label="Bonus progress">{['Review results', 'Draw winners', 'Approve winners', 'Announce'].map((step, index) =>
+        <li key={step} aria-current={stage === index ? 'step' : undefined}><span>{index + 1}</span>{step}</li>)}</ol>
+      <div className="bonus-setup">
+        <label>Hosting clan<select value={clanTag} disabled={busy} onChange={event => { setClanTag(event.target.value); changedContext() }}>
+          {!clans.length && <option value="">No assigned hosting clans</option>}{clans.map(c => <option key={c.tag} value={c.tag}>{c.name} · {c.tag}</option>)}</select></label>
+        <div><label>Minimum attacks · {pool === 'main' ? 'Main CWL' : 'Lazy CWL'}<input type="number" min="0" max="7" step="1" value={minimum}
+          disabled={busy || archived} onChange={event => { setMinimum(event.target.value); setPreview(null) }} placeholder="Choose minimum" /></label>
+          <button disabled={busy || archived || !dirty || !/^\d+$/.test(minimum) || Number(minimum) > 7}
+            onClick={() => void mutate('/policy', { pool, minimum: Number(minimum), revision: data.revision }, 'Minimum attacks saved. Existing draws stay unchanged.', 'PATCH')}>Save minimum</button></div>
+      </div>
+      {!clans.length && <p>No current signups are assigned to a hosting clan in this CWL pool. Check current signups and working assignments.</p>}
+      {selectedClan && !draw && <section className="bonus-panel">
+        <h2>{selectedClan.name}</h2><p>Each qualifying account gets one equal chance. Winners are saved and cannot be redrawn by refreshing.</p>
+        <label className="bonus-slots">Total bonuses available for this clan<input type="number" min="1" max="50" step="1" value={slots}
+          disabled={busy || archived} onChange={event => { setSlots(event.target.value); setPreview(null) }} placeholder="Count shown in-game" /></label>
+        <p className="small">Enter the total count shown in Clash for this CWL season. Already saved selections are deducted. The game’s bonus allowance is not verified automatically.</p>
+        <div className="bonus-action-bar"><span>{dirty ? 'Save the minimum attacks first.' : 'Review the results before drawing.'}</span>
+          <button className="primary" disabled={busy || archived || dirty || !/^\d+$/.test(slots) || Number(slots) < 1 || Number(slots) > 50 || data.policies[pool] === null}
+            onClick={() => void review()}>Review qualifying accounts</button></div>
+        {preview && <section className="bonus-preview">
+          <h3>{preview.eligible.length} accounts qualify · {Math.min(preview.available, preview.eligible.length)} winners</h3>
+          <p>Minimum {preview.minimum} attacks · {preview.available} bonus slots remaining</p>
+          {preview.available > preview.eligible.length && <p>There are fewer qualifying accounts than slots. Every qualifying account will win; remaining slots stay unused.</p>}
+          {preview.blocking_reasons.length > 0 && <div className="notice error" role="alert">{preview.blocking_reasons.map(reason => <p key={reason}>{reason}</p>)}<p>Use Results &amp; participation to refresh or reconcile the results.</p></div>}
+          <AccountList accounts={preview.eligible} />
+          <details><summary>Accounts not included ({preview.excluded.length})</summary><AccountList accounts={preview.excluded} /></details>
+          <div className="bonus-action-bar"><span>One saved draw per clan and CWL pool this month</span><button className="primary"
+            disabled={busy || archived || !!preview.blocking_reasons.length} onClick={() => void mutate('/draw', { pool, clan_tag: clanTag, slots: Number(slots), fingerprint: preview.fingerprint }, 'Winners drawn and saved. Review them before approving.')}>Draw and save winners</button></div>
+        </section>}
       </section>}
-      {tab === 'history' && <section className="bonus-history"><p className="small">Only selections saved here appear below. Older spreadsheet and in-game awards may be missing.</p>{history.length ? <><div className="bonus-history-list">{pageItems(history, Math.min(historyPage, maxHistoryPage)).map(item => <article className={`card bonus-history-row ${item.voided_at ? 'is-void' : ''}`} key={item.id}><div><strong>{item.player_name}</strong><small>{item.tag} · {item.clan_name || item.clan_tag || 'Unassigned'} · {item.cycle}</small><small>Attacks {display(item.attacks)} · Stars {display(item.stars)} · Published roster v{item.publication_version}</small><small>Confirmed {dateText(item.confirmed_at)} by Discord {item.confirmed_by}</small>{item.reason && <p>Reason: {item.reason}</p>}{item.warnings && item.warnings.length > 0 && <details><summary>Warnings recorded with this decision</summary>{item.warnings.map((warning, index) => <p className="bonus-warning" key={index}>{warning}</p>)}</details>}{item.voided_at && <p className="bonus-warning">Voided {dateText(item.voided_at)} by Discord {item.voided_by} · {item.void_reason}</p>}</div>{!item.voided_at && !archived && <button onClick={() => setVoiding({ id: item.id, reason: '' })}>Void record</button>}{voiding?.id === item.id && <div className="bonus-void"><label>Reason for voiding<textarea rows={2} maxLength={500} value={voiding.reason} onChange={event => setVoiding({ id: item.id, reason: event.target.value })} /></label><div><button onClick={() => setVoiding(null)}>Cancel</button><button className="primary" disabled={busy || !voiding.reason.trim()} onClick={voidHistory}>Confirm void</button></div></div>}</article>)}</div>{history.length > PAGE_SIZE && <div className="bonus-pages"><button disabled={historyPage === 0} onClick={() => setHistoryPage(historyPage - 1)}>Previous</button><span>Page {Math.min(historyPage, maxHistoryPage) + 1} of {maxHistoryPage + 1}</span><button disabled={historyPage >= maxHistoryPage} onClick={() => setHistoryPage(historyPage + 1)}>Next</button></div>}</> : <div className="card empty">No recorded bonus selections for this season.</div>}</section>}
-      {tab === 'rules' && rules && <section className="card bonus-rules"><h2>Review rules</h2><p>Set all three rules to get recommendations. Blank means unknown; zero counts as a value. Set clan bonus slots before confirming selections.</p><div className="bonus-rule-fields"><label>Minimum attacks<input type="number" min="0" max="7" step="1" value={rules.min_attacks} disabled={archived || busy} onChange={event => setRules(current => current && ({ ...current, min_attacks: event.target.value }))} placeholder="Unset" /></label><label>Minimum stars<input type="number" min="0" max="21" step="1" value={rules.min_stars} disabled={archived || busy} onChange={event => setRules(current => current && ({ ...current, min_stars: event.target.value }))} placeholder="Unset" /></label><label>Cooldown months<input type="number" min="0" max="24" step="1" value={rules.cooldown_months} disabled={archived || busy} onChange={event => setRules(current => current && ({ ...current, cooldown_months: event.target.value }))} placeholder="Unset" /></label></div><h3>Clan bonus slots</h3><div className="bonus-slot-list">{data.clans.map(item => <label key={item.tag}>{item.name} · {item.tag}<input type="number" min="0" max="50" step="1" value={rules.slots[item.tag] || ''} disabled={archived || busy} onChange={event => setRules(current => current && ({ ...current, slots: { ...current.slots, [item.tag]: event.target.value } }))} placeholder="Unset" /></label>)}</div><button className="primary" disabled={busy || archived || !rulesDirty} onClick={saveRules}>Save rules</button>{rulesDirty && <p className="small">Save these rule changes before confirming bonus selections.</p>}</section>}
+      {draw && <section className="bonus-panel">
+        <div className="bonus-toolbar"><h2>{draw.snapshot.clan_name} · Bonus winners</h2><strong>{draw.approved_at ? 'Approved' : 'Awaiting staff review'}</strong></div>
+        <p className="small">Saved draw · {new Date(draw.created_at).toLocaleString()}. These winners are preserved from the reviewed account list.</p>
+        <p>{draw.snapshot.winners.length} winners · {draw.snapshot.eligible.length} qualifying accounts · Minimum {draw.snapshot.minimum} attacks</p>
+        <AccountList accounts={draw.snapshot.winners} />
+        <details><summary>Draw details and qualifying accounts</summary><p>Drawn {new Date(draw.created_at).toLocaleString()}. Saved results are preserved even if rules change later.</p><AccountList accounts={draw.snapshot.eligible} /></details>
+        {!draw.approved_at && <div className="bonus-action-bar"><span>Approval records these winners. It does not send a message.</span><button className="primary" disabled={busy || archived || dirty}
+          onClick={() => void mutate(`/${draw.id}/approve`, {}, 'Winners approved. Review the announcement and choose a channel.')}>Approve winners</button></div>}
+        {!draw.approved_at && <details><summary>Correct a draw problem</summary><p>Cancel only when results or setup need correction. The original winners and reason stay in history.</p>
+          <label>Reason<textarea maxLength={500} value={cancelReason} disabled={busy || archived} onChange={event => setCancelReason(event.target.value)} /></label>
+          <button disabled={busy || archived || !cancelReason.trim()} onClick={() => void mutate(`/${draw.id}/cancel`, { reason: cancelReason.trim() }, 'Draw cancelled and retained in history. Correct the results before drawing again.')}>Cancel this draw</button></details>}
+        {draw.approved_at && <BonusAnnouncement key={draw.id} draw={draw} disabled={busy || archived}
+          onSend={(channel, retry = false) => void mutate(`/${draw.id}/send`, { channel_id: channel, retry }, 'Delivery status updated below.')} />}
+      </section>}
+      <details className="bonus-history"><summary>Saved bonus history ({data.history.length})</summary>
+        <p className="small">Dashboard selections only. This is not proof that medals were awarded in-game.</p>
+        {data.draws.filter(d => d.cancelled_at).map(d => <div className="bonus-history-row" key={`cancelled-${d.id}`}><strong>{d.snapshot.clan_name} · Cancelled draw</strong><p>{d.cancel_reason}</p><small>{new Date(d.cancelled_at!).toLocaleString()}</small><AccountList accounts={d.snapshot.winners} /></div>)}
+        {data.history.map(item => <div className="bonus-history-row" key={item.id}><strong>{item.player_name} · {item.clan_name || item.clan_tag}</strong><small>{item.tag} · {item.cycle} · {item.voided_at ? 'Voided' : 'Approved'} · {new Date(item.confirmed_at).toLocaleString()}</small></div>)}
+      </details>
     </>}
   </div>
 }

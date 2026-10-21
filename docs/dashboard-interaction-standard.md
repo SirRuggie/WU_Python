@@ -602,3 +602,55 @@ and cancelled pool changes. Native buttons, aria-current, keyboard focus outline
 and stacked mobile stages retain readable titles. 191 frontend tests and the
 production build passed; the existing bundle-size advisory remains. No live
 signup or Discord message was created.
+
+### Staff-reviewed CWL bonus raffles
+
+Bonus winners uses integrated Main/Lazy tabs and a four-stage workflow: review
+results, draw, approve, announce. Each pool has an independent minimum attack
+count. Every qualifying account receives one ticket, including multiple accounts
+owned by the same member. Fewer eligible accounts than slots means all qualify;
+unused slots remain visible. Routine setup and progress stay visible. Qualifying
+account details, correction controls and saved history use disclosures.
+
+The default candidate list is **current season signups and working assignments**,
+not an old published roster plus all historical participation records. The page
+labels this source, shows the last results check and excluded historical count,
+and offers a direct Clash refresh. Sync now uses current assignments (plus
+retained historical records for history), works without a publication, checks
+for signup/assignment changes during fetch, and accepts up to 100 hosting clans
+with existing three-request concurrency and bounded war-fetch timeout. Unknown,
+incomplete or identity-mismatched results block draws. Historical results are
+preserved; the Results page now explains its wider historical scope.
+
+Staff enter the game's total available bonus count for each clan; automatic
+verification of the league's bonus allowance is not implemented. Do not present
+this count as API-verified. Attack totals use the actual observed round count
+when known; they do not assume every season has seven rounds.
+
+Draws and their candidate snapshots are durable. Approval checks current results,
+roster identity and other confirmed selections. Cancellation is available only
+before approval, requires a reason, retains the original winners, and invalidates
+old preview requests. Announcement sends require approval and an explicit channel
+review. The existing channel picker and Discord preview are reused. Long messages
+split with per-part receipts. Explicit rejection supports a staff-triggered retry
+of unsent parts only; uncertain/interrupted delivery never retries automatically.
+No medals are awarded by the dashboard. The old slash command now opens this
+workflow instead of running a second weighted, nonpersistent lottery.
+
+Storage: new additive bonus_raffle_* tables in the existing SQLite database,
+owned by utils/cwl_bonus_raffle_store.py. Existing bonus confirmations and routes
+remain intact, and approval records winners in existing confirmation history.
+Shared random selection/rendering lives in utils; Discord REST transport moved
+to extensions with compatibility imports for the existing announcement routes.
+No existing signup, publication, results or confirmation data is deleted.
+
+Checks: backend auth/CSRF, archived/cross-season access, current-vs-published
+candidate source, no-publication sync/draw, unknown results, stale previews,
+changed results at approval, unique equal-weight tickets, concurrent draws and
+sends, replay, cancellation, explicit rejection, partial sends, uncertain delivery,
+Unicode length/mention escaping, existing participation/bonus/announcement tests,
+frontend tests, production build and war-reminder gate. Isolated desktop, 390px
+and 320px browser checks covered rules, candidate review, draw, approval, channel
+keyboard selection, preview, mocked send receipts and narrow-width overflow.
+No live signup data or Discord messages were changed for tests. This is not a
+claim of live notification delivery or a complete assistive-technology audit.
