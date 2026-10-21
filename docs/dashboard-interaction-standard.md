@@ -478,3 +478,23 @@ Validation: 198 frontend tests (including both directions, preserved preferences
 partial failure and no retry), 39 backend signup tests, production build;
 isolated desktop/390px/320px browser checks for highlight, inline save, failed
 save, and Cancel preserving bulk selection. No live signups or messages changed.
+
+### FWA signup guidance and staff review flag
+
+Lazy CWL includes the owner's FWA slogan. Accounts whose directory category is
+FWA show a warning when choosing Main, including inline saved-signup edits and
+final signup review. Main remains allowed. Manage signups displays FWA → Main
+CWL for staff; this is an on-page review flag, not a Discord alert.
+
+The existing clan provider now includes its stored category. A nullable
+signup_clan_type column is added idempotently to the existing SQLite signup
+store. Server-side member/staff saves capture known category data, retaining FWA
+history across later clan moves. The flag applies only while the pool is Main.
+Older signups use their saved origin clan tag against the directory; unavailable
+historical categories cannot be reconstructed during directory outages.
+
+Validation: 77 backend tests covering signups, roster and account loading,
+including allowed FWA Main signup, legacy classification, non-FWA accounts,
+clan move/outage persistence and switching to Lazy; 198 frontend tests;
+production build; isolated mobile warning and slogan inspection. No live
+signups or Discord messages changed for testing.

@@ -555,13 +555,18 @@ async def revoke(request):
     return web.json_response({"ok": True})
 
 
-async def _family_tags(request):
-    """Return None when directory status is unknown; never treat outage as outside."""
+async def _family_directory(request):
+    """Unknown directory data must not be interpreted as a non-FWA clan."""
     try:
         family = await request.app["providers"].family_clans()
     except ProviderUnavailable:
         return None
-    return {clan["tag"] for clan in family["clans"]}
+    return {clan["tag"]: clan for clan in family["clans"]}
+
+
+async def _family_tags(request):
+    directory = await _family_directory(request)
+    return None if directory is None else set(directory)
 
 
 def _family_status(clan_tag, approved):
@@ -580,10 +585,12 @@ async def _accounts(request, user_id):
             return await provider.player(value)
 
     accounts = await asyncio.gather(*(fetch(value) for value in links))
-    approved = await _family_tags(request)
+    directory = await _family_directory(request)
+    approved = None if directory is None else set(directory)
     for account in accounts:
         account["verified"] = bool(links[account["tag"]])
         account["family_clan_status"] = _family_status(account["current_clan_tag"], approved)
+        account["current_clan_type"] = (directory or {}).get(account["current_clan_tag"], {}).get("type")
         account["lazy_eligible"] = True
         account["lazy_ineligible_reason"] = None
     return accounts
@@ -671,13 +678,17 @@ async def signups(request):
             rows = db.execute("SELECT * FROM signups WHERE season_id=? ORDER BY user_id,tag", (sid,)).fetchall()
         else:
             rows = db.execute("SELECT * FROM signups WHERE season_id=? AND user_id=? ORDER BY tag", (sid, session["user_id"])).fetchall()
-    approved = await _family_tags(request)
+    directory = await _family_directory(request)
+    approved = None if directory is None else set(directory)
     result = []
     for row in rows:
         entry = dict(row)
         entry["has_staff_placement"] = entry["tag"] in placed
         entry["prefer_crystal_1_or_lower"] = bool(entry["prefer_crystal_1_or_lower"])
         entry["family_clan_status"] = _family_status(entry["signup_clan_tag"], approved)
+        origin_type = (directory or {}).get(entry["signup_clan_tag"], {}).get("type")
+        entry["signup_clan_type"] = "FWA" if "FWA" in (entry.get("signup_clan_type"), origin_type) else entry.get("signup_clan_type") or origin_type
+        entry["fwa_main_warning"] = entry["pool"] == "main" and entry["signup_clan_type"] == "FWA"
         result.append(entry)
     return web.json_response({"signups": result})
 
@@ -738,6 +749,8 @@ async def submit_signup(request):
             account = available[value]
             old = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
             db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET pool=excluded.pool,prefer_crystal_1_or_lower=excluded.prefer_crystal_1_or_lower,player_name=excluded.player_name,town_hall=excluded.town_hall,updated_at=CURRENT_TIMESTAMP", (sid, value, session["user_id"], pool, int(preference), account["name"], account["town_hall"], account["current_clan_tag"], account["current_clan_name"]))
+            if account.get("current_clan_type"):
+                db.execute("UPDATE signups SET signup_clan_type=CASE WHEN signup_clan_type='FWA' OR ?='FWA' THEN 'FWA' ELSE COALESCE(signup_clan_type,?) END WHERE season_id=? AND tag=?", (account["current_clan_type"], account["current_clan_type"], sid, value))
             after = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
             _audit(db, sid, value, session["user_id"], "member_signup", dict(old) if old else None, dict(after))
         if requested:
@@ -829,6 +842,8 @@ async def staff_add_signup(request):
             account = available[value]
             db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name) VALUES (?,?,?,?,?,?,?,?,?)",
                        (sid, value, uid, pool, int(preference), account["name"], account["town_hall"], account["current_clan_tag"], account["current_clan_name"]))
+            if account.get("current_clan_type"):
+                db.execute("UPDATE signups SET signup_clan_type=CASE WHEN signup_clan_type='FWA' OR ?='FWA' THEN 'FWA' ELSE COALESCE(signup_clan_type,?) END WHERE season_id=? AND tag=?", (account["current_clan_type"], account["current_clan_type"], sid, value))
             after = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
             _audit(db, sid, value, actor["user_id"], "staff_signup", None, dict(after))
         _bump(db, sid)

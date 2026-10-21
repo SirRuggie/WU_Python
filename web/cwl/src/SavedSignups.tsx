@@ -63,6 +63,7 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
         <div><strong className="signed-up-name"><TownHallIcon level={accounts.find(account => account.tag === signup.tag)?.town_hall ?? signup.town_hall}/><span>{signup.player_name || accounts.find(account => account.tag === signup.tag)?.name || signup.tag}</span></strong>
           <small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small>
           {moves[signup.tag] && moves[signup.tag] !== signup.pool && <p className="inline-reason pending-switch" role="status">Switching from {poolName(signup.pool)} → {poolName(moves[signup.tag])}<small>Not saved yet.</small></p>}
+          {(moves[signup.tag] || signup.pool) === 'main' && (signup.signup_clan_type === 'FWA' || accounts.find(account => account.tag === signup.tag)?.current_clan_type === 'FWA') && <p className="inline-reason">FWA accounts should choose Lazy CWL. Main CWL is allowed, but flagged for staff.</p>}
           {signup.has_staff_placement && <p className="inline-reason">Staff have placed this account. Ask staff to change or withdraw its signup.</p>}
         </div>
       </div>

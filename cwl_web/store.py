@@ -270,6 +270,8 @@ class Store:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.tx() as db:
             db.executescript(SCHEMA)
+            if "signup_clan_type" not in {row[1] for row in db.execute("PRAGMA table_info(signups)")}:
+                db.execute("ALTER TABLE signups ADD COLUMN signup_clan_type TEXT")
             from .player_weights import SCHEMA as WEIGHT_SCHEMA, migrate
             db.executescript(WEIGHT_SCHEMA)
             if 'permissions' not in {row['name'] for row in db.execute('PRAGMA table_info(grants)')}:

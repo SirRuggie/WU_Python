@@ -71,6 +71,34 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 201)
         return (await response.json())["id"]
 
+    async def test_fwa_main_warning_allows_signup_and_survives_clan_move_and_outage(self):
+        sid = await self.season()
+        self.providers.family_clans = AsyncMock(return_value={"clans": [{"tag": "#R2Y", "name": "Family", "type": "FWA"}]})
+        data = await (await self.call("GET", "/linked-accounts", self.member)).json()
+        self.assertEqual(next(a for a in data["accounts"] if a["tag"] == "#P2Y")["current_clan_type"], "FWA")
+        body = {"pool": "main", "accounts": [{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}]}
+        self.assertEqual((await self.call("POST", f"/seasons/{sid}/signups", self.member, json=body)).status, 200)
+        self.providers.players["#P2Y"]["current_clan_tag"] = "#OTHER"
+        self.providers.family_clans.side_effect = ProviderUnavailable("offline")
+        rows = (await (await self.call("GET", f"/seasons/{sid}/signups?all=1", self.owner)).json())["signups"]
+        self.assertTrue(rows[0]["fwa_main_warning"])
+        self.assertEqual(rows[0]["signup_clan_type"], "FWA")
+        body["pool"] = "lazy"
+        body["accounts"][0]["move_from_pool"] = "main"
+        self.assertEqual((await self.call("POST", f"/seasons/{sid}/signups", self.member, json=body)).status, 200)
+        rows = (await (await self.call("GET", f"/seasons/{sid}/signups", self.member)).json())["signups"]
+        self.assertFalse(rows[0]["fwa_main_warning"])
+        self.assertEqual(rows[0]["signup_clan_type"], "FWA")
+
+    async def test_existing_signup_fwa_category_and_non_fwa_signups(self):
+        sid = await self.season()
+        body = {"pool": "main", "accounts": [{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}, {"tag": "#Q2Y", "prefer_crystal_1_or_lower": False}]}
+        await self.call("POST", f"/seasons/{sid}/signups", self.member, json=body)
+        self.providers.family_clans = AsyncMock(return_value={"clans": [{"tag": "#R2Y", "name": "Family", "type": "FWA"}]})
+        rows = (await (await self.call("GET", f"/seasons/{sid}/signups", self.member)).json())["signups"]
+        self.assertTrue(next(r for r in rows if r["tag"] == "#P2Y")["fwa_main_warning"])
+        self.assertFalse(next(r for r in rows if r["tag"] == "#Q2Y")["fwa_main_warning"])
+
     async def test_signup_restriction_is_visible_without_exposing_unpublished_clan(self):
         sid = await self.season()
         body = {"pool": "main", "accounts": [{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}]}

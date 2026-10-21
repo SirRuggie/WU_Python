@@ -3,8 +3,8 @@ export type Pool = 'main' | 'lazy'
 export type Session = { authenticated: true; user: { id: string; username: string; display_name?: string; avatar_url?: string | null }; dashboard_permissions?: string[]; is_owner: boolean; can_edit: boolean; csrf_token: string }
 export type Season = { id: number; label: string; status: string; signup_open: boolean }
 export type FamilyClanStatus = 'approved' | 'outside' | 'unknown'
-export type Account = { war_weight?: number | null; tag: string; name: string; town_hall: number | null; current_clan_tag: string | null; current_clan_name: string | null; current_clan_badge_url?: string | null; verified: boolean; lazy_eligible: boolean; lazy_ineligible_reason: string | null; family_clan_status: FamilyClanStatus }
-export type Signup = { has_staff_placement?: boolean; tag: string; user_id: string; pool: Pool; prefer_crystal_1_or_lower: boolean; player_name?: string; town_hall?: number | null; signup_clan_name?: string | null; signup_clan_tag?: string | null; family_clan_status?: FamilyClanStatus }
+export type Account = { current_clan_type?: string | null; war_weight?: number | null; tag: string; name: string; town_hall: number | null; current_clan_tag: string | null; current_clan_name: string | null; current_clan_badge_url?: string | null; verified: boolean; lazy_eligible: boolean; lazy_ineligible_reason: string | null; family_clan_status: FamilyClanStatus }
+export type Signup = { signup_clan_type?: string | null; fwa_main_warning?: boolean; has_staff_placement?: boolean; tag: string; user_id: string; pool: Pool; prefer_crystal_1_or_lower: boolean; player_name?: string; town_hall?: number | null; signup_clan_name?: string | null; signup_clan_tag?: string | null; family_clan_status?: FamilyClanStatus }
 export type Clan = { cwl_league?: string | null; cwl_league_stale?: boolean; tag: string; name: string; archived: boolean; pool?: Pool | null }
 export type Grant = { permissions?: string[]; user_id: string; username?: string; granted_at?: string }
 export class ApiError extends Error { constructor(message: string, public status: number) { super(message) } }

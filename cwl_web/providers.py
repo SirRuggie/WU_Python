@@ -115,7 +115,7 @@ class LiveProviders:
             name = doc.get("name")
             if not isinstance(name, str) or not name.strip():
                 continue
-            result[value] = {"tag": value, "name": name.strip()}
+            result[value] = {"tag": value, "name": name.strip(), "type": doc["type"]}
         if not result:
             raise ProviderUnavailable("No eligible family clans found in bot directory")
         return {"source": "bot_mongo", "status": "ok", "checked_at": datetime.now(timezone.utc).isoformat(),
