@@ -9,3 +9,14 @@
 @media (max-width: 650px) {
   .saved-signup-actions button { flex: 1 1 180px; }
 }
+.saved-signup-savebar { position: sticky; bottom: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px; margin-top: 16px; background: #232019; border: 1px solid #977b36; border-radius: 12px; z-index: 2; }
+.saved-signup-savebar span { flex: 1 1 180px; }
+@media (max-height: 500px) { .saved-signup-savebar { position: static; } }
+@media (max-width: 650px) { .saved-signup-savebar button { flex: 1; } }
+.saved-signup-card.account-selected { border-color: #8f793f; background: #242116; }
+.saved-signup-card.pool-change-pending, .account-card.pool-change-pending { border-color: #e5b742; background: #2b2415; box-shadow: inset 3px 0 #e5b742; }
+.pending-switch, .pool-change-pending .inline-reason { background: #443719; color: #ffe3a0; border: 1px solid #876b2b; }
+.pending-switch small { color: #f2d99a; }
+.registered-card.saved-signup-card { flex-direction: column; align-items: stretch; }
+.saved-signup-card .registered-actions { flex-direction: row; flex-wrap: wrap; }
+.saved-signup-savebar .notice { flex: 1 1 100%; margin: 0; }

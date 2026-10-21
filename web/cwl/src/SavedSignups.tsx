@@ -1,3 +1,5 @@
+import useUnsavedWork from './useUnsavedWork'
+import type {SignupMove} from './signupMoves'
 import {useState, type RefObject} from 'react'
 import type {Account, Pool, Signup} from './api'
 import TownHallIcon from './TownHallIcon'
@@ -10,17 +12,32 @@ type Props = {
   busy: boolean
   canMove: boolean
   headingRef: RefObject<HTMLHeadingElement | null>
-  onMove: (rows: Signup[], pool: Pool) => void
+  onSave: (moves: SignupMove[]) => Promise<{saved: string[]; error: string | null}>
+  onDirty: (dirty: boolean) => void
   onWithdraw: (rows: Signup[]) => void
 }
 const poolName = (pool: Pool) => pool === 'main' ? 'Main CWL' : 'Lazy CWL'
 
-export default function SavedSignups({signups, accounts, editable, busy, canMove, headingRef, onMove, onWithdraw}: Props) {
+export default function SavedSignups({signups, accounts, editable, busy, canMove, headingRef, onSave, onDirty, onWithdraw}: Props) {
   const [selecting, setSelecting] = useState(false)
   const [tags, setTags] = useState<string[]>([])
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [moves, setMoves] = useState<Record<string, Pool>>({})
+  useUnsavedWork(Object.keys(moves).length > 0, onDirty)
+  const changes = signups.filter(row => moves[row.tag] && moves[row.tag] !== row.pool).map(signup => ({signup, destination: moves[signup.tag]}))
+  const stage = (rows: Signup[], pool: Pool) => setMoves(current => {
+    const next = {...current}
+    for (const row of rows) { if (row.pool === pool) delete next[row.tag]; else next[row.tag] = pool }
+    return next
+  })
+  const save = async () => {
+    const result = await onSave(changes)
+    setSaveError(result.error)
+    setMoves(current => Object.fromEntries(Object.entries(current).filter(([tag]) => !result.saved.includes(tag))))
+  }
   const available = signups.filter(row => !row.has_staff_placement)
   const selected = available.filter(row => tags.includes(row.tag))
-  const movable = (pool: Pool) => selected.filter(row => row.pool !== pool)
+  const movable = (pool: Pool) => selected.filter(row => (moves[row.tag] || row.pool) !== pool)
   const canMoveRows = (rows: Signup[]) => canMove && rows.length > 0 && rows.every(row => accounts.some(account => account.tag === row.tag))
   return <>
     <div className="section-heading">
@@ -34,24 +51,31 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
         <button disabled={busy || !selected.length} onClick={() => setTags([])}>Clear</button>
       </div>
       <div className="saved-signup-actions">
-        {(['main','lazy'] as Pool[]).map(pool => <button key={pool} disabled={busy || !canMoveRows(movable(pool))} onClick={() => onMove(movable(pool), pool)}>Move to {poolName(pool)} ({movable(pool).length})</button>)}
-        <button className="withdraw-button" disabled={busy || !selected.length} onClick={() => onWithdraw(selected)}>Withdraw selected ({selected.length})</button>
+        {(['main','lazy'] as Pool[]).map(pool => <button key={pool} disabled={busy || !canMoveRows(movable(pool))} onClick={() => stage(movable(pool), pool)}>Move to {poolName(pool)} ({movable(pool).length})</button>)}
+        <button className="withdraw-button" disabled={busy || !!changes.length || !selected.length} onClick={() => onWithdraw(selected)}>Withdraw selected ({selected.length})</button>
       </div>
-      <small>Moves open a review before saving. Accounts already in that pool stay there. Staff-placed accounts cannot be selected.</small>
+      <small>Changes stay here until you select Save changes. Accounts already in that pool stay there. Staff-placed accounts cannot be selected.</small>
       {selected.some(row => !accounts.some(account => account.tag === row.tag)) && <small>Some accounts could not be found in your linked accounts. Refresh accounts before moving them.</small>}
     </div>}
-    <div className="registered-grid">{signups.map(signup => <div className="card registered-card" key={signup.tag}>
+    <div className="registered-grid">{signups.map(signup => <div className={`card registered-card saved-signup-card ${moves[signup.tag] && moves[signup.tag] !== signup.pool ? 'pool-change-pending' : selecting && tags.includes(signup.tag) ? 'account-selected' : ''}`} key={signup.tag}>
       <div className="saved-signup-account">
         {selecting && editable && <input type="checkbox" aria-label={`Select ${signup.player_name || signup.tag} ${signup.tag}`} disabled={busy || !!signup.has_staff_placement} checked={!signup.has_staff_placement && tags.includes(signup.tag)} onChange={event => setTags(current => event.target.checked ? [...current,signup.tag] : current.filter(tag => tag !== signup.tag))}/>}
         <div><strong className="signed-up-name"><TownHallIcon level={accounts.find(account => account.tag === signup.tag)?.town_hall ?? signup.town_hall}/><span>{signup.player_name || accounts.find(account => account.tag === signup.tag)?.name || signup.tag}</span></strong>
           <small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small>
+          {moves[signup.tag] && moves[signup.tag] !== signup.pool && <p className="inline-reason pending-switch" role="status">Switching from {poolName(signup.pool)} → {poolName(moves[signup.tag])}<small>Not saved yet.</small></p>}
           {signup.has_staff_placement && <p className="inline-reason">Staff have placed this account. Ask staff to change or withdraw its signup.</p>}
         </div>
       </div>
       {!selecting && editable && !signup.has_staff_placement && <div className="registered-actions">
-        <button disabled={busy || !canMoveRows([signup])} onClick={() => onMove([signup], signup.pool === 'main' ? 'lazy' : 'main')}>Change CWL pool</button>
-        <button className="withdraw-button" disabled={busy} onClick={() => onWithdraw([signup])}>Withdraw signup</button>
+        <button disabled={busy || !canMoveRows([signup])} onClick={() => stage([signup], (moves[signup.tag] || signup.pool) === 'main' ? 'lazy' : 'main')}>{moves[signup.tag] ? 'Undo change' : 'Change CWL pool'}</button>
+        <button className="withdraw-button" disabled={busy || !!changes.length} onClick={() => onWithdraw([signup])}>Withdraw signup</button>
       </div>}
     </div>)}</div>
+    {changes.length > 0 && <div className="saved-signup-savebar" aria-label="Pending CWL changes">
+      {saveError && <p className="notice error" role="alert">{saveError}</p>}
+      <span>{changes.length} {changes.length === 1 ? 'change' : 'changes'} · Not saved yet</span>
+      <button disabled={busy} onClick={() => {setMoves({});setSaveError(null)}}>Cancel</button>
+      <button className="primary" disabled={busy || !editable || !changes.every(change => !change.signup.has_staff_placement && canMoveRows([change.signup]))} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'}</button>
+    </div>}
   </>
 }

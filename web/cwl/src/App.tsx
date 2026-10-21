@@ -1,3 +1,4 @@
+import {saveSignupMoves, type SignupMove} from './signupMoves'
 import {withdrawInOrder} from './signupWithdrawal'
 import SavedSignups from './SavedSignups'
 import AccountLinkHelp from './AccountLinkHelp'
@@ -251,6 +252,7 @@ function App() {
   const activeCompletion = completion?.seasonId === seasonId ? completion : null
   const setDraft = (next: Draft) => { if (!pool) return; setDrafts(current => ({ ...current, [pool]: next })); setReview(false); setNotice(null) }
   const choosePool = (next: Pool) => { if (pool && next !== pool && Object.keys(draft).length && !window.confirm('Change CWL pool and clear your unsubmitted selections? Saved signups stay unchanged.')) return; setSignupStep(2); if (pool === next) return; setSignupPanel('register'); setPool(next); setDrafts({ main: {}, lazy: {} }); setTransfers({ main: {}, lazy: {} }); setReview(false) }
+  const [savedSignupDirty, setSavedSignupDirty] = useState(false)
   const [manageDirty, setManageDirty] = useState(false)
   const [cwlDirty, setCwlDirty] = useState(false)
   const navigation = useRef<DashboardHistory | null>(null)
@@ -265,7 +267,7 @@ function App() {
     if (view === 'manage-signups' && staffSignupBusy) return false
     if (view === 'manage-signups' && staffSignupDirty) return window.confirm('Discard unfinished signup changes? Saved signups will stay unchanged.')
     if (view === 'signup' && (pending || signupBusy.current)) return false
-    if (view === 'signup' && signupDirty && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
+    if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
     if ((isManagementArea(view) || ['manage','text-commands','clan-management'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
@@ -380,17 +382,26 @@ function App() {
     setSignupPanel('saved')
     setJumpTarget('registered')
   }
-  const moveSavedSignups = (rows: Signup[], destination: Pool) => {
-    if (pending || loadingData || !rows.length) return
-    if (signupDirty && !window.confirm('Review this pool change and clear your other unsubmitted selections?')) return
-    setDrafts({main: {}, lazy: {}, [destination]: Object.fromEntries(rows.map(row => [row.tag, row.prefer_crystal_1_or_lower]))})
-    setTransfers({main: {}, lazy: {}, [destination]: Object.fromEntries(rows.map(row => [row.tag, row.pool]))})
-    setPool(destination)
-    setShowSignedUp(true)
-    setSignupPanel('register')
-    setSignupStep(2)
-    setReview(true)
+  const saveSavedSignups = async (moves: SignupMove[]): Promise<{saved: string[]; error: string | null}> => {
+    if (!season || !season.signup_open || season.status !== 'draft' || pending || signupBusy.current || loadingData || accountError || dataError) return {saved: [], error: 'Changes cannot be saved right now. Check signup availability and refresh accounts.'}
+    signupBusy.current = true
+    setPending(true)
     setNotice(null)
+    try {
+      const result = await saveSignupMoves(moves, (destination, rows) => api(`/seasons/${encodeURIComponent(seasonId)}/signups`, 'POST', {
+        pool: destination,
+        accounts: rows.map(row => ({tag: row.tag, prefer_crystal_1_or_lower: row.prefer_crystal_1_or_lower, move_from_pool: row.pool})),
+      }))
+      signupRequest.current += 1
+      setSignups(current => current.map(row => {
+        const move = moves.find(move => move.signup.tag === row.tag)
+        return result.saved.includes(row.tag) && move ? {...row, pool: move.destination} : row
+      }))
+      const error = result.error ? `${result.saved.length} of ${moves.length} changes confirmed. ${message(result.error)} Pending changes are kept. Refresh saved signups before retrying if the result is uncertain.` : null
+      setNotice(error ? null : {kind: 'success', text: 'CWL changes saved.'})
+      return {saved: result.saved, error}
+
+    } finally { signupBusy.current = false; setPending(false) }
   }
   const withdraw = async (rows: Signup[]) => {
     if (!seasonId || pending || loadingData || !rows.length) return
@@ -480,7 +491,7 @@ function App() {
           {!seasonId && seasons.length > 0 && <div className="card empty"><p>Select a season to view or manage your signups.</p></div>}
           {!seasonsLoading && !seasons.length && !seasonError && <div className="card empty"><h2>No season yet</h2><p>Staff will open a CWL season before members can sign up.</p></div>}
           {season && <>{!activeCompletion && loadingData && <p role="status">Loading linked accounts and saved signups…</p>}<div className="season-banner"><div><span className={`status-dot ${season.signup_open ? 'active' : ''}`} /> <strong>{season.label}</strong><span className="badge">{season.signup_open ? 'Signups open' : 'Signups closed'}</span></div><span>{season.status}</span></div>
-            {activeCompletion ? <section className="completion-card card" aria-labelledby="completion-title"><div className="completion-mark" aria-hidden="true">✓</div><p className="eyebrow">Signup complete</p><h2 id="completion-title" ref={completionHeadingRef} tabIndex={-1}>You're signed up</h2><p><strong>{activeCompletion.accounts.length} {activeCompletion.accounts.length === 1 ? 'account is' : 'accounts are'} signed up</strong> for {poolName(activeCompletion.pool)} in {activeCompletion.seasonLabel}.{activeCompletion.moved > 0 && <span> {activeCompletion.moved} {activeCompletion.moved === 1 ? 'account moved' : 'accounts moved'} from the other pool.</span>}</p><div className="completion-accounts">{activeCompletion.accounts.map(account => <div key={account.tag}><strong>{account.name}</strong><small>{account.tag}</small>{account.move_from_pool && <small>Moved from {poolName(account.move_from_pool)} to {poolName(activeCompletion.pool)}</small>}</div>)}</div><p>Your accounts are signed up. Staff will assign your accounts to clans. You can close this page, or sign up more accounts below.</p>{activeCompletion.refreshWarning && <div className="notice error" role="alert">Signup saved, but the latest account list could not be refreshed. You can check your saved signups later.</div>}<div className="completion-actions"><button className="primary" disabled={pending} onClick={() => void showSavedSignups()}>View my signups</button><button disabled={pending} onClick={() => changeView('assignments')}>My clan assignments</button><button disabled={pending} onClick={() => { setCompletion(null); setSignupPanel('register'); setSignupStep(1); setPool(null); setReview(false) }}>Sign up more accounts</button></div></section> : <><div className="signup-panel-tabs" role="group" aria-label="Signup sections"><button className={signupPanel === 'register' ? 'active' : ''} aria-pressed={signupPanel === 'register'} disabled={pending} onClick={() => setSignupPanel('register')}>{season.signup_open ? 'Sign up' : 'Signup guide'}</button><button className={signupPanel === 'saved' ? 'active' : ''} aria-pressed={signupPanel === 'saved'} disabled={pending} onClick={() => { setReview(false); setSignupPanel('saved') }}>My signups <span className="count-pill">{existing.length}</span></button></div>
+            {activeCompletion ? <section className="completion-card card" aria-labelledby="completion-title"><div className="completion-mark" aria-hidden="true">✓</div><p className="eyebrow">Signup complete</p><h2 id="completion-title" ref={completionHeadingRef} tabIndex={-1}>You're signed up</h2><p><strong>{activeCompletion.accounts.length} {activeCompletion.accounts.length === 1 ? 'account is' : 'accounts are'} signed up</strong> for {poolName(activeCompletion.pool)} in {activeCompletion.seasonLabel}.{activeCompletion.moved > 0 && <span> {activeCompletion.moved} {activeCompletion.moved === 1 ? 'account moved' : 'accounts moved'} from the other pool.</span>}</p><div className="completion-accounts">{activeCompletion.accounts.map(account => <div key={account.tag}><strong>{account.name}</strong><small>{account.tag}</small>{account.move_from_pool && <small>Moved from {poolName(account.move_from_pool)} to {poolName(activeCompletion.pool)}</small>}</div>)}</div><p>Your accounts are signed up. Staff will assign your accounts to clans. You can close this page, or sign up more accounts below.</p>{activeCompletion.refreshWarning && <div className="notice error" role="alert">Signup saved, but the latest account list could not be refreshed. You can check your saved signups later.</div>}<div className="completion-actions"><button className="primary" disabled={pending} onClick={() => void showSavedSignups()}>View my signups</button><button disabled={pending} onClick={() => changeView('assignments')}>My clan assignments</button><button disabled={pending} onClick={() => { setCompletion(null); setSignupPanel('register'); setSignupStep(1); setPool(null); setReview(false) }}>Sign up more accounts</button></div></section> : <><div className="signup-panel-tabs" role="group" aria-label="Signup sections"><button className={signupPanel === 'register' ? 'active' : ''} aria-pressed={signupPanel === 'register'} disabled={pending} onClick={() => { if (savedSignupDirty && !canLeave()) return; setSignupPanel('register') }}>{season.signup_open ? 'Sign up' : 'Signup guide'}</button><button className={signupPanel === 'saved' ? 'active' : ''} aria-pressed={signupPanel === 'saved'} disabled={pending} onClick={() => { setReview(false); setSignupPanel('saved') }}>My signups <span className="count-pill">{existing.length}</span></button></div>
             {signupPanel === 'register' && !season.signup_open && <section className="signup-guide" aria-label="Signup walkthrough"><p className="eyebrow">CWL signup guide</p><h2>Signups are closed</h2><p>View your saved signups or check your CWL clan. To make a change, ask staff for help.</p><div className="signup-action-buttons"><button onClick={() => setSignupPanel('saved')}>My signups</button><button onClick={() => changeView('assignments')}>My CWL clans</button></div></section>}
             {signupPanel === 'register' && season.signup_open && <div className="signup-flow">
               <section className="signup-guide" aria-label="Signup walkthrough">
@@ -505,9 +516,9 @@ function App() {
                 const stagedMove = movingFrom && transferConsent[account.tag] === movingFrom
                 const chosen = Object.hasOwn(draft, account.tag)
                 const placementLocked = !!movingFrom && !!signups.find(signup => signup.tag === account.tag)?.has_staff_placement
-                const reason = placementLocked ? 'Staff have placed this account. Ask staff before changing its CWL option.' : movingFrom ? stagedMove ? `Move to ${poolName(pool)} is pending. Your ${poolName(movingFrom)} signup stays saved until you submit.` : `Already signed up for ${poolName(movingFrom)}. Select to confirm a move to ${poolName(pool)}.` : ''
-                return <article className={`account-card ${chosen ? 'chosen' : ''}`} key={account.tag}>
-                  <div className="account-top"><label className="account-select"><input type="checkbox" checked={chosen} disabled={placementLocked || !season.signup_open || season.status !== 'draft' || pending || loadingData || !!dataError || !!accountError} onChange={event => { if (!pool) return; const source = transferSource(signups, account.tag, pool); if (event.target.checked && source && !window.confirm(`This account is already signed up for ${poolName(source)}. Do you want to sign up for ${poolName(pool)} instead?`)) return; const next = { ...draft }; if (event.target.checked) next[account.tag] = signups.find(signup => signup.tag === account.tag && signup.pool === pool)?.prefer_crystal_1_or_lower ?? false; else delete next[account.tag]; setTransfers(current => { const updated = { ...current[pool] }; if (event.target.checked && source) updated[account.tag] = source; else delete updated[account.tag]; return { ...current, [pool]: updated } }); setDraft(next) }} /><span><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag}</small></span></label></div>
+                const reason = placementLocked ? 'Staff have placed this account. Ask staff before changing its CWL option.' : movingFrom ? stagedMove ? `Switching from ${poolName(movingFrom)} → ${poolName(pool)}. Not saved yet. Select Continue to review.` : `Already signed up for ${poolName(movingFrom)}. Select to confirm a move to ${poolName(pool)}.` : ''
+                return <article className={`account-card ${chosen ? 'chosen' : ''} ${chosen && stagedMove ? 'pool-change-pending' : ''}`} key={account.tag}>
+                  <div className="account-top"><label className="account-select"><input type="checkbox" checked={chosen} disabled={placementLocked || !season.signup_open || season.status !== 'draft' || pending || loadingData || !!dataError || !!accountError} onChange={event => { if (!pool) return; const source = transferSource(signups, account.tag, pool); const next = { ...draft }; if (event.target.checked) next[account.tag] = signups.find(signup => signup.tag === account.tag && signup.pool === pool)?.prefer_crystal_1_or_lower ?? false; else delete next[account.tag]; setTransfers(current => { const updated = { ...current[pool] }; if (event.target.checked && source) updated[account.tag] = source; else delete updated[account.tag]; return { ...current, [pool]: updated } }); setDraft(next) }} /><span><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag}</small></span></label></div>
                   <div className="account-meta"><span>Current clan <strong>{account.current_clan_name || 'None'}{account.current_clan_tag ? ` · ${account.current_clan_tag}` : ''}</strong></span>{signedPool && <span>Signed Up <strong>{poolName(signedPool)}</strong></span>}</div>
                   {reason && <p className="inline-reason">{reason}</p>}
                 </article>
@@ -521,9 +532,9 @@ function App() {
             </div>}
             {signupPanel === 'saved' && <section className="registered">
               {loadingData ? <p role="status">Loading saved signups…</p> : dataError ? <p>Your saved signups could not be checked. Retry above.</p> : <>
-                <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={season.signup_open && season.status === 'draft'} busy={pending || loadingData} canMove={!accountError} headingRef={registeredHeadingRef} onMove={moveSavedSignups} onWithdraw={rows => void withdraw(rows)}/>
+                <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={season.signup_open && season.status === 'draft'} busy={pending || loadingData} canMove={!accountError} headingRef={registeredHeadingRef} onDirty={setSavedSignupDirty} onSave={saveSavedSignups} onWithdraw={rows => void withdraw(rows)}/>
                 {!existing.length && <div className="card empty"><p>No signed-up accounts for this season.</p>{season.signup_open && <button onClick={() => {setSignupPanel('register');setSignupStep(1)}}>Choose accounts</button>}</div>}
-                <button disabled={pending || loadingData} onClick={() => void loadSignup()}>Refresh saved signups</button>
+                <button disabled={pending || loadingData} onClick={() => { if (savedSignupDirty && !window.confirm('Refresh saved signups and discard pending pool changes?')) return; void loadSignup() }}>Refresh saved signups</button>
               </>}
             </section>}
           </>}

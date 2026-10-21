@@ -457,3 +457,24 @@ Validation: a 120-member fixture with 65 signup owners beyond the first 50,
 member authorization and malformed season checks; 39 backend and 195 frontend
 tests passed, production build passed. No live signup data changed. Members who
 are absent from the Discord directory can still have unavailable names.
+
+### Inline CWL pool editing
+
+Existing signup edits now stay in My signups. Single and bulk actions stage an
+inline source → destination label, gold border/tint, and explicit Not saved yet
+text. Save changes commits the pending edits; Cancel removes only pending edits
+and preserves account selection. The new-signup guide remains, but selecting a
+cross-pool account no longer opens a per-account confirmation popup. Its inline
+text leads to the existing review and final submit action.
+
+Navigation/reload guards cover pending saved-signup changes. Save errors stay
+with the save controls and retain unsaved edits. Existing backend source-pool,
+ownership and placement validation remains authoritative. Opposite-direction
+edits use one existing atomic request per destination; if the second fails,
+confirmed changes are kept and remaining changes reported, with no silent retry.
+No whole-batch atomicity across both destinations is claimed.
+
+Validation: 198 frontend tests (including both directions, preserved preferences,
+partial failure and no retry), 39 backend signup tests, production build;
+isolated desktop/390px/320px browser checks for highlight, inline save, failed
+save, and Cancel preserving bulk selection. No live signups or messages changed.
