@@ -22,6 +22,9 @@ request for organized implementation, cleanup, and adversarial review.
 - Remove code, styles, imports, and temporary fixtures made obsolete by a change.
   Do not leave an abandoned implementation alongside the replacement.
 
+For dashboard workflow changes, follow `docs/dashboard-interaction-standard.md`
+and record the scope of the usability/accessibility checks.
+
 ## Required completion review
 
 For meaningful feature changes, review the affected feature end to end before

@@ -79,3 +79,29 @@ and How reminders work are closed disclosures by default. Preview requests only
 run while the testing section is open; closing it retains its choices and send
 receipt. During a send it stays open. Uncertain or failed recent deliveries remain
 flagged in the history summary even when its details are collapsed.
+
+## Family overview
+
+Family clans opens on Reminder overview. It shows all family clans, enabled counts,
+attention filters, channel/schedule, and the latest scheduled delivery. Search by
+clan name, tag, type, or channel. Manage reminders opens the existing clan editor;
+returning preserves filters and returns focus to that clan. Desktop uses a table;
+mobile uses labeled records. The view refreshes every 30 seconds while active.
+
+The read-only `/manage/war-reminders/overview` route uses the same clan-management
+permission and storage owner. It batches clan/settings/status reads and aggregates
+only the newest scheduled receipt per current clan; test receipts and removed
+clans are excluded. Raw Mongo IDs and actor IDs are not exposed. Clan revisions
+are computed from the same full stored row as the existing editor.
+
+`utils/war_reminder_health.py` interprets stored checks. Enabled reminders whose
+checks are over three minutes old are flagged; a recent settings update gets a
+three-minute awaiting-check window. A check older than the settings update cannot
+verify new settings. Unconfirmed last scheduled deliveries remain flagged even
+if later polling succeeds. Disabled clans are explicitly off. A missing destination
+in a successfully loaded channel list is flagged for review. This is monitoring
+information, not proof of future notification delivery.
+
+See `docs/dashboard-interaction-standard.md` for design comparisons, shared rules,
+and the manual/adversarial checklist. No notification renderer or Discord payload
+changed in this overview release.

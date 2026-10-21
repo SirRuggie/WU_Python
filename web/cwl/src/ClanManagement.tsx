@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { api, apiUpload } from "./api";
+import ReminderOverview from "./clanManagement/ReminderOverview";
 import ClanDirectory from "./clanManagement/ClanDirectory";
 import ClanSettingsNavigation from "./clanManagement/ClanSettingsNavigation";
 import ClanFields from "./clanManagement/ClanFields";
@@ -23,7 +24,13 @@ export default function ClanManagement({
 }: {
   onDirty: (value: boolean) => void;
 }) {
-  const [view, setView] = useState<"clans" | "history">("clans");
+  const [view, setView] = useState<"overview" | "clans" | "history">(
+    "overview",
+  );
+  const [overviewReturnTag, setOverviewReturnTag] = useState<string | null>(
+    null,
+  );
+  const [channelsReady, setChannelsReady] = useState(false);
   const editGeneration = useRef(0),
     loadGeneration = useRef(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -98,6 +105,7 @@ export default function ClanManagement({
       }>("/manage/clan-choices");
       setRoles(result.roles);
       setChannels(result.channels);
+      setChannelsReady(true);
     } catch (e) {
       setChoicesError(
         e instanceof Error ? e.message : "Could not load roles and channels.",
@@ -126,12 +134,12 @@ export default function ClanManagement({
     };
   }, [dirty, busy, reminderBusy, onDirty]);
   useEffect(() => {
-    if (dirty || busy || reminderBusy || statusUrl) return;
+    if (view !== "clans" || dirty || busy || reminderBusy || statusUrl) return;
     const timer = setInterval(() => {
       if (!document.hidden) void load(true);
     }, 30000);
     return () => clearInterval(timer);
-  }, [dirty, busy, reminderBusy, statusUrl, saved?.tag]);
+  }, [view, dirty, busy, reminderBusy, statusUrl, saved?.tag]);
   useEffect(() => {
     if (!draft || section !== "Roles") return;
     let active = true;
@@ -276,13 +284,39 @@ export default function ClanManagement({
   }
   const disabled = busy || reminderBusy || !!statusUrl;
 
+  function changeView(next: typeof view) {
+    if (disabled || next === view) return;
+    if (dirty && !confirm("Discard unsaved clan changes?")) return;
+    if (dirty) setDraft(saved);
+    ++editGeneration.current;
+    setReminderDirty(false);
+    setView(next);
+    setAdding(false);
+  }
+  function openReminderClan(clan: Clan) {
+    ++editGeneration.current;
+    setOverviewReturnTag(clan.tag);
+    setSaved(clan);
+    setDraft({ ...clan });
+    setReminderDirty(false);
+    setSection("War reminders");
+    setView("clans");
+    setAdding(false);
+    setError("");
+    setNotice("");
+    setShowDirectory(false);
+    requestAnimationFrame(() => headingRef.current?.focus());
+    void load();
+  }
   return (
     <section className="clan-management">
       <div className="page-head">
         <div>
           <p className="eyebrow">Clan management</p>
           <h1>Family clans</h1>
-          <p>Family clans · shared with Discord.</p>
+          <p>
+            Monitor your family’s reminders and manage each clan in one place.
+          </p>
         </div>
         <button
           disabled={disabled}
@@ -297,27 +331,42 @@ export default function ClanManagement({
       <div className="clan-tabs" aria-label="Clan management views">
         <button
           disabled={disabled}
+          aria-pressed={view === "overview"}
+          onClick={() => changeView("overview")}
+        >
+          Reminder overview
+        </button>
+        <button
+          disabled={disabled}
           aria-pressed={view === "clans"}
-          onClick={() => setView("clans")}
+          onClick={() => changeView("clans")}
         >
           Clans
         </button>
         <button
           disabled={disabled}
           aria-pressed={view === "history"}
-          onClick={() => {
-            if (dirty && !confirm("Discard unsaved clan changes?")) return;
-            if (dirty) setDraft(saved);
-            ++editGeneration.current;
-            setReminderDirty(false);
-            setView("history");
-            setAdding(false);
-          }}
+          onClick={() => changeView("history")}
         >
           Activity & recovery
         </button>
       </div>
-      {view === "history" ? (
+      <div hidden={view !== "overview"}>
+        <ReminderOverview
+          active={view === "overview"}
+          channels={channels}
+          channelsReady={channelsReady && !choicesError}
+          choicesError={choicesError}
+          onRetryChoices={() => void loadChoices()}
+          onOpen={openReminderClan}
+          returnTag={overviewReturnTag}
+          onAdd={() => {
+            setView("clans");
+            setAdding(true);
+          }}
+        />
+      </div>
+      {view === "overview" ? null : view === "history" ? (
         <ClanHistory onRestored={() => void load()} />
       ) : (
         <>

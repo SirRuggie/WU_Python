@@ -32,6 +32,23 @@ class WarReminderStore:
         )
         await self.settings.create_index('enabled', name='enabled_reminders')
 
+    async def family_overview(self):
+        clans = await self.db.clans.find({}).sort('name', 1).to_list(length=None)
+        tags = [row['tag'] for row in clans]
+        if not tags:
+            return []
+        configs = {row['_id']: row for row in await self.settings.find({'_id': {'$in': tags}}).to_list(length=None)}
+        states = {row['_id']: row for row in await self.status.find({'_id': {'$in': tags}}).to_list(length=None)}
+        # Tests must never make a scheduled reminder look healthy or broken.
+        cursor = await self.deliveries.aggregate([
+            {'$match': {'clan_tag': {'$in': tags}, 'test': False}},
+            {'$sort': {'clan_tag': 1, 'at': -1}},
+            {'$group': {'_id': '$clan_tag', 'latest': {'$first': '$$ROOT'}}},
+            {'$project': {'latest.status': 1, 'latest.at': 1, 'latest.event': 1}},
+        ], maxTimeMS=10000)
+        latest = {row['_id']: row['latest'] for row in await cursor.to_list(length=None)}
+        return [(row, configs.get(row['tag']), states.get(row['tag']), latest.get(row['tag'])) for row in clans]
+
     async def clan(self, tag):
         return await self.db.clans.find_one({'tag': tag})
 

@@ -10,7 +10,8 @@ from aiohttp import web
 from utils import war_reminders as reminders
 from utils.war_reminder_store import SettingsConflict, WarReminderStore
 from .server_management import API, GUILD_ID, require_manage, mongo, discord
-from .manage_clans import tag
+from .manage_clans import tag, public as public_clan
+from utils.war_reminder_health import health
 from .manage_operations import revision
 from .war_reminder_samples import test_messages
 
@@ -64,6 +65,23 @@ async def read(request):
         dict(settings=reminders.settings(config), revision=revision(config), history=history, status=state),
         dumps=partial(json.dumps, default=json_value),
     )
+
+
+async def overview(request):
+    await require_manage(request, 'clans')
+    async with mongo(request) as db:
+        rows = await WarReminderStore(db).family_overview()
+    now = datetime.now(timezone.utc)
+    entries = []
+    for row, config, state, delivery in rows:
+        category, label, detail = health(config, state, delivery, now)
+        entries.append(dict(
+            clan=public_clan(row), settings=reminders.settings(config),
+            health=dict(category=category, label=label, detail=detail),
+            checked_at=(state or {}).get('checked_at'), last_delivery=delivery,
+        ))
+    return web.json_response(dict(clans=entries, generated_at=now),
+                             dumps=partial(json.dumps, default=json_value))
 
 
 async def save(request):
@@ -134,6 +152,7 @@ async def test_send(request):
 
 BASE = API+'/clans/{tag}/war-reminders'
 routes = [
+    web.get(API+'/war-reminders/overview', overview),
     web.get(BASE, read), web.put(BASE, save),
     web.post(BASE+'/preview', preview), web.post(BASE+'/test', test_send),
 ]

@@ -6,6 +6,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = [
     'tests/test_war_reminders.py',
+    'tests/test_war_reminder_overview.py',
     'tests/test_cwl_web_war_reminders.py',
     'tests/test_war_reminder_store.py',
     'tests/test_war_reminder_worker_failures.py',
@@ -20,7 +21,7 @@ BACKEND = [
 COMMANDS = [
     [sys.executable, '-m', 'pytest', '-q', *BACKEND],
     ['npm', '--prefix', 'web/cwl', 'test', '--', 'src/warReminders/types.test.ts', 'src/warReminders/DeliveryHistory.test.tsx',
-     'src/warReminderPreview.test.ts', 'src/clanManagement/ClanDirectory.test.tsx', 'src/ClanFilters.test.ts',
+     'src/warReminderPreview.test.ts', 'src/clanManagement/ClanDirectory.test.tsx', 'src/clanManagement/reminderOverview.test.ts', 'src/ClanFilters.test.ts',
      'src/channelSearch.test.ts', 'src/DiscordPreview.test.tsx'],
     ['npm', '--prefix', 'web/cwl', 'run', 'build'],
     ['git', 'diff', '--check'],

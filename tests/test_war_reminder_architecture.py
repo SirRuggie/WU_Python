@@ -14,7 +14,7 @@ def imports(path):
 
 def test_worker_and_shared_services_do_not_depend_on_dashboard():
     for path in ['extensions/tasks/war_reminders.py', 'utils/account_links.py',
-                 'utils/war_reminders.py', 'utils/war_reminder_store.py']:
+                 'utils/war_reminders.py', 'utils/war_reminder_health.py', 'utils/war_reminder_store.py']:
         assert not any(name.startswith('cwl_web') for name in imports(path)), path
 
 
