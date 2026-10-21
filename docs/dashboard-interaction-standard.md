@@ -359,3 +359,21 @@ Main action separation, bulk review and partial-failure receipt, stale worker
 snapshots, preservation of existing lists, and capture/start partial failure.
 No live lists or Discord messages were changed by these tests. Existing bundle-size
 warnings remain. This review covers return reminders, not the entire dashboard.
+
+### Signup dates and direct saving
+
+Opening and deadline each have one date control. Removed the duplicate advanced
+rule editors from these fields; existing recurring rules remain untouched until
+edited and month-end rules are described beside the resolved date. Opening has
+an explicit scheduling checkbox for manual-only announcements. Individual message
+timing remains available in the existing advanced reminder settings.
+
+Save is enabled for dirty editable drafts without requiring a separate preview.
+It validates through the existing preview endpoint before confirmation and PATCH;
+the server still validates generation and schedule on save. Preview schedule is
+optional. Validation errors are also shown in the save bar and clear on editing.
+Validation: 191 frontend tests, 16 campaign/API regressions, production build,
+and isolated desktop/mobile browser checks for date editing, immediate Save
+availability, invalid opening/deadline order, successful validation/confirmation,
+and collapsed secondary controls. No live campaigns or Discord sends were changed
+for testing. Existing build and aiohttp warnings remain.

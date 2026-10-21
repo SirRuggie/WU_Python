@@ -294,6 +294,7 @@ export default function ReminderWorkspace({
   };
   const edit = (next: Campaign) => {
     setDraft(next);
+    setError("");
     setPreview(null);
     setNotice("");
   };
@@ -700,16 +701,10 @@ export default function ReminderWorkspace({
                     <div className="signup-date-grid">
                     <SignupDateField label="Opening announcement" value={draft.messages.signup.schedule}
                       cycle={state.cycle} timezone={draft.timezone}
-                      onChange={value => {const next=clone(draft); next.messages.signup.schedule=value; edit(next)}}>
-                      <TimingEditor value={draft.messages.signup.schedule}
-                        onChange={value => {const next=clone(draft); next.messages.signup.schedule=value; edit(next)}}/>
-                    </SignupDateField>
+                      onChange={value => {const next=clone(draft); next.messages.signup.schedule=value; edit(next)}}/>
                     <SignupDateField label="Advertised signup deadline" deadline value={draft.signup_deadline}
                       cycle={state.cycle} timezone={draft.timezone}
-                      onChange={value => edit({...draft,signup_deadline:value})}>
-                      <TimingEditor deadline value={draft.signup_deadline}
-                        onChange={value => edit({...draft,signup_deadline:value})}/>
-                    </SignupDateField>
+                      onChange={value => edit({...draft,signup_deadline:value})}/>
                     </div>
                     <p className="small">
                       Website signups are currently{" "}
@@ -885,11 +880,11 @@ export default function ReminderWorkspace({
               {tab !== "history" && (
                 <div className={`reminder-save ${dirty ? 'has-changes' : ''}`}>
                   <span>
-                    {dirty
+                    {error || (dirty
                       ? preview
                         ? "Review ready — save to apply your changes"
-                        : "Unsaved changes — review before saving"
-                      : "Edit the fields above, then review and save"}
+                        : "Unsaved changes"
+                      : "All changes saved")}
                   </span>
                   <div className="reminder-control-actions" role="group" aria-label="Review and save">
                   <button
@@ -909,14 +904,16 @@ export default function ReminderWorkspace({
                       })
                     }
                   >
-                    1. Review changes
+                    Preview schedule
                   </button>
                   <button
                     className="primary"
-                    disabled={disabled || !preview || !dirty}
-                    onClick={() => {
+                    disabled={disabled || !dirty}
+                    onClick={() => void act(async () => {
+                      const checked = await api<CampaignState>(base + "/preview", "POST", body);
+                      setPreview(checked);
                       setConfirmation({
-                        text: "Save these messages and reminder times for this and future months in Discord /manage? The bot may send enabled messages at the scheduled times. Existing signup links stay unchanged.",
+                        text: "Save these reminder settings? They repeat monthly, and the bot will use the new times for enabled messages. Already-sent messages will not be sent again.",
                         action: () =>
                           void act(async () => {
                             const result = await api<CampaignState>(
@@ -931,9 +928,9 @@ export default function ReminderWorkspace({
                             );
                           }),
                       });
-                    }}
+                    })}
                   >
-                    2. Save changes
+                    Save changes
                   </button>
                   </div>
                 </div>
