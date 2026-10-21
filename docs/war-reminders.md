@@ -44,3 +44,31 @@ Run `./.venv/bin/python tools/check_war_reminders.py`. It checks the shared-serv
 The October 21 cleanup checks malformed bodies and extreme reminder strings, foreign-channel rejection, unauthorized callers, forged mention IDs, conflicting/unavailable links, user/clan cache isolation, concurrent settings writes, concurrent delivery claims, changed/removed clans during lookup, time-window expiry, Unicode length limits, hostile names, cancellation, and partial Discord delivery. Test messages now send all rendered parts, store partial progress, and budget their complete labels before splitting. The UI preserves an uncertain submission ID on retry and ignores stale preview/history requests. A failed history refresh does not turn an already successful send into a retry prompt.
 
 Visual verification uses isolated sample data and a mock ambiguous-delivery response at desktop and mobile widths; it never sends real Discord messages. Existing repository-wide aiohttp application-key/deprecation warnings and Vite bundle warnings are outside this feature cleanup. Live push delivery still depends on recipient settings and requires a separately authorized test.
+
+## Clan navigation and workflow checks
+
+Clan selection preserves the current settings section so staff can configure the
+same feature across several clans. On mobile, Change clan focuses the directory
+search; selecting a clan closes the picker and focuses its heading. Escape closes
+the picker. Settings tabs support Left/Right, Home/End, and Enter/Space to activate.
+
+General clan edits and reminder settings have separate save actions. If clan
+edits are pending when opening reminders, a visible banner keeps Save clan details
+available. Failed saves retain edits. Clan switching and section changes are
+locked while reminder saves or test sends are in progress. Directory loading,
+empty families, unmatched filters, and failed requests have distinct feedback;
+failed role/channel lookups have their own retry. Multipart reminder previews
+label each message boundary without adding those labels to Discord messages.
+
+The clan UI is split between orchestration in ClanManagement, directory/search
+in clanManagement/ClanDirectory, section navigation in ClanSettingsNavigation,
+and field rendering in ClanFields. Channel selection continues to use the shared
+ChannelCombobox. The quality gate includes directory-state regression tests.
+
+For future navigation changes, verify at desktop and 390px mobile widths:
+select and search clans; keep the active section across clans; edit Details then
+open reminders; fail a save and retry; cancel leaving unsaved reminders; save then
+switch; and verify navigation stays locked during a slow test send. Check keyboard
+focus after selection and section navigation. Inspect a 50-player preview with
+multiple owners and unlinked accounts, including all message parts. Use mocked
+requests for this workflow review; live Discord delivery is a separate check.

@@ -131,3 +131,14 @@
     display: grid;
   }
 }
+
+.war-preview-message + .war-preview-message {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #606572;
+}
+.war-preview-part {
+  display: block;
+  color: #c3c8d3;
+  margin: 8px 0;
+}

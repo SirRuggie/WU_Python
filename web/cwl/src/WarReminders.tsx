@@ -8,16 +8,20 @@ import type { ReminderData, ReminderSettings } from './warReminders/types'
 import './WarReminders.css'
 
 type Props = {
+  disabled?: boolean
   tag: string
   channels: AnnouncementChannel[]
   onDirty: (dirty: boolean) => void
+  onBusy?: (busy: boolean) => void
 }
 
-export default function WarReminders({ tag, channels, onDirty }: Props) {
+export default function WarReminders({ tag, channels, onDirty, onBusy, disabled = false }: Props) {
   const base = '/manage/clans/' + encodeURIComponent(tag) + '/war-reminders'
   const [data, setData] = useState<ReminderData | null>(null)
   const [draft, setDraft] = useState<ReminderSettings | null>(null)
   const [busy, setBusy] = useState(false)
+  const [testBusy, setTestBusy] = useState(false)
+  useEffect(() => { onBusy?.(busy || testBusy); return () => onBusy?.(false) }, [busy, testBusy, onBusy])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const generation = useRef(0)
@@ -97,14 +101,14 @@ export default function WarReminders({ tag, channels, onDirty }: Props) {
   return <section className="war-reminders" aria-label="War reminders">
     {error && <p className="notice error" role="alert">{error} <button disabled={busy} onClick={reload}>Reload</button></p>}
     {notice && <p className="notice" role="status">{notice}</p>}
-    {!draft || !data ? <p>Loading reminders…</p> : <>
-      <ScheduleEditor settings={draft} channels={channels} disabled={busy}
+    {!draft || !data ? <p role="status">{error ? 'Reminders could not be loaded. Use Reload to try again.' : 'Loading reminders…'}</p> : <>
+      <ScheduleEditor settings={draft} channels={channels} disabled={busy || testBusy || disabled}
         onChange={patch => setDraft(current => current ? { ...current, ...patch } : current)} />
       <div className="clan-actions">
         <small>{dirty ? 'Unsaved reminder changes' : 'Reminder settings saved'}</small>
-        <button className="primary" disabled={busy || !dirty} onClick={() => void save()}>Save reminders</button>
+        <button className="primary" disabled={busy || testBusy || disabled || !dirty} onClick={() => void save()}>Save reminders</button>
       </div>
-      <TestPanel base={base} settings={draft} disabled={busy} onDelivered={refreshHistory} />
+      <TestPanel base={base} settings={draft} disabled={busy || disabled} onDelivered={refreshHistory} onBusy={setTestBusy} />
       <DeliveryHistory data={data} enabled={data.settings.enabled} />
     </>}
   </section>

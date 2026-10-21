@@ -10,9 +10,10 @@ type Props = {
   settings: ReminderSettings
   disabled: boolean
   onDelivered: () => Promise<void>
+  onBusy?: (busy: boolean) => void
 }
 
-export default function TestPanel({ base, settings, disabled, onDelivered }: Props) {
+export default function TestPanel({ base, settings, disabled, onDelivered, onBusy }: Props) {
   const [event, setEvent] = useState('60')
   const [mentionMe, setMentionMe] = useState(true)
   const [useMyAccounts, setUseMyAccounts] = useState(false)
@@ -22,6 +23,7 @@ export default function TestPanel({ base, settings, disabled, onDelivered }: Pro
   const [error, setError] = useState('')
   const [urls, setUrls] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  useEffect(() => { onBusy?.(busy); return () => onBusy?.(false) }, [busy, onBusy])
   const sending = useRef(false)
   const mounted = useRef(true)
   const submission = useRef<{ fingerprint: string; id: string } | null>(null)
@@ -99,7 +101,10 @@ export default function TestPanel({ base, settings, disabled, onDelivered }: Pro
     {previewLoading ? <p role="status">Updating preview…</p> : <Suspense fallback={<p>Loading preview…</p>}>
       <div className="war-discord-preview">
         <div className="war-bot-name">WU Wizard <span>APP</span><small>Sample preview</small></div>
-        {messages.map((message, index) => <div key={index}><DiscordText text={reminderPreviewText(message.content)} /></div>)}
+        {messages.map((message, index) => <div className="war-preview-message" key={index}>
+          {messages.length > 1 && <small className="war-preview-part">Message {index + 1} of {messages.length}</small>}
+          <DiscordText text={reminderPreviewText(message.content)} />
+        </div>)}
         {mentionMe && <small>Your Discord mention heads your account group and triggers the test notification.</small>}
       </div>
     </Suspense>}

@@ -1,11 +1,259 @@
-.clan-layout{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:18px;align-items:start}.clan-management label{display:grid;gap:7px;min-width:0}.clan-management input,.clan-management select{width:100%;min-width:0;box-sizing:border-box}.clan-management fieldset{border:0;padding:0;display:grid;gap:18px;min-width:0}.clan-directory{display:grid;gap:8px}.clan-directory button{display:flex;gap:10px;text-align:left;align-items:center;overflow-wrap:anywhere}.clan-directory span{min-width:0}.clan-directory small{display:block}.clan-directory img{object-fit:contain}.clan-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.clan-tabs button[aria-pressed=true],.clan-directory button[aria-pressed=true]{background:#19478e;border-color:#80b2ff;color:white}.clan-artwork img{max-width:100%;max-height:180px;object-fit:contain;margin-top:12px}.clan-actions{position:sticky;bottom:10px;background:#191c24;padding:12px;border:1px solid #505766;border-radius:10px;display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:18px}.clan-remove{margin-top:24px}.clan-add{margin-bottom:18px;display:flex;gap:12px;align-items:end}.clan-management button{min-height:44px}.clan-management .clan-artwork input[type=file]{font-size:.85rem}@media(max-width:800px){.clan-layout{grid-template-columns:1fr}.clan-directory{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}.clan-add{flex-wrap:wrap}.clan-actions{flex-wrap:wrap}.clan-tabs button{flex:1}.clan-layout>aside{max-height:none}}
+.clan-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.clan-management label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.clan-management input,
+.clan-management select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.clan-management fieldset {
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.clan-directory {
+  display: grid;
+  gap: 8px;
+}
+.clan-directory button {
+  display: flex;
+  gap: 10px;
+  text-align: left;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+.clan-directory span {
+  min-width: 0;
+}
+.clan-directory small {
+  display: block;
+}
+.clan-directory img {
+  object-fit: contain;
+}
+.clan-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.clan-tabs button[aria-pressed="true"],
+.clan-tabs button[aria-selected="true"],
+.clan-directory button[aria-pressed="true"] {
+  background: #19478e;
+  border-color: #80b2ff;
+  color: white;
+}
+.clan-artwork img {
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  margin-top: 12px;
+}
+.clan-actions {
+  position: sticky;
+  bottom: 10px;
+  background: #191c24;
+  padding: 12px;
+  border: 1px solid #505766;
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+.clan-remove {
+  margin-top: 24px;
+}
+.clan-add {
+  margin-bottom: 18px;
+  display: flex;
+  gap: 12px;
+  align-items: end;
+}
+.clan-management button {
+  min-height: 44px;
+}
+.clan-management .clan-artwork input[type="file"] {
+  font-size: 0.85rem;
+}
+@media (max-width: 800px) {
+  .clan-layout {
+    grid-template-columns: 1fr;
+  }
+  .clan-directory {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+  .clan-add {
+    flex-wrap: wrap;
+  }
+  .clan-actions {
+    flex-wrap: wrap;
+  }
+  .clan-tabs button {
+    flex: 1;
+  }
+  .clan-layout > aside {
+    max-height: none;
+  }
+}
 
-.clan-mobile-switch{display:none}@media(max-width:800px){.clan-mobile-switch{display:block;width:100%;text-align:left}.clan-picker-closed{display:none}.clan-mobile-switch[aria-expanded=true]{margin-bottom:12px}}
+.clan-mobile-switch {
+  display: none;
+}
+@media (max-width: 800px) {
+  .clan-mobile-switch {
+    display: block;
+    width: 100%;
+    text-align: left;
+  }
+  .clan-picker-closed {
+    display: none;
+  }
+  .clan-mobile-switch[aria-expanded="true"] {
+    margin-bottom: 12px;
+  }
+}
 
-@media(max-width:800px){.clan-tabs[aria-label="Clan settings"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width: 800px) {
+  .clan-tabs[aria-label="Clan settings"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 
-.clan-history-filters{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;margin-bottom:16px}.clan-history-list{display:grid;gap:14px}.clan-history-heading{display:flex;justify-content:space-between;gap:12px;align-items:start}.clan-history-heading h3{margin:0 0 5px}.clan-history details{margin:14px 0}.clan-history summary{cursor:pointer;min-height:32px}.clan-history-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.clan-history-values dt{color:#b6c4d9;font-size:.85rem}.clan-history-values dd{margin:4px 0;overflow-wrap:anywhere}.clan-restore{border:1px solid #80b2ff;background:#172335;border-radius:12px;padding:16px;margin-top:16px}.clan-restore h4{margin-top:0}.clan-history .pill{white-space:nowrap}.clan-history nav{align-items:center;justify-content:center}.clan-history article{min-width:0;overflow-wrap:anywhere}@media(max-width:600px){.clan-history-filters,.clan-history-values{grid-template-columns:1fr}}
-.clan-restore .clan-tabs button{padding:10px;font-size:.9rem;white-space:nowrap}
+.clan-history-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.clan-history-list {
+  display: grid;
+  gap: 14px;
+}
+.clan-history-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+.clan-history-heading h3 {
+  margin: 0 0 5px;
+}
+.clan-history details {
+  margin: 14px 0;
+}
+.clan-history summary {
+  cursor: pointer;
+  min-height: 32px;
+}
+.clan-history-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.clan-history-values dt {
+  color: #b6c4d9;
+  font-size: 0.85rem;
+}
+.clan-history-values dd {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.clan-restore {
+  border: 1px solid #80b2ff;
+  background: #172335;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+}
+.clan-restore h4 {
+  margin-top: 0;
+}
+.clan-history .pill {
+  white-space: nowrap;
+}
+.clan-history nav {
+  align-items: center;
+  justify-content: center;
+}
+.clan-history article {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .clan-history-filters,
+  .clan-history-values {
+    grid-template-columns: 1fr;
+  }
+}
+.clan-restore .clan-tabs button {
+  padding: 10px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
 
-@media(min-width:801px){.clan-layout>aside{position:sticky;top:20px}.clan-directory{max-height:62vh;overflow:auto;scrollbar-gutter:stable}}
-.clan-layout>aside label+label{margin-top:12px}.clan-directory button{width:100%;border-radius:10px}.clan-directory button[aria-pressed=true]{box-shadow:inset 3px 0 #e6a640}.clan-directory strong{display:block}.clan-directory small{margin-top:4px;color:#c3cee0}
+@media (min-width: 801px) {
+  .clan-layout > aside {
+    position: sticky;
+    top: 20px;
+  }
+  .clan-directory {
+    max-height: 62vh;
+    overflow: auto;
+    scrollbar-gutter: stable;
+  }
+}
+.clan-layout > aside label + label {
+  margin-top: 12px;
+}
+.clan-directory button {
+  width: 100%;
+  border-radius: 10px;
+}
+.clan-directory button[aria-pressed="true"] {
+  box-shadow: inset 3px 0 #e6a640;
+}
+.clan-directory strong {
+  display: block;
+}
+.clan-directory small {
+  margin-top: 4px;
+  color: #c3cee0;
+}
+
+.clan-pending {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px;
+  border: 1px solid #e6a640;
+  border-radius: 10px;
+  margin: 14px 0;
+}
+.clan-management [role="tabpanel"] {
+  min-width: 0;
+}
+.clan-management h2:focus-visible {
+  outline: 2px solid #80b2ff;
+  outline-offset: 4px;
+}
+.clan-management [role="tab"]:focus-visible {
+  outline: 2px solid #e6a640;
+  outline-offset: 3px;
+}
