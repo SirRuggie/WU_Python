@@ -312,3 +312,36 @@ Normal mobile rows now group information in two bands; unusually long clan names
 and warning text still expand rather than truncate. 242 frontend tests and production build passed; the desktop 1440px layout
 and narrow modal width were also verified without horizontal overflow. No live account or roster
 writes or Discord messages were used in verification.
+
+### Finalize, publish and announcements — 2026-10-22
+
+Finalization uses a compact visibility/count summary, readiness checks, and a
+searchable clan preview before the publish action. The preview's Main/Lazy filter
+does not limit publication: both pools are explicitly included in the action and
+confirmation. Keep unassigned acknowledgement, archived-season rules, revision
+checks and published snapshot separation. Names are plain text with quiet Details
+controls. Pending writes and account dialogs lock conflicting navigation/refresh;
+failed preview reads clear protected records and offer recovery.
+
+Announcements use separate Main/Lazy tabs with visible saved/delivery state,
+destination, a message/link disclosure and optional mounted-on-open preview.
+Use one primary action: Save when edited, Send when saved. Saving is not sending.
+Test delivery and combined-pool sending are secondary disclosures. Preserve the
+confirmation's destinations and role-ping warning. Sent/pending/sending/uncertain
+states block replay; delivery receipts and backend owners are unchanged.
+Announcement permission gates editing and sending controls as well as server writes.
+CWL month edits participate in dirty/navigation/refresh protection. Profile, image,
+and message previews are not newly fetched/rendered in closed preview sections.
+
+Validation: Sol implemented publication review and Luna independently reviewed
+permission/state boundaries. 242 frontend tests, 27 bridge/announcement regressions,
+9 publication regressions, and the production build passed. Isolated SQLite and
+simulated announcement transport verified canceled publication, acknowledged
+sample publication advancing to announcements, independent pool drafts, failed
+save preserving content, successful save without sends, canceled refresh retaining
+edits, mounted preview, uncertain-delivery resend blocking, and desktop 1440px /
+mobile 390px and 320px layouts without document overflow. Confirmation outcomes
+were injected in the fixture; native popup operation and assistive technology were
+not certified. Sample publication affected only temporary SQLite. No live roster
+publication, Discord send, or role ping occurred. Existing build/aiohttp warnings
+remain. These checks do not prove live notification delivery.

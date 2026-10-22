@@ -68,6 +68,7 @@ function App() {
   const [fixtureMode, setFixtureMode] = useState(false)
   const [entryTarget] = useState(() => dashboardTarget(window.location.search, window.location.pathname))
   const [publicationDirty, setPublicationDirty] = useState(false)
+  const [publicationBusy, setPublicationBusy] = useState(false)
   const [publicationStep, setPublicationStep] = useState<'review' | 'announce'>(entryTarget.step || 'review')
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
   const [view, setView] = useState<View>(entryTarget.view)
@@ -320,6 +321,7 @@ function App() {
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
     if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
+    if (view === 'publication' && publicationBusy) return false
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
     if ((isManagementArea(view) || ['manage','text-commands','clan-management','weight-trial'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
     if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
@@ -604,7 +606,7 @@ function App() {
         {view === 'assignments' && <MemberAssignments onSignup={() => { setSignupPanel('register'); changeView('signup') }} seasonId={seasonId} seasons={seasons} />}
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} disabled={declarationBusy} onChange={e=>{if (canLeave()) setSeasonId(e.target.value)}}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId} onDirty={setDeclarationDirty} onBusy={setDeclarationBusy}/>}</>}
-        {view === 'publication' && session.can_edit && <PublicationWorkspace onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationDirty || window.confirm('Discard unsaved announcement changes?')) setSeasonId(id) }} />}
+        {view === 'publication' && session.can_edit && <PublicationWorkspace onBusy={setPublicationBusy} onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationBusy && (!publicationDirty || window.confirm('Discard unsaved announcement changes?'))) setSeasonId(id) }} />}
         {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'roster' && session.can_edit && <RosterWorkspace onDirty={setCwlDirty} key={seasonId} initialReadiness={rosterReadiness} onReviewPublication={() => { setPublicationStep('review'); changeView('publication') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { setSeasonId(id); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }} />}

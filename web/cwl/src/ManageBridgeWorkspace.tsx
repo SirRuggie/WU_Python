@@ -1,3 +1,4 @@
+import './announcementWorkspace.css'
 import { useDashboardPermission } from './DashboardPermissions'
 import { reconcileAnnouncementSave, type AnnouncementDraft } from './announcementDrafts'
 import AnnouncementPreviewDialog from './AnnouncementPreviewDialog'
@@ -8,7 +9,7 @@ import { poolLabel, type AnnouncementChannel } from './announcements'
 import ChannelCombobox from './ChannelCombobox'
 import { canQueueAnnouncement, dashboardRosterUrl, normalizeManageBridge, shouldPollBridge, type ManageBridge, type ManageDelivery } from './manageBridge'
 
-type Props = { seasonId: string; publicationVersion: number | null; onDirty?: (dirty: boolean) => void }
+type Props = { seasonId: string; publicationVersion: number | null; onDirty?: (dirty: boolean) => void; onBusy?: (busy: boolean) => void }
 type PoolDraft = AnnouncementDraft
 type Notice = { kind: 'success' | 'error'; text: string } | null
 const pools: Pool[] = ['main', 'lazy']
@@ -20,10 +21,11 @@ const draftFrom = (bridge: ManageBridge): Record<Pool, PoolDraft> => ({
 })
 const safeMessageUrl = (url: string | null | undefined) => !!url && /^https:\/\/(discord\.com|ptb\.discord\.com)\/channels\//.test(url)
 
-export default function ManageBridgeWorkspace({ seasonId, publicationVersion, onDirty }: Props) {
+export default function ManageBridgeWorkspace({ seasonId, publicationVersion, onDirty, onBusy }: Props) {
   const canManage = useDashboardPermission('cwl_send')
   const [bridge, setBridge] = useState<ManageBridge | null>(null)
   const [expandedPreview, setExpandedPreview] = useState<Pool | null>(null)
+  const [previewOpen, setPreviewOpen] = useState<Record<Pool, boolean>>({main: false, lazy: false})
   const [testChannel, setTestChannel] = useState('')
   const [testUrl, setTestUrl] = useState('')
   const [activePool, setActivePool] = useState<Pool>('main')
@@ -59,7 +61,7 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
         if (!reconciliation?.conflict) setDraftGeneration(result.generation)
         if (resetDraft === true) setCycleInput(result.cycle || '')
       }
-    } catch (error) { if (id === requestId.current && activeSeason.current === sid) setBridgeError(errorText(error)) }
+    } catch (error) { if (id === requestId.current && activeSeason.current === sid) {setBridgeError(errorText(error)); if (error instanceof ApiError && [401,403].includes(error.status)) {setBridge(null);setDrafts(emptyDraft());setDraftGeneration(null)}} }
     finally { if (id === requestId.current && activeSeason.current === sid) setLoading(false) }
   }, [seasonId])
   const loadChannels = useCallback(async () => {
@@ -69,15 +71,16 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
   useEffect(() => {
     requestId.current += 1
     activeSeason.current = seasonId
+    setExpandedPreview(null); setPreviewOpen({main:false,lazy:false}); setTestUrl('');
     setBridge(null); setDrafts(emptyDraft()); setDraftGeneration(null); setCycleInput(''); setNotice(null); setBridgeError(''); setChannelsError('')
     if (seasonId) { void load(true); void loadChannels() }
     return () => { requestId.current++; activeSeason.current = '' }
   }, [seasonId, publicationVersion, load, loadChannels])
   useEffect(() => {
-    if (!seasonId || !shouldPollBridge(bridge)) return
+    if (!seasonId || busy || loading || bridgeError || !shouldPollBridge(bridge)) return
     const timer = window.setTimeout(() => void load(false), 5000)
     return () => window.clearTimeout(timer)
-  }, [seasonId, bridge, load])
+  }, [seasonId, bridge, load, busy, loading, bridgeError])
   const setDraft = (pool: Pool, update: Partial<PoolDraft>) => setDrafts(current => ({ ...current, [pool]: { ...current[pool], ...update } }))
   const unsaved = (pool: Pool) => {
     if (!bridge) return false
@@ -85,15 +88,17 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
     const current = drafts[pool]
     return saved.channel_id !== current.channel_id || saved.body !== current.body || saved.roster_url !== current.roster_url
   }
-  const dirty = !!bridge && pools.some(unsaved)
+  const dirty = !!bridge && (pools.some(unsaved) || cycleInput !== (bridge.cycle || ''))
+  useEffect(() => {onBusy?.(busy); return () => onBusy?.(false)}, [busy, onBusy])
   useEffect(() => { onDirty?.(dirty); return () => onDirty?.(false) }, [dirty, onDirty])
   useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn) }, [dirty])
   const reviewRefresh = () => {
-    if (bridge && pools.some(unsaved) && !window.confirm('Discard unsaved CWL settings edits and load the latest Manage settings?')) return
+    if (dirty && !window.confirm('Discard unsaved CWL settings edits and load the latest Manage settings?')) return
     setNotice(null); void load(true); void loadChannels()
   }
   const bindCycle = async () => {
-    if (!seasonId || busy || !/^\d{4}-(0[1-9]|1[0-2])$/.test(cycleInput)) { setNotice({ kind: 'error', text: 'Choose a CWL month in YYYY-MM format.' }); return }
+    if (!canManage || !seasonId || busy || loading || !!bridgeError || !/^\d{4}-(0[1-9]|1[0-2])$/.test(cycleInput)) { setNotice({ kind: 'error', text: 'Choose a CWL month in YYYY-MM format.' }); return }
+    if (pools.some(unsaved) && !window.confirm('Changing the CWL month will discard unsaved message edits. Continue?')) return
     if (bridge?.cycle && bridge.cycle !== cycleInput && !window.confirm(`Change this season's Manage CWL settings from ${bridge.cycle} to ${cycleInput}? Review both pool templates before sending.`)) return
     const sid = seasonId
     setBusy(true); setNotice(null)
@@ -104,7 +109,7 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
     finally { setBusy(false) }
   }
   const save = async (pool: Pool) => {
-    if (!bridge?.generation || !seasonId || busy || draftGeneration !== bridge.generation || !unsaved(pool)) return
+    if (!canManage || loading || bridgeError || !bridge?.generation || !seasonId || busy || draftGeneration !== bridge.generation || !unsaved(pool)) return
     const source = drafts[pool]
     if (!/^\d{15,22}$/.test(source.channel_id) || !channels.some(channel => channel.id === source.channel_id)) { setNotice({ kind: 'error', text: 'Choose a current Discord guild channel.' }); return }
     if (source.channel_id === drafts[pool === 'main' ? 'lazy' : 'main'].channel_id) { setNotice({ kind: 'error', text: 'Main and Lazy announcements need different channels.' }); return }
@@ -118,7 +123,7 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
     finally { setBusy(false) }
   }
   const sendTest = async (pool: Pool) => {
-    if (!bridge || busy || !testChannel) return
+    if (!canManage || !bridge || busy || loading || bridgeError || !testChannel) return
     const name = channels.find(channel => channel.id === testChannel)?.name || testChannel
     if (!window.confirm(`Send a ${poolLabel(pool)} test to #${name}? No pings will be sent.`)) return
     const sid = seasonId
@@ -130,7 +135,7 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
     } catch (error) { if (activeSeason.current === sid) setNotice({kind:'error',text:errorText(error)}) }
     finally {setBusy(false)}
   }
-  const readyBoth = !!bridge && !busy && !loading && !channelsError && draftGeneration === bridge.generation && pools.every(pool => channels.some(channel => channel.id === drafts[pool].channel_id) && canQueueAnnouncement(bridge, pool, drafts[pool].channel_id, unsaved(pool)))
+  const readyBoth = canManage && !bridgeError && !!bridge && !busy && !loading && !channelsError && draftGeneration === bridge.generation && pools.every(pool => channels.some(channel => channel.id === drafts[pool].channel_id) && canQueueAnnouncement(bridge, pool, drafts[pool].channel_id, unsaved(pool)))
   const sendBoth = async () => {
     if (!bridge || !readyBoth) return
     const destinations = pools.map(pool => `${poolLabel(pool)} → #${channels.find(channel => channel.id === drafts[pool].channel_id)?.name}`).join('\n')
@@ -153,7 +158,7 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
     setBusy(false)
   }
   const send = async (pool: Pool) => {
-    if (!bridge || !seasonId || busy || !canQueueAnnouncement(bridge, pool, drafts[pool].channel_id, unsaved(pool)) || draftGeneration !== bridge.generation) return
+    if (!canManage || bridgeError || channelsError || loading || !bridge || !seasonId || busy || !canQueueAnnouncement(bridge, pool, drafts[pool].channel_id, unsaved(pool)) || draftGeneration !== bridge.generation) return
     const cycle = bridge.cycle!
     const version = bridge.published_version!
     const channelId = bridge.pools[pool].channel_id!
@@ -171,22 +176,95 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
     finally { setBusy(false) }
   }
   const preview = (pool: Pool) => bridge ? <DiscordPreview parts={[{type:'container',children:[{type:'text',text:'## '+(bridge.pools[pool].title||'Untitled')},{type:'text',text:drafts[pool].body},...(bridge.pools[pool].role_ids.length?[{type:'text',text:bridge.pools[pool].role_ids.map(id=>`<@&${id}>`).join(' ')} as PreviewPart]:[]),...(bridge.pools[pool].media_url?[{type:'media',items:[{url:bridge.pools[pool].media_url,description:'Roster announcement image'}]} as PreviewPart]:[]),{type:'row',children:bridge.pools[pool].buttons.map((button,index)=>({type:'button',label:button.label,emoji:button.emoji,url:index===0&&drafts[pool].roster_url?drafts[pool].roster_url:button.url}))}]}]}/> : null
-  return <section className="manage-bridge-workspace" aria-labelledby="manage-title"><div className="section-heading"><div><p className="eyebrow">Discord</p><h2 id="manage-title">Discord announcement</h2><p>Review Main and Lazy messages before sending. Publishing a roster does not send an announcement.</p></div><button disabled={!canManage || busy || loading} onClick={reviewRefresh}>Refresh</button></div>
+  return <section className="manage-bridge-workspace announcement-workspace" aria-labelledby="manage-title">
+    <header className="announcement-toolbar">
+      <div><h2 id="manage-title">Discord announcements</h2><p>Publishing makes placements visible. Sending notifies members separately.</p></div>
+      <button disabled={busy || loading} onClick={reviewRefresh}>Refresh status</button>
+    </header>
     {notice && <div className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</div>}
     {bridgeError && <div className="notice error" role="alert">{bridgeError}</div>}
-    {channelsError && <div className="notice error" role="alert">Discord channels unavailable: {channelsError}. Channel selection and sending are disabled until they load.</div>}
-    {loading && <p role="status">Loading Manage CWL settings…</p>}
-    {bridge && <><details key={bridge.cycle || 'unbound'} className="card manage-cycle" open={!bridge.cycle}><summary>CWL month: {bridge.cycle || 'Choose month'}</summary><div className="manage-cycle-fields"><p>Choose the CWL month for this season.</p><label>CWL month<input type="month" value={cycleInput} disabled={!canManage || busy} onChange={event => setCycleInput(event.target.value)} /></label><button disabled={!canManage || busy || !cycleInput || cycleInput === bridge.cycle} onClick={() => void bindCycle()}>{bridge.cycle ? 'Change CWL month' : 'Load CWL month'}</button></div></details>
-      {bridge.cycle && !bridge.worker_ready && <div className="notice error" role="alert">The bot sender is unavailable. You can edit messages or send a test. Refresh to check again.</div>}
-      {!bridge.cycle && <div className="card empty"><p>Choose a CWL month to load the Main and Lazy messages.</p></div>}
-      {bridge.cycle && <><div className="manage-bridge-summary"><strong>{bridge.worker_ready ? 'Bot sender ready' : 'Bot sender unavailable'}</strong><span>CWL month {bridge.cycle} · {bridge.published_version ? `roster version ${bridge.published_version}` : 'publish a roster first'}</span><small>Each pool sends once for this CWL month. Republished web versions do not resend automatically.</small></div><div className="manage-pool-tabs" role="tablist" aria-label="Announcement pool">{pools.map(pool => <button key={pool} id={`manage-tab-${pool}`} tabIndex={activePool === pool ? 0 : -1} onKeyDown={event => { const tabs = Array.from(event.currentTarget.parentElement!.querySelectorAll<HTMLButtonElement>('[role="tab"]')); const index = pools.indexOf(pool); const target = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : -1; if (target >= 0) { event.preventDefault(); tabs[target].focus() } }} type="button" role="tab" aria-selected={activePool === pool} aria-controls={`manage-panel-${pool}`} className={activePool === pool ? 'active' : ''} onClick={() => setActivePool(pool)}>{poolLabel(pool)}<small>{bridge.pools[pool].delivery?.status || 'Not sent'}</small></button>)}</div><div className="manage-pools">{pools.map(pool => {
-        const entry = bridge.pools[pool], draft = drafts[pool], changed = unsaved(pool)
-        const delivery = entry.delivery
-        const locked = delivery?.status === 'sent' || delivery?.status === 'pending' || delivery?.status === 'sending' || delivery?.status === 'uncertain'
-        const canEdit = !busy && !locked && draftGeneration === bridge.generation
-        const canSend = !busy && !loading && !channelsError && channels.length > 0 && draftGeneration === bridge.generation && canQueueAnnouncement(bridge, pool, draft.channel_id, changed)
-        return <article className="card manage-pool" key={pool} id={`manage-panel-${pool}`} role="tabpanel" aria-labelledby={`manage-tab-${pool}`} hidden={activePool !== pool}><div className="card-heading"><h3>{poolLabel(pool)}</h3><span className="badge">{entry.enabled ? 'Enabled in Manage' : 'Disabled in Manage'}</span></div><p className="small">Message: {entry.title || 'Untitled'}</p><ChannelCombobox label={`${poolLabel(pool)} destination`} channels={channels} value={draft.channel_id} disabled={!canEdit || !!channelsError || channels.length === 0} onChange={value => setDraft(pool, { channel_id: value })} /><details className="announcement-editor"><summary>Edit message and link</summary><div className="announcement-editor-body"><label>Message<textarea rows={7} maxLength={4000} value={draft.body} disabled={!canEdit} onChange={event => setDraft(pool, { body: event.target.value })} /></label><div className="manage-url-field"><label>Roster button link<input type="url" value={draft.roster_url} disabled={!canEdit} onChange={event => setDraft(pool, { roster_url: event.target.value })} placeholder="https://…" /></label><button disabled={!canEdit || window.location.protocol !== 'https:'} onClick={() => setDraft(pool, { roster_url: dashboardRosterUrl(window.location.origin, seasonId) })}>Use dashboard roster link</button></div><p className="small">Members open this link from the announcement.</p><button disabled={!canEdit || !changed || !!channelsError || channels.length === 0} onClick={() => void save(pool)}>Save changes</button></div></details><details className="manage-native-preview"><summary>Message preview</summary><button className="announcement-expand" onClick={() => setExpandedPreview(pool)}>Expand preview ↗</button>{preview(pool)}</details>{changed && <p className="inline-reason">Unsaved changes. Save this message before sending.</p>}{draftGeneration !== bridge.generation && <p className="inline-reason">Manage settings changed. Refresh and review before editing or sending.</p>}<p className="small">Sending includes the role pings and artwork shown in the preview.</p><details className="announcement-test"><summary>Send a test to Discord <span>No pings</span></summary><div className="announcement-test-body"><p>Test this message without pings. This does not change the announcement channel or mark it as sent.</p><ChannelCombobox label="Test channel" channels={channels} value={testChannel} disabled={!canManage || busy} onChange={setTestChannel} /><button disabled={!canManage || busy || !testChannel || !!channelsError || draftGeneration !== bridge.generation} onClick={() => void sendTest(pool)}>Send test</button>{testUrl && <a href={testUrl} target="_blank" rel="noopener noreferrer">View test in Discord ↗</a>}</div></details><div className="manage-actions"><button disabled={!canEdit || !changed || !!channelsError || channels.length === 0} onClick={() => void save(pool)}>Save message</button><button className="primary" disabled={!canSend} onClick={() => void send(pool)}>{(delivery?.status === 'failed' || delivery?.status === 'stale') ? 'Retry through Manage' : delivery?.status === 'sent' ? 'Already sent this month' : 'Send announcement'}</button></div>{delivery && <div className="manage-delivery"><strong>Announcement status: {delivery.status}</strong>{delivery.error && <small>{delivery.error}</small>}{delivery.message_url && (safeMessageUrl(delivery.message_url) ? <a href={delivery.message_url} target="_blank" rel="noopener noreferrer">View message in Discord ↗</a> : <small>{delivery.message_url}</small>)}{(delivery.status === 'pending' || delivery.status === 'sending') && <small>Checking delivery status every 5 seconds.</small>}{delivery.status === 'uncertain' && <small>Delivery is not confirmed. Check Discord before sending again.</small>}{delivery.status === 'stale' && <small>Settings changed before sending. Review the message and roster, then try again.</small>}</div>}</article>
-      })}</div><section className="announcement-send-both"><h3>Send Main and Lazy</h3><div className="manage-actions"><button disabled={!readyBoth} onClick={() => void sendBoth()}>Send both announcements</button><small>Sends each message to its saved channel. Save any changes first.</small></div></section></>}
+    {channelsError && <div className="notice error" role="alert"><span>Discord channels are unavailable. Sending is disabled.</span><button disabled={busy} onClick={() => void loadChannels()}>Retry channels</button></div>}
+    {loading && <p role="status">Checking announcement settings…</p>}
+    {bridge && <>
+      <div className="announcement-status">
+        <strong>{bridge.published_version ? `Published roster · Version ${bridge.published_version}` : 'Publish a roster before sending'}</strong>
+        <span>{bridge.worker_ready ? 'Sender ready' : 'Sender unavailable'}</span>
+        <span>{bridge.cycle || 'No CWL month selected'}</span>
+      </div>
+      <details key={bridge.cycle || 'unbound'} className="manage-cycle" open={!bridge.cycle}>
+        <summary>{bridge.cycle ? 'CWL month settings' : 'Choose CWL month'}</summary>
+        <div className="manage-cycle-fields">
+          <p>Choose the month these announcements belong to.</p>
+          <label>CWL month<input type="month" value={cycleInput} disabled={!canManage || busy || loading} onChange={event => setCycleInput(event.target.value)}/></label>
+          <button disabled={!canManage || busy || loading || !!bridgeError || !cycleInput || cycleInput === bridge.cycle} onClick={() => void bindCycle()}>{bridge.cycle ? 'Change month' : 'Load month'}</button>
+        </div>
+      </details>
+      {bridge.cycle && !bridge.worker_ready && <p className="notice error" role="alert">The bot sender is unavailable. Refresh status before sending.</p>}
+      {bridge.cycle && <>
+        <div className="manage-pool-tabs" role="tablist" aria-label="Announcement pool">
+          {pools.map(pool => <button key={pool} id={`manage-tab-${pool}`} tabIndex={activePool === pool ? 0 : -1}
+            onKeyDown={event => {
+              const tabs = Array.from(event.currentTarget.parentElement!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+              const index = pools.indexOf(pool)
+              const target = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : -1
+              if (target >= 0) {event.preventDefault(); tabs[target].focus()}
+            }} type="button" role="tab" aria-selected={activePool === pool} aria-controls={`manage-panel-${pool}`}
+            className={activePool === pool ? 'active' : ''} onClick={() => setActivePool(pool)}>
+            {poolLabel(pool)}<small>{unsaved(pool) ? 'Unsaved changes' : bridge.pools[pool].delivery?.status || 'Not sent'}</small>
+          </button>)}
+        </div>
+        <div className="manage-pools">{pools.map(pool => {
+          const entry = bridge.pools[pool], draft = drafts[pool], changed = unsaved(pool)
+          const delivery = entry.delivery
+          const locked = !!delivery && ['sent', 'pending', 'sending', 'uncertain'].includes(delivery.status)
+          const canEdit = canManage && !busy && !loading && !bridgeError && !locked && draftGeneration === bridge.generation
+          const canSend = canManage && !busy && !loading && !bridgeError && !channelsError && channels.some(channel => channel.id === draft.channel_id) && draftGeneration === bridge.generation && canQueueAnnouncement(bridge, pool, draft.channel_id, changed)
+          return <article className="manage-pool" key={pool} id={`manage-panel-${pool}`} role="tabpanel" aria-labelledby={`manage-tab-${pool}`} hidden={activePool !== pool}>
+            <div className="announcement-message-heading"><h3>{entry.title || `${poolLabel(pool)} announcement`}</h3><span>{entry.enabled ? 'Enabled' : 'Disabled in CWL settings'}</span></div>
+            <ChannelCombobox label={`${poolLabel(pool)} destination`} channels={channels} value={draft.channel_id} disabled={!canEdit || !!channelsError || channels.length === 0} onChange={value => setDraft(pool, {channel_id: value})}/>
+            {delivery && <div className={`manage-delivery delivery-${delivery.status}`} role="status">
+              <strong>Delivery: {delivery.status}</strong>
+              {delivery.error && <small>{delivery.error}</small>}
+              {safeMessageUrl(delivery.message_url) && <a href={delivery.message_url!} target="_blank" rel="noopener noreferrer">View in Discord ↗</a>}
+              {['pending','sending'].includes(delivery.status) && <small>Checking every 5 seconds. No delivery is confirmed yet.</small>}
+              {delivery.status === 'uncertain' && <small>Check Discord before taking further action. Automatic resend is blocked.</small>}
+              {delivery.status === 'stale' && <small>Settings changed before sending. Review the message and roster.</small>}
+            </div>}
+            <details className="announcement-editor">
+              <summary>Edit message and roster link</summary>
+              <div className="announcement-editor-body">
+                <label>Message<textarea rows={6} maxLength={4000} value={draft.body} disabled={!canEdit} onChange={event => setDraft(pool, {body: event.target.value})}/></label>
+                <div className="manage-url-field"><label>Roster button link<input type="url" value={draft.roster_url} disabled={!canEdit} onChange={event => setDraft(pool, {roster_url: event.target.value})}/></label>
+                  <button disabled={!canEdit || window.location.protocol !== 'https:'} onClick={() => setDraft(pool, {roster_url: dashboardRosterUrl(window.location.origin, seasonId)})}>Use dashboard link</button>
+                </div>
+              </div>
+            </details>
+            <details className="manage-native-preview" onToggle={event => {const open = event.currentTarget.open; setPreviewOpen(current => ({...current, [pool]: open}))}}>
+              <summary>Preview message · {entry.role_ids.length} role ping{entry.role_ids.length === 1 ? '' : 's'}</summary>
+              {previewOpen[pool] && activePool === pool && <><button className="announcement-expand" onClick={() => setExpandedPreview(pool)}>Expand preview ↗</button>{preview(pool)}</>}
+            </details>
+            {changed && <p className="inline-reason">Unsaved changes. Save before sending.</p>}
+            {draftGeneration !== bridge.generation && <p className="notice error">Settings changed elsewhere. Copy your edits, then refresh and review.</p>}
+            <div className="announcement-primary-action">
+              {changed ? <button className="primary" disabled={!canEdit || !!channelsError || !channels.length} onClick={() => void save(pool)}>{busy ? 'Saving…' : 'Save message'}</button>
+                : <button className="primary" disabled={!canSend} onClick={() => void send(pool)}>{delivery?.status === 'sent' ? 'Already sent' : delivery?.status === 'failed' || delivery?.status === 'stale' ? 'Review and retry send' : 'Send announcement'}</button>}
+              <small>{changed ? 'Saving does not send a Discord message.' : 'Confirmation shows the destination. Template role pings notify members.'}</small>
+            </div>
+            <details className="announcement-test">
+              <summary>Test in Discord · no pings</summary>
+              <div className="announcement-test-body"><p>Send a separate test without marking the announcement as sent.</p>
+                <ChannelCombobox label="Test channel" channels={channels} value={testChannel} disabled={!canManage || busy || !!channelsError} onChange={setTestChannel}/>
+                <button disabled={!canManage || busy || loading || !!bridgeError || !testChannel || !!channelsError || draftGeneration !== bridge.generation} onClick={() => void sendTest(pool)}>Send test</button>
+                {safeMessageUrl(testUrl) && <a href={testUrl} target="_blank" rel="noopener noreferrer">View test in Discord ↗</a>}
+              </div>
+            </details>
+          </article>
+        })}</div>
+        <details className="announcement-send-both"><summary>Send both pools together</summary>
+          <p>Main and Lazy each send to their saved channel. Each pool sends once per CWL month; republishing does not resend.</p>
+          <button disabled={!readyBoth} onClick={() => void sendBoth()}>Review and send both</button>
+        </details>
+      </>}
     </>}
     {expandedPreview && <AnnouncementPreviewDialog title={`${poolLabel(expandedPreview)} preview`} onClose={() => setExpandedPreview(null)}>{preview(expandedPreview)}</AnnouncementPreviewDialog>}
   </section>
