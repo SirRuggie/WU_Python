@@ -64,3 +64,10 @@ Isolated sample layout reviewed at 320, 390 and 1280 pixels: no page overflow,
 long player names wrap, unknown and earned-score rows remain readable, source and
 check time visible. Provider calls during research were read-only; no live messages,
 account changes or signup changes were made.
+
+Final start-boundary review: verified one second before opening does not contact the
+provider and returns no scores, while exactly 08:00 UTC begins score lookup. The
+same instant expressed in Eastern time produces the same event month and boundary.
+If the short Tasks cache spans opening, the row changes to “Waiting for update”
+instead of contradicting the live countdown with “Not started.” Focused backend
+suite: 49 passed; full frontend suite: 213 passed; production build passed.

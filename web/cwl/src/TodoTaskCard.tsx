@@ -5,10 +5,11 @@ export default function TodoTaskCard({ row, kind, now }: { row: TodoRow; kind: T
   const privateRow = kind === 'private'
   const games = kind === 'games'
   const preparation = row.state === 'preparation'
+  const gamesAwaitingRefresh = games && row.state === 'upcoming' && row.starts_at !== null && now >= row.starts_at * 1000
   const measurable = row.used !== null && row.total !== null && row.total > 0 && !privateRow && !games
   const timestamp = preparation ? row.starts_at : row.ends_at
   const status = privateRow ? (row.detail === 'private' ? 'Private war log' : 'Unable to check')
-    : games ? (row.state === 'upcoming' ? 'Not started' : row.used === null ? 'Not available' : `${row.used.toLocaleString()} points earned`)
+    : games ? (row.state === 'upcoming' ? (gamesAwaitingRefresh ? 'Waiting for update' : 'Not started') : row.used === null ? 'Not available' : `${row.used.toLocaleString()} points earned`)
     : preparation ? 'Preparation day' : `${row.remaining ?? '—'} attack${row.remaining === 1 ? '' : 's'} left`
   return <article className="todo-task">
     <div className="todo-task-name">
@@ -27,7 +28,7 @@ export default function TodoTaskCard({ row, kind, now }: { row: TodoRow; kind: T
     <div className="todo-task-time">
       {privateRow ? <p>{row.detail === 'private' ? 'Check attacks in-game. A clan leader can make the war log public.'
         : row.detail && row.detail !== 'error' ? row.detail : 'Could not check this war. Try again or check in-game.'}</p>
-        : games ? <p>{row.detail || 'This event · ClashPerk'}</p>
+        : games ? <p>{gamesAwaitingRefresh ? 'Refresh to check this event’s points.' : row.detail || 'This event · ClashPerk'}</p>
         : <>
           <small>{preparation ? 'Battle starts in' : 'Ends in'}</small>
           <strong>{todoTime(timestamp, now)}</strong>

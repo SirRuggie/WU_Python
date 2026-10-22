@@ -25,7 +25,8 @@ describe('Clan Games earned points', () => {
     const render = (changes: Partial<TodoRow>) => renderToStaticMarkup(<TodoTaskCard row={{...row,...changes}} kind="games" now={now}/>)
     expect(render({used:null})).toContain('Not available')
     expect(render({used:0})).toContain('0 points earned')
-    expect(render({used:null,state:'upcoming'})).toContain('Not started')
+    expect(render({used:null,state:'upcoming',starts_at:now/1000+1})).toContain('Not started')
+    expect(render({used:null,state:'upcoming',starts_at:now/1000})).toContain('Waiting for update')
   })
   it('labels the event month, source, check time, and ended state correctly', () => {
     const html = renderToStaticMarkup(<ClanGamesSummary view={view} now={now}/>)

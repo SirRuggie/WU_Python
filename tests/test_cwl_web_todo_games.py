@@ -45,6 +45,22 @@ class GamesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(view['rows'][0]['state'], 'upcoming')
         self.assertIsNone(view['rows'][0]['used'])
 
+    async def test_exact_start_boundary_and_same_instant_in_local_timezone(self):
+        from datetime import timedelta
+        start = datetime(2026, 10, 22, 8, tzinfo=timezone.utc)
+        fetch = AsyncMock(return_value={'#P2Y': 150})
+        with patch.object(todo_games, 'fetch_clan_scores', fetch):
+            before = await todo_games.build_games_view([account()], now=start-timedelta(seconds=1))
+            fetch.assert_not_awaited()
+            self.assertEqual(before['rows'][0]['state'], 'upcoming')
+            self.assertIsNone(before['rows'][0]['used'])
+            at_start = await todo_games.build_games_view([account()], now=start)
+            local_start = await todo_games.build_games_view([account()], now=start.astimezone(timezone(timedelta(hours=-4))))
+        self.assertEqual(fetch.await_count, 2)
+        self.assertEqual(at_start['rows'][0]['used'], 150)
+        self.assertEqual(at_start['season'], local_start['season'])
+        self.assertEqual(at_start['event_start'], local_start['event_start'])
+
     async def test_finished_event_keeps_same_month(self):
         with patch.object(todo_games, 'fetch_clan_scores', AsyncMock(return_value={'#P2Y': 9000})):
             view = await todo_games.build_games_view([account()], now=NOW.replace(day=30))
