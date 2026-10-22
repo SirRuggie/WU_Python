@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import aiohttp
 from utils.clan_games import fetch_clan_scores, valid_tag
 
-SOURCE_NOTE = 'ClashPerk · Tracked scores can lag behind the game.'
+SOURCE_NOTE = 'Tracked scores can lag behind the game.'
 FETCH_CONCURRENCY = 5
 
 
@@ -32,7 +32,7 @@ async def build_games_view(accounts, *, now=None):
     rows = [_base_row(account, start, end) for account in accounts
             if isinstance(account.town_hall, int) and account.town_hall >= 6]
     view = {'ok': True, 'note': SOURCE_NOTE, 'notes': [], 'unavailable': '',
-            'incomplete': '', 'rows': rows, 'season': season, 'source': 'ClashPerk',
+            'incomplete': '', 'rows': rows, 'season': season, 'source': 'Tracked scores',
             'checked_at': now.isoformat(), 'event_start': start.timestamp(), 'event_end': end.timestamp()}
     if now < start:
         for row in rows:
@@ -50,7 +50,7 @@ async def build_games_view(accounts, *, now=None):
         result = by_clan.get(clan)
         if isinstance(result, BaseException):
             failures += 1
-            row['detail'] = 'ClashPerk could not be reached. Try checking again.'
+            row['detail'] = 'Tracked scores are temporarily unavailable. Try checking again.'
             continue
         if result is None:
             missing += 1

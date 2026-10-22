@@ -31,7 +31,8 @@ describe('Clan Games earned points', () => {
   it('labels the event month, source, check time, and ended state correctly', () => {
     const html = renderToStaticMarkup(<ClanGamesSummary view={view} now={now}/>)
     expect(html).toContain('October 2026')
-    expect(html).toContain('ClashPerk')
+    expect(html).toContain('Tracked scores')
+    expect(html).not.toContain('ClashPerk')
     expect(html).toContain('Last checked')
     expect(html).toContain('Ends')
     expect(renderToStaticMarkup(<ClanGamesSummary view={view} now={Date.parse('2026-10-30T08:00:00Z')}/>)).toContain('Event ended')

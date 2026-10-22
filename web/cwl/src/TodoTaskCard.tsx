@@ -28,7 +28,7 @@ export default function TodoTaskCard({ row, kind, now }: { row: TodoRow; kind: T
     <div className="todo-task-time">
       {privateRow ? <p>{row.detail === 'private' ? 'Check attacks in-game. A clan leader can make the war log public.'
         : row.detail && row.detail !== 'error' ? row.detail : 'Could not check this war. Try again or check in-game.'}</p>
-        : games ? <p>{gamesAwaitingRefresh ? 'Refresh to check this event’s points.' : row.detail || 'This event · ClashPerk'}</p>
+        : games ? <p>{gamesAwaitingRefresh ? 'Refresh to check this event’s points.' : row.detail || 'This event · Tracked scores'}</p>
         : <>
           <small>{preparation ? 'Battle starts in' : 'Ends in'}</small>
           <strong>{todoTime(timestamp, now)}</strong>

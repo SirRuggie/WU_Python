@@ -27,7 +27,7 @@ class GamesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([r['used'] for r in view['rows']], [2450, 700])
         self.assertTrue(all(r['total'] is None and r['remaining'] is None for r in view['rows']))
         self.assertNotIn('goal', str(view))
-        self.assertEqual(view['source'], 'ClashPerk')
+        self.assertEqual(view['source'], 'Tracked scores')
 
     async def test_missing_not_zero_and_explicit_zero_kept(self):
         with patch.object(todo_games, 'fetch_clan_scores', AsyncMock(return_value={'#P2Y': 0})):

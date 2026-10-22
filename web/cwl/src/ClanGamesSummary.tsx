@@ -18,7 +18,7 @@ export default function ClanGamesSummary({ view, now }: { view: TodoView; now: n
       <time dateTime={new Date(upcoming ? start : end).toISOString()}>{localTime(upcoming ? start : end)}</time>
     </div>
     <p>{upcoming ? 'Points will appear here after the event starts.' : 'Points earned this event. Scores may take a few minutes to update.'}
-      <small>Source: {view.source || 'ClashPerk'}{view.checked_at && <> · Last checked {localTime(Date.parse(view.checked_at))}</>}</small>
+      <small>Tracked scores{view.checked_at && <> · Last checked {localTime(Date.parse(view.checked_at))}</>}</small>
     </p>
   </aside>
 }
