@@ -7,7 +7,7 @@ APP_ACTIONS = {
     'withdraw_publication': 'cwl_publish',
 }
 MODULE_ACTIONS = {
-    'staff_tag_signups': 'cwl_signups', 'signup_activity': 'cwl_signups',
+    'staff_signup_changes': 'cwl_signups', 'staff_tag_signups': 'cwl_signups', 'signup_activity': 'cwl_signups',
     'manage_reminders': 'cwl_reminders', 'participation': 'cwl_results',
     'participation_sync': 'cwl_results', 'bonuses': 'cwl_bonuses',
     'bonus_raffle': 'cwl_bonuses', 'manage_bridge': 'cwl_send',

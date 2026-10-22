@@ -834,3 +834,31 @@ browser checks covered 320px, 390px and 1280px without horizontal overflow, neut
 and gold cards, red alerts, Details/editor open/close, manual placement save, and
 alert review. The sample narrow card was 246px high with 44px action buttons.
 No live messages or production player mutations were used for verification.
+
+## October 22: Manage Signups member groups
+
+Saved signups use compact member groups with one Message link per member, TH icons,
+player identity, pool, exact working assignment and a labeled Manage action.
+Search includes member and clan names; a placement filter complements Main/Lazy.
+Inline management supports one account or selected accounts within a member group.
+Selection is gold, controls retain 44px targets, and the editor explicitly explains
+placement clearing before a pool switch or removal. Removal requires the labeled
+Confirm removal action. Placement editing remains in Roster. Filters and paging
+stay fixed while an edit is selected, and saves refresh rows without unmounting
+all groups. Missing Discord names retain a visible retry and player-based fallback.
+
+The staff-only signup response includes assignment name/tag and revision; member
+responses never include those unpublished assignments. The new staff change endpoint
+uses the existing Store transaction/audit and cwl_signups permission, rechecks the
+revision and member ownership after upstream checks, validates current FWA eligibility
+for Main transfers, and writes a whole selected batch atomically. Removed signups and
+pool changes preserve saved weights and publication snapshots. No schema migration.
+
+Validation: 73 backend tests passed, one opt-in Mongo drill skipped, 223 frontend
+tests passed and production build passed. Coverage includes member privacy, CSRF,
+wrong member, malformed/duplicate input, FWA batch rejection, concurrent revision
+change during upstream lookup, stale retry, removal and audit preservation. Browser
+checks used isolated data at 320/390/1280px, with long names, missing Discord names,
+multi-selection, pool switch save, explicit single removal, and inline controls.
+No horizontal overflow; Manage targets measured 44px. No live messages or production
+player changes were used. Existing build-size and aiohttp warnings remain.

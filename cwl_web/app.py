@@ -21,6 +21,7 @@ from .access_control import PERMISSIONS, scopes, request_scopes, OWNER_IDS, CWL_
 from .access_settings import access_context
 from .issues import diagnostics, routes as issue_routes
 from .staff_tag_signups import routes as staff_tag_signup_routes
+from .staff_signup_changes import routes as staff_signup_change_routes
 
 from .providers import FixtureProviders, LiveProviders, ProviderUnavailable, tag
 from .store import Store
@@ -681,7 +682,10 @@ async def signups(request):
         placed = {row["tag"] for row in db.execute(
             "SELECT tag FROM roster_entries WHERE season_id=? AND assigned_clan_tag IS NOT NULL", (sid,)
         ).fetchall()}
-        if _editor(request, session) and request.query.get("all") == "1":
+        staff_view = _editor(request, session) and request.query.get("all") == "1"
+        revision = _revision(db, sid)
+        assignments = {row["tag"]: dict(row) for row in db.execute("SELECT r.tag,r.assigned_clan_tag,c.name AS assigned_clan_name FROM roster_entries r LEFT JOIN clans c ON c.tag=r.assigned_clan_tag WHERE r.season_id=?", (sid,))} if staff_view else {}
+        if staff_view:
             rows = db.execute("SELECT * FROM signups WHERE season_id=? ORDER BY user_id,tag", (sid,)).fetchall()
         else:
             rows = db.execute("SELECT * FROM signups WHERE season_id=? AND user_id=? ORDER BY tag", (sid, session["user_id"])).fetchall()
@@ -690,6 +694,8 @@ async def signups(request):
     result = []
     for row in rows:
         entry = dict(row)
+        if staff_view:
+            entry.update({key: assignments.get(entry["tag"], {}).get(key) for key in ("assigned_clan_tag", "assigned_clan_name")})
         entry["has_staff_placement"] = entry["tag"] in placed
         entry["prefer_crystal_1_or_lower"] = bool(entry["prefer_crystal_1_or_lower"])
         entry["family_clan_status"] = _family_status(entry["signup_clan_tag"], approved)
@@ -697,7 +703,7 @@ async def signups(request):
         entry["signup_clan_type"] = "FWA" if "FWA" in (entry.get("signup_clan_type"), origin_type) else entry.get("signup_clan_type") or origin_type
         entry["fwa_main_warning"] = entry["pool"] == "main" and entry["signup_clan_type"] == "FWA"
         result.append(entry)
-    return web.json_response({"signups": result})
+    return web.json_response({"signups": result, **({"revision": revision} if staff_view else {})})
 
 
 async def submit_signup(request):
@@ -1764,7 +1770,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     from .clan_weights import lineup_lifecycle
     app.cleanup_ctx.append(lineup_lifecycle)
     from .signup_activity import routes as signup_activity_routes
-    routes = [*weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
+    routes = [*staff_signup_change_routes, *weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.put(API + "/member-season", set_member_season), web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
         web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
