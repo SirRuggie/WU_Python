@@ -640,9 +640,7 @@ export default function RosterWorkspace({
         <div>
           <p className="eyebrow">Staff roster</p>
           <h1>CWL roster &amp; signups</h1>
-          <p>{mode === "assign"
-            ? "Manage signups and working placements. Placements stay private until published."
-            : "Select accounts, choose a hosting clan, and assign. Changes save immediately."}</p>
+          <p>Working placements stay private until published.</p>
         </div>
         <label className="season-choice">
           Season
@@ -701,6 +699,35 @@ export default function RosterWorkspace({
       {loading && <p role="status">Loading roster…</p>}
       {roster && (
         <>
+          {canRoster && <div
+            className="roster-workflow-nav"
+            role="group"
+            aria-label="Roster workspace views"
+          >
+            {(
+              [
+                { id: "assign", label: "Accounts & signups" },
+                { id: "compare", label: "Compare clans" },
+                { id: "rules", label: "Clan settings" },
+                { id: "weights", label: `Weights · ${missingWeight} missing` },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                disabled={uiLocked}
+                aria-pressed={mode === item.id}
+                className={mode === item.id ? "active" : ""}
+                onClick={() => {
+                  if (item.id !== mode && !mayLeaveEditor()) return;
+                  setMode(item.id);
+                  setManualTag(null);
+                  setSelectedTags([]);
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>}
           {mode === "assign" ? (
             <div className="roster-list-pool-tabs workflow-tabs" role="group" aria-label="Show CWL accounts">
               {(["all", "main", "lazy"] as const).map((pool) => (
@@ -755,76 +782,18 @@ export default function RosterWorkspace({
               onBusy={setSignupBusy}
             />
           )}
-          {mode === "assign" ? (
+          {mode === "assign" && (
             <div className="roster-assign-summary" role="status">
               <span><strong>{poolAccounts.length}</strong> signed up</span>
               <span><strong>{assigned}</strong> assigned</span>
               <span><strong>{poolAccounts.length - assigned}</strong> awaiting placement</span>
               <span><strong>{missingWeight}</strong> missing weight</span>
             </div>
-          ) : (
-          <div className="roster-overview">
-            <div>
-              <strong>{poolAccounts.length}</strong>
-              <span>signed-up accounts</span>
-            </div>
-            <div>
-              <strong>{assigned}</strong>
-              <span>assigned</span>
-            </div>
-            <div>
-              <strong>{poolAccounts.length - assigned}</strong>
-              <span>unassigned</span>
-            </div>
-            <div>
-              <strong>{missingWeight}</strong>
-              <span>missing effective weight</span>
-            </div>
-          </div>
           )}
-          {canRoster && <div
-            className="roster-workflow-nav"
-            role="group"
-            aria-label="Roster workspace views"
-          >
-            {(
-              [
-                { id: "assign", label: "Assign accounts" },
-                { id: "compare", label: "Compare clans" },
-                { id: "rules", label: "Clan settings" },
-                { id: "weights", label: `Weights · ${missingWeight} missing` },
-              ] as const
-            ).map((item) => (
-              <button
-                key={item.id}
-                disabled={uiLocked}
-                aria-pressed={mode === item.id}
-                className={mode === item.id ? "active" : ""}
-                onClick={() => {
-                  if (item.id !== mode && !mayLeaveEditor()) return;
-                  setMode(item.id);
-                  setManualTag(null);
-                  setSelectedTags([]);
-                              }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>}
           <div className="roster-toolbar">
-            <span>
-              {mode === "assign" && !canRoster
-                ? "Select accounts to change their signup type or remove saved signups."
-                : mode === "assign" && viewPool === "all"
-                  ? "Choose Main or Lazy CWL to preview automatic placements."
-                : mode === "assign"
-                ? `${poolAccounts.filter((account) => account.auto_placement_reason === "ready").length} ready for auto-placement · ${poolAccounts.filter((account) => account.auto_placement_reason && account.auto_placement_reason !== "ready").length} need attention`
-                : mode === "compare"
-                  ? "Compare up to 10 clans side by side."
-                  : mode === "rules"
-                    ? "Set clan capacity and automatic placement ranges."
-                    : "Check missing weights and manage overrides."}
-            </span>
+            {mode === "assign" && canRoster && viewPool === "all" && (
+              <span>Choose Main or Lazy CWL above to preview automatic placements.</span>
+            )}
             <button
               disabled={uiLocked}
               onClick={() => {
@@ -834,7 +803,7 @@ export default function RosterWorkspace({
                   );
               }}
             >
-              Refresh
+              Refresh roster
             </button>
             {canRoster && mode === "assign" && viewPool !== "all" && (
               <button

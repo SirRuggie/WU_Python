@@ -1,24 +1,32 @@
 .roster-workspace .roster-workflow-nav {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 8px 0 14px;
-  scrollbar-width: thin;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #35353c;
 }
-.roster-workflow-nav button { white-space: nowrap; min-height: 44px; flex: 1; }
-.roster-workflow-nav button.active { background: #194b94; border-color: #8cb9ff; color: #fff; }
+.roster-workflow-nav button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 8px;
+  white-space: normal;
+}
+.roster-workspace .roster-workflow-nav button.active {
+  background: #352b17;
+  border-color: #c49b45;
+  color: #f5d27b;
+}
 
 .roster-workspace .roster-toolbar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
 .roster-toolbar > span { flex: 1; min-width: 230px; color: #c6d5e8; font-size: 13px; }
-.roster-workspace .roster-overview { margin-bottom: 8px; }
-.roster-workspace .roster-overview > div { padding: 12px; }
-.roster-workspace .roster-overview strong { font-size: 22px; }
 
 /* One search and filter area leads into the shared account list. */
 .roster-account-tools {
@@ -260,8 +268,7 @@
   .roster-quick-search > label:first-child { grid-column: 1 / -1; }
 }
 @media (max-width: 600px) {
-  .roster-workspace .roster-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .roster-workspace .roster-workflow-nav button { flex: 0 0 auto; }
+  .roster-workspace .roster-workflow-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .roster-workspace .roster-toolbar > span { width: 100%; flex-basis: 100%; }
   .roster-workspace .roster-account { padding: 5px 9px; }
   .roster-account-tools { padding: 10px 10px 0; }

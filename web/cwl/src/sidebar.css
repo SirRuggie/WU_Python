@@ -214,9 +214,6 @@ div.shell {
 .cwl-roster-tabs { display: flex; gap: 8px; flex: 1; min-width: 0; }
 .cwl-roster-tabs button { flex: 1; min-height: 48px; white-space: normal; }
 .cwl-roster-tabs button.active { background: #194a98; border: 1px solid #8bb9ff; color: #fff; }
-.cwl-more { flex: none; }
-.cwl-more summary { cursor: pointer; padding: 12px; }
-.cwl-more button { display: block; margin: 6px 0; }
 .cwl-result-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 
 @media (max-width: 900px) {
@@ -254,11 +251,18 @@ div.shell {
   .cwl-workspace-nav { flex-wrap: wrap; gap: 4px; }
   .cwl-roster-tabs { flex-basis: 100%; }
   .cwl-roster-tabs button { font-size: 13px; padding: 10px 6px; }
-  .cwl-more { margin-left: auto; }
 }
 
 @media (max-width: 370px) {
   .shell .topbar { padding-inline: 10px; gap: 8px; }
   .shell .topbar .user-pill { max-width: 44px; padding: 6px; }
   .shell .topbar .user-display-name { display: none; }
+}
+
+/* Route shortcuts stay compact; settings and exports live in the sidebar. */
+.shell .cwl-workspace-nav { margin-bottom: 12px; }
+.shell .cwl-roster-tabs { margin: 0; width: 100%; }
+.shell .cwl-roster-tabs > button { flex: 1 1 0; min-height: 44px; }
+@media (max-width: 650px) {
+  .shell .cwl-roster-tabs > button { padding: 8px 6px; font-size: 13px; }
 }

@@ -520,22 +520,30 @@ function App() {
         {seasonError && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
         {(view === 'signup' || view === 'assignments') && <div className="member-nav-tabs" role="group" aria-label="Member sections"><button className={view === 'signup' ? 'active' : ''} aria-pressed={view === 'signup'} onClick={() => changeView('signup', '', undefined, 'saved')}>My signups</button><button className={view === 'assignments' ? 'active' : ''} aria-pressed={view === 'assignments'} onClick={() => changeView('assignments')}>My clan assignments</button></div>}
-        {session.can_edit && ['roster','publication'].includes(view) && (
+        {session.can_edit && ['roster','publication'].includes(view) && allowedView('publication') === 'publication' && (
           <div className="cwl-workspace-nav">
             <nav className="cwl-roster-tabs" aria-label="Roster sections">
-              {allowedView('roster') === 'roster' && <button className={view === 'roster' ? 'active' : ''} aria-current={view === 'roster' ? 'page' : undefined} onClick={() => changeView('roster')}>Accounts &amp; roster</button>}
+              {allowedView('roster') === 'roster' && <button className={view === 'roster' ? 'active' : ''} aria-current={view === 'roster' ? 'page' : undefined} onClick={() => changeView('roster')}>Roster</button>}
               {allowedView('publication') === 'publication' && <>
                 <button className={view === 'publication' && publicationStep === 'review' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'review' ? 'page' : undefined} onClick={() => openPublication('review')}>Finalize roster</button>
                 <button className={view === 'publication' && publicationStep === 'announce' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'announce' ? 'page' : undefined} onClick={() => openPublication('announce')}>Announcements</button>
               </>}
             </nav>
-            {(allowedView('exports') === 'exports' || allowedView('staff') === 'staff') && <details className="cwl-more"><summary>More</summary>
-              {allowedView('exports') === 'exports' && <button onClick={() => changeView('exports')}>Exports &amp; history</button>}
-              {allowedView('staff') === 'staff' && <button onClick={() => changeView('staff')}>CWL settings</button>}
-            </details>}
+
           </div>
         )}
-        {session.can_edit && ['participation','bonuses','exports'].includes(view) && <div className="cwl-result-nav"><button aria-current={view === 'participation' ? 'page' : undefined} onClick={() => changeView('participation')}>Participation</button><button aria-current={view === 'bonuses' ? 'page' : undefined} onClick={() => changeView('bonuses')}>Bonus medals</button><button aria-current={view === 'exports' ? 'page' : undefined} onClick={() => changeView('exports')}>Exports & history</button></div>}
+        {session.can_edit && ['participation','bonuses','exports'].includes(view) &&
+          (['participation','bonuses','exports'] as const).filter(target => allowedView(target) === target).length > 1 && (
+          <nav className="cwl-result-nav" aria-label="Results sections">
+            {([
+              ['participation', 'Participation'],
+              ['bonuses', 'Bonus medals'],
+              ['exports', 'Exports & history'],
+            ] as const).filter(([target]) => allowedView(target) === target).map(([target, label]) => (
+              <button key={target} aria-current={view === target ? 'page' : undefined} onClick={() => changeView(target)}>{label}</button>
+            ))}
+          </nav>
+        )}
         {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}
         {view === 'staff-overview' && <StaffOverview onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
         {view === 'image-gallery' && <Suspense fallback={<p role="status">Loading images…</p>}><ImageGallery /></Suspense>}

@@ -137,13 +137,16 @@ export default function StaffSignupControls({ season, onChanged, onDirty, onBusy
   return (
     <section className="staff-signup-controls" aria-label="Staff signup controls">
       <div className="staff-signup-bar">
-        <span><strong>{archived ? "Archived season" : season.signup_open ? "Signups open" : "Signups closed"}</strong><small>Main and Lazy CWL · {archived ? "View only" : season.signup_open ? "Members can sign up" : "Staff can still add accounts"}</small></span>
+        <span>
+          <strong>{archived ? "Archived season" : season.signup_open ? "Signups open" : "Signups closed"}</strong>
+          <small>{archived ? "View only" : season.signup_open ? "Members can sign up" : "Staff can still add accounts"}</small>
+        </span>
         {!archived && <button ref={addButton} type="button" disabled={working || disabled} aria-expanded={open} onClick={() => { if (open) { if (canDiscard()) close(); } else setOpen(true); }}>Add signup</button>}
       </div>
       {canSettings && !archived && (
         <details className="staff-signup-window">
           <summary>Signup window settings</summary>
-          <p>Control whether members can sign up for Main and Lazy CWL. Saved signups remain when the window closes.</p>
+          <p>Closing the window keeps saved signups. Staff can still add accounts.</p>
           <button type="button" disabled={working || disabled || open} onClick={() => void toggle()}>{season.signup_open ? "Close signups" : "Open signups"}</button>
         </details>
       )}
@@ -219,7 +222,7 @@ export default function StaffSignupControls({ season, onChanged, onDirty, onBusy
                                 <TownHallIcon level={account.town_hall} />
                                 <span><strong>{account.name}</strong><small>{account.tag} · {account.current_clan_name || "No clan"}</small>{account.signed_up_pool && <small>Already signed up · {account.signed_up_pool === "main" ? "Main" : "Lazy"} CWL</small>}</span>
                               </label>
-                              {account.signed_up_pool && <StaffPlayerButton onDirty={setEditorDirty} onBusy={setEditorBusy} seasonId={String(season.id)} tag={account.tag} onChanged={async () => { setReload((value) => value + 1); await onChanged(true); }}>Manage signup</StaffPlayerButton>}
+                              {account.signed_up_pool && <StaffPlayerButton onDirty={setEditorDirty} onBusy={setEditorBusy} seasonId={String(season.id)} tag={account.tag} onChanged={async () => { setReload((value) => value + 1); await onChanged(true); }}>Account details</StaffPlayerButton>}
                             </div>
                           ))}
                         </div>

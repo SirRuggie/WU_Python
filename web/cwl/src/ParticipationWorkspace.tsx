@@ -219,7 +219,7 @@ export default function ParticipationWorkspace({ seasonId, seasons, onSeasonChan
 
   return <div className="participation-workspace">
     <div className="page-head participation-page-head">
-      <div><p className="eyebrow">CWL · Results</p><h1>Results &amp; participation</h1><p>Check CWL attacks and stars for current signups.</p></div>
+      <div><p className="eyebrow">CWL · Results</p><h1>Results &amp; participation</h1></div>
       <label className="season-choice">Season<select value={seasonId} disabled={controlsLocked} onChange={event => changeSeason(event.target.value)}>
         <option value="">Select a season</option>{seasons.map(season => <option key={season.id} value={String(season.id)}>{season.label}</option>)}</select></label>
     </div>
@@ -243,7 +243,7 @@ export default function ParticipationWorkspace({ seasonId, seasons, onSeasonChan
         {syncError && <p className="participation-capture-warning" role="alert">{syncError}</p>}
         {!data.sync?.cycle && <p className="participation-capture-warning">Set the CWL month in Capture settings before checking Clash.</p>}
         <details className="participation-capture-settings">
-          <summary>Capture settings and last check{syncDirty ? ' · Unsaved' : ''}</summary>
+          <summary>Capture settings{syncDirty ? ' · Unsaved' : ''}</summary>
           <div className="participation-sync-fields">
             <label>CWL month<input type="month" value={syncDraft?.cycle || ''} disabled={archived || writesLocked} onChange={event => { setSyncDraft(current => ({ cycle: event.target.value, enabled: current?.enabled || false, expected_updated_at: current?.expected_updated_at ?? null })); setSyncDirty(true); }} /></label>
             <label className="participation-sync-toggle"><input type="checkbox" checked={syncDraft?.enabled || false} disabled={archived || writesLocked} onChange={event => { setSyncDraft(current => ({ cycle: current?.cycle || '', enabled: event.target.checked, expected_updated_at: current?.expected_updated_at ?? null })); setSyncDirty(true); }} />Check automatically every 15 minutes</label>
@@ -275,7 +275,7 @@ export default function ParticipationWorkspace({ seasonId, seasons, onSeasonChan
           </div>)}
         </div>
         {!visible.length && <p className="participation-empty">No players match these filters.</p>}
-      </> : <p className="participation-empty">No current signup accounts yet. Working roster assignments can sync without publication.</p>}
+      </> : <p className="participation-empty">No current signup accounts yet.</p>}
       {lastPage > 0 && <nav className="roster-pagination" aria-label="Participation pages">
         <button type="button" disabled={controlsLocked || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button>
         <span>Page {currentPage + 1} of {lastPage + 1}</span>

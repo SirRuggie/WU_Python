@@ -142,7 +142,7 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
       <header className="compare-header">
         <div>
           <h2 id="compare-title">Compare clans</h2>
-          <p>{visibleClans.length} of {clans.length} selected {pool === 'main' ? 'Main' : 'Lazy'} clans visible · up to 10</p>
+          <p>{pool === 'main' ? 'Main' : 'Lazy'} CWL · {visibleClans.length} shown</p>
         </div>
         <button
           className="primary"
@@ -151,7 +151,7 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
           disabled={busy || !allClans.length}
           onClick={() => setChoosing(value => !value)}
         >
-          Choose clans · {clans.length}/10
+          Choose clans ({clans.length}/10)
         </button>
       </header>
 
@@ -189,10 +189,13 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
           {checking ? 'Updating locations…' : 'Refresh locations'}
         </button>
       </div>
-      <p className="compare-toolbar-note">
-        {available.length} of {allClans.length} clans match. Town Hall filters hide players, but totals include everyone assigned.
-        {' '}<span>Location: green in clan · red elsewhere · gray unchecked.</span>
-      </p>
+      <div className="compare-toolbar-note">
+        <span>{available.length} clans match filters · Location: green in clan, red elsewhere, gray unchecked.</span>
+        <details>
+          <summary>How totals work</summary>
+          <p>Town Hall filters hide players from view; clan totals still include every assigned account.</p>
+        </details>
+      </div>
       {locationError && <p className="notice error" role="alert">{locationError}</p>}
 
       {choosing && (
@@ -206,7 +209,6 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
               onChange={event => setClanSearch(event.target.value)}
             />
           </label>
-          <p>Select up to 10 clans. New choices go on the right.</p>
           <div className="compare-picker-list">
             {matchingClans.map(clan => (
               <label key={clan.tag}>

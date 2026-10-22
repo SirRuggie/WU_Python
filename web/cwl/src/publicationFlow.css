@@ -32,7 +32,6 @@
 .publication-section-heading p { margin: 3px 0 0; color: #b9bec7; font-size: 12px; }
 .publication-section-heading > span { color: #b9bec7; font-size: 12px; }
 .publication-section-heading > button { min-height: 44px; }
-.publication-readiness > p { margin: 0 0 8px; color: #b9bec7; font-size: 12px; }
 .publication-check-list { border-top: 1px solid #3a3a40; }
 .publication-check { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 50px; padding: 5px 0; border-bottom: 1px solid #3a3a40; }
 .publication-check > span:first-child { min-width: 0; }
@@ -40,7 +39,6 @@
 .publication-check small { display: block; }
 .publication-check strong { font-size: 13px; }
 .publication-check small { margin-top: 2px; font-size: 11px; }
-.publication-check > span:last-child { color: #a5e4b6; font-size: 12px; }
 .publication-check button { min-height: 44px; font-size: 12px; }
 
 .publication-preview-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0; }
@@ -82,6 +80,7 @@
 .publication-finalize .publication-ack { display: flex; align-items: start; gap: 10px; margin: 10px 0 14px; padding: 10px; border: 1px solid #625335; border-radius: 8px; background: #29251c; color: #f0d99d; cursor: pointer; }
 .publication-finalize .publication-ack input { flex: 0 0 auto; }
 .publication-finalize > button { min-height: 44px; }
+.publication-finalize .publication-publish-note { margin: 8px 0; color: #c8c9cd; font-size: 12px; }
 .publication-finalize .inline-reason { margin: 8px 0; }
 
 @media (max-width: 700px) {

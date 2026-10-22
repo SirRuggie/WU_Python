@@ -542,3 +542,41 @@ a successful sample removal with refreshed counts. Responsive checks included
 server authorization is covered by backend tests. No production signup/roster
 mutations or live Discord messages were used. Physical-device and assistive-
 technology testing was not performed; the existing bundle-size warning remains.
+
+### 2026-10-22: CWL clutter cleanup
+
+Keep the daily working area ahead of explanatory material. Roster modes now sit
+above pool/status controls; counts use one compact strip only on Accounts & signups.
+Compare clans remains a first-level working view with all picker, ordering, filter,
+location and editing controls. Its totals explanation is disclosed. Placement
+colors, selection behavior and the separate comparison/readiness meanings remain.
+
+Remove the extra More row from the roster header. Exports is directly available
+in the sidebar Results & bonuses group; CWL settings remains in the sidebar.
+Publication-only staff have a direct Publish roster entry. Hide empty permission
+subgroups and useless single-destination shortcut bars. Keep the publish workflow
+shortcuts compact on phones. Signup-window controls remain available in both the
+contextual disclosure and season settings so settings-only staff retain their
+existing workflow; these use the same API and do not add another storage owner.
+
+Publication shows only nonzero readiness issues and keeps the member/Discord
+publication distinction beside Publish. Readiness snapshot details use the compact
+status line; outdated snapshots retain their warning and working-roster action.
+Results/bonus headings no longer repeat their tabs. Bonus rule essentials and
+source problems stay visible; calculation details, historical qualifications and
+sent-message links are secondary. Bonus announcement preview mounts only when its
+disclosure is open. Reminder explanations move below the working area. Export
+format help follows records; working/published basis and full-download scope stay
+visible. Existing-member signup shortcuts now say Account details accurately.
+Remove obsolete summary and heading styles alongside the markup.
+
+Validation: independent agent review, 261 frontend tests, 34 backend permission,
+signup and bonus regressions, and TypeScript/Vite build passed. Isolated browser
+checks covered roster/Compare reachability, publication warnings and member-visible
+status, reminder overview-to-editor, export summary, results, saved bonus preview
+open/closed, and readiness working/published switching with an outdated snapshot.
+Layouts were inspected at 320px, 390px and 1440px; inspected pages had no horizontal
+document overflow. Navigation render tests cover signup-only, roster-only,
+publication-only and results-only permissions. No production records or live
+Discord messages were changed during testing. Physical-device and screen-reader
+checks were not performed; existing bundle-size and aiohttp warnings remain.

@@ -109,13 +109,14 @@ export default function ArrivalCheck({seasonId, onDirty, onBusy}: Props) {
       <div className="arrival-overview" role="status">
         <strong>{readyCount} / {[...clans.keys()].filter(Boolean).length} clans ready</strong>
         <span>{attention} accounts need attention</span>
-        <small>{data.updating ? 'Updating locations…' : data.source === 'published' ? `Published version ${data.version}` : 'Working roster'}</small>
+        <small>{data.updating ? 'Updating locations…' : data.source === 'published'
+          ? `Published version ${data.version}${data.published_at ? ` · ${new Date(data.published_at).toLocaleString()}` : ''}`
+          : 'Working roster'}</small>
       </div>
-      {data.source === 'published' && <div className={`notice ${outdated ? 'error' : ''}`} role="status">
-        <div><strong>{outdated ? 'Published roster is outdated' : 'Viewing a published snapshot'}</strong>
-          <p>{outdated ? 'Use the working roster to check current declaration readiness.' : 'This is the saved roster. Location checks do not change it.'}</p>
-          {outdated && <small>{data.removed_since_publication} no longer signed up · {data.added_since_publication} new signups</small>}
-          {data.published_at && <small>Published {new Date(data.published_at).toLocaleString()}</small>}
+      {outdated && <div className="notice error" role="status">
+        <div><strong>Published roster is outdated</strong>
+          <p>Use the working roster to check current declaration readiness.</p>
+          <small>{data.removed_since_publication} no longer signed up · {data.added_since_publication} new signups</small>
         </div><button disabled={busy || locked} onClick={() => setSource('draft')}>Use working roster</button>
       </div>}
       {source === 'published' && !data.publication_available && <p role="status">No published roster yet. Showing the working roster.</p>}

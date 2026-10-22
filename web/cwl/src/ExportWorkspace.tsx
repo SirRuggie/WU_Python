@@ -201,7 +201,7 @@ export default function ExportWorkspace({ seasonId, seasons, onSeasonChange }: P
 
   return <div className="export-workspace">
     <div className="page-head export-page-head">
-      <div><p className="eyebrow">CWL · Records</p><h1>Season exports &amp; history</h1><p>Review saved records, then download the CSV you need.</p></div>
+      <div><p className="eyebrow">CWL · Records</p><h1>Exports &amp; history</h1></div>
       <label className="season-choice">Season
         <select disabled={downloadBusy} value={seasonId} onChange={event => changeSeason(event.target.value)}>
           <option value="">Select a season</option>
@@ -212,7 +212,6 @@ export default function ExportWorkspace({ seasonId, seasons, onSeasonChange }: P
     {!seasonId && <p className="export-empty">Select a season to review and export its records.</p>}
     {seasonId && <>
       <div className="export-season-status" role="status">
-        <strong>{selectedSeason?.label || displayedPreview?.summary.season_label || 'Selected season'}</strong>
         <span>{selectedSeason?.status === 'archived' ? 'Archived season' : 'Working season'}</span>
         <span>{displayedPreview ? displayedPreview.summary.published_version ? `Published roster v${displayedPreview.summary.published_version} · ${dateText(displayedPreview.summary.published_at)}` : 'No roster published yet' : previewLoading ? 'Checking publication…' : 'Publication status unavailable'}</span>
         {displayedPreview?.summary.cwl_month && <span>CWL month {displayedPreview.summary.cwl_month}</span>}
@@ -237,12 +236,10 @@ export default function ExportWorkspace({ seasonId, seasons, onSeasonChange }: P
       {notice && <div className="notice success" role="status">{notice}</div>}
       {displayedPreview && !previewLoading && <>
         <div className="export-ready">
-          <div><strong>{displayedPreview.counts.rows} {displayedPreview.counts.rows === 1 ? 'row' : 'rows'} ready</strong><span>{kind === 'accounts' ? basis === 'published' ? 'Latest published roster' : 'Saved working placements' : choices.find(choice => choice.kind === kind)?.label}</span></div>
+          <div><strong>{displayedPreview.counts.rows} {displayedPreview.counts.rows === 1 ? 'row' : 'rows'} ready</strong><span>CSV includes all saved rows, regardless of search.</span></div>
           <button type="button" className="primary" disabled={downloadBusy} onClick={() => void download()}>{downloadBusy ? 'Preparing CSV…' : 'Download CSV'}</button>
         </div>
         {kind === 'accounts' && <p className="export-basis-note">{basis === 'published' ? 'Published roster placements and weights are frozen; separately recorded results may update.' : 'Saved working placements use the latest weights and results, including in archived seasons.'}</p>}
-        <p className="export-safety-note">Search filters this preview only. The CSV includes every saved row at download time.</p>
-        <details className="export-about"><summary>About this CSV</summary><p>Blank results remain blank. Weights use full numbers; Discord IDs remain complete. Names and notes are protected from running as spreadsheet formulas.</p></details>
         {rows.some(row => kind === 'accounts' ? row.participation_matches_roster === false : kind === 'participation' && row.matches_roster === false) && <p className="export-mismatch-note">Some results belong to another assignment, so they are blank in this roster export. Find the original results in Saved participation history.</p>}
         <div className="export-list-head"><strong>Preview</strong><span>{rows.length} matching · {displayedPreview.counts.rows} total</span></div>
         <label className="export-search">Find a record
@@ -265,6 +262,7 @@ export default function ExportWorkspace({ seasonId, seasons, onSeasonChange }: P
             <button type="button" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next</button>
           </nav>}
         </>}
+        <details className="export-about"><summary>CSV format &amp; data</summary><p>Blank results remain blank. Weights use full numbers; Discord IDs remain complete. Names and notes are protected from running as spreadsheet formulas. The file reflects saved records at download time.</p></details>
       </>}
     </>}
   </div>;

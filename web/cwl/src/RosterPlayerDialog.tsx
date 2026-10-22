@@ -150,7 +150,7 @@ export default function RosterPlayerDialog({
       {canSignups && !archived && (
         <section className="roster-player-signup" aria-label="Signup actions">
           <h3>Signup type</h3>
-          <p>{account.pool === 'main' ? 'Main CWL' : 'Lazy CWL'} · Changing type clears this account’s working placement.</p>
+          <p>{account.pool === 'main' ? 'Main CWL' : 'Lazy CWL'}{onPoolChange ? ' · Switching type clears the working placement.' : ''}</p>
           {onPoolChange && (!poolReview ? (
             <button type="button" disabled={busy || dirty} onClick={() => setPoolReview(account.pool === 'main' ? 'lazy' : 'main')}>
               Switch to {account.pool === 'main' ? 'Lazy' : 'Main'} CWL

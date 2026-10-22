@@ -76,7 +76,7 @@
 .bonus-check input { flex: none; width: auto; }
 .bonus-action-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 1px solid #343840; margin-top: 16px; padding: 14px 0; }
 .bonus-action-bar span { color: #b8c0cb; font-size: 13px; }
-.bonus-action-bar button { min-height: 44px; }
+.bonus-action-bar button { min-height: 44px; margin-left: auto; }
 .bonus-preview { margin-top: 12px; border-top: 2px solid #c39a3b; padding-top: 14px; }
 .bonus-preview h4 { margin: 18px 0 8px; }
 .bonus-announcement { border-top: 1px solid #38383d; margin-top: 20px; padding-top: 16px; }

@@ -130,16 +130,13 @@
     margin-left: 0;
   }
 }
-.reminder-month h3, .reminder-editor-intro h3 {
+.reminder-month h3 {
   margin-top: 0;
 }
 .reminder-editor-intro {
   padding: 0;
   border: 0;
   background: none;
-}
-.reminder-editor-intro p {
-  color: #d5dfed;
 }
 .reminder-month .reminder-fields button {
   min-height: 44px;
@@ -287,10 +284,6 @@ only editing opens the long forms. */ .reminder-overview {
 .reminder-overview-head h3 {
   margin: 0 0 3px;
   font-size: 16px;
-}
-.reminder-overview-head p {
-  margin: 0;
-  font-size: 12px;
 }
 .reminder-overview-head button {
   flex: 0 0 auto;

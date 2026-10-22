@@ -9,7 +9,25 @@
 .compare-toolbar > label { flex: 1 1 190px; margin: 0; min-width: 0; font-size: 12px; }
 .compare-toolbar > label select { width: 100%; min-height: 44px; }
 .compare-toolbar > button { flex: 0 0 auto; min-height: 44px; }
-.compare-workspace .compare-toolbar-note { margin: 8px 0 12px; color: #b9c0ca; font-size: 12px; }
+.compare-workspace .compare-toolbar-note {
+  margin: 8px 0 12px;
+  color: #b9c0ca;
+  font-size: 12px;
+}
+.compare-toolbar-note details { margin-top: 2px; }
+.compare-toolbar-note summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #bdd4f3;
+  cursor: pointer;
+}
+.compare-toolbar-note summary::before {
+  content: "▸";
+  margin-right: 6px;
+}
+.compare-toolbar-note details[open] summary::before { content: "▾"; }
+.compare-toolbar-note details p { margin: 0 0 6px; }
 
 .compare-picker { margin: 10px 0; padding: 12px; border: 1px solid #515d6a; border-radius: 10px; background: #1b2229; }
 .compare-picker > label { display: block; max-width: 380px; }

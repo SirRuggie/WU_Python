@@ -424,10 +424,6 @@ export default function ReminderWorkspace({
                 </button>
                 </div>
               </div>
-              <details className="reminder-disclosure reminder-context">
-                <summary>About this schedule · {state.cycle}</summary>
-                <p>Messages and times repeat monthly and also update Discord /manage. Existing signup links stay unchanged. Previously sent messages are not resent.</p>
-              </details>
               {archived && (
                 <p className="notice">
                   This season is archived. Settings are read-only.
@@ -453,7 +449,7 @@ export default function ReminderWorkspace({
               </div>
               {tab === "overview" && <div className="reminder-overview">
                 <div className="reminder-overview-head">
-                  <div><h3>Messages this cycle</h3><p>Review each purpose, audience, destination and next send before editing.</p></div>
+                  <h3>Messages · {state.cycle}</h3>
                   <button type="button" onClick={() => setTab("schedule")}>Edit timing</button>
                 </div>
                 <div className="reminder-overview-list">
@@ -477,8 +473,6 @@ export default function ReminderWorkspace({
               {tab === "messages" && (
                 <>
                   <div className="reminder-editor-intro">
-                    <h3>Choose a message to edit</h3>
-                    <p>Choose Main or Lazy, then choose a message.</p>
                     <div
                       className="tabs workflow-tabs"
                       role="group"
@@ -1045,6 +1039,10 @@ export default function ReminderWorkspace({
                   {!schedule.length && <p>No enabled scheduled messages.</p>}
                 </details>
               ) : null}
+              <details className="reminder-disclosure reminder-context">
+                <summary>About this schedule · {state.cycle}</summary>
+                <p>Messages and times repeat monthly and also update Discord /manage. Existing signup links stay unchanged. Previously sent messages are not resent.</p>
+              </details>
             </>
           )}
         </>

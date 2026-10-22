@@ -262,7 +262,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
 
   return <div className="bonus-workspace">
     <div className="page-head bonus-page-head">
-      <div><p className="eyebrow">CWL · Results &amp; bonuses</p><h1>Bonus winners</h1><p>Review eligibility, draw once, approve, then announce.</p></div>
+      <div><p className="eyebrow">CWL · Results &amp; bonuses</p><h1>Bonus winners</h1></div>
       <label className="season-choice">Season<select value={seasonId} disabled={busy || lookingUp} onChange={event => {
         if (canDiscard()) onSeasonChange(event.target.value);
       }}><option value="">Select a season</option>{seasons.map(season => <option key={season.id} value={season.id}>{season.label}</option>)}</select></label>
@@ -275,7 +275,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
     {busy && <p role="status">Working…</p>}
     {!seasonId && <p>Select a season to begin.</p>}
     {data && <>
-      <div className="bonus-context"><strong>{pool === 'main' ? 'Main CWL' : 'Lazy CWL'} · {data.cycle || 'CWL month not set'}</strong>
+      <div className="bonus-context"><strong>{data.cycle || 'CWL month not set'}</strong>
         <span>{data.sync.last_checked_at ? `Clash checked ${new Date(data.sync.last_checked_at).toLocaleString()}` : 'Clash not checked yet'}</span>
         <button type="button" disabled={busy || lookingUp} onClick={refresh}>Refresh</button></div>
       {archived && <p className="notice">Archived season · Read only</p>}
@@ -297,15 +297,15 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
       {!clans.length && <p>No current signups are assigned to a hosting clan in this CWL pool.</p>}
 
       {selectedClan && !draw && <section className="bonus-flow">
-        <div className="bonus-section-heading"><div><h2>{selectedClan.name}</h2><p>{pool === 'lazy' ? 'Four attacks, or three attacks and eight stars. Season flags apply. After three consecutive bonus seasons, an account sits out this season.' : 'Accounts with the saved minimum attacks can enter the draw.'}</p></div></div>
+        <div className="bonus-section-heading"><h2>{selectedClan.name}</h2></div>
         <div className="bonus-stats" role="status">
           <div><strong>{manualCount && countReady ? Number(slots) : allowance?.status === 'ready' ? allowance.total : '—'}</strong><span>Total bonus allowance{manualCount && countReady ? ' · staff count' : ''}</span></div>
           <div><strong>{clanAccounts.length}</strong><span>Current candidates</span></div>
           <div><strong>{preview?.eligible.length ?? (pool === 'lazy' ? clanAccounts.filter(account => !account.exclusion).length : '—')}</strong><span>{preview ? 'Verified eligible' : pool === 'lazy' ? 'Meets rules now' : 'Qualifying'}</span></div>
         </div>
-        <p className="bonus-support">{allowance?.reason || 'Refresh Clash results to check the allowance.'} {allowance?.base != null ? `${allowance.base} base + ${allowance.wins} wins${allowance.status === 'ready' ? ` = ${allowance.total}` : ''}.` : ''}</p>
+        <p className="bonus-support">{allowance?.reason || 'Refresh Clash results to check the allowance.'}</p>
         <details className="bonus-secondary"><summary>Bonus count and source</summary>
-          <p>{allowance?.league || 'League unknown'}{allowance?.team_size ? ` · ${allowance.team_size} vs ${allowance.team_size}` : ''} · {allowance?.completed_wars ?? 0}/{allowance?.rounds ?? '?'} wars complete</p>
+          <p>{allowance?.league || 'League unknown'}{allowance?.team_size ? ` · ${allowance.team_size} vs ${allowance.team_size}` : ''} · {allowance?.completed_wars ?? 0}/{allowance?.rounds ?? '?'} wars complete{allowance?.base != null ? ` · ${allowance.base} base + ${allowance.wins} wins${allowance.status === 'ready' ? ` = ${allowance.total}` : ''}` : ''}</p>
           <label className="bonus-check"><input type="checkbox" checked={manualCount} disabled={!canManage || busy || archived} onChange={event => { setManualCount(event.target.checked); setPreview(null); }} />Use the total shown in Clash</label>
           {manualCount && <label>Total bonuses shown in Clash<input type="number" min="1" max="50" step="1" value={slots} disabled={!canManage || busy || archived} onChange={event => { setSlots(event.target.value); setPreview(null); }} /></label>}
           {manualCount && <p className="bonus-caution">Staff-confirmed count; not API-verified.</p>}
@@ -329,7 +329,10 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
                 }
               })()}>Add candidate</button></div>
           </section>}
-          <p className="bonus-support">A player with bonuses in all three preceding CWL seasons sits out this season. This check uses saved dashboard approvals; earlier in-game medals not recorded here cannot be inferred. Eligibility is checked when you select Review eligibility.</p>
+          <p className="bonus-support">Qualifies with four attacks, or three attacks and eight stars; flags and exclusions still apply.</p>
+          <details className="bonus-secondary"><summary>Eligibility rules</summary>
+            <p>Three consecutive saved bonus approvals require a one-season sit-out. Earlier in-game medals not recorded here cannot be inferred.</p>
+          </details>
           {clanAccounts.some(account => account.representative_status === 'unavailable') && <p className="notice error" role="alert">Discord role lookup is unavailable for one or more accounts. Eligible accounts need verified role status before drawing; refresh when Discord is available.</p>}
           <AccountList accounts={clanAccounts} onReview={(account, opener) => { if (canLeaveEditor()) { setCandidateOpen(false); setCandidateTag(''); setCandidateReason(''); setCandidateLookup(null); reviewOpener.current = opener; setReviewTag(account.tag); setPreview(null); } }} busy={busy || !canManage || archived} searchable />
           {reviewAccount && <BonusCandidateReview key={reviewAccount.tag} account={reviewAccount} busy={busy} onDirty={setReviewDirty} onCancel={() => { if (canLeaveEditor()) closeReview(); }} onRemove={reviewAccount.manual_candidate ? async () => {
@@ -354,7 +357,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
           </details>
         </>}
 
-        <div className="bonus-action-bar"><span>{pool === 'lazy' ? 'Review the flags, exclusions and odds before saving a draw.' : 'Review results before drawing.'}</span>
+        <div className="bonus-action-bar">
           <button type="button" className="primary" disabled={!canManage || busy || archived || policyDirty || roleDirty || reviewDirty || candidateOpen || !countReady || (pool === 'main' && data.policies.main === null)} onClick={() => void review()}>Review eligibility</button></div>
         {preview && <section className="bonus-preview" aria-label="Draw preview">
           <div className="bonus-section-heading"><h3>{preview.eligible.length} eligible · {Math.min(preview.available, preview.eligible.length)} winners</h3><span>{preview.available} slots remaining</span></div>

@@ -73,3 +73,38 @@ it('offers the same roster destination to signup and placement staff without exp
   expect(views).not.toContain('publication')
  }
 })
+
+it('does not render empty nested CWL groups for roster-only or signup-only staff', async () => {
+ const {renderToStaticMarkup} = await import('react-dom/server')
+ const React = await import('react')
+ const {default: Sidebar} = await import('./SidebarNavigation')
+ const render = (permissions: string[]) => renderToStaticMarkup(React.createElement(Sidebar, {
+  userId: 'audit', view: 'roster', canEdit: true, isOwner: false, permissions, onNavigate: () => {},
+ }))
+
+ for (const permissions of [['cwl_roster'], ['cwl_signups']]) {
+  const markup = render(permissions)
+  expect(markup).toContain('Roster')
+  expect(markup).not.toContain('Reminders')
+  expect(markup).not.toContain('Results &amp; bonuses')
+ }
+})
+
+it('renders publish-only access and results exports in their CWL sidebar groups', async () => {
+ const {renderToStaticMarkup} = await import('react-dom/server')
+ const React = await import('react')
+ const {default: Sidebar} = await import('./SidebarNavigation')
+ const render = (permissions: string[]) => renderToStaticMarkup(React.createElement(Sidebar, {
+  userId: 'audit', view: 'publication', canEdit: true, isOwner: false, permissions, onNavigate: () => {},
+ }))
+
+ const publishOnly = render(['cwl_publish'])
+ expect(publishOnly).toContain('Publish roster')
+ expect(publishOnly).not.toContain('Roster</span>')
+ expect(publishOnly).not.toContain('Exports &amp; history')
+
+ const results = render(['cwl_results'])
+ expect(results).toContain('Exports &amp; history')
+ expect(results).toContain('Results &amp; bonuses')
+ expect(results).not.toContain('Publish roster')
+})

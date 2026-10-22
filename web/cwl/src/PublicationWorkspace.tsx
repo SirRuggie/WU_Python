@@ -217,9 +217,6 @@ export default function PublicationWorkspace({
         <div>
           <p className="eyebrow">Staff · CWL</p>
           <h1>{step === 'announce' ? 'Announcements' : 'Finalize roster'}</h1>
-          <p>{step === 'announce'
-            ? 'Review the message before choosing where to send it.'
-            : 'Review Main and Lazy assignments before members can see them.'}</p>
         </div>
         <label className="season-choice">
           Season
@@ -283,23 +280,20 @@ export default function PublicationWorkspace({
                 <h2 id="publication-readiness-title">Readiness checks</h2>
                 <span>{hasWarnings ? 'Review the flagged accounts' : draft.preview.accounts.length ? 'Checks clear' : 'Waiting for signups'}</span>
               </div>
-              <p>Missing weights do not block publication. Unassigned accounts need your acknowledgement.</p>
-              <div className="publication-check-list">
-                {checks.map(check => (
+              {hasWarnings && <div className="publication-check-list">
+                {checks.filter(check => check.accounts.length > 0).map(check => (
                   <div className="publication-check" key={check.filter}>
-                    <span><strong>{checkLabels[check.filter]}</strong><small>{check.accounts.length} account{check.accounts.length === 1 ? '' : 's'}</small></span>
-                    {check.accounts.length > 0
-                      ? <button disabled={locked || loading} onClick={() => onFix(check.filter)}>Review in roster →</button>
-                      : <span>✓ Clear</span>}
+                    <span><strong>{checkLabels[check.filter]}</strong><small>{check.accounts.length} account{check.accounts.length === 1 ? '' : 's'}{check.filter === 'missing_weight' ? ' · does not block publishing' : ''}</small></span>
+                    <button disabled={locked || loading} onClick={() => onFix(check.filter)}>Review in roster →</button>
                   </div>
                 ))}
-              </div>
+              </div>}
             </section>
 
             <section className="publication-preview" aria-labelledby="publication-preview-title">
               <div className="publication-section-heading">
                 <div>
-                  <h2 id="publication-preview-title">Preview assignments by clan</h2>
+                  <h2 id="publication-preview-title">Roster preview</h2>
                   <p>Main {poolCounts.main} · Lazy {poolCounts.lazy}. Both groups are included when you publish.</p>
                 </div>
                 <button disabled={locked || loading} onClick={() => void load()}>Refresh draft</button>
@@ -366,7 +360,6 @@ export default function PublicationWorkspace({
               <div className="publication-section-heading">
                 <div>
                   <h2 id="publication-finalize-title">Publish this roster</h2>
-                  <p>Publishes Main and Lazy placements together for members. Discord announcements are a separate step.</p>
                 </div>
               </div>
               {draft.preview.unassigned_count > 0 && (
@@ -380,6 +373,7 @@ export default function PublicationWorkspace({
                   <span>I understand {draft.preview.unassigned_count} account{draft.preview.unassigned_count === 1 ? ' is' : 's are'} still awaiting placement and will appear that way to members.</span>
                 </label>
               )}
+              <p className="publication-publish-note">Publishes Main and Lazy assignments to members. Discord announcements are separate.</p>
               {archived && <p className="inline-reason">This season is archived. Its roster cannot be published or republished.</p>}
               {!draft.preview.accounts.length && <p className="inline-reason">No signed-up accounts are in this roster yet.</p>}
               <button className="primary" disabled={!canPublish} onClick={() => void publish()}>

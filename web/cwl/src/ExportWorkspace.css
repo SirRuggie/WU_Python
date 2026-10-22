@@ -17,10 +17,6 @@
   font-size: 12px;
   color: #bac2cc;
 }
-.export-season-status strong {
-  color: #f4f2ee;
-  font-size: 14px;
-}
 .export-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 280px));
@@ -63,13 +59,13 @@
 .export-ready button {
   flex: 0 0 auto;
 }
-.export-safety-note, .export-basis-note {
+.export-basis-note {
   margin: 8px 0;
   color: #b6bdc7;
   font-size: 12px;
 }
 .export-about {
-  margin: 0 0 16px;
+  margin: 12px 0 0;
   border-bottom: 1px solid #ffffff20;
 }
 .export-about summary {
