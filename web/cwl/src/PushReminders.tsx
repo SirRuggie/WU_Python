@@ -1,14 +1,21 @@
 import DashboardIcon from './DashboardIcon'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, type Account } from './api'
-import { pushSupport, getBrowserSubscription, enableBrowserPush, disableBrowserPush, subscriptionId } from './webPush'
+import { PushPermissionError, getBrowserSubscription, enableBrowserPush, disableBrowserPush, subscriptionId } from './webPush'
+import usePushPermission from './usePushPermission'
+import PushPermissionHelp from './PushPermissionHelp'
 import TownHallIcon from './TownHallIcon'
 import './PushReminders.css'
 export type ReminderSubscription = { id: string; enabled: boolean; tags: string[]; war: boolean; cwl: boolean; offsets: number[]; updated_at?: number }
 type PushStatus = { available: boolean; public_key: string; subscriptions: ReminderSubscription[] }
 type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{outcome:string}> }
 export default function PushReminders({ accounts }: { accounts: Account[] }) {
-  const support = pushSupport()
+  const { support, refreshPermission } = usePushPermission()
+  const inFlight = useRef(false)
+  const mounted = useRef(true)
+  const edited = useRef(false)
+  const loadSequence = useRef(0)
+  const [permissionIssue, setPermissionIssue] = useState(false)
   const [status,setStatus] = useState<PushStatus | null>(null)
   const [current,setCurrent] = useState<ReminderSubscription | null>(null)
   const [tags,setTags] = useState<string[]>([])
@@ -21,33 +28,85 @@ export default function PushReminders({ accounts }: { accounts: Account[] }) {
   const [notice,setNotice] = useState('')
   const [search,setSearch] = useState('')
   const [install,setInstall] = useState<InstallEvent | null>(null)
-  const load = async () => {
+  const load = async (restoreChoices = false) => {
+    const turn = ++loadSequence.current
     const result = await api<PushStatus>('/push')
     const browser = await getBrowserSubscription()
     const id = browser ? await subscriptionId(browser) : null
+    if (!mounted.current || turn !== loadSequence.current) return
     const saved = result.subscriptions.find(item => item.id === id) || null
-    setStatus(result);setCurrent(saved)
-    if (saved) {setTags(saved.tags);setWar(saved.war);setCwl(saved.cwl);setOffsets(saved.offsets)}
+    setStatus(result); setCurrent(saved)
+    if (restoreChoices && !edited.current && saved) {
+      setTags(saved.tags); setWar(saved.war); setCwl(saved.cwl); setOffsets(saved.offsets)
+    }
   }
-  useEffect(() => { let live=true; api<PushStatus>('/push').then(async result => { const browser = await getBrowserSubscription(); const id=browser ? await subscriptionId(browser):null; if(!live)return; const saved=result.subscriptions.find(item=>item.id===id)||null; setStatus(result);setCurrent(saved);if(saved){setTags(saved.tags);setWar(saved.war);setCwl(saved.cwl);setOffsets(saved.offsets)} }).catch(cause=>{if(live)setError(cause instanceof Error?cause.message:'Reminder settings unavailable')});const capture=(event:Event)=>{event.preventDefault();setInstall(event as InstallEvent)};window.addEventListener('beforeinstallprompt',capture);return()=>{live=false;window.removeEventListener('beforeinstallprompt',capture)} },[])
-  const act = async (work:()=>Promise<void>) => {setBusy(true);setError('');setNotice('');try{await work()}catch(cause){setError(cause instanceof Error?cause.message:'Request failed. Try again.')}finally{setBusy(false)}}
+  useEffect(() => {
+    mounted.current = true
+    void load(true).catch(cause => { if (mounted.current) setError(cause instanceof Error ? cause.message : 'Reminder settings unavailable') })
+    const capture = (event: Event) => { event.preventDefault(); setInstall(event as InstallEvent) }
+    window.addEventListener('beforeinstallprompt', capture)
+    return () => { mounted.current = false; ++loadSequence.current; window.removeEventListener('beforeinstallprompt', capture) }
+  }, [])
+  const act = async (work: () => Promise<void>) => {
+    if (inFlight.current) return
+    inFlight.current = true
+    ++loadSequence.current // An earlier settings read must not overwrite this action.
+    setBusy(true); setError(''); setNotice(''); setPermissionIssue(false)
+    try { await work() }
+    catch (cause) {
+      if (mounted.current) {
+        setPermissionIssue(cause instanceof PushPermissionError)
+        setError(cause instanceof Error ? cause.message : 'Request failed. Try again.')
+      }
+    } finally {
+      inFlight.current = false
+      if (mounted.current) { setBusy(false); refreshPermission() }
+    }
+  }
   const enable = () => {
-    if (!status?.available || !tags.length || !validTimes || (!war&&!cwl)) return
-    // Start permission request on the user's click, before any server request.
-    const pending = enableBrowserPush(status.public_key)
-    void act(async()=>{const subscription=await pending;const saved=await api<ReminderSubscription>('/push/subscriptions','PUT',{subscription:subscription.toJSON(),enabled:true,tags,war,cwl,offsets});setCurrent(saved);await load();setNotice('Notifications are on for this device, grouped by war clan.')})
+    if (inFlight.current || !status?.available || !tags.length || !validTimes || (!war && !cwl)) return
+    // act invokes work synchronously: permission is requested on this click,
+    // before any fetch or worker registration can consume user activation.
+    void act(async () => {
+      const subscription = await enableBrowserPush(status.public_key)
+      const saved = await api<ReminderSubscription>('/push/subscriptions', 'PUT', {
+        subscription: subscription.toJSON(), enabled: true, tags, war, cwl, offsets,
+      })
+      if (!mounted.current) return
+      setCurrent(saved)
+      setStatus(value => value ? { ...value, subscriptions: [...value.subscriptions.filter(item => item.id !== saved.id), saved] } : value)
+      setNotice('Notifications are on for this device. Use Send test notification to check delivery.')
+    })
+  }
+  useEffect(() => {
+    if (support.permission === 'granted' && permissionIssue) {
+      setPermissionIssue(false); setError('')
+      setNotice('Browser permission is allowed. Select Enable notifications to finish setup with your chosen accounts and times.')
+    }
+  }, [support.permission, permissionIssue])
+  const recheckPermission = () => {
+    refreshPermission()
+    setError(''); setPermissionIssue(false)
+    setNotice('Permission checked. If allowed, select Enable notifications to finish setup or save your choices.')
   }
   const visible=accounts.filter(account=>`${account.name} ${account.tag} ${account.current_clan_name||''}`.toLowerCase().includes(search.trim().toLowerCase()))
   const dirty=!!current&&(JSON.stringify([...tags].sort())!==JSON.stringify([...current.tags].sort())||war!==current.war||cwl!==current.cwl||JSON.stringify([...offsets].sort())!==JSON.stringify([...current.offsets].sort()))
-  return <details className="card push-reminders"><summary><span><DashboardIcon name="bell"/> Notifications</span><span className="badge">{current?.enabled?'On for this device':'Off for this device'}</span></summary>
+  return <details className="card push-reminders"><summary><span><DashboardIcon name="bell"/> Notifications</span><span className="badge">{current?.enabled && support.permission === 'granted' ? 'On for this device' : support.permission === 'denied' ? 'Blocked in browser' : 'Off for this device'}</span></summary>
     <p>Get one reminder per clan at each chosen time. It lists your selected accounts with attacks left.</p>
     <p className="small">Reminders can arrive while the app is closed. Device settings, connection issues or delayed game data can affect delivery. Unavailable war data is skipped.</p>
-    {install ? <button onClick={()=>void install.prompt().then(()=>install.userChoice).then(()=>setInstall(null))}>Install Warriors United app ↗</button> : <p className="small">Install from your browser menu: Install app / Add to Home Screen. On iPhone, open the Home Screen app before enabling notifications.</p>}
-    {!support.supported&&<p className="notice">{support.reason}</p>}{support.permission==='denied'&&<p className="notice">Notifications are blocked. Allow notifications for this site in your browser settings, then return here.</p>}
-    {status&&!status.available&&<p className="notice">Notifications are not ready yet. Your choices have not been enabled.</p>}
-    {error&&<p className="notice error" role="alert">{error}<button disabled={busy} onClick={()=>void act(load)}>Retry settings</button></p>}{notice&&<p className="notice success" role="status">{notice}</p>}
-    <fieldset disabled={busy}><legend>Remind me about</legend><div className="push-options"><label><input type="checkbox" checked={war} onChange={event=>setWar(event.target.checked)}/>War</label><label><input type="checkbox" checked={cwl} onChange={event=>setCwl(event.target.checked)}/>CWL</label></div></fieldset>
-    <fieldset disabled={busy}><legend>Remind me before war ends</legend>
+    {install ? <button onClick={()=>void install.prompt().then(()=>install.userChoice).then(()=>setInstall(null))}>Install Warriors United app ↗</button> : <p className="small">Android and desktop can receive notifications without installing the app. On iPhone or iPad, open the installed Home Screen app.</p>}
+    <p className="small" role="status">Browser permission: <strong>{support.permission === 'granted' ? 'Allowed' : support.permission === 'denied' ? 'Blocked' : support.permission === 'default' ? 'Not allowed yet' : 'Unavailable here'}</strong>. {support.permission === 'granted' && !current?.enabled && 'Choose your accounts and enable notifications to finish setup.'}</p>
+    {!support.supported && <p className="notice">{support.reason}</p>}
+    {support.permission === 'denied' && <p className="notice">Allow notifications for this site in your browser settings. Repeatedly pressing Enable cannot override a browser block.</p>}
+    {status && !status.available && <p className="notice">Notifications are not ready yet. Your choices have not been enabled.</p>}
+    {error && <div className="notice error" role="alert"><p>{error}</p>{permissionIssue
+      ? <>{support.permission !== 'denied' && <button disabled={busy} onClick={enable}>Try permission again</button>}</>
+      : <button disabled={busy} onClick={() => void act(() => load())}>Reload settings</button>}</div>}
+    {notice && <p className="notice success" role="status">{notice}</p>}
+    <PushPermissionHelp expanded={permissionIssue || support.permission === 'denied' || !support.supported} />
+    <button type="button" disabled={busy} onClick={recheckPermission}>Recheck permission</button>
+    <fieldset disabled={busy} onChange={() => { edited.current = true }} onClick={() => { edited.current = true }}><legend>Remind me about</legend><div className="push-options"><label><input type="checkbox" checked={war} onChange={event=>setWar(event.target.checked)}/>War</label><label><input type="checkbox" checked={cwl} onChange={event=>setCwl(event.target.checked)}/>CWL</label></div></fieldset>
+    <fieldset disabled={busy} onChange={() => { edited.current = true }} onClick={() => { edited.current = true }}><legend>Remind me before war ends</legend>
       <p className="small">Choose hours and minutes. Add up to five different times; each sends one reminder per clan.</p>
       <div className="push-times">{offsets.map((value,index)=><div className="push-time-row" key={index}>
         <span className="push-time-number">{index+1}.</span>
@@ -58,10 +117,10 @@ export default function PushReminders({ accounts }: { accounts: Account[] }) {
       {offsets.length<5&&<button type="button" onClick={()=>setOffsets(current=>[...current,[120,30,360,60,15,5].find(value=>!current.includes(value))!])}>＋ Add reminder time</button>}
       {!validTimes&&<p className="notice" role="status">Choose at least one time from 1 minute to 24 hours. Each time must be different.</p>}
     </fieldset>
-    <fieldset disabled={busy}><legend>Accounts to include · {tags.length} selected</legend><label>Find an account<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Name, tag or current clan"/></label><div className="push-options"><button type="button" onClick={()=>setTags(accounts.map(account=>account.tag))}>Select all linked accounts</button><button type="button" onClick={()=>setTags([])}>Clear</button></div><div className="push-accounts">{visible.map(account=><label key={account.tag}><input type="checkbox" checked={tags.includes(account.tag)} onChange={event=>setTags(current=>event.target.checked?[...current,account.tag]:current.filter(tag=>tag!==account.tag))}/><TownHallIcon level={account.town_hall}/><span><strong>{account.name}</strong><small>{account.tag} · {account.current_clan_name||'No current clan'}</small></span></label>)}</div>{!accounts.length&&<p>Link your Clash accounts and let Todo load before selecting them here.</p>}</fieldset>
+    <fieldset disabled={busy} onChange={() => { edited.current = true }} onClick={() => { edited.current = true }}><legend>Accounts to include · {tags.length} selected</legend><label>Find an account<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Name, tag or current clan"/></label><div className="push-options"><button type="button" onClick={()=>setTags(accounts.map(account=>account.tag))}>Select all linked accounts</button><button type="button" onClick={()=>setTags([])}>Clear</button></div><div className="push-accounts">{visible.map(account=><label key={account.tag}><input type="checkbox" checked={tags.includes(account.tag)} onChange={event=>setTags(current=>event.target.checked?[...current,account.tag]:current.filter(tag=>tag!==account.tag))}/><TownHallIcon level={account.town_hall}/><span><strong>{account.name}</strong><small>{account.tag} · {account.current_clan_name||'No current clan'}</small></span></label>)}</div>{!accounts.length&&<p>Link your Clash accounts and let Todo load before selecting them here.</p>}</fieldset>
     <p className="small">Reminders use the account’s war clan, even if it has moved. Select and save newly linked accounts to include them.</p>
     {!current?.enabled && <p className="small">In your browser, select your accounts and reminder times. Select <strong>Enable notifications</strong>, then select <strong>Allow</strong> if prompted.</p>}
-    <div className="push-actions"><button className="primary" disabled={busy||!status?.available||!support.supported||!tags.length||!validTimes||(!war&&!cwl)} onClick={enable}>{busy?'Working…':current?.enabled?'Save reminder choices':'Enable notifications'}</button>{current?.enabled&&<><button disabled={busy||dirty} onClick={()=>void act(async()=>{await api(`/push/subscriptions/${current.id}/test`,'POST',{});setNotice('Test notification accepted by the push service. Check this device’s notifications.')})}>Send test notification</button><button disabled={busy} onClick={()=>void act(async()=>{await api(`/push/subscriptions/${current.id}`,'DELETE');await disableBrowserPush();setCurrent(null);await load();setNotice('Notifications are off for this device.')})}>Turn off on this device</button></>}</div>{dirty&&<small>Save your changes before testing.</small>}
+    <div className="push-actions"><button className="primary" disabled={busy||!status?.available||!support.supported||support.permission==='denied'||!tags.length||!validTimes||(!war&&!cwl)} onClick={enable}>{busy?'Working…':current?.enabled && support.permission === 'granted' ? 'Save reminder choices' : 'Enable notifications'}</button>{current?.enabled&&<><button disabled={busy||dirty||support.permission!=='granted'} onClick={()=>void act(async()=>{await api(`/push/subscriptions/${current.id}/test`,'POST',{});setNotice('Test notification accepted by the push service. Check this device’s notifications.')})}>Send test notification</button><button disabled={busy} onClick={()=>void act(async()=>{await api(`/push/subscriptions/${current.id}`,'DELETE');await disableBrowserPush();setCurrent(null);await load();setNotice('Notifications are off for this device.')})}>Turn off on this device</button></>}</div>{dirty&&<small>Save your changes before testing.</small>}
     {!!status?.subscriptions.some(item=>item.id!==current?.id)&&<details><summary>Other saved devices</summary><p className="small">Remove a device to stop reminders there.</p>{status.subscriptions.filter(item=>item.id!==current?.id).map((item,index)=><div className="push-device" key={item.id}><span>Device {index+1} · {item.enabled?'On':'Off'}<small>{item.updated_at?`Updated ${new Date(item.updated_at * 1000).toLocaleString()}`:''}</small></span><button disabled={busy} onClick={()=>void act(async()=>{await api(`/push/subscriptions/${item.id}`,'DELETE');await load();setNotice('Reminders removed for that device.')})}>Remove device</button></div>)}</details>}
     <p className="small">Notification text can appear on your lock screen. Signing out here turns off reminders on this browser; other devices keep their own settings.</p>
   </details>

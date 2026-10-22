@@ -69,3 +69,51 @@ it('still attempts unsubscribe when subscription fingerprinting fails', async ()
   expect(await stopPushOnSignout()).toBeNull()
   expect(unsubscribe).toHaveBeenCalledOnce()
 })
+
+it('requests permission synchronously before worker setup, without an intervening fetch', async () => {
+  const b = browser()
+  const pending = enableBrowserPush(publicKey)
+  expect(b.requestPermission).toHaveBeenCalledOnce()
+  expect(b.register).not.toHaveBeenCalled()
+  await pending
+  expect(b.subscribe).toHaveBeenCalledOnce()
+})
+it('an undecided or expired prompt is distinct from a browser block', async () => {
+  const b = browser()
+  b.requestPermission.mockResolvedValue('default')
+  await expect(enableBrowserPush(publicKey)).rejects.toMatchObject({ name: 'PushPermissionError', permission: 'default' })
+  expect(b.register).not.toHaveBeenCalled()
+  expect(b.subscribe).not.toHaveBeenCalled()
+})
+it('never prompts repeatedly when the browser has blocked permission', async () => {
+  const b = browser('denied')
+  await expect(enableBrowserPush(publicKey)).rejects.toMatchObject({ permission: 'denied' })
+  expect(b.requestPermission).not.toHaveBeenCalled()
+})
+it('does not prompt again after permission was allowed through site controls', async () => {
+  const b = browser('granted')
+  await enableBrowserPush(publicKey)
+  expect(b.requestPermission).not.toHaveBeenCalled()
+  expect(b.subscribe).toHaveBeenCalledWith({ userVisibleOnly: true, applicationServerKey: expect.any(Uint8Array) })
+})
+it('does not leave setup working forever when the service worker cannot activate', async () => {
+  vi.useFakeTimers()
+  try {
+    browser('granted')
+    Object.defineProperty(navigator.serviceWorker, 'ready', { value: new Promise(() => {}) })
+    const pending = expect(enableBrowserPush(publicKey)).rejects.toThrow('took too long')
+    await vi.advanceTimersByTimeAsync(12000)
+    await pending
+  } finally { vi.useRealTimers() }
+})
+
+it('supports Android browser tabs without requiring installation', () => {
+  browser()
+  Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 15) Chrome/155.0' })
+  expect(pushSupport().supported).toBe(true)
+})
+it('does not treat an embedded browser without PushManager as supported', () => {
+  browser()
+  delete (window as unknown as Record<string, unknown>).PushManager
+  expect(pushSupport().supported).toBe(false)
+})

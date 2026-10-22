@@ -1,8 +1,31 @@
 /** Browser plumbing only; the authenticated API owns reminder preferences. */
+export class PushPermissionError extends Error {
+  constructor(public readonly permission: 'default' | 'denied') {
+    super(permission === 'denied'
+      ? 'Notifications are blocked for this site. Allow them in your browser settings, then recheck permission.'
+      : 'The browser did not grant permission. If no prompt appeared, open this page in your full browser and check its notification settings.')
+    this.name = 'PushPermissionError'
+  }
+}
+
+export function pushPlatform(): 'ios' | 'android' | 'desktop' {
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios'
+  return /Android/i.test(navigator.userAgent) ? 'android' : 'desktop'
+}
+
+async function workerReady(): Promise<ServiceWorkerRegistration> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Notification setup took too long. Check your connection and try enabling again.')), 12000) }),
+    ])
+  } finally { clearTimeout(timer) }
+}
 export type PushSupport = { supported: boolean; reason: string; permission: NotificationPermission | 'unsupported' }
 
 export function pushSupport(): PushSupport {
-  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  const ios = pushPlatform() === 'ios'
   const installed = window.matchMedia('(display-mode: standalone)').matches || !!(navigator as Navigator & { standalone?: boolean }).standalone
   if (ios && !installed) return { supported: false, reason: 'On iPhone or iPad, add this dashboard to your Home Screen and open it there to enable reminders.', permission: 'unsupported' }
   if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
@@ -24,11 +47,11 @@ export async function registerPushWorker(): Promise<ServiceWorkerRegistration> {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) throw new Error('This browser does not support secure push reminders.')
   await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
   // ready resolves only once an active worker can receive the subscription.
-  return navigator.serviceWorker.ready
+  return workerReady()
 }
 
 export async function getBrowserSubscription(): Promise<PushSubscription | null> {
-  if (!pushSupport().supported) return null
+  if (!pushSupport().supported || Notification.permission !== 'granted') return null
   const registration = await registerPushWorker()
   return registration.pushManager.getSubscription()
 }
@@ -37,10 +60,11 @@ export async function getBrowserSubscription(): Promise<PushSubscription | null>
 export async function enableBrowserPush(vapidPublicKey: string): Promise<PushSubscription> {
   const support = pushSupport()
   if (!support.supported) throw new Error(support.reason)
+  if (support.permission === 'denied') throw new PushPermissionError('denied')
   const key = vapidKeyBytes(vapidPublicKey)
   // Request before asynchronous registration to preserve the user gesture on iOS.
   const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
-  if (permission !== 'granted') throw new Error(permission === 'denied' ? 'Notifications are blocked. Allow them in your browser’s site settings to enable reminders.' : 'Notification permission was not granted. You can try again when ready.')
+  if (permission !== 'granted') throw new PushPermissionError(permission === 'denied' ? 'denied' : 'default')
   const registration = await registerPushWorker()
   const existing = await registration.pushManager.getSubscription()
   if (existing) return existing
