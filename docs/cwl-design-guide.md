@@ -176,3 +176,42 @@ and submit paths; this does not validate the native popup or assistive technolog
 No live roster data or Discord notifications were used. Existing Vite bundle/import
 and aiohttp warnings remain. Compare, readiness, publication and Manage signups
 redesigns remain separate stages.
+
+### Manage signups implementation — 2026-10-22
+
+Carry the shared-list pattern into signup administration. Search, CWL type,
+placement and Refresh share one filter area; Discord member lookup is an optional
+filter within that area. Remove the duplicate Open roster shortcut. The sidebar
+remains the route to placement work.
+
+Group accounts by Discord member, with visible identity and compact player rows.
+Keep exact hosting clan and assignment state visible, with green saved placement
+and gold selection. Edit signup opens the existing selected-account action flow;
+pool switches and removal still require explicit save/confirmation and explain
+which placements will be cleared. Add signup remains the single entry point for
+member lookup or player-tag entry. Do not duplicate its underlying editor.
+
+Preserve revision checks, member ownership, FWA eligibility, staff-only placement
+data, archived-season restrictions, and published-roster separation. Changing the
+layout must not change any weights, grants, saved signups or notifications.
+
+Validation: Sol implemented and Luna independently reviewed the changed signup
+paths. 235 frontend tests and 100 relevant backend tests passed, covering staff
+signup changes, ownership, FWA eligibility, stale revisions, archived seasons,
+publication privacy, access scopes, signup entry/anchors and roster behavior.
+Production build and diff checks passed; existing Vite chunk/import and aiohttp
+warnings remain.
+
+Isolated SQLite/browser checks used 45 fictional accounts across 15 members.
+Checked desktop 1440px and mobile 390px/320px, long and external-looking names,
+username search, exact assigned clan, identity-service fallback, and 44px row and
+confirmation controls. No horizontal document overflow on inspected screens.
+Verified Cancel focus return; failed save retaining selections/action; stale-save
+error, Cancel and Refresh recovery; successful removal of an entire member group
+with persistent success feedback and stable heading focus; a pool change removing
+the current filtered group with the same focus fallback; reload persistence; and
+503/403 list errors clearing records without presenting an empty-success state.
+Add signup member/tag modes remain reachable, and dirty tag entry disables list
+actions. Native discard cancellation was simulated only in the isolated fixture;
+native popup operation and assistive technology are not certified. No live
+signups, weights, permissions or Discord messages were changed during testing.

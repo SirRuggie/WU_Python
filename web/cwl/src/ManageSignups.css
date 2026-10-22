@@ -1,84 +1,129 @@
-.manage-signups .staff-signup-controls {
-  margin-bottom: 16px;
-}
-.manage-signups .staff-signup-list-tools {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 190px auto;
-  align-items: end;
-  gap: 12px;
-}
-.manage-signups .staff-signup-list-tools > label {
+/* Status and the single Add signup entry sit above the saved member list. */
+.manage-signups .signup-top-controls {
   min-width: 0;
   margin: 0;
+  padding: 0;
+  border: 0;
 }
-.manage-signups .staff-signup-list-tools input,
-.manage-signups .staff-signup-list-tools select {
-  width: 100%;
+.manage-signups .staff-signup-controls {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-color: #414149;
+  background: #1b1c21;
 }
+.manage-signups .staff-signup-bar strong { font-size: 15px; }
+.manage-signups .staff-signup-bar small { margin-top: 2px; }
+.manage-signups .staff-signup-actions button { min-height: 44px; }
+.manage-signups .staff-signup-form { margin-top: 12px; }
+
+.manage-signups-list { min-width: 0; }
+.manage-signups-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 9px;
+}
+.manage-signups-heading h2 { margin: 0; font-size: 21px; }
+.manage-signups-heading > span { color: #b9c0ca; font-size: 13px; }
+.manage-signups-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) repeat(2, minmax(130px, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #38383f;
+  border-radius: 11px;
+  background: #19191d;
+}
+.manage-signups-filters > label { min-width: 0; margin: 0; }
+.manage-signups-filters input,
+.manage-signups-filters select { width: 100%; min-height: 44px; }
+.manage-signups-refresh { min-width: 82px; min-height: 44px; }
+.manage-signups-member-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+.manage-signups-member-filter button {
+  max-width: 100%;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+  background: #24252b;
+  font-size: 12px;
+}
+.manage-signups-member-picker { grid-column: 1 / -1; max-width: 560px; }
+.manage-signups-list > .notice { margin: 10px 0; }
+.manage-signups-list > p:not(.notice) { margin: 14px 0; }
+.manage-signups-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin: 20px 0;
+  font-size: 13px;
+}
+
+/* Member groups share restrained dividers and keep the member's identity clear. */
 .signup-member-group {
-  border: 1px solid #414149;
-  border-radius: 12px;
-  margin: 14px 0;
   overflow: hidden;
+  margin: 10px 0;
+  border: 1px solid #393941;
+  border-radius: 11px;
+  background: #171719;
 }
 .signup-member-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  background: #202027;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #393941;
+  background: #212126;
 }
-.signup-member-heading > div {
-  min-width: 0;
-}
-.signup-member-heading h3 {
-  margin: 0;
-  font-size: 15px;
-}
-.signup-member-heading small {
-  color: #b7bac5;
+.signup-member-heading > div { min-width: 0; }
+.signup-member-identity { display: flex; align-items: center; gap: 9px; }
+.signup-member-identity > div { min-width: 0; }
+.signup-member-avatar { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 50%; object-fit: cover; }
+.signup-member-avatar-fallback { display: grid; place-items: center; background: #454750; color: #fff; font-size: 15px; font-weight: 700; }
+.signup-member-heading h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.signup-member-heading small { color: #b9bcc5; font-size: 11px; }
+.signup-member-heading .button {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 7px 10px;
+  white-space: nowrap;
+  font-size: 12px;
 }
 .signup-compact-row {
   display: grid;
-  grid-template-columns: 44px minmax(140px, 1fr) 90px minmax(120px, 1fr) auto;
+  grid-template-columns: 44px minmax(140px, 1.35fr) 90px minmax(120px, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid #36363d;
+  gap: 7px 10px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid #33333a;
+}
+.signup-compact-row:last-of-type { border-bottom: 0; }
+.signup-compact-row.is-assigned {
+  background: #193329;
+  box-shadow: inset 3px 0 #7bc6a1;
 }
 .signup-compact-row.is-selected {
   background: #302916;
   box-shadow: inset 3px 0 #edc64d;
 }
-.signup-player {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.signup-player-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.signup-player-name img {
-  width: 26px;
-  height: 26px;
-  object-fit: contain;
-}
+.signup-player { min-width: 0; overflow-wrap: anywhere; }
+.signup-player-name { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.signup-player-name img { width: 24px; height: 24px; object-fit: contain; }
 .signup-player small,
-.signup-placement small {
-  display: block;
-  color: #b7bac5;
-  font-size: 12px;
-}
-.signup-placement {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.signup-pool {
-  font-size: 12px;
-  color: #dfd7bb;
-}
+.signup-placement small { display: block; color: #b9bcc5; font-size: 11px; }
+.signup-placement { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.signup-placement strong { display: block; margin-top: 2px; font-size: 13px; }
+.signup-placement > span { color: #bdcfee; }
+.signup-pool { color: #dfd7bb; font-size: 12px; }
 .signup-select,
 .signup-select-all {
   display: flex;
@@ -87,116 +132,55 @@
   min-height: 44px;
   margin: 0;
 }
-.signup-select {
-  justify-content: center;
-  width: 44px;
-}
-.signup-select-all {
-  padding: 0 14px;
-  font-size: 13px;
-}
+.signup-select { justify-content: center; width: 44px; }
+.signup-select-all { padding: 0 12px; border-bottom: 1px solid #33333a; font-size: 12px; }
 .signup-select input,
-.signup-select-all input {
-  width: 18px;
-  height: 18px;
-  accent-color: #edc64d;
+.signup-select-all input { width: 20px; height: 20px; accent-color: #edc64d; }
+.signup-compact-row button { min-height: 44px; font-size: 12px; }
+.signup-row-warning {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: #ffc2ca;
+  font-size: 12px;
 }
 .signup-inline-editor {
-  padding: 14px;
+  padding: 12px;
   border-top: 1px solid #a5893b;
   background: #25221a;
 }
-.signup-inline-editor p {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.signup-inline-editor select {
-  width: 100%;
-  max-width: 380px;
-}
-.signup-editor-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
-.signup-row-warning {
-  grid-column: 2/-1;
-  color: #ffc2ca;
-  font-size: 13px;
-  margin: 0;
-}
-.signup-member-group .notice {
-  margin: 12px;
-}
-.signup-member-group button,
-.signup-member-group .button {
-  min-height: 44px;
-}
-@media (max-width: 800px) {
-  .manage-signups .staff-signup-list-tools {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .manage-signups .staff-signup-list-tools > label:first-child {
-    grid-column: 1/-1;
-  }
-  .signup-compact-row {
-    grid-template-columns: 44px minmax(0, 1fr) auto;
-    gap: 4px 8px;
-  }
-  .signup-select {
-    grid-row: 1/3;
-  }
-  .signup-player {
-    grid-column: 2;
-  }
-  .signup-pool {
-    grid-column: 3;
-  }
-  .signup-placement {
-    grid-column: 2;
-  }
-  .signup-manage {
-    grid-column: 3;
-  }
-  .signup-member-heading {
-    padding: 8px 12px;
-  }
-}
+.signup-inline-editor p { font-size: 13px; overflow-wrap: anywhere; }
+.signup-inline-editor select { width: 100%; max-width: 380px; }
+.signup-editor-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.signup-editor-actions button { min-height: 44px; }
+.signup-member-group .notice { margin: 10px 12px; }
 
-.signup-top-controls {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  min-width: 0;
+@media (max-width: 900px) {
+  .manage-signups-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .manage-signups-filters > label:first-child { grid-column: 1 / -1; }
+  .signup-compact-row { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 4px 8px; }
+  .signup-select { grid-row: 1 / 3; }
+  .signup-player { grid-column: 2 / -1; }
+  .signup-pool { grid-column: 2; grid-row: 2; }
+  .signup-manage { grid-column: 3; grid-row: 2; }
+  .signup-placement { grid-column: 2 / -1; grid-row: 3; }
 }
-.signup-player {
-  grid-column: 2;
+@media (max-width: 600px) {
+  .manage-signups-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px; }
+  .manage-signups-refresh { grid-column: 1 / -1; justify-self: start; }
+  .manage-signups-heading h2 { font-size: 19px; }
+  .signup-member-heading { padding: 8px 10px; }
+  .signup-compact-row { padding: 7px 10px; }
+  .signup-member-heading .button { padding-inline: 8px; }
 }
-.signup-member-heading .button {
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-@media (max-width: 800px) {
-  .manage-signups > section.card {
-    padding: 12px;
-  }
-  .signup-compact-row .signup-player {
-    grid-column: 2/-1;
-  }
-  .signup-compact-row .signup-pool {
-    grid-column: 2;
-    grid-row: 2;
-  }
-  .signup-compact-row .signup-manage {
-    grid-column: 3;
-    grid-row: 2;
-  }
-  .signup-compact-row .signup-placement {
-    grid-column: 2/-1;
-    grid-row: 3;
-  }
-  .signup-compact-row .signup-select {
-    grid-row: 1/3;
-  }
+@media (max-width: 370px) {
+  .manage-signups-filters { grid-template-columns: minmax(0, 1fr); }
+  .manage-signups-filters > label:first-child,
+  .manage-signups-refresh,
+  .manage-signups-member-filter,
+  .manage-signups-member-picker { grid-column: 1; }
+  .signup-compact-row { grid-template-columns: 44px minmax(0, 1fr); }
+  .signup-player { grid-column: 2; }
+  .signup-pool { grid-column: 2; grid-row: 2; }
+  .signup-manage { grid-column: 2; grid-row: 4; justify-self: start; }
+  .signup-placement { grid-column: 2; grid-row: 3; }
 }

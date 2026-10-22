@@ -1,21 +1,26 @@
 import { useRef, useState } from "react";
 import { api, type Signup } from "./api";
 import TownHallIcon from "./TownHallIcon";
+import type { MemberOption } from "./MemberPicker";
 
 type Props = {
   accounts: Signup[];
   name: string;
+  identity?: MemberOption;
+  groupKey?: string;
   seasonId: number;
   revision: number;
   editable: boolean;
   disabled: boolean;
   onActive: (active: boolean) => void;
   onBusy: (busy: boolean) => void;
-  onChanged: () => Promise<void>;
+  onChanged: (notice: string) => Promise<void>;
 };
 export default function SignupMemberGroup({
   accounts,
   name,
+  identity,
+  groupKey,
   seasonId,
   revision,
   editable,
@@ -25,11 +30,12 @@ export default function SignupMemberGroup({
   onChanged,
 }: Props) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const selectionTrigger = useRef<HTMLElement | null>(null);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [action, setAction] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const uid = accounts[0].user_id || "";
   const chosen = accounts.filter((account) => selected.includes(account.tag));
   const affected = chosen.filter(
@@ -42,7 +48,6 @@ export default function SignupMemberGroup({
     setSelected(tags);
     setAction("");
     setError("");
-    setNotice("");
     onActive(tags.length > 0);
   }
   async function save() {
@@ -59,11 +64,10 @@ export default function SignupMemberGroup({
       setSelected([]);
       setAction("");
       onActive(false);
-      setNotice(
+      await onChanged(
         `${result.count} signup${result.count === 1 ? "" : "s"} ${action === "remove" ? "removed" : `changed to ${action === "main" ? "Main" : "Lazy"} CWL`}.`,
       );
-      await onChanged();
-      heading.current?.focus();
+      // The parent restores focus once the refreshed list has rendered.
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Could not save changes.",
@@ -73,16 +77,29 @@ export default function SignupMemberGroup({
       onBusy(false);
     }
   }
+  function cancel() {
+    select([]);
+    requestAnimationFrame(() => {
+      const target = selectionTrigger.current?.isConnected ? selectionTrigger.current : heading.current;
+      target?.focus({ preventScroll: true });
+    });
+  }
+  const avatarUrl = identity?.avatar_url?.startsWith("https://cdn.discordapp.com/")
+    ? identity.avatar_url
+    : null;
   return (
-    <section className="signup-member-group" aria-label={`${name} signups`}>
+    <section className="signup-member-group" data-signup-group-key={groupKey} aria-label={`${name} signups`}>
       <header className="signup-member-heading">
-        <div>
-          <h3 ref={heading} tabIndex={-1}>
-            {name}
-          </h3>
-          <small>
-            {accounts.length} {accounts.length === 1 ? "account" : "accounts"}
-          </small>
+        <div className="signup-member-identity">
+          {avatarUrl && !avatarFailed ? (
+            <img className="signup-member-avatar" src={avatarUrl} alt="" width={34} height={34} loading="lazy" onError={() => setAvatarFailed(true)} />
+          ) : (
+            <span className="signup-member-avatar signup-member-avatar-fallback" aria-hidden="true">{(identity?.display_name || name).slice(0, 1)}</span>
+          )}
+          <div>
+            <h3 ref={heading} tabIndex={-1}>{name}</h3>
+            <small>{identity?.username ? `@${identity.username} · ` : ""}{accounts.length} {accounts.length === 1 ? "account" : "accounts"}{uid ? ` · ${uid}` : ""}</small>
+          </div>
         </div>
         {/^[0-9]{15,22}$/.test(uid) && (
           <a
@@ -106,16 +123,17 @@ export default function SignupMemberGroup({
                 node.indeterminate =
                   selected.length > 0 && selected.length < accounts.length;
             }}
-            onChange={(e) =>
-              select(e.target.checked ? accounts.map((a) => a.tag) : [])
-            }
+            onChange={(e) => {
+              selectionTrigger.current = e.currentTarget;
+              select(e.target.checked ? accounts.map((a) => a.tag) : []);
+            }}
           />
           Select all {accounts.length} accounts
         </label>
       )}
       {accounts.map((account) => (
         <div
-          className={`signup-compact-row ${selected.includes(account.tag) ? "is-selected" : ""}`}
+          className={`signup-compact-row ${account.has_staff_placement ? "is-assigned" : ""} ${selected.includes(account.tag) ? "is-selected" : ""}`}
           key={account.tag}
         >
           {editable && (
@@ -125,13 +143,14 @@ export default function SignupMemberGroup({
                 aria-label={`Select ${account.player_name || account.tag}`}
                 disabled={disabled || busy}
                 checked={selected.includes(account.tag)}
-                onChange={(e) =>
+                onChange={(e) => {
+                  selectionTrigger.current = e.currentTarget;
                   select(
                     e.target.checked
                       ? [...selected, account.tag]
                       : selected.filter((tag) => tag !== account.tag),
-                  )
-                }
+                  );
+                }}
               />
             </label>
           )}
@@ -166,15 +185,16 @@ export default function SignupMemberGroup({
               className="signup-manage"
               disabled={disabled || busy}
               aria-expanded={selected.includes(account.tag)}
-              onClick={() =>
+              onClick={(event) => {
+                selectionTrigger.current = event.currentTarget;
                 select(
                   selected.length === 1 && selected[0] === account.tag
                     ? []
                     : [account.tag],
-                )
-              }
+                );
+              }}
             >
-              Manage
+              Edit signup
             </button>
           )}
           {account.fwa_main_warning && (
@@ -237,16 +257,11 @@ export default function SignupMemberGroup({
                   ? "Confirm removal"
                   : "Save changes"}
             </button>
-            <button disabled={busy} onClick={() => select([])}>
+            <button disabled={busy} onClick={cancel}>
               Cancel
             </button>
           </div>
         </div>
-      )}
-      {notice && (
-        <p className="notice success" role="status">
-          {notice}
-        </p>
       )}
     </section>
   );

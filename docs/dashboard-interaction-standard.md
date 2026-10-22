@@ -1047,3 +1047,11 @@ Applied the compact-row, contextual bulk-action and focused Details patterns
 documented in docs/cwl-design-guide.md. Validation scope and limitations are recorded
 there: 233 frontend/51 backend tests, isolated desktop/mobile checks and failure
 paths. No storage migration, permission change or notification behavior change.
+
+### 2026-10-22: Manage signups
+
+Adopted the CWL compact list/filter pattern, visible Discord identities, explicit
+signup actions, and reliable focus after cancellation or refreshed removal.
+The signup status bar keeps one Add signup entry. Read failures are distinct from
+empty results; filters cannot disrupt an active edit. See cwl-design-guide.md
+for the stage's regression and isolated browser evidence and limitations.

@@ -15,11 +15,11 @@ const accounts: Signup[] = [
     assigned_clan_tag: "#R2Y",
   },
 ];
-function render(editable: boolean) {
+function render(editable: boolean, rows: Signup[] = accounts, name = "Sample member") {
   return renderToStaticMarkup(
     <SignupMemberGroup
-      accounts={accounts}
-      name="Sample member"
+      accounts={rows}
+      name={name}
       seasonId={1}
       revision={1}
       editable={editable}
@@ -35,14 +35,37 @@ describe("compact signup groups", () => {
     const html = render(true);
     expect(html).toContain("Lazy Host");
     expect(html).toContain("&lt;Sample&gt;");
-    expect(html).toContain("Manage</button>");
+    expect(html).toContain("Edit signup</button>");
     expect(html).toContain("Message ↗");
     expect(html).not.toContain("Placed in working roster");
+  });
+  it("shows awaiting placement when there is no staff assignment", () => {
+    const html = render(true, [{
+      ...accounts[0],
+      has_staff_placement: false,
+      assigned_clan_name: null,
+      assigned_clan_tag: null,
+    }]);
+    expect(html).toContain("Awaiting placement");
+    expect(html).not.toContain("Assigned</small>");
+    expect(html).not.toContain("Lazy Host");
+  });
+  it("falls back to the saved clan tag when an assigned clan name is unavailable", () => {
+    const html = render(true, [{
+      ...accounts[0],
+      user_id: "",
+      assigned_clan_name: null,
+      assigned_clan_tag: "#OLD",
+    }], "No Discord account");
+    expect(html).toContain("#OLD");
+    expect(html).not.toContain("Awaiting placement");
+    expect(html).toContain("No Discord account");
+    expect(html).not.toContain("Message ↗");
   });
   it("omits mutation controls when read only", () => {
     const html = render(false);
     expect(html).not.toContain('type="checkbox"');
-    expect(html).not.toContain("Manage</button>");
+    expect(html).not.toContain("Edit signup</button>");
     expect(html).toContain("Lazy Host");
   });
 });
