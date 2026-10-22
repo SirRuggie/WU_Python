@@ -629,7 +629,7 @@ these are bundle measurements, not a physical-phone/network speed benchmark.
 Deployment must retain older hashed assets for already-open tabs, copy new assets
 before index.html, and keep HTML uncached. No routes, permissions or data migrated.
 
-Validation: 262 frontend regressions, 26 dashboard integration tests, TypeScript
+Validation: 263 frontend regressions, 26 dashboard integration tests, TypeScript
 and isolated Vite build passed. Independent code review and isolated browser
 checks covered 320/390-pixel and desktop layouts, a deliberately rejected export
 chunk, error reporting, usable navigation, Back, manual reload recovery with season
