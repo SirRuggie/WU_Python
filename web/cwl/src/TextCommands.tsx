@@ -6,6 +6,7 @@ import ChangeHistory from './ChangeHistory'
 import {useEffect, useState, useRef} from 'react'
 import {api} from './api'
 import DiscordMessagePreview from './DiscordMessagePreview'
+import useCompactPreview from './useCompactPreview'
 import './TextCommands.css'
 
 import CommandBuilder,{hasRoleActions,commandBlocks,commandPreview,mapBlockText,type Command} from './CommandBuilder'
@@ -13,18 +14,33 @@ export {commandPreview} from './CommandBuilder'
 const blank=():Command=>({command:'!',enabled:true,text:'',title:'',description:'',image_url:'',color:'#e2b332',blocks:[],allow_pings:false,choose_recipient:false,recipient_ping:false})
 export default function TextCommands({onDirty}:{onDirty:(value:boolean)=>void}) {
   const editor=useRef<HTMLDivElement>(null),testArea=useRef<HTMLDivElement>(null),collapsedPanel=useRef<HTMLElement>(null)
+  const compactPreview = useCompactPreview(700)
   const [collapsed,setCollapsed]=useState(false)
   function collapseEditor(){setCollapsed(true);requestAnimationFrame(()=>{collapsedPanel.current?.focus();collapsedPanel.current?.scrollIntoView({block:'nearest'})})}
   const [rows,setRows]=useState<Command[]>([]),[search,setSearch]=useState(''),[draft,setDraft]=useState<Command|null>(null),[saved,setSaved]=useState<Command|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[pane,setPane]=useState<'edit'|'preview'>('edit')
   const [roles,setRoles]=useState<RoleChoice[]>([]),[roleError,setRoleError]=useState('')
-  async function loadRoles(){try{const data=await api<{roles:RoleChoice[]}>('/manage/text-command-roles');setRoles(data.roles);setRoleError('')}catch{setRoleError('Could not load role choices.')}}
+  const rolesLoaded = useRef(false), rolesLoading = useRef(false)
+  async function loadRoles(){
+    if (rolesLoading.current) return
+    rolesLoading.current = true
+    try {
+      const data = await api<{roles:RoleChoice[]}>('/manage/text-command-roles')
+      setRoles(data.roles)
+      setRoleError('')
+      rolesLoaded.current = true
+    } catch {
+      setRoleError('Could not load role choices.')
+    } finally {
+      rolesLoading.current = false
+    }
+  }
   const [mentionNames,setMentionNames]=useState<MentionNames>({})
   const rememberMention=(key:string,name:string)=>setMentionNames(current=>current[key]===name?current:{...current,[key]:name})
   const dirty=!!draft&&JSON.stringify(draft)!==JSON.stringify(saved)
   async function load(){setLoading(true);try{const data=await api<{commands:Command[]}>('/manage/text-commands');setRows(data.commands);setError('')}catch(e){setError(e instanceof Error?e.message:'Could not load commands.')}finally{setLoading(false)}}
-  useEffect(()=>{void load();void loadRoles()},[])
+  useEffect(()=>{void load()},[])
   useEffect(()=>{onDirty(dirty);const guard=(e:BeforeUnloadEvent)=>{if(dirty){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',guard);return()=>{onDirty(false);window.removeEventListener('beforeunload',guard)}},[dirty,onDirty])
-  function choose(row:Command|null){if(dirty&&!window.confirm('Leave without saving your changes?'))return;setSaved(row);setDraft(row?{...row}:blank());setError('');setNotice('');setPane('edit');setCollapsed(false)}
+  function choose(row:Command|null){if(dirty&&!window.confirm('Leave without saving your changes?'))return;if(!rolesLoaded.current)void loadRoles();setSaved(row);setDraft(row?{...row}:blank());setError('');setNotice('');setPane('edit');setCollapsed(false)}
   function change(key:keyof Command,value:string|boolean){setDraft(current=>current?{...current,[key]:value}:current);setNotice('')}
   async function save(){if(!draft)return;setBusy(true);setError('');try{const {revision,...values}=draft;const result=await api<Command>('/manage/text-commands'+(saved?'/'+encodeURIComponent(saved.command):''),saved?'PATCH':'POST',{values,revision});setRows(current=>[...current.filter(row=>row.command!==result.command),result].sort((a,b)=>a.command.localeCompare(b.command)));setSaved(result);setDraft(result);collapseEditor();setNotice(result.enabled?`${result.command} is ready to use in Discord.`:`${result.command} is saved and turned off.`)}catch(e){setError(e instanceof Error?e.message:'Could not save command.')}finally{setBusy(false)}}
   async function remove(){if(!saved||!window.confirm(`Delete ${saved.command}? Its saved reply will be removed.`))return;setBusy(true);setError('');try{await api('/manage/text-commands/'+encodeURIComponent(saved.command),'DELETE',{revision:saved.revision});setRows(current=>current.filter(row=>row.command!==saved.command));setDraft(null);setSaved(null);setNotice('Command deleted.')}catch(e){setError(e instanceof Error?e.message:'Could not delete command.')}finally{setBusy(false)}}
@@ -43,6 +59,6 @@ export default function TextCommands({onDirty}:{onDirty:(value:boolean)=>void}) 
 
       <p className="small">Anyone can use enabled commands. Replies appear in the same channel.</p>
       <div className="text-command-save"><button className="primary" disabled={!dirty||!draft.command||!(draft.text.trim()||commandBlocks(draft).some(block=>block.type!=='separator'))}>Save command</button>{saved&&<button type="button" className="danger-link" onClick={()=>void remove()}>Delete</button>}</div>
-    </fieldset></form><DiscordMessagePreview parts={commandPreview({...draft,text:namedMentions(draft.text,mentionNames),blocks:commandBlocks(draft).map(block=>mapBlockText(block,text=>namedMentions(text,mentionNames)))})} caption={draft.choose_recipient?"The mention goes inside the embed, or above the text if there is no embed. Saving does not post.":"Preview only. Saving does not post a message."}/></div><div className="command-quick-actions" aria-label="Editor actions"><button type="button" disabled={busy} onClick={()=>{setPane('edit');requestAnimationFrame(()=>editor.current?.querySelector('form')?.scrollIntoView({block:'start',behavior:'smooth'}))}}>Edit</button><button type="button" disabled={busy} onClick={()=>{setPane('preview');requestAnimationFrame(()=>editor.current?.querySelector('.discord-preview')?.scrollIntoView({block:'start',behavior:'smooth'}))}}>Preview</button><button type="button" disabled={busy} onClick={()=>{const details=testArea.current?.querySelector('details');if(details){details.open=true;details.scrollIntoView({block:'start',behavior:'smooth'})}}}>Test</button><button type="button" className="primary" disabled={busy||!dirty} onClick={()=>{setPane('edit');requestAnimationFrame(()=>editor.current?.querySelector('form')?.requestSubmit())}}>{busy?'Working…':'Save'}</button></div><div ref={testArea}><CommandTest key={draft.command} draft={draft} disabled={busy}/></div>{saved&&hasRoleActions(commandBlocks(saved))&&<CommandActivity key={'activity:'+saved.command} command={saved.command}/ >}{saved?.revision&&<ChangeHistory onBusy={setBusy} key={'history:'+saved.command} target={'/manage/text-commands/'+encodeURIComponent(saved.command)} revision={saved.revision} disabled={busy||dirty} labels={{text:'Reply message',title:'Card title',description:'Card text',image_url:'Card image',color:'Card color',enabled:'Enabled'}} onRestored={async()=>{const data=await api<{commands:Command[]}>('/manage/text-commands');setRows(data.commands);const row=data.commands.find(item=>item.command===saved.command)||null;setSaved(row);setDraft(row)}}/>}</section>:<section className="card"><h2>Create a saved reply</h2><p>Choose New command or select a command to edit.</p><p className="small">Example: !trigger → your saved reply.</p></section>}
+    </fieldset></form>{(!compactPreview || pane === 'preview') && <DiscordMessagePreview parts={commandPreview({...draft,text:namedMentions(draft.text,mentionNames),blocks:commandBlocks(draft).map(block=>mapBlockText(block,text=>namedMentions(text,mentionNames)))})} caption={draft.choose_recipient?"The mention goes inside the embed, or above the text if there is no embed. Saving does not post.":"Preview only. Saving does not post a message."}/>}</div><div className="command-quick-actions" aria-label="Editor actions"><button type="button" disabled={busy} onClick={()=>{setPane('edit');requestAnimationFrame(()=>editor.current?.querySelector('form')?.scrollIntoView({block:'start',behavior:'smooth'}))}}>Edit</button><button type="button" disabled={busy} onClick={()=>{setPane('preview');requestAnimationFrame(()=>editor.current?.querySelector('.discord-preview')?.scrollIntoView({block:'start',behavior:'smooth'}))}}>Preview</button><button type="button" disabled={busy} onClick={()=>{const details=testArea.current?.querySelector('details');if(details){details.open=true;details.scrollIntoView({block:'start',behavior:'smooth'})}}}>Test</button><button type="button" className="primary" disabled={busy||!dirty} onClick={()=>{setPane('edit');requestAnimationFrame(()=>editor.current?.querySelector('form')?.requestSubmit())}}>{busy?'Working…':'Save'}</button></div><div ref={testArea}><CommandTest key={draft.command} draft={draft} disabled={busy}/></div>{saved&&hasRoleActions(commandBlocks(saved))&&<CommandActivity key={'activity:'+saved.command} command={saved.command}/ >}{saved?.revision&&<ChangeHistory onBusy={setBusy} key={'history:'+saved.command} target={'/manage/text-commands/'+encodeURIComponent(saved.command)} revision={saved.revision} disabled={busy||dirty} labels={{text:'Reply message',title:'Card title',description:'Card text',image_url:'Card image',color:'Card color',enabled:'Enabled'}} onRestored={async()=>{const data=await api<{commands:Command[]}>('/manage/text-commands');setRows(data.commands);const row=data.commands.find(item=>item.command===saved.command)||null;setSaved(row);setDraft(row)}}/>}</section>:<section className="card"><h2>Create a saved reply</h2><p>Choose New command or select a command to edit.</p><p className="small">Example: !trigger → your saved reply.</p></section>}
     </div></section>
 }

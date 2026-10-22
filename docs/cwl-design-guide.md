@@ -638,3 +638,30 @@ and sign-out returning to Discord sign-in. No live OAuth completion, physical
 mobile network benchmark or live notification delivery was tested. No messages
 were sent. Global CSS and hidden message-editor preview optimizations remain
 separate future work.
+
+## October 22: Mobile editor previews and image picker
+
+At the existing compact editor breakpoints (700px for command triggers, 900px
+for server settings), only the selected preview pane mounts the Discord renderer.
+Desktop retains the side-by-side preview. Hidden server previews schedule no draft
+requests; hiding the pane cancels debounce work and ignores obsolete results.
+Explicit Preview avoids also issuing a duplicate debounced request. Role choices
+load when a command editor opens, rather than on the command index.
+
+The command image picker downloads only when Choose image is pressed. Cancelling
+while its code downloads prevents the eventual modal and image-list request.
+Picker-load failures stay beside the image field; preview-load failures stay
+inside the preview. Neither replaces the unsaved editor. Browsers can cache a
+failed module import, so recovery text recommends saving first, then reloading,
+or pasting an image link; no automatic reload or retry of a save/send occurs.
+
+Validation: 265 frontend tests, 31 server-management/text-command backend tests,
+TypeScript and isolated production build passed. Independent review checked
+visibility gating, stale responses, and disclosure requests. Isolated browser
+checks covered 320/390px and desktop, zero preview/image-list requests while
+editing, deferred role lookup, exactly one explicit preview request, desktop
+preview updates after resizing, simulated failed picker/preview chunks preserving
+an unsaved draft, delayed-picker cancellation, successful image selection, and
+focus restoration to Choose image after closing. Test/activity/history disclosures
+remain on-demand. No live messages, uploads or production records were changed.
+This verifies request behavior, not a physical-phone network speed benchmark.
