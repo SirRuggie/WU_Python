@@ -24,7 +24,7 @@ from .staff_tag_signups import routes as staff_tag_signup_routes
 from .staff_signup_changes import routes as staff_signup_change_routes
 
 from .providers import FixtureProviders, LiveProviders, ProviderUnavailable, tag
-from .store import Store
+from .store import Store, signup_timestamps
 from .canonical_host import canonical_host
 from .placement_status import explain as explain_placement
 from .clan_metadata import enrich as enrich_clan_metadata
@@ -979,10 +979,12 @@ def _roster_rows(db, sid):
         "LEFT JOIN roster_entries r ON r.season_id=s.season_id AND r.tag=s.tag "
         "WHERE s.season_id=? ORDER BY s.tag", (sid,)
     ).fetchall()
+    signed_up = signup_timestamps(db, sid)
     official = saved_sources(db, [row["tag"] for row in rows])
     result = []
     for raw in rows:
         row = dict(raw)
+        row["signed_up_at"] = signed_up.get(row["tag"])
         if row["tag"] in official:
             source = official[row["tag"]]
             row.update(source_weight=source["weight"], source_name=source["source_name"],

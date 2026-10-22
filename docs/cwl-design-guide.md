@@ -665,3 +665,17 @@ an unsaved draft, delayed-picker cancellation, successful image selection, and
 focus restoration to Choose image after closing. Test/activity/history disclosures
 remain on-demand. No live messages, uploads or production records were changed.
 This verifies request behavior, not a physical-phone network speed benchmark.
+
+### Signup timestamp — October 22
+
+Account Details shows one muted “Signed up” line below Discord identity, formatted
+in the viewer's local date/time. The roster list stays unchanged. The date comes
+from the latest durable signup-creation audit event for that account and season;
+weight/placement edits and pool changes cannot replace it. Withdrawal followed by
+re-registration uses the new registration date. Legacy records without a creation
+event say “Not recorded”; no date is invented and no storage migration is needed.
+
+Validation: 42 backend and 275 frontend tests, production build, isolated Details
+check at desktop and 320px (no dialog overflow, UTC converted correctly). Tests
+cover repeat saves, pool changes, staff signup, re-registration and season isolation.
+No live signup, placement or notification changes were used for testing.

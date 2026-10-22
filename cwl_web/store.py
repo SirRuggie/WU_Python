@@ -274,6 +274,18 @@ CREATE TABLE IF NOT EXISTS participation_source_results (
 """
 
 
+def signup_timestamps(db, season_id):
+    """Current registration dates from durable creation events, never edit times."""
+    rows = db.execute(
+        "SELECT a.tag,a.created_at FROM roster_audit a JOIN ("
+        "SELECT tag,MAX(id) AS id FROM roster_audit WHERE season_id=? "
+        "AND action IN ('member_signup','staff_signup') "
+        "AND (before_json IS NULL OR before_json='null') GROUP BY tag"
+        ") latest ON a.id=latest.id", (season_id,)
+    ).fetchall()
+    return {row['tag']: row['created_at'].replace(' ', 'T') + 'Z' for row in rows}
+
+
 class Store:
     def __init__(self, path: str, durability=None):
         self.durability = None

@@ -1,5 +1,6 @@
 import type { Pool } from './api'
 export type RosterAccount = {
+  signed_up_at?: string | null;
   outside_family_and_hosts?: boolean;
   current_clan_tag?: string | null; current_clan_name?: string | null; current_clan_status?: 'current' | 'stale' | 'unavailable';
   auto_placement_reason?: string | null; auto_placement_note?: string | null;

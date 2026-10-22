@@ -148,6 +148,9 @@ export default function RosterPlayerDialog({
       </header>
       <small>{account.tag} · TH {account.town_hall ?? '—'} · {account.pool === 'main' ? 'Main' : 'Lazy'} CWL</small>
       <RosterDiscordIdentity userId={account.user_id} />
+      <small className="roster-signup-time">Signed up: {account.signed_up_at && Number.isFinite(Date.parse(account.signed_up_at))
+        ? <time dateTime={account.signed_up_at}>{new Date(account.signed_up_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
+        : 'Not recorded'}</small>
       <dl className="roster-player-context">
         <div>
           <dt>Current clan</dt>
