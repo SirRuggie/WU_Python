@@ -36,9 +36,6 @@
   outline-offset: -3px;
 }
 .clan-category-filters span { font-size: 12px; opacity: .8; margin-left: 5px; }
-.participation-editor > summary { cursor: pointer; padding: 12px 0; min-height: 44px; color: #f4cd64; }
-.shell .participation-card { padding: 16px; }
-.shell .participation-card h3 { margin: 0 0 4px; }
 .return-status-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr)); gap: 12px; margin: 16px 0; }
 .return-status-grid article { padding: 16px; border: 1px solid #46433a; border-radius: 12px; }
 .return-status-grid article > * { display: block; margin: 5px 0; overflow-wrap: anywhere; }

@@ -297,6 +297,49 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second["source_status"], "stale")
         self.assertEqual(data["sync"]["status"], "stale")
 
+    async def test_sync_settings_requires_matching_optional_revision_token(self):
+        await self.setup_published()
+        response = await self.call("GET", self.base, self.owner)
+        self.assertEqual(response.status, 200)
+        original = (await response.json())["sync"]["updated_at"]
+        self.assertIsInstance(original, str)
+        response = await self.call(
+            "POST", self.base + "/sync-settings", self.owner,
+            json={"cycle": "2026-10", "enabled": True, "expected_updated_at": original},
+        )
+        self.assertEqual(response.status, 200, await response.text())
+        current = (await response.json())["sync"]["updated_at"]
+        self.assertNotEqual(current, original)
+        response = await self.call(
+            "POST", self.base + "/sync-settings", self.owner,
+            json={"cycle": "2026-10", "enabled": False, "expected_updated_at": original},
+        )
+        self.assertEqual(response.status, 409, await response.text())
+        # Older clients omitting the token remain compatible.
+        response = await self.call(
+            "POST", self.base + "/sync-settings", self.owner,
+            json={"cycle": "2026-10", "enabled": False},
+        )
+        self.assertEqual(response.status, 200, await response.text())
+
+    async def test_naive_persisted_timestamps_render_as_stale_instead_of_crashing(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y"]])
+        self.set_war("#Y2Y")
+        self.assertEqual((await self.sync()).status, 200)
+        with self.app["store"].tx() as db:
+            db.execute(
+                "UPDATE participation_source_results SET checked_at=? WHERE season_id=? AND tag=?",
+                ("2026-10-22T12:00:00", self.sid, "#P2Y"),
+            )
+            db.execute(
+                "UPDATE participation_sync_settings SET last_success_at=? WHERE season_id=?",
+                ("2026-10-22T12:00:00", self.sid),
+            )
+        row, data = await self.account()
+        self.assertEqual(row["source_status"], "stale")
+        self.assertEqual(data["sync"]["status"], "stale")
+
     async def test_settings_change_during_fetch_discards_observations(self):
         await self.setup_published()
         self.set_group([["#Y2Y"]])
@@ -320,6 +363,33 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         ))
         row, _ = await self.account()
         self.assertIsNone(row["source_attacks"])
+
+    async def test_settings_changed_away_and_back_during_fetch_discards_observations(self):
+        await self.setup_published()
+        self.set_group([["#Y2Y"]])
+        self.set_war("#Y2Y")
+        original = self.league.league_group
+
+        async def toggle_and_restore(clan_tag):
+            for enabled in (True, False):
+                response = await self.call(
+                    "POST", self.base + "/sync-settings", self.owner,
+                    json={"cycle": "2026-10", "enabled": enabled},
+                )
+                self.assertEqual(response.status, 200, await response.text())
+            return await original(clan_tag)
+
+        self.providers.league_group = toggle_and_restore
+        response = await self.sync()
+        self.assertEqual(response.status, 409, await response.text())
+        self.assertFalse(self.app["store"].rows(
+            "SELECT * FROM participation_group_observations WHERE season_id=?",
+            (self.sid,),
+        ))
+        self.assertFalse(self.app["store"].rows(
+            "SELECT * FROM participation_war_observations WHERE season_id=?",
+            (self.sid,),
+        ))
 
     async def test_notes_only_does_not_override_source_then_manual_and_reset(self):
         await self.setup_published()

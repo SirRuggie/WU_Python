@@ -380,3 +380,39 @@ without horizontal document overflow. Role/channel providers were simulated;
 the real announcement transport was not used. Native confirmation cancellation
 was fixture-controlled; native popup and assistive-technology operation are not
 certified. Existing aiohttp warnings and Vite chunk-size warning remain.
+
+### Results and participation — 2026-10-22
+
+Use compact rows with attacks, stars, assigned hosting clan and source status.
+Details opens one focused native dialog with the linked Discord identity, source
+provenance, existing correction fields and staff notes. Keep incomplete/source
+warnings visible, and distinguish staff corrections from captured observations.
+Unknown totals remain unknown. Capture health and last check stay visible; capture
+settings and saved historical records are disclosures. Profile and history reads
+start only when their sections are opened. Pagination precedes history.
+
+Preserve existing per-account audit records and source/reset semantics. Failed
+saves retain edits; concurrent changes require explicit adoption of latest values.
+Capture settings now expose an optional timestamp concurrency token, consumed by
+the dashboard without changing legacy API payload support. Background checks do
+not advance that token, and a settings edit during capture invalidates its result.
+Malformed/naive source timestamps are stale rather than fatal. No storage migration
+or bonus-policy change is included.
+
+Validation: Sol implemented the frontend and Luna independently reviewed the
+participation contracts and state handling. 246 frontend tests, 137 relevant
+backend/access/durability tests passed (one external integration skipped), plus
+TypeScript/Vite build and diff checks. Existing aiohttp and bundle-size warnings
+remain. Isolated SQLite/provider checks used 45 fictional accounts with complete,
+partial and unavailable sources. Tested search, pagination, external-looking names,
+Discord identity, history on demand, failed-save retention, canceled discard,
+successful save/focus return, actual row-revision conflicts, actual settings-token
+conflicts and explicit discard recovery. A 503 refresh retained labeled old data
+and paused writes; list/history 403 cleared protected results; Retry recovered both.
+
+Inspected desktop 1440px, mobile 390px/320px and short 740×320 layouts without
+horizontal page overflow. Dialog controls retained 44px targets; the short-screen
+footer was non-sticky. Tab/Shift+Tab wrapped inside the dialog; Escape closed it
+and returned focus. Confirmation cancellation used a fixture-controlled boolean,
+not native popup automation; assistive-technology operation is not certified.
+No live roster/results edits or Discord notifications were used for validation.

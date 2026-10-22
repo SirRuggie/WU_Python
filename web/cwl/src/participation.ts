@@ -4,6 +4,7 @@ export type ParticipationAccount = {
   roster_token?: string
   previous_results?: { pool: string; assigned_clan_name: string | null; assigned_clan_tag: string | null; attacks: number | null; stars: number | null }
   tag: string
+  user_id?: string | null
   player_name: string
   town_hall: number | null
   pool: Pool
@@ -29,7 +30,7 @@ export type ParticipationAccount = {
   attacks_origin?: 'source' | 'manual' | 'unknown'
   stars_origin?: 'source' | 'manual' | 'unknown'
 }
-export type ParticipationSync = { cycle: string | null; cycle_source: 'settings' | 'manage_binding' | 'none'; enabled: boolean; status: string; last_checked_at: string | null; last_success_at: string | null; warning: string | null }
+export type ParticipationSync = { cycle: string | null; cycle_source: 'settings' | 'manage_binding' | 'none'; enabled: boolean; status: string; last_checked_at: string | null; last_success_at: string | null; updated_at: string | null; warning: string | null }
 export type ParticipationData = { historical_accounts_count?: number; roster_source?: string; publication_version: number | null; accounts: ParticipationAccount[]; sync?: ParticipationSync }
 export type ParticipationSort = 'name' | 'attacks-asc' | 'attacks-desc' | 'stars-asc' | 'stars-desc' | 'th-asc' | 'th-desc'
 export type ParticipationFilters = { search: string; pool: Pool | 'all'; clan: string; sort: ParticipationSort }

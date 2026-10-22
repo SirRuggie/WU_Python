@@ -100,6 +100,19 @@ class ParticipationTests(unittest.IsolatedAsyncioTestCase):
     def owner_user_id(self):
         return "505227988229554179"
 
+    async def test_staff_current_and_history_views_include_exact_linked_discord_id(self):
+        await self.signup("main", "#P2Y")
+        await self.publish()
+        response = await self.call("GET", self.endpoint, self.owner)
+        self.assertEqual(response.status, 200)
+        current = (await response.json())["accounts"][0]
+        self.assertEqual(current["user_id"], "100")
+        self.assertEqual((await self.save(notes="Reviewed")).status, 200)
+        response = await self.call("GET", self.endpoint + "?source=history", self.owner)
+        self.assertEqual(response.status, 200)
+        historical = (await response.json())["accounts"][0]
+        self.assertEqual(historical["user_id"], "100")
+
     async def test_republication_keeps_recorded_clan_identity(self):
         await self.signup("main", "#P2Y")
         response = await self.call("POST", "/clans", self.owner, json={"tag": "#C2Y"})

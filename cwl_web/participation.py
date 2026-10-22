@@ -72,11 +72,13 @@ def _account_view(snapshot, saved=None, source=None, *, archived=False):
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(source_checked)).total_seconds()
             if age > 30 * 60 and source_status in {"complete", "partial", "preparation", "no_data"}:
                 source_status = "historical" if archived else "stale"
-        except ValueError:
+        except (TypeError, ValueError):
             source_status = "stale"
     staff_update = saved is not None and saved["updated_by"] != "sync"
     return {
         "tag": identity["tag"],
+        # Exact Discord identity already linked to this saved signup.
+        "user_id": identity["user_id"],
         "player_name": identity["player_name"],
         "town_hall": identity["town_hall"],
         "pool": identity["pool"],
@@ -127,7 +129,10 @@ def current_account_view(snapshot, saved=None, source=None, *, archived=False):
     if mismatch:
         row.update(attacks=None, stars=None, attacks_origin='unknown', stars_origin='unknown')
         row['previous_results'] = {
-            key: saved[key] for key in ('pool', 'assigned_clan_name', 'assigned_clan_tag', 'attacks', 'stars')
+            key: saved[key] for key in (
+                'user_id', 'pool', 'assigned_clan_name', 'assigned_clan_tag',
+                'attacks', 'stars',
+            )
         }
     return row
 

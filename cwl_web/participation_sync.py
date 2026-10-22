@@ -35,6 +35,7 @@ def settings_view(db, season_id: int) -> dict:
     cycle = row["cycle"] if row else (binding["cycle"] if binding else None)
     status = row["status"] if row else "never"
     warning = row["warning"] if row else None
+    updated_at = row["updated_at"] if row else None
     season = db.execute("SELECT status FROM seasons WHERE id=?", (season_id,)).fetchone()
     if row and row["last_success_at"] and status in {"complete", "partial", "preparation"}:
         try:
@@ -46,7 +47,7 @@ def settings_view(db, season_id: int) -> dict:
                 else:
                     status = "stale"
                     warning = "Last successful Clash refresh is over 30 minutes old"
-        except ValueError:
+        except (TypeError, ValueError):
             status = "stale"
             warning = "Clash refresh timestamp is invalid"
     return {
@@ -57,6 +58,7 @@ def settings_view(db, season_id: int) -> dict:
         "warning": warning,
         "last_checked_at": row["last_checked_at"] if row else None,
         "last_success_at": row["last_success_at"] if row else None,
+        "updated_at": updated_at,
     }
 
 
@@ -422,6 +424,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 or working_accounts(db, season_id) != working_snapshot
                 or current["cycle"] != cycle
                 or current["enabled"] != settings["enabled"]
+                or current["updated_at"] != settings["updated_at"]
             ):
                 _fail(409, "Season, signup assignments, or sync month changed during refresh")
             allowances = AllowanceStore(db, season_id, cycle)
@@ -600,20 +603,29 @@ async def sync_settings(request):
 
     session = _require(request, "editor")
     body = await _json(request)
-    if set(body) != {"cycle", "enabled"}:
-        _fail(400, "Expected cycle and enabled")
+    allowed = {"cycle", "enabled", "expected_updated_at"}
+    if set(body) - allowed or not {"cycle", "enabled"} <= set(body):
+        _fail(400, "Expected cycle and enabled, with optional expected_updated_at")
     cycle = body["cycle"]
     enabled = body["enabled"]
     if not isinstance(cycle, str) or not _CYCLE.fullmatch(cycle):
         _fail(400, "Cycle must be YYYY-MM")
     if type(enabled) is not bool:
         _fail(400, "Enabled must be a boolean")
+    expected_updated_at = body.get("expected_updated_at")
+    if (
+        "expected_updated_at" in body and expected_updated_at is not None
+        and not isinstance(expected_updated_at, str)
+    ):
+        _fail(400, "expected_updated_at must be a timestamp or null")
     sid = _sid(request)
     with _store(request).tx() as db:
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Archived season is read-only")
         prior = settings_view(db, sid)
+        if "expected_updated_at" in body and expected_updated_at != prior["updated_at"]:
+            _fail(409, "Participation sync settings changed; refresh before saving")
         stamp = now()
         changed_cycle = prior["cycle"] != cycle
         db.execute(
