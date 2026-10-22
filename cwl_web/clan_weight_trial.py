@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from aiohttp import web
 from .providers import tag, ProviderUnavailable
-from utils.clan_weight_trial_store import WeightConflict
+from utils.clan_weight_store import WeightConflict
 
 
 def authorize(request):
@@ -56,7 +56,7 @@ def last_saved(request, clan_tag):
         name = rows[0]['name'] if rows else None
     return {'at': saved['updated_at'], 'discord_id': actor_id,
             'name': name or ('Discord user ' + actor_id if actor_id.isdigit() else 'Unknown user'),
-            'imported': saved['actor_id'].endswith(':sheet-test-import')}
+            'imported': saved['actor_id'].endswith((':sheet-test-import', ':sheet-import'))}
 
 
 async def directory(request):

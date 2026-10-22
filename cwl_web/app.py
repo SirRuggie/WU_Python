@@ -928,7 +928,9 @@ def _roster_rows(db, sid):
         row["kept"] = bool(row["kept"])
         saved_weight = db.execute("SELECT initial_weight FROM player_weights WHERE tag=?", (row["tag"],)).fetchone()
         row["initial_manual_weight"] = saved_weight["initial_weight"] if saved_weight else None
-        row["effective_weight"] = row["manual_weight"] if row["manual_weight"] is not None else row["source_weight"]
+        row["clan_weight_managed"] = row["tag"] in official
+        row["effective_weight"] = (row["source_weight"] if row["clan_weight_managed"] else
+                                   row["manual_weight"] if row["manual_weight"] is not None else row["source_weight"])
         result.append(row)
     return result
 
@@ -1167,6 +1169,8 @@ async def update_roster_account(request):
             _fail(404, "Signed-up account not found")
         old = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone()
         before = dict(old) if old else None
+        if "manual_weight" in body and player_tag in saved_sources(db, [player_tag]):
+            _fail(409, "This account uses Clan weights. Update its weight under Clan management.")
         manual = body.get("manual_weight", old["manual_weight"] if old else None)
         if manual is not None and (type(manual) is not int or manual <= 0 or manual > 1_000_000_000):
             _fail(400, "Invalid manual weight")
@@ -1753,8 +1757,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     from .strikes import strike_jobs_lifecycle
     app.cleanup_ctx.append(strike_jobs_lifecycle)
     from .clan_weight_trial import routes as weight_trial_routes
-    from utils.clan_weight_trial_store import ClanWeightTrialStore
-    app["clan_weight_trial"] = ClanWeightTrialStore(app["store"].path, transaction_factory=app["store"].tx)
+    from utils.clan_weight_store import ClanWeightStore
+    app["clan_weight_trial"] = ClanWeightStore(app["store"].path, transaction_factory=app["store"].tx)
     from .clan_weights import lineup_lifecycle
     app.cleanup_ctx.append(lineup_lifecycle)
     from .signup_activity import routes as signup_activity_routes

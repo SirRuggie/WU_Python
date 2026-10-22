@@ -1,4 +1,4 @@
-"""Official clan weights keyed by player tag; legacy table names preserve data."""
+"""Official clan weights keyed by player tag; migrated in place from the former trial ledger."""
 import sqlite3
 import json
 from contextlib import contextmanager
@@ -9,12 +9,12 @@ CREATE TABLE IF NOT EXISTS clan_weight_war_lineups (
  clan_tag TEXT PRIMARY KEY, end_time TEXT NOT NULL, captured_at TEXT NOT NULL, lineup_json TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS clan_weight_trial (
+CREATE TABLE IF NOT EXISTS clan_player_weights (
  tag TEXT PRIMARY KEY, weight INTEGER, revision INTEGER NOT NULL,
  player_name TEXT NOT NULL, town_hall INTEGER, last_clan_tag TEXT NOT NULL,
  last_clan_name TEXT NOT NULL, updated_at TEXT NOT NULL, actor_id TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS clan_weight_trial_history (
+CREATE TABLE IF NOT EXISTS clan_player_weight_history (
  id INTEGER PRIMARY KEY, tag TEXT NOT NULL, weight INTEGER, revision INTEGER NOT NULL,
  clan_tag TEXT NOT NULL, actor_id TEXT NOT NULL, updated_at TEXT NOT NULL,
  UNIQUE(tag,revision)
@@ -26,7 +26,7 @@ class WeightConflict(ValueError):
     pass
 
 
-class ClanWeightTrialStore:
+class ClanWeightStore:
     def __init__(self, path, transaction_factory=None):
         self.path = path
         self.transaction_factory = transaction_factory
@@ -52,19 +52,19 @@ class ClanWeightTrialStore:
 
     def all(self):
         with self.connect() as db:
-            return [dict(row) for row in db.execute('SELECT * FROM clan_weight_trial ORDER BY last_clan_name,player_name,tag')]
+            return [dict(row) for row in db.execute('SELECT * FROM clan_player_weights ORDER BY last_clan_name,player_name,tag')]
 
     def for_members(self, tags):
         if not tags:
             return {}
         with self.connect() as db:
             return {row['tag']: dict(row) for row in db.execute(
-                'SELECT * FROM clan_weight_trial WHERE tag IN (' + ','.join('?' for _ in tags) + ')', tuple(tags))}
+                'SELECT * FROM clan_player_weights WHERE tag IN (' + ','.join('?' for _ in tags) + ')', tuple(tags))}
 
     def last_saved(self, clan_tag):
         with self.connect() as db:
             row = db.execute(
-                'SELECT updated_at,actor_id,actor_name FROM clan_weight_trial_history WHERE clan_tag=? ORDER BY id DESC LIMIT 1',
+                'SELECT updated_at,actor_id,actor_name FROM clan_player_weight_history WHERE clan_tag=? ORDER BY id DESC LIMIT 1',
                 (clan_tag,),
             ).fetchone()
             return dict(row) if row else None
@@ -77,7 +77,7 @@ class ClanWeightTrialStore:
                 db.execute('BEGIN IMMEDIATE')
             changed_tags = []
             for change in changes:
-                current = db.execute('SELECT * FROM clan_weight_trial WHERE tag=?', (change['tag'],)).fetchone()
+                current = db.execute('SELECT * FROM clan_player_weights WHERE tag=?', (change['tag'],)).fetchone()
                 revision = current['revision'] if current else 0
                 storages = change.get('storages', (current['storages'] if current else None))
                 same = current and current['weight'] == change['weight'] and current['storages'] == storages
@@ -87,9 +87,9 @@ class ClanWeightTrialStore:
                     continue  # Safe replay after a lost response; no duplicate audit event.
                 changed_tags.append(change['tag'])
                 member = members[change['tag']]
-                db.execute('INSERT OR REPLACE INTO clan_weight_trial(tag,weight,revision,player_name,town_hall,last_clan_tag,last_clan_name,updated_at,actor_id,storages) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                db.execute('INSERT OR REPLACE INTO clan_player_weights(tag,weight,revision,player_name,town_hall,last_clan_tag,last_clan_name,updated_at,actor_id,storages) VALUES (?,?,?,?,?,?,?,?,?,?)',
                            (change['tag'],change['weight'],revision+1,member['name'],member['town_hall'],roster['tag'],roster['name'],now,actor,storages))
-                db.execute('INSERT INTO clan_weight_trial_history(tag,weight,revision,clan_tag,actor_id,updated_at,storages,actor_name) VALUES (?,?,?,?,?,?,?,?)',
+                db.execute('INSERT INTO clan_player_weight_history(tag,weight,revision,clan_tag,actor_id,updated_at,storages,actor_name) VALUES (?,?,?,?,?,?,?,?)',
                            (change['tag'],change['weight'],revision+1,roster['tag'],actor,now,storages,actor_name))
             if changed_tags and db.execute("SELECT 1 FROM sqlite_master WHERE name='roster_meta'").fetchone():
                 placeholders = ','.join('?' for _ in changed_tags)
@@ -127,12 +127,25 @@ class ClanWeightTrialStore:
 
 
 def initialize(db):
+    # Rename the existing ledger in place: no duplicate source or lost history.
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    migrated = False
+    for old, new in (("clan_weight_trial", "clan_player_weights"),
+                     ("clan_weight_trial_history", "clan_player_weight_history")):
+        if old in tables:
+            if new in tables:
+                raise RuntimeError("Both legacy and official clan-weight tables exist; reconcile before startup")
+            db.execute(f'ALTER TABLE {old} RENAME TO {new}')
+            migrated = True
     db.executescript(SCHEMA)
-    for table in ('clan_weight_trial', 'clan_weight_trial_history'):
+    if migrated and 'roster_meta' in tables:
+        db.execute("INSERT INTO roster_meta(season_id,revision) SELECT id,1 FROM seasons WHERE status='draft' "
+                   "ON CONFLICT(season_id) DO UPDATE SET revision=revision+1")
+    for table in ('clan_player_weights', 'clan_player_weight_history'):
         columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
         if 'storages' not in columns:
             db.execute(f'ALTER TABLE {table} ADD COLUMN storages INTEGER')
-    columns = {row['name'] for row in db.execute('PRAGMA table_info(clan_weight_trial_history)')}
+    columns = {row['name'] for row in db.execute('PRAGMA table_info(clan_player_weight_history)')}
     if 'actor_name' not in columns:
-        db.execute('ALTER TABLE clan_weight_trial_history ADD COLUMN actor_name TEXT')
-    db.execute('CREATE INDEX IF NOT EXISTS weight_trial_history_clan_id ON clan_weight_trial_history(clan_tag,id DESC)')
+        db.execute('ALTER TABLE clan_player_weight_history ADD COLUMN actor_name TEXT')
+    db.execute('CREATE INDEX IF NOT EXISTS clan_player_weight_history_clan_id ON clan_player_weight_history(clan_tag,id DESC)')

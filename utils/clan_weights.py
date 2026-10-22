@@ -1,6 +1,6 @@
 """Official clan-weight resolution over the existing durable weight ledger.
 
-Explicit roster/manual overrides remain a caller's responsibility. A saved blank
+Saved clan weights take precedence over manual overrides. A saved blank
 is intentional Not Available, not permission to revive an older external value.
 """
 
@@ -8,7 +8,7 @@ is intentional Not Available, not permission to revive an older external value.
 def saved_sources(db, tags):
     if not tags:
         return {}
-    rows = db.execute('SELECT tag,weight,updated_at FROM clan_weight_trial WHERE tag IN (' +
+    rows = db.execute('SELECT tag,weight,updated_at FROM clan_player_weights WHERE tag IN (' +
                       ','.join('?' for _ in tags) + ')', tuple(tags)).fetchall()
     return {row['tag']: {'weight': row['weight'], 'source_name': 'Clan weights',
                          'source_modified_at': row['updated_at'],
@@ -23,7 +23,7 @@ async def source_weights(store, provider, tags):
     # Retain external validation at the HTTP boundary, rather than sanitizing it.
     if not isinstance(external, dict):
         return external
-    return {**external, **{tag: value for tag, value in saved.items() if value['weight'] is not None}}
+    return {**{tag: value for tag, value in external.items() if tag in missing}, **{tag: value for tag, value in saved.items() if value['weight'] is not None}}
 
 
 def overlay_accounts(store, payload):
@@ -33,5 +33,5 @@ def overlay_accounts(store, payload):
         saved = saved_sources(db, [account['tag'] for account in accounts])
         manual = {row['tag']: row['weight'] for row in db.execute('SELECT tag,weight FROM player_weights WHERE weight IS NOT NULL')}
     return {**payload, 'accounts': [
-        {**account, 'war_weight': manual.get(account['tag'], saved.get(account['tag'], {}).get('weight', account.get('war_weight')))}
+        {**account, 'war_weight': saved[account['tag']]['weight'] if account['tag'] in saved else manual.get(account['tag'], account.get('war_weight'))}
         for account in accounts]}

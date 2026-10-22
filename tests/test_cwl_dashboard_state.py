@@ -7,7 +7,7 @@ import pytest
 from pymongo.errors import DuplicateKeyError
 
 from cwl_web.store import Store
-from utils.clan_weight_trial_store import ClanWeightTrialStore
+from utils.clan_weight_store import ClanWeightStore
 from utils.cwl_dashboard_state import (
     MongoDashboardState, DashboardDurabilityError, encode, decode, utcnow, database_lock,
 )
@@ -74,7 +74,7 @@ def test_successful_save_recovers_on_empty_replacement_server(setup, tmp_path):
     path, store, owner, collection = setup
     with store.tx() as db:
         db.execute('UPDATE roster_entries SET manual_weight=150000')
-    trial = ClanWeightTrialStore(path, transaction_factory=store.tx)
+    trial = ClanWeightStore(path, transaction_factory=store.tx)
     trial.save({'tag': '#CLAN', 'name': 'FWA clan', 'members': [
         {'tag': '#ABC', 'name': 'Name', 'town_hall': 17}]},
         [{'tag': '#ABC', 'revision': 0, 'weight': 149000, 'storages': 5}], '123', 'Discord name')
@@ -86,9 +86,9 @@ def test_successful_save_recovers_on_empty_replacement_server(setup, tmp_path):
     new = Store(replacement, durability=recovered)
     assert new.one('SELECT manual_weight FROM roster_entries')['manual_weight'] == 150000
     assert new.one('SELECT count(*) n FROM signups')['n'] == 1
-    assert new.one('SELECT weight FROM clan_weight_trial')['weight'] == 149000
-    assert ClanWeightTrialStore(replacement).saved_lineup('#CLAN')['order'] == {'#ABC': 1}
-    assert new.one('SELECT actor_name FROM clan_weight_trial_history')['actor_name'] == 'Discord name'
+    assert new.one('SELECT weight FROM clan_player_weights')['weight'] == 149000
+    assert ClanWeightStore(replacement).saved_lineup('#CLAN')['order'] == {'#ABC': 1}
+    assert new.one('SELECT actor_name FROM clan_player_weight_history')['actor_name'] == 'Discord name'
 
 
 @pytest.mark.parametrize('failure,expected', [('before', 149000), ('after', 151000)])

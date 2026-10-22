@@ -1,28 +1,24 @@
-# Clan weights temporary trial
+# Official clan weights
 
-Clan management → Weights · Test is a separate experiment, available to the
-owner and staff with the Clan management grant. It uses the existing family
-clan directory and public live `clan_roster` provider, not CWL signup/publication
-snapshots. Current membership is fetched on selection, refresh and save. It is
-not continuously polled while staff are typing. Unavailable or incomplete
-upstream membership cannot be treated as a successful empty roster or saved.
+Clan management → Clan weights is the authoritative saved weight ledger for
+family FWA accounts, keyed by player tag. Current membership comes from Clash;
+saved weights survive clan moves and restarts. The searchable clan selector,
+war-order rows, storage/loot/full-weight editor, and Column F copy remain available.
 
-Each compact row shows Town Hall, player name/tag and weight in thousands.
-Enter/Tab moves between inputs; a single Excel column can be pasted down the
-currently displayed rows. The order is TH descending, then name/tag; pasted rows
-must follow that displayed order. Save weights commits the changed rows together.
-Blank means Not Available; only whole thousands between 1k and 999k are accepted.
-There is no automatic save. Unsaved changes are protected on clan changes,
-refresh, navigation and browser unload. Mobile uses a native clan selector.
+`utils/clan_weight_store.py` owns `clan_player_weights` and
+`clan_player_weight_history`. The October 22 migration renames the previous trial
+tables in place, preserving every value, revision and audit record. No parallel
+test copy is created. Writes use the dashboard Store transaction and majority-
+acknowledged Mongo recovery checkpoints. Legacy HTTP paths and internal app keys
+remain compatible with existing clients; they do not select a separate database.
 
-## Isolation and persistence
-
-`utils.clan_weight_trial_store.py` owns additive `clan_weight_trial` and
-`clan_weight_trial_history` tables in the dashboard SQLite database. Player tag
-is the identity, so saved weights survive leaving/joining clans and restarts.
-There is no expiry and no change to live `player_weights`, roster entries,
-Google Sheets, external FWA weights or bot calculations. Normal dashboard
-database backups must include these tables. This trial has no Mongo outbox.
+Saved clan weights (including an intentional Not Available) take precedence over
+old manual overrides and external imports in CWL placement and account views.
+Accounts without a saved clan-weight record can still use manual entry or external
+fallback. Staff edit authoritative values in Clan weights; the roster editor
+shows the source and rejects an override for a managed player. Previous manual
+values remain in history. Migration invalidates draft revisions; published roster
+snapshots remain historical until staff publish again.
 
 Saves recheck that the clan is still in the family and the edited accounts are
 still current members. Per-player revisions reject conflicting edits atomically.
@@ -141,3 +137,29 @@ revisions or history timestamps are rewritten. Empty, replayed, or rolled-back
 saves do not advance the receipt; departed members do not erase it. Eight backend
 feature tests, 199 frontend tests, build and war-reminder gate passed. Isolated
 browser checks verified the new status updates after saving and mobile reflow.
+
+## Official ledger reconciliation — October 22
+
+Compared WU FWA War Weights, tab WU FWA Clans, A6:BG66 against current official
+membership for all seven FWA clans. Names were matched uniquely inside each clan;
+duplicate ANTONY+ accounts were distinguished by their current preparation-war
+positions (24 and 33). 348 current members matched; eight Wonder Wall values
+needed correction. Lil Ace in Four and Twenty and DragonSlayer-12 in Wonder Wall
+have no matching sheet row and retain their existing weights at the owner's
+explicit request. No sheet cells are edited; this is a one-time reconciliation,
+not a recurring spreadsheet dependency.
+
+The deployment rechecks current membership, saved values, and per-player revisions
+before applying changes through the official storage owner with Mongo durability.
+All preexisting rows/history are retained. Only actual changes add history and
+advance last-saved receipts. The source sheet was reread before deployment and
+unchanged. The two unmatched records are verified unchanged after the write.
+
+Validation: 363 backend tests passed (one opt-in live test skipped), 221 frontend
+tests passed, and the war-reminder validation gate/build passed. Migration tests
+verify in-place history preservation, idempotent startup, and revision invalidation;
+Mongo recovery tests verify the canonical tables restore on a replacement host.
+Priority tests cover saved values, intentional blanks, cached account overlays,
+external fallback for unmanaged accounts, and rejected roster overrides. Isolated
+desktop/390px UI confirms managed accounts show the authoritative weight and direct
+staff to Clan weights without presenting an ineffective manual override.

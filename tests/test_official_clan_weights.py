@@ -7,14 +7,14 @@ from cwl_web.app import _roster_rows
 from cwl_web.store import Store
 from cwl_web.providers import ProviderUnavailable
 from cwl_web.clan_weights import capture_lineups
-from utils.clan_weight_trial_store import ClanWeightTrialStore
+from utils.clan_weight_store import ClanWeightStore
 from utils.clan_weights import source_weights, overlay_accounts
 
 
 @pytest.fixture
 def ledger(tmp_path):
     store = Store(tmp_path / 'weights.sqlite')
-    weights = ClanWeightTrialStore(store.path, transaction_factory=store.tx)
+    weights = ClanWeightStore(store.path, transaction_factory=store.tx)
     with store.tx() as db:
         db.execute("INSERT INTO seasons(id,label) VALUES(1,'November')")
         db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall) VALUES(1,'#P2Y','1','lazy',0,'Player',17)")
@@ -46,7 +46,7 @@ def test_saved_weights_immediately_drive_roster_and_invalidate_previews(ledger):
     assert store.one('SELECT revision FROM roster_meta')['revision'] == revision + 1
     with store.tx() as db:
         db.execute('UPDATE roster_entries SET manual_weight=160000')
-        assert _roster_rows(db, 1)[0]['effective_weight'] == 160000
+        assert _roster_rows(db, 1)[0]['effective_weight'] == 150000
     assert len(weights.all()) == 1
 
 
@@ -86,7 +86,7 @@ def test_lineup_survives_restart_and_older_response_cannot_replace_it(ledger):
     weights.remember_lineup('#R2Y', lineup(state='warEnded'))
     weights.remember_lineup('#R2Y', lineup(state='inWar'))
     weights.remember_lineup('#R2Y', lineup(end='20261002T070000.000Z'))
-    restarted = ClanWeightTrialStore(store.path)
+    restarted = ClanWeightStore(store.path)
     saved = restarted.saved_lineup('#R2Y')
     assert saved['state'] == 'warEnded'
     assert saved['cached'] is True
@@ -109,3 +109,34 @@ def test_background_capture_fwa_only_and_failures_retain_history(ledger):
     provider.weight_war_lineup.side_effect = ProviderUnavailable('private or no current war')
     asyncio.run(capture_lineups(app))
     assert weights.saved_lineup('#R2Y')['order'] == lineup()['order']
+
+
+def test_manual_cannot_override_saved_or_explicitly_blank_clan_weight(ledger):
+    store, weights = ledger
+    with store.tx() as db:
+        db.execute("INSERT INTO player_weights VALUES('#P2Y',170000,170000,'now')")
+        db.execute('UPDATE roster_entries SET manual_weight=170000')
+    save(weights, 149000)
+    cached = {'accounts': [{'tag': '#P2Y', 'war_weight': 100000}]}
+    assert overlay_accounts(store, cached)['accounts'][0]['war_weight'] == 149000
+    save(weights, None, 1)
+    assert overlay_accounts(store, cached)['accounts'][0]['war_weight'] is None
+    with store.tx() as db:
+        assert _roster_rows(db, 1)[0]['effective_weight'] is None
+
+
+def test_legacy_ledger_migrates_in_place_without_losing_data(ledger):
+    store, weights = ledger
+    save(weights, 149000)
+    with store.tx() as db:
+        original = [tuple(r) for r in db.execute('SELECT * FROM clan_player_weights')]
+        history = [tuple(r) for r in db.execute('SELECT * FROM clan_player_weight_history')]
+        db.execute('ALTER TABLE clan_player_weights RENAME TO clan_weight_trial')
+        db.execute('ALTER TABLE clan_player_weight_history RENAME TO clan_weight_trial_history')
+    restarted = Store(store.path)
+    with restarted.tx() as db:
+        assert [tuple(r) for r in db.execute('SELECT * FROM clan_player_weights')] == original
+        assert [tuple(r) for r in db.execute('SELECT * FROM clan_player_weight_history')] == history
+        assert not db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('clan_weight_trial','clan_weight_trial_history')").fetchall()
+        assert _roster_rows(db, 1)[0]['effective_weight'] == 149000
+    Store(store.path)  # Repeated startup is safe.

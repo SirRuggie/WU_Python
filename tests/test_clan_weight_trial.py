@@ -3,7 +3,7 @@ from io import BytesIO
 from openpyxl import load_workbook
 from unittest.mock import AsyncMock
 import test_cwl_web_foundation as foundation
-from utils.clan_weight_trial_store import ClanWeightTrialStore
+from utils.clan_weight_store import ClanWeightStore
 from cwl_web.providers import ProviderUnavailable
 
 
@@ -22,6 +22,21 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
 
     async def save(self,changes,actor=None,clan='%23R2Y'):
         return await self.call('PUT','/weight-trial/clans/'+clan,actor or self.owner,json={'changes':changes})
+
+    async def test_roster_override_cannot_replace_official_clan_weight(self):
+        self.roster()
+        sid = await foundation.WebFoundationTests.season(self)
+        await self.call('POST',f'/seasons/{sid}/signups',self.member,json={
+            'pool':'lazy','accounts':[{'tag':'#P2Y','prefer_crystal_1_or_lower':False}]})
+        await self.save([{'tag':'#P2Y','weight':149000,'revision':0}])
+        roster = await (await self.call('GET',f'/seasons/{sid}/roster',self.owner)).json()
+        response = await self.call('PATCH',f'/seasons/{sid}/roster/%23P2Y',self.owner,
+            json={'revision':roster['revision'],'manual_weight':175000})
+        self.assertEqual(response.status,409)
+        self.assertEqual(roster['accounts'][0]['effective_weight'],149000)
+        self.assertTrue(roster['accounts'][0]['clan_weight_managed'])
+        self.assertEqual((await self.call('PATCH',f'/seasons/{sid}/roster/%23P2Y',self.owner,
+            json={'revision':roster['revision'],'kept':True})).status,200)
 
     async def test_access_validation_atomicity_and_replay(self):
         self.roster()
@@ -44,7 +59,7 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app['clan_weight_trial'].all(),[])
         self.assertEqual((await self.save([item])).status,200)
         self.assertEqual((await self.save([item])).status,200)
-        self.assertEqual(len(self.app['store'].rows('SELECT * FROM clan_weight_trial_history')),1)
+        self.assertEqual(len(self.app['store'].rows('SELECT * FROM clan_player_weight_history')),1)
         self.assertEqual((await self.save([{'tag':'#Q2Y','weight':130000,'revision':0},{**item,'weight':150000}])).status,409)
         self.assertEqual(len(self.app['clan_weight_trial'].all()),1)
         self.assertEqual(self.app['store'].rows('SELECT * FROM player_weights'),[])
@@ -56,7 +71,7 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         self.roster(members=[])
         current=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
         self.assertEqual(current['members'],[])
-        self.assertEqual(ClanWeightTrialStore(self.app['store'].path).all()[0]['weight'],149000)
+        self.assertEqual(ClanWeightStore(self.app['store'].path).all()[0]['weight'],149000)
         exported=await self.call('GET','/weight-trial/export.xlsx',self.owner)
         sheet=load_workbook(BytesIO(await exported.read())).active
         self.assertEqual(sheet['B2'].value,'=malicious()')
@@ -78,13 +93,13 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         self.roster()
         item={'tag':'#P2Y','weight':149000,'storages':5,'revision':0}
         self.assertEqual((await self.save([item])).status,200)
-        self.assertEqual(ClanWeightTrialStore(self.app['store'].path).all()[0]['storages'],5)
+        self.assertEqual(ClanWeightStore(self.app['store'].path).all()[0]['storages'],5)
         for changes in ({'storages':True},{'storages':0},{'storages':6},{'weight':149001}):
             self.assertEqual((await self.save([{**item,**changes}])).status,400)
         self.assertEqual((await self.save([{**item,'storages':4}])).status,409)
         self.assertEqual((await self.save([{**item,'storages':4,'revision':1}])).status,200)
         self.assertEqual((await self.save([{**item,'storages':4,'revision':1}])).status,200)
-        row=ClanWeightTrialStore(self.app['store'].path).all()[0]
+        row=ClanWeightStore(self.app['store'].path).all()[0]
         self.assertEqual(row['storages'],4)
         self.assertEqual(row['revision'],2)
 
@@ -152,7 +167,7 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.save([{**item,'weight':150000}])).status,409)
         read=await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
         self.assertEqual(read['last_saved'],stamp)
-        persisted=ClanWeightTrialStore(self.app['store'].path)
+        persisted=ClanWeightStore(self.app['store'].path)
         self.assertEqual(persisted.last_saved('#R2Y')['updated_at'],stamp['at'])
         self.assertIsNone(persisted.last_saved('#J2Y'))
         # A departed player must not remove the clan's historical save receipt.
