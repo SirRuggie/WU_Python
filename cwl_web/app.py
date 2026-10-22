@@ -230,10 +230,28 @@ CWL_PAGE_PATHS = {
     "exports": "/cwl/exports",
     "staff": "/cwl/settings",
 }
+MANAGEMENT_PAGE_PATHS = {
+    "staff-overview": "/staff",
+    "clan-management": "/clans",
+    "strikes": "/clans/strikes",
+    "replacements": "/clans/replacements",
+    "members-settings": "/server/members",
+    "applications-settings": "/server/applications",
+    "fwa-settings": "/server/fwa",
+    "connections-settings": "/settings/integrations",
+    "text-commands": "/server/commands",
+    "manage": "/server",
+    "image-gallery": "/settings/image-gallery",
+    "tickets": "/tickets",
+    "access": "/settings/access",
+    "issues": "/settings/issues",
+}
 
 
 def login_destination(query):
     view = query.get("view", "")
+    if view in MANAGEMENT_PAGE_PATHS:
+        return MANAGEMENT_PAGE_PATHS[view]
     if view in CWL_PAGE_PATHS:
         params = {}
         season = str(query.get("season", ""))
@@ -259,6 +277,8 @@ def saved_login_destination(request):
         return value
     if len(value) <= 150:
         path, _, query = value.partition("?")
+        if path in MANAGEMENT_PAGE_PATHS.values():
+            return path
         for view, destination in CWL_PAGE_PATHS.items():
             if path == destination:
                 params = {key: values[0] for key, values in parse_qs(query).items()}
@@ -1882,7 +1902,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
             return response
         app.router.add_get("/", index_page)
         app.router.add_get("/index.html", index_page)
-        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values())):
+        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values()), *(path.lstrip('/') for path in MANAGEMENT_PAGE_PATHS.values())):
             app.router.add_get('/' + path, index_page)
             app.router.add_get('/' + path + '/', index_page)
     return app

@@ -17,7 +17,7 @@ it('displays push payload while fixing hostile URLs to same-origin Todo', async 
   let completion
   w.handlers.push({ data: { json: () => ({ title: 'War ends soon', body: '2 accounts need attacks', url:'https://bad.example/phish', tag:'clan1' }) }, waitUntil: p => { completion = p } })
   await completion
-  expect(w.showNotification).toHaveBeenCalledWith('War ends soon', expect.objectContaining({body:'2 accounts need attacks',tag:'clan1',data:{url:'https://cwl.example.test/?view=todo'}}))
+  expect(w.showNotification).toHaveBeenCalledWith('War ends soon', expect.objectContaining({body:'2 accounts need attacks',tag:'clan1',data:{url:'https://cwl.example.test/tasks'}}))
 })
 it('malformed payload still produces a visible fallback', async () => {
   const w=worker()
@@ -33,5 +33,14 @@ it('notification click cannot navigate to an external origin', async () => {
   w.handlers.notificationclick({notification:{close,data:{url:'https://bad.example/'}},waitUntil:p=>{completion=p}})
   await completion
   expect(close).toHaveBeenCalledOnce()
-  expect(w.openWindow).toHaveBeenCalledWith('https://cwl.example.test/?view=todo')
+  expect(w.openWindow).toHaveBeenCalledWith('https://cwl.example.test/tasks')
+})
+it('opens clean Tasks for old notifications and strips payload query data', async () => {
+  for (const url of ['/?view=todo', '/tasks?next=https://bad.example', '//bad.example/tasks', 'javascript:alert(1)']) {
+    const w = worker()
+    let completion
+    w.handlers.notificationclick({notification:{close:vi.fn(),data:{url}},waitUntil:p=>{completion=p}})
+    await completion
+    expect(w.openWindow).toHaveBeenCalledWith('https://cwl.example.test/tasks')
+  }
 })

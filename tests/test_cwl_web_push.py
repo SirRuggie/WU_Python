@@ -65,7 +65,7 @@ class PlannerTests(unittest.TestCase):
         payload = push.reminder_payload(item)
         self.assertEqual(payload['body'], '4 attacks remaining across 2 accounts\nSir 2 Stoned: 2 attacks\n₮HɆ ĐɄ₳Ⱡł₮Ɏ: 2 attacks')
         self.assertIn('⚔️ War · 30m remaining', payload['title'])
-        self.assertEqual(payload['url'], '/?view=todo')
+        self.assertEqual(payload['url'], '/tasks')
         for offset, expected in [(540, '9h'), (95, '1h 35m'), (1, '1m')]:
             self.assertIn(expected + ' remaining', push.reminder_payload(item | {'offset': offset})['title'])
         item['kind'] = 'cwl'
@@ -158,6 +158,7 @@ class PushTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(push, 'fresh', new=AsyncMock(return_value=snapshot(now))), patch.object(push, 'send', return_value='sent') as send:
             await push.process_user(self.app, '100')
             self.assertEqual(send.call_count, 2)
+            self.assertEqual(send.call_args_list[0].args[1]['url'], '/tasks')
             self.assertIn('#P2Y', send.call_args_list[0].args[1]['body'])
             self.assertIn('#Q2Y', send.call_args_list[0].args[1]['body'])
             # Reopening the durable store simulates restart; no replay.
@@ -174,9 +175,10 @@ class PushTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_test_rate_limit_and_disable(self):
         saved, body = await self.save()
-        with patch.object(push, 'send', return_value='sent'):
+        with patch.object(push, 'send', return_value='sent') as send:
             endpoint = push.API+'/subscriptions/'+saved['id']+'/test'
             self.assertEqual((await self.client.post(endpoint, headers=self.auth())).status, 200)
+            self.assertEqual(send.call_args.args[1]['url'], '/tasks')
             self.assertEqual((await self.client.post(endpoint, headers=self.auth())).status, 429)
         await self.client.put(push.API+'/subscriptions', json=body | {'enabled':False}, headers=self.auth())
         with patch.object(push, 'fresh', new=AsyncMock(return_value=snapshot(int(time.time())))), patch.object(push, 'send') as send:

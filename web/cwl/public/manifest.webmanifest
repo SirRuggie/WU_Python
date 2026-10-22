@@ -3,7 +3,7 @@
   "name": "Warriors United Dashboard",
   "short_name": "Warriors United",
   "description": "Your accounts, activities and opt-in war reminders.",
-  "start_url": "/?view=todo",
+  "start_url": "/tasks",
   "scope": "/",
   "display": "standalone",
   "background_color": "#111113",

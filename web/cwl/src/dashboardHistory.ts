@@ -1,7 +1,8 @@
 import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 import { cwlPaths } from "./staffLinks";
-const staffPaths: Record<string, string> = { ...cwlPaths, "weight-trial": "/clan-weights" };
+import { managementPaths } from "./managementLinks";
+const staffPaths: Record<string, string> = { ...cwlPaths, ...managementPaths, "weight-trial": "/clan-weights" };
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
 export type DashboardRoute = { view: DashboardView; season: string; signupPanel?: "register" | "saved"; step?: "review" | "announce" };
 export function dashboardTarget(search: string, pathname = '/'): DashboardRoute {

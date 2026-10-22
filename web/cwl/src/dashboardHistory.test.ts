@@ -49,7 +49,7 @@ describe("dashboard browser history", () => {
       season: "12",
     });
     expect(loginPath("?view=access&season=12", false)).toBe(
-      "/api/cwl/auth/discord?view=home",
+      "/api/cwl/auth/discord?view=access",
     );
   });
   it("records visits, updates season in place, and accepts Back and Forward", () => {
@@ -119,7 +119,7 @@ it('uses clean member paths and only retains seasons on CWL staff pages', () => 
    expect(dashboardPath({view,season:'1'})).toBe(path)
    expect(dashboardTarget('',path).view).toBe(view)
  }
- expect(dashboardPath({view:'clan-management',season:'1'})).toBe('/?view=clan-management')
+ expect(dashboardPath({view:'clan-management',season:'1'})).toBe('/clans')
  expect(dashboardPath({view:'roster',season:'2'})).toBe('/cwl/roster?season=2')
 })
 

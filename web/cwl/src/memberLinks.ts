@@ -1,3 +1,4 @@
+import { managementTarget } from './managementLinks'
 import { cwlTarget } from "./staffLinks"
 export type MemberView = 'home' | 'search' | 'wars' | 'events' | 'todo' | 'signup' | 'assignments'
 export const memberPaths: Record<string, string> = {home: '/', signup: '/signup', assignments: '/assignments', todo: '/tasks', wars: '/wars', events: '/events', search: '/search'}
@@ -22,8 +23,9 @@ export function memberPath(view: string, _season = ''): string {
 export function loginPath(search: string, retry: boolean, pathname = '/'): string {
   const weightPage = ['/clan-weights','/weight','/weights','/weight-trial'].includes(pathname.replace(/\/$/, '')) || (pathname === '/' && new URLSearchParams(search).get('view') === 'weight-trial')
   const staffView = cwlTarget(search, pathname)
+  const managementView = managementTarget(search, pathname)
   const target = memberTarget(search, pathname)
-  const params = new URLSearchParams({view: staffView || (weightPage ? 'weight-trial' : target.signupPanel === 'saved' ? 'my-signups' : target.view)})
+  const params = new URLSearchParams({view: staffView || managementView || (weightPage ? 'weight-trial' : target.signupPanel === 'saved' ? 'my-signups' : target.view)})
   const incoming = new URLSearchParams(search)
   if (staffView && /^\d{1,18}$/.test(incoming.get('season') || '')) params.set('season', incoming.get('season')!)
   if (staffView === 'publication' && ['review','announce'].includes(incoming.get('step') || '')) params.set('step', incoming.get('step')!)

@@ -1055,3 +1055,33 @@ signup actions, and reliable focus after cancellation or refreshed removal.
 The signup status bar keeps one Add signup entry. Read failures are distinct from
 empty results; filters cannot disrupt an active edit. See cwl-design-guide.md
 for the stage's regression and isolated browser evidence and limitations.
+
+## October 22: Remaining dashboard URLs completed
+
+All dashboard views now have clean page paths. Management destinations include
+`/staff`, `/clans`, `/clans/strikes`, `/clans/replacements`, `/tickets`, `/server`,
+`/server/members`, `/server/applications`, `/server/fwa`, `/server/commands`,
+`/settings/access`, `/settings/integrations`, `/settings/image-gallery`, and
+`/settings/issues`. Existing member, CWL and clan-weight paths remain unchanged.
+Legacy `?view=` bookmarks still resolve and normalize after authentication. Existing
+Discord posts do not need deletion or replacement. OAuth API query parameters are
+intentional API inputs, not old page URLs. Season and publication-step parameters
+remain on the relevant CWL pages. Member pages still use the current member season.
+
+Sign-in preserves allowlisted management destinations without widening permissions;
+unknown destinations, external redirects and traversal-like return cookies are
+rejected. Management return URLs discard unrelated query parameters. The installed
+app starts at `/tasks` with its existing app ID. Push payloads and service-worker
+clicks now use `/tasks`, including clicks on older notifications. No data migration.
+
+Review: independent Sol backend implementation and Luna adversarial review, plus
+frontend/backend route, OAuth, history, permission and push regressions. Isolated
+browser checks covered direct Staff access, navigation to Family clans, Back,
+refresh, and legacy-link normalization at desktop/mobile widths. The mobile page
+had no horizontal overflow; unavailable fixture settings retained a visible error.
+Live Discord OAuth and notification delivery were not exercised. Existing API
+permissions and unsaved-edit history guards remain in force.
+
+Validation totals: 256 frontend tests, 46 backend tests and 49 route subtests passed;
+TypeScript/Vite build passed. Existing aiohttp warnings and bundle-size warning
+remain. No live messages were sent.
