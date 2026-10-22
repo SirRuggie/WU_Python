@@ -64,9 +64,16 @@ def _pool(request):
 def _delivery(value):
     if not value:
         return None
-    return {'status': value.get('status', 'pending'),
-            'message_url': value.get('message_url') or (value.get('receipt') or {}).get('message_url'),
-            'error': value.get('error') or value.get('failure')}
+    receipt = value.get('receipt') or {}
+    return {
+        'status': value.get('status', 'pending'),
+        'message_url': value.get('message_url') or receipt.get('message_url'),
+        'error': value.get('error') or value.get('failure'),
+        'requested_at': value.get('created_at'),
+        'started_at': value.get('started_at'),
+        'updated_at': value.get('updated_at'),
+        'sent_at': receipt.get('at') or receipt.get('updated_at'),
+    }
 
 
 async def _worker_ready(mongo):

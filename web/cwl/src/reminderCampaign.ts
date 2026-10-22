@@ -35,3 +35,11 @@ export function displayTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
+
+/** The next unsent occurrence shown in the reminder overview. */
+export function nextReminderOccurrence(schedule: Occurrence[], messageId: string, audience: 'main' | 'lazy', now = Date.now()): Occurrence | undefined {
+  return schedule
+    .filter(item => item.message_id === messageId && item.variant === audience && item.run_at &&
+      new Date(item.run_at).getTime() > now && !['sent', 'skipped', 'cancelled'].includes(item.status || ''))
+    .sort((left, right) => String(left.run_at).localeCompare(String(right.run_at)))[0]
+}

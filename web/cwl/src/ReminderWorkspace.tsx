@@ -3,12 +3,13 @@ import ConfirmDialog from "./ConfirmDialog";
 import { useReminderLookup } from "./useReminderLookups";
 import DiscordPreview, { type PreviewPart } from "./DiscordMessagePreview";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, type Pool } from "./api";
+import { api, ApiError, type Pool } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
 import type { AnnouncementChannel } from "./announcements";
 import {
   campaignPatch,
   displayTime,
+  nextReminderOccurrence,
   type Campaign,
   type CampaignState,
   type Timing,
@@ -197,8 +198,9 @@ export default function ReminderWorkspace({
     roles = roleLookup.items;
   const channelError = channelLookup.error;
   const acting = useRef(false);
-  const [tab, setTab] = useState<"messages" | "schedule" | "history">(
-    "schedule",
+  const loadRequest = useRef(0);
+  const [tab, setTab] = useState<"overview" | "messages" | "schedule" | "history">(
+    "overview",
   );
   const [messageId, setMessageId] = useState("signup");
   const [pool, setPool] = useState<Pool>("main");
@@ -211,38 +213,60 @@ export default function ReminderWorkspace({
     action: () => void;
   } | null>(null);
   const load = useCallback(async () => {
-    const data = await api<CampaignState>(base);
-    setState(data);
-    setDraft(data.campaign ? clone(data.campaign) : null);
-    setPreview(null);
+    const request = ++loadRequest.current;
+    try {
+      const data = await api<CampaignState>(base);
+      if (request !== loadRequest.current) return;
+      setState(data);
+      setDraft(data.campaign ? clone(data.campaign) : null);
+      setPreview(null);
+    } catch (cause) {
+      if (request === loadRequest.current && cause instanceof ApiError && [401, 403].includes(cause.status)) {
+        setState(null);
+        setDraft(null);
+        setPreview(null);
+      }
+      throw cause;
+    }
   }, [base]);
   useEffect(() => {
     let alive = true;
+    const request = ++loadRequest.current;
+    setState(null);
+    setDraft(null);
+    setPreview(null);
+    setError("");
     setBusy(true);
     api<CampaignState>(base)
       .then((data) => {
-        if (alive) {
-          setState(data);
-          setDraft(data.campaign ? clone(data.campaign) : null);
+        if (!alive || request !== loadRequest.current) return;
+        setState(data);
+        setDraft(data.campaign ? clone(data.campaign) : null);
+      })
+      .catch((cause) => {
+        if (!alive || request !== loadRequest.current) return;
+        setError(errorText(cause));
+        if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
+          setState(null);
+          setDraft(null);
         }
       })
-      .catch((error) => {
-        if (alive) setError(errorText(error));
-      })
       .finally(() => {
-        if (alive) setBusy(false);
+        if (alive && request === loadRequest.current) setBusy(false);
       });
     return () => {
       alive = false;
+      loadRequest.current += 1;
     };
   }, [base]);
   const patch =
     state?.campaign && draft ? campaignPatch(state.campaign, draft) : {};
   const dirty = Object.keys(patch).length > 0;
+  const protectedBusy = busy && !!state;
   useEffect(() => {
-    onDirty(dirty);
+    onDirty(dirty || protectedBusy);
     return () => onDirty(false);
-  }, [dirty, onDirty]);
+  }, [dirty, protectedBusy, onDirty]);
   useEffect(() => {
     setRoleText(
       draft?.messages[messageId]?.variants[pool]?.role_ids.join(", ") || "",
@@ -259,23 +283,25 @@ export default function ReminderWorkspace({
   }, [dirty]);
   useEffect(() => {
     if (!state?.cycle || state.schedule_synced || busy) return;
+    let active = true;
     const timer = window.setTimeout(() => {
       api<CampaignState>(base)
-        .then((data) =>
-          setState((current) =>
-            current && data.generation === current.generation
-              ? {
-                  ...current,
-                  worker_ready: data.worker_ready,
-                  schedule_synced: data.schedule_synced,
-                  schedule_sync_at: data.schedule_sync_at,
-                }
-              : current,
-          ),
-        )
-        .catch(() => {});
+        .then(data => {
+          if (!active) return;
+          setState(current => current && data.generation === current.generation
+            ? { ...current, worker_ready: data.worker_ready,
+                schedule_synced: data.schedule_synced, schedule_sync_at: data.schedule_sync_at }
+            : current);
+        })
+        .catch(cause => {
+          if (!active || !(cause instanceof ApiError) || ![401, 403].includes(cause.status)) return;
+          setState(null);
+          setDraft(null);
+          setPreview(null);
+          setError(errorText(cause));
+        });
     }, 10000);
-    return () => window.clearTimeout(timer);
+    return () => { active = false; window.clearTimeout(timer); };
   }, [base, state, busy]);
   const act = async (work: () => Promise<void>) => {
     if (acting.current) return;
@@ -285,8 +311,13 @@ export default function ReminderWorkspace({
     setNotice("");
     try {
       await work();
-    } catch (error) {
-      setError(errorText(error));
+    } catch (cause) {
+      if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
+        setState(null);
+        setDraft(null);
+        setPreview(null);
+      }
+      setError(errorText(cause));
     } finally {
       acting.current = false;
       setBusy(false);
@@ -309,6 +340,15 @@ export default function ReminderWorkspace({
   const variant = selected?.variants[pool];
   const disabled = busy || archived;
   const schedule = preview?.schedule || state?.schedule || [];
+  const destination = (id: string) => {
+    if (!id) return "No channel chosen";
+    return channels.find(channel => channel.id === id)?.name || `Channel ${id}`;
+  };
+  const recipient = (ids: string[]) => {
+    if (!ids.length) return "No role mentions";
+    const labels = ids.slice(0, 2).map(id => roles.find(role => role.id === id)?.name || `Role ${id}`);
+    return `${labels.join(", ")}${ids.length > 2 ? ` +${ids.length - 2} more` : ""}`;
+  };
   return (
     <section className="reminders-workspace">
       {error && (
@@ -323,6 +363,7 @@ export default function ReminderWorkspace({
         </p>
       )}
       {busy && <p role="status">Working…</p>}
+      {state?.warning && <p className="notice error" role="alert">{state.warning}</p>}
       {state && (
         <>
           {draft && (
@@ -332,7 +373,7 @@ export default function ReminderWorkspace({
                   {draft.paused
                     ? "Reminders paused"
                     : state.activated
-                      ? "Reminders running"
+                      ? "Automation enabled"
                       : "Not activated"}
                 </span>
                 <span>
@@ -355,7 +396,7 @@ export default function ReminderWorkspace({
                         });
                     }}
                   >
-                    Refresh Manage
+                    Refresh
                   </button>
                 <button
                   disabled={disabled || dirty}
@@ -393,21 +434,46 @@ export default function ReminderWorkspace({
                 </p>
               )}
               <div className="tabs workflow-tabs" role="group" aria-label="Reminder sections">
-                {(["messages", "schedule", "history"] as const).map((value) => (
+                {(["overview", "messages", "schedule", "history"] as const).map((value) => (
                   <button
                     key={value}
                     className={tab === value ? "active" : ""}
                     aria-pressed={tab === value}
                     onClick={() => setTab(value)}
                   >
-                    {value === "messages"
-                      ? "Messages"
+                    {value === "overview"
+                      ? "Overview"
+                      : value === "messages"
+                        ? "Messages"
                       : value === "schedule"
                         ? "Schedule"
                         : "Delivery history"}
                   </button>
                 ))}
               </div>
+              {tab === "overview" && <div className="reminder-overview">
+                <div className="reminder-overview-head">
+                  <div><h3>Messages this cycle</h3><p>Review each purpose, audience, destination and next send before editing.</p></div>
+                  <button type="button" onClick={() => setTab("schedule")}>Edit timing</button>
+                </div>
+                <div className="reminder-overview-list">
+                  {Object.entries(draft.messages).filter(([id]) => id !== "roster").flatMap(([id, item]) =>
+                    (["main", "lazy"] as const).map(audience => {
+                      const settings = item.variants[audience];
+                      const upcoming = nextReminderOccurrence(schedule, id, audience);
+                      const enabled = item.enabled && settings.enabled !== false;
+                      return <article className="reminder-overview-row" key={`${id}:${audience}`}>
+                        <div><strong>{item.label || id}</strong><small>{audience === "main" ? "Main Clan CWL" : "Lazy CWL"} · {enabled ? draft.paused ? "Paused" : "Enabled" : "Disabled"}</small></div>
+                        <div><small>Destination</small><span>{destination(settings.destination_channel_id)}</span></div>
+                        <div><small>Notify</small><span>{recipient(settings.role_ids)}</span></div>
+                        <div><small>Next scheduled</small><span>{!enabled ? "Disabled" : upcoming?.run_at ? displayTime(upcoming.run_at) : "No upcoming send"}</span></div>
+                        <button type="button" onClick={() => { setMessageId(id); setPool(audience); setTab("messages"); }}>Edit<span className="reminder-visually-hidden"> {item.label || id} for {audience === "main" ? "Main" : "Lazy"} CWL</span></button>
+                      </article>;
+                    }))}
+                </div>
+                {(channelError || roleLookup.error) && <p className="reminder-lookup-warning" role="status">Channel or role names are unavailable. IDs are shown; open a message to retry the lookup.</p>}
+                <p className="reminder-overview-note">Scheduled times show the next planned send; delivery is confirmed in Delivery history. Website signups are {state.signup_open ? "open" : "closed"} separately.</p>
+              </div>}
               {tab === "messages" && (
                 <>
                   <div className="reminder-editor-intro">
@@ -877,7 +943,7 @@ export default function ReminderWorkspace({
                   )}
                 </div>
               )}
-              {tab !== "history" && (
+              {tab !== "history" && (tab !== "overview" || dirty) && (
                 <div className={`reminder-save ${dirty ? 'has-changes' : ''}`}>
                   <span>
                     {error || (dirty
@@ -935,7 +1001,7 @@ export default function ReminderWorkspace({
                   </div>
                 </div>
               )}
-              {tab !== "messages" || preview ? (
+              {tab === "schedule" || preview ? (
                 <details className="reminder-disclosure reminder-schedule-panel" key={preview ? "preview" : "saved"} open={!!preview}>
                   <summary>{preview ? "Review schedule changes" : "View saved schedule"}</summary>
                   <p>

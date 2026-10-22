@@ -1,0 +1,122 @@
+/* Return reminder overview: routine list and status first, maintenance secondary. */ .return-overview .return-context {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 10px 0;
+  border-block: 1px solid #ffffff24;
+  font-size: 12px;
+}
+.return-context > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.return-context strong {
+  display: block;
+  color: #bdc6d0;
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+.return-overview .return-destination-warning {
+  color: #efcd96;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.return-destination-warning button {
+  border: 0;
+  background: transparent;
+  color: #bdd4f3;
+  text-decoration: underline;
+  min-height: 44px;
+}
+.return-overview .return-filters {
+  gap: 9px;
+  margin: 13px 0;
+}
+.return-overview .return-bulk-bar {
+  margin-bottom: 8px;
+  padding: 10px;
+  border-radius: 9px;
+}
+.return-overview .return-clan-list {
+  border: 0;
+  border-top: 1px solid #ffffff26;
+  border-radius: 0;
+}
+.return-overview .return-clan-row {
+  gap: 8px 12px;
+  padding: 9px 2px;
+}
+.return-overview .return-clan-row + .return-clan-row {
+  border-color: #ffffff1b;
+}
+.return-overview .return-clan-row small {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #bcc3cc;
+}
+.return-overview .return-row-actions {
+  flex-direction: row;
+}
+.return-row-actions button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #bdd4f3;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.return-row-actions button:hover {
+  background: #ffffff10;
+}
+.return-overview .return-health-note {
+  margin: 9px 0;
+  color: #aeb8c4;
+  font-size: 11px;
+}
+.return-overview .return-maintenance {
+  padding-top: 0;
+}
+.return-overview .return-maintenance summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: #bdd4f3;
+}
+.return-overview .return-maintenance summary::before {
+  content: '▸';
+  margin-right: 7px;
+}
+.return-overview .return-maintenance[open] summary::before {
+  content: '▾';
+}
+.return-overview summary:focus-visible {
+  outline: 3px solid #e0b43c;
+  outline-offset: 2px;
+}
+@media (max-width: 700px) {
+  .return-overview .return-context {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .return-overview .return-clan-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .return-overview .return-clan-row > div:nth-child(2), .return-overview .return-window {
+    grid-column: 1;
+  }
+  .return-overview .return-row-actions {
+    grid-column: 2;
+    grid-row: 1 / 4;
+    align-self: center;
+  }
+  .return-overview .return-clan-name {
+    grid-column: 1;
+  }
+}
+
+.return-overview .return-selection-note {
+  margin: -5px 0 9px;
+  color: #b7c1cb;
+  font-size: 11px;
+}

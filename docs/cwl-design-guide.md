@@ -446,3 +446,29 @@ live production restore. Browser checks covered desktop 1440px, mobile 390px and
 320px, archived-season notes, search, safe literal names, successful download,
 503 recovery and preview clearing/retry. No live Discord or push delivery was
 tested, and these checks do not prove production authentication or a live write.
+
+
+### CWL reminders and announcements — 2026-10-22
+
+The reminder editor presents message audience, destination, schedule and delivery
+state together, with contextual save, refresh and retry actions. Signup links stay
+locked in this editor. Previewing is silent; saving changes settings but does not
+send a message. The published-roster announcement review shows the CWL month,
+publication version, destination, role recipients and rendered message before a
+staff member queues one or both pool announcements. Canceling the review queues
+nothing. Delivery labels distinguish queued, sending, sent, failed, uncertain and
+stale states; the UI shows confirmed-send time, otherwise status-update or first-request
+time when the existing receipt has it. No storage migration or delivery-policy change
+is included.
+
+Validation: 252 frontend tests and the production build passed. The backend run
+passed 116 tests across the 77-test campaign/reminder/announcement/worker suite and
+39 additional reminder, status and dashboard regressions. Isolated browser checks
+covered 1440px, 390px and 320px widths without horizontal overflow; reminder 503
+save retention and 403 clearing/retry; announcement lookup 403 clearing; canceling
+send review with zero queued requests; one confirmed mock queue followed by pending
+and uncertain send blocking; dialog focus containment/restoration; and contextual
+return-selection controls and filter clearing. Tests exercise existing Mongo
+persistence semantics but are not a new disaster-recovery restore. No live Discord
+messages were sent; mock queue success does not prove live delivery. The delayed initial-load race was checked in the browser; publication refreshes
+retain unsaved drafts. Full assistive-technology operation is not certified.

@@ -47,8 +47,7 @@
 .reminders-workspace details details {
   border-bottom: 1px solid #444;
 }
-.reminder-status,
-.reminder-save {
+.reminder-status, .reminder-save {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -86,8 +85,7 @@
 .reminder-save > span {
   margin-right: auto;
 }
-.reminder-schedule > div,
-.reminder-history-row {
+.reminder-schedule > div, .reminder-history-row {
   display: grid;
   grid-template-columns: 2fr 1fr 2fr 1fr;
   gap: 12px;
@@ -112,8 +110,7 @@
   .reminder-columns {
     grid-template-columns: 1fr;
   }
-  .reminder-schedule > div,
-  .reminder-history-row {
+  .reminder-schedule > div,   .reminder-history-row {
     grid-template-columns: 1fr 1fr;
   }
   .reminder-save button {
@@ -133,9 +130,7 @@
     margin-left: 0;
   }
 }
-
-.reminder-month h3,
-.reminder-editor-intro h3 {
+.reminder-month h3, .reminder-editor-intro h3 {
   margin-top: 0;
 }
 .reminder-editor-intro {
@@ -153,7 +148,6 @@
 .reminders-workspace .tabs button {
   min-height: 44px;
 }
-
 .reminder-selected-roles {
   display: flex;
   gap: 8px;
@@ -171,21 +165,48 @@
     position: static;
   }
 }
-
 .reminders-workspace :is(input, textarea, select, summary, button) {
   scroll-margin-block: 100px 180px;
 }
-.signup-date-field { margin: 20px 0; }
-.signup-date-field > label { display: grid; gap: 8px; max-width: 32rem; }
-.signup-date-field > .check-label { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-bottom: 10px; }
-.signup-date-field .check-label input { flex: 0 0 auto; width: auto; }
-.signup-date-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
-.signup-date-grid > section { min-width: 0; }
-.signup-date-grid input { min-width: 0; max-width: 100%; }
-@media (max-width: 800px) { .signup-date-grid { grid-template-columns: minmax(0,1fr); gap: 0; } }
-
-/* Keep actions attached to their status or editor; navigation uses the shared rail. */
-.reminder-status {
+.signup-date-field {
+  margin: 20px 0;
+}
+.signup-date-field > label {
+  display: grid;
+  gap: 8px;
+  max-width: 32rem;
+}
+.signup-date-field > .check-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin-bottom: 10px;
+}
+.signup-date-field .check-label input {
+  flex: 0 0 auto;
+  width: auto;
+}
+.signup-date-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 20px;
+}
+.signup-date-grid > section {
+  min-width: 0;
+}
+.signup-date-grid input {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 800px) {
+  .signup-date-grid {
+    grid-template-columns: minmax(0,1fr);
+    gap: 0;
+  }
+}
+/* Keep actions attached to their status or editor;
+navigation uses the shared rail. */ .reminder-status {
   padding: 14px 16px;
   background: #181818;
   border: 1px solid #393939;
@@ -206,7 +227,9 @@
   border-radius: 0;
   min-height: 44px;
 }
-.reminders-workspace .reminder-control-actions > button + button { border-left: 1px solid #46433a; }
+.reminders-workspace .reminder-control-actions > button + button {
+  border-left: 1px solid #46433a;
+}
 .reminder-disclosure {
   min-width: 0;
   border: 1px solid #393939;
@@ -214,14 +237,32 @@
   padding: 0 16px;
   align-self: start;
 }
-.reminder-disclosure[open] { padding-bottom: 16px; }
-.reminder-disclosure + label { margin-top: 16px; }
-.reminder-context { color: #bbb; }
-.reminder-save:not(.has-changes) { position: static; background: transparent; border-width: 1px 0 0; border-radius: 0; }
-.reminder-save:not(.has-changes) .reminder-control-actions { display: none; }
+.reminder-disclosure[open] {
+  padding-bottom: 16px;
+}
+.reminder-disclosure + label {
+  margin-top: 16px;
+}
+.reminder-context {
+  color: #bbb;
+}
+.reminder-save:not(.has-changes) {
+  position: static;
+  background: transparent;
+  border-width: 1px 0 0;
+  border-radius: 0;
+}
+.reminder-save:not(.has-changes) .reminder-control-actions {
+  display: none;
+}
 @media (max-width:800px) {
-  .reminder-status .reminder-control-actions, .reminder-save .reminder-control-actions { width: 100%; margin-left: 0; }
-  .reminder-control-actions > button { flex: 1; }
+  .reminder-status .reminder-control-actions, .reminder-save .reminder-control-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+  .reminder-control-actions > button {
+    flex: 1;
+  }
 }
 .shell .reminders-workspace .workflow-tabs {
   flex-wrap: nowrap;
@@ -231,4 +272,163 @@
 .shell .reminders-workspace .workflow-tabs > button {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+/* Daily reminder review is a compact list;
+only editing opens the long forms. */ .reminder-overview {
+  min-width: 0;
+}
+.reminder-overview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.reminder-overview-head h3 {
+  margin: 0 0 3px;
+  font-size: 16px;
+}
+.reminder-overview-head p {
+  margin: 0;
+  font-size: 12px;
+}
+.reminder-overview-head button {
+  flex: 0 0 auto;
+}
+.reminder-overview-list {
+  border-top: 1px solid #ffffff28;
+}
+.reminder-overview-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.2fr) minmax(105px, 1fr) minmax(105px, 1fr) minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 9px 2px;
+  border-bottom: 1px solid #ffffff1a;
+  min-width: 0;
+}
+.reminder-overview-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.reminder-overview-row strong, .reminder-overview-row small, .reminder-overview-row span {
+  display: block;
+}
+.reminder-overview-row strong {
+  font-size: 13px;
+}
+.reminder-overview-row small {
+  color: #bbc3ce;
+  font-size: 11px;
+}
+.reminder-overview-row span {
+  margin-top: 2px;
+  font-size: 12px;
+}
+.reminder-overview-row button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #bdd4f3;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.reminder-overview-row button:hover {
+  background: #ffffff10;
+}
+.reminder-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.reminder-overview-note, .reminder-lookup-warning {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+.reminder-lookup-warning {
+  color: #f0c994;
+}
+.reminders-workspace .workflow-tabs {
+  margin: 0;
+  border-bottom: 1px solid #ffffff24;
+}
+.reminders-workspace .workflow-tabs > button {
+  border: 0;
+  border-radius: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #c3c8d0;
+}
+.reminders-workspace .workflow-tabs > button.active {
+  border-bottom-color: #e2b541;
+  background: #e2b54110;
+  color: #f0d37e;
+}
+.reminders-workspace .reminder-status {
+  display: flex;
+  gap: 6px 16px;
+  padding: 10px 12px;
+  border-radius: 9px;
+}
+.reminders-workspace .reminder-status > span {
+  font-size: 12px;
+}
+.reminders-workspace .reminder-status .badge {
+  background: transparent;
+  padding: 0;
+  color: #f0d37e;
+}
+@media (max-width: 950px) {
+  .reminder-overview-row {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+  .reminder-overview-row > div:nth-child(4) {
+    grid-column: 2 / 4;
+  }
+  .reminder-overview-row button {
+    grid-column: 4;
+    grid-row: 1 / 3;
+  }
+}
+@media (max-width: 650px) {
+  .shell .reminders-workspace .workflow-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    overflow: visible;
+  }
+  .shell .reminders-workspace .workflow-tabs > button {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+  .reminder-overview-head {
+    align-items: start;
+    flex-wrap: wrap;
+  }
+  .reminder-overview-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+  }
+  .reminder-overview-row > div:nth-child(2), .reminder-overview-row > div:nth-child(3), .reminder-overview-row > div:nth-child(4) {
+    grid-column: 1;
+  }
+  .reminder-overview-row button {
+    grid-column: 2;
+    grid-row: 1 / 5;
+  }
+  .reminder-overview-row span {
+    font-size: 12px;
+  }
+  .reminders-workspace .reminder-status .reminder-control-actions {
+    width: 100%;
+  }
 }

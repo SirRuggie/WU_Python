@@ -23,6 +23,6 @@ describe('Manage campaign bridge', () => {
     expect(canQueueAnnouncement(unbound, 'main', '123', false)).toBe(false)
   })
   it('creates a direct assignment URL with a season selector', () => {
-    expect(dashboardRosterUrl('https://cwl.example', '12')).toBe('https://cwl.example/?view=assignments&season=12')
+    expect(dashboardRosterUrl('https://cwl.example', '12')).toBe('https://cwl.example/assignments?season=12')
   })
 })

@@ -84,12 +84,20 @@ class ManageBridgeTests(unittest.IsolatedAsyncioTestCase):
         await cwl_web_bridge.mark_worker_alive(self.mongo,GUILD_ID)
         response=await self.call('POST',self.base+'/main/send',self.owner,json=body)
         self.assertEqual(response.status,202,await response.text())
-        self.assertEqual((await response.json())['delivery']['status'],'pending')
+        pending=(await response.json())['delivery']
+        self.assertEqual(pending['status'],'pending')
+        self.assertTrue(pending['requested_at'])
+        self.assertTrue(pending['updated_at'])
+        self.assertIsNone(pending['started_at'])
+        self.assertIsNone(pending['sent_at'])
         oid=cwl_campaign.occurrence_id('2026-10','roster','main')
-        await cwl_campaign.record_delivery(self.mongo,GUILD_ID,'2026-10',{'occurrence_id':oid,'status':'sent','message_url':'https://discord.com/channels/1/2/3'})
+        await cwl_campaign.record_delivery(self.mongo,GUILD_ID,'2026-10',{'occurrence_id':oid,'status':'sent','message_url':'https://discord.com/channels/1/2/3','at':'2026-10-22T15:30:00+00:00'})
         shared=(await self.state())['pools']['main']['delivery']
         self.assertEqual(shared['status'],'sent')
         self.assertEqual(shared['message_url'],'https://discord.com/channels/1/2/3')
+        self.assertEqual(shared['sent_at'],'2026-10-22T15:30:00+00:00')
+        self.assertTrue(shared['requested_at'])
+        self.assertTrue(shared['updated_at'])
         self.assertEqual((await self.call('POST',self.base+'/main/send',self.owner,json=body)).status,409)
         edit={'generation':data['generation'],'channel_id':body['channel_id'],'body':'changed','roster_url':'https://example.com/'}
         self.assertEqual((await self.call('PATCH',self.base+'/main',self.owner,json=edit)).status,409)
