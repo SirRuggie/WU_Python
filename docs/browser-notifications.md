@@ -63,3 +63,21 @@ from the permission issue in the screenshot.
 Validation totals for this change: 275 frontend tests and 15 focused push backend
 tests passed. Required war-reminder validation also passed (185 backend tests,
 1 skipped; 32 focused frontend checks). Existing aiohttp warnings remain.
+
+## October 22: simpler reminder settings
+
+Everyday controls now show War/CWL, reminder times, a compact selected-account
+count with an expandable picker, and Enable/Save plus Turn off. Permission details,
+recheck/test controls, installation advice, other saved devices and delivery
+explanations live under “Notification help & test”. Errors and unsaved changes
+remain visible outside that disclosure. Android help covers Chrome's delegated
+“Managed by Warriors United” permission and relaunching the installed app.
+No subscription storage, API authorization, scheduling or delivery changes.
+
+Validation: 275 frontend tests, 15 push backend tests, and the war-reminder
+validation gate passed (a temporary copy redirected only its build output to
+/tmp so checks could not replace served production assets). Isolated browser
+checks at 320/390/1280px covered account selection, permission grant, save,
+disclosure visibility, dirty-state test blocking and a failed test with retained
+settings; inspected widths had no horizontal overflow. Permission and transport
+were simulated; no real push was sent. Existing build/aiohttp warnings remain.
