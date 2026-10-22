@@ -932,3 +932,20 @@ reload retaining announcement step/season, legacy readiness normalization, and t
 signed-out OAuth link. No live Discord OAuth or notification delivery was tested.
 No layout or control sizes changed. Existing build chunk-size/aiohttp warnings remain.
 Held for combined deployment with batch one and remaining management URLs.
+
+## Staff access identity clarity — prepared, not deployed
+
+Owner access lists resolve current Discord nicknames/usernames and role names on
+read and after save. Stored labels, grant IDs, permissions, revisions and audit
+history are not rewritten by identity lookups. Requests use bounded concurrency
+and per-request timeouts; missing members/roles and unavailable Discord retain
+saved entries with explicit status. Owner-only access and existing revision/CSRF
+checks remain unchanged.
+
+The list shows labeled selectable Discord IDs, usernames, member/role distinctions,
+Discord profile links, and name/username/ID search. Removal confirmation includes
+the ID to distinguish identical names. Validation: 17 backend permission/identity
+tests, 229 frontend tests and build passed. Isolated browser checked long names,
+missing-member fallback, role identity, username search, and 320/390/1280px layout
+without horizontal overflow. No production permissions or Discord messages changed.
+Held alongside the URL rollout for combined deployment.

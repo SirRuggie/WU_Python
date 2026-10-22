@@ -3,7 +3,7 @@ import { api, ApiError } from './api'
 import MemberPicker from './MemberPicker'
 import './AccessSettings.css'
 
-type Grant = { kind: 'user' | 'role'; id: string; label: string; permissions: string[] }
+type Grant = { kind: 'user' | 'role'; id: string; label: string; permissions: string[]; display_name?: string; username?: string; identity_status?: 'current' | 'missing' | 'unavailable' }
 type Permission = { id: string; label: string; description: string }
 type AccessData = {
   revision: number; grants: Grant[]; owners: string[];
@@ -12,6 +12,7 @@ type AccessData = {
 }
 export default function AccessSettings({ onDirty }: { onDirty?: (dirty: boolean) => void }) {
   const [data, setData] = useState<AccessData | null>(null)
+  const [search, setSearch] = useState('')
   const [kind, setKind] = useState<'user' | 'role'>('user')
   const [id, setId] = useState('')
   const [selected, setSelected] = useState<string[]>([])
@@ -109,8 +110,27 @@ export default function AccessSettings({ onDirty }: { onDirty?: (dirty: boolean)
         <div className="access-toolbar"><span>{selected.length} actions selected · Access management is owner-only</span><div><button type="button" disabled={busy} onClick={() => { if (leave()) { setEditing(false); setId(''); setSelected([]) } }}>Cancel</button><button className="primary" disabled={busy || !id || !selected.length || !dirty || (kind === 'user' && data.owners.includes(id))}>{busy ? 'Saving…' : 'Save access'}</button></div></div>
       </form>
     </section>}
-    {data && <section className="card"><h2>Staff access</h2>{!data.grants.length && <p>No added staff. Only the two owners have access.</p>}{data.grants.map(grant => <div className="access-row" key={`${grant.kind}:${grant.id}`}><div><strong>{grant.label}</strong><small>{grant.kind === 'role' ? 'Discord role' : 'Member'} · {grant.id}</small><p>{grant.permissions.map(p => labels[p] || p).join(' · ')}</p></div><div className="access-row-actions"><button disabled={busy} onClick={() => edit(grant)}>Edit</button><button disabled={busy || editing} onClick={() => setRemove(grant)}>Remove</button></div></div>)}</section>}
-    {remove && <div className="notice error" role="alert"><p>Remove this access entry for <strong>{remove.label}</strong>? Other grants still apply.</p><div className="access-row-actions"><button disabled={busy} onClick={() => setRemove(null)}>Cancel</button><button disabled={busy} onClick={() => void save(remove)}>Remove access entry</button></div></div>}
+    {data && <section className="card">
+      <h2>Staff access</h2>
+      <label>Find staff or role<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name, username or Discord ID" /></label>
+      {!data.grants.length && <p>No added staff. Only the two owners have access.</p>}
+      {!!data.grants.length && !data.grants.some(grant => [grant.display_name, grant.username, grant.label, grant.id].join(' ').toLowerCase().includes(search.toLowerCase())) && <p>No matching access entries.</p>}
+      {data.grants.filter(grant => [grant.display_name, grant.username, grant.label, grant.id].join(' ').toLowerCase().includes(search.toLowerCase())).map(grant => <div className="access-row" key={`${grant.kind}:${grant.id}`}>
+        <div>
+          <strong>{grant.display_name || (grant.label !== grant.id ? grant.label : grant.kind === 'role' ? 'Unresolved role' : 'Unresolved member')}</strong>
+          <small>{grant.kind === 'role' ? 'Discord role' : 'Specific member'}{grant.username ? ` · @${grant.username}` : ''}</small>
+          <small className="access-discord-id">{grant.kind === 'role' ? 'Role ID' : 'Discord ID'}: <code>{grant.id}</code></small>
+          {grant.identity_status !== 'current' && <small>{grant.identity_status === 'missing' ? 'No longer found in the server. Saved access remains until removed.' : 'Live identity unavailable. Showing saved details; use Refresh access to retry.'}</small>}
+          <p>{grant.permissions.map(p => labels[p] || p).join(' · ')}</p>
+        </div>
+        <div className="access-row-actions">
+          {grant.kind === 'user' && <a className="button" href={`https://discord.com/users/${grant.id}`} target="_blank" rel="noreferrer">Discord profile ↗</a>}
+          <button disabled={busy} onClick={() => edit(grant)}>Edit</button>
+          <button disabled={busy || editing} onClick={() => setRemove(grant)}>Remove</button>
+        </div>
+      </div>)}
+    </section>}
+    {remove && <div className="notice error" role="alert"><p>Remove this access entry for <strong>{remove.display_name || remove.label}</strong> (Discord {remove.kind === 'role' ? 'role ' : ''}ID: {remove.id})? Other grants still apply.</p><div className="access-row-actions"><button disabled={busy} onClick={() => setRemove(null)}>Cancel</button><button disabled={busy} onClick={() => void save(remove)}>Remove access entry</button></div></div>}
     {data && <details className="card"><summary>Access history · latest 200 changes</summary>{data.history.length ? [...data.history].reverse().map((row, i) => <p key={i}><strong>{row.after ? 'Saved' : 'Removed'} {row.after?.label || row.before?.label || row.subject_id}</strong><br /><small>{new Date(row.at).toLocaleString()} · Owner {row.actor_id}</small><br />{row.after?.permissions.map(p => labels[p] || p).join(' · ') || 'Entry removed'}</p>) : <p>No changes recorded in the new access settings yet.</p>}</details>}
   </div>
 }

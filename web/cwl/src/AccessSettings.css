@@ -22,3 +22,6 @@
 }
 
 .access-workspace fieldset { border: 0; padding-inline: 0; margin-inline: 0; }
+
+.access-discord-id code { font-size: inherit; user-select: all; }
+.access-row-actions .button { min-height: 44px; display: inline-flex; align-items: center; }

@@ -1,5 +1,6 @@
 """Owner-only access editing and live request authorization."""
 import json
+from .access_identities import decorate_access
 from aiohttp import web
 from pymongo.write_concern import WriteConcern
 from utils.dashboard_access import (
@@ -72,7 +73,7 @@ async def access(request):
     _require(request, 'owner')
     async with mongo(request) as db:
         document = await repository(db).read()
-    return web.json_response(public_document(document or legacy_document(_store(request))))
+    return web.json_response(await decorate_access(request, public_document(document or legacy_document(_store(request)))))
 
 
 async def save(request):
@@ -111,7 +112,7 @@ async def save(request):
             raise web.HTTPConflict(text=str(exc)) from exc
         except ValueError as exc:
             raise web.HTTPBadRequest(text=str(exc)) from exc
-    return web.json_response(public_document(saved))
+    return web.json_response(await decorate_access(request, public_document(saved)))
 
 
 async def roles(request):
