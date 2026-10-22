@@ -192,7 +192,7 @@ def _fixture(app, tags):
              "cwl": section([row(accounts[1], 0, 1)] if len(accounts)>1 else []),
              "raid": section([row(accounts[0], 2, 5)] if accounts else []),
              "private": section([row(accounts[-1], None, None, "private")] if accounts else []),
-             "games": section([row(accounts[0], 560, 1000)] if accounts else [])}
+             "games": section([row(accounts[0], 2450, None)] if accounts else [])}
     for key in ("war", "cwl", "raid", "private"):
         for item in views[key]["rows"]:
             if key == "private":
@@ -200,7 +200,11 @@ def _fixture(app, tags):
     for item in views['war']['rows']:
         item['fwa_outcome'] = {'status': 'win', 'opponent': 'Fixture FWA Opponent'}
     for item in views["games"]["rows"]:
-        item["state"] = "observed"
+        item["state"] = "reported"
+    from .todo_games import event_window
+    start, end = event_window(datetime.now(timezone.utc))
+    views["games"].update(season=start.strftime("%Y-%m"), source="ClashPerk (sample)", checked_at=_now(),
+                          event_start=start.timestamp(), event_end=end.timestamp())
     return {"checked_at": _now(), "accounts": accounts, "views": views}
 
 

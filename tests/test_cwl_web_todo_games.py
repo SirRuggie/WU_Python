@@ -1,163 +1,145 @@
-"""Clan Games Todo activity is observational and fails closed."""
-
+"""Monthly Clan Games scores: read-only, scoped to linked accounts, no fake zeros."""
 import asyncio
 import json
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from cwl_web import todo_games
+from utils import clan_games
+
+NOW = datetime(2026, 10, 23, 12, tzinfo=timezone.utc)
 
 
-def account(tag="#P2Y", th=16):
-    return SimpleNamespace(tag=tag, name="Main", town_hall=th, clan_tag="#Q2Y",
-                           clan_name="Warriors United", clan_badge=None)
-
-
-def event(when, previous=0, current=250, delta=250):
-    return {"eventTime": when.isoformat().replace("+00:00", "Z"), "clanTag": "#Q2Y",
-            "statType": "clan_games", "previousValue": previous,
-            "currentValue": current, "delta": delta}
+def account(tag='#P2Y', clan='#Q2Y', th=16):
+    return SimpleNamespace(tag=tag, name='<script>Account</script>', town_hall=th,
+                           clan_tag=clan, clan_name='Clan', clan_badge=None)
 
 
 class GamesTests(unittest.IsolatedAsyncioTestCase):
-    async def test_observed_activity_only_current_month_and_deduplicated(self):
-        now = datetime.now(timezone.utc)
-        start, _ = todo_games._month_window(now)
-        good = event(now - timedelta(minutes=1))
-        old = event(start - timedelta(seconds=1), 0, 4000, 4000)
+    async def test_one_fetch_per_clan_only_linked_players_no_goal(self):
+        fetch = AsyncMock(return_value={'#P2Y': 2450, '#Q2Y': 700, '#PYY': 9000})
+        with patch.object(todo_games, 'fetch_clan_scores', fetch):
+            view = await todo_games.build_games_view([account(), account('#Q2Y'), account('#PYY', th=5)], now=NOW)
+        self.assertEqual(fetch.await_count, 1)
+        self.assertEqual(fetch.call_args.args[2], '2026-10')
+        self.assertEqual([r['used'] for r in view['rows']], [2450, 700])
+        self.assertTrue(all(r['total'] is None and r['remaining'] is None for r in view['rows']))
+        self.assertNotIn('goal', str(view))
+        self.assertEqual(view['source'], 'ClashPerk')
 
-        async def fetch(*args):
-            return [good, good, old, event(now - timedelta(minutes=2), 250, 600, 350)]
+    async def test_missing_not_zero_and_explicit_zero_kept(self):
+        with patch.object(todo_games, 'fetch_clan_scores', AsyncMock(return_value={'#P2Y': 0})):
+            view = await todo_games.build_games_view([account(), account('#Q2Y'), account('#PYY', clan=None)], now=NOW)
+        self.assertEqual([r['used'] for r in view['rows']], [0, None, None])
+        self.assertEqual(view['rows'][0]['state'], 'reported')
+        self.assertEqual(view['rows'][1]['state'], 'unknown')
 
-        with patch.object(todo_games, "_fetch_history", fetch):
-            view = await todo_games.build_games_view([account(), account("#Q2Y", th=5)])
-        row, = view["rows"]
-        self.assertEqual(row["used"], 600)
-        self.assertIsNone(row["remaining"])
-        self.assertEqual(row["total"], 1000)
-        self.assertEqual(row["state"], "partial")
-        self.assertIsNone(row["starts_at"])
-        self.assertIsNone(row["ends_at"])
-        self.assertTrue(view["ok"])  # feed loaded, but old item makes it partial
-        self.assertIn("ClashKing", view["note"])
+    async def test_upcoming_does_not_fetch_and_month_rollover(self):
+        fetch = AsyncMock()
+        with patch.object(todo_games, 'fetch_clan_scores', fetch):
+            view = await todo_games.build_games_view([account()], now=datetime(2027, 1, 1, tzinfo=timezone.utc))
+        fetch.assert_not_awaited()
+        self.assertEqual(view['season'], '2027-01')
+        self.assertEqual(view['rows'][0]['state'], 'upcoming')
+        self.assertIsNone(view['rows'][0]['used'])
 
-    async def test_no_record_is_unknown_not_zero(self):
-        async def fetch(*args):
-            return []
+    async def test_finished_event_keeps_same_month(self):
+        with patch.object(todo_games, 'fetch_clan_scores', AsyncMock(return_value={'#P2Y': 9000})):
+            view = await todo_games.build_games_view([account()], now=NOW.replace(day=30))
+        self.assertEqual(view['season'], '2026-10')
+        self.assertLess(view['event_end'], NOW.replace(day=30).timestamp())
+        self.assertEqual(view['rows'][0]['used'], 9000)
 
-        with patch.object(todo_games, "_fetch_history", fetch):
-            view = await todo_games.build_games_view([account()])
-        row, = view["rows"]
-        self.assertEqual(row["state"], "unknown")
-        self.assertIsNone(row["used"])
-        self.assertIsNone(row["total"])
-        self.assertIsNone(row["remaining"])
-        self.assertTrue(view["ok"])
-        self.assertTrue(view["incomplete"])
+    async def test_partial_outage_does_not_erase_other_clan(self):
+        async def fetch(session, clan, *args):
+            if clan == '#Q2Y': raise TimeoutError()
+            return {'#Q2Y': 800}
+        with patch.object(todo_games, 'fetch_clan_scores', fetch):
+            view = await todo_games.build_games_view([account(), account('#Q2Y', clan='#PYY')], now=NOW)
+        self.assertTrue(view['ok'])
+        self.assertTrue(view['incomplete'])
+        self.assertEqual([r['used'] for r in view['rows']], [None, 800])
+        with patch.object(todo_games, 'fetch_clan_scores', AsyncMock(side_effect=TimeoutError)):
+            view = await todo_games.build_games_view([account()], now=NOW)
+        self.assertFalse(view['ok'])
 
-    async def test_goal_reached_from_valid_positive_changes(self):
-        now = datetime.now(timezone.utc)
-        async def fetch(*args):
-            return [event(now - timedelta(minutes=1), 0, 1100, 1100)]
+    def test_wrong_season_malformed_and_conflicting_scores(self):
+        with self.assertRaises(ValueError):
+            clan_games.scores({'season':'2026-09','members':[]},'2026-10')
+        members = [{'tag':'#P2Y','points':250}, {'tag':'#P2Y','points':300},
+                   {'tag':'#Q2Y','points':True}, {'tag':'#PYY','points':-1},
+                   {'tag':'#QYY','points':500}, {'tag':'#QYY','points':500}]
+        data = clan_games.scores({'season':'2026-10','members':members}, '2026-10')
+        self.assertEqual(data, {'#P2Y':None, '#Q2Y':None, '#PYY':None, '#QYY':500})
+        with self.assertRaises(ValueError):
+            clan_games.scores({'season':'2026-10','members':{}},'2026-10')
 
-        with patch.object(todo_games, "_fetch_history", fetch):
-            view = await todo_games.build_games_view([account()])
-        self.assertTrue(view["ok"])
-        self.assertEqual(view["rows"][0]["state"], "goal_reached")
-        self.assertEqual(view["rows"][0]["remaining"], 0)
-
-    async def test_invalid_and_limit_truncated_are_partial(self):
-        now = datetime.now(timezone.utc)
-        valid = event(now - timedelta(minutes=1))
-        bad = event(now - timedelta(minutes=2), 0, 1, True)
-        async def fetch(*args):
-            return [valid, bad]
-
-        with patch.object(todo_games, "_fetch_history", fetch):
-            view = await todo_games.build_games_view([account()])
-        self.assertEqual(view["rows"][0]["state"], "partial")
-        self.assertEqual(view["rows"][0]["used"], 250)
-        self.assertIsNone(view["rows"][0]["remaining"])
-        self.assertTrue(view["ok"])
-
-        async def full(*args):
-            return [valid] * todo_games.HISTORY_LIMIT
-        with patch.object(todo_games, "_fetch_history", full):
-            view = await todo_games.build_games_view([account()])
-        self.assertEqual(view["rows"][0]["state"], "partial")
-        self.assertTrue(view["incomplete"])
-
-    async def test_provider_failure_keeps_account_unknown(self):
-        async def fetch(*args):
-            raise TimeoutError()
-
-        with patch.object(todo_games, "_fetch_history", fetch):
-            view = await todo_games.build_games_view([account()])
-        self.assertFalse(view["ok"])
-        self.assertTrue(view["unavailable"])
-        self.assertIsNone(view["rows"][0]["used"])
+    async def test_cancellation_is_not_converted_to_empty_result(self):
+        fetch = AsyncMock(side_effect=asyncio.CancelledError)
+        # Caller cancellation must cancel gather, not produce a successful snapshot.
+        async def wait(*args):
+            await asyncio.sleep(60)
+        with patch.object(todo_games, 'fetch_clan_scores', wait):
+            task = asyncio.create_task(todo_games.build_games_view([account()], now=NOW))
+            await asyncio.sleep(0)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError): await task
 
 
-    async def test_mismatched_delta_and_conflicting_event_are_excluded(self):
-        now = datetime.now(timezone.utc)
-        good = event(now - timedelta(minutes=1), 0, 250, 250)
-        conflict = event(now - timedelta(minutes=1), 0, 300, 300)
-        unrelated = event(now - timedelta(minutes=2), 0, 100, 100)
-        mismatch = event(now - timedelta(minutes=3), 0, 500, 400)
-
-        async def fetch(*args):
-            return [good, conflict, unrelated, mismatch]
-
-        with patch.object(todo_games, "_fetch_history", fetch):
-            view = await todo_games.build_games_view([account()])
-        self.assertTrue(view["ok"])
-        self.assertEqual(view["rows"][0]["used"], 100)
-        self.assertEqual(view["rows"][0]["state"], "partial")
-        self.assertIsNone(view["rows"][0]["remaining"])
-
-    async def test_stream_reads_every_chunk_and_enforces_size(self):
-        class Response:
-            status = 200
-            content_type = "application/json"
-
-            def __init__(self, chunks):
-                self.chunks = chunks
-                self.content = self
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def iter_chunked(self, size):
-                for chunk in self.chunks:
-                    yield chunk
-
-        class Session:
-            def __init__(self, chunks):
-                self.chunks = chunks
-                self.params = None
-
-            def get(self, url, **kwargs):
-                self.params = kwargs["params"]
-                return Response(self.chunks)
-
-        now = datetime.now(timezone.utc)
-        start, _ = todo_games._month_window(now)
-        payload = json.dumps({"items": [event(now - timedelta(minutes=1))]}).encode()
-        session = Session([payload[:11], payload[11:]])
-        items = await todo_games._fetch_history(session, "#P2Y", start, now, asyncio.Semaphore(1))
-        self.assertEqual(len(items), 1)
-        self.assertEqual(session.params["type"], "clan_games")
-        self.assertEqual(session.params["limit"], "500")
-
-        huge = Session([b" " * (todo_games.MAX_RESPONSE_BYTES + 1)])
-        with self.assertRaisesRegex(ValueError, "too large"):
-            await todo_games._fetch_history(huge, "#P2Y", start, now, asyncio.Semaphore(1))
+class Response:
+    content_type = 'application/json'
+    def __init__(self, status=200, chunks=None):
+        self.status = status
+        self.chunks = chunks or [b'{"season":"2026-10","members":[]}']
+        self.content = self
+    async def __aenter__(self): return self
+    async def __aexit__(self, *args): pass
+    async def iter_chunked(self, size):
+        for chunk in self.chunks: yield chunk
 
 
-if __name__ == "__main__":
-    unittest.main()
+class Session:
+    def __init__(self, responses): self.responses, self.calls = list(responses), []
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return self.responses.pop(0)
+
+
+class TransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_401_refresh_once_correct_season_and_no_redirects(self):
+        session = Session([Response(401), Response()])
+        auth = AsyncMock(side_effect=['one','two'])
+        with patch.object(clan_games, 'get_access_token', auth):
+            self.assertEqual(await clan_games.fetch_clan_scores(session, '#Q2Y', '2026-10', asyncio.Semaphore(1)), {})
+        self.assertEqual(len(session.calls),2)
+        url, args = session.calls[-1]
+        self.assertIn('%23Q2Y/clan-games',url)
+        self.assertEqual(args['params'],{'season':'2026-10'})
+        self.assertFalse(args['allow_redirects'])
+        self.assertEqual(args['headers']['Authorization'],'Bearer two')
+
+    async def test_rejected_credentials_and_rate_limit_are_not_retried(self):
+        for status in (401,403,429,500,302):
+            session = Session([Response(status),Response(status)])
+            with patch.object(clan_games, 'get_access_token', AsyncMock(return_value='token')):
+                with self.assertRaises(ValueError):
+                    await clan_games.fetch_clan_scores(session,'#Q2Y','2026-10',asyncio.Semaphore(1))
+            self.assertEqual(len(session.calls),2 if status==401 else 1)
+
+    async def test_stream_read_and_size_bound(self):
+        data=json.dumps({'season':'2026-10','members':[{'tag':'#P2Y','points':1234}]}).encode()
+        with patch.object(clan_games, 'get_access_token', AsyncMock(return_value='token')):
+            result=await clan_games.fetch_clan_scores(Session([Response(chunks=[data[:11],data[11:]])]),'#Q2Y','2026-10',asyncio.Semaphore(1))
+            self.assertEqual(result,{'#P2Y':1234})
+            with self.assertRaisesRegex(ValueError,'too large'):
+                await clan_games.fetch_clan_scores(Session([Response(chunks=[b' '*(clan_games.MAX_RESPONSE_BYTES+1)])]),'#Q2Y','2026-10',asyncio.Semaphore(1))
+
+    async def test_missing_key_and_invalid_tags_never_request_scores(self):
+        session=Session([])
+        with patch.object(clan_games,'get_access_token',AsyncMock(return_value=None)):
+            for tag in ('#Q2Y','https://other.example'):
+                with self.assertRaises(ValueError):
+                    await clan_games.fetch_clan_scores(session,tag,'2026-10',asyncio.Semaphore(1))
+        self.assertEqual(session.calls,[])

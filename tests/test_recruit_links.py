@@ -190,16 +190,16 @@ def test_no_key_does_not_attempt_authentication(monkeypatch):
     monkeypatch.delenv('CLASHPERK_PASSKEY',raising=False)
     class NoNetwork:
         def post(self,*a,**kw): raise AssertionError('Must not send an empty credential')
-    assert asyncio.run(clashperk_links._login(NoNetwork())) is None
+    assert asyncio.run(clashperk_links.get_access_token(NoNetwork())) is None
 
 
 def test_login_cache_and_key_rotation(monkeypatch):
     session=setup_session(monkeypatch,[Response(200,{'accessToken':'one'}),Response(200,{'accessToken':'two'})])
     async def run():
-        assert await clashperk_links._login(session)=='one'
-        assert await clashperk_links._login(session)=='one'
+        assert await clashperk_links.get_access_token(session)=='one'
+        assert await clashperk_links.get_access_token(session)=='one'
         monkeypatch.setenv('CLASHPERK_PASSKEY','rotated')
-        assert await clashperk_links._login(session)=='two'
+        assert await clashperk_links.get_access_token(session)=='two'
     asyncio.run(run())
     assert len(session.calls)==2
 

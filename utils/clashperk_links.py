@@ -12,7 +12,8 @@ _key = ""
 _lock = asyncio.Lock()
 
 
-async def _login(session, *, rejected=None):
+async def get_access_token(session, *, rejected=None):
+    """Return a shared, memory-only token for read-only ClashPerk providers."""
     global _token, _expires, _key
     key = os.getenv("CLASHPERK_PASSKEY", "").strip()
     if not key:
@@ -45,7 +46,7 @@ async def lookup(*, discord_ids=None, player_tags=None):
         return []
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-            token = await _login(session)
+            token = await get_access_token(session)
             if not token:
                 return None
             records = []
@@ -53,7 +54,7 @@ async def lookup(*, discord_ids=None, player_tags=None):
                 for attempt in range(2):
                     async with session.post(BASE_URL + "/links/query", json={field: values[start:start + 100]}, headers={"Authorization": "Bearer " + token}, allow_redirects=False) as response:
                         if response.status == 401 and attempt == 0:
-                            token = await _login(session, rejected=token)
+                            token = await get_access_token(session, rejected=token)
                             if not token:
                                 return None
                             continue

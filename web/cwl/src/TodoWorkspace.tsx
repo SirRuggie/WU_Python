@@ -1,3 +1,6 @@
+import TodoTaskCard from './TodoTaskCard'
+import ClanGamesSummary from './ClanGamesSummary'
+import { withoutGamesScores } from './todoSnapshot'
 import DashboardIcon from './DashboardIcon'
 import TaskEventTimer from './activity/TaskEventTimer'
 import { useClock } from './activity/useClock'
@@ -7,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from './api'
 import { clanDeepLink } from './publication'
 import TownHallIcon from './TownHallIcon'
-import { todoEmptyText, todoTabs, todoTime, visibleTodoRows, type TodoKind, type TodoSnapshot, type TodoRow } from './todo'
+import { todoEmptyText, todoTabs, visibleTodoRows, type TodoKind, type TodoSnapshot, type TodoRow } from './todo'
 import './TodoWorkspace.css'
 import { readTodoPreferences, saveTodoPreferences } from './todoPreferences'
 function Badge({ url }: { url?: string | null }) {
@@ -18,7 +21,17 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
   const preferenceId = userId
   const [preferences] = useState(() => { try { return readTodoPreferences(preferenceId, window.localStorage) } catch { return { tab: 'war' as TodoKind, selected: null, sort: 'deadline' } } })
   const cacheKey = `todo:${userId}`
-  const [data,setData] = useState<TodoSnapshot | null>(() => readSnapshot<TodoSnapshot>(cacheKey, (value): value is TodoSnapshot => { const v = value as TodoSnapshot; return !!v && Array.isArray(v.accounts) && typeof v.checked_at === 'string' && ['war','cwl','raid','games','private'].every(key => Array.isArray(v.views?.[key as TodoKind]?.rows)) }))
+  const [data,setData] = useState<TodoSnapshot | null>(() => {
+    const saved = readSnapshot<TodoSnapshot>(cacheKey, (value): value is TodoSnapshot => {
+      const v = value as TodoSnapshot
+      return !!v && Array.isArray(v.accounts) && typeof v.checked_at === 'string'
+        && ['war','cwl','raid','games','private'].every(key => Array.isArray(v.views?.[key as TodoKind]?.rows))
+    })
+    if (!saved) return null
+    const safe = withoutGamesScores(saved)
+    writeSnapshot(cacheKey, safe)
+    return safe
+  })
   const [cached,setCached] = useState(!!data)
   const [error,setError] = useState('')
   const [loading,setLoading] = useState(false)
@@ -39,7 +52,7 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
       inFlight=true;setLoading(true)
       try {
         const result = await api<TodoSnapshot>('/todo')
-        if (!cancelled) { setData(result);writeSnapshot(cacheKey,result);setCached(false);setError('') }
+        if (!cancelled) { setData(result);writeSnapshot(cacheKey,withoutGamesScores(result));setCached(false);setError('') }
       } catch (cause) { if (!cancelled) { if (cause instanceof ApiError && [401,403].includes(cause.status)) { setData(null); setCached(false) }; setError(cause instanceof Error ? cause.message : 'Could not update your tasks. Try again.') } }
       finally { inFlight=false;if (!cancelled) setLoading(false) }
     }
@@ -74,20 +87,13 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
       })}</div>
       <details className="todo-account-picker"><summary>{selected===null ? 'All linked accounts' : `${selectedCount} account${selectedCount===1?'':'s'} selected`} <span>Choose accounts</span></summary><div className="todo-picker-tools"><label>Find linked accounts<input type="search" value={accountSearch} onChange={event=>setAccountSearch(event.target.value)} placeholder="Account or clan name…" /></label><button onClick={()=>setSelected(null)}>All accounts</button><button onClick={()=>setSelected([])}>Clear</button></div><div className="todo-picker-list">{filteredAccounts.map(account=><label key={account.tag}><input type="checkbox" checked={selected===null || selected.includes(account.tag)} onChange={event=>setSelected(current=>{const previous=current===null ? accounts.map(item=>item.tag) : current;return event.target.checked ? [...new Set([...previous,account.tag])] : previous.filter(tag=>tag!==account.tag)})}/><TownHallIcon level={account.town_hall}/><span><strong>{account.name}</strong><small>{account.tag}</small></span></label>)}{!filteredAccounts.length && <p>No matching linked accounts.</p>}</div></details>
       <div className="todo-section-head"><div><h2><DashboardIcon name={config.icon}/> {config.label}</h2><p>{config.description}</p></div><label>Sort tasks<select value={sort} onChange={event=>setSort(event.target.value)}><option value="deadline">Ending soonest</option><option value="th">Town Hall · highest first</option><option value="name">Account name · A–Z</option></select></label></div>
-      {(tab==='raid' || tab==='games' || tab==='cwl') && <TaskEventTimer kind={tab} now={now}/>}
+      {tab==='games' && view?.season ? <ClanGamesSummary view={view} now={now}/> : (tab==='raid' || tab==='games' || tab==='cwl') && <TaskEventTimer kind={tab} now={now}/>}
       <label className="todo-search">Search tasks<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Account, tag or clan…"/></label>
       {view && <>
         {(!view.ok || !!view.incomplete) && <div className="todo-warning" role="status"><strong>{view.ok ? 'Some activity could not be checked' : 'This activity is unavailable'}</strong><p>{view.incomplete || view.unavailable || view.note || 'Try again later. Check this activity in-game meanwhile.'}</p></div>}
         {tab!=='private' && tab!=='games' && unreadable>0 && <div className="todo-warning"><span>Some war logs could not be read. Their attacks may not appear here.</span><button onClick={()=>setTab('private')}>View affected accounts →</button></div>}
         {notes.length>0 && <div className="todo-notes">{notes.map(note=><p key={note}>{note}</p>)}</div>}
-        {!accounts.length ? <div className="card empty"><h3>No linked accounts to show</h3><p>Use ClashKing’s /link command in Discord, then check again.</p></div> : !rows.length ? <div className="card empty"><h3>{!view.ok || view.incomplete ? 'Check in-game' : selectedCount===0 ? 'Choose accounts to see their tasks' : 'Nothing to show here'}</h3><p>{todoEmptyText(view,tab,selected!==null || !!search)}</p></div> : <div className="todo-clan-list">{[...groups.entries()].map(([key,members])=><section className="todo-clan" key={key}><header><Badge url={members[0].badge_url}/><div><h3>{members[0].clan_name || members[0].clan_tag || 'Clan unknown'}</h3>{tab==='war' && members[0].fwa_outcome && <div className={`todo-fwa ${members[0].fwa_outcome.status}`}><strong>{({win:'FWA outcome: WIN',lose:'FWA outcome: LOSE',blacklisted:'BLACKLISTED opponent',unknown:'FWA outcome: Unknown'})[members[0].fwa_outcome.status]}</strong>{members[0].fwa_outcome.opponent && <span>vs {members[0].fwa_outcome.opponent}</span>}</div>}<small>{members.length} account{members.length===1?'':'s'} on this page</small></div>{key!=='none' && <a href={clanDeepLink(key)} target="_blank" rel="noopener noreferrer">Open Clan ↗</a>}</header>{members.map((row,index)=>{
-          const privateRow=tab==='private'
-          const games=tab==='games'
-          const preparation=row.state==='preparation'
-          const measurable=row.used!==null && row.total!==null && row.total>0 && !privateRow
-          const timestamp=preparation ? row.starts_at : row.ends_at
-          return <article className="todo-task" key={`${row.tag}-${index}`}><div className="todo-task-name"><TownHallIcon level={row.town_hall}/><div><strong>{row.name}</strong><small>{row.tag}</small></div><a href={`https://link.clashofclans.com/en?action=OpenPlayerProfile&tag=${encodeURIComponent(row.tag)}`} target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.name} in Clash of Clans`}>↗</a></div><div className="todo-task-progress"><span className={`todo-state ${preparation?'prep':privateRow?'blocked':''}`}>{privateRow ? (row.detail==='private' ? 'Private war log' : 'Unable to check') : games ? row.used===null ? 'Points unknown' : `${row.used.toLocaleString()} recorded points` : preparation ? 'Preparation day' : `${row.remaining ?? '—'} attack${row.remaining===1?'':'s'} left`}</span>{measurable && <><progress max={row.total!} value={Math.min(row.used!,row.total!)} aria-label={`${row.name}: ${row.used} of ${row.total} ${games?'goal points':'attacks used'}`}/><small>{games ? `Family goal: ${row.total!.toLocaleString()} points` : `${row.used} of ${row.total} attacks used`}</small></>}</div><div className="todo-task-time">{privateRow ? <p>{row.detail==='private' ? 'Check attacks in-game. A clan leader can make the war log public.' : row.detail && row.detail!=='error' ? row.detail : 'Could not check this war. Try again or check in-game.'}</p> : games ? <p>{row.detail || 'Recorded activity may not include every point. Check in-game for your exact total.'}</p> : <><small>{preparation ? 'Battle starts in' : 'Ends in'}</small><strong>{todoTime(timestamp,now)}</strong>{timestamp && <time dateTime={new Date(timestamp*1000).toISOString()}>{new Date(timestamp*1000).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time>}</>}</div></article>
-        })}</section>)}</div>}
+        {!accounts.length ? <div className="card empty"><h3>No linked accounts to show</h3><p>Use ClashKing’s /link command in Discord, then check again.</p></div> : !rows.length ? <div className="card empty"><h3>{!view.ok || view.incomplete ? 'Check in-game' : selectedCount===0 ? 'Choose accounts to see their tasks' : 'Nothing to show here'}</h3><p>{todoEmptyText(view,tab,selected!==null || !!search)}</p></div> : <div className="todo-clan-list">{[...groups.entries()].map(([key,members])=><section className="todo-clan" key={key}><header><Badge url={members[0].badge_url}/><div><h3>{members[0].clan_name || members[0].clan_tag || 'Clan unknown'}</h3>{tab==='war' && members[0].fwa_outcome && <div className={`todo-fwa ${members[0].fwa_outcome.status}`}><strong>{({win:'FWA outcome: WIN',lose:'FWA outcome: LOSE',blacklisted:'BLACKLISTED opponent',unknown:'FWA outcome: Unknown'})[members[0].fwa_outcome.status]}</strong>{members[0].fwa_outcome.opponent && <span>vs {members[0].fwa_outcome.opponent}</span>}</div>}<small>{members.length} account{members.length===1?'':'s'} on this page</small></div>{key!=='none' && <a href={clanDeepLink(key)} target="_blank" rel="noopener noreferrer">Open Clan ↗</a>}</header>{members.map((row,index)=><TodoTaskCard key={`${row.tag}-${index}`} row={row} kind={tab} now={now}/>)}</section>)}</div>}
         {lastPage>0 && <nav className="todo-pagination" aria-label="Activity pages"><button disabled={currentPage===0} onClick={()=>setPage(currentPage-1)}>← Previous</button><span>{currentPage+1} / {lastPage+1}</span><button disabled={currentPage===lastPage} onClick={()=>setPage(currentPage+1)}>Next →</button></nav>}
       </>}
     </>}

@@ -743,3 +743,11 @@ stay together, technical detail is collapsed, loading/errors/empty matches are
 separate, and stale responses are ignored after leaving. Checked isolated sample
 layouts at 320, 390 and 1280 pixels, including visible keyboard focus and no horizontal
 overflow. See `dashboard-issues.md` for diagnostic scope and deliberate limitations.
+
+## Monthly Clan Games points
+
+Tasks now shows earned points without a family goal. Existing account selection,
+clan grouping, refresh controls and mobile rows are retained. Event month/source/
+check time stay visible in the integrated schedule block; missing scores never
+become zero. Isolated samples reviewed at 320/390/1280px, including long names and
+unknown scores; no page overflow. See `clan-games-tasks.md` for source and limits.
