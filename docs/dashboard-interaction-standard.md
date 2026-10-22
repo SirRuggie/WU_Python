@@ -4,6 +4,10 @@ Use this standard for new or meaningfully changed dashboard workflows. The famil
 clan reminder overview is the first complete application, not a claim that every
 existing dashboard screen already meets these rules or is WCAG-certified.
 
+For CWL layout decisions and the October 22 comparative review, also follow
+[the living CWL design guide](cwl-design-guide.md). It records proposed patterns
+separately from deployed behavior.
+
 ## Evidence and design comparisons
 
 These are comparisons with published administrative product/design-system patterns,
