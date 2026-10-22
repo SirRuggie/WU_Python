@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 import hikari
 import pendulum
+from utils.dashboard_urls import SIGNUP_URL, ASSIGNMENTS_URL, DASHBOARD_ORIGIN
 from pymongo.errors import DuplicateKeyError
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -91,7 +92,6 @@ LEGACY_SIGNUP_LAZY = (
         "\"LAZY WAY OR NO WAY!!\" Outside involvement is not permitted.\n\n"
         "Direct all questions and concerns in <#872692009066958879> <:warriorcat:947992348971905035>"
     )
-SIGNUP_URL = "https://cwl.ruggie.zone/signup"
 
 
 def signup_buttons() -> list[dict]:
@@ -99,11 +99,30 @@ def signup_buttons() -> list[dict]:
     return [{"label": "Sign up for CWL", "url": SIGNUP_URL}]
 
 
+LEGACY_ROSTER_URLS = (
+    "https://docs.google.com/spreadsheets/d/1GcNVWyx5HjoDm5AbQAOT0_pwyf95KRl_f4lQ0Up3ZBM/edit?usp=sharing",
+    "https://docs.google.com/spreadsheets/d/1GxIuathFuro-xdYM9rVcF2Sob9lyFgDsT7TekkkuK-E/edit#gid=512888016",
+)
+
+
 def normalize_signup_entry(campaign: dict) -> dict:
     """Upgrade signup destinations without changing delivery state or custom copy."""
     result = copy.deepcopy(campaign)
     defaults = default_campaign()
     for message_id, message in result.get("messages", {}).items():
+        for item in message.get("variants", {}).values():
+            item["body"] = item.get("body", "").replace("https://cwl.ruggie.zone", DASHBOARD_ORIGIN)
+            for button in item.get("buttons", []):
+                url = button.get("url", "")
+                if url.startswith("https://cwl.ruggie.zone/") or url == "https://cwl.ruggie.zone":
+                    button["url"] = DASHBOARD_ORIGIN + url[len("https://cwl.ruggie.zone"):]
+                if message_id == "roster" and url in LEGACY_ROSTER_URLS:
+                    button["url"] = ASSIGNMENTS_URL
+                    button["label"] = "My assignments"
+                    item["body"] = item.get("body", "").replace(
+                        "The Clan Links are on the Spreadsheet.",
+                        "Open My assignments below to see your published clan and its join link.",
+                    )
         if message_id != "signup" and not message_id.startswith("reminder:"):
             continue
         for pool, item in message.get("variants", {}).items():
@@ -164,15 +183,15 @@ def default_campaign() -> dict:
             "variants": {
                 "main": _variant(
                     title="<:league_medal:949137422933962753> CWL Time <:league_medal:949137422933962753>",
-                    body="Below are the CWL Rosters. Once your attacks are complete, make your way to your assigned Clan.\n\nThe Clan Links are on the Spreadsheet. You can also find them in <#1114047624216068136>\n\nDirect all questions and concerns to <#801950200133976124> <:warriorcat:947992348971905035>",
+                    body="Below are the CWL Rosters. Once your attacks are complete, make your way to your assigned Clan.\n\nOpen My assignments below to see your published clan and its join link. You can also find them in <#1114047624216068136>\n\nDirect all questions and concerns to <#801950200133976124> <:warriorcat:947992348971905035>",
                     media_url="https://c.tenor.com/aXIInybKvOwAAAAd/tenor.gif", channel_id=main_channel, role_ids=[role],
-                    buttons=_buttons(("CWL Rosters", "https://docs.google.com/spreadsheets/d/1GcNVWyx5HjoDm5AbQAOT0_pwyf95KRl_f4lQ0Up3ZBM/edit?usp=sharing", "📋")),
+                    buttons=_buttons(("My assignments", ASSIGNMENTS_URL, "📋")),
                 ),
                 "lazy": _variant(
                     title="<:league_medal:949137422933962753> Lazy CWL Time <:league_medal:949137422933962753>",
                     body="Below are the Lazy CWL Rosters. If you cannot view the Roster or do not understand it, please ping <@&769130325460254740> in <#872692009066958879> and we'll get it sorted.\n\nAs soon as both your attacks are complete in the current war make your way to your assigned Clan. __The sooner the better.__\n\nThere are several Bots in the server that can provide war information. To many to list here. Feel free to play around in <#1128848663872028743>. War and CWL are good keywords for looking.",
                     media_url="https://c.tenor.com/aXIInybKvOwAAAAd/tenor.gif", channel_id=lazy_channel, role_ids=[role],
-                    buttons=_buttons(("Lazy CWL Rosters", "https://docs.google.com/spreadsheets/d/1GxIuathFuro-xdYM9rVcF2Sob9lyFgDsT7TekkkuK-E/edit#gid=512888016", "😴"), ("LazyCWL Guide", "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit", "📖")),
+                    buttons=_buttons(("My assignments", ASSIGNMENTS_URL, "😴"), ("LazyCWL Guide", "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit", "📖")),
                 ),
             },
         },

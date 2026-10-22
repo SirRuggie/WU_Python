@@ -22,6 +22,7 @@ from .staff_tag_signups import routes as staff_tag_signup_routes
 
 from .providers import FixtureProviders, LiveProviders, ProviderUnavailable, tag
 from .store import Store
+from .canonical_host import canonical_host
 from .placement_status import explain as explain_placement
 from .clan_metadata import enrich as enrich_clan_metadata
 from .exports import export_csv
@@ -1723,7 +1724,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         raise ValueError("CWL_WEB_DB_PATH is required for the dashboard working copy")
     if dev_fixture and dev_identity is None:
         dev_identity = {"id": PERMANENT_OWNER_ID, "username": "Development owner", "guild_owner": False}
-    app = web.Application(middlewares=[errors, auth_diagnostics], client_max_size=32 * 1024)
+    app = web.Application(middlewares=[errors, canonical_host, auth_diagnostics], client_max_size=32 * 1024)
     app["store"] = Store(db_path, durability=durability)
     if dev_fixture and providers is None:
         providers = FixtureProviders(dev_identity["id"])
