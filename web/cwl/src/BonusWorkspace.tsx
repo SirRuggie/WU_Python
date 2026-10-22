@@ -341,7 +341,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
             return saved;
           }} />}
           <details className="bonus-secondary" onToggle={event => { if (event.currentTarget.open) void loadRoles(); }}>
-            <summary>Representative odds setting</summary>
+            <summary>FWA Rep odds settings</summary>
             <p>Members with this Discord role receive two chances in Lazy draws. Each account can win only once. Two tickets do not guarantee twice the final winning probability when several winners are drawn.</p>
             {rolesLoading && <p role="status">Loading roles…</p>}
             {rolesError && <p role="alert">{rolesError} <button type="button" onClick={() => void loadRoles()}>Retry roles</button></p>}
