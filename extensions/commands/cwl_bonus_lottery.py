@@ -14,9 +14,9 @@ class LazyBonusLottery(lightbulb.SlashCommand, name="lazycwl-bonuses",
             await ctx.respond("You do not have permission to use this command.", ephemeral=True)
             return
         await ctx.respond(
-            "Choose Lazy CWL in **Bonus winners** to review attacks, draw equal-chance winners, "
+            "Choose Lazy CWL in **Bonus winners** to review eligibility and draw weighted winners, "
             "and approve them before posting an announcement.\n"
-            f"{DASHBOARD_ORIGIN}/?view=bonuses\n"
+            f"{DASHBOARD_ORIGIN}/cwl/bonuses\n"
             "Sign in with your staff account. If Home opens after sign-in, go to CWL → Results & bonuses → Bonus medals.",
             ephemeral=True,
             user_mentions=False, role_mentions=False, mentions_everyone=False,

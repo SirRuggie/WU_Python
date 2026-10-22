@@ -8,7 +8,7 @@ from unittest.mock import patch
 import test_cwl_web_bonuses as bonus_fixtures
 from test_cwl_web_announcements import Transport, MAIN_CHANNEL, FOREIGN_CHANNEL
 from extensions.cwl_discord_transport import AnnouncementUncertain, AnnouncementRejected
-from utils.cwl_bonus_raffle import draw_accounts, announcement_pages
+from utils.cwl_bonus_raffle import draw_accounts, announcement_pages, lazy_eligibility
 
 
 class RaffleTests(unittest.IsolatedAsyncioTestCase):
@@ -149,6 +149,21 @@ class RaffleTests(unittest.IsolatedAsyncioTestCase):
         partial = await (await self.call('POST', self.base + '/preview', self.owner, json=body)).json()
         self.assertIn('Resolve incomplete or changed account results before drawing', partial['blocking_reasons'])
 
+    async def test_legacy_main_draw_without_lazy_review_fields_still_approves(self):
+        import json
+        await self.ready()
+        draw = await self.draw()
+        legacy = draw['snapshot']
+        for group in ('eligible', 'excluded'):
+            for account in legacy[group]:
+                for field in ('bonus_review', 'three_cycle_cooldown', 'host_valid'):
+                    account.pop(field, None)
+        with self.app['store'].tx() as db:
+            db.execute('UPDATE bonus_raffle_draws SET snapshot_json=? WHERE id=?',
+                       (json.dumps(legacy), draw['id']))
+        approved = await self.approve(draw)
+        self.assertTrue(approved['approved_at'])
+
     async def test_changed_results_block_approval_without_reroll(self):
         await self.ready()
         draw = await self.draw()
@@ -279,11 +294,49 @@ class RaffleDomainTests(unittest.TestCase):
         winners = draw_accounts(accounts, 60)
         self.assertEqual(len({a['tag'] for a in winners}), 50)
 
+    def test_lazy_rule_thresholds_overrides_and_hard_exclusions(self):
+        base = {'tag': '#ABC', 'pool': 'lazy', 'assigned_clan_tag': '#HOST',
+                'in_current_roster': True, 'source_complete': True,
+                'attacks': 4, 'stars': 0}
+        self.assertIsNone(lazy_eligibility(base))
+        self.assertIsNone(lazy_eligibility({**base, 'attacks': 3, 'stars': 8}))
+        self.assertIn('participation rule', lazy_eligibility({**base, 'attacks': 3, 'stars': 7}))
+        self.assertIn('Missed CWL sync', lazy_eligibility({**base, 'bonus_review': {'flags': ['missed_sync']}}))
+        exception = {'flags': ['missed_sync'], 'override_reason': 'Staff reviewed'}
+        self.assertIsNone(lazy_eligibility({**base, 'attacks': 1, 'stars': 0,
+                                            'three_cycle_cooldown': True,
+                                            'bonus_review': exception}))
+        self.assertIn('active Lazy clan', lazy_eligibility({**base, 'manual_candidate': True,
+                            'manual_host_valid': False, 'bonus_review': exception}))
+        self.assertIn('Already selected', lazy_eligibility({**base,
+                            'already_confirmed_this_cycle': True, 'bonus_review': exception}))
+        self.assertIn('invalid', lazy_eligibility({**base, 'attacks': 8,
+                            'bonus_review': exception}))
+
+    def test_weighted_draw_is_unique_and_multiplier_must_be_valid(self):
+        ordinary = {'tag': '#ONE', 'multiplier': 1}
+        representative = {'tag': '#REP', 'multiplier': 2}
+        other = {'tag': '#TWO', 'multiplier': 1}
+        with patch('utils.cwl_bonus_raffle.secrets.SystemRandom') as rng:
+            rng.return_value.choice.side_effect = [representative, ordinary]
+            winners = draw_accounts([ordinary, representative, other], 2)
+            self.assertEqual(winners, [representative, ordinary])
+            first_tickets, second_tickets = [call.args[0] for call in rng.return_value.choice.call_args_list]
+            self.assertEqual(sum(item['tag'] == '#REP' for item in first_tickets), 2)
+            self.assertFalse(any(item['tag'] == '#REP' for item in second_tickets))
+        with self.assertRaises(ValueError):
+            draw_accounts([{'tag': '#BAD', 'multiplier': 3}], 1)
+        with self.assertRaises(ValueError):
+            draw_accounts([{'tag': '#BAD', 'multiplier': 3}, {'tag': '#OK'}], 2)
+
     def test_unicode_long_names_split_and_no_mentions(self):
         snapshot = {'pool': 'lazy', 'clan_name': '@everyone **Clan**', 'cycle': '2026-10', 'minimum': 5,
-                    'winners': [{'tag': '#P'+str(i), 'player_name': '<@123456789012345678>\n' + '😀'*80, 'attacks': 7} for i in range(50)]}
+                    'winners': [{'tag': '#P'+str(i), 'player_name': '<@123456789012345678>\n' + '😀'*80, 'attacks': None, 'stars': None} for i in range(50)]}
         pages = announcement_pages(snapshot)
         self.assertGreater(len(pages), 1)
+        self.assertIn('Rule: 4+ attacks OR 3+ attacks and 8+ stars', pages[0])
+        self.assertNotIn('Minimum None attacks', pages[0])
+        self.assertIn('Participation unavailable', pages[0])
         self.assertTrue(all(len(p.encode('utf-16-le')) // 2 <= 2000 for p in pages))
         self.assertTrue(all('@everyone' not in p and '<@123' not in p for p in pages))
         for i in range(50):

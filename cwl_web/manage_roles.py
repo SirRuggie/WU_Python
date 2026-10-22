@@ -77,11 +77,11 @@ def search_text(value):
     return unicodedata.normalize('NFKC', str(value or '')).casefold()
 
 
-async def searchable_members(request):
+async def searchable_members(request, *, force=False):
     """Discord's search is prefix-only. Cache a complete paged directory instead."""
     state = request.app.setdefault('member_search_directory', {'lock': asyncio.Lock()})
     async with state['lock']:
-        if time.monotonic() - state.get('loaded_at', -1000) < 60:
+        if not force and time.monotonic() - state.get('loaded_at', -1000) < 60:
             return state['rows']
         rows = []
         after = None

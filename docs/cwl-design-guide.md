@@ -345,3 +345,38 @@ were injected in the fixture; native popup operation and assistive technology we
 not certified. Sample publication affected only temporary SQLite. No live roster
 publication, Discord send, or role ping occurred. Existing build/aiohttp warnings
 remain. These checks do not prove live notification delivery.
+
+### Lazy bonus review and draw — 2026-10-22
+
+Bonus winners now starts with season/host context, a compact allowance/candidate
+summary, searchable rows and focused account review. The review carries the three
+season flags, a reasoned eligibility exception and saved author/time. Manual
+candidates use verified player-tag lookup and an explicit reason. The role picker
+loads on demand. Ordinary row actions are quiet 44px controls; mobile steps wrap,
+long names reflow, and the candidate list reveals 20 records at a time.
+
+Reviewing or opening an editor cannot draw. Unsaved/open review and add forms
+invalidate the preview and block saving winners. A saved draw leads to approval,
+then a separate announcement; equal-or-fewer candidates than slots uses Save all
+winners. Flags, provenance, incomplete source and role failures remain visible.
+Main retains its configured minimum. See `cwl-lazy-bonuses.md` for Lazy rules,
+manual-candidate boundaries, ticket weighting, history and durable storage.
+
+Validation: Sol implemented the UI, Luna implemented/reviewed storage/domain,
+and both independently reviewed the other boundary. 246 frontend tests, 116
+bonus/participation/recovery backend tests (one external integration skipped),
+and 26 access/architecture regressions passed. TypeScript/Vite build and diff
+checks passed. Tests include Main compatibility, 3/8 qualification, streak/reset,
+reasoned overrides, multiplier validation, no duplicate winners, stale approvals,
+archived/unauthorized writes, malformed inputs, foreign roles, role outage,
+manual-candidate add/remove without signup mutation, and database reopen.
+
+Isolated SQLite/provider browser checks covered 24 fictional accounts, long
+external-looking names, search, manual addition, representative role save,
+failed save retaining the reason, canceled discard, successful save with focus
+return, preview invalidation on review open, six-winner draw and approval,
+403 clearing/retry recovery, empty hosting clan, and 1440px/390px/320px layouts
+without horizontal document overflow. Role/channel providers were simulated;
+the real announcement transport was not used. Native confirmation cancellation
+was fixture-controlled; native popup and assistive-technology operation are not
+certified. Existing aiohttp warnings and Vite chunk-size warning remain.

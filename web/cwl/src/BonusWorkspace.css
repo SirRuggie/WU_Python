@@ -1,58 +1,112 @@
 .bonus-workspace { min-width: 0; }
-.bonus-toolbar, .bonus-action-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px 0;
+.bonus-page-head { margin-bottom: 16px; }
+.bonus-page-head > div > p:last-child { margin-bottom: 0; }
+.bonus-context, .bonus-section-heading, .bonus-candidates-heading, .bonus-editor-heading {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
-.bonus-toolbar h2 { margin: 0; }
-.bonus-action-bar { border-top: 1px solid #38383d; margin-top: 18px; }
-.bonus-action-bar > span { flex: 1 1 220px; color: #bbc0ca; font-size: 14px; }
-.bonus-steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 0;
-  list-style: none;
-  border-bottom: 1px solid #494337;
-  margin: 16px 0 24px;
-}
-.bonus-steps li { padding: 16px 12px; border-bottom: 3px solid transparent; color: #b6b6bc; }
-.bonus-steps li[aria-current] { color: #f5cc56; border-bottom-color: #e4b529; background: #b88a1410; }
-.bonus-steps li span { display: inline-block; margin-right: 8px; font-weight: 700; }
-.bonus-setup { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; margin-bottom: 24px; }
-.bonus-setup > div { display: flex; align-items: end; gap: 10px; }
-.bonus-setup label { flex: 1; min-width: 0; }
-.bonus-setup input, .bonus-setup select { width: 100%; }
-.bonus-panel { border: 1px solid #38383d; border-radius: 16px; padding: 22px; background: #161618; }
-.bonus-panel h2 { margin-top: 0; }
-.bonus-slots { max-width: 340px; }
-.bonus-slots input { width: 100%; }
-.bonus-account-list { list-style: none; padding: 0; margin: 14px 0; }
-.bonus-account-list li { display: flex; align-items: start; justify-content: space-between; gap: 18px; border-top: 1px solid #333338; padding: 12px 0; }
-.bonus-account-list li > div { min-width: 0; overflow-wrap: anywhere; }
-.bonus-account-list small, .bonus-history-row small { display: block; color: #b7bdc8; margin-top: 4px; }
-.bonus-account-list li > div:last-child { text-align: right; }
-.bonus-workspace details { margin-top: 18px; }
-.bonus-workspace summary { cursor: pointer; min-height: 44px; padding: 12px 0; }
+.bonus-context { min-height: 44px; margin: 12px 0; color: #d6d9e0; }
+.bonus-context > span { color: #aeb7c6; font-size: 13px; }
+.bonus-context button, .bonus-quiet-action { background: transparent; border: 0; color: #bbd7ff; }
+.bonus-context button { min-height: 44px; padding: 8px 12px; }
+.bonus-steps { display: flex; gap: 4px; list-style: none; margin: 12px 0 20px; padding: 0 0 8px; border-bottom: 1px solid #343840; overflow-x: auto; }
+.bonus-steps li { flex: 1 0 auto; min-width: 100px; padding: 8px 10px; color: #b5bdca; font-size: 13px; border-bottom: 2px solid transparent; white-space: nowrap; }
+.bonus-steps li[aria-current] { color: #f2cb64; border-color: #ebbc48; }
+.bonus-steps li span { font-weight: 700; margin-right: 6px; }
+.bonus-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 2px 0 16px; }
+.bonus-controls label { flex: 1 1 250px; max-width: 520px; min-width: 0; }
+.bonus-controls label select { width: 100%; }
+.bonus-controls button { min-height: 44px; }
+.bonus-flow { border-top: 1px solid #343840; padding-top: 16px; margin-top: 2px; }
+.bonus-section-heading { align-items: start; margin-bottom: 12px; }
+.bonus-section-heading h2, .bonus-section-heading h3, .bonus-candidates-heading h3 { margin: 0; }
+.bonus-section-heading p { margin: 5px 0 0; color: #b8c0cb; }
+.bonus-section-heading > span { color: #ced6e2; }
+.bonus-stats { display: flex; flex-wrap: wrap; gap: 0; border-block: 1px solid #343840; margin: 12px 0; }
+.bonus-stats > div { min-width: 130px; flex: 1 1 0; display: flex; align-items: baseline; gap: 8px; padding: 11px 14px; }
+.bonus-stats > div + div { border-left: 1px solid #343840; }
+.bonus-stats strong { color: #f3d47f; font-size: 20px; line-height: 1.2; }
+.bonus-stats span, .bonus-support { color: #b8c0cb; font-size: 13px; }
+.bonus-support { margin: 8px 0 14px; }
+.bonus-workspace details { border-top: 1px solid #343840; }
+.bonus-workspace details summary { min-height: 44px; padding: 12px 0; cursor: pointer; color: #c8d9ef; }
+.bonus-secondary > p { color: #b8c0cb; margin: 6px 0 14px; }
+.bonus-secondary > label:not(.bonus-check) { display: block; max-width: 480px; margin: 12px 0; }
+.bonus-secondary > label select, .bonus-secondary > label input, .bonus-secondary > label textarea { width: 100%; }
+.bonus-secondary > button { min-height: 44px; margin-bottom: 12px; }
+.bonus-policy { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.bonus-policy label { width: 200px; }
+.bonus-policy input { width: 100%; }
+.bonus-policy button { min-height: 44px; }
+.bonus-candidates-heading { margin: 16px 0 8px; }
+.bonus-candidates-heading button { min-height: 44px; }
+.bonus-account-search { display: block; max-width: 480px; margin-bottom: 8px; }
+.bonus-account-search input { width: 100%; }
+.bonus-account-list { margin: 0; padding: 0; list-style: none; }
+.bonus-account-list li { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1.1fr) auto; align-items: center; gap: 12px; min-height: 58px; padding: 7px 0; border-bottom: 1px solid #30343c; }
+.bonus-account-identity, .bonus-account-outcome { min-width: 0; overflow-wrap: anywhere; }
+.bonus-account-identity strong, .bonus-account-outcome strong { display: block; font-size: 14px; }
+.bonus-account-identity small, .bonus-account-outcome small, .bonus-editor-heading small { display: block; color: #aeb8c6; font-size: 12px; margin-top: 3px; }
+.bonus-account-outcome small:first-of-type { color: #c5d4e6; }
+.bonus-quiet-action { min-height: 44px; padding: 8px 10px; text-align: center; }
+.bonus-quiet-action:hover, .bonus-context button:hover { text-decoration: underline; }
+.bonus-empty { margin: 10px 0; color: #b9c2cf; }
+.bonus-show-more { display: block; width: 100%; min-height: 44px; margin: 8px 0; background: transparent; color: #bbd7ff; border: 1px solid #3c485a; }
+.bonus-review-editor, .bonus-add-candidate { margin: 12px 0 18px; padding: 16px; background: #1b2029; border: 1px solid #56677f; border-radius: 10px; }
+.bonus-review-editor h3 { margin: 0; }
+.bonus-review-editor > p, .bonus-add-candidate > p { color: #c1c9d6; }
+.bonus-review-context { margin: 10px 0; color: #c1c9d6; font-size: 13px; }
+.bonus-review-context p { margin: 5px 0; }
+.bonus-review-context .bonus-review-attribution { color: #9eabbc; }
+.bonus-review-editor fieldset { border: 0; padding: 0; margin: 12px 0; }
+.bonus-review-editor legend { font-weight: 700; margin-bottom: 4px; }
+.bonus-flag { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 0; border-bottom: 1px solid #384354; }
+.bonus-flag input { flex: none; }
+.bonus-flag span { min-width: 0; }
+.bonus-flag small { display: block; color: #aeb8c6; }
+.bonus-override-reason, .bonus-add-candidate > label { display: block; margin: 12px 0; }
+.bonus-override-reason textarea, .bonus-add-candidate textarea { display: block; width: 100%; min-height: 82px; }
+.bonus-lookup { display: flex; gap: 8px; align-items: end; max-width: 520px; }
+.bonus-lookup label { flex: 1; min-width: 0; }
+.bonus-lookup input { width: 100%; }
+.bonus-lookup button { min-height: 44px; }
+.bonus-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.bonus-editor-actions button { min-height: 44px; }
+.bonus-caution { color: #f2cb73; }
+.bonus-check { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.bonus-check input { flex: none; width: auto; }
+.bonus-action-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 1px solid #343840; margin-top: 16px; padding: 14px 0; }
+.bonus-action-bar span { color: #b8c0cb; font-size: 13px; }
+.bonus-action-bar button { min-height: 44px; }
+.bonus-preview { margin-top: 12px; border-top: 2px solid #c39a3b; padding-top: 14px; }
+.bonus-preview h4 { margin: 18px 0 8px; }
 .bonus-announcement { border-top: 1px solid #38383d; margin-top: 20px; padding-top: 16px; }
 .bonus-message-preview { margin: 18px 0; border-left: 3px solid #e4b529; background: #202024; padding: 14px; border-radius: 4px; }
 .bonus-message-preview .discord-preview { margin: 0; }
-.bonus-check { display: flex; gap: 12px; align-items: center; min-height: 44px; }
-.bonus-check input { flex: none; }
+.bonus-history { margin-top: 22px; }
 .bonus-history-row { padding: 12px 0; border-bottom: 1px solid #333338; overflow-wrap: anywhere; }
-@media (max-width: 700px) {
-  .bonus-steps { grid-template-columns: 1fr 1fr; }
-  .bonus-steps li { padding: 12px 8px; }
-  .bonus-setup { grid-template-columns: 1fr; gap: 16px; }
-  .bonus-setup > div { flex-wrap: wrap; }
-  .bonus-setup > div label { flex-basis: 170px; }
-  .bonus-panel { padding: 14px; }
+.bonus-history-row small { display: block; color: #b7bdc8; margin-top: 4px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 650px) {
+  .bonus-context { flex-wrap: wrap; }
+  .bonus-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; gap: 2px; }
+  .bonus-steps li { min-width: 0; white-space: normal; padding: 6px 8px; }
+  .bonus-context > span { order: 3; flex-basis: 100%; }
+  .bonus-stats > div { min-width: 95px; padding: 9px 8px; flex-direction: column; gap: 2px; }
+  .bonus-stats strong { font-size: 17px; }
+  .bonus-stats span { font-size: 11px; }
+  .bonus-account-list li { grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; }
+  .bonus-account-outcome { grid-column: 1; grid-row: 2; }
+  .bonus-account-list li > button { grid-column: 2; grid-row: 1 / 3; }
+  .bonus-controls > button { flex: 1 1 100%; }
   .bonus-action-bar > button { width: 100%; }
-  .bonus-account-list li { flex-wrap: wrap; gap: 6px; }
-  .bonus-account-list li > div:last-child { text-align: left; }
 }
-.bonus-allowance { padding: 12px 0; border-bottom: 1px solid #38383d; }
-.bonus-allowance > strong { font-size: 20px; }
-.bonus-count-override .bonus-check input { width: auto; }
+@media (max-width: 380px) {
+  .bonus-steps li { min-width: 88px; font-size: 12px; }
+  .bonus-candidates-heading { flex-wrap: wrap; }
+  .bonus-candidates-heading button { width: 100%; }
+  .bonus-lookup { flex-wrap: wrap; }
+  .bonus-lookup label, .bonus-lookup button { flex-basis: 100%; }
+  .bonus-editor-actions button { flex: 1 1 0; }
+}
+
+.bonus-workspace .notice a { color: inherit; text-decoration: underline; }

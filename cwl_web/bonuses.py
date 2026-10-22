@@ -228,6 +228,8 @@ def _preview(db, season_id):
         elif count and count + confirmed > clan["slots"]:
             blocks.append(f"Bonus selections exceed slots for {clan['name']}")
     for account in selected:
+        if account['pool'] == 'lazy':
+            blocks.append(f"{account['player_name']}: use Bonus winners for Lazy eligibility review and drawing")
         if account["roster_changed"]:
             blocks.append(f"{account['player_name']} has results from a previous assignment; reconcile first")
         if account["already_confirmed_this_cycle"]:
