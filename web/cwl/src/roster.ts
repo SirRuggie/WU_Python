@@ -38,8 +38,3 @@ export function parseWeightK(value: string): number | null {
   if (!Number.isFinite(parsed) || parsed < 0 || !Number.isSafeInteger(fullWeight)) throw new Error('Enter a weight in thousands, such as 174 or 174.5, or leave the field blank.')
   return fullWeight
 }
-export function parseManualWeightK(value: string): number | null {
-  const weight = parseWeightK(value)
-  if (weight !== null && (weight < 1 || weight > 500000)) throw new Error('Manual weight must be between 0.001k and 500k.')
-  return weight
-}

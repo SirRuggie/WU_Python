@@ -1,6 +1,8 @@
+import ManualWeightFields from './ManualWeightFields'
+import { manualWeightDraft, parseManualWeight, type ManualWeightDraft } from './manualWeight'
 import { useState, useCallback, useEffect } from 'react'
 import TownHallIcon from './TownHallIcon'
-import { parseManualWeightK, type RosterAccount } from './roster'
+import { type RosterAccount } from './roster'
 import './WeightQueue.css'
 
 type Props = { onDirty?: (dirty: boolean) => void; accounts: RosterAccount[]; busy: boolean; onEdit: (tag: string) => void; onSave: (tag: string, weight: number) => Promise<boolean>; onRefresh: () => void; onClose: () => void }
@@ -19,23 +21,23 @@ export default function WeightQueue({ accounts, busy, onEdit, onSave, onRefresh,
     <div className="card-heading"><h2 id="weight-queue-title">Needs weight · {missing.length}</h2><button onClick={onClose}>Back to roster</button></div>
     <p>Saved clan weights are used first. Refresh to check fallback weights. If an account is still missing, enter its known war weight below. Saved accounts leave this list automatically.</p>
     <div className="weight-queue-tools"><button disabled={busy} onClick={onRefresh}>↻ Refresh weights</button><label>Find account<input type="search" value={search} onChange={event => { setSearch(event.target.value); setPage(0) }} placeholder="Name or player tag" /></label></div>
-    <p className="small">Refresh checks all season signups and preserves manual weights. Enter thousands: 174 = 174,000. Saving a weight does not move the account.</p>
+    <p className="small">Refresh checks all season signups and preserves manual weights. Enter loot or full weight. Loot is multiplied by 5. Saving a weight does not move the account.</p>
     {!missing.length ? <div role="status"><h3>All accounts have a weight ✓</h3><p>Return to the roster to preview automatic placement.</p></div> : <>{!matching.length && <p>No missing-weight accounts match your search.</p>}{missing.map(account => <div key={account.tag} hidden={!matching.slice(currentPage * 10, (currentPage + 1) * 10).includes(account)}><WeightRow onDirty={reportDirty} account={account} busy={busy} onEdit={onEdit} onSave={onSave} /></div>)}</>}
     {lastPage > 0 && <nav aria-label="Missing weight pages"><button disabled={currentPage===0 || busy} onClick={() => setPage(currentPage-1)}>← Previous</button><span>{currentPage+1} / {lastPage+1}</span><button disabled={currentPage===lastPage || busy} onClick={() => setPage(currentPage+1)}>Next →</button></nav>}
   </section>
 }
 function WeightRow({ account, busy, onEdit, onSave, onDirty }: Pick<Props, 'busy' | 'onEdit' | 'onSave'> & { account: RosterAccount; onDirty: (tag: string, dirty: boolean) => void }) {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState<ManualWeightDraft>(manualWeightDraft(null))
   const [error, setError] = useState('')
-  useEffect(() => { onDirty(account.tag, !!value); return () => onDirty(account.tag, false) }, [account.tag, value, onDirty])
+  useEffect(() => { onDirty(account.tag, !!value.text); return () => onDirty(account.tag, false) }, [account.tag, value, onDirty])
   return <form className="weight-queue-row" onSubmit={async event => {
     event.preventDefault()
     try {
-      const weight = parseManualWeightK(value)
+      const weight = parseManualWeight(value)
       if (weight === null) throw new Error('Enter a known weight before saving.')
       setError('')
       const saved = await onSave(account.tag, weight)
-      if (saved) setValue('')
+      if (saved) setValue(manualWeightDraft(null))
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Weight could not be saved.') }
-  }}><div className="weight-queue-identity"><TownHallIcon level={account.town_hall}/><div><button type="button" className="roster-player-name" disabled={busy} onClick={()=>onEdit(account.tag)} title="Edit account">{account.player_name}</button><small>{account.tag} · {account.pool==='lazy'?'Lazy':'Main'} CWL</small><small>{account.source_status==='unavailable'?'FWA source unavailable':'No saved FWA weight'}</small></div></div><label>Weight (k)<input aria-label={`Weight for ${account.player_name} (${account.tag}) in thousands`} type="number" inputMode="decimal" min="0.001" max="500" step="0.001" value={value} onChange={event => setValue(event.target.value)} placeholder="e.g. 174" disabled={busy} required /></label><button className="primary" disabled={busy || !value.trim()}>Save weight</button>{error && <p className="inline-reason" role="alert">{error}</p>}</form>
+  }}><div className="weight-queue-identity"><TownHallIcon level={account.town_hall}/><div><button type="button" className="roster-player-name" disabled={busy} onClick={()=>onEdit(account.tag)} title="Edit account">{account.player_name}</button><small>{account.tag} · {account.pool==='lazy'?'Lazy':'Main'} CWL</small><small>{account.source_status==='unavailable'?'FWA source unavailable':'No saved FWA weight'}</small></div></div><ManualWeightFields value={value} onChange={setValue} disabled={busy}/><button className="primary" disabled={busy || !value.text.trim()}>Save weight</button>{error && <p className="inline-reason" role="alert">{error}</p>}</form>
 }

@@ -780,3 +780,20 @@ without horizontal overflow. Browser automation stalled at the native confirmati
 dialog, so full visual confirmation at wide width and the browser click-through
 could not be completed; API withdrawal behavior is covered by regression tests.
 Existing sent Discord messages and already-dispatched deliveries are not recalled.
+
+## October 22: manual CWL loot and full-weight entry
+
+Account dialogs, the inline weight editor, and the missing-weight queue share
+Loot / Full weight inputs. Loot is first and uses five storages; both fields
+use actual amounts, not thousands. Saving sends only the full integer weight to
+the existing authorized, revision-checked, durable override endpoint. No stored
+weights or clan-weight data are migrated. Blank input retains the existing
+restore-source behavior; invalid input remains editable and cannot be saved.
+
+Validated 218 frontend tests, 32 roster/weight backend regressions, and production
+build. Tests cover both conversions, commas, field switching, exact preservation
+of existing weights, blank restoration, invalid amounts, and bounds. Isolated
+browser checks exercised save/reopen, reverse conversion, keyboard clearing,
+source restoration, and missing-weight queue save. Dialog layouts checked at
+320px, 390px and 1280px; labels, decimal keyboard hint, and no horizontal overflow
+verified. No production player values were edited during validation.
