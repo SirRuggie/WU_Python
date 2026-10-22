@@ -949,3 +949,30 @@ tests, 229 frontend tests and build passed. Isolated browser checked long names,
 missing-member fallback, role identity, username search, and 320/390/1280px layout
 without horizontal overflow. No production permissions or Discord messages changed.
 Held alongside the URL rollout for combined deployment.
+
+## Staff access workspace redesign — prepared, not deployed
+
+Replaced the separate form/list with a people-and-roles directory and selected
+identity editor. Add access uses the existing searchable MemberPicker (nickname,
+username, avatar) and searchable role results, then an explicit Choose permissions
+step. IDs remain visible for disambiguation, not required as input. Existing entries
+open directly in the editor. On mobile the directory gives way to a focused editor
+with Back; editor heading and return list receive focus. Owners remain protected.
+
+Permission sections show counts, explanatory labels and native checkbox switches.
+All actions selects only currently listed permission IDs; individual exceptions
+remain editable. No wildcard, implied future grant or authorization model changes.
+Save/Reset is sticky except on short screens. Unsaved navigation confirmation,
+revision-checked saves, role/member lookup recovery, explicit removal confirmation,
+and owner-only API protection remain. Empty roles are distinguished from loading.
+No storage migration, production permissions or external messages changed.
+
+Validation: 231 frontend tests, 26 backend access/identity/member-lookup tests and
+production build passed. Isolated browser exercised name lookup, role search,
+selecting existing identities, group on, individual off, Reset, saving to the
+fixture store, and returning to the directory. Reviewed 320/390/1280px with long
+names, readable identity, selected state, visible save bar and no page overflow.
+Existing backend tests cover non-owner denial, stale revisions, role loss and lookup
+outages. These checks do not constitute live Discord permission changes or a full
+assistive-technology audit. Existing build-size warnings remain. Hold for combined
+release with URL batches.
