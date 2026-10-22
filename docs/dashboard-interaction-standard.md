@@ -988,3 +988,13 @@ tests, 17 backend identity/access tests and build passed; isolated browser verif
 loaded avatars in list/editor and no horizontal overflow at 320px. The screenshot
 reported by the owner was the older live layout; these changes remain held with
 the redesign and URL batches, not yet deployed.
+
+## Mobile access removal correction
+
+Removal confirmation uses a separate wrapping action group beneath its text;
+mobile buttons stack full-width with 44px minimum height. Hide Save/Reset during
+confirmation and restore it on cancellation. Corrects shared notice flex/button
+styles that pushed Confirm removal outside the mobile viewport. No authorization
+or removal API changes. 232 frontend tests and build passed. Isolated 320px browser
+verified both buttons inside viewport, 44px heights, absent save bar during
+confirmation and restoration on Cancel. No live access entries removed.

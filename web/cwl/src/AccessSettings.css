@@ -57,3 +57,18 @@
 .access-identity-header { display: flex; align-items: center; gap: 12px; }
 .access-identity-header .access-avatar { width: 56px; height: 56px; flex-basis: 56px; }
 .access-identity-header p { min-width: 0; }
+
+.access-workspace .access-remove-confirm {
+  display: block;
+  min-width: 0;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.access-remove-confirm p { margin: 0 0 16px; }
+.access-remove-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.access-remove-actions button { min-width: 0; white-space: normal; }
+@media (max-width: 760px) {
+  .access-remove-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .access-remove-actions button { width: 100%; }
+}
+.access-workspace .access-remove-actions button { min-height: 44px; }
