@@ -1,27 +1,12 @@
 import DashboardIcon from './DashboardIcon'
 import { useEffect, useState } from 'react'
 import { api, type Account } from './api'
-import { pushSupport, getBrowserSubscription, enableBrowserPush, disableBrowserPush } from './webPush'
+import { pushSupport, getBrowserSubscription, enableBrowserPush, disableBrowserPush, subscriptionId } from './webPush'
 import TownHallIcon from './TownHallIcon'
 import './PushReminders.css'
 export type ReminderSubscription = { id: string; enabled: boolean; tags: string[]; war: boolean; cwl: boolean; offsets: number[]; updated_at?: number }
 type PushStatus = { available: boolean; public_key: string; subscriptions: ReminderSubscription[] }
 type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{outcome:string}> }
-export async function subscriptionId(subscription: PushSubscription) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(subscription.endpoint))
-  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2,'0')).join('')
-}
-// Explicit sign-out stops this browser's personal reminders, not other devices.
-export async function stopPushOnSignout(): Promise<string | null> {
-  let id: string | null = null
-  try {
-    const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : null
-    const subscription = await registration?.pushManager?.getSubscription()
-    if (subscription) id = await subscriptionId(subscription)
-    await disableBrowserPush()
-  } catch { /* Browser failures must not block ending the authenticated session. */ }
-  return id
-}
 export default function PushReminders({ accounts }: { accounts: Account[] }) {
   const support = pushSupport()
   const [status,setStatus] = useState<PushStatus | null>(null)

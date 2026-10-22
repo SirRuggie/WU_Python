@@ -55,3 +55,26 @@ export async function disableBrowserPush(): Promise<void> {
   const notifications = await registration?.getNotifications()
   notifications?.forEach(notification => notification.close())
 }
+
+export async function subscriptionId(subscription: PushSubscription): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(subscription.endpoint))
+  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('')
+}
+
+// End this browser's personal reminders before ending the authenticated session.
+export async function stopPushOnSignout(): Promise<string | null> {
+  let id: string | null = null
+  try {
+    const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : null
+    const subscription = await registration?.pushManager?.getSubscription()
+    if (subscription) id = await subscriptionId(subscription)
+  } catch {
+    // A missing subscription ID should not prevent the unsubscribe attempt.
+  }
+  try {
+    await disableBrowserPush()
+  } catch {
+    // Browser failures must not block ending the authenticated session.
+  }
+  return id
+}

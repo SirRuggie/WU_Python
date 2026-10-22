@@ -1,6 +1,4 @@
 import { DashboardPermissions } from './DashboardPermissions'
-import WeightTrial from './weightTrial/WeightTrial'
-import MemberSeasonSettings from './MemberSeasonSettings'
 import FwaSignupDialog from './FwaSignupDialog'
 import {saveSignupMoves, type SignupMove} from './signupMoves'
 import {withdrawInOrder} from './signupWithdrawal'
@@ -8,48 +6,52 @@ import SavedSignups from './SavedSignups'
 import CwlPoolTabs from './CwlPoolTabs'
 import SignupWalkthrough from './SignupWalkthrough'
 import AccountLinkHelp from './AccountLinkHelp'
-import WarsWorkspace from './activity/WarsWorkspace'
-import EventsWorkspace from './activity/EventsWorkspace'
-import DashboardSearch from './DashboardSearch'
 import DashboardIcon from './DashboardIcon'
-import ArrivalCheck from './ArrivalCheck'
-import StaffOverview from './StaffOverview'
-import ClanManagement from './ClanManagement'
-import StrikesWorkspace from './StrikesWorkspace'
-import ReplacementWorkspace from './ReplacementWorkspace'
 import { strikePermissions } from './strikePermissions'
 import {isManagementArea, managementAreas} from './managementAreas'
-import TextCommands from './TextCommands'
-import AccessSettings from './AccessSettings'
-import DashboardIssues from './DashboardIssues'
-import ServerManagement from './ServerManagement'
 import { FilterPicker, leagueValue, matchesLeague } from './ClanFilters'
 import { sortClans, clanSortOptions, type ClanSort } from './clanSort'
-import { stopPushOnSignout } from './PushReminders'
-import ReminderWorkspace from './ReminderWorkspace'
 import SidebarNavigation, { navigationSection, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
-import TodoWorkspace from './TodoWorkspace'
 import { memberTarget, loginPath } from './memberLinks'
 import { DashboardHistory, dashboardTarget, seasonViews } from './dashboardHistory'
 import './Welcome.css'
-import DashboardHome from './DashboardHome'
 import './SignupFlow.css'
-import ExportWorkspace from './ExportWorkspace'
 import TownHallIcon from './TownHallIcon'
 import type { ReadinessFilter } from './readiness'
 import './staffNavigation.css'
 import './sidebar.css'
 import { AccountIdentity } from './AccountIdentity'
 import { useMobileNavigation } from './useMobileNavigation'
-import RosterWorkspace from './RosterWorkspace'
-import PublicationWorkspace from './PublicationWorkspace'
-import ParticipationWorkspace from './ParticipationWorkspace'
-import BonusWorkspace from './BonusWorkspace'
-import MemberAssignments from './MemberAssignments'
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { stopPushOnSignout } from './webPush'
+import RouteLoadBoundary from './RouteLoadBoundary'
+import { lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, setCsrfToken, type Account, type Clan, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
+// Each destination loads only when opened. Keep shell, auth, and signup form helpers eager.
+const WeightTrial = lazy(() => import('./weightTrial/WeightTrial'))
+const MemberSeasonSettings = lazy(() => import('./MemberSeasonSettings'))
+const WarsWorkspace = lazy(() => import('./activity/WarsWorkspace'))
+const EventsWorkspace = lazy(() => import('./activity/EventsWorkspace'))
+const DashboardSearch = lazy(() => import('./DashboardSearch'))
+const ArrivalCheck = lazy(() => import('./ArrivalCheck'))
+const StaffOverview = lazy(() => import('./StaffOverview'))
+const ClanManagement = lazy(() => import('./ClanManagement'))
+const StrikesWorkspace = lazy(() => import('./StrikesWorkspace'))
+const ReplacementWorkspace = lazy(() => import('./ReplacementWorkspace'))
+const TextCommands = lazy(() => import('./TextCommands'))
+const AccessSettings = lazy(() => import('./AccessSettings'))
+const DashboardIssues = lazy(() => import('./DashboardIssues'))
+const ServerManagement = lazy(() => import('./ServerManagement'))
+const ReminderWorkspace = lazy(() => import('./ReminderWorkspace'))
+const TodoWorkspace = lazy(() => import('./TodoWorkspace'))
+const DashboardHome = lazy(() => import('./DashboardHome'))
+const ExportWorkspace = lazy(() => import('./ExportWorkspace'))
+const RosterWorkspace = lazy(() => import('./RosterWorkspace'))
+const PublicationWorkspace = lazy(() => import('./PublicationWorkspace'))
+const ParticipationWorkspace = lazy(() => import('./ParticipationWorkspace'))
+const BonusWorkspace = lazy(() => import('./BonusWorkspace'))
+const MemberAssignments = lazy(() => import('./MemberAssignments'))
 const ImageGallery = lazy(() => import('./CommandImageLibrary').then(module => ({default:module.ImageGallery})))
 const TicketBrowser = lazy(() => import('./TicketBrowser'))
 type View = DashboardView
@@ -398,6 +400,22 @@ function App() {
     catch (error) { setNotice({ kind: 'error', text: message(error) }) }
     finally { setPending(false) }
   }
+  const signOut = () => {
+    if (!canLeave()) return
+    void run(
+      async () => api('/auth/logout', 'POST', { push_id: await stopPushOnSignout() }),
+      'Signed out.',
+      async () => {
+        signupRequest.current += 1
+        setAccounts([])
+        setSignups([])
+        setDrafts({ main: {}, lazy: {} })
+        setCompletion(null)
+        setSession(null)
+        setAuthState('signed-out')
+      },
+    )
+  }
   const submit = async () => {
     if (!seasonId || !season || !pool || !selected.length || pending || signupBusy.current || loadingData || dataError || accountError || !season.signup_open || season.status !== 'draft') return
     signupBusy.current = true
@@ -509,7 +527,7 @@ function App() {
           <AccountIdentity user={session.user} />
           <small>@{session.user.username}</small>
         </div>
-        <button onClick={() => { if (!canLeave()) return; void run(async () => { const pushId = await stopPushOnSignout(); return api('/auth/logout', 'POST', { push_id: pushId }) }, 'Signed out.', async () => { signupRequest.current += 1; setAccounts([]); setSignups([]); setDrafts({main: {}, lazy: {}}); setCompletion(null); setSession(null); setAuthState('signed-out') }) }}>Sign out</button>
+        <button disabled={pending} onClick={signOut}>Sign out</button>
       </div>
     </aside>
     {menuOpen && <button className="scrim" tabIndex={-1} aria-hidden="true" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
@@ -517,6 +535,7 @@ function App() {
     <div className="workspace" inert={mobile && menuOpen}>
       <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main>
+        <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
         {seasonError && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
         {(view === 'signup' || view === 'assignments') && <div className="member-nav-tabs" role="group" aria-label="Member sections"><button className={view === 'signup' ? 'active' : ''} aria-pressed={view === 'signup'} onClick={() => changeView('signup', '', undefined, 'saved')}>My signups</button><button className={view === 'assignments' ? 'active' : ''} aria-pressed={view === 'assignments'} onClick={() => changeView('assignments')}>My clan assignments</button></div>}
@@ -546,8 +565,8 @@ function App() {
         )}
         {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}
         {view === 'staff-overview' && <StaffOverview onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
-        {view === 'image-gallery' && <Suspense fallback={<p role="status">Loading images…</p>}><ImageGallery /></Suspense>}
-        {view === 'tickets' && <Suspense fallback={<p role="status">Loading tickets…</p>}><TicketBrowser /></Suspense>}
+        {view === 'image-gallery' && <ImageGallery />}
+        {view === 'tickets' && <TicketBrowser />}
         {view === 'clan-management' && <ClanManagement onDirty={setManageDirty} />}
         {view === 'weight-trial' && <WeightTrial onDirty={setManageDirty} />}
         {view === 'strikes' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <StrikesWorkspace permissions={session.dashboard_permissions || []} isOwner={session.is_owner} userId={session.user.id} />}
@@ -644,6 +663,7 @@ function App() {
         {session.access_warning && <div className="notice error" role="alert">{session.access_warning}</div>}
         {view === 'issues' && session.is_owner && <DashboardIssues />}
         {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}
+        </RouteLoadBoundary>
       </main>
     </div>
 

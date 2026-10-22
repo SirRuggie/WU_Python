@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { disableBrowserPush, enableBrowserPush, pushSupport, vapidKeyBytes } from './webPush'
+import { disableBrowserPush, enableBrowserPush, pushSupport, stopPushOnSignout, vapidKeyBytes } from './webPush'
 
 afterEach(() => vi.unstubAllGlobals())
 const publicKey = btoa(String.fromCharCode(4) + 'x'.repeat(64)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -50,4 +50,22 @@ it('unsubscribe closes visible notifications on this device', async () => {
   await disableBrowserPush()
   expect(unsubscribe).toHaveBeenCalledOnce()
   expect(close).toHaveBeenCalledOnce()
+})
+
+it('identifies and unsubscribes this browser before sign-out', async () => {
+  const b = browser('granted')
+  const unsubscribe = vi.fn().mockResolvedValue(true)
+  b.getSubscription.mockResolvedValue({ endpoint: 'https://push.example.test/abc', unsubscribe })
+  const id = await stopPushOnSignout()
+  expect(id).toMatch(/^[0-9a-f]{64}$/)
+  expect(unsubscribe).toHaveBeenCalledOnce()
+})
+
+it('still attempts unsubscribe when subscription fingerprinting fails', async () => {
+  const b = browser('granted')
+  const unsubscribe = vi.fn().mockResolvedValue(true)
+  b.getSubscription.mockResolvedValue({ endpoint: 'https://push.example.test/abc', unsubscribe })
+  vi.stubGlobal('crypto', { subtle: { digest: vi.fn().mockRejectedValue(new Error('unavailable')) } })
+  expect(await stopPushOnSignout()).toBeNull()
+  expect(unsubscribe).toHaveBeenCalledOnce()
 })

@@ -612,3 +612,29 @@ its input and displayed an inline error; Cancel returned to Add player. Only sam
 fixture data was published; no live Discord messages or production records were
 changed during verification. Physical-device/screen-reader testing was not performed.
 Existing bundle-size and aiohttp warnings remain; this is not WCAG certification.
+
+## October 22: Load dashboard screens on demand
+
+The authenticated shell, sign-in, and shared signup controls remain eager. Route
+workspaces now load through React.lazy, including CWL roster, results, bonuses,
+exports, activity and management. A shared route boundary announces loading and
+reports a failed screen through the existing browser-issue channel. Navigation
+stays usable after a screen fails. Reload is explicit, warns about unsaved edits,
+and retains the current URL/season; never automatically reload or retry mutations.
+Sign-out push cleanup remains an eager browser helper, independent of page chunks.
+
+Measured build entry assets: JavaScript fell from 805,808 bytes to about 291 KB,
+and CSS from 213,768 to 55,472 bytes. Route dependencies download when opened;
+these are bundle measurements, not a physical-phone/network speed benchmark.
+Deployment must retain older hashed assets for already-open tabs, copy new assets
+before index.html, and keep HTML uncached. No routes, permissions or data migrated.
+
+Validation: 262 frontend regressions, 26 dashboard integration tests, TypeScript
+and isolated Vite build passed. Independent code review and isolated browser
+checks covered 320/390-pixel and desktop layouts, a deliberately rejected export
+chunk, error reporting, usable navigation, Back, manual reload recovery with season
+preserved, Compare clans, cancelled dirty-form close retaining entered values,
+and sign-out returning to Discord sign-in. No live OAuth completion, physical
+mobile network benchmark or live notification delivery was tested. No messages
+were sent. Global CSS and hidden message-editor preview optimizations remain
+separate future work.
