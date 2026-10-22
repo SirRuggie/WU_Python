@@ -494,6 +494,52 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         snapshot = self.app["store"].one("SELECT * FROM publication_accounts WHERE tag='#P2Y'")
         self.assertEqual((snapshot["assigned_clan_tag"], snapshot["manual_weight"]), ("#C2Y", 176000))
 
+    async def test_withdraw_publication_hides_all_versions_and_preserves_work(self):
+        await self.signup("main", "#P2Y")
+        await self.call("POST", "/clans", self.owner, json={"tag": "#C2Y"})
+        await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
+                        json={"revision": await self.revision(), "assigned_clan_tag": "#C2Y"})
+        for instruction in ("First", "Second"):
+            response = await self.call("POST", f"/seasons/{self.sid}/publication", self.owner,
+                                      json={"revision": await self.revision(), "acknowledge_unassigned": True,
+                                            "joining_instructions": instruction})
+            self.assertEqual(response.status, 201)
+        body = {"revision": await self.revision(), "version": 2}
+        path = f"/seasons/{self.sid}/publication/withdraw"
+        self.assertEqual((await self.call("POST", path, self.member, json=body)).status, 403)
+        no_csrf = {"Cookie": self.owner["Cookie"]}
+        self.assertEqual((await self.call("POST", path, no_csrf, json=body)).status, 403)
+        for malformed in ({}, {**body, "version": True}, {**body, "revision": "1"}):
+            self.assertEqual((await self.call("POST", path, self.owner, json=malformed)).status, 400)
+        self.assertEqual((await self.call("POST", path, self.owner, json={**body, "version": 1})).status, 409)
+        self.assertEqual((await self.call("POST", path, self.owner, json={**body, "revision": 0})).status, 409)
+        before = self.app["store"].rows("SELECT * FROM roster_entries")
+        response = await self.call("POST", path, self.owner, json=body)
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await self.call("POST", path, self.owner, json=body)).status, 409)
+        self.assertEqual(before, self.app["store"].rows("SELECT * FROM roster_entries"))
+        self.assertEqual(len(self.app["store"].rows("SELECT * FROM publication_accounts")), 2)
+        self.assertEqual(len(self.app["store"].rows("SELECT * FROM roster_publications WHERE withdrawn_at IS NOT NULL")), 2)
+        # Reopening the store must not revive a withdrawn publication.
+        self.app["store"] = Store(self.app["store"].path)
+        response = await self.call("GET", f"/seasons/{self.sid}/my-assignments", self.member)
+        mine = await response.json()
+        self.assertIsNone(mine["published"])
+        self.assertEqual(len(mine["accounts"]), 1)
+        self.assertIsNone(mine["accounts"][0]["assigned_clan_tag"])
+        self.assertIsNone(mine["accounts"][0]["assigned_clan_name"])
+        preview = await (await self.call("GET", f"/seasons/{self.sid}/publication", self.owner)).json()
+        self.assertIsNone(preview["published"])
+        self.assertEqual(preview["preview"]["assigned_count"], 1)
+        # A new explicit publication is visible and continues the version history.
+        response = await self.call("POST", f"/seasons/{self.sid}/publication", self.owner,
+                                  json={"revision": await self.revision(), "acknowledge_unassigned": True,
+                                        "joining_instructions": "Ready"})
+        self.assertEqual(response.status, 201)
+        self.assertEqual((await response.json())["published"]["version"], 3)
+        mine = await (await self.call("GET", f"/seasons/{self.sid}/my-assignments", self.member)).json()
+        self.assertEqual(mine["accounts"][0]["assigned_clan_tag"], "#C2Y")
+
     async def test_publication_idempotency_stale_revision_and_versions(self):
         await self.signup("main", "#P2Y")
         revision = await self.revision()

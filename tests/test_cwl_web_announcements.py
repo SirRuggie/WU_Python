@@ -108,6 +108,20 @@ class AnnouncementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 201)
         return (await response.json())["published"]["version"]
 
+    async def test_withdrawn_publication_cannot_be_announced(self):
+        version = await self.publish()
+        await self.set_channel("main", MAIN_CHANNEL)
+        preview = await (await self.call("GET", f"/seasons/{self.sid}/publication", self.owner)).json()
+        response = await self.call("POST", f"/seasons/{self.sid}/publication/withdraw", self.owner,
+                                   json={"revision": preview["draft_revision"], "version": version})
+        self.assertEqual(response.status, 200)
+        response = await self.call("GET", f"/seasons/{self.sid}/announcements", self.owner)
+        self.assertIsNone((await response.json())["latest_publication"])
+        response = await self.call("POST", f"/seasons/{self.sid}/announcements/main/send", self.owner,
+                                   json={"version": version, "channel_id": MAIN_CHANNEL})
+        self.assertEqual(response.status, 409)
+        self.assertEqual(self.transport.calls, [])
+
     async def set_channel(self, pool, channel_id, headers=None):
         return await self.call("PATCH", f"/seasons/{self.sid}/announcements/{pool}/channel",
                                headers or self.owner, json={"channel_id": channel_id})

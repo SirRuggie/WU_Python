@@ -1503,7 +1503,7 @@ def _member_publication_meta(row):
 
 def _latest_publication(db, sid):
     return db.execute(
-        "SELECT * FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1",
+        "SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1",
         (sid,),
     ).fetchone()
 
@@ -1587,7 +1587,7 @@ async def publish_roster(request):
         if unassigned and not acknowledged:
             _fail(409, "Unassigned accounts require explicit acknowledgement")
         clan_names = {clan["tag"]: clan["name"] for clan in clans}
-        version = (latest["version"] + 1) if latest else 1
+        version = db.execute("SELECT COALESCE(MAX(version),0)+1 FROM roster_publications WHERE season_id=?", (sid,)).fetchone()[0]
         now = datetime.now(timezone.utc).isoformat()
         cursor = db.execute(
             "INSERT INTO roster_publications(season_id,version,revision,published_by,published_at,"
@@ -1617,6 +1617,29 @@ async def publish_roster(request):
                _publication_meta(latest), published)
         _bump(db, sid)
     return web.json_response({"published": published}, status=201)
+
+
+async def withdraw_publication(request):
+    session = _require(request, "editor")
+    body = await _json(request)
+    if set(body) != {"revision", "version"} or any(
+        type(body[key]) is not int or body[key] < 0 for key in ("revision", "version")
+    ):
+        _fail(400, "Expected roster revision and publication version")
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        _season(db, sid)
+        _check_revision(db, sid, body["revision"])
+        latest = _latest_publication(db, sid)
+        if latest is None or latest["version"] != body["version"]:
+            _fail(409, "Publication changed; refresh before withdrawing")
+        # Withdraw all visible versions so an older publication cannot reappear.
+        db.execute("UPDATE roster_publications SET withdrawn_at=? "
+                   "WHERE season_id=? AND withdrawn_at IS NULL",
+                   (datetime.now(timezone.utc).isoformat(), sid))
+        _audit(db, sid, None, session["user_id"], "roster_unpublish", _publication_meta(latest), None)
+        revision = _bump(db, sid)
+    return web.json_response({"published": None, "revision": revision})
 
 
 async def my_assignments(request):
@@ -1753,6 +1776,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         web.get(API + "/seasons/{season_id}/publication", publication_preview),
         web.get(API + "/seasons/{season_id}/export.csv", export_csv),
         web.post(API + "/seasons/{season_id}/publication", publish_roster),
+        web.post(API + "/seasons/{season_id}/publication/withdraw", withdraw_publication),
         web.get(API + "/seasons/{season_id}/my-assignments", my_assignments),
         web.get(API + "/approved-clans", approved_clans), web.delete(API + "/approved-clans/{tag}", family_clans_read_only),
         web.get(API + "/access", access), web.post(API + "/access", grant), web.get(API + "/access/roles", access_roles),

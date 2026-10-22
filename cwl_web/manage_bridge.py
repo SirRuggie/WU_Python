@@ -84,7 +84,7 @@ async def status(request):
     _require(request, 'editor')
     sid = _sid(request)
     cycle = _binding(request, sid)
-    published = _store(request).one('SELECT version FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1', (sid,))
+    published = _store(request).one('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,))
     result = {'cycle': cycle, 'generation': None, 'worker_ready': False, 'pools': {},
               'published_version': published['version'] if published else None}
     if not cycle:
@@ -216,7 +216,7 @@ async def send(request):
     with _store(request).tx() as db:
         if _season(db, sid)['status'] != 'draft':
             raise web.HTTPConflict(text='Season is archived')
-        latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
+        latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
         if latest is None or latest['version'] != body['version']:
             raise web.HTTPConflict(text='Published roster changed; refresh and review')
     if not isinstance(body['channel_id'], str) or not re.fullmatch(r'\d{15,22}', body['channel_id']) or not isinstance(body['generation'], str):

@@ -751,3 +751,32 @@ clan grouping, refresh controls and mobile rows are retained. Event month/source
 check time stay visible in the integrated schedule block; missing scores never
 become zero. Isolated samples reviewed at 320/390/1280px, including long names and
 unknown scores; no page overflow. See `clan-games-tasks.md` for source and limits.
+
+## October 22: withdrawing an old CWL publication
+
+A production report matched the October 15 test publication exactly. Member
+assignments read the published snapshot, not the working roster, but there was no
+withdrawal control. The publication now has a nullable `withdrawn_at` field.
+Withdrawal marks every active version for that season, preserves accounts and
+history, audits the action, and bumps the roster revision in the existing
+Mongo-backed Store transaction. Publication versions continue increasing after
+withdrawal. Existing publications are not automatically hidden by schema migration.
+
+Staff with CWL publish permission can use **Hide published assignments** in the
+member-visibility panel. It checks the reviewed revision and version, requires
+CSRF, and explains that existing Discord posts are not removed. Publication
+lookups for member assignments, announcements, images, exports, and staff
+comparisons exclude withdrawn versions. Working placements remain intact.
+Member assignments show the publication date and refresh on visible-page polling
+and return to the tab. Already loaded old clients need a page refresh.
+
+Validation: 331 CWL backend tests and 213 frontend tests passed; production build
+passed. Regression coverage includes two publications, withdrawal without
+falling back to the older version, preserved working placements, restart,
+republishing as the next version, ownership/CSRF, malformed and stale requests,
+duplicate submission, and blocked announcement sends (mock transport only).
+The 390px isolated UI showed the visibility explanation and labeled hide control
+without horizontal overflow. Browser automation stalled at the native confirmation
+dialog, so full visual confirmation at wide width and the browser click-through
+could not be completed; API withdrawal behavior is covered by regression tests.
+Existing sent Discord messages and already-dispatched deliveries are not recalled.

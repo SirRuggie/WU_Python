@@ -24,7 +24,7 @@ def _now() -> str:
 def _latest(db, season_id: int):
     return db.execute(
         "SELECT id,version FROM roster_publications "
-        "WHERE season_id=? ORDER BY version DESC LIMIT 1",
+        "WHERE withdrawn_at IS NULL AND season_id=? ORDER BY version DESC LIMIT 1",
         (season_id,),
     ).fetchone()
 

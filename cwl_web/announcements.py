@@ -129,7 +129,7 @@ async def announcement_status(request):
     with _store(request).tx() as db:
         season = _season(db, sid)
         latest = db.execute(
-            "SELECT * FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1",
+            "SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1",
             (sid,),
         ).fetchone()
         pools = {}
@@ -240,7 +240,7 @@ async def send_announcement(request):
     with _store(request).tx() as db:
         season = _season(db, sid)
         latest = db.execute(
-            "SELECT * FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1",
+            "SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1",
             (sid,),
         ).fetchone()
         if latest is None or latest["version"] != version:
@@ -278,7 +278,7 @@ async def send_announcement(request):
     nonce = _nonce(sid, version, pool, channel_id)
     with _store(request).tx() as db:
         _season(db, sid)
-        latest = db.execute("SELECT version FROM roster_publications WHERE season_id=? "
+        latest = db.execute("SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL "
                             "ORDER BY version DESC LIMIT 1", (sid,)).fetchone()
         setting = db.execute("SELECT channel_id FROM announcement_channels WHERE season_id=? AND pool=?",
                              (sid, pool)).fetchone()

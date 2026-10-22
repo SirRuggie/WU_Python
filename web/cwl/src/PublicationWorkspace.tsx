@@ -68,6 +68,22 @@ export default function PublicationWorkspace({ seasonId, seasons, onSeasonChange
       }
     } finally { setBusy(false) }
   }
+  const withdraw = async () => {
+    if (!draft?.published || !seasonId || busy || loading || error || !canManage) return
+    if (!window.confirm('Hide published assignments from members? Signups and the working roster will be kept. Existing Discord messages will not be removed.')) return
+    const sid = seasonId
+    setBusy(true); setError(''); setSuccess('')
+    try {
+      await api(`/seasons/${encodeURIComponent(sid)}/publication/withdraw`, 'POST', {
+        revision: draft.draft_revision, version: draft.published.version,
+      })
+      if (currentSeason.current !== sid) return
+      setSuccess('Publication withdrawn. Members will see assignments only after you publish again.')
+      await load()
+    } catch (cause) {
+      if (currentSeason.current === sid) setError(errorText(cause))
+    } finally { setBusy(false) }
+  }
   const status = draft ? draftPublicationStatus(draft) : null
   const archived = seasons.find(season => String(season.id) === seasonId)?.status.toLowerCase() === 'archived'
   const clans = new Map(draft?.preview.clans.map(clan => [clan.tag, clan.name]))
@@ -100,11 +116,11 @@ export default function PublicationWorkspace({ seasonId, seasons, onSeasonChange
     <div className="page-head"><div><p className="eyebrow">Staff tools</p><h1>{step === 'announce' ? 'Announcements' : 'Finalize roster'}</h1><p>{step === 'announce' ? 'Review the messages and send to Discord.' : 'Check the clans before making assignments visible.'}</p></div><label className="season-choice">Season<select value={seasonId} disabled={busy} onChange={event => onSeasonChange(event.target.value)}><option value="">Select a season</option>{seasons.map(season => <option key={season.id} value={String(season.id)}>{season.label}</option>)}</select></label></div>
     {!seasonId && <div className="card empty"><p>Select a season to review its draft roster.</p></div>}
     {error && <div className="notice error" role="alert">{error}<button onClick={() => void load()}>Refresh draft</button></div>}
-    {success && <div className="notice success" role="status">{success}<button type="button" onClick={() => setStep('announce')}>Continue to announcement</button></div>}
+    {success && <div className="notice success" role="status">{success}{draft?.published && <button type="button" onClick={() => setStep('announce')}>Continue to announcement</button>}</div>}
     {loading && <p role="status">Loading publication preview…</p>}
     <div hidden={step !== 'review'}>
       {draft && <>
-        <section className="card publication-status"><div><p className="eyebrow">Member visibility</p><h2>{status === 'unpublished' ? 'Not published' : status === 'changed' ? 'Published roster has draft changes' : 'Published roster is current'}</h2><p>{status === 'unpublished' ? 'Assignments can change until the roster is published.' : status === 'changed' ? 'Publish again to make these changes official.' : 'Current placements match the official version.'}</p></div>{draft.published && <div className="publication-meta"><strong>Version {draft.published.version}</strong><span>Published {dateText(draft.published.published_at)}</span><span>{draft.published.assigned_count} assigned · {draft.published.unassigned_count} awaiting placement</span></div>}</section>
+        <section className="card publication-status"><div><p className="eyebrow">Member visibility</p><h2>{status === 'unpublished' ? 'Not published' : status === 'changed' ? 'Published roster has draft changes' : 'Published roster is current'}</h2><p>{status === 'unpublished' ? 'Members cannot see placements until you publish.' : status === 'changed' ? 'Members can still see the previous published version. Publish your changes, or hide the previous publication below.' : 'Current placements match the official version.'}</p></div>{draft.published && <div className="publication-meta"><strong>Version {draft.published.version}</strong><span>Published {dateText(draft.published.published_at)}</span><span>{draft.published.assigned_count} assigned · {draft.published.unassigned_count} awaiting placement</span>{canManage && <button disabled={busy || loading || !!error} onClick={() => void withdraw()}>Hide published assignments</button>}</div>}</section>
         <div className="roster-overview publication-totals"><div><strong>{draft.preview.accounts.length}</strong><span>draft accounts</span></div><div><strong>{draft.preview.assigned_count}</strong><span>assigned</span></div><div><strong>{draft.preview.unassigned_count}</strong><span>unassigned</span></div></div>
         <section className="card readiness-checks"><div className="card-heading"><div><p className="eyebrow">Roster readiness</p><h2>{checks.some(check => check.accounts.length) ? 'Review these items before publishing' : draft.preview.accounts.length ? 'Readiness checks passed' : 'Waiting for signups'}</h2><p>Missing weights do not block publishing. Confirm below if any accounts still need a clan.</p></div></div>{checks.map(check => <div className="staff-row" key={check.filter}><div><strong>{labels[check.filter]}</strong><small>{check.accounts.length} account{check.accounts.length === 1 ? '' : 's'}</small></div>{check.accounts.length > 0 ? <button disabled={busy || loading} onClick={() => onFix(check.filter)}>Review in roster builder →</button> : <span>✓ Clear</span>}</div>)}</section>
         <section className="card publication-form"><div className="card-heading"><div><p className="eyebrow">Step 1</p><h2>{draft.published ? 'Finalize updated roster' : 'Finalize roster'}</h2></div><button type="button" disabled={loading || busy} onClick={() => void load()}>Refresh draft</button></div><p>Review the clans below. Publishing makes this roster official.</p>{draft.preview.unassigned_count > 0 && <label className="publication-ack"><input type="checkbox" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} /><span>I understand {draft.preview.unassigned_count} account{draft.preview.unassigned_count === 1 ? ' is' : 's are'} unassigned and will appear to members as awaiting placement.</span></label>}{archived && <p className="inline-reason">This season is archived. Its roster cannot be published or republished.</p>}{!draft.preview.accounts.length && <p className="inline-reason">No signed-up accounts are in this roster yet.</p>}<div className="publication-actions"><button className="primary" disabled={!canManage || busy || loading || !!error || archived || !draft.preview.accounts.length || (draft.preview.unassigned_count > 0 && !acknowledged)} onClick={() => void publish()}>{busy ? 'Finalizing…' : draft.published ? 'Finalize updated roster' : 'Finalize roster'}</button></div></section>

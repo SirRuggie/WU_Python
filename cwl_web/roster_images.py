@@ -27,7 +27,7 @@ def snapshot(request, version=None, clan_tag=None):
     sid=_sid(request)
     with _store(request).tx() as db:
         season=dict(_season(db,sid))
-        pub=db.execute('SELECT * FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1',(sid,)).fetchone()
+        pub=db.execute('SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1',(sid,)).fetchone()
         if not pub: raise web.HTTPConflict(text='Finalize a roster first.')
         if version is not None and str(pub['version'])!=str(version):raise web.HTTPConflict(text='A newer roster is published. Refresh the preview.')
         rows=[dict(r) for r in db.execute('SELECT * FROM publication_accounts WHERE publication_id=? ORDER BY town_hall DESC,player_name,tag',(pub['id'],))]

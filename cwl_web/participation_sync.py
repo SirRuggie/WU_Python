@@ -340,7 +340,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 return {"sync": settings, "updated_accounts": 0}
             latest = db.execute(
                 "SELECT id,version FROM roster_publications "
-                "WHERE season_id=? ORDER BY version DESC LIMIT 1",
+                "WHERE withdrawn_at IS NULL AND season_id=? ORDER BY version DESC LIMIT 1",
                 (season_id,),
             ).fetchone()
             identities = _participants(db, season_id)
@@ -412,7 +412,7 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             season = db.execute("SELECT status FROM seasons WHERE id=?", (season_id,)).fetchone()
             latest = db.execute(
                 "SELECT version FROM roster_publications "
-                "WHERE season_id=? ORDER BY version DESC LIMIT 1",
+                "WHERE withdrawn_at IS NULL AND season_id=? ORDER BY version DESC LIMIT 1",
                 (season_id,),
             ).fetchone()
             current = settings_view(db, season_id)
