@@ -1,5 +1,5 @@
 import { sortRosterAccounts, type RosterAccount, type RosterSort } from './roster'
-export type ClanSummary = { count: number; knownTownHalls: number; averageTownHall: number | null; knownWeights: number; averageWeight: number | null }
+export type ClanSummary = { count: number; knownTownHalls: number; averageTownHall: number | null; knownWeights: number; totalWeight: number | null }
 export function compareClanAccounts(accounts: RosterAccount[], clanTag: string, sort: RosterSort): RosterAccount[] {
   return sortRosterAccounts(accounts.filter(account => account.assigned_clan_tag === clanTag), sort)
 }
@@ -7,7 +7,7 @@ export function clanSummary(accounts: RosterAccount[], clanTag: string): ClanSum
   const members = accounts.filter(account => account.assigned_clan_tag === clanTag)
   const halls = members.map(account => account.town_hall).filter((value): value is number => value !== null)
   const weights = members.map(account => account.effective_weight).filter((value): value is number => value !== null)
-  return { count: members.length, knownTownHalls: halls.length, averageTownHall: halls.length ? halls.reduce((a, b) => a + b, 0) / halls.length : null, knownWeights: weights.length, averageWeight: weights.length ? weights.reduce((a, b) => a + b, 0) / weights.length : null }
+  return { count: members.length, knownTownHalls: halls.length, averageTownHall: halls.length ? halls.reduce((a, b) => a + b, 0) / halls.length : null, knownWeights: weights.length, totalWeight: weights.length ? weights.reduce((a, b) => a + b, 0) : null }
 }
 
 // Keep staff choices stable when hosting clans or filters change.
