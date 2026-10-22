@@ -3,8 +3,9 @@ import { api, ApiError } from './api'
 import MemberPicker, { type MemberOption } from './MemberPicker'
 import AccessPermissions from './AccessPermissions'
 import './AccessSettings.css'
+import AccessAvatar from './AccessAvatar'
 
-type Grant = { kind: 'user' | 'role'; id: string; label: string; permissions: string[]; display_name?: string; username?: string; identity_status?: 'current' | 'missing' | 'unavailable' }
+type Grant = { kind: 'user' | 'role'; id: string; label: string; permissions: string[]; display_name?: string; username?: string; avatar_url?: string | null; identity_status?: 'current' | 'missing' | 'unavailable' }
 type Permission = { id: string; label: string; description: string }
 type AccessData = {
   revision: number; grants: Grant[]; owners: string[];
@@ -115,9 +116,9 @@ export default function AccessSettings({ onDirty }: { onDirty?: (dirty: boolean)
         <label>Find existing access<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name, username or ID" /></label>
         {!matches.length && <p>{data.grants.length ? 'No matching entries.' : 'No added staff yet. Choose Add access to get started.'}</p>}
         {matches.map(grant => <button className="access-person" key={`${grant.kind}:${grant.id}`} disabled={busy || loading} aria-pressed={editing && kind === grant.kind && id === grant.id} onClick={() => edit(grant)}>
-          <strong>{grant.display_name || (grant.label !== grant.id ? grant.label : 'Unresolved '+(grant.kind === 'role' ? 'role' : 'member'))}</strong>
+          <AccessAvatar name={grant.display_name || grant.label} kind={grant.kind} url={grant.avatar_url} /><span className="access-person-info"><strong>{grant.display_name || (grant.label !== grant.id ? grant.label : 'Unresolved '+(grant.kind === 'role' ? 'role' : 'member'))}</strong>
           <small>{grant.kind === 'role' ? 'Role' : 'Member'}{grant.username ? ` · @${grant.username}` : ''}</small>
-          <small>{grant.permissions.length} {grant.permissions.length === 1 ? 'action' : 'actions'} · {grant.id}</small>
+          <small>{grant.permissions.length} {grant.permissions.length === 1 ? 'action' : 'actions'} · {grant.kind === 'role' ? 'Role ID' : 'Discord ID'}: {grant.id}</small></span>
         </button>)}
         <details><summary>Protected owners</summary><p>Only these two owners can change access. Ownership cannot be granted here.</p>{data.owners.map(owner => <p key={owner}>Discord ID: <code>{owner}</code></p>)}</details>
       </section>
@@ -138,7 +139,7 @@ export default function AccessSettings({ onDirty }: { onDirty?: (dirty: boolean)
             {kind === 'user' && data.owners.includes(id) && <p role="status">This is a protected owner. Their access cannot be edited.</p>}
             <button className="primary" disabled={!id || busy || (kind === 'role' && (rolesLoading || !!roleError)) || (kind === 'user' && data.owners.includes(id))} onClick={() => { setChoosing(false); requestAnimationFrame(() => heading.current?.focus()) }}>Choose permissions →</button>
           </> : <>
-            <p className="access-identity">{kind === 'role' ? 'Discord role' : 'Specific member'}{username ? ` · @${username}` : ''}<br />{kind === 'role' ? 'Role ID' : 'Discord ID'}: <code>{id}</code></p>
+            <div className="access-identity-header"><AccessAvatar name={title} kind={kind} url={current?.avatar_url || picked?.avatar_url} /><p className="access-identity">{kind === 'role' ? 'Discord role' : 'Specific member'}{username ? ` · @${username}` : ''}<br />{kind === 'role' ? 'Role ID' : 'Discord ID'}: <code>{id}</code></p></div>
             {current && current.identity_status !== 'current' && <p className="inline-reason">{current.identity_status === 'missing' ? 'Not found in this server. Saved access remains until removed.' : 'Live identity unavailable. Refresh access to retry.'}</p>}
             {kind === 'user' && <a href={`https://discord.com/users/${id}`} target="_blank" rel="noreferrer">Open Discord profile ↗</a>}
             <p>CWL includes Main and Lazy. Clan permissions apply to all clans. User and role grants add together.</p>

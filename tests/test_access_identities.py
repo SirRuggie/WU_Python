@@ -14,11 +14,12 @@ class IdentityTests(unittest.IsolatedAsyncioTestCase):
         async def discord(request, method, path):
             if path.endswith('/roles'):
                 return [{'id':'777','name':'Current role'}]
-            return {'nick':'Current nickname <test>', 'user':{'username':'unique_user'}}
+            return {'nick':'Current nickname <test>', 'user':{'username':'unique_user', 'avatar':'avatar_hash'}}
         with patch('cwl_web.server_management.discord', discord):
             result = await decorate_access(SimpleNamespace(), data)
         self.assertEqual(result['grants'][0]['display_name'], 'Current nickname <test>')
         self.assertEqual(result['grants'][0]['username'], 'unique_user')
+        self.assertEqual(result['grants'][0]['avatar_url'], 'https://cdn.discordapp.com/avatars/100/avatar_hash.png?size=64')
         self.assertEqual(result['grants'][1]['display_name'], 'Current role')
         self.assertEqual(result['grants'][0]['id'], '100')
         self.assertEqual(result['grants'][0]['permissions'], ['tickets'])

@@ -976,3 +976,15 @@ Existing backend tests cover non-owner denial, stale revisions, role loss and lo
 outages. These checks do not constitute live Discord permission changes or a full
 assistive-technology audit. Existing build-size warnings remain. Hold for combined
 release with URL batches.
+
+## Staff access profile pictures — prepared, not deployed
+
+Staff directory and editor now include Discord avatars with initial fallbacks;
+roles have a distinct @ marker. Reused the existing Discord member avatar URL
+builder (server avatar, user avatar or default) and restricted image rendering to
+Discord CDN URLs. Labels show display name, username and explicit Discord/role ID,
+wrapping long values. No permission or storage changes. Validation: 232 frontend
+tests, 17 backend identity/access tests and build passed; isolated browser verified
+loaded avatars in list/editor and no horizontal overflow at 320px. The screenshot
+reported by the owner was the older live layout; these changes remain held with
+the redesign and URL batches, not yet deployed.

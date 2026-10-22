@@ -5,6 +5,7 @@ from aiohttp import ClientError, web
 
 async def decorate_access(request, data):
     from .server_management import discord, GUILD_ID
+    from .manage_roles import member_option
     limit = asyncio.Semaphore(5)
     roles = None
     if any(row['kind'] == 'role' for row in data['grants']):
@@ -28,7 +29,9 @@ async def decorate_access(request, data):
                 user = member.get('user', {})
                 name = member.get('nick') or user.get('global_name') or user.get('username')
                 if name:
-                    row.update(display_name=name, username=user.get('username'), identity_status='current')
+                    identity = member_option(dict(member, user=dict(user, id=grant['id'])))
+                    row.update(display_name=name, username=user.get('username'),
+                               avatar_url=identity['avatar_url'], identity_status='current')
         except web.HTTPNotFound:
             row['identity_status'] = 'missing'
         except (web.HTTPException, ClientError, TimeoutError):
