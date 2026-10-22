@@ -998,3 +998,15 @@ styles that pushed Confirm removal outside the mobile viewport. No authorization
 or removal API changes. 232 frontend tests and build passed. Isolated 320px browser
 verified both buttons inside viewport, 44px heights, absent save bar during
 confirmation and restoration on Cancel. No live access entries removed.
+
+## Reachable mobile menu
+
+Reviewed the supplied mobile recording. Mobile topbar now stays at the viewport top
+with an explicit Menu label and 44px control. The drawer brand/close row stays pinned
+while its navigation scrolls. Drawer remains above the header and its backdrop;
+existing close, Escape, navigation and unsaved-change behavior remains. At very narrow
+widths, account avatar stays visible while username yields space to page/menu labels.
+Desktop navigation is unchanged. 232 frontend tests and build passed. Isolated
+390px check opened navigation after 2448px page scroll, then scrolled the drawer
+953px and verified its close button stayed at 15px. 320px menu remained at 9.5px
+with a 44px target and no horizontal overflow. No data or API changes.

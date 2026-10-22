@@ -26,3 +26,44 @@
 @media(max-width:600px){.cwl-workspace-nav{flex-wrap:wrap;gap:4px}.cwl-roster-tabs{flex-basis:100%}.cwl-roster-tabs button{font-size:13px;padding:10px 6px}.cwl-more{margin-left:auto}}
 .shell .sidebar .strikes-subnav{margin:0 0 0 16px;padding-left:8px}
 .shell .sidebar .strikes-subnav button{font-size:12px;min-height:38px}
+
+/* Mobile navigation stays reachable while content and the drawer scroll. */
+@media (max-width: 900px) {
+  .shell .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    box-shadow: 0 2px 8px #0005;
+  }
+  .shell .menu-open {
+    flex: 0 0 auto;
+    min-height: 44px;
+    gap: 8px;
+    padding-inline: 12px;
+    border-color: #8d7845;
+    color: #ffe098;
+  }
+  .shell .topbar > div { flex: 1; overflow: hidden; }
+  .shell .topbar > div > strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .shell .topbar .user-pill { flex-shrink: 1; min-width: 0; }
+  .shell .sidebar > .brand-wrap {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #151517;
+    padding-right: 60px;
+  }
+  .shell .sidebar .brand-wrap .brand { min-width: 0; overflow: hidden; }
+  .shell .sidebar .brand-wrap .brand > div { overflow: hidden; }
+  .shell .sidebar .brand-wrap .brand strong { overflow: hidden; text-overflow: ellipsis; }
+  .shell .workspace { scroll-padding-top: 80px; }
+}
+@media (max-width: 370px) {
+  .shell .topbar { padding-inline: 10px; gap: 8px; }
+  .shell .topbar .user-pill { max-width: 44px; padding: 6px; }
+  .shell .topbar .user-display-name { display: none; }
+}
