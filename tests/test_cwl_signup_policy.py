@@ -51,5 +51,30 @@ class SignupPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.call('DELETE', f'/seasons/{sid}/signups/%23P2Y', self.member)).status, 200)
         self.assertEqual((await self.call('DELETE', f'/seasons/{sid}/signups/%23P2Y', self.member)).status, 200)
         items = (await (await self.call('GET', path, self.owner)).json())['items']
+        self.assertEqual(items, [])
+        self.assertEqual(len(self.app['store'].rows("SELECT * FROM roster_audit WHERE action='member_withdrawal'")), 1)
+
+    async def test_only_placed_changes_are_listed_before_limit_and_name_is_preserved(self):
+        import json
+        sid = await self.season()
+        store = self.app['store']
+        with store.tx() as db:
+            db.execute("INSERT OR REPLACE INTO clans(tag,name) VALUES ('#R2Y','Former hosting clan')")
+        account = {'tag': '#P2Y', 'prefer_crystal_1_or_lower': False}
+        await self.call('POST', f'/seasons/{sid}/signups', self.member,
+                        json={'pool': 'main', 'accounts': [account]})
+        with store.tx() as db:
+            db.execute("INSERT INTO roster_entries(season_id,tag,assigned_clan_tag,kept) VALUES (?, '#P2Y', '#R2Y', 0)", (sid,))
+        self.assertEqual((await self.call('DELETE', f'/seasons/{sid}/signups/%23P2Y', self.member)).status, 200)
+        with store.tx() as db:
+            db.execute("UPDATE clans SET name='Renamed clan' WHERE tag='#R2Y'")
+            for _ in range(105):
+                db.execute("INSERT INTO roster_audit(season_id,tag,actor_id,action,before_json) VALUES (?,?,?,?,?)",
+                           (sid, '#OTHER', '100', 'member_pool_change', json.dumps({'pool':'main','assigned_clan_tag':None})))
+        path = f'/seasons/{sid}/signup-activity'
+        items = (await (await self.call('GET', path, self.owner)).json())['items']
         self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['assigned_clan_name'], 'Former hosting clan')
+        self.assertEqual(items[0]['assigned_clan_tag'], '#R2Y')
         self.assertEqual(items[0]['action'], 'member_withdrawal')
+        self.assertEqual(len(store.rows("SELECT * FROM roster_audit WHERE action='member_pool_change'")), 105)

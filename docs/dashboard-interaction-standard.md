@@ -811,3 +811,26 @@ for Main/unclassified/archived exclusions, preserved existing placements, unchan
 Main behavior, and full-clan disabling. Isolated browser checked the actual manual
 placement options at desktop and 390px: only the sample Lazy host was selectable.
 This changes destination presentation, not dashboard permissions or stored rosters.
+
+## October 22: compact roster records and placement-change alerts
+
+The staff change panel filters durable audit events by the assignment immediately
+before a member withdrawal or pool change, before applying the 100-event limit.
+Unassigned changes remain in history. New events snapshot the hosting clan name;
+older events resolve the retained clan record and fall back to the tag. Review
+receipts and existing staff authorization remain unchanged. No audit is deleted.
+
+Placement-change alerts use a red background/border, warning symbol and explicit
+heading. Roster records are neutral, with gold selection. Names are plain text;
+placement and an aria-expanded Details control share an action row. Details holds
+editing, Discord contact and weight provenance. Repeated readiness copy is removed,
+but placement blockers remain visible. Targets remain at least 44px.
+
+Validation: 92 backend tests passed, one opt-in Mongo drill skipped; 221 frontend
+tests and production build passed. Tests include assignment removal, unassigned
+changes, 105 irrelevant events not masking an older alert, clan rename preserving
+the captured name, review/CSRF/season permissions and duplicate review. Isolated
+browser checks covered 320px, 390px and 1280px without horizontal overflow, neutral
+and gold cards, red alerts, Details/editor open/close, manual placement save, and
+alert review. The sample narrow card was 246px high with 44px action buttons.
+No live messages or production player mutations were used for verification.

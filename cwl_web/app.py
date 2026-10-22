@@ -759,8 +759,9 @@ async def submit_signup(request):
             before = dict(old) if old else None
             changed_pool = old is not None and old['pool'] != pool
             if changed_pool:
-                placement = db.execute('SELECT assigned_clan_tag FROM roster_entries WHERE season_id=? AND tag=?', (sid, value)).fetchone()
+                placement = db.execute('SELECT r.assigned_clan_tag, c.name AS assigned_clan_name FROM roster_entries r LEFT JOIN clans c ON c.tag=r.assigned_clan_tag WHERE r.season_id=? AND r.tag=?', (sid, value)).fetchone()
                 before['assigned_clan_tag'] = placement['assigned_clan_tag'] if placement else None
+                before['assigned_clan_name'] = placement['assigned_clan_name'] if placement else None
                 db.execute('UPDATE roster_entries SET assigned_clan_tag=NULL,kept=0 WHERE season_id=? AND tag=?', (sid, value))
             _audit(db, sid, value, session["user_id"], "member_pool_change" if changed_pool else "member_signup", before, dict(after))
         if requested:
@@ -899,8 +900,9 @@ async def withdraw(request):
             _fail(423, "Signups are closed")
         before = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"])).fetchone()
         if before:
-            assigned = db.execute("SELECT assigned_clan_tag FROM roster_entries WHERE season_id=? AND tag=?", (sid, value)).fetchone()
-            before = {**dict(before), "assigned_clan_tag": assigned["assigned_clan_tag"] if assigned else None}
+            assigned = db.execute("SELECT r.assigned_clan_tag, c.name AS assigned_clan_name FROM roster_entries r LEFT JOIN clans c ON c.tag=r.assigned_clan_tag WHERE r.season_id=? AND r.tag=?", (sid, value)).fetchone()
+            before = {**dict(before), "assigned_clan_tag": assigned["assigned_clan_tag"] if assigned else None,
+                      "assigned_clan_name": assigned["assigned_clan_name"] if assigned else None}
             db.execute("DELETE FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"]))
             _audit(db, sid, value, session["user_id"], "member_withdrawal", dict(before), None)
             _bump(db, sid)

@@ -9,6 +9,7 @@ async def activity(request):
     sid = _sid(request)
     with _store(request).tx() as db:
         _season(db, sid)
+        clans = {row["tag"]: row["name"] for row in db.execute("SELECT tag,name FROM clans")}
     items = []
     for row in _store(request).signup_activity(sid):
         before = json.loads(row['before_json'] or '{}')
@@ -16,6 +17,7 @@ async def activity(request):
         items.append({
             'id': row['id'], 'tag': row['tag'], 'player_name': before.get('player_name') or row['tag'],
             'action': row['action'], 'from_pool': before.get('pool'), 'to_pool': after.get('pool'),
+            'assigned_clan_name': before.get('assigned_clan_name') or clans.get(before.get('assigned_clan_tag')),
             'assigned_clan_tag': before.get('assigned_clan_tag'), 'user_id': row['actor_id'],
             'created_at': row['created_at'].replace(' ', 'T') + 'Z',
         })

@@ -369,6 +369,7 @@ class Store:
             return [dict(row) for row in db.execute(
                 "SELECT a.* FROM roster_audit a LEFT JOIN signup_activity_reviews r ON r.audit_id=a.id "
                 "WHERE a.season_id=? AND a.action IN ('member_withdrawal','member_pool_change') "
+                "AND NULLIF(TRIM(json_extract(a.before_json, '$.assigned_clan_tag')), '') IS NOT NULL "
                 "AND r.audit_id IS NULL ORDER BY a.id DESC LIMIT 100", (season_id,))]
 
     def review_signup_activity(self, season_id, audit_id, actor):
