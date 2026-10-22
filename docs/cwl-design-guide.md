@@ -505,3 +505,40 @@ covered default-off, League label, group identity, selecting 24 accounts togethe
 clearing selection and returning to 20-account ungrouped pagination. No production
 roster mutations or live Discord messages were used. Existing build size warning
 remains; physical-device/assistive-technology testing was not performed.
+
+### 2026-10-22: One roster and signup workspace
+
+Replace the separate Manage signups page with one roster workspace. Preserve
+Compare clans beside Assign accounts, with its existing Main/Lazy comparisons,
+clan selection and account operations. The account list supports All/Main/Lazy;
+auto-placement and bulk placement require an explicit Main or Lazy group.
+
+Signup status stays visible. Add signup is secondary; opening/closing the signup
+window is disclosed and requires CWL settings permission. Selected accounts reveal
+signup actions and a review that explains cleared placements and unchanged
+published rosters. Details offers occasional account signup changes. Signup and
+placement permissions remain distinct; the sidebar admits either grant to this
+workspace, not to every action. Old Manage signups URLs resolve to the roster with
+the season retained. Remove the obsolete duplicate list/editor and its styling.
+
+Signup changes across members use explicit selected tags, a maximum of 50, and one
+revision-checked transaction. A malformed/missing account, ineligible Main change,
+or concurrent revision rejects the whole request. Existing member-scoped callers
+remain supported. Published snapshots and saved weights remain separate. No data
+migration or notification delivery change.
+
+Completion review: 259 frontend tests and the TypeScript/Vite production build
+passed; 112 backend tests plus 49 subtests passed. Backend regressions cover
+separate signup/roster grants, atomic cross-member changes, malformed/duplicate
+and oversized selections, stale revisions, ineligible switches, saved weights,
+and published snapshot preservation. Independent review corrected archived
+editor controls and stale Details drafts after a revision conflict.
+
+Isolated browser checks covered legacy-link normalization, retained Compare clans,
+All/Main/Lazy selection, signup-only versus roster-only controls, member details,
+Add signup, bulk review/cancel, a simulated failed save with inline recovery, and
+a successful sample removal with refreshed counts. Responsive checks included
+320px, 390px and 1440px widths. Fixture permission responses test UI visibility;
+server authorization is covered by backend tests. No production signup/roster
+mutations or live Discord messages were used. Physical-device and assistive-
+technology testing was not performed; the existing bundle-size warning remains.

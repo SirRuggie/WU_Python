@@ -250,6 +250,12 @@ MANAGEMENT_PAGE_PATHS = {
 
 def login_destination(query):
     view = query.get("view", "")
+    if view == "manage-signups":
+        params = {}
+        season = str(query.get("season", ""))
+        if re.fullmatch(r"[0-9]{1,18}", season):
+            params["season"] = season
+        return CWL_PAGE_PATHS["roster"] + ("?" + urlencode(params) if params else "")
     if view in MANAGEMENT_PAGE_PATHS:
         return MANAGEMENT_PAGE_PATHS[view]
     if view in CWL_PAGE_PATHS:

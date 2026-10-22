@@ -8,6 +8,9 @@ import useUnsavedWork from "./useUnsavedWork";
 import ClanDestinationOptions from "./ClanDestinationOptions";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import RosterPlayerDialog from "./RosterPlayerDialog";
+import RosterSignupActions from "./RosterSignupActions";
+import StaffSignupControls from "./StaffSignupControls";
+import { useDashboardPermission } from "./DashboardPermissions";
 import TownHallIcon from "./TownHallIcon";
 import "./RosterWorkspace.css";
 import {
@@ -49,6 +52,8 @@ type Props = {
   onSeasonChange: (id: string) => void;
   initialReadiness?: ReadinessFilter;
   onReviewPublication?: () => void;
+  onSeasonRefresh?: () => Promise<void>;
+  onBusy?: (busy: boolean) => void;
 };
 type Feedback = { kind: "success" | "error"; text: string };
 const errorText = (error: unknown) =>
@@ -63,8 +68,14 @@ export default function RosterWorkspace({
   onSeasonChange,
   initialReadiness = "all",
   onReviewPublication,
+  onSeasonRefresh,
+  onBusy,
   onDirty,
 }: Props) {
+  const canRoster = useDashboardPermission("cwl_roster");
+  const canSignups = useDashboardPermission("cwl_signups");
+  const season = seasons.find((item) => String(item.id) === seasonId);
+  const archived = season?.status === "archived";
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -99,6 +110,11 @@ export default function RosterWorkspace({
   const [readinessFilter, setReadinessFilter] =
     useState<ReadinessFilter>(initialReadiness);
   const [poolFilter, setPoolFilter] = useCwlPool();
+  const [listPool, setListPool] = useWorkspacePreference<Pool | "all">(
+    `wu-roster-${seasonId}-list-pool`,
+    "all",
+  );
+  const viewPool = mode === "assign" ? listPool : poolFilter;
   const [assignmentFilter, setAssignmentFilter] = useWorkspacePreference<
     "all" | "assigned" | "unassigned"
   >(`wu-roster-${seasonId}-assignment`, "all");
@@ -130,17 +146,33 @@ export default function RosterWorkspace({
   const [rulesDirty, setRulesDirty] = useState(false);
   const [weightsDirty, setWeightsDirty] = useState(false);
   const [playerDirty, setPlayerDirty] = useState(false);
+  const [signupDirty, setSignupDirty] = useState(false);
+  const [signupBusy, setSignupBusy] = useState(false);
+  const [signupReviewOpen, setSignupReviewOpen] = useState(false);
+  const [signupOpen, setSignupOpen] = useState(false);
+  const working = busy || signupBusy;
+  const uiLocked = working || signupReviewOpen || signupOpen;
   const dirty =
     rulesDirty ||
     weightsDirty ||
     playerDirty ||
+    signupDirty ||
+    signupReviewOpen ||
     !!manualTag ||
     selectedTags.length > 0;
-  useUnsavedWork(dirty || busy, onDirty);
+  useUnsavedWork(dirty || working, onDirty);
+  useEffect(() => {
+    onBusy?.(working);
+    return () => onBusy?.(false);
+  }, [working, onBusy]);
+  useEffect(() => {
+    if (!canRoster && mode !== "assign") setMode("assign");
+  }, [canRoster, mode, setMode]);
   const mayLeaveEditor = () =>
-    !busy &&
+    !working &&
     (!dirty || window.confirm("Discard unsaved roster edits and selections?"));
   const listHeading = useRef<HTMLDivElement>(null);
+  const focusListHeading = () => requestAnimationFrame(() => requestAnimationFrame(() => listHeading.current?.focus({ preventScroll: true })));
   const requestId = useRef(0);
   const activeSeason = useRef(seasonId);
   activeSeason.current = seasonId;
@@ -148,13 +180,24 @@ export default function RosterWorkspace({
   const refresh = useCallback(async () => {
     if (!seasonId) return null;
     const id = ++requestId.current;
-    const snapshot = await api<RosterSnapshot>(
-      `/seasons/${encoded(seasonId)}/roster`,
-    );
-    if (id !== requestId.current || activeSeason.current !== seasonId)
-      return null;
-    setRoster(snapshot);
-    return snapshot;
+    try {
+      const snapshot = await api<RosterSnapshot>(
+        `/seasons/${encoded(seasonId)}/roster`,
+      );
+      if (id !== requestId.current || activeSeason.current !== seasonId) return null;
+      setRoster(snapshot);
+      return snapshot;
+    } catch (error) {
+      if (id === requestId.current && activeSeason.current === seasonId &&
+          error instanceof ApiError && [401, 403].includes(error.status)) {
+        setRoster(null);
+        setSelectedTags([]);
+        setEditingTag(null);
+        setManualTag(null);
+        setPreview(null);
+      }
+      throw error;
+    }
   }, [seasonId]);
   useEffect(() => {
     setEditingTag(null);
@@ -193,7 +236,20 @@ export default function RosterWorkspace({
     }
   };
   const fail = async (error: unknown) => {
+    if (error instanceof ApiError && [401, 403].includes(error.status)) {
+      setRoster(null);
+      setSelectedTags([]);
+      setEditingTag(null);
+      setManualTag(null);
+      setPreview(null);
+      setFeedback({ kind: "error", text: error.message });
+      return;
+    }
     if (error instanceof ApiError && error.status === 409) {
+      const hadAccountEditor = !!editingTag || !!manualTag;
+      const hadManualPlacement = !!manualTag;
+      setEditingTag(null);
+      setManualTag(null);
       try {
         await refresh();
       } catch {
@@ -202,8 +258,11 @@ export default function RosterWorkspace({
       setPreview(null);
       setFeedback({
         kind: "error",
-        text: `${error.message} The roster was refreshed; review it and try again.`,
+        text: hadAccountEditor
+          ? `${error.message} The account editor closed. Reopen it to review the latest saved values.`
+          : `${error.message} The roster was refreshed; review it and try again.`,
       });
+      if (hadManualPlacement) focusListHeading();
     } else setFeedback({ kind: "error", text: errorText(error) });
   };
   const edit = async (
@@ -211,7 +270,7 @@ export default function RosterWorkspace({
     body: Record<string, unknown>,
     success: string,
   ): Promise<boolean> => {
-    if (!roster || !seasonId || busy) return false;
+    if (!canRoster || !roster || !seasonId || working || archived) return false;
     const sid = seasonId;
     setBusy(true);
     setFeedback(null);
@@ -230,7 +289,7 @@ export default function RosterWorkspace({
     }
   };
   const removeSignup = async (tag: string): Promise<boolean> => {
-    if (!roster || !seasonId || busy) return false;
+    if (!canSignups || !roster || !seasonId || working || archived) return false;
     const sid = seasonId;
     setBusy(true);
     setFeedback(null);
@@ -264,7 +323,7 @@ export default function RosterWorkspace({
       lower_league: boolean | null;
     },
   ) => {
-    if (!roster || !seasonId || busy) return false;
+    if (!canRoster || !roster || !seasonId || working || archived) return false;
     const sid = seasonId;
     setBusy(true);
     setFeedback(null);
@@ -285,7 +344,7 @@ export default function RosterWorkspace({
     }
   };
   const previewPlacement = async () => {
-    if (!roster || !seasonId || busy) return;
+    if (!canRoster || !roster || !seasonId || working || archived) return;
     const sid = seasonId;
     setBusy(true);
     setFeedback(null);
@@ -308,7 +367,9 @@ export default function RosterWorkspace({
       !preview ||
       !roster ||
       !seasonId ||
-      busy ||
+      !canRoster ||
+      uiLocked ||
+      archived ||
       preview.revision !== roster.revision
     )
       return;
@@ -336,7 +397,7 @@ export default function RosterWorkspace({
     }
   };
   const refreshWeights = async () => {
-    if (!roster || !seasonId || busy) return;
+    if (!canRoster || !roster || !seasonId || working || archived) return;
     const sid = seasonId;
     setBusy(true);
     setFeedback(null);
@@ -370,7 +431,7 @@ export default function RosterWorkspace({
         filterRosterAccounts(
           readinessAccounts(roster.accounts, roster.clans, readinessFilter),
           search,
-          poolFilter,
+          viewPool,
           assignmentFilter,
         ).filter(
           (account) =>
@@ -393,7 +454,7 @@ export default function RosterWorkspace({
   const pageAccounts = accountPages[currentPage] || [];
   const filterKey = JSON.stringify([
     search,
-    poolFilter,
+    viewPool,
     assignmentFilter,
     readinessFilter,
     leagues,
@@ -422,7 +483,7 @@ export default function RosterWorkspace({
         : [...current, tag],
     );
   const bulkAssign = async () => {
-    if (!roster || !seasonId || busy || !selectedTags.length) return;
+    if (!canRoster || viewPool === "all" || !roster || !seasonId || working || archived || !selectedTags.length) return;
     if (staleSelection) {
       setFeedback({
         kind: "error",
@@ -484,8 +545,51 @@ export default function RosterWorkspace({
       setBusy(false);
     }
   };
+  const bulkChangeSignups = async (
+    action: Pool | "remove",
+    tags: string[],
+  ): Promise<boolean> => {
+    if (!canSignups || !roster || !seasonId || working || archived || !tags.length || tags.length > 50) return false;
+    const available = new Set(roster.accounts.map((account) => account.tag));
+    if (tags.some((tag) => !available.has(tag))) {
+      setFeedback({ kind: "error", text: "The selection changed. Clear it and choose the accounts again." });
+      return false;
+    }
+    const sid = seasonId;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const result = await api<{ count: number }>(
+        `/seasons/${encoded(sid)}/staff-signup-changes`,
+        "POST",
+        { revision: roster.revision, tags, action },
+      );
+      if (activeSeason.current === sid) {
+        const fromBulk = selectedTags.length > 0;
+        setSelectedTags([]);
+        await afterWrite(`${result.count} signup${result.count === 1 ? "" : "s"} ${action === "remove" ? "removed" : `changed to ${action === "main" ? "Main" : "Lazy"} CWL`}. Publish again to update the published roster.`);
+        if (fromBulk) focusListHeading();
+      }
+      return true;
+    } catch (error) {
+      if (activeSeason.current === sid) {
+        if (error instanceof ApiError && error.status === 409) {
+          const fromBulk = selectedTags.length > 0;
+          setSelectedTags([]);
+          setEditingTag(null);
+          await fail(error);
+          if (fromBulk) focusListHeading();
+        } else {
+          await fail(error);
+        }
+      }
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
   const undoPlacement = async () => {
-    if (!roster?.undo || !seasonId || busy) return;
+    if (!canRoster || !roster?.undo || !seasonId || uiLocked || archived) return;
     const sid = seasonId;
     setBusy(true);
     setFeedback(null);
@@ -512,7 +616,7 @@ export default function RosterWorkspace({
     }
   };
   const poolAccounts =
-    roster?.accounts.filter((account) => account.pool === poolFilter) || [];
+    roster?.accounts.filter((account) => viewPool === "all" || account.pool === viewPool) || [];
   const assigned =
     poolAccounts.filter((account) => !!account.assigned_clan_tag).length || 0;
   const missingWeight =
@@ -524,6 +628,9 @@ export default function RosterWorkspace({
     ) || [];
   const ruleClan =
     activeClans.find((clan) => clan.tag === ruleTag) || activeClans[0];
+  const selectedAccounts = selectedTags
+    .map((tag) => roster?.accounts.find((account) => account.tag === tag))
+    .filter((account): account is NonNullable<typeof account> => !!account);
   const clanName = (tag: string | null) =>
     roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
 
@@ -532,16 +639,16 @@ export default function RosterWorkspace({
       <div className="page-head">
         <div>
           <p className="eyebrow">Staff roster</p>
-          <h1>Roster builder</h1>
+          <h1>CWL roster &amp; signups</h1>
           <p>{mode === "assign"
-            ? "Working placements stay private until published."
+            ? "Manage signups and working placements. Placements stay private until published."
             : "Select accounts, choose a hosting clan, and assign. Changes save immediately."}</p>
         </div>
         <label className="season-choice">
           Season
           <select
             value={seasonId}
-            disabled={busy}
+            disabled={uiLocked}
             onChange={(event) => {
               if (mayLeaveEditor()) onSeasonChange(event.target.value);
             }}
@@ -555,7 +662,7 @@ export default function RosterWorkspace({
           </select>
         </label>
       </div>
-      {seasonId && <SignupActivity key={seasonId} seasonId={seasonId} />}
+      {seasonId && canSignups && <SignupActivity key={seasonId} seasonId={seasonId} />}
       {!seasonId && (
         <div className="card empty">
           <p>Select a season to build its CWL roster.</p>
@@ -594,21 +701,60 @@ export default function RosterWorkspace({
       {loading && <p role="status">Loading roster…</p>}
       {roster && (
         <>
-          <CwlPoolTabs
-            value={poolFilter}
-            disabled={busy}
-            onChange={(pool) => {
-              if (!mayLeaveEditor()) return;
-              setPoolFilter(pool);
-              setPreview(null);
-              setBulkDestination("");
-              setRuleTag("");
-              setLeagues([]);
-              setTownHalls([]);
-              setSearch("");
-              setEditingTag(null);
-            }}
-          />
+          {mode === "assign" ? (
+            <div className="roster-list-pool-tabs workflow-tabs" role="group" aria-label="Show CWL accounts">
+              {(["all", "main", "lazy"] as const).map((pool) => (
+                <button
+                  type="button"
+                  key={pool}
+                  aria-pressed={listPool === pool}
+                  disabled={uiLocked}
+                  onClick={() => {
+                    if (!mayLeaveEditor()) return;
+                    setListPool(pool);
+                    if (pool !== "all") setPoolFilter(pool);
+                    setPreview(null);
+                    setBulkDestination("");
+                    setSelectedTags([]);
+                    setSearch("");
+                    setEditingTag(null);
+                  }}
+                >
+                  {pool === "all" ? "All accounts" : pool === "main" ? "Main CWL" : "Lazy CWL"}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <CwlPoolTabs
+              value={poolFilter}
+              disabled={uiLocked}
+              onChange={(pool) => {
+                if (!mayLeaveEditor()) return;
+                setPoolFilter(pool);
+                setPreview(null);
+                setBulkDestination("");
+                setRuleTag("");
+                setLeagues([]);
+                setTownHalls([]);
+                setSearch("");
+                setEditingTag(null);
+              }}
+            />
+          )}
+          {season && canSignups && mode === "assign" && (
+            <StaffSignupControls
+              key={seasonId}
+              disabled={busy || selectedTags.length > 0 || !!manualTag || !!editingTag || rulesDirty || weightsDirty}
+              onOpenChange={setSignupOpen}
+              season={season}
+              onChanged={async () => {
+                await refresh();
+                await onSeasonRefresh?.();
+              }}
+              onDirty={setSignupDirty}
+              onBusy={setSignupBusy}
+            />
+          )}
           {mode === "assign" ? (
             <div className="roster-assign-summary" role="status">
               <span><strong>{poolAccounts.length}</strong> signed up</span>
@@ -636,7 +782,7 @@ export default function RosterWorkspace({
             </div>
           </div>
           )}
-          <div
+          {canRoster && <div
             className="roster-workflow-nav"
             role="group"
             aria-label="Roster workspace views"
@@ -651,7 +797,7 @@ export default function RosterWorkspace({
             ).map((item) => (
               <button
                 key={item.id}
-                disabled={busy}
+                disabled={uiLocked}
                 aria-pressed={mode === item.id}
                 className={mode === item.id ? "active" : ""}
                 onClick={() => {
@@ -664,10 +810,14 @@ export default function RosterWorkspace({
                 {item.label}
               </button>
             ))}
-          </div>
+          </div>}
           <div className="roster-toolbar">
             <span>
-              {mode === "assign"
+              {mode === "assign" && !canRoster
+                ? "Select accounts to change their signup type or remove saved signups."
+                : mode === "assign" && viewPool === "all"
+                  ? "Choose Main or Lazy CWL to preview automatic placements."
+                : mode === "assign"
                 ? `${poolAccounts.filter((account) => account.auto_placement_reason === "ready").length} ready for auto-placement · ${poolAccounts.filter((account) => account.auto_placement_reason && account.auto_placement_reason !== "ready").length} need attention`
                 : mode === "compare"
                   ? "Compare up to 10 clans side by side."
@@ -676,7 +826,7 @@ export default function RosterWorkspace({
                     : "Check missing weights and manage overrides."}
             </span>
             <button
-              disabled={busy}
+              disabled={uiLocked}
               onClick={() => {
                 if (mayLeaveEditor())
                   void refresh().catch((error) =>
@@ -686,15 +836,15 @@ export default function RosterWorkspace({
             >
               Refresh
             </button>
-            {mode === "assign" && (
+            {canRoster && mode === "assign" && viewPool !== "all" && (
               <button
-                disabled={busy || !activeClans.length}
+                disabled={uiLocked || archived || !activeClans.length}
                 onClick={() => void previewPlacement()}
               >
                 Auto-place preview
               </button>
             )}
-            {onReviewPublication && mode !== "assign" && (
+            {canRoster && onReviewPublication && mode !== "assign" && (
               <button
                 className="primary"
                 disabled={busy}
@@ -704,7 +854,7 @@ export default function RosterWorkspace({
               </button>
             )}
           </div>
-          {mode === "weights" && (
+          {canRoster && mode === "weights" && (
             <WeightQueue
               onDirty={setWeightsDirty}
               onEdit={(tag) => {
@@ -727,21 +877,21 @@ export default function RosterWorkspace({
               }
             />
           )}
-          {roster.undo && (
+          {canRoster && roster.undo && (
             <div className="roster-undo card">
               <div>
                 <strong>Undo last placement change</strong>
                 <small>{roster.undo.label}</small>
               </div>
               <button
-                disabled={busy || roster.undo.revision !== roster.revision}
+                disabled={uiLocked || archived || roster.undo.revision !== roster.revision}
                 onClick={() => void undoPlacement()}
               >
                 Undo
               </button>
             </div>
           )}
-          {mode === "rules" && (
+          {canRoster && mode === "rules" && (
             <section id="clan-range-editor" className="roster-rules card">
               <div className="card-heading">
                 <h2>Clan ranges & capacity</h2>
@@ -795,9 +945,11 @@ export default function RosterWorkspace({
               }}
               onSave={(body) => edit(editingTag, body, "Account updated.")}
               onRemove={() => removeSignup(editingTag)}
+              archived={archived}
+              onPoolChange={(pool) => bulkChangeSignups(pool, [editingTag])}
             />
           )}
-          {mode === "compare" && (
+          {canRoster && mode === "compare" && (
             <CompareClans
               key={`${seasonId}:${poolFilter}`}
               pool={poolFilter}
@@ -810,7 +962,7 @@ export default function RosterWorkspace({
               }}
             />
           )}
-          {mode === "assign" && preview && (
+          {canRoster && mode === "assign" && preview && (
             <section
               className="card roster-preview"
               aria-labelledby="preview-title"
@@ -876,7 +1028,7 @@ export default function RosterWorkspace({
                 <button
                   className="primary"
                   disabled={
-                    busy ||
+                    uiLocked || archived ||
                     !preview.placements.length ||
                     preview.revision !== roster.revision
                   }
@@ -895,6 +1047,7 @@ export default function RosterWorkspace({
                   Find accounts
                   <input
                     value={search}
+                    disabled={uiLocked}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Name, tag or Discord ID"
                   />
@@ -903,6 +1056,7 @@ export default function RosterWorkspace({
                   Show
                   <select
                     value={assignmentFilter}
+                    disabled={uiLocked}
                     onChange={(event) =>
                       setAssignmentFilter(
                         event.target.value as "all" | "assigned" | "unassigned",
@@ -918,6 +1072,7 @@ export default function RosterWorkspace({
                   Sort
                   <select
                     value={sort}
+                    disabled={uiLocked}
                     onChange={(event) =>
                       setSort(event.target.value as RosterSort)
                     }
@@ -941,7 +1096,7 @@ export default function RosterWorkspace({
                 </summary>
                 <label className="roster-group-toggle">
                   <input type="checkbox" checked={groupByDiscord}
-                    disabled={busy || !!manualTag || !!editingTag}
+                    disabled={uiLocked || !!manualTag || !!editingTag}
                     onChange={(event) => {
                       setGroupByDiscord(event.target.checked);
                       setPage(0);
@@ -953,6 +1108,7 @@ export default function RosterWorkspace({
                     Readiness check
                     <select
                       value={readinessFilter}
+                      disabled={uiLocked}
                       onChange={(event) => {
                         setReadinessFilter(
                           event.target.value as ReadinessFilter,
@@ -970,6 +1126,7 @@ export default function RosterWorkspace({
                 <div className="clan-filter-bar">
                   <FilterPicker
                     label="League"
+                    disabled={uiLocked}
                     options={[
                       ...new Set(
                         sortClans(roster.clans, "league_desc").map((clan) =>
@@ -985,6 +1142,7 @@ export default function RosterWorkspace({
                   />
                   <FilterPicker
                     label="Town Halls"
+                    disabled={uiLocked}
                     options={[
                       ...new Set(
                         roster.accounts.map((account) => account.town_hall),
@@ -1001,6 +1159,7 @@ export default function RosterWorkspace({
                     }}
                   />
                   <button
+                    disabled={uiLocked}
                     onClick={() => {
                       setGroupByDiscord(false);
                       setLeagues([]);
@@ -1021,12 +1180,12 @@ export default function RosterWorkspace({
                 </div>
               </details>
               </div>
-              <div className="roster-list-heading" ref={listHeading}>
+              <div className="roster-list-heading" ref={listHeading} tabIndex={-1}>
                 <label className="roster-select-all">
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
-                    disabled={busy || !visibleTags.length || (!allVisibleSelected && selectingPageWouldExceedLimit)}
+                    disabled={uiLocked || archived || (!canRoster && !canSignups) || (!canSignups && viewPool === "all") || !visibleTags.length || (!allVisibleSelected && selectingPageWouldExceedLimit)}
                     onChange={(event) =>
                       setSelectedTags(
                         event.target.checked
@@ -1050,44 +1209,45 @@ export default function RosterWorkspace({
               {selectedTags.length > 0 && (
                 <div className="roster-bulk card roster-selection-bar">
                   <strong>{selectedTags.length}/50 selected{hiddenSelection ? ` · ${hiddenSelection} on other pages` : ""}</strong>
-                  <label>
-                    Hosting clan
-                    <select
-                      value={bulkDestination}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setBulkDestination(event.target.value)
-                      }
-                    >
-                      <option value="">Choose a destination</option>
-                      <option value="__unassign__">Unassign selected</option>
-                      <ClanDestinationOptions
-                        clans={roster.clans}
-                        pool={poolFilter}
-                      />
-                    </select>
-                  </label>
-                  <button
-                    className="primary"
-                    disabled={
-                      busy ||
-                      !selectedTags.length ||
-                      !!staleSelection ||
-                      selectedTags.length > 50 ||
-                      !bulkDestination
-                    }
-                    onClick={() => void bulkAssign()}
-                  >
-                    {bulkDestination === "__unassign__"
-                      ? `Unassign ${selectedTags.length}`
-                      : `Assign ${selectedTags.length}`}
-                  </button>
-                  {staleSelection > 0 && (
-                    <small role="alert">Roster changed. Clear selection and choose accounts again.</small>
+                  {canRoster && viewPool !== "all" && !signupReviewOpen && (
+                    <div className="roster-placement-bulk">
+                      <label>
+                        Hosting clan
+                        <select
+                          value={bulkDestination}
+                          disabled={working || archived}
+                          onChange={(event) => setBulkDestination(event.target.value)}
+                        >
+                          <option value="">Choose a destination</option>
+                          <option value="__unassign__">Unassign selected</option>
+                          <ClanDestinationOptions clans={roster.clans} pool={poolFilter} />
+                        </select>
+                      </label>
+                      <button
+                        className="primary"
+                        disabled={working || archived || !!staleSelection || selectedTags.length > 50 || !bulkDestination}
+                        onClick={() => void bulkAssign()}
+                      >
+                        {bulkDestination === "__unassign__" ? `Unassign ${selectedTags.length}` : `Assign ${selectedTags.length}`}
+                      </button>
+                    </div>
                   )}
-                  <button disabled={busy} onClick={() => setSelectedTags([])}>
-                    Clear selection
-                  </button>
+                  {canRoster && viewPool === "all" && !canSignups && (
+                    <small>Choose Main or Lazy CWL above to bulk assign placements.</small>
+                  )}
+                  {canSignups && !archived && (
+                    <RosterSignupActions
+                      key={roster.revision}
+                      accounts={selectedAccounts}
+                      clans={roster.clans}
+                      error={feedback?.kind === "error" ? feedback.text : undefined}
+                      busy={working || !!staleSelection || selectedTags.length > 50}
+                      onApply={bulkChangeSignups}
+                      onReviewChange={setSignupReviewOpen}
+                    />
+                  )}
+                  {staleSelection > 0 && <small role="alert">Roster changed. Clear selection and choose accounts again.</small>}
+                  <button disabled={working || signupReviewOpen} onClick={() => setSelectedTags([])}>Clear selection</button>
                 </div>
               )}
               {groupByDiscord && groupNamesError && (
@@ -1113,10 +1273,10 @@ export default function RosterWorkspace({
                         <label className="roster-account-select">
                           <input
                             type="checkbox"
-                            aria-label={`Select ${account.player_name} for bulk assignment`}
+                            aria-label={`Select ${account.player_name} for bulk actions`}
                             checked={selectedTags.includes(account.tag)}
                             disabled={
-                              busy ||
+                              uiLocked || archived || (!canSignups && viewPool === "all") ||
                               (!selectedTags.includes(account.tag) &&
                                 selectedTags.length >= 50)
                             }
@@ -1129,7 +1289,7 @@ export default function RosterWorkspace({
                             {account.player_name}
                           </h3>
                           <small>
-                            {account.tag} · TH {account.town_hall ?? "—"}
+                            {account.tag} · TH {account.town_hall ?? "—"}{viewPool === "all" ? ` · ${account.pool === "main" ? "Main" : "Lazy"} CWL` : ""}
                           </small>
                         </div>
                       </div>
@@ -1179,8 +1339,8 @@ export default function RosterWorkspace({
                         )}
                       </div>
                       <div className="roster-placement-help">
-                        <button
-                          disabled={busy}
+                        {canRoster && <button
+                          disabled={uiLocked || archived}
                           onClick={() => {
                             setManualTag(account.tag);
                             setManualClan(account.assigned_clan_tag || "");
@@ -1190,10 +1350,10 @@ export default function RosterWorkspace({
                           {account.assigned_clan_tag
                             ? "Move →"
                             : "Assign →"}
-                        </button>
+                        </button>}
                         <button
                           type="button"
-                          disabled={busy}
+                          disabled={uiLocked}
                           aria-label={`Details for ${account.player_name}`}
                           onClick={() => {
                             setFeedback(null);
@@ -1203,7 +1363,7 @@ export default function RosterWorkspace({
                           Details
                         </button>
                       </div>
-                      {manualTag === account.tag && (
+                      {canRoster && manualTag === account.tag && (
                         <form
                           className="roster-manual-place"
                           onSubmit={(event) => {
@@ -1272,7 +1432,7 @@ export default function RosterWorkspace({
               {accountPages.length > 1 && (
                 <nav className="roster-pagination" aria-label="Account pages">
                   <button
-                    disabled={busy || currentPage === 0}
+                    disabled={uiLocked || currentPage === 0}
                     onClick={() => {
                       setPage(currentPage - 1);
                       listHeading.current?.scrollIntoView({ block: "start" });
@@ -1284,7 +1444,7 @@ export default function RosterWorkspace({
                     Page {currentPage + 1} of {lastPage + 1}
                   </span>
                   <button
-                    disabled={busy || currentPage === lastPage}
+                    disabled={uiLocked || currentPage === lastPage}
                     onClick={() => {
                       setPage(currentPage + 1);
                       listHeading.current?.scrollIntoView({ block: "start" });

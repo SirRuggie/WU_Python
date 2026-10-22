@@ -8,7 +8,7 @@ it('keeps all personal pages together without staff grants',()=>{
 it('keeps CWL work separate from server configuration',()=>{
  const sections=visibleNavigationSections(true,false,['cwl'])
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL'])
- expect(sections.find(section=>section.id==='cwl-management')?.items.map(item=>item.view)).toContain('manage-signups')
+ expect(sections.find(section=>section.id==='cwl-management')?.items.map(item=>item.view)).toContain('roster')
  expect(navigationSection('cwl-returns')).toBe('CWL')
 })
 it('preserves every explicit scope without exposing other tools',()=>{
@@ -22,7 +22,7 @@ it('shows owners all groups and every destination once',()=>{
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL','Clan management','Tickets','Server tools','Settings'])
  const views=sections.flatMap(section=>section.items.map(item=>item.view))
  expect(new Set(views).size).toBe(views.length)
- expect(views).toHaveLength(31)
+ expect(views).toHaveLength(30)
  expect(sections.find(section=>section.id==='settings')?.items.map(item=>item.view)).toEqual(['image-gallery','connections-settings','issues','access'])
  expect(navigationSection('tickets')).toBe('Tickets')
  expect(navigationSection('applications-settings')).toBe('Server tools')
@@ -31,13 +31,13 @@ it('shows owners all groups and every destination once',()=>{
  expect(navigationSection('replacements')).toBe('Clan management')
 })
 
-it('renders Manage signups in the staff sidebar only', async () => {
+it('renders one combined Roster entry in the staff sidebar only', async () => {
  const {renderToStaticMarkup} = await import('react-dom/server')
  const {createElement} = await import('react')
  const {default: SidebarNavigation} = await import('./SidebarNavigation')
- const props = {userId:'audit',view:'manage-signups' as const,canEdit:true,isOwner:true,onNavigate:()=>{}}
- expect(renderToStaticMarkup(createElement(SidebarNavigation,props))).toContain('Manage signups')
- expect(renderToStaticMarkup(createElement(SidebarNavigation,{...props,canEdit:false,isOwner:false}))).not.toContain('Manage signups')
+ const props = {userId:'audit',view:'roster' as const,canEdit:true,isOwner:true,onNavigate:()=>{}}
+ expect(renderToStaticMarkup(createElement(SidebarNavigation,props))).toContain('Roster')
+ expect(renderToStaticMarkup(createElement(SidebarNavigation,{...props,canEdit:false,isOwner:false}))).not.toContain('Roster')
 })
 
 it('renders the weight trial under clan management for clan staff only',async()=>{
@@ -58,9 +58,18 @@ it('separates CWL action permissions from clan management and access settings',(
  expect(views(['cwl_publish'])).not.toContain('roster')
  expect(views(['cwl_send'])).toContain('bonuses')
  expect(views(['cwl_send'])).not.toContain('access')
- expect(views(['clans'])).not.toContain('manage-signups')
+ expect(views(['clans'])).not.toContain('roster')
 })
 
 it('keeps issue history owner-only even for CWL staff',()=>{
  expect(visibleNavigationSections(true,false,['cwl_signups']).flatMap(s=>s.items).some(i=>i.view==='issues')).toBe(false)
+})
+
+it('offers the same roster destination to signup and placement staff without exposing publishing', () => {
+ for (const permissions of [['cwl_signups'], ['cwl_roster'], ['cwl_signups', 'cwl_roster']]) {
+  const views = visibleNavigationSections(true, false, permissions).flatMap(section => section.items.map(item => item.view))
+  expect(views.filter(view => view === 'roster')).toHaveLength(1)
+  expect(views).not.toContain('manage-signups')
+  expect(views).not.toContain('publication')
+ }
 })

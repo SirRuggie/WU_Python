@@ -10,7 +10,8 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
   const params = new URLSearchParams(search);
   const saved = savedSignupTarget(search, pathname);
   const pathView = Object.entries({...memberPaths, ...staffPaths}).find(([, path]) => path !== '/' && path === pathname)?.[0];
-  const value = (saved ? "signup" : undefined) || (weightAliases.includes(pathname) ? "weight-trial" : pathView) || (params.get("view") === "signups" ? "signup" : params.get("view"));
+  const requested = (saved ? "signup" : undefined) || (weightAliases.includes(pathname) ? "weight-trial" : pathView) || (params.get("view") === "signups" ? "signup" : params.get("view"));
+  const value = requested === "manage-signups" ? "roster" : requested;
   return {
     ...(saved ? {signupPanel: "saved" as const} : {}),
     view: dashboardViews.includes(value as DashboardView)
@@ -22,7 +23,7 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
       : "",
   };
 }
-export const seasonViews = new Set(['manage-signups', 'reminders', 'exports', 'declaration', 'publication', 'participation', 'bonuses', 'roster', 'staff']);
+export const seasonViews = new Set(['reminders', 'exports', 'declaration', 'publication', 'participation', 'bonuses', 'roster', 'staff']);
 export function dashboardPath(route: DashboardRoute) {
   if (route.view === "signup" && route.signupPanel === "saved") return "/my-signups";
   if (memberPaths[route.view]) return memberPaths[route.view];

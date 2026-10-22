@@ -49,6 +49,16 @@ class ManagementDashboardLinksTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, 302)
                 self.assertEqual(response.cookies["wu_login_page"].value, "")
 
+    def test_legacy_manage_signups_login_resolves_to_roster(self):
+        self.assertEqual(login_destination({"view": "manage-signups", "season": "12"}), "/cwl/roster?season=12")
+        self.assertEqual(login_destination({"view": "manage-signups", "season": "bad"}), "/cwl/roster")
+        self.assertEqual(saved_login_destination(SimpleNamespace(
+            cookies={"wu_login_page": "/cwl/signups?season=12&next=https://evil.test"}
+        )), "/cwl/roster?season=12")
+        self.assertEqual(saved_login_destination(SimpleNamespace(
+            cookies={"wu_login_page": "/?view=manage-signups&season=12"}
+        )), "/cwl/roster?season=12")
+
     def test_management_destinations_are_canonical_and_strict(self):
         for view, path in MANAGEMENT_PAGE_PATHS.items():
             with self.subTest(view=view):

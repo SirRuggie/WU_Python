@@ -1,4 +1,4 @@
-"""Atomic, revision-checked staff changes to one member's saved signups."""
+"""Atomic, revision-checked staff changes to explicitly selected saved signups."""
 import asyncio
 from aiohttp import web
 from .providers import tag
@@ -12,11 +12,13 @@ async def change(request):
     body = await _json(request)
     values = body.get('tags')
     action = body.get('action')
+    # The member-group editor supplies user_id; the roster editor selects explicit
+    # tags across members. A supplied user_id remains an ownership constraint.
     uid = body.get('user_id')
-    if action not in ('main', 'lazy', 'remove') or not isinstance(uid, str):
+    if action not in ('main', 'lazy', 'remove') or ('user_id' in body and not isinstance(uid, str)):
         _fail(400, 'Choose an action and member')
-    if not isinstance(values, list) or not 1 <= len(values) <= 100:
-        _fail(400, 'Select between 1 and 100 accounts')
+    if not isinstance(values, list) or not 1 <= len(values) <= 50:
+        _fail(400, 'Select between 1 and 50 accounts')
     try:
         tags = [tag(value) for value in values]
     except (ValueError, TypeError):
@@ -32,7 +34,7 @@ async def change(request):
         accounts = []
         for value in tags:
             row = db.execute('SELECT * FROM signups WHERE season_id=? AND tag=?', (sid, value)).fetchone()
-            if row is None or row['user_id'] != uid:
+            if row is None or (uid is not None and row['user_id'] != uid):
                 _fail(409, 'Signups changed. Refresh and select the accounts again.')
             accounts.append(dict(row))
         return accounts

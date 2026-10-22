@@ -6,6 +6,7 @@ import ClanDestinationOptions from './ClanDestinationOptions'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { RosterAccount, RosterClan } from './roster'
+import type { Pool } from './api'
 import RosterDiscordIdentity from './RosterDiscordIdentity'
 import './RosterPlayerDialog.css'
 
@@ -18,6 +19,8 @@ type Props = {
   onClose: () => void
   onSave: (body: Record<string, unknown>) => Promise<boolean>
   onRemove: () => Promise<boolean>
+  onPoolChange?: (pool: Pool) => Promise<boolean>
+  archived?: boolean
 }
 
 const fullWeight = (value: number | null) =>
@@ -28,7 +31,7 @@ const sourceStatus = (status: RosterAccount['source_status']) =>
     ? 'Source unavailable; prior value may be stale' : 'Missing weight'
 
 export default function RosterPlayerDialog({
-  account, clans, busy, error, onClose, onSave, onRemove, onDirty,
+  account, clans, busy, error, onClose, onSave, onRemove, onPoolChange, onDirty, archived = false,
 }: Props) {
   const canRoster = useDashboardPermission('cwl_roster')
   const canSignups = useDashboardPermission('cwl_signups')
@@ -37,13 +40,14 @@ export default function RosterPlayerDialog({
   const [clan, setClan] = useState(account.assigned_clan_tag || '')
   const [kept, setKept] = useState(account.kept)
   const [localError, setLocalError] = useState('')
+  const [poolReview, setPoolReview] = useState<Pool | null>(null)
   const currentHost = clans.find(item => item.tag === account.assigned_clan_tag)
   const dirty = JSON.stringify(weight) !== JSON.stringify(manualWeightDraft(account.manual_weight))
     || clan !== (account.assigned_clan_tag || '') || kept !== account.kept
-  useUnsavedWork(dirty || busy, onDirty)
+  useUnsavedWork(dirty || busy || !!poolReview, onDirty)
 
   const close = () => {
-    if (!busy && (!dirty || window.confirm('Discard unsaved account changes?'))) onClose()
+    if (!busy && (!(dirty || poolReview) || window.confirm('Discard unsaved account changes?'))) onClose()
   }
   useEffect(() => {
     const dialog = ref.current
@@ -60,6 +64,7 @@ export default function RosterPlayerDialog({
   }, [])
 
   async function save() {
+    if (!canRoster || archived) return
     try {
       const body: Record<string, unknown> = {}
       const value = account.clan_weight_managed ? account.manual_weight : parseManualWeight(weight)
@@ -75,8 +80,15 @@ export default function RosterPlayerDialog({
   }
 
   async function remove() {
+    if (!canSignups || archived) return
     if (!window.confirm(`Remove ${account.player_name} from this season's signups and working roster? Published rosters stay unchanged until you publish again.`)) return
     if (await onRemove()) onClose()
+  }
+
+  async function changePool() {
+    if (!poolReview || !onPoolChange || !canSignups || archived || busy) return
+    setLocalError('')
+    if (await onPoolChange(poolReview)) onClose()
   }
 
   return createPortal(
@@ -110,8 +122,8 @@ export default function RosterPlayerDialog({
           <div><dt>Source weight</dt><dd>{fullWeight(account.source_weight)}<small>{sourceStatus(account.source_status)}{account.source_name ? ` · ${account.source_name}` : ''}</small>{account.source_modified_at && <small>Source updated {new Date(account.source_modified_at).toLocaleString()}</small>}{account.source_checked_at && <small>Fetched {new Date(account.source_checked_at).toLocaleString()}</small>}</dd></div>
         </dl>
       </details>
-      <form onSubmit={event => { event.preventDefault(); void save() }}>
-        <fieldset disabled={busy || !canRoster}>
+      {canRoster && <form onSubmit={event => { event.preventDefault(); void save() }}>
+        <fieldset disabled={busy || archived || !!poolReview}>
           {account.clan_weight_managed ? (
             <p>Weight from Clan weights: <strong>{fullWeight(account.effective_weight)}</strong>. Update it under Clan management → Clan weights.</p>
           ) : (
@@ -129,15 +141,36 @@ export default function RosterPlayerDialog({
           </label>
           <label className="check-label"><input type="checkbox" checked={kept} onChange={event => setKept(event.target.checked)} />Lock placement</label>
           <small>Auto-place won’t move this account.</small>
-          {(localError || error) && <p role="alert">{localError || error}</p>}
           <button className="primary" type="submit">{busy ? 'Saving…' : 'Save changes'}</button>
         </fieldset>
-      </form>
-      <small>Changes apply to the working roster. Publish again to update the published roster.</small>
-      <div className="roster-player-remove">
-        <button className="danger" disabled={busy || !canSignups} onClick={() => void remove()}>Remove signup</button>
-        <small>Removes this season’s signup and placement. Saved weights stay.</small>
-      </div>
+      </form>}
+      {canRoster && <small>Changes apply to the working roster. Publish again to update the published roster.</small>}
+      {(localError || error) && <p role="alert">{localError || error}</p>}
+      {archived && <p>Archived season · account changes are unavailable.</p>}
+      {canSignups && !archived && (
+        <section className="roster-player-signup" aria-label="Signup actions">
+          <h3>Signup type</h3>
+          <p>{account.pool === 'main' ? 'Main CWL' : 'Lazy CWL'} · Changing type clears this account’s working placement.</p>
+          {onPoolChange && (!poolReview ? (
+            <button type="button" disabled={busy || dirty} onClick={() => setPoolReview(account.pool === 'main' ? 'lazy' : 'main')}>
+              Switch to {account.pool === 'main' ? 'Lazy' : 'Main'} CWL
+            </button>
+          ) : (
+            <div className="roster-player-pool-review" role="group" aria-label="Review signup type change">
+              <strong>Move {account.player_name} to {poolReview === 'main' ? 'Main' : 'Lazy'} CWL?</strong>
+              <small>Any working hosting-clan assignment will be cleared. Published rosters stay unchanged until republished. Main CWL eligibility is checked before saving.</small>
+              <div>
+                <button type="button" disabled={busy} onClick={() => setPoolReview(null)}>Cancel</button>
+                <button type="button" className="primary" disabled={busy} onClick={() => void changePool()}>{busy ? 'Saving…' : 'Confirm signup change'}</button>
+              </div>
+            </div>
+          ))}
+          <div className="roster-player-remove">
+            <button className="danger" disabled={busy || !!poolReview || dirty} onClick={() => void remove()}>Remove signup</button>
+            <small>Removes this season’s signup and placement. Saved weights stay.</small>
+          </div>
+        </section>
+      )}
     </dialog>,
     document.body,
   )

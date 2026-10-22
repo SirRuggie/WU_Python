@@ -62,3 +62,46 @@
   .roster-player-dialog select { font-size: 16px; }
   .roster-player-source .roster-player-context { grid-template-columns: 1fr; }
 }
+
+.roster-player-signup {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #3d3d43;
+}
+.roster-player-signup h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.roster-player-signup p {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.roster-player-signup > button,
+.roster-player-pool-review button {
+  min-height: 44px;
+}
+.roster-player-pool-review {
+  padding: 11px;
+  border: 1px solid #8c6740;
+  border-radius: 8px;
+  background: #30241d;
+}
+.roster-player-pool-review strong,
+.roster-player-pool-review small {
+  display: block;
+}
+.roster-player-pool-review small {
+  margin-top: 5px;
+}
+.roster-player-pool-review > div {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+@media (max-width: 440px) {
+  .roster-player-pool-review button {
+    width: 100%;
+  }
+}

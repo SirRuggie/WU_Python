@@ -155,12 +155,13 @@ it('round trips every staff CWL destination, including legacy links and OAuth re
  for (const [view,path] of Object.entries(cwlPaths)) {
   const legacy = dashboardTarget(`?view=${view}&season=12`)
   const expected = dashboardPath(legacy)
-  expect(expected.startsWith(path)).toBe(true)
+  const canonical = view === "manage-signups" ? "roster" : view
+  expect(expected.startsWith(view === "manage-signups" ? "/cwl/roster" : path)).toBe(true)
   for (const suffix of ['', '/']) {
    const target = dashboardTarget('?view=access&season=12', path+suffix)
-   expect(target.view).toBe(view)
+   expect(target.view).toBe(canonical)
    expect(dashboardPath(target)).toBe(expected)
-   expect(loginPath('?view=access&season=12',false,path+suffix)).toBe(`/api/cwl/auth/discord?view=${view}&season=12`)
+   expect(loginPath('?view=access&season=12',false,path+suffix)).toBe(`/api/cwl/auth/discord?view=${canonical}&season=12`)
   }
  }
  expect(dashboardTarget('?view=publication&step=announce','/cwl/roster').step).toBeUndefined()

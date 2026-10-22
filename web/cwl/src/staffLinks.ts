@@ -13,7 +13,8 @@ export const cwlPaths: Record<string, string> = {
 };
 export function cwlTarget(search: string, pathname: string): string | undefined {
   const path = pathname.replace(/\/$/, "");
-  return Object.entries(cwlPaths).find(([, destination]) => destination === path)?.[0]
+  const target = Object.entries(cwlPaths).find(([, destination]) => destination === path)?.[0]
     || (pathname === "/" && Object.hasOwn(cwlPaths, new URLSearchParams(search).get("view") || "")
       ? new URLSearchParams(search).get("view")! : undefined);
+  return target === "manage-signups" ? "roster" : target;
 }
