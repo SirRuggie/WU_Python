@@ -1,3 +1,6 @@
+import type { MemberOption } from "./MemberPicker";
+import RosterDiscordIdentity from "./RosterDiscordIdentity";
+import { rosterAccountPages, rosterMemberKey } from "./rosterGrouping";
 import DashboardIcon from "./DashboardIcon";
 import SignupActivity from "./SignupActivity";
 import useWorkspacePreference from "./useWorkspacePreference";
@@ -18,6 +21,7 @@ import WeightQueue from "./WeightQueue";
 import { readinessAccounts, type ReadinessFilter } from "./readiness";
 import CompareClans from "./CompareClans";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -102,6 +106,25 @@ export default function RosterWorkspace({
     `wu-roster-${seasonId}-sort`,
     "name",
   );
+  const [groupByDiscord, setGroupByDiscord] = useState(false);
+  const [groupMembers, setGroupMembers] = useState<Record<string, MemberOption>>({});
+  const [groupNamesLoading, setGroupNamesLoading] = useState(false);
+  const [groupNamesError, setGroupNamesError] = useState(false);
+  const [groupNamesRetry, setGroupNamesRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setGroupMembers({});
+    setGroupNamesError(false);
+    setGroupNamesLoading(groupByDiscord);
+    if (!groupByDiscord) return;
+    api<{ options: MemberOption[] }>(`/staff-signup-members?season_id=${encoded(seasonId)}`)
+      .then(data => {
+        if (active) setGroupMembers(Object.fromEntries(data.options.map(member => [member.id, member])));
+      })
+      .catch(() => { if (active) setGroupNamesError(true); })
+      .finally(() => { if (active) setGroupNamesLoading(false); });
+    return () => { active = false; };
+  }, [groupByDiscord, seasonId, groupNamesRetry]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [bulkDestination, setBulkDestination] = useState("");
   const [rulesDirty, setRulesDirty] = useState(false);
@@ -364,9 +387,10 @@ export default function RosterWorkspace({
         sort,
       )
     : [];
-  const lastPage = Math.max(0, Math.ceil(filtered.length / 20) - 1);
+  const accountPages = rosterAccountPages(filtered, groupByDiscord);
+  const lastPage = Math.max(0, accountPages.length - 1);
   const currentPage = Math.min(page, lastPage);
-  const pageAccounts = filtered.slice(currentPage * 20, (currentPage + 1) * 20);
+  const pageAccounts = accountPages[currentPage] || [];
   const filterKey = JSON.stringify([
     search,
     poolFilter,
@@ -908,13 +932,22 @@ export default function RosterWorkspace({
               </div>
               <details className="roster-more-filters">
                 <summary>
-                  Filters · League &amp; Town Hall{" "}
+                  Filters · League, Town Hall &amp; grouping{" "}
                   {readinessFilter !== "all" ||
                   leagues.length ||
-                  townHalls.length
+                  townHalls.length || groupByDiscord
                     ? "· Active"
                     : ""}
                 </summary>
+                <label className="roster-group-toggle">
+                  <input type="checkbox" checked={groupByDiscord}
+                    disabled={busy || !!manualTag || !!editingTag}
+                    onChange={(event) => {
+                      setGroupByDiscord(event.target.checked);
+                      setPage(0);
+                    }} />
+                  Group by Discord user
+                </label>
                 <div className="card readiness-filter">
                   <label>
                     Readiness check
@@ -936,7 +969,7 @@ export default function RosterWorkspace({
                 </div>
                 <div className="clan-filter-bar">
                   <FilterPicker
-                    label="Assigned clan league"
+                    label="League"
                     options={[
                       ...new Set(
                         sortClans(roster.clans, "league_desc").map((clan) =>
@@ -969,6 +1002,7 @@ export default function RosterWorkspace({
                   />
                   <button
                     onClick={() => {
+                      setGroupByDiscord(false);
                       setLeagues([]);
                       setTownHalls([]);
                       setSearch("");
@@ -1056,9 +1090,21 @@ export default function RosterWorkspace({
                   </button>
                 </div>
               )}
+              {groupByDiscord && groupNamesError && (
+                <p role="status">Discord profiles could not be loaded. Accounts remain grouped by Discord ID.
+                  <button type="button" onClick={() => setGroupNamesRetry(value => value + 1)}>Retry profiles</button>
+                </p>
+              )}
               {filtered.length ? (
                 <div className="roster-account-list">
-                  {pageAccounts.map((account) => (
+                  {pageAccounts.map((account, index) => (
+                    <Fragment key={account.tag}>
+                    {groupByDiscord && (index === 0 || rosterMemberKey(pageAccounts[index - 1]) !== rosterMemberKey(account)) && (
+                      <header className="roster-member-heading">
+                        <RosterDiscordIdentity userId={account.user_id} resolvedMember={groupMembers[account.user_id] || null} resolving={groupNamesLoading} />
+                        <small>{pageAccounts.filter(item => rosterMemberKey(item) === rosterMemberKey(account)).length} accounts shown</small>
+                      </header>
+                    )}
                     <article
                       className={`card roster-account ${account.assigned_clan_tag ? "roster-account-assigned" : ""} ${account.outside_family_and_hosts ? "roster-account-outside" : ""} ${selectedTags.includes(account.tag) ? "roster-account-selected" : ""}`}
                       key={account.tag}
@@ -1215,6 +1261,7 @@ export default function RosterWorkspace({
                         </form>
                       )}
                     </article>
+                    </Fragment>
                   ))}
                 </div>
               ) : (
@@ -1222,7 +1269,7 @@ export default function RosterWorkspace({
                   <p>No accounts match these filters.</p>
                 </div>
               )}
-              {filtered.length > 20 && (
+              {accountPages.length > 1 && (
                 <nav className="roster-pagination" aria-label="Account pages">
                   <button
                     disabled={busy || currentPage === 0}

@@ -483,3 +483,25 @@ Validation: 252 frontend tests and production build passed; isolated sample rost
 visually checked at 390px and 1440px. Desktop had no horizontal overflow. This is
 a palette-only change; no authorization, persistence or notification behavior
 changed. Physical phone display differences were not tested.
+
+### 2026-10-22: Optional Discord grouping in Assign accounts
+
+The League picker now uses the short label “League”. Filters includes “Group by
+Discord user”, off by default and reset on remount. It preserves existing roster
+rows/highlights and groups the filtered results by exact Discord ID. Within each
+member, the selected account sort is retained; member order follows the first
+matching account. Unlinked accounts remain separate. Pagination keeps a member
+whole, allowing an oversized group its own page; the existing 50-account bulk
+mutation limit is unchanged. Grouping can be disabled without losing selection.
+Manage signups is unchanged.
+
+Names, avatars and Discord IDs use one season-scoped lookup only while grouping
+is enabled. Stale responses are ignored on season/toggle changes; failures preserve
+ID-based groups with explicit retry. Account dialogs retain on-demand lookup.
+Independent review found and corrected per-header request fan-out. 260 frontend
+tests and TypeScript/Vite build passed. Tests cover unlinked identity separation,
+ordering, pagination and oversized groups. Isolated 390px/1440px browser checks
+covered default-off, League label, group identity, selecting 24 accounts together,
+clearing selection and returning to 20-account ungrouped pagination. No production
+roster mutations or live Discord messages were used. Existing build size warning
+remains; physical-device/assistive-technology testing was not performed.

@@ -302,3 +302,26 @@
 .roster-placement-lock .dashboard-icon { width: 14px; height: 14px; }
 .roster-placement-help button:hover:not(:disabled) { background: #ffffff0d; text-decoration: underline; }
 .roster-placement-help button:focus-visible { outline: 2px solid #f0c84b; outline-offset: -2px; }
+
+.roster-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin: 8px 0;
+}
+.roster-member-heading {
+  padding: 10px 14px;
+  background: #1b1b1f;
+  border-block: 1px solid #ffffff20;
+}
+.roster-member-heading .roster-discord-identity {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.roster-member-heading > small {
+  display: block;
+  margin-top: 4px;
+  color: #b7bac3;
+}
