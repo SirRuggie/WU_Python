@@ -1,4 +1,45 @@
-.arrival-check{margin-top:20px}.arrival-controls{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin:18px 0}.arrival-controls label:last-child{display:flex;gap:8px;align-items:center}.arrival-clan{margin:14px 0;padding:16px}.arrival-clan summary{display:flex;flex-wrap:wrap;align-items:center;gap:12px;cursor:pointer;min-height:44px}.arrival-clan summary:before{content:'▸';color:#f4cd64}.arrival-clan[open] summary:before{content:'▾'}.arrival-clan summary b{color:#a5e4b6}.arrival-account{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px;margin-top:10px;border-radius:10px;border:1px solid #555;background:#232327}.arrival-account strong,.arrival-account small{display:block;overflow-wrap:anywhere}.arrival-account strong{display:flex;align-items:center;gap:8px}.arrival-arrived{background:#193728;border-color:#6bad83}.arrival-missing{background:#442323;border-color:#c97b7b}.arrival-missing small{color:#f1c6c6}.arrival-ready{border-color:#6bad83}@media(max-width:600px){.arrival-account{grid-template-columns:1fr}.arrival-check>.card-heading{flex-wrap:wrap}.arrival-controls{align-items:stretch;flex-direction:column}}
+.arrival-check { margin-top: 12px; }
+.arrival-toolbar, .arrival-overview { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.arrival-toolbar .cwl-pool-tabs { margin: 0; }
+.arrival-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 14px 0; border-bottom: 1px solid #343439; }
+.arrival-controls label { min-width: 0; }
+.arrival-controls select, .arrival-controls input[type="search"] { width: 100%; min-height: 44px; }
+.arrival-search { flex: 1 1 220px; }
+.arrival-controls .arrival-filter { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.arrival-overview { justify-content: flex-start; padding: 14px 0; font-size: .9rem; }
+.arrival-overview small { color: #b4b7c0; }
+.arrival-clan { margin: 10px 0; border: 1px solid #36363e; border-radius: 10px; overflow: hidden; }
+.arrival-clan-heading { margin: 0; font-size: 1rem; }
+.arrival-clan-heading > button { display: flex; flex-wrap: wrap; align-items: center; width: 100%; min-height: 60px; gap: 8px 14px; padding: 12px; border: 0; border-radius: 0; text-align: left; background: #1c1c20; }
+.arrival-clan-name { flex: 1 1 200px; overflow-wrap: anywhere; }
+.arrival-clan-count, .arrival-clan-state { font-size: .82rem; font-weight: 400; }
+.arrival-clan-state { color: #bdc0c9; }
+.arrival-clan-state.is-ready { color: #a5e4b6; }
+.arrival-ready { border-color: #477b5b; }
+.arrival-minimum { padding: 8px 12px; margin: 0; font-size: .85rem; }
+.arrival-account { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid #46464d; border-left: 3px solid #71717d; background: #232327; }
+.arrival-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.arrival-identity > div { min-width: 0; }
+.arrival-account strong, .arrival-account small { display: block; overflow-wrap: anywhere; }
+.arrival-account small { font-size: .78rem; line-height: 1.5; }
+.arrival-arrived { background: #142c22; border-left-color: #79c698; }
+.arrival-missing { background: #382222; border-left-color: #ce8787; }
+.arrival-missing small { color: #e5c1c1; }
+.arrival-location > strong { font-size: .85rem; }
+.arrival-actions { display: flex; align-items: center; gap: 4px; }
+.arrival-actions .button, .arrival-actions .roster-player-name { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 4px 10px; border: 0; border-radius: 6px; background: transparent; color: #b9d6ff; font-size: .85rem; font-weight: 600; text-decoration: none; }
+.arrival-actions .button:hover, .arrival-actions .roster-player-name:hover { background: #ffffff12; }
+.arrival-help { margin: 16px 0; color: #b9bbc3; font-size: .85rem; }
+.arrival-help summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
 .arrival-check > .notice { align-items: flex-start; flex-wrap: wrap; }
 .arrival-check > .notice > div { flex: 1 1 240px; min-width: 0; }
 .arrival-check > .notice p { margin: 8px 0; }
+.arrival-check > .notice small { display: block; }
+@media (max-width: 600px) {
+  .arrival-controls > label:not(.arrival-filter) { flex: 1 1 100%; }
+  .arrival-account { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; }
+  .arrival-identity { grid-column: 1 / -1; }
+  .arrival-location { min-width: 0; }
+  .arrival-actions { align-self: end; }
+  .arrival-clan-name { flex-basis: 100%; }
+}

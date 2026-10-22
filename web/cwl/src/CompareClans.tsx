@@ -1,115 +1,383 @@
-import { FilterPicker, leagueValue, matchesLeague, matchesTownHall } from './ClanFilters'
-import { sortClans, clanSortOptions, type ClanSort } from './clanSort'
-import { useEffect, useRef, useState } from 'react'
-import { clanSummary, compareClanAccounts, comparisonOrder, moveComparisonClan } from './compare'
-import { assignmentOptions, weightText, type RosterSnapshot, type RosterSort } from './roster'
-import './CompareClans.css'
-import type {Pool} from './api'
-import { api } from './api'
-import DiscordContact from './DiscordContact'
-import { comparisonLocation, type ComparisonLocation } from './comparisonLocation'
+import { useEffect, useRef, useState } from 'react';
+import { api, type Pool } from './api';
+import { FilterPicker, leagueValue, matchesLeague, matchesTownHall } from './ClanFilters';
+import { sortClans, clanSortOptions, type ClanSort } from './clanSort';
+import { clanSummary, compareClanAccounts, comparisonOrder, moveComparisonClan } from './compare';
+import { comparisonLocation, type ComparisonLocation } from './comparisonLocation';
+import DiscordContact from './DiscordContact';
+import { assignmentOptions, weightText, type RosterSnapshot, type RosterSort } from './roster';
+import './CompareClans.css';
 
-type Props = { pool: Pool; seasonId: string; roster: RosterSnapshot; busy: boolean; onEdit: (tag: string) => void }
-const sortOptions: { value: RosterSort; label: string }[] = [
-  { value: 'town_hall_desc', label: 'Town Hall: high to low' }, { value: 'town_hall_asc', label: 'Town Hall: low to high' },
-  { value: 'weight_desc', label: 'Weight: high to low' }, { value: 'weight_asc', label: 'Weight: low to high' }, { value: 'name', label: 'Name A–Z' },
-]
-const averageText = (value: number | null) => value === null ? '—' : value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+type Props = {
+  pool: Pool;
+  seasonId: string;
+  roster: RosterSnapshot;
+  busy: boolean;
+  onEdit: (tag: string) => void;
+};
+
+const playerSortOptions: { value: RosterSort; label: string }[] = [
+  { value: 'town_hall_desc', label: 'Town Hall: high to low' },
+  { value: 'town_hall_asc', label: 'Town Hall: low to high' },
+  { value: 'weight_desc', label: 'Weight: high to low' },
+  { value: 'weight_asc', label: 'Weight: low to high' },
+  { value: 'name', label: 'Name A–Z' },
+];
+
+function averageText(value: number | null) {
+  return value === null ? '—' : value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function totalWeightText(value: number | null) {
+  if (value === null) return '—';
+  if (value < 1_000_000) return weightText(value);
+  return `${(value / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 3 })}m`;
+}
 
 export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: Props) {
-  const [locations, setLocations] = useState<Record<string, ComparisonLocation>>({})
-  const [checking, setChecking] = useState(false)
-  const [locationError, setLocationError] = useState('')
-  const [refreshLocations, setRefreshLocations] = useState(0)
-  const [now, setNow] = useState(Date.now())
+  const [locations, setLocations] = useState<Record<string, ComparisonLocation>>({});
+  const [checking, setChecking] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  const [refreshLocations, setRefreshLocations] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const [clanSort, setClanSort] = useState<ClanSort>('name');
+  const [leagues, setLeagues] = useState<string[]>([]);
+  const [townHalls, setTownHalls] = useState<string[]>([]);
+  const [clans, setClans] = useState<string[]>([]);
+  const [choosing, setChoosing] = useState(false);
+  const [clanSearch, setClanSearch] = useState('');
+  const [sort, setSort] = useState<RosterSort>('town_hall_desc');
+  const [focusedClan, setFocusedClan] = useState('');
+  const loadedPreference = useRef<string | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout>
-    setLocations({}); setChecking(true); setLocationError('')
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    setLocations({});
+    setChecking(true);
+    setLocationError('');
     async function check(force = false) {
       try {
-        const result = await api<{updating: boolean; accounts: (ComparisonLocation & {tag: string})[]}>(`/seasons/${encodeURIComponent(seasonId)}/arrival-check?background=1&source=draft${force ? '&refresh=1' : ''}`)
-        if (cancelled) return
-        setLocations(Object.fromEntries(result.accounts.map(account => [account.tag, account])))
-        setChecking(result.updating); setNow(Date.now())
-        if (result.updating) timer = setTimeout(() => void check(), 2000)
+        const suffix = force ? '&refresh=1' : '';
+        const result = await api<{ updating: boolean; accounts: (ComparisonLocation & { tag: string })[] }>(
+          `/seasons/${encodeURIComponent(seasonId)}/arrival-check?background=1&source=draft${suffix}`,
+        );
+        if (cancelled) return;
+        setLocations(Object.fromEntries(result.accounts.map(account => [account.tag, account])));
+        setChecking(result.updating);
+        setNow(Date.now());
+        if (result.updating) timer = setTimeout(() => void check(), 2000);
       } catch {
-        if (!cancelled) { setChecking(false); setLocationError('Could not update locations. Try again.'); setLocations({}) }
+        if (!cancelled) {
+          setChecking(false);
+          setLocationError('Could not update locations. Try again.');
+          setLocations({});
+        }
       }
     }
-    void check(true)
-    const clock = setInterval(() => setNow(Date.now()), 30000)
-    return () => { cancelled = true; clearTimeout(timer); clearInterval(clock) }
-  }, [seasonId, refreshLocations])
-  const [clanSort, setClanSort] = useState<ClanSort>('name')
-  const [leagues,setLeagues] = useState<string[]>([])
-  const [townHalls,setTownHalls] = useState<string[]>([])
-  const allClans = sortClans(assignmentOptions(roster.clans).filter(clan=>clan.pool===pool), clanSort)
-  const available = allClans.filter(clan=>matchesLeague(clan.cwl_league,leagues))
-  const [clans, setClans] = useState<string[]>([])
-  const [choosing, setChoosing] = useState(false)
-  const [clanSearch, setClanSearch] = useState('')
-  const loadedSeason = useRef<string | null>(null)
-  const [sort, setSort] = useState<RosterSort>('town_hall_desc')
-  const scroller = useRef<HTMLDivElement>(null)
-  const activeTags = allClans.map(clan => clan.tag).sort().join('|')
-  const visibleClans = clans.filter(tag => available.some(clan => clan.tag === tag))
-  const matchingClans = available.filter(clan => `${clan.name} ${clan.tag}`.toLowerCase().includes(clanSearch.trim().toLowerCase()))
+    void check(true);
+    const clock = setInterval(() => setNow(Date.now()), 30000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      clearInterval(clock);
+    };
+  }, [seasonId, refreshLocations]);
+
+  const allClans = sortClans(assignmentOptions(roster.clans).filter(clan => clan.pool === pool), clanSort);
+  const available = allClans.filter(clan => matchesLeague(clan.cwl_league, leagues));
+  const activeTags = allClans.map(clan => clan.tag).sort().join('|');
+  const visibleClans = clans.filter(tag => available.some(clan => clan.tag === tag));
+  const matchingClans = available.filter(clan =>
+    `${clan.name} ${clan.tag}`.toLowerCase().includes(clanSearch.trim().toLowerCase()),
+  );
+  const selectedFocus = visibleClans.includes(focusedClan) ? focusedClan : visibleClans[0];
+
   useEffect(() => {
-    const changedSeason = loadedSeason.current !== seasonId
-    let saved: unknown = null
-    if (changedSeason) {
-      try { saved = JSON.parse(localStorage.getItem(`wu-compare-clans:${seasonId}:${pool}`) || 'null') } catch { /* Optional preference. */ }
-      loadedSeason.current = seasonId
+    // Main and Lazy have separate saved choices, even within the same season.
+    const preferenceKey = `${seasonId}:${pool}`;
+    const changedPreference = loadedPreference.current !== preferenceKey;
+    let saved: unknown = null;
+    if (changedPreference) {
+      try {
+        saved = JSON.parse(localStorage.getItem(`wu-compare-clans:${preferenceKey}`) || 'null');
+      } catch {
+        // Saved comparison order is optional.
+      }
+      loadedPreference.current = preferenceKey;
     }
-    setClans(current => comparisonOrder(changedSeason ? saved : current, allClans.map(clan => clan.tag)))
-  }, [seasonId, activeTags])
-  const updateClans = (next: string[]) => {
-    setClans(next)
-    try { localStorage.setItem(`wu-compare-clans:${seasonId}:${pool}`, JSON.stringify(next)) } catch { /* Optional preference. */ }
+    setClans(current => comparisonOrder(
+      changedPreference ? saved : current,
+      allClans.map(clan => clan.tag),
+    ));
+  }, [seasonId, pool, activeTags]);
+
+  function updateClans(next: string[]) {
+    setClans(next);
+    try {
+      localStorage.setItem(`wu-compare-clans:${seasonId}:${pool}`, JSON.stringify(next));
+    } catch {
+      // Comparison choices still work for this session.
+    }
   }
-  const moveTo = (index: number) => {
-    const container = scroller.current
-    const column = container?.children[index] as HTMLElement | undefined
-    if (container && column) container.scrollTo({ left: container.scrollLeft + column.getBoundingClientRect().left - container.getBoundingClientRect().left, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+
+  function moveTo(index: number) {
+    const container = scroller.current;
+    const column = container?.children[index] as HTMLElement | undefined;
+    if (!container || !column) return;
+    container.scrollTo({
+      left: container.scrollLeft + column.getBoundingClientRect().left - container.getBoundingClientRect().left,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
   }
-  return <section className="compare-workspace card" aria-labelledby="compare-title">
-    <div className="card-heading"><div><p className="eyebrow">Staff placement</p><h2 id="compare-title">Compare clans</h2></div><label className="compare-sort">Sort players<select value={sort} onChange={event => setSort(event.target.value as RosterSort)}>{sortOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></div>
-    <p>Compare up to 10 {pool==='main'?'Main':'Lazy'} CWL clans side by side.</p>
-    {roster.clans.some(clan=>!clan.archived&&!clan.pool)&&<p className="small">Some clans have no CWL group. Choose Main or Lazy in Clan settings to include them here.</p>}
-    <div className="compare-location-controls"><small>Green: in this clan · Red: not in this clan · Gray: not checked</small><button disabled={checking} onClick={() => setRefreshLocations(value => value + 1)}>{checking ? 'Updating locations…' : 'Refresh clan locations'}</button>{locationError && <span role="alert">{locationError}</span>}</div>
-    <div className="clan-filter-bar"><FilterPicker label="CWL leagues" options={[...new Set(sortClans(allClans,'league_desc').map(clan=>leagueValue(clan.cwl_league)))]} selected={leagues} onChange={setLeagues}/><FilterPicker label="Town Halls" options={[...new Set(roster.accounts.map(account=>account.town_hall))].sort((a,b)=>(b??-1)-(a??-1)).map(value=>value==null?'Unknown TH':`TH ${value}`)} selected={townHalls} onChange={setTownHalls}/><button disabled={!leagues.length&&!townHalls.length} onClick={()=>{setLeagues([]);setTownHalls([])}}>Clear filters</button><small>{available.length} of {allClans.length} clans match. Town Hall filters hide players only; clan totals stay unchanged.</small></div>
-    {available.length === 0 ? <p className="inline-reason">No hosting clans match. Clear filters or add an active hosting clan in Seasons &amp; clans.</p> : <>
-      <div className="compare-pan-controls">
-        <button className="primary" aria-expanded={choosing} aria-controls="comparison-clan-picker" disabled={busy} onClick={() => setChoosing(!choosing)}>Choose clans · {clans.length}/10</button>
-        <label>Sort chosen clans<select value="" disabled={busy} onChange={event => { const value=event.target.value as ClanSort; setClanSort(value); updateClans(sortClans(allClans.filter(clan=>clans.includes(clan.tag)),value).map(clan=>clan.tag)) }}><option value="" disabled>Choose order…</option>{clanSortOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+
+  function focusAt(index: number) {
+    const tag = visibleClans[index];
+    if (!tag) return;
+    setFocusedClan(tag);
+    moveTo(index);
+  }
+
+  return (
+    <section className="compare-workspace card" aria-labelledby="compare-title">
+      <header className="compare-header">
+        <div>
+          <h2 id="compare-title">Compare clans</h2>
+          <p>{visibleClans.length} of {clans.length} selected {pool === 'main' ? 'Main' : 'Lazy'} clans visible · up to 10</p>
+        </div>
+        <button
+          className="primary"
+          aria-expanded={choosing}
+          aria-controls={choosing ? "comparison-clan-picker" : undefined}
+          disabled={busy || !allClans.length}
+          onClick={() => setChoosing(value => !value)}
+        >
+          Choose clans · {clans.length}/10
+        </button>
+      </header>
+
+      {roster.clans.some(clan => !clan.archived && !clan.pool) && (
+        <p className="inline-reason">Some hosting clans need a Main or Lazy CWL group in Clan settings before they can be compared.</p>
+      )}
+
+      <div className="compare-toolbar" role="group" aria-label="Comparison filters and status">
+        <FilterPicker
+          label="CWL leagues"
+          options={[...new Set(sortClans(allClans, 'league_desc').map(clan => leagueValue(clan.cwl_league)))]}
+          selected={leagues}
+          onChange={setLeagues}
+        />
+        <FilterPicker
+          label="Town Halls"
+          options={[...new Set(roster.accounts.map(account => account.town_hall))]
+            .sort((a, b) => (b ?? -1) - (a ?? -1))
+            .map(value => value == null ? 'Unknown TH' : `TH ${value}`)}
+          selected={townHalls}
+          onChange={setTownHalls}
+        />
+        <label>
+          Sort players
+          <select value={sort} onChange={event => setSort(event.target.value as RosterSort)}>
+            {playerSortOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <button disabled={!leagues.length && !townHalls.length} onClick={() => { setLeagues([]); setTownHalls([]); }}>
+          Clear filters
+        </button>
+        <button disabled={checking} onClick={() => setRefreshLocations(value => value + 1)}>
+          {checking ? 'Updating locations…' : 'Refresh locations'}
+        </button>
       </div>
-      {choosing && <div id="comparison-clan-picker" className="compare-picker">
-        <label>Find a clan<input type="search" placeholder="Clan name or tag" value={clanSearch} onChange={event=>setClanSearch(event.target.value)} /></label>
-        <p>Select up to 10 clans. New choices go on the right.</p>
-        <div className="compare-picker-list">{matchingClans.map(clan=><label key={clan.tag}><input type="checkbox" checked={clans.includes(clan.tag)} disabled={busy || (!clans.includes(clan.tag) && clans.length>=10)} onChange={()=>updateClans(clans.includes(clan.tag)?clans.filter(tag=>tag!==clan.tag):[...clans,clan.tag])}/><span><strong>{clan.name}</strong><small>{clan.cwl_league || 'League unavailable'} · {clan.tag}</small></span></label>)}</div>
-        {!matchingClans.length && <p>No clans match. Change the search or league filter.</p>}
-        <div className="compare-picker-actions"><button disabled={busy || !clans.length} onClick={()=>updateClans([])}>Clear choices</button><button onClick={()=>setChoosing(false)}>Done</button></div>
-      </div>}
-      {visibleClans.length < clans.length && <p className="inline-reason">{clans.length-visibleClans.length} chosen clans are hidden by the league filter. Clear filters to show them.</p>}
-      <div className="compare-jump" role="group" aria-label="Jump to comparison clan">{visibleClans.map((tag,index)=><button key={tag} onClick={()=>moveTo(index)}>{available.find(clan=>clan.tag===tag)?.name}</button>)}</div>
-      {!visibleClans.length && <p className="inline-reason">Choose clans above to start comparing.</p>}
-      <p id="compare-scroll-hint" className="compare-scroll-hint">↔ Swipe or scroll sideways here, or use the clan buttons above. Only this section moves.</p>
-      <div className="compare-pan" ref={scroller} tabIndex={0} role="region" aria-label="Side-by-side clan comparison" aria-describedby="compare-scroll-hint" style={{ gridTemplateColumns: `repeat(${Math.max(1,visibleClans.length)}, minmax(280px, 1fr))` }}>
-        {visibleClans.map((clanTag, index) => {
-          const clan = available.find(item => item.tag === clanTag)
-          const members = compareClanAccounts(roster.accounts, clanTag, sort).filter(account=>matchesTownHall(account.town_hall,townHalls))
-          const summary = clanSummary(roster.accounts, clanTag)
-          return <div className="compare-side" key={clanTag}>
-            <div className="compare-column-tools"><button aria-label={`Move ${clan?.name} left`} disabled={busy || index===0} onClick={()=>updateClans(moveComparisonClan(clans,clanTag,visibleClans[index-1]))}>← Left</button><button aria-label={`Move ${clan?.name} right`} disabled={busy || index===visibleClans.length-1} onClick={()=>updateClans(moveComparisonClan(clans,clanTag,visibleClans[index+1]))}>Right →</button><button aria-label={`Remove ${clan?.name} from comparison`} disabled={busy} onClick={()=>updateClans(clans.filter(tag=>tag!==clanTag))}>✕</button></div>
-            <label>Change clan<select value={clanTag} disabled={busy} onChange={event => { const destination = event.target.value; updateClans(clans.map(tag => tag===clanTag ? destination : tag===destination ? clanTag : tag)) }}>{available.map(item => <option value={item.tag} key={item.tag}>{item.name} · {item.cwl_league || 'League unavailable'} · {item.tag}</option>)}</select></label>
-            {clan && <><div className="compare-clan-summary"><strong>{clan.name}</strong><small>CWL: {clan.cwl_league || 'League unavailable'}{clan.cwl_league_stale && clan.cwl_league ? ' · last known' : ''}</small><small>{summary.count}/{clan.effective_capacity} occupied</small><small>Avg TH {averageText(summary.averageTownHall)} ({summary.knownTownHalls} known)</small><small>Total weight {summary.totalWeight === null ? '—' : weightText(summary.totalWeight)} ({summary.knownWeights}/{summary.count} weights known)</small></div><div className="compare-player-list">{members.length ? members.map(account => {
-              const location = comparisonLocation(locations[account.tag], clanTag, now)
-              return <div key={account.tag} className={`compare-account compare-account-${location.state}`}><button type="button" disabled={busy} onClick={()=>onEdit(account.tag)} title={`Edit account · ${location.label} · ${location.detail}`} aria-label={`Edit ${account.player_name}: ${location.label}`} className={`compare-player compare-player-${location.state}`}><span className="compare-player-heading"><strong>{account.player_name}</strong><span>TH {account.town_hall ?? '—'}</span></span><small className="compare-player-meta">{account.tag} · {account.pool === 'main' ? 'Main' : 'Lazy'} · {weightText(account.effective_weight)}</small></button><div className="compare-contact"><DiscordContact userId={account.user_id} compact /></div></div>
-            }) : <p>No accounts match in this clan.</p>}</div></>}
+      <p className="compare-toolbar-note">
+        {available.length} of {allClans.length} clans match. Town Hall filters hide players, but totals include everyone assigned.
+        {' '}<span>Location: green in clan · red elsewhere · gray unchecked.</span>
+      </p>
+      {locationError && <p className="notice error" role="alert">{locationError}</p>}
+
+      {choosing && (
+        <div id="comparison-clan-picker" className="compare-picker">
+          <label>
+            Find a clan
+            <input
+              type="search"
+              placeholder="Clan name or tag"
+              value={clanSearch}
+              onChange={event => setClanSearch(event.target.value)}
+            />
+          </label>
+          <p>Select up to 10 clans. New choices go on the right.</p>
+          <div className="compare-picker-list">
+            {matchingClans.map(clan => (
+              <label key={clan.tag}>
+                <input
+                  type="checkbox"
+                  checked={clans.includes(clan.tag)}
+                  disabled={busy || (!clans.includes(clan.tag) && clans.length >= 10)}
+                  onChange={() => updateClans(
+                    clans.includes(clan.tag)
+                      ? clans.filter(tag => tag !== clan.tag)
+                      : [...clans, clan.tag],
+                  )}
+                />
+                <span><strong>{clan.name}</strong><small>{clan.cwl_league || 'League unavailable'} · {clan.tag}</small></span>
+              </label>
+            ))}
           </div>
-        })}
-      </div>
-    </>}
-  </section>
+          {!matchingClans.length && <p>No clans match. Change the search or league filter.</p>}
+          <div className="compare-picker-actions">
+            <button disabled={busy || !clans.length} onClick={() => updateClans([])}>Clear choices</button>
+            <button onClick={() => setChoosing(false)}>Done</button>
+          </div>
+        </div>
+      )}
+
+      {!!clans.length && (
+        <details className="compare-arrange">
+          <summary>Order and change chosen clans</summary>
+          <label>
+            Sort chosen clans
+            <select
+              value=""
+              disabled={busy}
+              onChange={event => {
+                const value = event.target.value as ClanSort;
+                setClanSort(value);
+                updateClans(sortClans(allClans.filter(clan => clans.includes(clan.tag)), value).map(clan => clan.tag));
+              }}
+            >
+              <option value="" disabled>Choose order…</option>
+              {clanSortOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <ol>
+            {clans.map((tag, index) => {
+              const clan = allClans.find(item => item.tag === tag);
+              if (!clan) return null;
+              return (
+                <li key={tag}>
+                  <span>{clan.name}</span>
+                  <div>
+                    <button aria-label={`Move ${clan.name} left`} disabled={busy || index === 0} onClick={() => updateClans(moveComparisonClan(clans, tag, clans[index - 1]))}>←</button>
+                    <button aria-label={`Move ${clan.name} right`} disabled={busy || index === clans.length - 1} onClick={() => updateClans(moveComparisonClan(clans, tag, clans[index + 1]))}>→</button>
+                    <button aria-label={`Remove ${clan.name} from comparison`} disabled={busy} onClick={() => updateClans(clans.filter(value => value !== tag))}>Remove</button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </details>
+      )}
+
+      {visibleClans.length < clans.length && (
+        <p className="inline-reason">{clans.length - visibleClans.length} chosen clans are hidden by the league filter. Clear filters to show them.</p>
+      )}
+      {!allClans.length && <p className="inline-reason">No active {pool === 'main' ? 'Main' : 'Lazy'} hosting clans. Assign a CWL group in Clan settings.</p>}
+      {!!allClans.length && !available.length && <p className="inline-reason">No hosting clans match. Clear filters to see your choices.</p>}
+      {!!available.length && !visibleClans.length && <p className="inline-reason">Choose clans above to start comparing.</p>}
+
+      {!!visibleClans.length && (
+        <>
+          <div className="compare-navigation">
+            <label className="compare-desktop-jump">
+              Jump to clan
+              <select value="" onChange={event => moveTo(Number(event.target.value))}>
+                <option value="" disabled>Choose a clan…</option>
+                {visibleClans.map((tag, index) => (
+                  <option key={tag} value={index}>{available.find(clan => clan.tag === tag)?.name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="compare-mobile-focus">
+              <button aria-label="Previous clan" disabled={visibleClans.indexOf(selectedFocus) === 0} onClick={() => focusAt(visibleClans.indexOf(selectedFocus) - 1)}>←</button>
+              <label>
+                Clan {visibleClans.indexOf(selectedFocus) + 1} of {visibleClans.length}
+                <select value={selectedFocus} onChange={event => setFocusedClan(event.target.value)}>
+                  {visibleClans.map(tag => (
+                    <option key={tag} value={tag}>{available.find(clan => clan.tag === tag)?.name}</option>
+                  ))}
+                </select>
+              </label>
+              <button aria-label="Next clan" disabled={visibleClans.indexOf(selectedFocus) === visibleClans.length - 1} onClick={() => focusAt(visibleClans.indexOf(selectedFocus) + 1)}>→</button>
+            </div>
+            <small className="compare-desktop-hint">Scroll sideways within the comparison to view more clans.</small>
+          </div>
+          <div
+            className="compare-pan"
+            ref={scroller}
+            tabIndex={0}
+            role="region"
+            aria-label="Clan comparison"
+            style={{ gridTemplateColumns: `repeat(${visibleClans.length}, minmax(280px, 1fr))` }}
+          >
+            {visibleClans.map(clanTag => {
+              const clan = available.find(item => item.tag === clanTag);
+              if (!clan) return null;
+              const members = compareClanAccounts(roster.accounts, clanTag, sort)
+                .filter(account => matchesTownHall(account.town_hall, townHalls));
+              const summary = clanSummary(roster.accounts, clanTag);
+              const unknownWeights = summary.count - summary.knownWeights;
+              return (
+                <section
+                  className={`compare-side ${clanTag === selectedFocus ? 'mobile-current' : ''}`}
+                  key={clanTag}
+                  aria-label={`${clan.name} comparison`}
+                >
+                  <header className="compare-clan-summary">
+                    <div>
+                      <h3>{clan.name}</h3>
+                      <small>{clan.cwl_league || 'League unavailable'}{clan.cwl_league_stale && clan.cwl_league ? ' · last known' : ''} · {clan.tag}</small>
+                    </div>
+                    <div className="compare-clan-stats">
+                      <span>{summary.count}/{clan.effective_capacity} occupied</span>
+                      <span title={summary.totalWeight === null ? 'No weights known' : `${summary.totalWeight.toLocaleString()} exact total weight`}>Total weight {totalWeightText(summary.totalWeight)}</span>
+                      <span>{unknownWeights ? `${unknownWeights} unknown weight${unknownWeights === 1 ? '' : 's'}` : 'All weights known'}</span>
+                      <span>Avg TH {averageText(summary.averageTownHall)} · {summary.knownTownHalls}/{summary.count} known</span>
+                    </div>
+                  </header>
+                  <details className="compare-column-change">
+                    <summary>Change clan in this column</summary>
+                    <select
+                      aria-label={`Change ${clan.name} column to clan`}
+                      value={clanTag}
+                      disabled={busy}
+                      onChange={event => {
+                        const destination = event.target.value;
+                        updateClans(clans.map(tag => tag === clanTag ? destination : tag === destination ? clanTag : tag));
+                        setFocusedClan(destination);
+                      }}
+                    >
+                      {available.map(item => (
+                        <option value={item.tag} key={item.tag}>{item.name} · {item.cwl_league || 'League unavailable'} · {item.tag}</option>
+                      ))}
+                    </select>
+                  </details>
+                  <div className="compare-player-list">
+                    {members.length ? members.map(account => {
+                      const location = comparisonLocation(locations[account.tag], clanTag, now);
+                      return (
+                        <div key={account.tag} className={`compare-account compare-account-${location.state}`}>
+                          <div className="compare-player-info">
+                            <strong>{account.player_name}</strong>
+                            <small>{account.tag} · TH {account.town_hall ?? '—'} · {weightText(account.effective_weight)}</small>
+                            <span title={location.detail}>{location.label}</span>
+                          </div>
+                          <button type="button" className="compare-details" disabled={busy} onClick={() => onEdit(account.tag)} aria-label={`Details for ${account.player_name}`}>
+                            Details
+                          </button>
+                          <DiscordContact userId={account.user_id} compact />
+                        </div>
+                      );
+                    }) : <p>No accounts match in this clan.</p>}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </section>
+  );
 }

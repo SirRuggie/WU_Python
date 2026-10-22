@@ -73,6 +73,8 @@ function App() {
   const [view, setView] = useState<View>(entryTarget.view)
   const [staffSignupDirty, setStaffSignupDirty] = useState(false)
   const [staffSignupBusy, setStaffSignupBusy] = useState(false)
+  const [declarationDirty, setDeclarationDirty] = useState(false)
+  const [declarationBusy, setDeclarationBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const { drawerRef, triggerRef, mobile } = useMobileNavigation(menuOpen, () => setMenuOpen(false), Boolean(session))
@@ -310,6 +312,8 @@ function App() {
     return () => window.removeEventListener('beforeunload', protect)
   }, [view, signupDirty, pending])
   const canLeave = () => {
+    if (view === 'declaration' && declarationBusy) return false
+    if (view === 'declaration' && declarationDirty) return window.confirm('Discard unsaved account changes?')
     if (view === 'manage-signups' && staffSignupBusy) return false
     if (view === 'manage-signups' && staffSignupDirty) return window.confirm('Discard unfinished signup changes? Saved signups will stay unchanged.')
     if (view === 'signup' && (pending || signupBusy.current)) return false
@@ -599,7 +603,7 @@ function App() {
         </>}
         {view === 'assignments' && <MemberAssignments onSignup={() => { setSignupPanel('register'); changeView('signup') }} seasonId={seasonId} seasons={seasons} />}
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} onChange={e=>setSeasonId(e.target.value)}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId}/>}</>}
+        {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} disabled={declarationBusy} onChange={e=>{if (canLeave()) setSeasonId(e.target.value)}}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId} onDirty={setDeclarationDirty} onBusy={setDeclarationBusy}/>}</>}
         {view === 'publication' && session.can_edit && <PublicationWorkspace onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationDirty || window.confirm('Discard unsaved announcement changes?')) setSeasonId(id) }} />}
         {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}

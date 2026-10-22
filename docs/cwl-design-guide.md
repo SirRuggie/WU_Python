@@ -250,3 +250,42 @@ selection colors, Details open/close, unchanged Lazy-only assignment editor, and
 held-unassigned text spanning the desktop summary. Independent review caught the
 held-unassigned explanation and summary-grid issue; both were corrected and
 verified before release. No API, storage, permission or auto-placement changes.
+
+### Compare clans and declaration readiness — 2026-10-22
+
+Compare uses one filter toolbar and compact player rows with explicit Details and
+DM actions. Clan selection remains capped at ten; ordering and column replacement
+are secondary disclosures. Desktop retains side-by-side columns; mobile shows one
+selected clan with previous/next and a named selector. Main/Lazy selection and
+order are saved separately. Total weights include all assigned players even when
+a Town Hall filter hides rows; unknown weights remain explicit. Million totals
+use `m`, with the exact value available on the total. Location colors retain their
+own meaning: green in the selected clan, red elsewhere, gray unverified.
+
+Declaration readiness starts with source, search, attention filter and clan counts.
+Compact expandable clan groups show arrived totals and individual current-location
+states; ordinary actions are quiet text controls with 44px targets. Names are plain
+text. Published snapshots remain distinct and read-only, including the no-publication
+fallback. Invalid/missing/stale or in-flight checks cannot count as arrived. Ready
+requires at least 15 assigned accounts, every one freshly arrived, and no loading,
+error or outdated-publication state. This remains a location check, not a claim
+that all in-game declaration requirements have been checked.
+
+Read failures clear records and offer Retry; they do not continue an automatic
+failure loop. Open account dialogs pause polling and lock filters. Existing player
+editing, save revisions and source weights are reused; declaration navigation now
+protects dirty account edits and pending writes. Closing Details restores focus.
+No storage migration, permission grant, publication or notification changes.
+
+Validation: Sol implemented Compare and reviewed the readiness integration; Luna
+reviewed source/state boundaries and added readiness regressions. 242 frontend
+tests, 73 relevant declaration/publication/roster backend tests and production build
+passed. Isolated SQLite/sample-data browser checks covered desktop 1440px and
+mobile 390px/320px, long external-looking names rendered as text, 44px row controls,
+no horizontal document overflow, mobile clan switching, reorder persistence across
+Main/Lazy, search opening ready groups, a 20/20 ready clan and below-15 exception,
+invalid timestamp handling, 403 clearing and Retry recovery, read-only published
+fallback, dialog open/close/filter lock and focus return. Published-outdated and
+concurrent-write behavior are covered by regression tests; live Discord delivery
+and assistive technologies were not tested. No live rosters, weights or messages
+were changed during validation. Existing build size/import warnings remain.

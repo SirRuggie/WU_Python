@@ -2,10 +2,12 @@ import {useEffect,useRef,useState,type ReactNode} from 'react'
 import {api,ApiError} from './api'
 import type {RosterSnapshot} from './roster'
 import RosterPlayerDialog from './RosterPlayerDialog'
-export default function StaffPlayerButton({seasonId,tag,children,onChanged,disabled=false,onDirty,onBusy}:{seasonId:string;tag:string;children:ReactNode;onChanged?:()=>void|Promise<unknown>;disabled?:boolean;onDirty?:(dirty:boolean)=>void;onBusy?:(busy:boolean)=>void}){
+export default function StaffPlayerButton({seasonId,tag,children,onChanged,disabled=false,onDirty,onBusy,onOpenChange}:{seasonId:string;tag:string;children:ReactNode;onChanged?:()=>void|Promise<unknown>;disabled?:boolean;onDirty?:(dirty:boolean)=>void;onBusy?:(busy:boolean)=>void;onOpenChange?:(open:boolean)=>void}){
  const [snapshot,setSnapshot]=useState<RosterSnapshot|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('')
- useEffect(()=>{onBusy?.(busy);return()=>onBusy?.(false)},[busy,onBusy])
+ useEffect(()=>{if(!busy)return;onBusy?.(true);return()=>onBusy?.(false)},[busy,onBusy])
  const generation=useRef(0)
+ const opener=useRef<HTMLButtonElement>(null)
+ const wasOpen=useRef(false)
  useEffect(()=>{generation.current++;setSnapshot(null);setError('');setBusy(false);return()=>{generation.current++}},[seasonId,tag])
  const path=`/seasons/${encodeURIComponent(seasonId)}`
  async function open(){const id=++generation.current;setBusy(true);setError('');try{const result=await api<RosterSnapshot>(`${path}/roster`);if(id!==generation.current)return;if(!result.accounts.some(a=>a.tag===tag))throw new Error('This account is no longer signed up in this season.');setSnapshot(result)}catch(e){if(id===generation.current)setError(e instanceof Error?e.message:'Could not load account.')}finally{if(id===generation.current)setBusy(false)}}
@@ -22,5 +24,15 @@ export default function StaffPlayerButton({seasonId,tag,children,onChanged,disab
   finally{if(id===generation.current)setBusy(false)}
  }
  const account=snapshot?.accounts.find(a=>a.tag===tag)
- return <><button type="button" className="roster-player-name" disabled={disabled||busy} onClick={()=>void open()} title="Edit account">{children}</button>{error&&!account&&<small role="alert">{error}</small>}{account&&snapshot&&<RosterPlayerDialog onDirty={onDirty} account={account} clans={snapshot.clans} busy={busy} error={error} onClose={()=>{if(!busy)setSnapshot(null)}} onSave={body=>write(false,body)} onRemove={()=>write(true)}/>}</>
+ useEffect(()=>{if(!account)return;onOpenChange?.(true);return()=>onOpenChange?.(false)},[Boolean(account),onOpenChange])
+ useEffect(()=>{
+  if(account){wasOpen.current=true;return}
+  if(!wasOpen.current)return
+  wasOpen.current=false
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+   const button=opener.current
+   if(button?.isConnected&&!button.disabled&&!document.querySelector('dialog[open]'))button.focus({preventScroll:true})
+  }))
+ },[Boolean(account)])
+ return <><button ref={opener} type="button" className="roster-player-name" disabled={disabled||busy} onClick={()=>void open()} title="Edit account">{children}</button>{error&&!account&&<small role="alert">{error}</small>}{account&&snapshot&&<RosterPlayerDialog onDirty={onDirty} account={account} clans={snapshot.clans} busy={busy} error={error} onClose={()=>{if(!busy)setSnapshot(null)}} onSave={body=>write(false,body)} onRemove={()=>write(true)}/>}</>
 }
