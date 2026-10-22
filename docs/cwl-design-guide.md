@@ -258,8 +258,8 @@ DM actions. Clan selection remains capped at ten; ordering and column replacemen
 are secondary disclosures. Desktop retains side-by-side columns; mobile shows one
 selected clan with previous/next and a named selector. Main/Lazy selection and
 order are saved separately. Total weights include all assigned players even when
-a Town Hall filter hides rows; unknown weights remain explicit. Million totals
-use `m`, with the exact value available on the total. Location colors retain their
+a Town Hall filter hides rows; unknown weights remain explicit. Clan totals show the full calculated number with comma separators (for example,
+`1,542,000`), never `k` or `m`. Individual player weights retain their compact format. Location colors retain their
 own meaning: green in the selected clan, red elsewhere, gray unverified.
 
 Declaration readiness starts with source, search, attention filter and clan counts.

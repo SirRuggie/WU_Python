@@ -29,9 +29,7 @@ function averageText(value: number | null) {
 }
 
 function totalWeightText(value: number | null) {
-  if (value === null) return '—';
-  if (value < 1_000_000) return weightText(value);
-  return `${(value / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 3 })}m`;
+  return value === null ? '—' : value.toLocaleString('en-US');
 }
 
 export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: Props) {
