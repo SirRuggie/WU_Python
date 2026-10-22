@@ -472,3 +472,14 @@ return-selection controls and filter clearing. Tests exercise existing Mongo
 persistence semantics but are not a new disaster-recovery restore. No live Discord
 messages were sent; mock queue success does not prove live delivery. The delayed initial-load race was checked in the browser; publication refreshes
 retain unsaved drafts. Full assistive-technology operation is not certified.
+
+### 2026-10-22: Lighter green status highlights
+
+Brightened assigned/arrived/success green backgrounds and borders across roster,
+signup, comparison, readiness, member assignments and matching dashboard status
+views. Existing alpha values are unchanged (assigned roster rows remain 0.105);
+yellow warnings, gold selection and red errors retain their meanings.
+Validation: 252 frontend tests and production build passed; isolated sample roster
+visually checked at 390px and 1440px. Desktop had no horizontal overflow. This is
+a palette-only change; no authorization, persistence or notification behavior
+changed. Physical phone display differences were not tested.
