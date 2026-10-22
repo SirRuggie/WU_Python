@@ -57,6 +57,100 @@ class ExportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(archived[0]['season_status'], 'archived')
         self.assertEqual(await self.revision(), revision)
 
+    async def test_preview_is_staff_only_read_only_and_matches_csv_columns(self):
+        await self.setup_published()
+        revision = await self.revision()
+        url = f'/seasons/{self.sid}/export-preview?kind=accounts&basis=published'
+        self.assertEqual((await self.call('GET', url)).status, 401)
+        self.assertEqual((await self.call('GET', url, self.member)).status, 403)
+        response = await self.call('GET', url + '&unused=1', self.owner)
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertIn('no-store', response.headers['Cache-Control'])
+        preview = await response.json()
+        self.assertEqual((preview['kind'], preview['basis']), ('accounts', 'published'))
+        self.assertEqual(preview['summary']['published_available'], True)
+        self.assertEqual(preview['summary']['roster_basis'], 'published')
+        self.assertEqual(preview['counts']['rows'], len(preview['rows']))
+        self.assertTrue(preview['rows'])
+        csv_response = await self.call('GET', f'/seasons/{self.sid}/export.csv?kind=accounts&basis=published', self.owner)
+        reader = csv.reader(io.StringIO((await csv_response.read()).decode('utf-8-sig')))
+        self.assertEqual(next(reader), preview['columns'])
+        self.assertEqual(len(list(reader)), preview['counts']['rows'])
+        self.assertEqual(await self.revision(), revision)
+
+    async def test_published_preview_excludes_current_draft_bonus_selection_and_new_signups(self):
+        await self.setup_published()
+        await self.signup('main', '#G2Y')
+        self.assertEqual((await self.settings(0)).status, 200)
+        response = await self.select(1)
+        self.assertEqual(response.status, 200, await response.text())
+        current = await self.call('GET', f'/seasons/{self.sid}/export-preview?kind=accounts&basis=current', self.owner)
+        published = await self.call('GET', f'/seasons/{self.sid}/export-preview?kind=accounts&basis=published', self.owner)
+        self.assertEqual(current.status, 200, await current.text())
+        self.assertEqual(published.status, 200, await published.text())
+        current_rows = (await current.json())['rows']
+        published_data = await published.json()
+        published_rows = published_data['rows']
+        self.assertEqual(len(current_rows), len(published_rows) + 1)
+        self.assertNotIn('#G2Y', {row['tag'] for row in published_rows})
+        self.assertTrue(any(row['bonus_draft_selected'] for row in current_rows))
+        self.assertFalse(any(row['bonus_draft_selected'] for row in published_rows))
+        self.assertEqual(published_data['summary']['published_available'], True)
+
+    async def test_mismatched_saved_results_are_separated_from_current_and_published_rosters(self):
+        await self.setup_published()
+        response = await self.call(
+            'PATCH', f'/seasons/{self.sid}/participation/%23P2Y', self.owner,
+            json={'revision': 0, 'publication_version': 1, 'attacks': 2, 'stars': 5, 'notes': 'Old host result'},
+        )
+        self.assertEqual(response.status, 200, await response.text())
+        response = await self.call('POST', '/clans', self.owner, json={'tag': '#J2Y'})
+        self.assertEqual(response.status, 201)
+        response = await self.call(
+            'PATCH', f'/seasons/{self.sid}/roster/%23P2Y', self.owner,
+            json={'revision': await self.revision(), 'assigned_clan_tag': '#J2Y', 'kept': True},
+        )
+        self.assertEqual(response.status, 200, await response.text())
+        response = await self.call(
+            'POST', f'/seasons/{self.sid}/publication', self.owner,
+            json={'revision': await self.revision(), 'acknowledge_unassigned': True, 'joining_instructions': ''},
+        )
+        self.assertEqual(response.status, 201, await response.text())
+
+        for basis in ('current', 'published'):
+            response = await self.call(
+                'GET', f'/seasons/{self.sid}/export-preview?kind=accounts&basis={basis}', self.owner,
+            )
+            self.assertEqual(response.status, 200, await response.text())
+            row = next(row for row in (await response.json())['rows'] if row['tag'] == '#P2Y')
+            self.assertFalse(row['participation_matches_roster'])
+            self.assertIsNone(row['participation_attacks'])
+            self.assertEqual(row['participation_recorded_clan_tag'], '#C2Y')
+
+        published_participation = await self.call(
+            'GET', f'/seasons/{self.sid}/export-preview?kind=participation&basis=published', self.owner,
+        )
+        self.assertEqual(published_participation.status, 200, await published_participation.text())
+        published_row = (await published_participation.json())['rows'][0]
+        self.assertEqual(published_row['assigned_clan_tag'], '#J2Y')
+        self.assertFalse(published_row['matches_roster'])
+        self.assertIsNone(published_row['attacks'])
+        self.assertEqual(published_row['recorded_clan_tag'], '#C2Y')
+
+        history = await self.call(
+            'GET', f'/seasons/{self.sid}/export-preview?kind=participation-history', self.owner,
+        )
+        self.assertEqual(history.status, 200, await history.text())
+        historical_row = (await history.json())['rows'][0]
+        self.assertEqual(historical_row['attacks'], 2)
+        self.assertEqual(historical_row['assigned_clan_tag'], '#C2Y')
+
+    async def test_preview_missing_published_roster_and_invalid_kind(self):
+        base = f'/seasons/{self.sid}/export-preview'
+        self.assertEqual((await self.call('GET', base + '?kind=accounts&basis=published', self.owner)).status, 409)
+        self.assertEqual((await self.call('GET', base + '?kind=bad', self.owner)).status, 400)
+        self.assertEqual((await self.call('GET', base + '?kind=accounts&basis=bad', self.owner)).status, 400)
+
     async def test_bonus_history_retains_void_and_participation(self):
         await self.setup_published()
         response = await self.call('PATCH', f'/seasons/{self.sid}/participation/%23P2Y', self.owner,

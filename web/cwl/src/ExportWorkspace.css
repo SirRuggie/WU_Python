@@ -1,0 +1,214 @@
+.export-workspace {
+  min-width: 0;
+}
+.export-page-head {
+  margin-bottom: 14px;
+}
+.export-page-head p {
+  margin-bottom: 0;
+}
+.export-season-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 16px;
+  padding: 10px 0;
+  border-block: 1px solid #ffffff24;
+  font-size: 12px;
+  color: #bac2cc;
+}
+.export-season-status strong {
+  color: #f4f2ee;
+  font-size: 14px;
+}
+.export-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 280px));
+  gap: 10px 14px;
+  align-items: end;
+  padding: 14px 0 10px;
+}
+.export-controls label {
+  min-width: 0;
+}
+.export-controls p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #bcc3cb;
+  font-size: 13px;
+}
+.export-ready {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-block: 1px solid #ffffff24;
+}
+.export-ready > div {
+  min-width: 0;
+}
+.export-ready strong, .export-ready span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.export-ready strong {
+  font-size: 16px;
+}
+.export-ready span {
+  margin-top: 2px;
+  color: #bfc5cf;
+  font-size: 12px;
+}
+.export-ready button {
+  flex: 0 0 auto;
+}
+.export-safety-note, .export-basis-note {
+  margin: 8px 0;
+  color: #b6bdc7;
+  font-size: 12px;
+}
+.export-about {
+  margin: 0 0 16px;
+  border-bottom: 1px solid #ffffff20;
+}
+.export-about summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: #bdd4f3;
+  cursor: pointer;
+  font-size: 12px;
+}
+.export-about summary::before, .export-record-details summary::before {
+  content: "▸";
+  margin-right: 7px;
+}
+.export-about[open] summary::before, .export-record-details[open] summary::before {
+  content: "▾";
+}
+.export-about p {
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+.export-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #ffffff24;
+  padding-bottom: 8px;
+}
+.export-list-head strong {
+  font-size: 14px;
+}
+.export-list-head span {
+  color: #b7c0ca;
+  font-size: 12px;
+}
+.export-search {
+  display: block;
+  width: min(100%, 480px);
+  margin: 12px 0;
+}
+.export-record {
+  display: grid;
+  grid-template-columns: minmax(125px, 1.5fr) repeat(5, minmax(70px, 1fr));
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+  padding: 9px 2px;
+  border-bottom: 1px solid #ffffff1b;
+}
+.export-record-name, .export-record-field {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.export-record-name strong, .export-record-name small, .export-record-field small, .export-record-field span {
+  display: block;
+}
+.export-record-name strong {
+  font-size: 13px;
+}
+.export-record-name small {
+  font-size: 11px;
+}
+.export-record-field small {
+  font-size: 10px;
+  color: #b9c2cc;
+}
+.export-record-field span {
+  margin-top: 2px;
+  font-size: 12px;
+}
+.export-empty {
+  padding: 12px 0;
+  color: #b9c1cb;
+  font-size: 13px;
+}
+@media (max-width: 900px) {
+  .export-record {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .export-record-name {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 620px) {
+  .export-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .export-controls p {
+    grid-column: auto;
+  }
+  .export-ready {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .export-ready button {
+    width: 100%;
+    min-height: 44px;
+  }
+  .export-record {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+  }
+  .export-record-name {
+    grid-column: 1 / -1;
+  }
+  .export-record-field small {
+    font-size: 11px;
+  }
+  .export-record-field span {
+    font-size: 13px;
+  }
+}
+.export-mismatch-note {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid #bd8a81;
+  background: #bd8a8110;
+  color: #e3c2bb;
+  font-size: 12px;
+}
+.export-record-details {
+  grid-column: 1 / -1;
+  border-top: 1px solid #ffffff12;
+}
+.export-record-details summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: #bdd4f3;
+  cursor: pointer;
+  font-size: 12px;
+}
+.export-record-details p {
+  margin: 0 0 7px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.export-about summary:focus-visible, .export-record-details summary:focus-visible {
+  outline: 3px solid #e0b43c;
+  outline-offset: 2px;
+}

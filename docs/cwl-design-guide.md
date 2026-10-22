@@ -416,3 +416,33 @@ footer was non-sticky. Tab/Shift+Tab wrapped inside the dialog; Escape closed it
 and returned focus. Confirmation cancellation used a fixture-controlled boolean,
 not native popup automation; assistive-technology operation is not certified.
 No live roster/results edits or Discord notifications were used for validation.
+
+### Season exports and history — 2026-10-22
+
+Season exports provides a searchable preview for accounts, current participation,
+saved participation history and bonus-selection history. Preview and CSV download
+use the same read-only snapshot builder, so the displayed row count and CSV basis
+come from one consistent server-side read. Search filters the preview only; the
+download includes every saved row for the selected export. Names and notes remain
+literal spreadsheet-safe text, and Discord IDs retain their full values.
+
+Published-roster exports use the immutable published identities and weights. A
+result recorded for a different account assignment is not silently attached to a
+published or current roster row: it is identified as belonging to another
+assignment, while its original provenance remains in saved participation history.
+Archived working-placement exports intentionally use the latest saved working
+weights; those weights are not frozen by archiving. Published snapshots remain
+separate. No storage migration is required.
+
+Validation: the combined CWL backend gate passed 182 tests with one external test
+skipped, including the 95-test export/roster/participation/bonus/backup gate, 15
+dashboard-state tests, and 72 Lazy-bonus, announcement, bridge, signup-change and
+clan-permission tests. The frontend suite passed 249 tests and the production
+build passed. The seasonal journey covered signup, pool consent, withdrawal,
+autoplacement, hiding member placement before publication, publication, results,
+Main bonus, archive, exports and storage reopen; Lazy rules were checked in
+independent suites. Mongo backup behavior was exercised with simulated tests, not a
+live production restore. Browser checks covered desktop 1440px, mobile 390px and
+320px, archived-season notes, search, safe literal names, successful download,
+503 recovery and preview clearing/retry. No live Discord or push delivery was
+tested, and these checks do not prove production authentication or a live write.

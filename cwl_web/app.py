@@ -28,7 +28,7 @@ from .store import Store
 from .canonical_host import canonical_host
 from .placement_status import explain as explain_placement
 from .clan_metadata import enrich as enrich_clan_metadata
-from .exports import export_csv
+from .exports import export_csv, export_preview
 from .announcements import routes as announcement_routes
 from .manage_bridge import routes as manage_bridge_routes
 from .participation import routes as participation_routes
@@ -1831,6 +1831,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         web.get(API + "/seasons/{season_id}/arrival-check", arrival_check),
         web.get(API + "/seasons/{season_id}/publication", publication_preview),
         web.get(API + "/seasons/{season_id}/export.csv", export_csv),
+        web.get(API + "/seasons/{season_id}/export-preview", export_preview),
         web.post(API + "/seasons/{season_id}/publication", publish_roster),
         web.post(API + "/seasons/{season_id}/publication/withdraw", withdraw_publication),
         web.get(API + "/seasons/{season_id}/my-assignments", my_assignments),

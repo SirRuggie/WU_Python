@@ -3,6 +3,7 @@ import csv
 import io
 import unittest
 import test_cwl_web_roster as fixture
+from cwl_web.store import Store
 
 
 class SeasonTrial(unittest.IsolatedAsyncioTestCase):
@@ -60,6 +61,18 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
             rows = list(csv.DictReader(io.StringIO((await response.read()).decode('utf-8-sig'))))
             self.assertTrue(rows)
             self.assertEqual(rows[0]['season_status'], 'archived')
+            preview = await request('GET', '/export-preview?kind=' + kind)
+            self.assertEqual(preview['summary']['season_status'], 'archived')
+            self.assertEqual(preview['counts']['rows'], len(rows))
+        await request('GET', '/export-preview?kind=bonus-history', who=self.member, status=403)
+        # Reopening storage must retain the joined seasonal artifacts, not merely
+        # the final CSV or browser state. Mongo recovery has its own snapshot suite.
+        reopened = Store(self.app['store'].path)
+        self.assertEqual(reopened.one('SELECT status FROM seasons WHERE id=?', (self.sid,))['status'], 'archived')
+        self.assertEqual(len(reopened.rows('SELECT tag FROM signups WHERE season_id=?', (self.sid,))), 2)
+        self.assertEqual(len(reopened.rows('SELECT tag FROM publication_accounts WHERE publication_id IN (SELECT id FROM roster_publications WHERE season_id=?)', (self.sid,))), 2)
+        self.assertEqual(reopened.one('SELECT attacks,stars FROM participation_records WHERE season_id=? AND tag=?', (self.sid, '#P2Y')), {'attacks': 7, 'stars': 18})
+        self.assertEqual(len(reopened.rows('SELECT tag FROM bonus_confirmations WHERE season_id=? AND voided_at IS NULL', (self.sid,))), 1)
         await request('PATCH', '/roster/%23P2Y', {'revision': await self.revision(), 'assigned_clan_tag': None}, status=423)
         await request('POST', '/publication', {'revision': await self.revision(), 'acknowledge_unassigned': True, 'joining_instructions': ''}, status=423)
         await request('POST', '/signups', {'pool': 'main', 'accounts': [{'tag': '#G2Y', 'prefer_crystal_1_or_lower': False}]}, self.member, 423)

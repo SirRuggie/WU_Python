@@ -32,7 +32,7 @@ const sections: Section[] = [
     { view: 'publication', permissions: ['cwl_publish', 'cwl_send'], label: 'Publish roster', icon: 'publish' },
     { view: 'participation', permissions: ['cwl_results'], label: 'Results & participation', icon: 'results' },
     { view: 'bonuses', permissions: ['cwl_bonuses', 'cwl_send'], label: 'Bonus medals', icon: 'medal' },
-    { view: 'exports', permissions: ['cwl_results'], label: 'Export season', icon: 'download' },
+    { view: 'exports', permissions: ['cwl_results'], label: 'Exports & history', icon: 'download' },
     { view: 'staff', permissions: ['cwl_settings'], label: 'CWL settings', icon: 'settings' },
   ] },
   { id: 'clans', label: 'Clan management', icon: 'shield', items: [
