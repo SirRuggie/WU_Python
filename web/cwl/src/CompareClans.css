@@ -53,7 +53,7 @@
 .compare-player-list > p { padding: 10px; }
 .compare-workspace .compare-account { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px; border: 0; border-bottom: 1px solid #38383f; border-radius: 0; background: transparent; }
 .compare-workspace .compare-account:last-child { border-bottom: 0; }
-.compare-workspace .compare-account-arrived { background: #2b4b38; box-shadow: inset 3px 0 #b0edbb; }
+.compare-workspace .compare-account-arrived { background: #2b4b38; box-shadow: inset 3px 0 #90ee90; }
 .compare-workspace .compare-account-missing { background: #3c2425; box-shadow: inset 3px 0 #d58d90; }
 .compare-player-info { min-width: 0; overflow-wrap: anywhere; }
 .compare-player-info strong { display: block; font-size: 13px; }

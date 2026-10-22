@@ -15,14 +15,14 @@
 .arrival-clan-count, .arrival-clan-state { font-size: .82rem; font-weight: 400; }
 .arrival-clan-state { color: #bdc0c9; }
 .arrival-clan-state.is-ready { color: #a5e4b6; }
-.arrival-ready { border-color: #80b68c; }
+.arrival-ready { border-color: #90ee90; }
 .arrival-minimum { padding: 8px 12px; margin: 0; font-size: .85rem; }
 .arrival-account { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid #46464d; border-left: 3px solid #71717d; background: #232327; }
 .arrival-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .arrival-identity > div { min-width: 0; }
 .arrival-account strong, .arrival-account small { display: block; overflow-wrap: anywhere; }
 .arrival-account small { font-size: .78rem; line-height: 1.5; }
-.arrival-arrived { background: #284634; border-left-color: #b0edbb; }
+.arrival-arrived { background: #284634; border-left-color: #90ee90; }
 .arrival-missing { background: #382222; border-left-color: #ce8787; }
 .arrival-missing small { color: #e5c1c1; }
 .arrival-location > strong { font-size: .85rem; }

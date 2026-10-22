@@ -109,7 +109,7 @@
 .signup-compact-row:last-of-type { border-bottom: 0; }
 .signup-compact-row.is-assigned {
   background: #2b4b38;
-  box-shadow: inset 3px 0 #b0edbb;
+  box-shadow: inset 3px 0 #90ee90;
 }
 .signup-compact-row.is-selected {
   background: #302916;
