@@ -11,8 +11,9 @@ export function memberPath(view: string, _season = ''): string {
   return memberPaths[view] || '/'
 }
 export function loginPath(search: string, retry: boolean, pathname = '/'): string {
+  const weightPage = ['/clan-weights','/weight','/weights','/weight-trial'].includes(pathname) || new URLSearchParams(search).get('view') === 'weight-trial'
   const target = memberTarget(search, pathname)
-  const params = new URLSearchParams({view: target.view})
+  const params = new URLSearchParams({view: weightPage ? 'weight-trial' : target.view})
   if (target.season) params.set('season', target.season)
   if (retry) params.set('retry','1')
   return `/api/cwl/auth/discord?${params}`

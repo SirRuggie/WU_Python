@@ -862,3 +862,15 @@ checks used isolated data at 320/390/1280px, with long names, missing Discord na
 multi-selection, pool switch save, explicit single removal, and inline controls.
 No horizontal overflow; Manage targets measured 44px. No live messages or production
 player changes were used. Existing build-size and aiohttp warnings remain.
+
+## October 22: Clan Weights URL
+
+Clan Weights now generates /clan-weights. Legacy ?view=weight-trial and the short
+/weight, /weights, /weight-trial entry paths still resolve to that canonical path.
+The explicit OAuth destination allowlist supports returning to Clan Weights;
+normal staff authorization remains required. Existing API paths are retained.
+Corrected outdated page copy to reflect saved clan weights' source priority.
+Validation: 47 backend tests, 225 frontend tests and production build passed;
+isolated browser verified legacy and short aliases normalize to /clan-weights.
+Member links remain /signup, /assignments, /tasks, /wars, /events and /search.
+Other staff tools retain their existing query-based URLs; no general route rewrite.

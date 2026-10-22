@@ -122,3 +122,11 @@ it('uses clean member paths and only retains seasons on CWL staff pages', () => 
  expect(dashboardPath({view:'clan-management',season:'1'})).toBe('/?view=clan-management')
  expect(dashboardPath({view:'roster',season:'2'})).toBe('/?view=roster&season=2')
 })
+
+it('uses a clean clan weight path and preserves old entry links',()=>{
+ expect(dashboardPath({view:'weight-trial',season:'1'})).toBe('/clan-weights')
+ for(const path of ['/clan-weights','/weight','/weights','/weight-trial']) {
+  expect(dashboardTarget('',path).view).toBe('weight-trial')
+ }
+ expect(dashboardTarget('?view=weight-trial&season=1').view).toBe('weight-trial')
+})

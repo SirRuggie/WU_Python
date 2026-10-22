@@ -28,3 +28,9 @@ it('preserves the clean signup destination through sign-in', () => {
  expect(memberTarget('', '/signup')).toEqual({view:'signup', season:''})
  expect(loginPath('', false, '/signup')).toBe('/api/cwl/auth/discord?view=signup')
 })
+
+it('returns staff to Clan Weights after login without accepting arbitrary redirects',()=>{
+ expect(loginPath('',false,'/clan-weights')).toBe('/api/cwl/auth/discord?view=weight-trial')
+ expect(loginPath('?view=weight-trial',false)).toBe('/api/cwl/auth/discord?view=weight-trial')
+ expect(loginPath('?view=https://evil.test',false)).toBe('/api/cwl/auth/discord?view=home')
+})

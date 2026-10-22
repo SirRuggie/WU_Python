@@ -233,7 +233,7 @@ export default function WeightTrial({
         </div>
       </div>
       <p className="weight-trial-note">
-        Official CWL weight source. Staff overrides take priority; FWA Stats is used only when no weight has been saved here.
+        Official CWL weight source. Saved clan weights take priority. Manual weights or FWA Stats are used only for accounts without a saved clan weight.
       </p>
       {directoryError && (
         <p role="alert" className="notice error">
