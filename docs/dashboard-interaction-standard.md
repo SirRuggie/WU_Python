@@ -797,3 +797,17 @@ browser checks exercised save/reopen, reverse conversion, keyboard clearing,
 source restoration, and missing-weight queue save. Dialog layouts checked at
 320px, 390px and 1280px; labels, decimal keyboard hint, and no horizontal overflow
 verified. No production player values were edited during validation.
+
+## October 22: Lazy hosting-clan selectors
+
+Lazy account placement, bulk assignment, and the shared account editor now offer
+only active clans classified as Lazy CWL hosts. Main selectors retain their
+existing behavior. An existing out-of-group placement is preserved and represented
+by a disabled current-placement option; changing a weight cannot silently move it.
+The placement explanation no longer advertises cross-group choices for Lazy.
+
+Validated 221 frontend tests and production build. Added rendered-selector tests
+for Main/unclassified/archived exclusions, preserved existing placements, unchanged
+Main behavior, and full-clan disabling. Isolated browser checked the actual manual
+placement options at desktop and 390px: only the sample Lazy host was selectable.
+This changes destination presentation, not dashboard permissions or stored rosters.

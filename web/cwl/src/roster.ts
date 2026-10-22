@@ -11,7 +11,7 @@ export type RosterUndo = { id: number; label: string; revision: number }
 export type RosterSnapshot = { revision: number; accounts: RosterAccount[]; clans: RosterClan[]; undo: RosterUndo | null }
 export type AutoPreview = { revision: number; placements: { tag: string; assigned_clan_tag: string }[]; unassigned: { tag: string; reason: string }[] }
 export type RosterSort = 'name' | 'town_hall_asc' | 'town_hall_desc' | 'weight_asc' | 'weight_desc'
-export function assignmentOptions(clans: RosterClan[]): RosterClan[] { return clans.filter(clan => !clan.archived) }
+export function assignmentOptions(clans: RosterClan[], pool?: Pool): RosterClan[] { return clans.filter(clan => !clan.archived && (pool !== 'lazy' || clan.pool === 'lazy')) }
 export function filterRosterAccounts(accounts: RosterAccount[], search: string, pool: Pool | 'all', assignment: 'all' | 'assigned' | 'unassigned') {
   const term = search.trim().toLowerCase()
   return accounts.filter(account => (pool === 'all' || account.pool === pool)
