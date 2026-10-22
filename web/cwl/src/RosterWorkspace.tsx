@@ -1,3 +1,4 @@
+import DashboardIcon from "./DashboardIcon";
 import SignupActivity from "./SignupActivity";
 import useWorkspacePreference from "./useWorkspacePreference";
 import useUnsavedWork from "./useUnsavedWork";
@@ -1087,15 +1088,22 @@ export default function RosterWorkspace({
                         </div>
                       </div>
                       <div className="roster-row-summary">
-                        <span>
+                        <span className="roster-row-weight" aria-label={`Weight: ${weightText(account.effective_weight)}`}>
                           <small>Weight</small>
                           <strong>
                             {weightText(account.effective_weight)}
                           </strong>
                         </span>
-                        <span>
+                        <span className="roster-row-host">
                           <small>Hosting clan</small>
-                          <strong>{clanName(account.assigned_clan_tag)}</strong>
+                          <strong>
+                            {account.kept && (
+                              <span className="roster-placement-lock" role="img" aria-label="Locked placement: auto-place will not move this account" title="Locked placement: auto-place will not move this account">
+                                <DashboardIcon name="locked" />
+                              </span>
+                            )}
+                            {clanName(account.assigned_clan_tag)}
+                          </strong>
                         </span>
                         <span className="roster-current-clan">
                           <small>
@@ -1116,15 +1124,11 @@ export default function RosterWorkspace({
                             <small className="roster-outside-label">Outside family / hosting clans</small>
                           )}
                         </span>
-                        <span>
-                          {account.kept
-                            ? "Kept"
-                            : account.assigned_clan_tag
-                              ? "Assigned"
-                              : account.auto_placement_reason === "ready"
-                                ? "Ready"
-                                : account.auto_placement_note || "Not assigned"}
-                        </span>
+                        {!account.assigned_clan_tag && (account.kept || account.auto_placement_reason !== "ready") && (
+                          <span className="roster-row-status">
+                            {account.kept ? "Held unassigned · unlock in Details to auto-place" : account.auto_placement_note || "Not assigned"}
+                          </span>
+                        )}
                       </div>
                       <div className="roster-placement-help">
                         <button
@@ -1136,8 +1140,8 @@ export default function RosterWorkspace({
                           }}
                         >
                           {account.assigned_clan_tag
-                            ? "Move"
-                            : "Assign"}
+                            ? "Move →"
+                            : "Assign →"}
                         </button>
                         <button
                           type="button"

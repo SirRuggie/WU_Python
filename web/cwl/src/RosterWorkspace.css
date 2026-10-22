@@ -141,7 +141,7 @@
 .roster-account-select input { width: 20px; height: 20px; }
 .roster-workspace .roster-row-summary {
   display: grid;
-  grid-template-columns: 78px minmax(100px, 1.1fr) minmax(100px, 1fr) minmax(90px, 1fr);
+  grid-template-columns: 78px minmax(100px, 1.1fr) minmax(100px, 1fr);
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -151,14 +151,14 @@
 .roster-row-summary strong { display: block; overflow-wrap: anywhere; }
 .roster-row-summary small { color: #b3bdc8; font-size: 10px; }
 .roster-row-summary strong { margin-top: 2px; font-size: 12px; line-height: 1.3; }
-.roster-workspace .roster-row-summary > span:last-child {
-  grid-column: auto;
+.roster-workspace .roster-row-status {
+  grid-column: 1 / -1;
   color: #c6deff;
   font-size: 12px;
   font-weight: 700;
 }
-.roster-workspace .roster-account-assigned .roster-row-summary > span:last-child { color: #a5e5bf; }
-.roster-workspace .roster-account-selected .roster-row-summary > span:last-child { color: #f5d785; }
+.roster-workspace .roster-account-assigned .roster-row-status { color: #a5e5bf; }
+.roster-workspace .roster-account-selected .roster-row-status { color: #f5d785; }
 .roster-placement-help {
   display: flex;
   justify-content: flex-end;
@@ -171,8 +171,9 @@
   min-width: 44px;
   min-height: 44px;
   padding: 7px 10px;
-  border-color: #484851;
-  background: #26262c;
+  border: 0;
+  background: transparent;
+  color: #d2e2fa;
   font-size: 12px;
 }
 .roster-manual-place {
@@ -213,16 +214,23 @@
   .roster-workspace .roster-placement-help { grid-column: 2; grid-row: 1; }
 }
 @media (max-width: 760px) {
-  .roster-workspace .roster-account { grid-template-columns: minmax(0, 1fr); gap: 7px; }
-  .roster-workspace .roster-placement-help { grid-column: 1; grid-row: auto; justify-content: flex-start; padding-left: 52px; }
-  .roster-workspace .roster-row-summary {
-    grid-column: 1;
-    grid-template-columns: minmax(65px, .5fr) minmax(0, 1fr);
-    gap: 7px 10px;
-    padding-left: 52px;
-  }
-  .roster-current-clan,
-  .roster-workspace .roster-row-summary > span:last-child { grid-column: 1 / -1; }
+  .roster-workspace .roster-account { grid-template-columns: minmax(0, 1fr) 78px; gap: 0 8px; padding-block: 8px; }
+  .roster-workspace .roster-account-head { grid-column: 1; grid-row: 1; }
+  .roster-workspace .roster-row-summary,
+  .roster-workspace .roster-placement-help { display: contents; }
+  .roster-workspace .roster-row-weight { grid-column: 2; grid-row: 1; text-align: right; }
+  .roster-row-weight > small,
+  .roster-row-host > small { display: none; }
+  .roster-row-weight > strong { font-size: 14px; }
+  .roster-workspace .roster-row-host { grid-column: 1; grid-row: 2; padding-left: 52px; align-self: center; min-width: 0; }
+  .roster-workspace .roster-current-clan { grid-column: 1; grid-row: 3; padding-left: 52px; align-self: center; min-width: 0; }
+  .roster-current-clan > small:first-child,
+  .roster-current-clan > strong { display: inline; font-size: 11px; font-weight: 400; }
+  .roster-current-clan > small:first-child::after { content: ": "; }
+  .roster-workspace .roster-row-status { grid-column: 1 / -1; padding-left: 52px; margin-top: 3px; }
+  .roster-placement-help > button:first-child { grid-column: 2; grid-row: 2; }
+  .roster-placement-help > button:last-child { grid-column: 2; grid-row: 3; }
+  .roster-placement-help > button { justify-self: end; padding: 6px; }
   .roster-workspace .roster-quick-search { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .roster-quick-search > label:first-child { grid-column: 1 / -1; }
 }
@@ -263,3 +271,9 @@
 @media (max-width: 600px) {
   .roster-assign-summary { gap: 4px 12px; }
 }
+
+.roster-row-host > strong { display: flex; align-items: center; gap: 5px; }
+.roster-placement-lock { display: inline-flex; flex: 0 0 auto; color: #c5d7cc; }
+.roster-placement-lock .dashboard-icon { width: 14px; height: 14px; }
+.roster-placement-help button:hover:not(:disabled) { background: #ffffff0d; text-decoration: underline; }
+.roster-placement-help button:focus-visible { outline: 2px solid #f0c84b; outline-offset: -2px; }

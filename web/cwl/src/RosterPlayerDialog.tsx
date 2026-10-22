@@ -128,8 +128,8 @@ export default function RosterPlayerDialog({
               <ClanDestinationOptions clans={clans} pool={account.pool} current={account.assigned_clan_tag} />
             </select>
           </label>
-          <label className="check-label"><input type="checkbox" checked={kept} onChange={event => setKept(event.target.checked)} />Keep this placement</label>
-          <small>Auto-place will leave this account unchanged.</small>
+          <label className="check-label"><input type="checkbox" checked={kept} onChange={event => setKept(event.target.checked)} />Lock placement</label>
+          <small>Auto-place won’t move this account.</small>
           {(localError || error) && <p role="alert">{localError || error}</p>}
           <button className="primary" type="submit">{busy ? 'Saving…' : 'Save changes'}</button>
         </fieldset>

@@ -232,3 +232,21 @@ archived host, directory outage, no clan, stale and unavailable locations.
 Independent review found no blocker. Isolated 390px browser verified yellow
 assigned-outside rows, green family rows, visible explanation and no overflow;
 desktop Compare had no outside-row classes. Existing build warnings remain.
+
+### Compact mobile assignment rows — 2026-10-22
+
+Place weight beside player identity on mobile, hosting clan beside the quiet
+Assign/Move action, and current clan beside Details. Replace the standalone Kept
+line with a non-interactive lock icon next to the destination, with an accessible
+explanation. Details calls the existing control Lock placement and explains that
+auto-place will not move it. Held-unassigned entries retain an explicit explanation.
+Move/Details remain native buttons with visible keyboard focus and 44px targets,
+but no filled boxes. Green/yellow/gold row meanings are unchanged.
+
+Validation: 235 frontend tests and build passed; isolated browser checks at 320px,
+390px and 1440px showed no horizontal overflow. Standard sample mobile rows were
+151px tall (long names 162px), versus about 200px previously. Verified 44px actions,
+selection colors, Details open/close, unchanged Lazy-only assignment editor, and
+held-unassigned text spanning the desktop summary. Independent review caught the
+held-unassigned explanation and summary-grid issue; both were corrected and
+verified before release. No API, storage, permission or auto-placement changes.
