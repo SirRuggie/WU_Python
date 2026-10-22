@@ -99,8 +99,8 @@
 }
 .roster-workspace .roster-account:last-child { border-bottom: 0; }
 .roster-workspace .roster-account-assigned {
-  background: rgba(144, 238, 144, 0.30);
-  box-shadow: inset 2px 0 #90ee90;
+  background: #2b4b38;
+  box-shadow: inset 3px 0 #90ee90;
 }
 .roster-workspace .roster-account-outside {
   background: rgba(232, 181, 70, 0.10);
