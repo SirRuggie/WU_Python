@@ -6,7 +6,7 @@ import ClanDestinationOptions from './ClanDestinationOptions'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { RosterAccount, RosterClan } from './roster'
-import DiscordContact from './DiscordContact'
+import RosterDiscordIdentity from './RosterDiscordIdentity'
 import './RosterPlayerDialog.css'
 
 type Props = {
@@ -91,8 +91,7 @@ export default function RosterPlayerDialog({
         <button type="button" disabled={busy} onClick={close}>Close ×</button>
       </header>
       <small>{account.tag} · TH {account.town_hall ?? '—'} · {account.pool === 'main' ? 'Main' : 'Lazy'} CWL</small>
-      <DiscordContact userId={account.user_id} />
-      <small>{account.user_id ? `Discord ID: ${account.user_id}` : 'No Discord account'}</small>
+      <RosterDiscordIdentity userId={account.user_id} />
       <dl className="roster-player-context">
         <div>
           <dt>Current clan</dt>

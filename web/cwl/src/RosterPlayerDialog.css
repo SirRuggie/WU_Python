@@ -1,41 +1,64 @@
-.roster-player-dialog{box-sizing:border-box;width:min(480px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:20px;border:1px solid #70603b;border-radius:14px;background:#171719;color:#f5f4f0}.roster-player-dialog::backdrop{background:#000a}.roster-player-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}.roster-player-dialog h2{overflow-wrap:anywhere;margin:0}.roster-player-dialog>small{display:block;margin-top:8px}.roster-player-dialog fieldset{border:0;padding:0;margin:18px 0}.roster-player-dialog label{margin-top:14px}.roster-player-dialog fieldset>button{margin-top:18px}.roster-player-remove{border-top:1px solid #444;padding-top:16px}.roster-player-remove small{display:block;margin-top:8px}.compare-workspace button.compare-player:hover{background:#ffffff0a}.compare-workspace button.compare-player:focus-visible{outline:2px solid #f4cd64;outline-offset:-2px}
+.roster-player-dialog {
+  box-sizing: border-box;
+  width: min(480px, calc(100vw - 16px));
+  max-width: calc(100% - 16px);
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #65646a;
+  border-radius: 12px;
+  background: #19191d;
+  color: #f5f4f0;
+}
+.roster-player-dialog::backdrop { background: #000a; }
+.roster-player-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.roster-player-dialog h2 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
+.roster-player-dialog header button { min-width: 44px; min-height: 44px; }
+.roster-player-dialog > small { display: block; margin-top: 5px; color: #b9bcc5; }
+.roster-player-dialog .discord-contact { min-height: 44px; margin: 6px 0 0; }
+.roster-player-dialog fieldset { margin: 12px 0; padding: 0; border: 0; }
+.roster-player-dialog label { margin-top: 11px; }
+.roster-player-dialog select,
+.roster-player-dialog input:not([type="checkbox"]) { min-height: 44px; }
+.roster-player-dialog fieldset > button { min-height: 44px; margin-top: 14px; }
+.roster-player-dialog fieldset > small { display: block; margin-top: 5px; color: #b9bcc5; }
+.roster-player-remove { margin-top: 12px; padding-top: 12px; border-top: 1px solid #3d3d43; }
+.roster-player-remove button { min-height: 44px; }
+.roster-player-remove small { display: block; margin-top: 4px; color: #b9bcc5; }
 
-.roster-player-name{background:transparent;border:0;padding:0;justify-content:flex-start;text-align:left;font:inherit}.compare-workspace .compare-account button.compare-player{cursor:pointer}
-.roster-player-dialog fieldset > small { display: block; margin-top: 8px; }
-
+/* Current context is a quick read, with provenance behind disclosure. */
 .roster-player-context {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin: 14px 0 0;
+  gap: 10px;
+  margin: 9px 0 0;
 }
 .roster-player-context > div {
   min-width: 0;
-  padding: 10px;
-  border: 1px solid #36363c;
-  border-radius: 9px;
-  background: #202024;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid #3b3b41;
 }
-.roster-player-context dt { color: #bfc2cc; font-size: 11px; }
-.roster-player-context dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 700; }
-.roster-player-context dd small { display: block; margin-top: 4px; line-height: 1.35; font-weight: 400; }
-@media (max-width: 440px) {
-  .roster-player-context { grid-template-columns: 1fr; }
-}
-
-.roster-player-source {
-  margin: 8px 0 0;
-  border: 1px solid #36363c;
-  border-radius: 9px;
-  padding: 0 10px;
-}
+.roster-player-context dt { color: #aeb5c2; font-size: 11px; }
+.roster-player-context dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 650; }
+.roster-player-context dd small { display: block; margin-top: 3px; line-height: 1.3; font-weight: 400; }
+.roster-player-source { margin-top: 6px; border-bottom: 1px solid #3b3b41; }
 .roster-player-source > summary {
   display: flex;
   align-items: center;
   min-height: 44px;
-  color: #b9d5ff;
+  color: #bdd4f3;
   font-size: 13px;
-  font-weight: 700;
   cursor: pointer;
 }
-.roster-player-source .roster-player-context { margin: 0 0 10px; }
+.roster-player-source .roster-player-context { margin: 0 0 8px; }
+.roster-player-source .roster-player-context > div { padding: 4px 0 7px; }
+
+.roster-player-name { background: transparent; border: 0; padding: 0; justify-content: flex-start; text-align: left; font: inherit; }
+
+@media (max-width: 440px) {
+  .roster-player-dialog { padding: 13px; }
+  .roster-player-dialog h2 { font-size: 18px; }
+  .roster-player-dialog input:not([type="checkbox"]),
+  .roster-player-dialog select { font-size: 16px; }
+  .roster-player-source .roster-player-context { grid-template-columns: 1fr; }
+}

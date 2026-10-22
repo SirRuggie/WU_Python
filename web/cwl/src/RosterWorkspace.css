@@ -99,17 +99,17 @@
 }
 .roster-workspace .roster-account:last-child { border-bottom: 0; }
 .roster-workspace .roster-account-assigned {
-  background: #193329;
-  box-shadow: inset 3px 0 #7bc6a1;
+  background: rgba(92, 169, 117, 0.105);
+  box-shadow: inset 2px 0 #78b88d;
 }
 .roster-workspace .roster-account-outside {
-  background: #3b3218;
-  box-shadow: inset 3px 0 #efc64e;
+  background: rgba(232, 181, 70, 0.10);
+  box-shadow: inset 2px 0 #d9ae4d;
 }
 .roster-workspace .roster-outside-label { color: #f5d785; }
 .roster-workspace .roster-account-selected {
-  background: #302916;
-  box-shadow: inset 3px 0 #edc64d;
+  background: rgba(237, 198, 77, 0.13);
+  box-shadow: inset 2px 0 #edc64d;
 }
 .roster-workspace .roster-account-head {
   display: flex;
@@ -149,6 +149,7 @@
 }
 .roster-row-summary small,
 .roster-row-summary strong { display: block; overflow-wrap: anywhere; }
+.roster-row-clans { display: contents; }
 .roster-row-summary small { color: #b3bdc8; font-size: 10px; }
 .roster-row-summary strong { margin-top: 2px; font-size: 12px; line-height: 1.3; }
 .roster-workspace .roster-row-status {
@@ -214,23 +215,47 @@
   .roster-workspace .roster-placement-help { grid-column: 2; grid-row: 1; }
 }
 @media (max-width: 760px) {
-  .roster-workspace .roster-account { grid-template-columns: minmax(0, 1fr) 78px; gap: 0 8px; padding-block: 8px; }
+  .roster-workspace .roster-account {
+    grid-template-columns: minmax(0, 1fr) 126px;
+    gap: 0 6px;
+    padding-block: 6px;
+  }
   .roster-workspace .roster-account-head { grid-column: 1; grid-row: 1; }
-  .roster-workspace .roster-row-summary,
-  .roster-workspace .roster-placement-help { display: contents; }
+  .roster-workspace .roster-row-summary { display: contents; }
   .roster-workspace .roster-row-weight { grid-column: 2; grid-row: 1; text-align: right; }
-  .roster-row-weight > small,
-  .roster-row-host > small { display: none; }
+  .roster-row-weight > small, .roster-row-host > small { display: none; }
   .roster-row-weight > strong { font-size: 14px; }
-  .roster-workspace .roster-row-host { grid-column: 1; grid-row: 2; padding-left: 52px; align-self: center; min-width: 0; }
-  .roster-workspace .roster-current-clan { grid-column: 1; grid-row: 3; padding-left: 52px; align-self: center; min-width: 0; }
+  .roster-workspace .roster-row-clans {
+    display: block;
+    grid-column: 1;
+    grid-row: 2;
+    align-self: center;
+    min-width: 0;
+    padding-left: 52px;
+    line-height: 1.2;
+  }
+  .roster-workspace .roster-row-host,
+  .roster-workspace .roster-current-clan { display: block; min-width: 0; padding: 0; }
+  .roster-row-host > strong { display: flex; align-items: center; min-width: 0; }
   .roster-current-clan > small:first-child,
   .roster-current-clan > strong { display: inline; font-size: 11px; font-weight: 400; }
   .roster-current-clan > small:first-child::after { content: ": "; }
-  .roster-workspace .roster-row-status { grid-column: 1 / -1; padding-left: 52px; margin-top: 3px; }
-  .roster-placement-help > button:first-child { grid-column: 2; grid-row: 2; }
-  .roster-placement-help > button:last-child { grid-column: 2; grid-row: 3; }
-  .roster-placement-help > button { justify-self: end; padding: 6px; }
+  .roster-workspace .roster-row-status {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    padding-left: 52px;
+    margin-top: 2px;
+    line-height: 1.25;
+  }
+  .roster-workspace .roster-placement-help {
+    display: flex;
+    grid-column: 2;
+    grid-row: 2;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+  }
+  .roster-placement-help > button { min-width: 44px; min-height: 44px; padding: 5px; }
   .roster-workspace .roster-quick-search { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .roster-quick-search > label:first-child { grid-column: 1 / -1; }
 }
@@ -238,7 +263,7 @@
   .roster-workspace .roster-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .roster-workspace .roster-workflow-nav button { flex: 0 0 auto; }
   .roster-workspace .roster-toolbar > span { width: 100%; flex-basis: 100%; }
-  .roster-workspace .roster-account { padding: 9px 10px; }
+  .roster-workspace .roster-account { padding: 5px 9px; }
   .roster-account-tools { padding: 10px 10px 0; }
   .roster-list-heading { flex-wrap: wrap; padding-inline: 10px; gap: 0 12px; }
   .roster-list-heading > span { width: 100%; padding: 0 0 8px 28px; text-align: left; }
@@ -248,8 +273,8 @@
   .roster-workspace .roster-selection-bar > button { flex: 1; min-width: 110px; }
 }
 @media (max-width: 370px) {
-  .roster-workspace .roster-row-summary,
-  .roster-workspace .roster-placement-help { padding-left: 0; }
+  .roster-workspace .roster-row-clans,
+  .roster-workspace .roster-row-status { padding-left: 0; }
   .roster-account-head h3 { font-size: 13px; }
 }
 

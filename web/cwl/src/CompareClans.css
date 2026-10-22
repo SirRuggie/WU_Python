@@ -43,7 +43,7 @@
 .compare-workspace .compare-side { min-width: 0; padding: 0; overflow: hidden; scroll-snap-align: start; border: 1px solid #38383f; border-radius: 10px; background: #1b1c20; }
 .compare-workspace .compare-clan-summary { display: block; min-height: 0; margin: 0; padding: 11px; border-bottom: 1px solid #38383f; background: #24252b; }
 .compare-clan-summary h3 { margin: 0 0 2px; font-size: 15px; overflow-wrap: anywhere; }
-.compare-clan-summary small { padding: 0; background: none; font-size: 11px; color: #bfc8d3; overflow-wrap: anywhere; }
+.compare-workspace .compare-clan-summary small { padding: 0; background: none; font-size: 11px; color: #bfc8d3; overflow-wrap: anywhere; }
 .compare-clan-stats { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
 .compare-clan-stats span { padding: 4px 7px; border-radius: 5px; background: #302817; color: #e7d19a; font-size: 11px; }
 .compare-column-change { border-bottom: 1px solid #38383f; }

@@ -1094,36 +1094,38 @@ export default function RosterWorkspace({
                             {weightText(account.effective_weight)}
                           </strong>
                         </span>
-                        <span className="roster-row-host">
-                          <small>Hosting clan</small>
-                          <strong>
-                            {account.kept && (
-                              <span className="roster-placement-lock" role="img" aria-label="Locked placement: auto-place will not move this account" title="Locked placement: auto-place will not move this account">
-                                <DashboardIcon name="locked" />
-                              </span>
+                        <div className="roster-row-clans">
+                          <span className="roster-row-host">
+                            <small>Hosting clan</small>
+                            <strong>
+                              {account.kept && (
+                                <span className="roster-placement-lock" role="img" aria-label="Locked placement: auto-place will not move this account" title="Locked placement: auto-place will not move this account">
+                                  <DashboardIcon name="locked" />
+                                </span>
+                              )}
+                              {clanName(account.assigned_clan_tag)}
+                            </strong>
+                          </span>
+                          <span className="roster-current-clan">
+                            <small>
+                              Current clan
+                              {account.current_clan_status === "stale"
+                                ? " · Last checked"
+                                : ""}
+                            </small>
+                            <strong>
+                              {account.current_clan_status === "unavailable" ||
+                              !account.current_clan_status
+                                ? "Unavailable"
+                                : account.current_clan_name ||
+                                  account.current_clan_tag ||
+                                  "No clan"}
+                            </strong>
+                            {account.outside_family_and_hosts && (
+                              <small className="roster-outside-label">Outside family / hosting clans</small>
                             )}
-                            {clanName(account.assigned_clan_tag)}
-                          </strong>
-                        </span>
-                        <span className="roster-current-clan">
-                          <small>
-                            Current clan
-                            {account.current_clan_status === "stale"
-                              ? " · Last checked"
-                              : ""}
-                          </small>
-                          <strong>
-                            {account.current_clan_status === "unavailable" ||
-                            !account.current_clan_status
-                              ? "Unavailable"
-                              : account.current_clan_name ||
-                                account.current_clan_tag ||
-                                "No clan"}
-                          </strong>
-                          {account.outside_family_and_hosts && (
-                            <small className="roster-outside-label">Outside family / hosting clans</small>
-                          )}
-                        </span>
+                          </span>
+                        </div>
                         {!account.assigned_clan_tag && (account.kept || account.auto_placement_reason !== "ready") && (
                           <span className="roster-row-status">
                             {account.kept ? "Held unassigned · unlock in Details to auto-place" : account.auto_placement_note || "Not assigned"}

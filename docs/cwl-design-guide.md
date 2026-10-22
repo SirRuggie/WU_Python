@@ -289,3 +289,26 @@ fallback, dialog open/close/filter lock and focus return. Published-outdated and
 concurrent-write behavior are covered by regression tests; live Discord delivery
 and assistive technologies were not tested. No live rosters, weights or messages
 were changed during validation. Existing build size/import warnings remain.
+
+### Softer rows and Discord identity in account Details — 2026-10-22
+
+Use low-opacity status tints over the neutral row surface with slim colored edges;
+retain green assigned, yellow outside family/hosts and gold selected semantics.
+On mobile, group hosting/current clan information together and place quiet Move
+and Details actions side by side. Avoid a separate 44px band for every datum.
+Keep touch targets 44px, with names and exceptional states wrapping naturally.
+
+Account Details resolves the linked Discord member only while the dialog is open.
+Show a small avatar, display name, username and exact Discord ID together, with a
+quiet DM link. Use the existing staff-protected directory endpoint, matching the
+requested ID exactly; allow only Discord CDN avatars. Keep a visible unavailable
+fallback and Retry after lookup failure. Identity reads do not change links or
+permissions. Current clan and weight are compact facts rather than separate boxes.
+
+Validation: independent identity/access review and 58 related backend regressions
+passed. Isolated browser inspected successful profile/PFP loading, failed lookup
+with ID retained, successful Retry, narrow 320/390px layout and 44px actions.
+Normal mobile rows now group information in two bands; unusually long clan names
+and warning text still expand rather than truncate. 242 frontend tests and production build passed; the desktop 1440px layout
+and narrow modal width were also verified without horizontal overflow. No live account or roster
+writes or Discord messages were used in verification.

@@ -1,0 +1,7 @@
+.roster-discord-identity { display: flex; align-items: center; gap: 9px; margin: 12px 0; padding: 10px 0; border-block: 1px solid #ffffff12; }
+.roster-discord-identity > img, .roster-discord-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; object-fit: cover; }
+.roster-discord-avatar { display: grid; place-items: center; background: #ffffff0d; color: #b6bdc7; }
+.roster-discord-person { min-width: 0; flex: 1; }
+.roster-discord-person strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.roster-discord-person small { display: block; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; color: #b7bac3; }
+.roster-discord-identity .discord-contact, .roster-discord-person button { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 4px; border: 0; background: transparent; color: #b9d5ff; font-size: 12px; }
