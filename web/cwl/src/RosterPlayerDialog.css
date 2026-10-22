@@ -2,3 +2,40 @@
 
 .roster-player-name{background:transparent;border:0;padding:0;justify-content:flex-start;text-align:left;font:inherit}.compare-workspace .compare-account button.compare-player{cursor:pointer}
 .roster-player-dialog fieldset > small { display: block; margin-top: 8px; }
+
+.roster-player-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+}
+.roster-player-context > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #36363c;
+  border-radius: 9px;
+  background: #202024;
+}
+.roster-player-context dt { color: #bfc2cc; font-size: 11px; }
+.roster-player-context dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 700; }
+.roster-player-context dd small { display: block; margin-top: 4px; line-height: 1.35; font-weight: 400; }
+@media (max-width: 440px) {
+  .roster-player-context { grid-template-columns: 1fr; }
+}
+
+.roster-player-source {
+  margin: 8px 0 0;
+  border: 1px solid #36363c;
+  border-radius: 9px;
+  padding: 0 10px;
+}
+.roster-player-source > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: #b9d5ff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.roster-player-source .roster-player-context { margin: 0 0 10px; }

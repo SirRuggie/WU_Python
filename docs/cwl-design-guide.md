@@ -144,3 +144,35 @@ feature work. Move existing controls and reuse their handlers before replacing l
 | 2026-10-22 | Reduce CWL navigation layers and repeated row buttons | Proposed; no CWL UI changes in this research pass |
 | 2026-10-22 | Borrow compact lists/contextual actions, preserve WU workflow | Direction from owner; prototype next |
 | 2026-10-22 | Retain green assigned-player indication and total weights | Existing owner requirements |
+
+### Assign accounts implementation — 2026-10-22
+
+Adopted compact rows in one shared list surface, grouped search/filter controls,
+inline totals, and a contextual bulk toolbar above results. Assigned rows remain
+green; selection overrides them with gold. Explicit Assign/Move and Details are
+the row actions. Details reuses the player editor and discloses source/provenance
+information without repeating edit fields in every row. Closing restores focus.
+Routine touch targets remain at least 44px.
+
+Cross-page selection is retained and explicitly counted. Selecting a page that
+would exceed 50 is disabled with an explanation, rather than silently truncating.
+Bulk confirmation states the count and destination. Existing revision, permission,
+capacity, official-weight and publication boundaries are unchanged.
+
+Validation: 233 frontend tests and 51 backend roster, publication, placement,
+official-weight and access tests passed; TypeScript/Vite build and diff checks
+passed. Sol implemented and Luna independently reviewed affected paths and added
+a Lazy-host destination regression. Isolated SQLite fixtures covered 65 accounts,
+long/external-looking names, missing weights, green/gold states, desktop 1440px and
+mobile 390px/320px, 44px row controls, no horizontal overflow, dialog focus return,
+cross-page selection/50 limit, filter selection reset, Lazy-only destinations,
+single assignment, manual loot conversion, failed save retaining input, retry and
+reload persistence. Bulk cancel made no write; simulated 409 retained selection
+and displayed refresh feedback; retry saved and cleared selection.
+
+Native browser confirmation UI could not be driven reliably by the browser tool.
+Its boolean outcomes were injected only in the isolated fixture to verify cancel
+and submit paths; this does not validate the native popup or assistive technology.
+No live roster data or Discord notifications were used. Existing Vite bundle/import
+and aiohttp warnings remain. Compare, readiness, publication and Manage signups
+redesigns remain separate stages.

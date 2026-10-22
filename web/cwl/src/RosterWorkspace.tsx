@@ -1,16 +1,9 @@
-import ManualWeightFields from "./ManualWeightFields";
-import {
-  manualWeightDraft,
-  parseManualWeight,
-  type ManualWeightDraft,
-} from "./manualWeight";
 import SignupActivity from "./SignupActivity";
 import useWorkspacePreference from "./useWorkspacePreference";
 import useUnsavedWork from "./useUnsavedWork";
 import ClanDestinationOptions from "./ClanDestinationOptions";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import RosterPlayerDialog from "./RosterPlayerDialog";
-import DiscordContact from "./DiscordContact";
 import TownHallIcon from "./TownHallIcon";
 import "./RosterWorkspace.css";
 import {
@@ -39,7 +32,6 @@ import {
   weightInputText,
   weightText,
   type AutoPreview,
-  type RosterAccount,
   type RosterClan,
   type RosterSnapshot,
   type RosterSort,
@@ -54,22 +46,10 @@ type Props = {
   onReviewPublication?: () => void;
 };
 type Feedback = { kind: "success" | "error"; text: string };
-const poolName = (pool: Pool | null) =>
-  pool === "lazy"
-    ? "Lazy CWL"
-    : pool === "main"
-      ? "Main Clan CWL"
-      : "Pool not set";
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
     : "The roster request failed. Try again.";
-const statusText = (status: RosterAccount["source_status"]) =>
-  status === "current"
-    ? "Current"
-    : status === "unavailable"
-      ? "Source unavailable; prior value may be stale"
-      : "Missing weight";
 const encoded = (value: string) => encodeURIComponent(value);
 
 export default function RosterWorkspace({
@@ -95,7 +75,6 @@ export default function RosterWorkspace({
   );
   const [manualTag, setManualTag] = useState<string | null>(null);
   const [manualClan, setManualClan] = useState("");
-  const [expandedAccounts, setExpandedAccounts] = useState<string[]>([]);
   const [ruleTag, setRuleTag] = useWorkspacePreference(
     `wu-roster-${seasonId}-clan`,
     "",
@@ -124,10 +103,6 @@ export default function RosterWorkspace({
   );
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [bulkDestination, setBulkDestination] = useState("");
-  const [weightEdit, setWeightEdit] = useState<{
-    tag: string;
-    value: ManualWeightDraft;
-  } | null>(null);
   const [rulesDirty, setRulesDirty] = useState(false);
   const [weightsDirty, setWeightsDirty] = useState(false);
   const [playerDirty, setPlayerDirty] = useState(false);
@@ -135,7 +110,6 @@ export default function RosterWorkspace({
     rulesDirty ||
     weightsDirty ||
     playerDirty ||
-    !!weightEdit ||
     !!manualTag ||
     selectedTags.length > 0;
   useUnsavedWork(dirty || busy, onDirty);
@@ -163,7 +137,6 @@ export default function RosterWorkspace({
     setManualTag(null);
     setRoster(null);
     setPreview(null);
-    setWeightEdit(null);
     setFeedback(null);
     setSelectedTags([]);
     setBulkDestination("");
@@ -286,24 +259,6 @@ export default function RosterWorkspace({
     } finally {
       setBusy(false);
     }
-  };
-  const saveWeight = async (account: RosterAccount) => {
-    if (!weightEdit || weightEdit.tag !== account.tag) return;
-    let weight: number | null;
-    try {
-      weight = parseManualWeight(weightEdit.value);
-    } catch (error) {
-      setFeedback({ kind: "error", text: errorText(error) });
-      return;
-    }
-    const saved = await edit(
-      account.tag,
-      { manual_weight: weight },
-      weight === null
-        ? "Manual weight cleared; source weight restored."
-        : "Weight saved for this and future seasons.",
-    );
-    if (saved) setWeightEdit(null);
   };
   const previewPlacement = async () => {
     if (!roster || !seasonId || busy) return;
@@ -429,6 +384,9 @@ export default function RosterWorkspace({
     }
   }, [filterKey]);
   const visibleTags = pageAccounts.map((account) => account.tag);
+  const hiddenSelection = selectedTags.filter((tag) => !visibleTags.includes(tag)).length;
+  const staleSelection = selectedTags.filter((tag) => !filtered.some((account) => account.tag === tag)).length;
+  const selectingPageWouldExceedLimit = new Set([...selectedTags, ...visibleTags]).size > 50;
   const allVisibleSelected =
     visibleTags.length > 0 &&
     visibleTags.every((tag) => selectedTags.includes(tag));
@@ -440,6 +398,13 @@ export default function RosterWorkspace({
     );
   const bulkAssign = async () => {
     if (!roster || !seasonId || busy || !selectedTags.length) return;
+    if (staleSelection) {
+      setFeedback({
+        kind: "error",
+        text: "The roster changed since selection. Clear selection and choose accounts again.",
+      });
+      return;
+    }
     if (selectedTags.length > 50) {
       setFeedback({
         kind: "error",
@@ -464,6 +429,10 @@ export default function RosterWorkspace({
       });
       return;
     }
+    const actionSummary = bulkDestination === "__unassign__"
+      ? `Unassign ${selectedTags.length} selected account${selectedTags.length === 1 ? "" : "s"} from the working roster?`
+      : `Assign ${selectedTags.length} selected account${selectedTags.length === 1 ? "" : "s"} to ${clanName(bulkDestination)}?`;
+    if (!window.confirm(`${actionSummary} Published assignments remain visible until you publish again.`)) return;
     const sid = seasonId;
     setBusy(true);
     setFeedback(null);
@@ -534,15 +503,14 @@ export default function RosterWorkspace({
     roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
 
   return (
-    <div className="roster-workspace">
+    <div className={`roster-workspace${mode === "assign" ? " roster-workspace-assign" : ""}`}>
       <div className="page-head">
         <div>
           <p className="eyebrow">Staff roster</p>
           <h1>Roster builder</h1>
-          <p>
-            Select accounts, choose a hosting clan, and assign. Changes save
-            immediately.
-          </p>
+          <p>{mode === "assign"
+            ? "Working placements stay private until published."
+            : "Select accounts, choose a hosting clan, and assign. Changes save immediately."}</p>
         </div>
         <label className="season-choice">
           Season
@@ -616,6 +584,14 @@ export default function RosterWorkspace({
               setEditingTag(null);
             }}
           />
+          {mode === "assign" ? (
+            <div className="roster-assign-summary" role="status">
+              <span><strong>{poolAccounts.length}</strong> signed up</span>
+              <span><strong>{assigned}</strong> assigned</span>
+              <span><strong>{poolAccounts.length - assigned}</strong> awaiting placement</span>
+              <span><strong>{missingWeight}</strong> missing weight</span>
+            </div>
+          ) : (
           <div className="roster-overview">
             <div>
               <strong>{poolAccounts.length}</strong>
@@ -634,6 +610,7 @@ export default function RosterWorkspace({
               <span>missing effective weight</span>
             </div>
           </div>
+          )}
           <div
             className="roster-workflow-nav"
             role="group"
@@ -657,8 +634,7 @@ export default function RosterWorkspace({
                   setMode(item.id);
                   setManualTag(null);
                   setSelectedTags([]);
-                  setWeightEdit(null);
-                }}
+                              }}
               >
                 {item.label}
               </button>
@@ -667,7 +643,7 @@ export default function RosterWorkspace({
           <div className="roster-toolbar">
             <span>
               {mode === "assign"
-                ? "1. Find accounts → 2. Select → 3. Assign a clan"
+                ? `${poolAccounts.filter((account) => account.auto_placement_reason === "ready").length} ready for auto-placement · ${poolAccounts.filter((account) => account.auto_placement_reason && account.auto_placement_reason !== "ready").length} need attention`
                 : mode === "compare"
                   ? "Compare up to 10 clans side by side."
                   : mode === "rules"
@@ -693,7 +669,7 @@ export default function RosterWorkspace({
                 Auto-place preview
               </button>
             )}
-            {onReviewPublication && (
+            {onReviewPublication && mode !== "assign" && (
               <button
                 className="primary"
                 disabled={busy}
@@ -888,34 +864,7 @@ export default function RosterWorkspace({
           )}
           {mode === "assign" && (
             <>
-              <div className="roster-placement-overview">
-                <strong>
-                  {
-                    poolAccounts.filter(
-                      (account) => account.auto_placement_reason === "ready",
-                    ).length
-                  }{" "}
-                  ready for auto-placement ·{" "}
-                  {
-                    poolAccounts.filter(
-                      (account) =>
-                        account.auto_placement_reason &&
-                        account.auto_placement_reason !== "ready",
-                    ).length
-                  }{" "}
-                  need attention
-                </strong>
-                <p>
-                  Automatic placement follows capacity, weights and signup
-                  pools. Choose Place manually to assign an account yourself.
-                </p>
-                <button onClick={() => setMode("rules")}>
-                  Review clan settings
-                </button>
-                <button onClick={() => setMode("weights")}>
-                  Review missing weights
-                </button>
-              </div>
+              <div className="roster-account-tools">
               <div className="roster-quick-search">
                 <label>
                   Find accounts
@@ -1036,18 +985,19 @@ export default function RosterWorkspace({
                   </small>
                 </div>
               </details>
+              </div>
               <div className="roster-list-heading" ref={listHeading}>
                 <label className="roster-select-all">
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
-                    disabled={busy || !visibleTags.length}
+                    disabled={busy || !visibleTags.length || (!allVisibleSelected && selectingPageWouldExceedLimit)}
                     onChange={(event) =>
                       setSelectedTags(
                         event.target.checked
                           ? [
                               ...new Set([...selectedTags, ...visibleTags]),
-                            ].slice(0, 50)
+                            ]
                           : selectedTags.filter(
                               (tag) => !visibleTags.includes(tag),
                             ),
@@ -1057,9 +1007,54 @@ export default function RosterWorkspace({
                   Select all {visibleTags.length} on this page
                 </label>
                 <span>
-                  {filtered.length} matching · {selectedTags.length} selected
+                  {selectingPageWouldExceedLimit && !allVisibleSelected
+                    ? "Select up to 50 accounts; clear some before selecting this page."
+                    : `${filtered.length} matching · ${selectedTags.length} selected`}
                 </span>
               </div>
+              {selectedTags.length > 0 && (
+                <div className="roster-bulk card roster-selection-bar">
+                  <strong>{selectedTags.length}/50 selected{hiddenSelection ? ` · ${hiddenSelection} on other pages` : ""}</strong>
+                  <label>
+                    Hosting clan
+                    <select
+                      value={bulkDestination}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setBulkDestination(event.target.value)
+                      }
+                    >
+                      <option value="">Choose a destination</option>
+                      <option value="__unassign__">Unassign selected</option>
+                      <ClanDestinationOptions
+                        clans={roster.clans}
+                        pool={poolFilter}
+                      />
+                    </select>
+                  </label>
+                  <button
+                    className="primary"
+                    disabled={
+                      busy ||
+                      !selectedTags.length ||
+                      !!staleSelection ||
+                      selectedTags.length > 50 ||
+                      !bulkDestination
+                    }
+                    onClick={() => void bulkAssign()}
+                  >
+                    {bulkDestination === "__unassign__"
+                      ? `Unassign ${selectedTags.length}`
+                      : `Assign ${selectedTags.length}`}
+                  </button>
+                  {staleSelection > 0 && (
+                    <small role="alert">Roster changed. Clear selection and choose accounts again.</small>
+                  )}
+                  <button disabled={busy} onClick={() => setSelectedTags([])}>
+                    Clear selection
+                  </button>
+                </div>
+              )}
               {filtered.length ? (
                 <div className="roster-account-list">
                   {pageAccounts.map((account) => (
@@ -1090,7 +1085,6 @@ export default function RosterWorkspace({
                             {account.tag} · TH {account.town_hall ?? "—"}
                           </small>
                         </div>
-                        <span className="badge">{poolName(account.pool)}</span>
                       </div>
                       <div className="roster-row-summary">
                         <span>
@@ -1123,9 +1117,9 @@ export default function RosterWorkspace({
                           {account.kept
                             ? "Kept"
                             : account.assigned_clan_tag
-                              ? "✓ Assigned"
+                              ? "Assigned"
                               : account.auto_placement_reason === "ready"
-                                ? "Ready for auto-placement"
+                                ? "Ready"
                                 : account.auto_placement_note || "Not assigned"}
                         </span>
                       </div>
@@ -1139,24 +1133,19 @@ export default function RosterWorkspace({
                           }}
                         >
                           {account.assigned_clan_tag
-                            ? "Move account"
-                            : "Place manually"}
+                            ? "Move"
+                            : "Assign"}
                         </button>
                         <button
-                          aria-expanded={expandedAccounts.includes(account.tag)}
-                          aria-controls={`account-details-${account.tag}`}
-                          onClick={() =>
-                            setExpandedAccounts((current) =>
-                              current.includes(account.tag)
-                                ? current.filter((tag) => tag !== account.tag)
-                                : [...current, account.tag],
-                            )
-                          }
+                          type="button"
+                          disabled={busy}
+                          aria-label={`Details for ${account.player_name}`}
+                          onClick={() => {
+                            setFeedback(null);
+                            setEditingTag(account.tag);
+                          }}
                         >
-                          Details{" "}
-                          <span aria-hidden="true">
-                            {expandedAccounts.includes(account.tag) ? "▴" : "▾"}
-                          </span>
+                          Details
                         </button>
                       </div>
                       {manualTag === account.tag && (
@@ -1216,195 +1205,6 @@ export default function RosterWorkspace({
                           </button>
                         </form>
                       )}
-                      <div
-                        className="roster-account-details"
-                        id={`account-details-${account.tag}`}
-                        hidden={!expandedAccounts.includes(account.tag)}
-                      >
-                        <div className="roster-detail-actions">
-                          <button
-                            disabled={busy}
-                            onClick={() => {
-                              setFeedback(null);
-                              setEditingTag(account.tag);
-                            }}
-                          >
-                            Edit account
-                          </button>
-                          <DiscordContact userId={account.user_id} />
-                        </div>
-                        <small>
-                          {account.user_id
-                            ? `Discord ID: ${account.user_id}`
-                            : "No Discord account"}
-                        </small>
-                        <div className="roster-data">
-                          <div>
-                            <small>Source weight</small>
-                            <strong>{weightText(account.source_weight)}</strong>
-                            <small>
-                              {statusText(account.source_status)}
-                              {account.source_name
-                                ? ` · ${account.source_name}`
-                                : ""}
-                              {account.source_modified_at
-                                ? ` · Source updated ${new Date(account.source_modified_at).toLocaleString()}`
-                                : ""}
-                              {account.source_checked_at
-                                ? ` · Fetched ${new Date(account.source_checked_at).toLocaleString()}`
-                                : ""}
-                            </small>
-                          </div>
-                          <div>
-                            <small>Weight used</small>
-                            <strong>
-                              {weightText(account.effective_weight)}
-                            </strong>
-                            <small>
-                              {account.clan_weight_managed
-                                ? "Using Clan weights"
-                                : account.manual_weight === null
-                                  ? "Using imported weight"
-                                  : `Manual override: ${weightText(account.manual_weight)}`}
-                            </small>
-                            {account.initial_manual_weight != null && (
-                              <small>
-                                First saved weight:{" "}
-                                {weightText(account.initial_manual_weight)}
-                              </small>
-                            )}
-                          </div>
-                          <div>
-                            <small>Hosting clan</small>
-                            <strong>
-                              {clanName(account.assigned_clan_tag)}
-                              {roster.clans.find(
-                                (clan) =>
-                                  clan.tag === account.assigned_clan_tag,
-                              )?.archived
-                                ? " · Archived"
-                                : ""}
-                            </strong>
-                            <small>
-                              {account.kept
-                                ? "Kept placement"
-                                : "Available for auto-placement"}
-                            </small>
-                          </div>
-                        </div>
-                        <div className="roster-controls">
-                          <label>
-                            Assign hosting clan
-                            <select
-                              value={account.assigned_clan_tag || ""}
-                              disabled={busy}
-                              onChange={(event) =>
-                                void edit(
-                                  account.tag,
-                                  {
-                                    assigned_clan_tag:
-                                      event.target.value || null,
-                                    kept: true,
-                                  },
-                                  event.target.value
-                                    ? "Hosting clan assignment saved."
-                                    : "Account unassigned and kept.",
-                                )
-                              }
-                            >
-                              <option value="">Unassigned</option>
-                              {account.assigned_clan_tag &&
-                                roster.clans.find(
-                                  (clan) =>
-                                    clan.tag === account.assigned_clan_tag,
-                                )?.archived && (
-                                  <option
-                                    value={account.assigned_clan_tag}
-                                    disabled
-                                  >
-                                    {clanName(account.assigned_clan_tag)} ·
-                                    Archived (current)
-                                  </option>
-                                )}
-                              <ClanDestinationOptions
-                                clans={roster.clans}
-                                pool={account.pool}
-                                current={account.assigned_clan_tag}
-                              />
-                            </select>
-                          </label>
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              void edit(
-                                account.tag,
-                                { kept: !account.kept },
-                                account.kept
-                                  ? "Account released for automatic placement."
-                                  : "Placement kept.",
-                              )
-                            }
-                          >
-                            {account.kept ? "Release keep" : "Keep placement"}
-                          </button>
-                          <button
-                            disabled={busy || account.clan_weight_managed}
-                            title={
-                              account.clan_weight_managed
-                                ? "Update under Clan management → Clan weights"
-                                : undefined
-                            }
-                            onClick={() => {
-                              setWeightEdit({
-                                tag: account.tag,
-                                value: manualWeightDraft(
-                                  account.manual_weight ??
-                                    account.effective_weight,
-                                ),
-                              });
-                              setFeedback(null);
-                            }}
-                          >
-                            Edit weight
-                          </button>
-                          {!account.clan_weight_managed &&
-                            account.manual_weight !== null && (
-                              <button
-                                disabled={busy}
-                                onClick={() =>
-                                  void edit(
-                                    account.tag,
-                                    { manual_weight: null },
-                                    "Source weight restored.",
-                                  )
-                                }
-                              >
-                                Restore source
-                              </button>
-                            )}
-                        </div>
-                        {weightEdit?.tag === account.tag && (
-                          <div className="weight-editor">
-                            <ManualWeightFields
-                              value={weightEdit.value}
-                              onChange={(value) =>
-                                setWeightEdit({ tag: account.tag, value })
-                              }
-                              disabled={busy}
-                            />
-                            <button
-                              className="primary"
-                              disabled={busy}
-                              onClick={() => void saveWeight(account)}
-                            >
-                              Save weight
-                            </button>
-                            <button onClick={() => setWeightEdit(null)}>
-                              Cancel
-                            </button>
-                          </div>
-                        )}
-                      </div>
                     </article>
                   ))}
                 </div>
@@ -1437,50 +1237,6 @@ export default function RosterWorkspace({
                     Next →
                   </button>
                 </nav>
-              )}
-              {selectedTags.length > 0 && (
-                <div className="roster-bulk card roster-selection-bar">
-                  <strong>{selectedTags.length}/50 selected</strong>
-                  <label>
-                    Hosting clan
-                    <select
-                      value={bulkDestination}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setBulkDestination(event.target.value)
-                      }
-                    >
-                      <option value="">Choose a destination</option>
-                      <option value="__unassign__">Unassign selected</option>
-                      <ClanDestinationOptions
-                        clans={roster.clans}
-                        pool={poolFilter}
-                      />
-                    </select>
-                  </label>
-                  <button
-                    className="primary"
-                    disabled={
-                      busy ||
-                      !selectedTags.length ||
-                      selectedTags.length > 50 ||
-                      !bulkDestination
-                    }
-                    onClick={() => void bulkAssign()}
-                  >
-                    {bulkDestination === "__unassign__"
-                      ? "Unassign selected"
-                      : "Assign selected"}
-                  </button>
-                  {selectedTags.length > 50 && (
-                    <small role="alert">
-                      Select up to 50 accounts per request.
-                    </small>
-                  )}
-                  <button disabled={busy} onClick={() => setSelectedTags([])}>
-                    Clear selection
-                  </button>
-                </div>
               )}
             </>
           )}

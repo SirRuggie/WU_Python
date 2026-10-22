@@ -1040,3 +1040,10 @@ and history tests remain green. Native confirmation cancellation was not verifie
 in the browser; existing canLeave handlers are unchanged. No live permissions,
 rosters or Discord messages were modified. Existing Vite bundle/import and aiohttp
 warnings remain; this is not a full assistive-technology audit.
+
+### 2026-10-22: CWL Assign accounts
+
+Applied the compact-row, contextual bulk-action and focused Details patterns
+documented in docs/cwl-design-guide.md. Validation scope and limitations are recorded
+there: 233 frontend/51 backend tests, isolated desktop/mobile checks and failure
+paths. No storage migration, permission change or notification behavior change.
