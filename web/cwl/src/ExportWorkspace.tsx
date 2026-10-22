@@ -146,7 +146,7 @@ export default function ExportWorkspace({ seasonId, seasons, onSeasonChange }: P
     setBasis('current');
   };
   const download = async () => {
-    if (!seasonId || !displayedPreview || previewLoading || downloadBusy) return;
+    if (!seasonId || !displayedPreview || previewLoading || downloadBusy || downloadController.current) return;
     const controller = new AbortController();
     downloadController.current = controller;
     setDownloadBusy(true);

@@ -85,9 +85,13 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
   const [roleSearch, setRoleSearch] = useState('');
   const reviewOpener = useRef<HTMLButtonElement | null>(null);
   const addOpener = useRef<HTMLButtonElement | null>(null);
+  const candidateTagInput = useRef<HTMLInputElement | null>(null);
   const candidateHeading = useRef<HTMLHeadingElement | null>(null);
+  const drawHeading = useRef<HTMLHeadingElement | null>(null);
+  const previousStage = useRef<number | null>(null);
   const generation = useRef(0);
   const lookupGeneration = useRef(0);
+  const lookupPending = useRef(false);
   const working = useRef(false);
   const activeSeason = useRef(seasonId);
   activeSeason.current = seasonId;
@@ -118,9 +122,16 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
   const clanAccounts = data?.accounts.filter(account => account.pool === pool && account.assigned_clan_tag === clanTag) || [];
   const reviewAccount = clanAccounts.find(account => account.tag === reviewTag);
   const stage = draw?.approved_at ? 3 : draw ? 2 : preview ? 1 : 0;
+  useEffect(() => {
+    if (previousStage.current === 1 && stage === 2) {
+      requestAnimationFrame(() => drawHeading.current?.focus({ preventScroll: true }));
+    }
+    previousStage.current = stage;
+  }, [stage]);
 
   const resetContext = (source = data, nextPool = pool) => {
     lookupGeneration.current += 1;
+    lookupPending.current = false;
     setLookingUp(false);
     setMinimum(String(source?.policies[nextPool] ?? ''));
     setRoleId(source?.lazy_settings?.representative_role_id || '769130325460254740');
@@ -168,6 +179,9 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
     void load();
     return () => { generation.current += 1; };
   }, [load]);
+  useEffect(() => {
+    if (candidateOpen) candidateTagInput.current?.focus();
+  }, [candidateOpen]);
   useEffect(() => { if (data) setMinimum(String(data.policies[pool] ?? '')); }, [data, pool]);
   useEffect(() => { if (!clans.some(clan => clan.tag === clanTag)) setClanTag(clans[0]?.tag || ''); }, [data, pool, clanTag]);
 
@@ -199,9 +213,9 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
   };
   const canDiscard = () => (!unsaved && !cancelReason) || window.confirm('Discard unsaved bonus edits?');
   const canLeaveEditor = () => (!reviewDirty && !(candidateOpen && (candidateTag || candidateReason))) || window.confirm('Discard unsaved candidate edits?');
-  const refresh = () => { if (canDiscard()) { resetContext(); void load(); } };
+  const refresh = () => { if (!working.current && !lookupPending.current && canDiscard()) { resetContext(); void load(); } };
   const review = async () => {
-    if (working.current || !selectedClan || policyDirty || roleDirty || archived) return;
+    if (working.current || !selectedClan || policyDirty || roleDirty || reviewDirty || candidateOpen || !countReady || archived) return;
     working.current = true;
     setBusy(true);
     setError('');
@@ -220,8 +234,9 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
     }
   };
   const lookupCandidate = async () => {
-    if (!candidateTag.trim() || lookingUp) return;
+    if (!candidateTag.trim() || lookingUp || lookupPending.current) return;
     const lookup = ++lookupGeneration.current;
+    lookupPending.current = true;
     const lookupSeason = seasonId;
     setLookingUp(true);
     setCandidateLookup(null);
@@ -234,7 +249,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
         if (cause instanceof ApiError && [401, 403].includes(cause.status)) setData(null);
         setError(errorText(cause));
       }
-    } finally { if (lookup === lookupGeneration.current) setLookingUp(false); }
+    } finally { if (lookup === lookupGeneration.current) { lookupPending.current = false; setLookingUp(false); } }
   };
   const closeReview = () => {
     setReviewTag('');
@@ -270,7 +285,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
     <CwlPoolTabs value={pool} disabled={busy || lookingUp} onChange={next => {
       if (canDiscard()) { setPool(next); resetContext(data, next); }
     }} />
-    {error && <div className="notice error" role="alert">{error} <button type="button" disabled={busy} onClick={refresh}>Refresh saved status</button></div>}
+    {error && !(data && (candidateOpen || reviewAccount)) && <div className="notice error" role="alert">{error} <button type="button" disabled={busy} onClick={refresh}>Refresh saved status</button></div>}
     {notice && <p role="status">{notice}</p>}
     {busy && <p role="status">Working…</p>}
     {!seasonId && <p>Select a season to begin.</p>}
@@ -315,13 +330,14 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
           <label>Minimum attacks<input type="number" min="0" max="7" step="1" value={minimum} disabled={!canManage || busy || archived} onChange={event => { setMinimum(event.target.value); setPreview(null); }} /></label>
           <button type="button" disabled={!canManage || busy || archived || reviewDirty || candidateOpen || !policyDirty || !/^\d+$/.test(minimum) || Number(minimum) > 7} onClick={() => void mutate('/policy', { pool, minimum: Number(minimum), revision: data.revision }, 'Minimum attacks saved. Earlier draws stay unchanged.', 'PATCH')}>Save minimum</button>
         </div> : <>
-          <div className="bonus-candidates-heading"><h3 ref={candidateHeading} tabIndex={-1}>Candidate review</h3><button ref={addOpener} type="button" disabled={!canManage || busy || archived} onClick={() => { setCandidateOpen(current => !current); setCandidateLookup(null); }}>Add player by tag</button></div>
+          <div className="bonus-candidates-heading"><h3 ref={candidateHeading} tabIndex={-1}>Candidate review</h3><button ref={addOpener} type="button" disabled={!canManage || busy || archived} onClick={() => { setCandidateOpen(current => !current); setCandidateLookup(null); setError(''); }}>Add player by tag</button></div>
           {candidateOpen && <section className="bonus-add-candidate" aria-label="Add bonus candidate">
             <p>Add an account directly to this clan’s candidate pool. This does not change its signup or roster placement.</p>
-            <div className="bonus-lookup"><label>Player tag<input value={candidateTag} maxLength={20} disabled={busy || lookingUp} placeholder="#PLAYER" onChange={event => { setCandidateTag(event.target.value); setCandidateLookup(null); }} /></label>
+            <div className="bonus-lookup"><label>Player tag<input ref={candidateTagInput} value={candidateTag} maxLength={20} disabled={busy || lookingUp} placeholder="#PLAYER" onChange={event => { setCandidateTag(event.target.value); setCandidateLookup(null); }} /></label>
               <button type="button" disabled={!candidateTag.trim() || busy || lookingUp} onClick={() => void lookupCandidate()}>{lookingUp ? 'Looking up…' : 'Find player'}</button></div>
             {candidateLookup && <p><strong>{candidateLookup.account.name}</strong> · {candidateLookup.account.tag} · TH {candidateLookup.account.town_hall}{candidateLookup.account.current_clan_name ? ` · ${candidateLookup.account.current_clan_name}` : ''}</p>}
             <label>Reason for addition<textarea value={candidateReason} maxLength={500} disabled={busy} onChange={event => setCandidateReason(event.target.value)} placeholder="Why should this player enter this clan’s draw?" /></label>
+            {error && <p className="notice error" role="alert">{error}</p>}
             <div className="bonus-editor-actions"><button type="button" disabled={busy} onClick={() => { if (canLeaveEditor()) closeCandidate(); }}>Cancel</button>
               <button type="button" className="primary" disabled={!canManage || busy || !candidateLookup || !candidateReason.trim()} onClick={() => void (async () => {
                 if (await mutate('/manual-candidates', { tag: candidateLookup!.account.tag, clan_tag: clanTag, reason: candidateReason.trim(), revision: data.revision }, 'Candidate added. Review eligibility before drawing.')) {
@@ -334,11 +350,11 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
             <p>Three consecutive saved bonus approvals require a one-season sit-out. Earlier in-game medals not recorded here cannot be inferred.</p>
           </details>
           {clanAccounts.some(account => account.representative_status === 'unavailable') && <p className="notice error" role="alert">Discord role lookup is unavailable for one or more accounts. Eligible accounts need verified role status before drawing; refresh when Discord is available.</p>}
-          <AccountList accounts={clanAccounts} onReview={(account, opener) => { if (canLeaveEditor()) { setCandidateOpen(false); setCandidateTag(''); setCandidateReason(''); setCandidateLookup(null); reviewOpener.current = opener; setReviewTag(account.tag); setPreview(null); } }} busy={busy || !canManage || archived} searchable />
+          <AccountList accounts={clanAccounts} onReview={(account, opener) => { if (canLeaveEditor()) { setCandidateOpen(false); setCandidateTag(''); setCandidateReason(''); setCandidateLookup(null); reviewOpener.current = opener; setReviewTag(account.tag); setPreview(null); setError(''); } }} busy={busy || !canManage || archived} searchable />
           {reviewAccount && <BonusCandidateReview key={reviewAccount.tag} account={reviewAccount} busy={busy} onDirty={setReviewDirty} onCancel={() => { if (canLeaveEditor()) closeReview(); }} onRemove={reviewAccount.manual_candidate ? async () => {
             if (!window.confirm(`Remove ${reviewAccount.player_name} from this bonus candidate pool? The CWL signup and roster will stay unchanged.`)) return;
             if (await mutate('/manual-candidates', { tag: reviewAccount.tag, revision: data.revision }, 'Manual candidate removed. Review eligibility again.', 'DELETE')) { closeReview(); }
-          } : undefined} onSave={async (flags, overrideReason) => {
+          } : undefined} error={error} onSave={async (flags, overrideReason) => {
             const saved = await mutate('/account-review', { tag: reviewAccount.tag, flags, override_reason: overrideReason, revision: data.revision }, 'Account review saved. Review eligibility again before drawing.', 'PATCH');
             if (saved) closeReview();
             return saved;
@@ -371,7 +387,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
       </section>}
 
       {draw && <section className="bonus-flow">
-        <div className="bonus-section-heading"><div><h2>{draw.snapshot.clan_name} · Bonus winners</h2><p>Saved {new Date(draw.created_at).toLocaleString()} · {draw.approved_at ? 'Approved' : 'Awaiting staff approval'}</p></div></div>
+        <div className="bonus-section-heading"><div><h2 ref={drawHeading} tabIndex={-1}>{draw.snapshot.clan_name} · Bonus winners</h2><p>Saved {new Date(draw.created_at).toLocaleString()} · {draw.approved_at ? 'Approved' : 'Awaiting staff approval'}</p></div></div>
         <div className="bonus-stats"><div><strong>{draw.snapshot.winners.length}</strong><span>Winners</span></div><div><strong>{draw.snapshot.eligible.length}</strong><span>Eligible</span></div><div><strong>{draw.snapshot.slots}</strong><span>Bonus allowance</span></div></div>
         <AccountList accounts={draw.snapshot.winners} mode="winners" />
         <details className="bonus-secondary"><summary>Draw details and all eligible accounts</summary>

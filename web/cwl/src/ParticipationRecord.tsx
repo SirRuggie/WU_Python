@@ -53,6 +53,7 @@ export default function ParticipationRecord({
     sourceCheckedAt: account.source_checked_at ?? null,
   }));
   const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
   const [error, setError] = useState('');
   const changed = draft.attacks !== base.attacks || draft.stars !== base.stars || draft.notes !== base.notes;
   const current = values(account);
@@ -99,7 +100,8 @@ export default function ParticipationRecord({
     dialog.current?.close();
   };
   const save = async () => {
-    if (readonly || locked || busy || !changed || stale || validation || attackValue === undefined || starValue === undefined) return;
+    if (readonly || locked || busy || pending.current || !changed || stale || validation || attackValue === undefined || starValue === undefined) return;
+    pending.current = true;
     setBusy(true);
     setError('');
     try {
@@ -113,13 +115,15 @@ export default function ParticipationRecord({
     } catch (cause) {
       setError(errorText(cause));
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };
   const reset = async () => {
-    if (readonly || locked || busy || changed || stale || !canReset) return;
+    if (readonly || locked || busy || pending.current || changed || stale || !canReset) return;
     const partial = !account.source_complete ? ' These source results are partial and may change.' : '';
     if (!window.confirm(`Replace manual attack and star overrides for ${account.player_name} with synced values? Staff notes stay saved.${partial}`)) return;
+    pending.current = true;
     setBusy(true);
     setError('');
     try {
@@ -131,6 +135,7 @@ export default function ParticipationRecord({
     } catch (cause) {
       setError(errorText(cause));
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };

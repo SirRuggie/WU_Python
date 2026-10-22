@@ -10,13 +10,14 @@ export const LAZY_FLAGS = [
 type Props = {
   account: RaffleAccount;
   busy: boolean;
+  error: string;
   onCancel: () => void;
   onDirty: (dirty: boolean) => void;
   onSave: (flags: string[], overrideReason: string) => Promise<boolean>;
   onRemove?: () => Promise<void>;
 };
 
-export default function BonusCandidateReview({ account, busy, onCancel, onDirty, onSave, onRemove }: Props) {
+export default function BonusCandidateReview({ account, busy, error, onCancel, onDirty, onSave, onRemove }: Props) {
   const savedFlags = account.bonus_review?.flags || [];
   const savedReason = account.bonus_review?.override_reason || '';
   const [flags, setFlags] = useState<string[]>(savedFlags);
@@ -57,6 +58,7 @@ export default function BonusCandidateReview({ account, busy, onCancel, onDirty,
         <textarea value={reason} maxLength={500} disabled={busy} onChange={event => setReason(event.target.value)} placeholder="Leave blank to follow the automatic rules; enter a reason to override exclusion" />
       </label>
       {reason.trim() && <p className="bonus-caution">This account can enter the draw despite an automatic rule or flag. The reason is saved with the review.</p>}
+      {error && <p className="notice error" role="alert">{error}</p>}
       <div className="bonus-editor-actions">
         {onRemove && <button type="button" className="bonus-remove-candidate" disabled={busy} onClick={() => void onRemove()}>Remove candidate</button>}
         <button type="button" disabled={busy} onClick={onCancel}>Cancel</button>

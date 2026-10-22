@@ -48,6 +48,8 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
   const [focusedClan, setFocusedClan] = useState('');
   const loadedPreference = useRef<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const chooseButton = useRef<HTMLButtonElement>(null);
+  const clanSearchInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,6 +113,15 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
     ));
   }, [seasonId, pool, activeTags]);
 
+  useEffect(() => {
+    if (choosing) clanSearchInput.current?.focus({ preventScroll: true });
+  }, [choosing]);
+
+  function closeChooser() {
+    setChoosing(false);
+    requestAnimationFrame(() => chooseButton.current?.focus({ preventScroll: true }));
+  }
+
   function updateClans(next: string[]) {
     setClans(next);
     try {
@@ -145,6 +156,7 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
           <p>{pool === 'main' ? 'Main' : 'Lazy'} CWL · {visibleClans.length} shown</p>
         </div>
         <button
+          ref={chooseButton}
           className="primary"
           aria-expanded={choosing}
           aria-controls={choosing ? "comparison-clan-picker" : undefined}
@@ -165,6 +177,7 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
           options={[...new Set(sortClans(allClans, 'league_desc').map(clan => leagueValue(clan.cwl_league)))]}
           selected={leagues}
           onChange={setLeagues}
+          disabled={busy}
         />
         <FilterPicker
           label="Town Halls"
@@ -173,19 +186,20 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
             .map(value => value == null ? 'Unknown TH' : `TH ${value}`)}
           selected={townHalls}
           onChange={setTownHalls}
+          disabled={busy}
         />
         <label>
           Sort players
-          <select value={sort} onChange={event => setSort(event.target.value as RosterSort)}>
+          <select value={sort} disabled={busy} onChange={event => setSort(event.target.value as RosterSort)}>
             {playerSortOptions.map(option => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         </label>
-        <button disabled={!leagues.length && !townHalls.length} onClick={() => { setLeagues([]); setTownHalls([]); }}>
+        <button disabled={busy || (!leagues.length && !townHalls.length)} onClick={() => { setLeagues([]); setTownHalls([]); }}>
           Clear filters
         </button>
-        <button disabled={checking} onClick={() => setRefreshLocations(value => value + 1)}>
+        <button disabled={busy || checking} onClick={() => setRefreshLocations(value => value + 1)}>
           {checking ? 'Updating locations…' : 'Refresh locations'}
         </button>
       </div>
@@ -199,10 +213,20 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
       {locationError && <p className="notice error" role="alert">{locationError}</p>}
 
       {choosing && (
-        <div id="comparison-clan-picker" className="compare-picker">
+        <div
+          id="comparison-clan-picker"
+          className="compare-picker"
+          onKeyDown={event => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            closeChooser();
+          }}
+        >
           <label>
             Find a clan
             <input
+              ref={clanSearchInput}
               type="search"
               placeholder="Clan name or tag"
               value={clanSearch}
@@ -229,7 +253,7 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
           {!matchingClans.length && <p>No clans match. Change the search or league filter.</p>}
           <div className="compare-picker-actions">
             <button disabled={busy || !clans.length} onClick={() => updateClans([])}>Clear choices</button>
-            <button onClick={() => setChoosing(false)}>Done</button>
+            <button onClick={closeChooser}>Done</button>
           </div>
         </div>
       )}
@@ -283,7 +307,7 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
           <div className="compare-navigation">
             <label className="compare-desktop-jump">
               Jump to clan
-              <select value="" onChange={event => moveTo(Number(event.target.value))}>
+              <select value="" disabled={busy} onChange={event => moveTo(Number(event.target.value))}>
                 <option value="" disabled>Choose a clan…</option>
                 {visibleClans.map((tag, index) => (
                   <option key={tag} value={index}>{available.find(clan => clan.tag === tag)?.name}</option>
@@ -291,16 +315,16 @@ export default function CompareClans({ pool, seasonId, roster, busy, onEdit }: P
               </select>
             </label>
             <div className="compare-mobile-focus">
-              <button aria-label="Previous clan" disabled={visibleClans.indexOf(selectedFocus) === 0} onClick={() => focusAt(visibleClans.indexOf(selectedFocus) - 1)}>←</button>
+              <button aria-label="Previous clan" disabled={busy || visibleClans.indexOf(selectedFocus) === 0} onClick={() => focusAt(visibleClans.indexOf(selectedFocus) - 1)}>←</button>
               <label>
                 Clan {visibleClans.indexOf(selectedFocus) + 1} of {visibleClans.length}
-                <select value={selectedFocus} onChange={event => setFocusedClan(event.target.value)}>
+                <select value={selectedFocus} disabled={busy} onChange={event => setFocusedClan(event.target.value)}>
                   {visibleClans.map(tag => (
                     <option key={tag} value={tag}>{available.find(clan => clan.tag === tag)?.name}</option>
                   ))}
                 </select>
               </label>
-              <button aria-label="Next clan" disabled={visibleClans.indexOf(selectedFocus) === visibleClans.length - 1} onClick={() => focusAt(visibleClans.indexOf(selectedFocus) + 1)}>→</button>
+              <button aria-label="Next clan" disabled={busy || visibleClans.indexOf(selectedFocus) === visibleClans.length - 1} onClick={() => focusAt(visibleClans.indexOf(selectedFocus) + 1)}>→</button>
             </div>
             <small className="compare-desktop-hint">Scroll sideways within the comparison to view more clans.</small>
           </div>

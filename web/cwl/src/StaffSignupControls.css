@@ -124,6 +124,7 @@
 .staff-signup-account > label {
   display: flex;
   align-items: center;
+  min-height: 44px;
   gap: 8px;
   margin: 0;
 }

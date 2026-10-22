@@ -37,7 +37,17 @@ export function RosterSignupReview({ accounts, clans, action, busy, error, headi
   const hostName = (tag: string | null) => clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
 
   return (
-    <div className="roster-signup-review" role="group" aria-labelledby="signup-review-title">
+    <div
+      className="roster-signup-review"
+      role="group"
+      aria-labelledby="signup-review-title"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || busy) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+      }}
+    >
       <h3 id="signup-review-title" tabIndex={-1} ref={headingRef}>Review {actionLabel[action]}</h3>
       <p>
         {changed.length} of {accounts.length} selected account{accounts.length === 1 ? "" : "s"} will change.
@@ -71,6 +81,7 @@ export default function RosterSignupActions({ accounts, clans, busy, error, onAp
   const [reviewing, setReviewing] = useState(false);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
   const reviewButton = useRef<HTMLButtonElement>(null);
+  const pendingApply = useRef(false);
   const tags = accounts.map((account) => account.tag);
   const changed = accounts.filter((account) => action === "remove" || account.pool !== action);
 
@@ -88,9 +99,14 @@ export default function RosterSignupActions({ accounts, clans, busy, error, onAp
   }
 
   async function apply() {
-    if (!action || busy || !changed.length) return;
-    const saved = await onApply(action, tags);
-    if (saved) setReviewing(false);
+    if (!action || busy || pendingApply.current || !changed.length) return;
+    pendingApply.current = true;
+    try {
+      const saved = await onApply(action, tags);
+      if (saved) setReviewing(false);
+    } finally {
+      pendingApply.current = false;
+    }
   }
 
   return (

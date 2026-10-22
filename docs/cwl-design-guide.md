@@ -580,3 +580,35 @@ document overflow. Navigation render tests cover signup-only, roster-only,
 publication-only and results-only permissions. No production records or live
 Discord messages were changed during testing. Physical-device and screen-reader
 checks were not performed; existing bundle-size and aiohttp warnings remain.
+
+### 2026-10-22: Keyboard and interaction polish
+
+Account Details explicitly focuses Close, contains Tab/Shift+Tab within visible
+controls, restores its opener on dismissal, announces saving, and restores focus
+to the signup-type button after cancelling its review. Bulk signup review supports
+Escape and returns to Review. Compare's chooser focuses search and returns to
+Choose clans on Done/Escape. Comparison controls respect pending operations.
+Filter disclosures expose disabled state, cannot open while locked, and close on
+Escape with focus returned to their summary. Short-screen dialogs remain scrollable;
+linked-account choices retain 44px targets. Channel searches consume Enter even
+without a match, preventing unintended enclosing-form submission, and their Clear
+controls have field-specific accessible names.
+
+Publication, result edits/capture, signup mutations and export downloads use
+synchronous in-flight guards in addition to disabled controls. Bonus candidate
+lookup errors stay beside the active form, and adding a candidate focuses its tag
+field. Publishing/draw transitions focus the new task heading. Existing permissions,
+revision checks, publication privacy, storage and notification retry rules remain.
+
+Validation: independent red-team code review, 261 frontend tests, 34 backend
+permission/signup/bonus regressions, TypeScript/Vite build and diff checks passed.
+Isolated browser checks verified Details initial focus, forward/backward Tab wrap,
+Escape/opener restoration, signup review Cancel/Escape, compare chooser and filter
+Escape, short 320x480 dialog scrolling, and desktop layout. A delayed fixture
+publication received exactly one request after a double-click, completed, and
+focused the announcement heading. A channel search with zero matches consumed
+Enter without sending; Escape retained input focus. Failed candidate lookup kept
+its input and displayed an inline error; Cancel returned to Add player. Only sample
+fixture data was published; no live Discord messages or production records were
+changed during verification. Physical-device/screen-reader testing was not performed.
+Existing bundle-size and aiohttp warnings remain; this is not WCAG certification.

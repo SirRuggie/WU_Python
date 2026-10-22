@@ -50,6 +50,11 @@
   font-size: 13px;
   cursor: pointer;
 }
+.roster-player-source > summary::before {
+  content: "▸";
+  margin-right: 7px;
+}
+.roster-player-source[open] > summary::before { content: "▾"; }
 .roster-player-source .roster-player-context { margin: 0 0 8px; }
 .roster-player-source .roster-player-context > div { padding: 4px 0 7px; }
 

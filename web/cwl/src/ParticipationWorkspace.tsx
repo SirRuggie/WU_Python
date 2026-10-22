@@ -32,6 +32,7 @@ export default function ParticipationWorkspace({ seasonId, seasons, onSeasonChan
   const syncDirtyRef = useRef(false);
   syncDirtyRef.current = syncDirty;
   const [syncBusy, setSyncBusy] = useState(false);
+  const syncPending = useRef(false);
   const [syncError, setSyncError] = useState('');
   const [page, setPage] = useState(0);
   const [recordEpoch, setRecordEpoch] = useState(0);
@@ -114,10 +115,11 @@ export default function ParticipationWorkspace({ seasonId, seasons, onSeasonChan
     void load();
   };
   const saveSyncSettings = async () => {
-    if (!seasonId || !syncDraft || syncBusy || editing || archived || error || !validCwlCycle(syncDraft.cycle)) return;
+    if (!seasonId || !syncDraft || syncBusy || syncPending.current || editing || archived || error || !validCwlCycle(syncDraft.cycle)) return;
     const sid = seasonId;
     const cycleChanged = syncDraft.cycle !== data?.sync?.cycle;
     if (cycleChanged && dirtyTags.size && !window.confirm(`Changing the CWL month will discard unsaved result edits for ${dirtyTags.size} account${dirtyTags.size === 1 ? '' : 's'}. Continue?`)) return;
+    syncPending.current = true;
     setSyncBusy(true);
     setSyncError('');
     try {
@@ -135,11 +137,12 @@ export default function ParticipationWorkspace({ seasonId, seasons, onSeasonChan
         setSyncError(errorText(cause));
         if (cause instanceof ApiError && cause.status === 409) await load();
       }
-    } finally { setSyncBusy(false); }
+    } finally { syncPending.current = false; setSyncBusy(false); }
   };
   const syncNow = async () => {
-    if (!seasonId || syncBusy || editing || dirtyTags.size || archived || error || !data?.sync?.cycle || syncDirty) return;
+    if (!seasonId || syncBusy || syncPending.current || editing || dirtyTags.size || archived || error || !data?.sync?.cycle || syncDirty) return;
     const sid = seasonId;
+    syncPending.current = true;
     setSyncBusy(true);
     setSyncError('');
     try {
@@ -153,6 +156,7 @@ export default function ParticipationWorkspace({ seasonId, seasons, onSeasonChan
       }
     } finally {
       if (currentSeason.current === sid) await load();
+      syncPending.current = false;
       setSyncBusy(false);
     }
   };

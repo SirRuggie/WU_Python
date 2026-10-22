@@ -3,7 +3,7 @@ import { manualWeightDraft, parseManualWeight } from './manualWeight'
 import { useDashboardPermission } from './DashboardPermissions'
 import useUnsavedWork from './useUnsavedWork'
 import ClanDestinationOptions from './ClanDestinationOptions'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { RosterAccount, RosterClan } from './roster'
 import type { Pool } from './api'
@@ -36,6 +36,9 @@ export default function RosterPlayerDialog({
   const canRoster = useDashboardPermission('cwl_roster')
   const canSignups = useDashboardPermission('cwl_signups')
   const ref = useRef<HTMLDialogElement>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const switchButton = useRef<HTMLButtonElement>(null)
+  const pendingAction = useRef(false)
   const [weight, setWeight] = useState(manualWeightDraft(account.manual_weight))
   const [clan, setClan] = useState(account.assigned_clan_tag || '')
   const [kept, setKept] = useState(account.kept)
@@ -47,12 +50,13 @@ export default function RosterPlayerDialog({
   useUnsavedWork(dirty || busy || !!poolReview, onDirty)
 
   const close = () => {
-    if (!busy && (!(dirty || poolReview) || window.confirm('Discard unsaved account changes?'))) onClose()
+    if (!busy && !pendingAction.current && (!(dirty || poolReview) || window.confirm('Discard unsaved account changes?'))) onClose()
   }
   useEffect(() => {
     const dialog = ref.current
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
     dialog?.showModal()
+    closeButton.current?.focus({ preventScroll: true })
     return () => {
       dialog?.close()
       requestAnimationFrame(() => {
@@ -63,8 +67,27 @@ export default function RosterPlayerDialog({
     }
   }, [])
 
+  function containFocus(event: KeyboardEvent<HTMLDialogElement>) {
+    if (event.key !== 'Tab') return
+    const dialog = ref.current
+    if (!dialog) return
+    const controls = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+    )).filter(control => control.getClientRects().length > 0 && !control.closest('fieldset[disabled]'))
+    const first = controls[0]
+    const last = controls[controls.length - 1]
+    if (!first || !last) return
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
   async function save() {
-    if (!canRoster || archived) return
+    if (!canRoster || archived || busy || pendingAction.current) return
     try {
       const body: Record<string, unknown> = {}
       const value = account.clan_weight_managed ? account.manual_weight : parseManualWeight(weight)
@@ -73,22 +96,41 @@ export default function RosterPlayerDialog({
       if (kept !== account.kept || clan !== (account.assigned_clan_tag || '')) body.kept = kept
       if (!Object.keys(body).length) { onClose(); return }
       setLocalError('')
-      if (await onSave(body)) onClose()
+      pendingAction.current = true
+      try {
+        if (await onSave(body)) onClose()
+      } finally {
+        pendingAction.current = false
+      }
     } catch (cause) {
       setLocalError(cause instanceof Error ? cause.message : 'Could not save changes.')
     }
   }
 
   async function remove() {
-    if (!canSignups || archived) return
+    if (!canSignups || archived || busy || pendingAction.current) return
     if (!window.confirm(`Remove ${account.player_name} from this season's signups and working roster? Published rosters stay unchanged until you publish again.`)) return
-    if (await onRemove()) onClose()
+    pendingAction.current = true
+    try {
+      if (await onRemove()) onClose()
+    } catch (cause) {
+      setLocalError(cause instanceof Error ? cause.message : 'Could not remove signup.')
+    } finally {
+      pendingAction.current = false
+    }
   }
 
   async function changePool() {
-    if (!poolReview || !onPoolChange || !canSignups || archived || busy) return
+    if (!poolReview || !onPoolChange || !canSignups || archived || busy || pendingAction.current) return
     setLocalError('')
-    if (await onPoolChange(poolReview)) onClose()
+    pendingAction.current = true
+    try {
+      if (await onPoolChange(poolReview)) onClose()
+    } catch (cause) {
+      setLocalError(cause instanceof Error ? cause.message : 'Could not change signup type.')
+    } finally {
+      pendingAction.current = false
+    }
   }
 
   return createPortal(
@@ -96,11 +138,13 @@ export default function RosterPlayerDialog({
       className="roster-player-dialog"
       ref={ref}
       onCancel={event => { event.preventDefault(); if (!busy) close() }}
+      onKeyDown={containFocus}
       aria-labelledby="roster-player-title"
+      aria-busy={busy}
     >
       <header>
         <h2 id="roster-player-title">{account.player_name}</h2>
-        <button type="button" disabled={busy} onClick={close}>Close ×</button>
+        <button ref={closeButton} type="button" disabled={busy} onClick={close}>Close ×</button>
       </header>
       <small>{account.tag} · TH {account.town_hall ?? '—'} · {account.pool === 'main' ? 'Main' : 'Lazy'} CWL</small>
       <RosterDiscordIdentity userId={account.user_id} />
@@ -145,6 +189,7 @@ export default function RosterPlayerDialog({
         </fieldset>
       </form>}
       {canRoster && <small>Changes apply to the working roster. Publish again to update the published roster.</small>}
+      {busy && <p role="status">Saving account changes…</p>}
       {(localError || error) && <p role="alert">{localError || error}</p>}
       {archived && <p>Archived season · account changes are unavailable.</p>}
       {canSignups && !archived && (
@@ -152,7 +197,7 @@ export default function RosterPlayerDialog({
           <h3>Signup type</h3>
           <p>{account.pool === 'main' ? 'Main CWL' : 'Lazy CWL'}{onPoolChange ? ' · Switching type clears the working placement.' : ''}</p>
           {onPoolChange && (!poolReview ? (
-            <button type="button" disabled={busy || dirty} onClick={() => setPoolReview(account.pool === 'main' ? 'lazy' : 'main')}>
+            <button ref={switchButton} type="button" disabled={busy || dirty} onClick={() => setPoolReview(account.pool === 'main' ? 'lazy' : 'main')}>
               Switch to {account.pool === 'main' ? 'Lazy' : 'Main'} CWL
             </button>
           ) : (
@@ -160,7 +205,7 @@ export default function RosterPlayerDialog({
               <strong>Move {account.player_name} to {poolReview === 'main' ? 'Main' : 'Lazy'} CWL?</strong>
               <small>Any working hosting-clan assignment will be cleared. Published rosters stay unchanged until republished. Main CWL eligibility is checked before saving.</small>
               <div>
-                <button type="button" disabled={busy} onClick={() => setPoolReview(null)}>Cancel</button>
+                <button type="button" disabled={busy} onClick={() => { setPoolReview(null); requestAnimationFrame(() => switchButton.current?.focus({ preventScroll: true })) }}>Cancel</button>
                 <button type="button" className="primary" disabled={busy} onClick={() => void changePool()}>{busy ? 'Saving…' : 'Confirm signup change'}</button>
               </div>
             </div>

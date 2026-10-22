@@ -50,6 +50,15 @@ export default function PublicationWorkspace({
   const [announcementDirty, setAnnouncementDirty] = useState(false);
   const [announcementBusy, setAnnouncementBusy] = useState(false);
   const requestId = useRef(0);
+  const pageHeading = useRef<HTMLHeadingElement>(null);
+  const previousStep = useRef(step);
+  useEffect(() => {
+    if (previousStep.current !== step) {
+      requestAnimationFrame(() => pageHeading.current?.focus({ preventScroll: true }));
+      previousStep.current = step;
+    }
+  }, [step]);
+  const mutationPending = useRef(false);
   const currentSeason = useRef(seasonId);
   currentSeason.current = seasonId;
 
@@ -107,7 +116,7 @@ export default function PublicationWorkspace({
     && (draft.preview.unassigned_count === 0 || acknowledged));
 
   async function publish() {
-    if (!draft || !seasonId || !canPublish) return;
+    if (!draft || !seasonId || !canPublish || mutationPending.current) return;
     const total = draft.preview.accounts.length;
     const assigned = draft.preview.assigned_count;
     const unassigned = draft.preview.unassigned_count;
@@ -115,6 +124,7 @@ export default function PublicationWorkspace({
       `Publish this working roster for both Main and Lazy CWL? ${total} accounts: ${assigned} assigned and ${unassigned} awaiting placement. Members will be able to see these assignments. This does not send a Discord announcement.`,
     )) return;
     const sid = seasonId;
+    mutationPending.current = true;
     setBusy(true);
     setError('');
     setSuccess('');
@@ -147,16 +157,18 @@ export default function PublicationWorkspace({
           : errorText(cause));
       }
     } finally {
+      mutationPending.current = false;
       setBusy(false);
     }
   }
 
   async function withdraw() {
-    if (!draft?.published || !seasonId || locked || loading || error || !canManage) return;
+    if (!draft?.published || !seasonId || locked || loading || error || !canManage || mutationPending.current) return;
     if (!window.confirm(
       'Hide published assignments from members? Signups and the working roster will be kept. Existing Discord messages will not be removed.',
     )) return;
     const sid = seasonId;
+    mutationPending.current = true;
     setBusy(true);
     setError('');
     setSuccess('');
@@ -174,6 +186,7 @@ export default function PublicationWorkspace({
         setError(errorText(cause));
       }
     } finally {
+      mutationPending.current = false;
       setBusy(false);
     }
   }
@@ -216,7 +229,7 @@ export default function PublicationWorkspace({
       <div className="page-head">
         <div>
           <p className="eyebrow">Staff · CWL</p>
-          <h1>{step === 'announce' ? 'Announcements' : 'Finalize roster'}</h1>
+          <h1 ref={pageHeading} tabIndex={-1}>{step === 'announce' ? 'Announcements' : 'Finalize roster'}</h1>
         </div>
         <label className="season-choice">
           Season
