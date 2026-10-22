@@ -52,8 +52,8 @@ async def authorized(ctx, mongo, scope='strikes_read') -> bool:
         return False
     if member.permissions & hikari.Permissions.ADMINISTRATOR:
         return True
-    from cwl_web.access_control import dashboard_allowed
-    return await dashboard_allowed({'user_id': str(ctx.user.id)}, scope, mongo)
+    from utils.dashboard_access import dashboard_allowed
+    return await dashboard_allowed({'user_id': str(ctx.user.id), 'role_ids': getattr(member, 'role_ids', ())}, scope, mongo)
 
 
 def panel(title: str, *lines: str, buttons=None):

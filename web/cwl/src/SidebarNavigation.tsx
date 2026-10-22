@@ -21,23 +21,23 @@ const sections: Section[] = [
     { view: 'assignments', label: 'My clan assignments', icon: 'shield' },
   ] },
   { id: 'staff-overview', label: 'Staff', icon: 'overview', items: [
-    { view: 'staff-overview', label: 'Staff overview', icon: 'overview', permissions: ['cwl','clans','text_commands','recruitment','tickets','member_roles','fwa','server_tools'] },
+    { view: 'staff-overview', label: 'Staff overview', icon: 'overview', permissions: ['cwl','cwl_signups','cwl_roster','cwl_publish','cwl_reminders','cwl_results','cwl_bonuses','cwl_send','cwl_settings','clan_weights','clans','text_commands','recruitment','tickets','member_roles','fwa','server_tools'] },
   ] },
   { id: 'cwl-management', label: 'CWL', icon: 'trophy', access: 'staff', items: [
-    { view: 'manage-signups', label: 'Manage signups', icon: 'signup' },
-    { view: 'roster', label: 'Roster', icon: 'roster' },
-    { view: 'declaration', label: 'Declaration readiness check', icon: 'tasks' },
-    { view: 'cwl-returns', label: 'Return reminders', icon: 'return' },
-    { view: 'reminders', label: 'Signup reminders', icon: 'mail' },
-    { view: 'publication', label: 'Publish roster', icon: 'publish' },
-    { view: 'participation', label: 'Results & participation', icon: 'results' },
-    { view: 'bonuses', label: 'Bonus medals', icon: 'medal' },
-    { view: 'exports', label: 'Export season', icon: 'download' },
-    { view: 'staff', label: 'CWL settings', icon: 'settings' },
+    { view: 'manage-signups', permissions: ['cwl_signups'], label: 'Manage signups', icon: 'signup' },
+    { view: 'roster', permissions: ['cwl_roster'], label: 'Roster', icon: 'roster' },
+    { view: 'declaration', permissions: ['cwl_roster'], label: 'Declaration readiness check', icon: 'tasks' },
+    { view: 'cwl-returns', permissions: ['cwl_reminders'], label: 'Return reminders', icon: 'return' },
+    { view: 'reminders', permissions: ['cwl_reminders'], label: 'Signup reminders', icon: 'mail' },
+    { view: 'publication', permissions: ['cwl_publish', 'cwl_send'], label: 'Publish roster', icon: 'publish' },
+    { view: 'participation', permissions: ['cwl_results'], label: 'Results & participation', icon: 'results' },
+    { view: 'bonuses', permissions: ['cwl_bonuses', 'cwl_send'], label: 'Bonus medals', icon: 'medal' },
+    { view: 'exports', permissions: ['cwl_results'], label: 'Export season', icon: 'download' },
+    { view: 'staff', permissions: ['cwl_settings'], label: 'CWL settings', icon: 'settings' },
   ] },
   { id: 'clans', label: 'Clan management', icon: 'shield', items: [
     {view:'clan-management',label:'Family clans',icon:'shield',permissions:['clans']},
-    {view:'weight-trial',label:'Clan weights',icon:'roster',permissions:['clans']},
+    {view:'weight-trial',label:'Clan weights',icon:'roster',permissions:['clan_weights']},
     {view:'strikes',label:'Strikes',icon:'flag',permissions:['strikes','strikes_add','strikes_remove']},
     {view:'replacements',label:'Replacements',icon:'replace',permissions:['strikes','strikes_add','strikes_remove']},
   ] },
@@ -60,7 +60,7 @@ const sections: Section[] = [
 export function visibleNavigationSections(canEdit: boolean, isOwner: boolean, permissions: string[] = []) {
   return sections.filter(section => !section.access || (section.access === 'staff' ? canEdit : isOwner))
     .map(section => ({ ...section, items: section.items.filter(item =>
-      (item.access !== 'owner' || isOwner) && (isOwner || !item.permissions || item.permissions.some(scope => permissions.includes(scope)))) }))
+      (item.access !== 'owner' || isOwner) && (isOwner || !item.permissions || item.permissions.some(scope => (permissions.includes(scope) || (scope.startsWith('cwl_') && permissions.includes('cwl')))))) }))
     .filter(section => section.items.length > 0)
 }
 export function navigationSection(view: DashboardView) {

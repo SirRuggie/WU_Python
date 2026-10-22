@@ -57,7 +57,7 @@ def test_owners_keep_access_but_discord_admin_alone_does_not():
         db = SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None)))
         actor = {'user_id': '123', 'dashboard': True, 'permissions': 8, 'role_ids': set()}
         assert not await allowed(actor, 'roles', db)
-        for owner in ({**actor, 'guild_owner': True}, {**actor, 'user_id': '505227988229554179'}):
+        for owner in ({**actor, 'user_id': '644005027052126208'}, {**actor, 'user_id': '505227988229554179'}):
             for section in SECTION_SCOPE:
                 assert await allowed(owner, section, db, write=True)
     asyncio.run(run())

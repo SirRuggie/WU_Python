@@ -718,3 +718,20 @@ approving a fictional draw, and no horizontal overflow. Announcement remained a
 separate disabled action until channel review; no live messages or real winners
 were created. Existing Vite chunk-size and aiohttp warnings remain. This is scoped
 feature testing, not a complete assistive-technology audit.
+
+## Dashboard Access follow-up
+
+Access opens on the staff list, with member/role editing opened explicitly.
+Permission areas use integrated underline selectors; only one group is expanded.
+CWL and Clan management remain separate, without Main/Lazy or clan-scope controls.
+Save/cancel actions stay with their form; removal has a visible confirmation;
+verbose history is collapsed. Failed saves preserve the draft and revision
+conflicts require an explicit reload. Navigation warns before discarding edits.
+
+Validation used isolated sample data at 320px, 390px and 1280px, including editing
+and saving a role grant, removal confirmation, success feedback and history.
+No horizontal page overflow was observed. Native labels, fieldsets and buttons
+remain keyboard-operable; this is not a full assistive-technology certification.
+Backend review covered owner-only access administration, action isolation,
+role revocation, stale revisions, failed writes, queued sends and partial Discord
+availability. See dashboard-access.md for storage and migration details.

@@ -1544,8 +1544,19 @@ async def _poll_web_roster_requests() -> None:
             # A bad schedule must not block the independent reviewed roster queue.
             # No acknowledgement is written; the next poll retries reconciliation.
             print(f"[CWL Web Bridge] Schedule sync failed: {type(exc).__name__}")
+        async def can_send_roster(row):
+            from utils.dashboard_access import OWNER_IDS, AccessRepository, effective, expand_legacy
+            uid = str(row['requested_by'])
+            if uid in OWNER_IDS:
+                return True
+            member = await bot_instance.rest.fetch_member(int(row['guild_id']), int(uid))
+            document = await AccessRepository(mongo_client.bot_config).read()
+            if document is not None:
+                return 'cwl_send' in effective(document, uid, member.role_ids)
+            grant = await mongo_client.bot_config.find_one({'_id': 'dashboard-access:' + uid}) or {}
+            return 'cwl_send' in expand_legacy(grant.get('permissions', []))
         await cwl_web_bridge.process_pending_roster_requests(
-            mongo_client, send_campaign_message,
+            mongo_client, send_campaign_message, authorize=can_send_roster,
             guild_id=cwl_campaign.LEGACY_WU_GUILD_ID,
         )
     except Exception as exc:

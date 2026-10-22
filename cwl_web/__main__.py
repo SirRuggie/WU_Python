@@ -30,7 +30,7 @@ def main():
                 durability = MongoDashboardState.open(os.getenv('MONGODB_URI', ''))
                 durability.restore(db_path)
                 logging.info('Dashboard restored from Mongo revision %s', durability.revision)
-            app = create_app(
+            app = create_app(live_access=not fixture,
                 db_path=db_path,
                 durability=durability,
                 static_dir=Path(static_dir) if static_dir else None,

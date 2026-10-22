@@ -12,9 +12,9 @@ it('keeps CWL work separate from server configuration',()=>{
  expect(navigationSection('cwl-returns')).toBe('CWL')
 })
 it('preserves every explicit scope without exposing other tools',()=>{
- for(const [scope,view] of Object.entries({clans:'clan-management',strikes:'strikes',strikes_add:'strikes',strikes_remove:'strikes',member_roles:'members-settings',recruitment:'applications-settings',tickets:'applications-settings',fwa:'fwa-settings',text_commands:'text-commands',server_tools:'connections-settings'})){
+ for(const [scope,view] of Object.entries({clans:'clan-management',clan_weights:'weight-trial',strikes:'strikes',strikes_add:'strikes',strikes_remove:'strikes',member_roles:'members-settings',recruitment:'applications-settings',tickets:'applications-settings',fwa:'fwa-settings',text_commands:'text-commands',server_tools:'connections-settings'})){
   const staff=visibleNavigationSections(false,false,[scope]).filter(section=>!['my-dashboard','activity','my-cwl','staff-overview'].includes(section.id))
-  expect(staff.flatMap(section=>section.items.map(item=>item.view))).toEqual(scope==='clans'?[view,'weight-trial']:scope==='tickets'?['tickets',view]:scope==='text_commands'?[view,'image-gallery']:scope.startsWith('strikes')?[view,'replacements']:[view])
+  expect(staff.flatMap(section=>section.items.map(item=>item.view))).toEqual(scope==='tickets'?['tickets',view]:scope==='text_commands'?[view,'image-gallery']:scope.startsWith('strikes')?[view,'replacements']:[view])
  }
 })
 it('shows owners all groups and every destination once',()=>{
@@ -45,6 +45,18 @@ it('renders the weight trial under clan management for clan staff only',async()=
  const React=await import('react')
  const {default:Sidebar}=await import('./SidebarNavigation')
  const render=(permissions:string[])=>renderToStaticMarkup(React.createElement(Sidebar,{userId:'1',view:'weight-trial',canEdit:false,isOwner:false,permissions,onNavigate:()=>{}}))
- expect(render(['clans'])).toContain('Clan weights')
+ expect(render(['clan_weights'])).toContain('Clan weights')
+ expect(render(['clans'])).not.toContain('Clan weights')
  expect(render([])).not.toContain('Clan weights')
+})
+
+it('separates CWL action permissions from clan management and access settings',()=>{
+ const views=(permissions:string[])=>visibleNavigationSections(true,false,permissions).flatMap(s=>s.items.map(i=>i.view))
+ expect(views(['cwl_roster'])).toContain('roster')
+ expect(views(['cwl_roster'])).not.toContain('publication')
+ expect(views(['cwl_publish'])).toContain('publication')
+ expect(views(['cwl_publish'])).not.toContain('roster')
+ expect(views(['cwl_send'])).toContain('bonuses')
+ expect(views(['cwl_send'])).not.toContain('access')
+ expect(views(['clans'])).not.toContain('manage-signups')
 })

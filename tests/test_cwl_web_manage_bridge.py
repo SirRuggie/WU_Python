@@ -70,7 +70,7 @@ class ManageBridgeTests(unittest.IsolatedAsyncioTestCase):
         expected=copy.deepcopy(before['campaign'])
         variant=expected['messages']['roster']['variants']['lazy']
         variant.update(destination_channel_id=111111111111111111,body=body['body'])
-        variant['buttons'][0]['url']=body['roster_url']
+        variant['buttons'][0]['url']=body['roster_url'].replace('https://cwl.ruggie.zone', 'https://dash.warriorsunited.cc')
         self.assertEqual(after['campaign'],expected)
         self.assertEqual((await self.state())['pools']['lazy']['body'],body['body'])
         self.assertEqual((await self.call('PATCH',self.base+'/lazy',self.owner,json=body)).status,409)

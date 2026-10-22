@@ -74,10 +74,10 @@ async def identity(request):
         permissions |= 8
     result = {'user_id': uid, 'role_ids': role_ids, 'permissions': permissions,
               'guild_owner': owner, 'member': member, 'roles': roles, 'guild': guild}
-    from .access_control import scopes
+    from .access_control import request_scopes
     from .app import _store
     result['dashboard'] = True
-    result['dashboard_scopes'] = scopes(_store(request), uid)
+    result['dashboard_scopes'] = sorted(request_scopes(request, uid))
     request['manage_identity'] = result
     return result
 
@@ -143,11 +143,14 @@ async def catalog(request):
     from .manage_content import catalog_sections
     sections.extend(await catalog_sections(request))
     from .app import _session, _editor
-    if _editor(request, _session(request)):
-        sections.extend([
-            dict(id='cwl-messages',label='CWL messages and reminders',description='Edit announcements and scheduled reminders.',group='War',allowed=True,destination='reminders'),
-            dict(id='cwl-roster',label='CWL roster builder',description='Assign accounts and compare hosting clans.',group='War',allowed=True,destination='roster'),
-        ])
+    from .access_control import request_scopes
+    from .app import _owner
+    permissions = request_scopes(request, actor['user_id'])
+    owner = _owner(_session(request))
+    if owner or 'cwl_reminders' in permissions:
+        sections.append(dict(id='cwl-messages',label='CWL messages and reminders',description='Edit scheduled reminders.',group='War',allowed=True,destination='reminders'))
+    if owner or 'cwl_roster' in permissions:
+        sections.append(dict(id='cwl-roster',label='CWL roster builder',description='Assign accounts and compare hosting clans.',group='War',allowed=True,destination='roster'))
 
     return web.json_response({'sections': sections})
 

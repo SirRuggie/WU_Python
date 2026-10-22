@@ -17,7 +17,8 @@ from urllib.parse import urlencode, quote, parse_qs
 
 import aiohttp
 from aiohttp import web
-from .access_control import PERMISSIONS, scopes
+from .access_control import PERMISSIONS, scopes, request_scopes, OWNER_IDS, CWL_PERMISSIONS
+from .access_settings import access_context
 from .staff_tag_signups import routes as staff_tag_signup_routes
 
 from .providers import FixtureProviders, LiveProviders, ProviderUnavailable, tag
@@ -109,12 +110,12 @@ def _session(request):
 
 
 def _owner(session):
-    return session["user_id"] == PERMANENT_OWNER_ID or bool(session["guild_owner"])
+    return session["user_id"] in OWNER_IDS
 
 
 def _editor(request, session):
     from .access_control import scopes
-    return _owner(session) or "cwl" in scopes(_store(request), session["user_id"])
+    return _owner(session) or bool(set(CWL_PERMISSIONS) & request_scopes(request, session["user_id"]))
 
 
 def _require(request, level="member"):
@@ -123,6 +124,11 @@ def _require(request, level="member"):
         _fail(403, "Owner access required")
     if level == "editor" and not _editor(request, session):
         _fail(403, "Dashboard access required")
+    if level == "editor" and not _owner(session) and request.method not in ("GET", "HEAD", "OPTIONS"):
+        from .cwl_permissions import mutation_permission
+        required = mutation_permission(request)
+        if required is None or required not in request_scopes(request, session['user_id']):
+            _fail(403, "You do not have permission for this CWL action.")
     if request.method not in ("GET", "HEAD", "OPTIONS") and not secrets.compare_digest(request.headers.get("X-CSRF-Token", ""), session["csrf"]):
         _fail(403, "Invalid CSRF token")
     return session
@@ -206,7 +212,7 @@ async def config(request):
 
 async def me(request):
     session = _require(request)
-    return web.json_response({"authenticated": True, "user": {"id": session["user_id"], "username": session["username"], "display_name": session["display_name"] or session["username"], "avatar_url": session["avatar_url"]}, "is_owner": _owner(session), "can_edit": _editor(request, session), "dashboard_permissions": list(PERMISSIONS) if _owner(session) else scopes(_store(request), session["user_id"]), "csrf_token": session["csrf"]})
+    return web.json_response({"authenticated": True, "access_warning": request.get("access_warning"), "user": {"id": session["user_id"], "username": session["username"], "display_name": session["display_name"] or session["username"], "avatar_url": session["avatar_url"]}, "is_owner": _owner(session), "can_edit": _editor(request, session), "dashboard_permissions": list(PERMISSIONS) if _owner(session) else sorted(request_scopes(request, session["user_id"])), "csrf_token": session["csrf"]})
 
 
 RETURN_COOKIE = "wu_login_page"
@@ -543,43 +549,7 @@ async def family_clans_read_only(request):
     raise web.HTTPMethodNotAllowed(request.method, ["GET"])
 
 
-async def access(request):
-    _require(request, "owner")
-    from .access_control import PERMISSIONS, scopes
-    grants = _store(request).rows("SELECT grants.*, (SELECT COALESCE(NULLIF(display_name,''),username) FROM sessions WHERE sessions.user_id=grants.user_id ORDER BY expires_at DESC LIMIT 1) AS username FROM grants ORDER BY granted_at DESC")
-    for row in grants:
-        row['permissions'] = scopes(_store(request), row['user_id'])
-    return web.json_response({"grants": grants, "permissions": [dict(id=key, label=value[0], description=value[1]) for key, value in PERMISSIONS.items()]})
-
-
-async def grant(request):
-    session = _require(request, "owner")
-    body = await _json(request)
-    user_id = str(body.get("user_id", ""))
-    if not user_id.isdigit() or len(user_id) > 25:
-        _fail(400, "Invalid Discord user ID")
-    from .access_control import PERMISSIONS
-    from .server_management import mongo
-    permissions = body.get('permissions')
-    if not isinstance(permissions, list) or not permissions or any(not isinstance(value, str) or value not in PERMISSIONS for value in permissions):
-        _fail(400, "Choose at least one valid access area")
-    permissions = sorted(set(permissions))
-    async with mongo(request) as shared:
-        await shared.bot_config.update_one({'_id': 'dashboard-access:' + user_id}, {'$set': {'permissions': permissions, 'granted_by': session['user_id']}}, upsert=True)
-    with _store(request).tx() as db:
-        db.execute("INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET granted_by=excluded.granted_by,permissions=excluded.permissions,granted_at=CURRENT_TIMESTAMP", (user_id, session["user_id"], json.dumps(permissions)))
-    return web.json_response({"user_id": user_id, "permissions": permissions}, status=201)
-
-
-async def revoke(request):
-    _require(request, "owner")
-    user_id = request.match_info["user_id"]
-    from .server_management import mongo
-    async with mongo(request) as shared:
-        await shared.bot_config.delete_one({"_id": "dashboard-access:" + user_id})
-    with _store(request).tx() as db:
-        db.execute("DELETE FROM grants WHERE user_id=?", (user_id,))
-    return web.json_response({"ok": True})
+from .access_settings import access, save as grant, roles as access_roles
 
 
 async def _family_directory(request):
@@ -1716,7 +1686,7 @@ async def errors(request, handler):
     return response
 
 
-def create_app(*, db_path=None, durability=None, providers=None, oauth=None, secure_cookies=True, after_login="/", dev_fixture=False, dev_identity=None, static_dir=None):
+def create_app(*, db_path=None, durability=None, providers=None, oauth=None, secure_cookies=True, after_login="/", dev_fixture=False, dev_identity=None, static_dir=None, live_access=False):
     """Build an app. Dev fixture requires explicit opt-in and loopback serving."""
     if db_path is None:
         db_path = os.getenv("CWL_WEB_DB_PATH", "")
@@ -1724,8 +1694,9 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         raise ValueError("CWL_WEB_DB_PATH is required for the dashboard working copy")
     if dev_fixture and dev_identity is None:
         dev_identity = {"id": PERMANENT_OWNER_ID, "username": "Development owner", "guild_owner": False}
-    app = web.Application(middlewares=[errors, canonical_host, auth_diagnostics], client_max_size=32 * 1024)
+    app = web.Application(middlewares=[errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
     app["store"] = Store(db_path, durability=durability)
+    app["live_access"] = live_access
     if dev_fixture and providers is None:
         providers = FixtureProviders(dev_identity["id"])
         with app["store"].tx() as db:
@@ -1783,7 +1754,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         web.post(API + "/seasons/{season_id}/publication", publish_roster),
         web.get(API + "/seasons/{season_id}/my-assignments", my_assignments),
         web.get(API + "/approved-clans", approved_clans), web.delete(API + "/approved-clans/{tag}", family_clans_read_only),
-        web.get(API + "/access", access), web.post(API + "/access", grant), web.delete(API + "/access/{user_id}", revoke),
+        web.get(API + "/access", access), web.post(API + "/access", grant), web.get(API + "/access/roles", access_roles),
         web.get(API + "/staff-signup-members", staff_signup_members), web.get(API + "/seasons/{season_id}/staff-signups/accounts", staff_signup_accounts), web.post(API + "/seasons/{season_id}/staff-signups", staff_add_signup), web.delete(API + "/seasons/{season_id}/staff-signups/{tag}", staff_remove_signup), web.get(API + "/linked-accounts", linked_accounts), web.get(API + "/dashboard/accounts", dashboard_accounts), web.get(API + "/seasons/{season_id}/signups", signups), web.post(API + "/seasons/{season_id}/signups", submit_signup), web.delete(API + "/seasons/{season_id}/signups/{tag}", withdraw),
     ]
     routes.extend(announcement_routes())

@@ -13,6 +13,8 @@ from types import SimpleNamespace
 from aiohttp.test_utils import TestClient, TestServer
 
 from cwl_web import create_app
+from dashboard_access_fakes import AccessCollection
+from utils.dashboard_access import CWL_PERMISSIONS
 from cwl_web.app import _discord_avatar_url
 from cwl_web.providers import LiveProviders, ProviderUnavailable
 from unittest.mock import AsyncMock, patch
@@ -45,8 +47,9 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.providers = FakeProviders()
-        self.app = create_app(db_path=str(Path(self.tmp.name) / "cwl.sqlite"), providers=self.providers, secure_cookies=False)
-        self.app["server_management_mongo"] = SimpleNamespace(bot_config=SimpleNamespace(update_one=AsyncMock(), delete_one=AsyncMock()))
+        self.app = create_app(db_path=str(Path(self.tmp.name) / "cwl.sqlite"), providers=self.providers, secure_cookies=False, live_access=True)
+        self.app["server_management_mongo"] = SimpleNamespace(bot_config=AccessCollection())
+        self.app['server_management_discord'] = AsyncMock(return_value={'user': {'username': 'Test member'}, 'roles': []})
         self.client = TestClient(TestServer(self.app))
         await self.client.start_server()
         self.owner = self.auth("505227988229554179")
@@ -64,6 +67,17 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         return {"Cookie": "cwl_session=" + raw, "X-CSRF-Token": csrf}
 
     async def call(self, method, path, headers=None, **kwargs):
+        if path == '/access' and method == 'POST' and 'user_id' in kwargs.get('json', {}):
+            old = kwargs['json']
+            stored = self.app['server_management_mongo'].bot_config.documents.get('dashboard-access-v2', {})
+            values = old.get('permissions')
+            if values == ['cwl']:
+                values = list(CWL_PERMISSIONS)
+            kwargs['json'] = {'kind': 'user', 'id': old['user_id'], 'revision': stored.get('revision', 0), 'permissions': values or []}
+        if path.startswith('/access/') and method == 'DELETE':
+            stored = self.app['server_management_mongo'].bot_config.documents.get('dashboard-access-v2', {})
+            kwargs['json'] = {'kind': 'user', 'id': path.rsplit('/', 1)[-1], 'revision': stored.get('revision', 0), 'permissions': None}
+            method, path = 'POST', '/access'
         return await self.client.request(method, "/api/cwl" + path, headers=headers, **kwargs)
 
     async def season(self):
@@ -247,7 +261,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("POST", "/access", self.member, json={"user_id": "200"})
         self.assertEqual(response.status, 403)
         response = await self.call("POST", "/access", self.owner, json={"user_id": "100", "permissions": ["cwl"]})
-        self.assertEqual(response.status, 201)
+        self.assertEqual(response.status, 200)
         response = await self.call("POST", "/seasons", self.member, json={"label": "October 2026", "signup_open": True})
         self.assertEqual(response.status, 201)
         response = await self.call("DELETE", "/access/100", self.owner)
@@ -260,7 +274,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
             response = await self.call('POST', '/access', self.owner, json={'user_id': '100', 'permissions': permissions})
             self.assertEqual(response.status, 400)
         response = await self.call('POST', '/access', self.owner, json={'user_id': '100', 'permissions': ['tickets']})
-        self.assertEqual(response.status, 201)
+        self.assertEqual(response.status, 200)
         response = await self.call('GET', '/auth/me', self.member)
         data = await response.json()
         self.assertFalse(data['can_edit'])
@@ -268,11 +282,11 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call('POST', '/seasons', self.member, json={'label': 'No access'})
         self.assertEqual(response.status, 403)
         response = await self.call('POST', '/access', self.owner, json={'user_id': '100', 'permissions': ['cwl']})
-        self.assertEqual(response.status, 201)
+        self.assertEqual(response.status, 200)
         response = await self.call('GET', '/auth/me', self.member)
         data = await response.json()
         self.assertTrue(data['can_edit'])
-        self.assertEqual(data['dashboard_permissions'], ['cwl'])
+        self.assertEqual(data['dashboard_permissions'], sorted(CWL_PERMISSIONS))
         response = await self.call('GET', '/access', self.member)
         self.assertEqual(response.status, 403)
 
@@ -489,7 +503,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
     async def test_guild_owner_session_and_persistence(self):
-        guild_owner = self.auth("300", owner=True)
+        guild_owner = self.auth("644005027052126208", owner=True)
         response = await self.call("POST", "/seasons", guild_owner,
                                    json={"label": "November 2026", "signup_open": False})
         self.assertEqual(response.status, 201)
@@ -583,7 +597,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("GET", "/auth/me", {"Cookie": "cwl_session=" + raw})
         self.assertEqual(response.status, 200)
         payload = await response.json()
-        self.assertTrue(payload["is_owner"])
+        self.assertFalse(payload["is_owner"])
         self.assertEqual(payload["user"], {"id": "300", "username": "owner_handle", "display_name": "Current owner",
                                            "avatar_url": "https://cdn.discordapp.com/avatars/300/a_0123456789abcdef0123456789abcdef.gif"})
 

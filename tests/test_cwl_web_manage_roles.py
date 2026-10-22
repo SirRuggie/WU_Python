@@ -4,13 +4,14 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
+from dashboard_access_fakes import AccessCollection
 from cwl_web import manage_roles as roles
 
 
 def test_one_forbidden_role_prevents_entire_selection():
     async def scenario():
         actor = {'user_id':'111111111111111111','roles':[{'id':'333333333333333333','name':'allowed','position':1}, {'id':'444444444444444444','name':'forbidden','position':99}], 'guild':{'owner_id':'999999999999999999'}, 'member':{'user':{'id':'111111111111111111'},'roles':[]}}
-        request = NS(match_info={'action':'add'}, json=AsyncMock(return_value={'values':{'member_id':'222222222222222222','role_ids':['333333333333333333','444444444444444444']}}))
+        request = NS(app={'server_management_mongo':NS(bot_config=AccessCollection())},match_info={'action':'add'}, json=AsyncMock(return_value={'values':{'member_id':'222222222222222222','role_ids':['333333333333333333','444444444444444444']}}))
         async def read(_request, method, path, **kwargs):
             assert method == 'GET', 'No writes are permitted before the full selection is checked'
             if path == '/users/@me':
@@ -24,8 +25,8 @@ def test_one_forbidden_role_prevents_entire_selection():
 
 def test_target_hierarchy_blocks_even_if_roles_are_manageable():
     async def scenario():
-        actor={'roles':[], 'guild':{'owner_id':'999999999999999999'}, 'member':{'user':{'id':'111111111111111111'},'roles':[]}}
-        request=NS(match_info={'action':'remove'},json=AsyncMock(return_value={'values':{'member_id':'222222222222222222','role_ids':['333333333333333333']}}))
+        actor={'user_id':'111111111111111111','roles':[], 'guild':{'owner_id':'999999999999999999'}, 'member':{'user':{'id':'111111111111111111'},'roles':[]}}
+        request=NS(app={'server_management_mongo':NS(bot_config=AccessCollection())},match_info={'action':'remove'},json=AsyncMock(return_value={'values':{'member_id':'222222222222222222','role_ids':['333333333333333333']}}))
         async def read(_request,method,path,**kwargs):
             assert method=='GET'
             return {'id':'555555555555555555'} if path=='/users/@me' else {'user':{'id':path.rsplit('/',1)[-1]},'roles':[]}
@@ -98,9 +99,9 @@ def test_role_change_accepts_uuid_and_repeated_add_is_skipped():
     async def scenario():
         import json
         target='222222222222222222';selected='333333333333333333'
-        actor={'roles':[{'id':selected,'name':'Member','position':1}], 'guild':{'owner_id':'999999999999999999'},'member':{'user':{'id':'111111111111111111'},'roles':[]}}
+        actor={'user_id':'111111111111111111','roles':[{'id':selected,'name':'Member','position':1}], 'guild':{'owner_id':'999999999999999999'},'member':{'user':{'id':'111111111111111111'},'roles':[]}}
         body={'request_id':'5e20fa01-2494-4a19-b0c5-b2ecf527b657','values':{'member_id':target,'role_ids':[selected]}}
-        request=NS(match_info={'action':'add'},json=AsyncMock(return_value=body))
+        request=NS(app={'server_management_mongo':NS(bot_config=AccessCollection())},match_info={'action':'add'},json=AsyncMock(return_value=body))
         current=[];writes=[]
         async def api(_request,method,path,**kwargs):
             if method=='PUT':
@@ -134,7 +135,7 @@ def test_page_only_offers_roles_actor_and_bot_can_manage():
             {'id':managed,'name':'Integration','position':1,'managed':True},
             {'id':higher,'name':'High','position':12},
             {'id':privileged,'name':'Admin','position':2,'permissions':int(hikari.Permissions.ADMINISTRATOR)}]
-        actor={'roles':all_roles,'guild':{'owner_id':'999999999999999999'},'member':{'user':{'id':'111111111111111111'},'roles':[actor_top]}}
+        actor={'user_id':'111111111111111111','roles':all_roles,'guild':{'owner_id':'999999999999999999'},'member':{'user':{'id':'111111111111111111'},'roles':[actor_top]}}
         async def api(_request,method,path,**kwargs):
             assert method=='GET'
             return {'id':'555555555555555555'} if path=='/users/@me' else {'user':{'id':'555555555555555555'},'roles':[bot_top]}

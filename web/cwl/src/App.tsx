@@ -1,3 +1,4 @@
+import { DashboardPermissions } from './DashboardPermissions'
 import WeightTrial from './weightTrial/WeightTrial'
 import MemberSeasonSettings from './MemberSeasonSettings'
 import FwaSignupDialog from './FwaSignupDialog'
@@ -144,6 +145,31 @@ function App() {
     }
   }, [])
   useEffect(() => { void loadAuth() }, [loadAuth])
+  useEffect(() => {
+    if (!session) return
+    let active = true, pending = false
+    const uid = session.user.id
+    const refreshAccess = async () => {
+      if (document.hidden || pending) return
+      pending = true
+      try {
+        const fresh = await api<Session>('/auth/me')
+        if (active && fresh.user.id === uid) setSession(current => current?.user.id === uid ? fresh : current)
+      } catch (error) {
+        if (active && error instanceof ApiError && error.status === 401) { setSession(null); setAuthState('signed-out') }
+      } finally { pending = false }
+    }
+    const timer = window.setInterval(() => { void refreshAccess() }, 60000)
+    window.addEventListener('focus', refreshAccess)
+    window.addEventListener('dashboard-access-changed', refreshAccess)
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refreshAccess); window.removeEventListener('dashboard-access-changed', refreshAccess) }
+  }, [session?.user.id])
+  useEffect(() => {
+    if (!session) return
+    const allowed = visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === view))
+    if (!allowed) { setView('home'); setCwlDirty(false); setNotice({kind:'error', text:'Your dashboard access changed. Choose an available page.'}) }
+  }, [session, view])
+
   useEffect(() => { if (['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) void api<{ dev_fixture: boolean }>('/config').then(result => setFixtureMode(result.dev_fixture)).catch(() => setFixtureMode(false)) }, [])
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenuOpen(false); setReview(false) } }
@@ -286,6 +312,7 @@ function App() {
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
+    if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
     if ((isManagementArea(view) || ['manage','text-commands','clan-management','weight-trial'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
     if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
@@ -460,7 +487,7 @@ function App() {
 
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
-  return <div className="shell">
+  return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className="shell">
     <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
       <div className="brand-wrap"><Brand /><button className="menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button></div>
       <div className="community"><img className="community-icon discord-server-icon" src={serverIconUrl} alt="Warriors United server icon" width={38} height={38} /><span><strong>Warriors United</strong><small>Member dashboard</small></span></div>
@@ -575,11 +602,12 @@ function App() {
           </div>
 {staffSection !== 'season' && <div className="staff-page-controls"><p role="status">{staffCount ? `${currentStaffPage * 8 + 1}–${Math.min((currentStaffPage + 1) * 8, staffCount)} of ${staffCount}` : 'No matching results.'}</p>{staffCount > 8 && <div><button disabled={currentStaffPage === 0} onClick={() => setStaffPage(currentStaffPage - 1)}>Previous</button><span>Page {currentStaffPage + 1} of {staffLastPage + 1}</span><button disabled={currentStaffPage >= staffLastPage} onClick={() => setStaffPage(currentStaffPage + 1)}>Next</button></div>}</div>}
         </div>}
-        {view === 'access' && session.is_owner && <AccessSettings />}
+        {session.access_warning && <div className="notice error" role="alert">{session.access_warning}</div>}
+        {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}
       </main>
     </div>
 
-  </div>
+  </div></DashboardPermissions.Provider>
 }
 function Brand() { return <div className="brand"><img className="emblem discord-server-icon" src={serverIconUrl} alt="Warriors United server icon" width={39} height={39} /><span><strong>WARRIORS UNITED</strong><small>SERVER DASHBOARD</small></span></div> }
 export default App

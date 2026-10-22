@@ -18,6 +18,8 @@ class Config:
         self.permissions = permissions
 
     async def find_one(self, query):
+        if query == {'_id': 'dashboard-access-v2'}:
+            return None
         assert query == {'_id': 'dashboard-access:123'}
         return {'permissions': list(self.permissions)}
 

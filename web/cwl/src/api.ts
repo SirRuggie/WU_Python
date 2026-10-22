@@ -1,6 +1,6 @@
 import { clearSnapshots } from './snapshotCache'
 export type Pool = 'main' | 'lazy'
-export type Session = { authenticated: true; user: { id: string; username: string; display_name?: string; avatar_url?: string | null }; dashboard_permissions?: string[]; is_owner: boolean; can_edit: boolean; csrf_token: string }
+export type Session = { authenticated: true; access_warning?: string | null; user: { id: string; username: string; display_name?: string; avatar_url?: string | null }; dashboard_permissions?: string[]; is_owner: boolean; can_edit: boolean; csrf_token: string }
 export type Season = { id: number; label: string; status: string; signup_open: boolean }
 export type FamilyClanStatus = 'approved' | 'outside' | 'unknown'
 export type Account = { current_clan_type?: string | null; war_weight?: number | null; tag: string; name: string; town_hall: number | null; current_clan_tag: string | null; current_clan_name: string | null; current_clan_badge_url?: string | null; verified: boolean; lazy_eligible: boolean; lazy_ineligible_reason: string | null; family_clan_status: FamilyClanStatus }
@@ -17,7 +17,10 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
   } catch { throw new ApiError('The CWL service is unavailable. Check your connection and try again.', 0) }
   const data = await response.json().catch(() => null)
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) clearSnapshots()
+    if (response.status === 401 || response.status === 403) {
+      clearSnapshots()
+      if (path !== '/auth/me') window.dispatchEvent(new Event('dashboard-access-changed'))
+    }
     const message = typeof data?.error === 'string' ? data.error : typeof data?.message === 'string' ? data.message : null
     const fallback: Record<number, string> = { 401: 'Your Discord session has expired. Sign in again.', 403: 'You do not have access to this action.', 404: 'This item is no longer available.', 409: 'This account is already signed up for the other CWL pool for this season.', 423: 'Signups are closed for this season.', 503: 'Linked accounts or game data are temporarily unavailable. Try again shortly.' }
     throw new ApiError(message || fallback[response.status] || `Request failed (${response.status}). Try again.`, response.status)

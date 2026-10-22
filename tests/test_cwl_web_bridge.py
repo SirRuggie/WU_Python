@@ -367,3 +367,16 @@ def test_old_native_failure_does_not_hide_new_pending_request():
         )
         assert status["status"] == "pending"
     run(scenario())
+
+
+def test_revoked_roster_sender_never_reaches_discord():
+    async def scenario():
+        from unittest.mock import AsyncMock
+        mongo = MemoryMongo()
+        loaded = await cwl_campaign.load_campaign(mongo, GUILD, CYCLE)
+        row = await cwl_web_bridge.queue_roster_send(mongo, **settings(loaded))
+        sender = AsyncMock()
+        result = await cwl_web_bridge.process_roster_request(mongo, row, sender, authorize=AsyncMock(return_value=False))
+        assert result['status'] == 'failed'
+        sender.assert_not_awaited()
+    run(scenario())

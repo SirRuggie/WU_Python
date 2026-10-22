@@ -181,9 +181,16 @@ async def process_roster_request(
     mongo,
     row: dict,
     sender: Callable[..., Awaitable[bool]],
+    authorize=None,
 ) -> dict:
     """Claim and attempt a pending request once. A crash stays sending."""
     key = request_id(row["guild_id"], row["cycle"], row["pool"])
+    if authorize is not None and not await authorize(row):
+        await mongo.bot_config.update_one(
+            {'_id': key, 'status': 'pending'},
+            {'$set': {'status': 'failed', 'error': 'Dashboard announcement access was removed. Nothing was sent.', 'updated_at': _now()}},
+        )
+        return await mongo.bot_config.find_one({'_id': key})
     started = _now()
     claimed = await mongo.bot_config.update_one(
         {"_id": key, "status": "pending"},
@@ -246,13 +253,13 @@ async def process_roster_request(
     return await mongo.bot_config.find_one({"_id": key})
 
 
-async def process_pending_roster_requests(mongo, sender, *, guild_id: int, limit: int = 10) -> int:
+async def process_pending_roster_requests(mongo, sender, *, guild_id: int, limit: int = 10, authorize=None) -> int:
     await mark_worker_alive(mongo, guild_id)
     rows = await mongo.bot_config.find({
         "kind": REQUEST_KIND, "guild_id": int(guild_id), "status": "pending",
     }).to_list(length=limit)
     for row in rows[:limit]:
-        await process_roster_request(mongo, row, sender)
+        await process_roster_request(mongo, row, sender, authorize=authorize)
     return len(rows[:limit])
 
 

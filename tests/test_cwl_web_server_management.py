@@ -28,6 +28,8 @@ def test_permission_boundaries_match_native_manage():
 def test_identity_refreshes_roles_on_every_new_request():
     async def scenario():
         from cwl_web import app
+        class Request(dict):
+            app = {'store': SimpleNamespace(one=lambda *args: None)}
         roles = [{'id': str(manage.GUILD_ID), 'permissions': '0'}, {'id': '1', 'permissions': '32'}]
         current_roles = ['1']
         async def discord(request, method, path, **kwargs):
@@ -37,9 +39,9 @@ def test_identity_refreshes_roles_on_every_new_request():
                 return {'user': {'id': '123'}, 'roles': current_roles.copy()}
             return {'owner_id': '999'}
         with patch.object(app, '_require', return_value={'user_id': '123'}), patch.object(app, '_store', return_value=SimpleNamespace(one=lambda *args: None)), patch.object(manage, 'discord', discord):
-            assert (await manage.identity({}))['permissions'] == 32
+            assert (await manage.identity(Request()))['permissions'] == 32
             current_roles.clear()
-            assert (await manage.identity({}))['permissions'] == 0
+            assert (await manage.identity(Request()))['permissions'] == 0
     asyncio.run(scenario())
 
 

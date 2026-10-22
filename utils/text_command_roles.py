@@ -17,6 +17,9 @@ async def protected_roles(db):
         if 'role' in key and any(word in key for word in ('staff','recruiter','admin','moderator','support')):
             for item in (value if isinstance(value,list) else [value]):
                 if str(item).isdigit():blocked.add(int(item))
+    from utils.dashboard_access import AccessRepository
+    policy = await AccessRepository(db.bot_config).read()
+    blocked.update(int(g['id']) for g in (policy or {}).get('grants', []) if g['kind'] == 'role')
     return blocked
 
 def safe_role(role,blocked=KNOWN_STAFF_ROLES):
@@ -29,9 +32,9 @@ async def perform(interaction,db,row,action):
     me=await rest.fetch_my_user();bot_member=await rest.fetch_member(GUILD_ID,me.id)
     author_id=int(row.get('updated_by',0))
     # A removed editor's old public controls must not keep granting access.
-    await rest.fetch_member(GUILD_ID,author_id)
-    grant=await db.bot_config.find_one({'_id':'dashboard-access:'+str(author_id)}) or {}
-    authorized=author_id in (int(guild_data.owner_id),505227988229554179) or 'text_commands' in grant.get('permissions',[])
+    author=await rest.fetch_member(GUILD_ID,author_id)
+    from utils.dashboard_access import dashboard_allowed
+    authorized=await dashboard_allowed({'user_id':str(author_id),'role_ids':author.role_ids}, 'text_commands', db)
     guild=NS(id=GUILD_ID,owner_id=guild_data.owner_id,get_role=roles.get,get_member=lambda uid:bot_member if uid==me.id else None)
     bot=NS(get_me=lambda:me);role=roles.get(int(action['role_id']))
     if not authorized or not safe_role(role,await protected_roles(db)) or not role_is_manageable(guild,bot,role):

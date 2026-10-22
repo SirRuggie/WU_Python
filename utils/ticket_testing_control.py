@@ -41,7 +41,7 @@ async def _admin(ctx, mongo):
     # Only the web worker supplies this internal context after live authorization.
     actor = getattr(ctx, "dashboard_actor", None)
     if isinstance(actor, dict) and actor.get('dashboard'):
-        from cwl_web.access_control import dashboard_allowed
+        from utils.dashboard_access import dashboard_allowed
         cfg = await mongo.ticket_setup.find_one({'_id': 'config'}) or {}
         if int(cfg.get('ticket_target_guild_id') or 0) != _guild(ctx):
             raise ValueError("Ticket settings belong to a different server.")

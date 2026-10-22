@@ -8,9 +8,9 @@ from utils.clan_weight_trial_store import WeightConflict
 
 def authorize(request):
     from .app import _require, _owner, _store, _fail
-    from .access_control import scopes
+    from .access_control import request_scopes
     actor = _require(request)
-    if not _owner(actor) and 'clans' not in scopes(_store(request), actor['user_id']):
+    if not _owner(actor) and 'clan_weights' not in request_scopes(request, actor['user_id']):
         _fail(403, 'Clan management access required')
     return actor
 

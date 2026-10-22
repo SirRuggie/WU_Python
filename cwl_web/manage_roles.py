@@ -6,7 +6,7 @@ import unicodedata
 from uuid import UUID
 from types import SimpleNamespace as NS
 from aiohttp import web
-from .server_management import API, GUILD_ID, discord, require_manage
+from .server_management import API, GUILD_ID, discord, require_manage, mongo
 from extensions.commands.recruit import perms
 from utils.role_permissions import role_is_manageable
 
@@ -168,6 +168,13 @@ async def change(request):
     if not isinstance(selected, list) or not 1 <= len(selected) <= 25 or len(set(map(str, selected))) != len(selected):
         raise web.HTTPBadRequest(text='Choose between 1 and 25 different roles.')
     selected = [sid(value) for value in selected]
+    from utils.dashboard_access import OWNER_IDS, AccessRepository
+    if actor['user_id'] not in OWNER_IDS:
+        async with mongo(request) as shared:
+            policy = await AccessRepository(shared.bot_config).read()
+        protected = {g['id'] for g in (policy or {}).get('grants', []) if g['kind'] == 'role'}
+        if protected.intersection(selected):
+            raise web.HTTPForbidden(text='Only dashboard owners can add or remove roles that grant dashboard access.')
     target_data = await discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{target_id}')
     roles, guild, bot, actor_member = await hierarchy(request, actor)
     target = member(target_data)

@@ -5,7 +5,7 @@ from aiohttp import web
 from .server_management import API, GUILD_ID, identity, allowed, mongo
 from .access_control import SECTION_SCOPE
 
-DESTINATIONS = {'clans':'clan-management','text_commands':'text-commands','cwl':'roster',
+DESTINATIONS = {'clan_weights':'weight-trial','clans':'clan-management','text_commands':'text-commands','cwl':'roster',
  'recruitment':'applications-settings','tickets':'applications-settings','member_roles':'members-settings',
  'fwa':'fwa-settings','server_tools':'connections-settings'}
 REPRESENTATIVES = {'clans':'clans','text_commands':'text_commands','cwl':'cwl','recruitment':'recruit',
@@ -22,6 +22,13 @@ async def overview(request):
     actor = await identity(request)
     async with mongo(request) as db:
         grants = {scope for scope, section in REPRESENTATIVES.items() if await allowed(actor,section,db)}
+        from .access_control import CWL_PERMISSIONS
+        from utils.dashboard_access import OWNER_IDS
+        effective_scopes = set(actor.get('dashboard_scopes', []))
+        if str(actor['user_id']) in OWNER_IDS or effective_scopes & set(CWL_PERMISSIONS):
+            grants.add('cwl')
+        if 'clan_weights' in effective_scopes:
+            grants.add('clan_weights')
         if not grants:raise web.HTTPForbidden(text='Staff access is required.')
         result = {'checked_at':time.time(),'seasons':[], 'tickets':None,'failures':[], 'failures_count':0,'warnings':[]}
         if 'cwl' in grants:
@@ -38,14 +45,14 @@ async def overview(request):
                 channel = str(hub.get('channel_id') or '')
                 result['tickets'] = {'open':count,'url':f'https://discord.com/channels/{GUILD_ID}/{channel}' if channel.isdigit() else None}
             else:result['warnings'].append('Ticket counts require Discord recruiter access.')
-        sections = [section for section,scope in SECTION_SCOPE.items() if scope in grants]
+        sections = [section for section,scope in SECTION_SCOPE.items() if scope in grants or (scope.startswith('cwl_') and 'cwl' in grants)]
         query = {'kind':'manage_web_request','guild_id':GUILD_ID,'user_id':actor['user_id'],
                  'section':{'$in':sections},'status':{'$in':['failed','uncertain']},'created_at':{'$gte':time.time()-7*86400}}
         result['failures_count'] = await db.bot_config.count_documents(query)
         rows = await db.bot_config.find(query,{'section':1,'action':1,'status':1,'created_at':1}).sort('created_at',-1).limit(5).to_list(length=5)
         result['failures'] = [{'id':str(row['_id']),'action':str(row.get('action','Action')).replace('_',' '),
-            'status':row['status'],'at':row['created_at'],'destination':DESTINATIONS[SECTION_SCOPE[row['section']]]} for row in rows]
-        result['areas'] = [DESTINATIONS[scope] for scope in DESTINATIONS if scope in grants]
+            'status':row['status'],'at':row['created_at'],'destination':DESTINATIONS.get(SECTION_SCOPE[row['section']], 'cwl-returns')} for row in rows]
+        result['areas'] = [DESTINATIONS[scope] for scope in DESTINATIONS if scope in grants or (scope.startswith('cwl_') and 'cwl' in grants)]
     response = web.json_response(result)
     response.headers['Cache-Control']='no-store'
     return response
