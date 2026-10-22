@@ -215,3 +215,20 @@ Add signup member/tag modes remain reachable, and dirty tag entry disables list
 actions. Native discard cancellation was simulated only in the isolated fixture;
 native popup operation and assistive technology are not certified. No live
 signups, weights, permissions or Discord messages were changed during testing.
+
+### Outside-clan warning in Assign accounts — 2026-10-22
+
+A confirmed current clan outside both the family directory and active hosting
+directory gives the Assign accounts row yellow shading and an explicit
+“Outside family / hosting clans” label. It takes priority over assigned green;
+checked selection retains its separate styling. Compare and declarations are
+unchanged. Stale/unavailable location, no clan, or unavailable family directory
+does not prove an outside clan and therefore does not trigger the warning.
+No persistent data is changed.
+
+Validation: 235 frontend tests, 39 roster/publication backend tests and production
+build passed. Added regressions for family, outside, active host without lineup,
+archived host, directory outage, no clan, stale and unavailable locations.
+Independent review found no blocker. Isolated 390px browser verified yellow
+assigned-outside rows, green family rows, visible explanation and no overflow;
+desktop Compare had no outside-row classes. Existing build warnings remain.

@@ -92,6 +92,40 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
                                          "min_weight": 150000, "max_weight": 180000, "lower_league": lower})
         self.assertEqual(response.status, 200)
 
+    async def test_outside_clan_highlight_requires_known_location_and_directory(self):
+        from unittest.mock import AsyncMock
+        await self.signup("main", "#P2Y")
+        await self.signup("lazy", "#Q2Y")
+
+        async def flags():
+            response = await self.call("GET", f"/seasons/{self.sid}/roster", self.owner)
+            self.assertEqual(response.status, 200)
+            return {row["tag"]: row["outside_family_and_hosts"] for row in (await response.json())["accounts"]}
+
+        self.assertEqual(await flags(), {"#P2Y": False, "#Q2Y": True})
+        # An active hosting-directory clan counts even without a season lineup.
+        await self.call("POST", "/clans", self.owner, json={"tag": "#J2Y"})
+        self.assertFalse((await flags())["#Q2Y"])
+        with self.app["store"].tx() as db:
+            db.execute("UPDATE clans SET archived=1 WHERE tag='#J2Y'")
+        self.assertTrue((await flags())["#Q2Y"])
+        self.providers.family_clans = AsyncMock(side_effect=ProviderUnavailable("offline"))
+        self.assertFalse((await flags())["#Q2Y"])
+        self.providers.family_clans = AsyncMock(return_value={"clans": [{"tag": "#R2Y"}]})
+        self.app["roster_location_cache"].clear()
+        self.providers.players["#Q2Y"]["current_clan_tag"] = None
+        self.providers.players["#Q2Y"]["current_clan_name"] = None
+        self.assertFalse((await flags())["#Q2Y"])
+        # Even a cached outside location must not be called current during an outage.
+        self.app["roster_location_cache"]["#Q2Y"] = (0, {
+            "current_clan_tag": "#OUTSIDE", "current_clan_name": "Outside",
+            "current_clan_status": "current",
+        })
+        self.providers.player = AsyncMock(side_effect=ProviderUnavailable("offline"))
+        self.assertFalse((await flags())["#Q2Y"])
+        self.app["roster_location_cache"].clear()
+        self.assertFalse((await flags())["#Q2Y"])
+
     async def test_staff_remove_signup_closed_assigned_and_revision_guard(self):
         await self.signup("main", "#P2Y")
         await self.host("#C2Y", "main")

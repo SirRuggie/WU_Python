@@ -102,6 +102,11 @@
   background: #193329;
   box-shadow: inset 3px 0 #7bc6a1;
 }
+.roster-workspace .roster-account-outside {
+  background: #3b3218;
+  box-shadow: inset 3px 0 #efc64e;
+}
+.roster-workspace .roster-outside-label { color: #f5d785; }
 .roster-workspace .roster-account-selected {
   background: #302916;
   box-shadow: inset 3px 0 #edc64d;

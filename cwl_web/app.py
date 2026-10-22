@@ -1010,7 +1010,20 @@ async def roster(request):
             account["auto_placement_reason"] = reason
             account["auto_placement_note"] = explain_placement(account, result["clans"], reason) if reason else None
     from .roster_locations import enrich as enrich_locations
-    await asyncio.gather(enrich_clan_metadata(request, result["clans"]), enrich_locations(request, result["accounts"]))
+    family, _, _ = await asyncio.gather(
+        _family_tags(request), enrich_clan_metadata(request, result["clans"]),
+        enrich_locations(request, result["accounts"]),
+    )
+    hosting_tags = {clan["tag"] for clan in result["clans"] if not clan["archived"]}
+    for account in result["accounts"]:
+        # Unknown/stale locations or directory outages are not proof of an outside clan.
+        account["outside_family_and_hosts"] = bool(
+            account["current_clan_status"] == "current"
+            and account["current_clan_tag"]
+            and family is not None
+            and account["current_clan_tag"] not in family
+            and account["current_clan_tag"] not in hosting_tags
+        )
     return web.json_response(result)
 
 

@@ -1059,7 +1059,7 @@ export default function RosterWorkspace({
                 <div className="roster-account-list">
                   {pageAccounts.map((account) => (
                     <article
-                      className={`card roster-account ${account.assigned_clan_tag ? "roster-account-assigned" : ""} ${selectedTags.includes(account.tag) ? "roster-account-selected" : ""}`}
+                      className={`card roster-account ${account.assigned_clan_tag ? "roster-account-assigned" : ""} ${account.outside_family_and_hosts ? "roster-account-outside" : ""} ${selectedTags.includes(account.tag) ? "roster-account-selected" : ""}`}
                       key={account.tag}
                     >
                       <div className="roster-account-head">
@@ -1112,6 +1112,9 @@ export default function RosterWorkspace({
                                 account.current_clan_tag ||
                                 "No clan"}
                           </strong>
+                          {account.outside_family_and_hosts && (
+                            <small className="roster-outside-label">Outside family / hosting clans</small>
+                          )}
                         </span>
                         <span>
                           {account.kept
