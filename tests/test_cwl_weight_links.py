@@ -39,3 +39,23 @@ class WeightLinksTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await client.get('/api/cwl/seasons/1/signups')).status,401)
         self.assertEqual(login_destination({'view':'my-signups','season':'999'}),'/my-signups')
         self.assertEqual(saved_login_destination(SimpleNamespace(cookies={'wu_login_page':'/my-signups'})),'/my-signups')
+
+    async def test_cwl_routes_and_restricted_api(self):
+        from cwl_web.app import CWL_PAGE_PATHS
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'index.html').write_text('<html>CWL dashboard</html>')
+            app = create_app(db_path=str(root/'test.sqlite'), static_dir=root, dev_fixture=True, secure_cookies=False)
+            async with TestClient(TestServer(app)) as client:
+                for view, path in CWL_PAGE_PATHS.items():
+                    for suffix in ['', '/']:
+                        response = await client.get(path + suffix + '?season=12')
+                        self.assertEqual(response.status, 200)
+                        self.assertIn('CWL dashboard', await response.text())
+                    self.assertEqual(login_destination({'view':view, 'season':'12'}), path+'?season=12')
+                    self.assertEqual(saved_login_destination(SimpleNamespace(cookies={'wu_login_page':path+'?season=12&view=access&redirect=https://evil.test'})), path+'?season=12')
+                self.assertEqual((await client.get('/api/cwl/seasons/1/signups?all=1')).status, 401)
+                self.assertEqual((await client.get('/cwl/not-a-page')).status, 404)
+        self.assertEqual(login_destination({'view':'publication','season':'bad','step':'announce'}), '/cwl/publish?step=announce')
+        for value in ['//evil.test/cwl/roster','/cwl/roster/../../access','/cwl/roster%0d%0aLocation:evil','/cwl/roster?'+('x'*151)]:
+            self.assertEqual(saved_login_destination(SimpleNamespace(cookies={'wu_login_page':value})), '')

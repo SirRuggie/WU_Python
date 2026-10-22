@@ -1,6 +1,7 @@
 import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
-const staffPaths: Record<string, string> = { "weight-trial": "/clan-weights" };
+import { cwlPaths } from "./staffLinks";
+const staffPaths: Record<string, string> = { ...cwlPaths, "weight-trial": "/clan-weights" };
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
 export type DashboardRoute = { view: DashboardView; season: string; signupPanel?: "register" | "saved"; step?: "review" | "announce" };
 export function dashboardTarget(search: string, pathname = '/'): DashboardRoute {
@@ -14,7 +15,7 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
     view: dashboardViews.includes(value as DashboardView)
       ? (value as DashboardView)
       : "home",
-    ...(params.get("view") === "publication" && ["review", "announce"].includes(params.get("step") || "") ? { step: params.get("step") as "review" | "announce" } : {}),
+    ...(value === "publication" && ["review", "announce"].includes(params.get("step") || "") ? { step: params.get("step") as "review" | "announce" } : {}),
     season: /^\d{1,18}$/.test(params.get("season") || "")
       ? params.get("season")!
       : "",
@@ -23,12 +24,12 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
 export const seasonViews = new Set(['manage-signups', 'reminders', 'exports', 'declaration', 'publication', 'participation', 'bonuses', 'roster', 'staff']);
 export function dashboardPath(route: DashboardRoute) {
   if (route.view === "signup" && route.signupPanel === "saved") return "/my-signups";
-  if (staffPaths[route.view]) return staffPaths[route.view];
   if (memberPaths[route.view]) return memberPaths[route.view];
-  const params = new URLSearchParams({ view: route.view });
+  const path = staffPaths[route.view];
+  const params = new URLSearchParams(path ? {} : { view: route.view });
   if (route.view === "publication" && route.step) params.set("step", route.step);
   if (route.season && seasonViews.has(route.view)) params.set("season", route.season);
-  return `/?${params}`;
+  return `${path || "/"}${params.size ? `?${params}` : ""}`;
 }
 type HistoryPort = Pick<History, "state" | "pushState" | "replaceState" | "go">;
 // Index entries so canceling Back/Forward returns to the original entry without

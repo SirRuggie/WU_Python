@@ -308,6 +308,12 @@
   border-radius: 12px;
 }
 
+/* Saved hosting assignments are green; bulk selection still takes priority. */
+.roster-workspace .roster-account-assigned {
+  background: #193329;
+  border-color: #7bc6a1;
+}
+
 .roster-workspace .roster-account-selected {
   background: #302916;
   border-color: #edc64d;

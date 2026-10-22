@@ -111,7 +111,7 @@ it('preserves announcement steps while rejecting arbitrary step values', () => {
   expect(dashboardTarget('?view=publication&step=unsafe')).toEqual({view:'publication',season:''})
   const history = fixture()
   history.controller.write({view:'publication',season:'12',step:'announce'},true)
-  expect(history.current().url).toBe('/?view=publication&step=announce&season=12')
+  expect(history.current().url).toBe('/cwl/publish?step=announce&season=12')
 })
 
 it('uses clean member paths and only retains seasons on CWL staff pages', () => {
@@ -120,7 +120,7 @@ it('uses clean member paths and only retains seasons on CWL staff pages', () => 
    expect(dashboardTarget('',path).view).toBe(view)
  }
  expect(dashboardPath({view:'clan-management',season:'1'})).toBe('/?view=clan-management')
- expect(dashboardPath({view:'roster',season:'2'})).toBe('/?view=roster&season=2')
+ expect(dashboardPath({view:'roster',season:'2'})).toBe('/cwl/roster?season=2')
 })
 
 it('uses a clean clan weight path and preserves old entry links',()=>{
@@ -148,4 +148,23 @@ it('normalizes member trailing slashes without overriding path with a conflictin
   expect(dashboardTarget('?view=roster',path).view).toBe(view)
   expect(dashboardPath(dashboardTarget('?season=999',path))).toBe(path.slice(0,-1))
  }
+})
+
+it('round trips every staff CWL destination, including legacy links and OAuth returns', async () => {
+ const {cwlPaths} = await import('./staffLinks')
+ for (const [view,path] of Object.entries(cwlPaths)) {
+  const legacy = dashboardTarget(`?view=${view}&season=12`)
+  const expected = dashboardPath(legacy)
+  expect(expected.startsWith(path)).toBe(true)
+  for (const suffix of ['', '/']) {
+   const target = dashboardTarget('?view=access&season=12', path+suffix)
+   expect(target.view).toBe(view)
+   expect(dashboardPath(target)).toBe(expected)
+   expect(loginPath('?view=access&season=12',false,path+suffix)).toBe(`/api/cwl/auth/discord?view=${view}&season=12`)
+  }
+ }
+ expect(dashboardTarget('?view=publication&step=announce','/cwl/roster').step).toBeUndefined()
+ expect(dashboardPath(dashboardTarget('?step=announce&season=12','/cwl/publish'))).toBe('/cwl/publish?step=announce&season=12')
+ expect(loginPath('?season=bad&step=unsafe',false,'/cwl/publish')).toBe('/api/cwl/auth/discord?view=publication')
+ expect(loginPath('?view=roster',false,'/tasks')).toBe('/api/cwl/auth/discord?view=todo')
 })

@@ -896,3 +896,39 @@ fixture season. No live Discord OAuth login was performed for this batch.
 This batch is intentionally held for the combined URL release after staff CWL
 and remaining management routes are completed. Do not restart production or
 replace its served assets for this batch alone.
+
+## Assign accounts: restore saved-placement color
+
+Restored green background and border only on Assign accounts cards with a saved
+assigned_clan_tag. Unassigned cards remain neutral and selected cards remain gold
+through the later selection rule. Hosting clan text remains visible, so color is
+not the only placement indication. Compare clans and declaration readiness styles
+are unchanged. This is a scoped color correction; dimensions, controls, focus and
+44px targets are unchanged. Validation: 228 frontend tests and production build
+passed; CSS scope and selection precedence reviewed. No new browser visual check
+or production deployment was performed; held with the pending local changes.
+
+## Staff CWL URL rollout — batch two prepared, not deployed
+
+Staff CWL pages generate /cwl/signups, /cwl/roster, /cwl/readiness,
+/cwl/reminders/signup, /cwl/reminders/return, /cwl/publish, /cwl/results,
+/cwl/bonuses, /cwl/exports and /cwl/settings. Season-based pages retain their
+season query; publishing retains review/announce step. Existing query links and
+trailing slashes resolve to canonical destinations. Existing local filters are
+unchanged; URL-backed filter sharing is not introduced by this routing batch.
+
+OAuth return destinations use explicit internal mappings and validated season/step
+values, including clean cookie paths. Unknown/external paths cannot become login
+redirects. Existing navigation grants and server API authorization remain in force.
+No data, schema, external messages, or API endpoints are migrated. Compatibility
+mappings serve the same components, not duplicate implementations. Keep old links
+for bookmarks and Discord history while generated navigation uses the new paths.
+
+Validation: 67 backend tests (including dashboard permission scopes), 229 frontend
+tests and isolated build passed. Covered all route/trailing-slash entries, legacy
+links, path precedence, malformed seasons/steps, hostile return destinations and
+history cancellation. Isolated browser checked roster to announcements, Back/Forward,
+reload retaining announcement step/season, legacy readiness normalization, and the
+signed-out OAuth link. No live Discord OAuth or notification delivery was tested.
+No layout or control sizes changed. Existing build chunk-size/aiohttp warnings remain.
+Held for combined deployment with batch one and remaining management URLs.

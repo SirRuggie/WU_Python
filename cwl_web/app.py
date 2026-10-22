@@ -218,10 +218,30 @@ async def me(request):
 
 
 RETURN_COOKIE = "wu_login_page"
+CWL_PAGE_PATHS = {
+    "manage-signups": "/cwl/signups",
+    "roster": "/cwl/roster",
+    "declaration": "/cwl/readiness",
+    "reminders": "/cwl/reminders/signup",
+    "cwl-returns": "/cwl/reminders/return",
+    "publication": "/cwl/publish",
+    "participation": "/cwl/results",
+    "bonuses": "/cwl/bonuses",
+    "exports": "/cwl/exports",
+    "staff": "/cwl/settings",
+}
 
 
 def login_destination(query):
     view = query.get("view", "")
+    if view in CWL_PAGE_PATHS:
+        params = {}
+        season = str(query.get("season", ""))
+        if re.fullmatch(r"[0-9]{1,18}", season):
+            params["season"] = season
+        if view == "publication" and query.get("step") in {"review", "announce"}:
+            params["step"] = query["step"]
+        return CWL_PAGE_PATHS[view] + ("?" + urlencode(params) if params else "")
     if view == "my-signups":
         return "/my-signups"
     if view == "weight-trial":
@@ -237,6 +257,13 @@ def saved_login_destination(request):
     value = request.cookies.get(RETURN_COOKIE, "")
     if value in {'/', '/signup', '/assignments', '/tasks', '/wars', '/events', '/search', '/clan-weights', '/my-signups'}:
         return value
+    if len(value) <= 150:
+        path, _, query = value.partition("?")
+        for view, destination in CWL_PAGE_PATHS.items():
+            if path == destination:
+                params = {key: values[0] for key, values in parse_qs(query).items()}
+                params["view"] = view
+                return login_destination(params)
     if not value.startswith("/?") or len(value) > 150:
         return ""
     return login_destination({key: values[0] for key, values in parse_qs(value[2:]).items()})
@@ -1841,7 +1868,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
             return response
         app.router.add_get("/", index_page)
         app.router.add_get("/index.html", index_page)
-        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups'):
+        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values())):
             app.router.add_get('/' + path, index_page)
             app.router.add_get('/' + path + '/', index_page)
     return app
