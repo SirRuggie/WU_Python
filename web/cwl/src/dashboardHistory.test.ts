@@ -130,3 +130,22 @@ it('uses a clean clan weight path and preserves old entry links',()=>{
  }
  expect(dashboardTarget('?view=weight-trial&season=1').view).toBe('weight-trial')
 })
+
+it('gives saved signups a distinct history entry and restores the tab on Back/Forward',()=>{
+ const f=fixture()
+ f.controller.write({view:'signup',season:'99'},true)
+ f.controller.write({view:'signup',season:'99',signupPanel:'saved'},true)
+ expect(f.current().url).toBe('/my-signups')
+ expect(dashboardTarget('',f.current().url)).toEqual({view:'signup',season:'',signupPanel:'saved'})
+ expect(f.controller.pop(f.travel(-1),()=>true)).toBe(true)
+ expect(f.current().url).toBe('/signup')
+ expect(dashboardTarget('',f.current().url).signupPanel).toBeUndefined()
+ expect(f.controller.pop(f.travel(1),()=>true)).toBe(true)
+ expect(f.current().url).toBe('/my-signups')
+})
+it('normalizes member trailing slashes without overriding path with a conflicting view',()=>{
+ for(const [path,view] of [['/signup/','signup'],['/assignments/','assignments'],['/tasks/','todo'],['/wars/','wars'],['/events/','events'],['/search/','search']] as const) {
+  expect(dashboardTarget('?view=roster',path).view).toBe(view)
+  expect(dashboardPath(dashboardTarget('?season=999',path))).toBe(path.slice(0,-1))
+ }
+})

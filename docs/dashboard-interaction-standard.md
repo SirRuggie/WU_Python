@@ -874,3 +874,25 @@ Validation: 47 backend tests, 225 frontend tests and production build passed;
 isolated browser verified legacy and short aliases normalize to /clan-weights.
 Member links remain /signup, /assignments, /tasks, /wars, /events and /search.
 Other staff tools retain their existing query-based URLs; no general route rewrite.
+
+## Member URL rollout — batch one prepared, not deployed
+
+Member URLs are /signup, /my-signups, /assignments, /tasks, /wars, /events and
+/search. My signups is a route to the saved tab of the existing signup feature,
+not a duplicate page. Signup tab navigation creates history entries; Back/Forward,
+refresh and login entry preserve the requested tab. Legacy query links continue
+working, including signup aliases; trailing slashes normalize to the canonical
+path. Member pages still resolve only the staff-enabled season. A conflicting
+query view cannot override a recognized member path during login.
+
+Validation: 51 backend tests, 228 frontend tests and isolated production build
+passed. Covered static paths/trailing slashes, authentication requirements,
+allowlisted login returns, historical links, member-season enforcement, and
+history navigation/cancellation regression tests. Isolated browser checked direct
+saved-tab entry, register/saved Back and Forward, refresh, signed-out destination
+and local fixture login, plus an old season=999 link resolving to the enabled
+fixture season. No live Discord OAuth login was performed for this batch.
+
+This batch is intentionally held for the combined URL release after staff CWL
+and remaining management routes are completed. Do not restart production or
+replace its served assets for this batch alone.

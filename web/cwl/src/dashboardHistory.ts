@@ -1,13 +1,16 @@
-import { memberPaths } from "./memberLinks";
+import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 const staffPaths: Record<string, string> = { "weight-trial": "/clan-weights" };
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
-export type DashboardRoute = { view: DashboardView; season: string; step?: "review" | "announce" };
+export type DashboardRoute = { view: DashboardView; season: string; signupPanel?: "register" | "saved"; step?: "review" | "announce" };
 export function dashboardTarget(search: string, pathname = '/'): DashboardRoute {
+  pathname = pathname === '/' ? '/' : pathname.replace(/\/$/, '');
   const params = new URLSearchParams(search);
+  const saved = savedSignupTarget(search, pathname);
   const pathView = Object.entries({...memberPaths, ...staffPaths}).find(([, path]) => path !== '/' && path === pathname)?.[0];
-  const value = (weightAliases.includes(pathname) ? "weight-trial" : pathView) || (params.get("view") === "signups" ? "signup" : params.get("view"));
+  const value = (saved ? "signup" : undefined) || (weightAliases.includes(pathname) ? "weight-trial" : pathView) || (params.get("view") === "signups" ? "signup" : params.get("view"));
   return {
+    ...(saved ? {signupPanel: "saved" as const} : {}),
     view: dashboardViews.includes(value as DashboardView)
       ? (value as DashboardView)
       : "home",
@@ -19,6 +22,7 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
 }
 export const seasonViews = new Set(['manage-signups', 'reminders', 'exports', 'declaration', 'publication', 'participation', 'bonuses', 'roster', 'staff']);
 export function dashboardPath(route: DashboardRoute) {
+  if (route.view === "signup" && route.signupPanel === "saved") return "/my-signups";
   if (staffPaths[route.view]) return staffPaths[route.view];
   if (memberPaths[route.view]) return memberPaths[route.view];
   const params = new URLSearchParams({ view: route.view });

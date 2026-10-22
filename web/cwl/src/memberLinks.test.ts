@@ -34,3 +34,11 @@ it('returns staff to Clan Weights after login without accepting arbitrary redire
  expect(loginPath('?view=weight-trial',false)).toBe('/api/cwl/auth/discord?view=weight-trial')
  expect(loginPath('?view=https://evil.test',false)).toBe('/api/cwl/auth/discord?view=home')
 })
+
+it('opens saved signups directly and keeps the enabled member season',()=>{
+ for(const [query,path] of [['','/my-signups'],['','/my-signups/'],['?view=my-signups&season=999','/'],['?tab=saved','/signup']]) {
+  expect(memberTarget(query,path)).toEqual({view:'signup',season:'',signupPanel:'saved'})
+  expect(loginPath(query,false,path)).toBe('/api/cwl/auth/discord?view=my-signups')
+ }
+ expect(loginPath('?view=weight-trial',false,'/tasks')).toBe('/api/cwl/auth/discord?view=todo')
+})

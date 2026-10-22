@@ -222,6 +222,8 @@ RETURN_COOKIE = "wu_login_page"
 
 def login_destination(query):
     view = query.get("view", "")
+    if view == "my-signups":
+        return "/my-signups"
     if view == "weight-trial":
         return "/clan-weights"
     if view == "signups":
@@ -233,7 +235,7 @@ def login_destination(query):
 
 def saved_login_destination(request):
     value = request.cookies.get(RETURN_COOKIE, "")
-    if value in {'/', '/signup', '/assignments', '/tasks', '/wars', '/events', '/search', '/clan-weights'}:
+    if value in {'/', '/signup', '/assignments', '/tasks', '/wars', '/events', '/search', '/clan-weights', '/my-signups'}:
         return value
     if not value.startswith("/?") or len(value) > 150:
         return ""
@@ -1839,6 +1841,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
             return response
         app.router.add_get("/", index_page)
         app.router.add_get("/index.html", index_page)
-        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial'):
+        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups'):
             app.router.add_get('/' + path, index_page)
+            app.router.add_get('/' + path + '/', index_page)
     return app
