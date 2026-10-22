@@ -31,7 +31,7 @@ class FakeLeague:
 
 
 def side(clan_tag, members):
-    return {"tag": clan_tag, "name": clan_tag, "members": members}
+    return {"tag": clan_tag, "name": clan_tag, "members": members, "stars": 30, "destruction": 90}
 
 
 def member(player_tag, stars):
@@ -94,7 +94,7 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         host = side("#C2Y", [member("#P2Y", attacks)])
         other = side("#J2Y", [member("#Q2Y", (1,))])
         self.league.wars[war_tag] = {
-            "tag": war_tag, "state": state,
+            "tag": war_tag, "state": state, "team_size": 15,
             "clan": host if clan_side == "clan" else other,
             "opponent": other if clan_side == "clan" else host,
         }
@@ -107,6 +107,48 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         data = await response.json()
         return next(row for row in data["accounts"] if row["tag"] == "#P2Y"), data
+
+    async def test_allowance_league_captured_only_during_live_current_month_war(self):
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+        from utils.cwl_bonus_allowance import AllowanceStore
+        await self.setup_published()
+        self.set_group([["#Y2Y"]], state='WAR')
+        self.set_war('#Y2Y', state='WAR')
+        self.league.wars['#Y2Y']['end_time'] = '20261003T000000.000Z'
+        async def profile(tag):
+            return {'tag': tag, 'cwl_league': 'Crystal League I'}
+        self.providers.clan = profile
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 10, 2, tzinfo=timezone.utc)
+        with patch('cwl_web.participation_sync.datetime', Clock):
+            self.assertEqual((await self.sync()).status, 200)
+        with self.app['store'].tx() as db:
+            self.assertEqual(AllowanceStore(db, self.sid, '2026-10').view('#C2Y')['league'], 'Crystal League I')
+        # A second season/month cannot borrow this league snapshot.
+        with self.app['store'].tx() as db:
+            self.assertIsNone(AllowanceStore(db, self.sid, '2026-11').view('#C2Y')['league'])
+            db.execute('DELETE FROM bonus_allowance_leagues')
+        # A stale active group and a past war cannot capture a promoted profile.
+        self.league.wars['#Y2Y']['end_time'] = '20261001T000000.000Z'
+        with patch('cwl_web.participation_sync.datetime', Clock):
+            self.assertEqual((await self.sync()).status, 200)
+        with self.app['store'].tx() as db:
+            self.assertIsNone(AllowanceStore(db, self.sid, '2026-10').view('#C2Y')['league'])
+
+    async def test_ended_group_does_not_infer_season_league_from_current_profile(self):
+        from utils.cwl_bonus_allowance import AllowanceStore
+        await self.setup_published()
+        self.set_group([["#Y2Y"]])
+        self.set_war('#Y2Y')
+        self.assertEqual((await self.sync()).status, 200)
+        with self.app['store'].tx() as db:
+            result = AllowanceStore(db, self.sid, '2026-10').view('#C2Y')
+            self.assertIsNone(result['league'])
+            self.assertIsNone(result['total'])
+            self.assertEqual(result['completed_wars'], 1)
 
     async def test_sync_current_signups_without_a_published_roster(self):
         await self.setup_published()

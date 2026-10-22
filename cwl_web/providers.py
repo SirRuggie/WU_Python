@@ -430,7 +430,8 @@ class LiveProviders:
                 result_members.append({"tag": member_tag, "name": member["name"],
                                        "town_hall": th, "attacks": attacks,
                                        "opponent_attacks": opponent_attacks})
-            result[side] = {"tag": side_tag, "name": value["name"], "members": result_members}
+            result[side] = {"tag": side_tag, "name": value["name"], "members": result_members,
+                            "stars": value.get("stars"), "destruction": value.get("destructionPercentage")}
         result["checked_at"] = datetime.now(timezone.utc).isoformat()
         return result
 

@@ -74,7 +74,7 @@ class LeagueProviderTests(unittest.IsolatedAsyncioTestCase):
         payload = {
             "state": "warEnded", "teamSize": 15, "preparationStartTime": "20261001T000000.000Z",
             "startTime": "20261002T000000.000Z", "endTime": "20261003T000000.000Z",
-            "clan": {"tag": "#R2Y", "name": "Example", "members": [
+            "clan": {"tag": "#R2Y", "name": "Example", "stars": 40, "destructionPercentage": 92.5, "members": [
                 {"tag": "#P2Y", "name": "Attacked", "townhallLevel": 16,
                  "attacks": [{"stars": 2}, {"stars": 3}], "opponentAttacks": 1},
                 {"tag": "#Q2Y", "name": "Pending", "townhallLevel": 15},
@@ -89,6 +89,8 @@ class LeagueProviderTests(unittest.IsolatedAsyncioTestCase):
             result = await self.make_provider().league_war("C2Y")
         self.assertEqual(result["state"], "ENDED")
         self.assertEqual(result["team_size"], 15)
+        self.assertEqual(result["clan"]["stars"], 40)
+        self.assertEqual(result["clan"]["destruction"], 92.5)
         self.assertEqual(result["clan"]["members"][0]["attacks"], [{"stars": 2}, {"stars": 3}])
         self.assertEqual(result["clan"]["members"][1]["attacks"], [])
         self.assertEqual(result["opponent"]["members"][0]["attacks"], [])

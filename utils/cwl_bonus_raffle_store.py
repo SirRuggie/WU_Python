@@ -78,8 +78,14 @@ class RaffleStore:
 
     def preview(self, view, pool, clan_tag, slots):
         minimum = self.policies()[pool]
+        automatic = slots is None
+        allowance = view.get('allowances', {}).get(clan_tag, {})
+        if automatic:
+            slots = allowance.get('total') if allowance.get('status') == 'ready' else 0
         accounts = [a for a in view['accounts'] if a['pool'] == pool and a['assigned_clan_tag'] == clan_tag]
         eligible, excluded, blocks = [], [], []
+        if automatic and allowance.get('status') != 'ready':
+            blocks.append(allowance.get('reason') or 'Automatic allowance is not available. Confirm the in-game count.')
         if not view['cycle']:
             blocks.append('Select the CWL month in Results first')
         if view['active_other_cycles']:
@@ -110,6 +116,8 @@ class RaffleStore:
         result = {'cycle': view['cycle'], 'pool': pool, 'clan_tag': clan_tag,
                   'clan_name': clan.get('name', clan_tag), 'minimum': minimum,
                   'slots': slots, 'available': available, 'confirmed': confirmed,
+                  'allowance_source': 'automatic' if automatic else 'staff',
+                  'allowance': allowance if automatic else None,
                   'eligible': eligible, 'excluded': excluded,
                   'publication_version': view['publication_version'],
                   'blocking_reasons': sorted(set(blocks))}
@@ -142,6 +150,10 @@ class RaffleStore:
         snapshot = draw['snapshot']
         if snapshot['cycle'] != view['cycle']:
             raise RaffleConflict('The CWL month changed. Restore the original month before approving')
+        if snapshot.get('allowance_source') == 'automatic':
+            allowance = view.get('allowances', {}).get(snapshot['clan_tag'])
+            if allowance != snapshot.get('allowance'):
+                raise RaffleConflict('The calculated allowance changed. Review the draw before approval; winners have not been rerolled')
         # Revalidate relevant results/identity without rerolling saved winners.
         current = {a['tag']: a for a in view['accounts']}
         original = snapshot['eligible'] + snapshot['excluded']

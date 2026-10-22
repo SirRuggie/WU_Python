@@ -622,9 +622,9 @@ with existing three-request concurrency and bounded war-fetch timeout. Unknown,
 incomplete or identity-mismatched results block draws. Historical results are
 preserved; the Results page now explains its wider historical scope.
 
-Staff enter the game's total available bonus count for each clan; automatic
-verification of the league's bonus allowance is not implemented. Do not present
-this count as API-verified. Attack totals use the actual observed round count
+Bonus allowance now defaults to a calculation using the saved season league,
+war size and final wins. Missing evidence and special events retain an explicitly
+labeled staff-confirmed count. See `cwl-bonus-allowance.md` for sources and scope. Attack totals use the actual observed round count
 when known; they do not assume every season has seven rounds.
 
 Draws and their candidate snapshots are durable. Approval checks current results,
@@ -697,3 +697,24 @@ manual save, desktop and 390px/320px reflow with no horizontal page overflow.
 Frontend regression tests, production build and war-reminder validation run before
 deployment. This is not a guarantee against every future bug or proof of live
 Discord delivery. Existing frontend bundle-size advisory remains.
+
+
+### Automatic CWL bonus allowance — October 21
+
+The base + wins breakdown stays visible; the optional staff-confirmed count is a
+collapsed disclosure. Preview, saved draw and history distinguish calculated versus
+staff-entered counts. Missing final evidence blocks automatic draws; changes to
+calculation evidence invalidate previews and block approval without rerolling.
+Manual drafts use navigation/discard protection. Existing gold Main/Lazy tabs and
+manual announcement review remain unchanged.
+
+Checks: 607 CWL/weights/durability backend regressions (one opt-in real Mongo drill
+excluded from that run), 203 frontend tests, production build, and required war
+reminder gate passed. Focused additional cases cover five-round groups, zero wins,
+malformed scores, cached final results, league promotion, current-month capture,
+and automatic/manual snapshots. Isolated browser tests at desktop 1280px, 390px
+and 320px verified automatic review, override clearing the preview, saving and
+approving a fictional draw, and no horizontal overflow. Announcement remained a
+separate disabled action until channel review; no live messages or real winners
+were created. Existing Vite chunk-size and aiohttp warnings remain. This is scoped
+feature testing, not a complete assistive-technology audit.

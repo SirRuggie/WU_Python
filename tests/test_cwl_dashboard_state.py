@@ -245,12 +245,21 @@ def test_real_mongo_recovery_when_local_binary_is_available(setup, tmp_path, mon
             store = Store(source, durability=first)
             with store.tx() as db:
                 db.execute('UPDATE roster_entries SET manual_weight=179000')
+                from utils.cwl_bonus_allowance import AllowanceStore
+                allowance = AllowanceStore(db, 1, '2026-11')
+                allowance.capture_league('#C2Y', 'Crystal League I', '2026-11-02T00:00:00Z')
+                allowance.capture_war('#Y2Y', {'state': 'ENDED', 'team_size': 30,
+                    'clan': {'tag': '#C2Y', 'stars': 70, 'destruction': 90},
+                    'opponent': {'tag': '#J2Y', 'stars': 60, 'destruction': 80}})
             first.close()
             first = None
             second = MongoDashboardState.open(authenticated)
             replacement = tmp_path / 'replacement-server.sqlite'
             second.restore(replacement)
-            assert Store(replacement).one('SELECT manual_weight FROM roster_entries')['manual_weight'] == 179000
+            recovered = Store(replacement)
+            assert recovered.one('SELECT manual_weight FROM roster_entries')['manual_weight'] == 179000
+            assert recovered.one('SELECT league FROM bonus_allowance_leagues')['league'] == 'Crystal League I'
+            assert recovered.one('SELECT war_tag FROM bonus_allowance_wars')['war_tag'] == '#Y2Y'
             assert second.collection.write_concern.document == {'w': 'majority', 'j': True, 'wtimeout': 5000}
         finally:
             for client in (first, second):

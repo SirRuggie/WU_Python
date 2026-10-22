@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from aiohttp import web
 
 from utils.cwl_working_roster import working_accounts, account_token
+from utils.cwl_bonus_allowance import AllowanceStore
 from .providers import ProviderUnavailable, tag as normalize_tag
 
 INTERVAL_SECONDS = 15 * 60
@@ -160,7 +161,18 @@ async def _fetch_groups(providers, clans: list[str], cycle: str):
         async with semaphore:
             try:
                 group = await asyncio.wait_for(providers.league_group(clan_tag), timeout=10)
-                return clan_tag, (*_valid_group(group, cycle, clan_tag), str(group.get("state") or "").upper()), None
+                validated = _valid_group(group, cycle, clan_tag)
+                state = str(group.get("state") or "").upper()
+                league = None
+                # Never infer a past season's league from a promoted clan profile.
+                if state in {"INWAR", "WAR", "PREPARATION"} and cycle == datetime.now(timezone.utc).strftime('%Y-%m'):
+                    try:
+                        clan = await asyncio.wait_for(providers.clan(clan_tag), timeout=10)
+                        if isinstance(clan, dict) and clan.get('tag') == clan_tag:
+                            league = clan.get('cwl_league')
+                    except (ProviderUnavailable, ValueError, KeyError, TypeError, TimeoutError):
+                        pass
+                return clan_tag, (*validated, state, league), None
             except (ProviderUnavailable, ValueError, KeyError, TypeError, TimeoutError) as exc:
                 return clan_tag, None, "season_mismatch" if isinstance(exc, ValueError) and "season" in str(exc) else "unavailable"
 
@@ -174,7 +186,7 @@ async def _fetch_wars(providers, tags: list[str]):
         async with semaphore:
             try:
                 war = await asyncio.wait_for(providers.league_war(war_tag), timeout=10)
-                if not isinstance(war, dict):
+                if not isinstance(war, dict) or war.get("tag", war_tag) != war_tag:
                     raise ValueError("War unavailable")
                 return war_tag, war, None
             except (ProviderUnavailable, ValueError, KeyError, TypeError, TimeoutError):
@@ -349,10 +361,11 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             if result is None:
                 failures.append(error or "unavailable")
                 continue
-            rounds, members, state = result
-            groups_to_write.append((clan_tag, state, rounds, members))
+            rounds, members, state, league = result
+            groups_to_write.append((clan_tag, state, rounds, members, league))
             fresh_groups.add(clan_tag)
         with store.tx() as db:
+            captured_scores = AllowanceStore(db, season_id, cycle).captured_wars()
             cached_groups = _group_rows(db, season_id, cycle)
             cached_fetches = {
                 row["war_tag"]: row for row in db.execute(
@@ -378,10 +391,12 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
         for war_tag in sorted(all_tags):
             cached = cached_fetches.get(war_tag)
             scanned = set(json.loads(cached["scanned_clans_json"])) if cached else set()
-            if cached and cached["ended"] and set(clans) <= scanned:
+            if cached and cached["ended"] and set(clans) <= scanned and war_tag in captured_scores:
                 continue
             to_fetch.append(war_tag)
         war_fetches = await _fetch_wars(app["providers"], to_fetch)
+        war_fetches = [(tag, None, 'season_mismatch') if war and war.get('season') not in (None, cycle)
+                       else (tag, war, error) for tag, war, error in war_fetches]
         fresh_wars = set()
         wars_to_write = []
         for war_tag, war, error in war_fetches:
@@ -409,7 +424,24 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
                 or current["enabled"] != settings["enabled"]
             ):
                 _fail(409, "Season, signup assignments, or sync month changed during refresh")
-            for clan_tag, state, rounds, members in groups_to_write:
+            allowances = AllowanceStore(db, season_id, cycle)
+            for clan_tag, state, rounds, members, league in groups_to_write:
+                # A stale active group near season end must not capture a promoted
+                # league. Require a matching live war whose end is still ahead.
+                active_war = False
+                group_tags = {tag for values in rounds for tag in values}
+                for war_tag, war, _ in war_fetches:
+                    if war_tag not in group_tags or not war or _war_state(war.get('state')) not in {'WAR', 'PREPARATION'}:
+                        continue
+                    if not any(isinstance(war.get(key), dict) and war[key].get('tag') == clan_tag for key in ('clan', 'opponent')):
+                        continue
+                    try:
+                        end = datetime.strptime(war['end_time'], '%Y%m%dT%H%M%S.%fZ').replace(tzinfo=timezone.utc)
+                        active_war = active_war or end > datetime.now(timezone.utc)
+                    except (KeyError, ValueError, TypeError):
+                        pass
+                if league and active_war:
+                    allowances.capture_league(clan_tag, league, stamp)
                 db.execute(
                     "INSERT INTO participation_group_observations("
                     "season_id,cycle,clan_tag,season,state,war_tags_json,members_json,observed_at"
@@ -423,6 +455,8 @@ async def sync_season(app, season_id: int, *, force: bool = False) -> dict:
             for war_tag, war, error in war_fetches:
                 if war is None:
                     continue
+                if war.get("season") in (None, cycle):
+                    allowances.capture_war(war_tag, war)
                 db.execute(
                     "INSERT INTO participation_war_fetches("
                     "season_id,cycle,war_tag,ended,scanned_clans_json,observed_at"

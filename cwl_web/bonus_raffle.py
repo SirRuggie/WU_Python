@@ -6,6 +6,7 @@ import sqlite3
 from aiohttp import web
 from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementUnavailable, DiscordTransport
 from utils.cwl_bonus_raffle_store import RaffleConflict, RaffleStore
+from utils.cwl_bonus_allowance import AllowanceStore
 from .bonuses import _view, _require_draft, _bump, _validate_revision, _cas
 
 
@@ -18,7 +19,8 @@ def _state(db, sid):
     for account in result['accounts']:
         account['season_rounds'] = rounds.get(account['assigned_clan_tag'])
     store = RaffleStore(db, sid)
-    return {**result, 'policies': store.policies(), 'draws': store.draws()}
+    return {**result, 'policies': store.policies(), 'draws': store.draws(),
+            'allowances': {c['tag']: AllowanceStore(db, sid, result['cycle']).view(c['tag']) for c in result['clans']}}
 
 
 def _selection(body):
@@ -27,7 +29,7 @@ def _selection(body):
         _fail(400, 'Choose Main or Lazy CWL')
     if not isinstance(body.get('clan_tag'), str) or len(body['clan_tag']) > 20:
         _fail(400, 'Choose a hosting clan')
-    if type(body.get('slots')) is not int or not 1 <= body['slots'] <= 50:
+    if body.get('slots') is not None and (type(body['slots']) is not int or not 1 <= body['slots'] <= 50):
         _fail(400, 'Enter 1–50 available bonuses, as shown in-game')
     return body['pool'], body['clan_tag'], body['slots']
 

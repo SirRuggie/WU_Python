@@ -60,6 +60,63 @@ class RaffleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200, await response.text())
         return (await response.json())['draws'][0]
 
+    def allowance_evidence(self):
+        import json
+        from utils.cwl_bonus_allowance import AllowanceStore
+        from test_cwl_bonus_allowance import war
+        with self.app['store'].tx() as db:
+            owner = AllowanceStore(db, self.sid, '2026-10')
+            tags = ['#Y2Y', '#Y2P', '#Y2L', '#Y2Q', '#Y2G', '#Y2R', '#Y2J']
+            db.execute('INSERT INTO participation_group_observations VALUES (?,?,?,?,?,?,?,?)',
+                       (self.sid, '2026-10', '#C2Y', '2026-10', 'ENDED', json.dumps([[t] for t in tags]), '[]', 'now'))
+            owner.capture_league('#C2Y', 'Crystal League I', 'now')
+            for tag in tags:
+                owner.capture_war(tag, war())
+
+    async def test_automatic_preview_draw_and_changed_allowance_blocks_approval(self):
+        from utils.cwl_bonus_allowance import AllowanceStore
+        from test_cwl_bonus_allowance import war
+        await self.ready()
+        self.allowance_evidence()
+        body = {'pool': 'main', 'clan_tag': '#C2Y', 'slots': None}
+        response = await self.call('POST', self.base + '/preview', self.owner, json=body)
+        preview = await response.json()
+        self.assertEqual(preview['slots'], 11)
+        self.assertEqual(preview['allowance_source'], 'automatic')
+        self.assertEqual(preview['blocking_reasons'], [])
+        response = await self.call('POST', self.base + '/draw', self.owner, json={**body, 'fingerprint': preview['fingerprint']})
+        self.assertEqual(response.status, 200, await response.text())
+        draw = (await response.json())['draws'][0]
+        with self.app['store'].tx() as db:
+            AllowanceStore(db, self.sid, '2026-10').capture_war('#Y2Y', war(stars=20))
+        response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
+        self.assertEqual(response.status, 409)
+        self.assertEqual((await self.get_state())['draws'][0]['snapshot'], draw['snapshot'])
+
+    async def test_automatic_missing_data_blocks_draw_and_override_remains_explicit(self):
+        await self.ready()
+        body = {'pool': 'main', 'clan_tag': '#C2Y', 'slots': None}
+        response = await self.call('POST', self.base + '/preview', self.owner, json=body)
+        preview = await response.json()
+        self.assertTrue(preview['blocking_reasons'])
+        response = await self.call('POST', self.base + '/draw', self.owner, json={**body, 'fingerprint': preview['fingerprint']})
+        self.assertEqual(response.status, 409)
+        draw = await self.draw()
+        self.assertEqual(draw['snapshot']['allowance_source'], 'staff')
+        self.assertIsNone(draw['snapshot']['allowance'])
+
+    async def test_allowance_change_invalidates_preview(self):
+        from utils.cwl_bonus_allowance import AllowanceStore
+        from test_cwl_bonus_allowance import war
+        await self.ready()
+        self.allowance_evidence()
+        body = {'pool': 'main', 'clan_tag': '#C2Y', 'slots': None}
+        preview = await (await self.call('POST', self.base + '/preview', self.owner, json=body)).json()
+        with self.app['store'].tx() as db:
+            AllowanceStore(db, self.sid, '2026-10').capture_war('#Y2Y', war(stars=20))
+        response = await self.call('POST', self.base + '/draw', self.owner, json={**body, 'fingerprint': preview['fingerprint']})
+        self.assertEqual(response.status, 409)
+
     async def test_saved_draw_review_send_and_replays(self):
         await self.ready()
         draw = await self.draw()

@@ -24,6 +24,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
   const [clanTag, setClanTag] = useState('')
   const [minimum, setMinimum] = useState('')
   const [slots, setSlots] = useState('')
+  const [manualCount, setManualCount] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [preview, setPreview] = useState<RafflePreview | null>(null)
   const generation = useRef(0)
@@ -32,7 +33,8 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
   activeSeason.current = seasonId
   const path = `/seasons/${encodeURIComponent(seasonId)}/bonus-raffle`
   const dirty = !!data && minimum !== String(data.policies[pool] ?? '')
-  useUnsavedWork(dirty || busy || !!cancelReason, onDirty)
+  const unsaved = dirty || (manualCount && !!slots && !data?.draws.some(d => d.pool === pool && d.clan_tag === clanTag && d.cycle === data.cycle && !d.cancelled_at))
+  useUnsavedWork(unsaved || busy || !!cancelReason, onDirty)
   const archived = data?.season_status !== 'draft'
   const currentClans = data?.clans.filter(clan => data.accounts.some(a => a.pool === pool && a.assigned_clan_tag === clan.tag)) || []
   const clans = [...currentClans]
@@ -43,7 +45,10 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
   }
   const selectedClan = clans.find(c => c.tag === clanTag)
   const draw = data?.draws.find(d => d.pool === pool && d.clan_tag === clanTag && d.cycle === data.cycle && !d.cancelled_at)
-  const changedContext = () => { setPreview(null); setSlots(''); setCancelReason(''); setNotice('') }
+  const allowance = data?.allowances?.[clanTag]
+  const requestedSlots = manualCount ? Number(slots) : null
+  const countReady = manualCount ? /^\d+$/.test(slots) && Number(slots) >= 1 && Number(slots) <= 50 : allowance?.status === 'ready'
+  const changedContext = () => { setMinimum(String(data?.policies[pool] ?? '')); setManualCount(false); setPreview(null); setSlots(''); setCancelReason(''); setNotice('') }
 
   const load = useCallback(async () => {
     if (!seasonId || working.current) return
@@ -66,7 +71,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
 
   useEffect(() => {
     generation.current += 1; working.current = false
-    setData(null); setClanTag(''); setPreview(null); setSlots(''); setCancelReason(''); setNotice(''); setError('')
+    setManualCount(false); setData(null); setClanTag(''); setPreview(null); setSlots(''); setCancelReason(''); setNotice(''); setError('')
     void load()
     return () => { generation.current += 1 }
   }, [load])
@@ -93,7 +98,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
     }
   }
   const refresh = () => {
-    if ((dirty || cancelReason) && !window.confirm('Discard unsaved bonus edits and refresh?')) return
+    if ((unsaved || cancelReason) && !window.confirm('Discard unsaved bonus edits and refresh?')) return
     void load()
   }
   const review = async () => {
@@ -101,7 +106,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
     working.current = true; setBusy(true); setError(''); setPreview(null)
     const request = ++generation.current
     try {
-      const result = await api<RafflePreview>(path + '/preview', 'POST', { pool, clan_tag: clanTag, slots: Number(slots) })
+      const result = await api<RafflePreview>(path + '/preview', 'POST', { pool, clan_tag: clanTag, slots: requestedSlots })
       if (request === generation.current) setPreview(result)
     } catch (cause) {
       if (request === generation.current) {
@@ -117,10 +122,10 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
     <div className="page-head"><div><p className="eyebrow">CWL · Results &amp; bonuses</p><h1>Bonus winners</h1>
       <p>Review attacks, draw winners, then announce them to your clan.</p></div>
       <label className="season-choice">Season<select value={seasonId} disabled={busy} onChange={event => {
-        if ((!dirty && !cancelReason) || window.confirm('Discard unsaved bonus edits and change season?')) onSeasonChange(event.target.value)
+        if ((!unsaved && !cancelReason) || window.confirm('Discard unsaved bonus edits and change season?')) onSeasonChange(event.target.value)
       }}><option value="">Select a season</option>{seasons.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label></div>
     <CwlPoolTabs value={pool} disabled={busy} onChange={next => {
-      if ((!dirty && !cancelReason) || window.confirm('Discard unsaved bonus edits and switch CWL?')) { setPool(next); changedContext() }
+      if ((!unsaved && !cancelReason) || window.confirm('Discard unsaved bonus edits and switch CWL?')) { setPool(next); changedContext() }
     }} />
     {error && <div className="notice error" role="alert">{error} <button disabled={busy} onClick={refresh}>Refresh saved status</button></div>}
     {notice && <p role="status">{notice}</p>}
@@ -141,7 +146,7 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
       <ol className="bonus-steps" aria-label="Bonus progress">{['Review results', 'Draw winners', 'Approve winners', 'Announce'].map((step, index) =>
         <li key={step} aria-current={stage === index ? 'step' : undefined}><span>{index + 1}</span>{step}</li>)}</ol>
       <div className="bonus-setup">
-        <label>Hosting clan<select value={clanTag} disabled={busy} onChange={event => { setClanTag(event.target.value); changedContext() }}>
+        <label>Hosting clan<select value={clanTag} disabled={busy} onChange={event => { if ((!unsaved && !cancelReason) || window.confirm('Discard unsaved bonus edits and change clan?')) { setClanTag(event.target.value); changedContext() } }}>
           {!clans.length && <option value="">No assigned hosting clans</option>}{clans.map(c => <option key={c.tag} value={c.tag}>{c.name} · {c.tag}</option>)}</select></label>
         <div><label>Minimum attacks · {pool === 'main' ? 'Main CWL' : 'Lazy CWL'}<input type="number" min="0" max="7" step="1" value={minimum}
           disabled={busy || archived} onChange={event => { setMinimum(event.target.value); setPreview(null) }} placeholder="Choose minimum" /></label>
@@ -151,29 +156,44 @@ export default function BonusWorkspace({ seasonId, seasons, onDirty, onSeasonCha
       {!clans.length && <p>No current signups are assigned to a hosting clan in this CWL pool. Check current signups and working assignments.</p>}
       {selectedClan && !draw && <section className="bonus-panel">
         <h2>{selectedClan.name}</h2><p>Each qualifying account gets one equal chance. Winners are saved and cannot be redrawn by refreshing.</p>
-        <label className="bonus-slots">Total bonuses available for this clan<input type="number" min="1" max="50" step="1" value={slots}
-          disabled={busy || archived} onChange={event => { setSlots(event.target.value); setPreview(null) }} placeholder="Count shown in-game" /></label>
-        <p className="small">Enter the total count shown in Clash for this CWL season. Already saved selections are deducted. The game’s bonus allowance is not verified automatically.</p>
+        <div className="bonus-allowance" role="status">
+          <strong>{allowance?.status === 'ready' ? `${allowance.total} bonuses available` : 'Bonus allowance not ready'}</strong>
+          {allowance?.league && <p className="small">{allowance.league}{allowance.team_size ? ` · ${allowance.team_size} vs ${allowance.team_size}` : ''}</p>}
+          {allowance?.base !== null && allowance?.base !== undefined && <p>{allowance.base} base bonuses + {allowance.wins} wins{allowance.status === 'ready' ? ` = ${allowance.total}` : ` · ${allowance.completed_wars}/${allowance.rounds ?? '?'} wars complete`}</p>}
+          <p className="small">{allowance?.reason || 'Refresh Clash results to check the allowance.'} Already saved selections are deducted before drawing.</p>
+        </div>
+        <details className="bonus-count-override">
+          <summary>Use the count shown in Clash{manualCount ? ' · Staff override active' : ''}</summary>
+          <p className="small">For missing season data or special game events. Enter the total allowance, before any dashboard selections.</p>
+          <label className="bonus-check"><input type="checkbox" checked={manualCount} disabled={busy || archived} onChange={event => { setManualCount(event.target.checked); setPreview(null) }} />Use a staff-confirmed count</label>
+          {manualCount && <label className="bonus-slots">Total bonuses shown in Clash<input type="number" min="1" max="50" step="1" value={slots}
+            disabled={busy || archived} onChange={event => { setSlots(event.target.value); setPreview(null) }} placeholder="Count shown in-game" /></label>}
+        </details>
+        {manualCount && <p className="notice">Using staff-confirmed count: {slots || 'Enter a count above'}. This is not API-verified.</p>}
         <div className="bonus-action-bar"><span>{dirty ? 'Save the minimum attacks first.' : 'Review the results before drawing.'}</span>
-          <button className="primary" disabled={busy || archived || dirty || !/^\d+$/.test(slots) || Number(slots) < 1 || Number(slots) > 50 || data.policies[pool] === null}
+          <button className="primary" disabled={busy || archived || dirty || !countReady || data.policies[pool] === null}
             onClick={() => void review()}>Review qualifying accounts</button></div>
         {preview && <section className="bonus-preview">
-          <h3>{preview.eligible.length} accounts qualify · {Math.min(preview.available, preview.eligible.length)} winners</h3>
+          <h3>{preview.eligible.length} {preview.eligible.length === 1 ? 'account qualifies' : 'accounts qualify'} · {Math.min(preview.available, preview.eligible.length)} {Math.min(preview.available, preview.eligible.length) === 1 ? 'winner' : 'winners'}</h3>
+          <p>{preview.allowance_source === 'automatic' ? 'Calculated allowance' : 'Staff-confirmed allowance'} · {preview.slots} total bonuses</p>
           <p>Minimum {preview.minimum} attacks · {preview.available} bonus slots remaining</p>
           {preview.available > preview.eligible.length && <p>There are fewer qualifying accounts than slots. Every qualifying account will win; remaining slots stay unused.</p>}
           {preview.blocking_reasons.length > 0 && <div className="notice error" role="alert">{preview.blocking_reasons.map(reason => <p key={reason}>{reason}</p>)}<p>Use Results &amp; participation to refresh or reconcile the results.</p></div>}
           <AccountList accounts={preview.eligible} />
           <details><summary>Accounts not included ({preview.excluded.length})</summary><AccountList accounts={preview.excluded} /></details>
           <div className="bonus-action-bar"><span>One saved draw per clan and CWL pool this month</span><button className="primary"
-            disabled={busy || archived || !!preview.blocking_reasons.length} onClick={() => void mutate('/draw', { pool, clan_tag: clanTag, slots: Number(slots), fingerprint: preview.fingerprint }, 'Winners drawn and saved. Review them before approving.')}>Draw and save winners</button></div>
+            disabled={busy || archived || !!preview.blocking_reasons.length} onClick={() => void mutate('/draw', { pool, clan_tag: clanTag, slots: requestedSlots, fingerprint: preview.fingerprint }, 'Winners drawn and saved. Review them before approving.')}>Draw and save winners</button></div>
         </section>}
       </section>}
       {draw && <section className="bonus-panel">
         <div className="bonus-toolbar"><h2>{draw.snapshot.clan_name} · Bonus winners</h2><strong>{draw.approved_at ? 'Approved' : 'Awaiting staff review'}</strong></div>
         <p className="small">Saved draw · {new Date(draw.created_at).toLocaleString()}. These winners are preserved from the reviewed account list.</p>
-        <p>{draw.snapshot.winners.length} winners · {draw.snapshot.eligible.length} qualifying accounts · Minimum {draw.snapshot.minimum} attacks</p>
+        <p className="small">{draw.snapshot.allowance_source === 'automatic' ? 'Calculated allowance' : 'Staff-confirmed allowance'} · {draw.snapshot.slots} total bonuses</p>
+        <p>{draw.snapshot.winners.length} {draw.snapshot.winners.length === 1 ? 'winner' : 'winners'} · {draw.snapshot.eligible.length} qualifying {draw.snapshot.eligible.length === 1 ? 'account' : 'accounts'} · Minimum {draw.snapshot.minimum} attacks</p>
         <AccountList accounts={draw.snapshot.winners} />
-        <details><summary>Draw details and qualifying accounts</summary><p>Drawn {new Date(draw.created_at).toLocaleString()}. Saved results are preserved even if rules change later.</p><AccountList accounts={draw.snapshot.eligible} /></details>
+        <details><summary>Draw details and qualifying accounts</summary><p>Drawn {new Date(draw.created_at).toLocaleString()}. Saved results are preserved even if rules change later.</p>
+          {draw.snapshot.allowance && <p>{draw.snapshot.allowance.league} · {draw.snapshot.allowance.team_size} vs {draw.snapshot.allowance.team_size} · {draw.snapshot.allowance.base} base bonuses + {draw.snapshot.allowance.wins} wins = {draw.snapshot.slots}</p>}
+          <AccountList accounts={draw.snapshot.eligible} /></details>
         {!draw.approved_at && <div className="bonus-action-bar"><span>Approval records these winners. It does not send a message.</span><button className="primary" disabled={busy || archived || dirty}
           onClick={() => void mutate(`/${draw.id}/approve`, {}, 'Winners approved. Review the announcement and choose a channel.')}>Approve winners</button></div>}
         {!draw.approved_at && <details><summary>Correct a draw problem</summary><p>Cancel only when results or setup need correction. The original winners and reason stay in history.</p>

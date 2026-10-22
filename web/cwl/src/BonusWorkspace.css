@@ -53,3 +53,6 @@
   .bonus-account-list li { flex-wrap: wrap; gap: 6px; }
   .bonus-account-list li > div:last-child { text-align: left; }
 }
+.bonus-allowance { padding: 12px 0; border-bottom: 1px solid #38383d; }
+.bonus-allowance > strong { font-size: 20px; }
+.bonus-count-override .bonus-check input { width: auto; }
