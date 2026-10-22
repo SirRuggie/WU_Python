@@ -22,6 +22,7 @@ import { strikePermissions } from './strikePermissions'
 import {isManagementArea, managementAreas} from './managementAreas'
 import TextCommands from './TextCommands'
 import AccessSettings from './AccessSettings'
+import DashboardIssues from './DashboardIssues'
 import ServerManagement from './ServerManagement'
 import { FilterPicker, leagueValue, matchesLeague } from './ClanFilters'
 import { sortClans, clanSortOptions, type ClanSort } from './clanSort'
@@ -497,7 +498,7 @@ function App() {
     </aside>
     {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     <div className="workspace">
-      <header className="topbar"><button className="menu-open" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button><div><span className="crumb">Warriors United{navigationSection(view) ? ` / ${navigationSection(view)}` : ''}</span><strong>{view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'manage-signups' ? 'Manage signups' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
+      <header className="topbar"><button className="menu-open" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button><div><span className="crumb">Warriors United{navigationSection(view) ? ` / ${navigationSection(view)}` : ''}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'manage-signups' ? 'Manage signups' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main>
         {seasonError && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
@@ -603,6 +604,7 @@ function App() {
 {staffSection !== 'season' && <div className="staff-page-controls"><p role="status">{staffCount ? `${currentStaffPage * 8 + 1}–${Math.min((currentStaffPage + 1) * 8, staffCount)} of ${staffCount}` : 'No matching results.'}</p>{staffCount > 8 && <div><button disabled={currentStaffPage === 0} onClick={() => setStaffPage(currentStaffPage - 1)}>Previous</button><span>Page {currentStaffPage + 1} of {staffLastPage + 1}</span><button disabled={currentStaffPage >= staffLastPage} onClick={() => setStaffPage(currentStaffPage + 1)}>Next</button></div>}</div>}
         </div>}
         {session.access_warning && <div className="notice error" role="alert">{session.access_warning}</div>}
+        {view === 'issues' && session.is_owner && <DashboardIssues />}
         {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}
       </main>
     </div>

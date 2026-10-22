@@ -735,3 +735,11 @@ remain keyboard-operable; this is not a full assistive-technology certification.
 Backend review covered owner-only access administration, action isolation,
 role revocation, stale revisions, failed writes, queued sends and partial Discord
 availability. See dashboard-access.md for storage and migration details.
+
+## Dashboard issue visibility
+
+Owner-only issue history uses the existing Settings navigation. Search and refresh
+stay together, technical detail is collapsed, loading/errors/empty matches are
+separate, and stale responses are ignored after leaving. Checked isolated sample
+layouts at 320, 390 and 1280 pixels, including visible keyboard focus and no horizontal
+overflow. See `dashboard-issues.md` for diagnostic scope and deliberate limitations.

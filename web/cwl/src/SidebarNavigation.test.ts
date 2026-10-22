@@ -22,8 +22,8 @@ it('shows owners all groups and every destination once',()=>{
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL','Clan management','Tickets','Server tools','Settings'])
  const views=sections.flatMap(section=>section.items.map(item=>item.view))
  expect(new Set(views).size).toBe(views.length)
- expect(views).toHaveLength(30)
- expect(sections.find(section=>section.id==='settings')?.items.map(item=>item.view)).toEqual(['image-gallery','connections-settings','access'])
+ expect(views).toHaveLength(31)
+ expect(sections.find(section=>section.id==='settings')?.items.map(item=>item.view)).toEqual(['image-gallery','connections-settings','issues','access'])
  expect(navigationSection('tickets')).toBe('Tickets')
  expect(navigationSection('applications-settings')).toBe('Server tools')
  expect(navigationSection('clan-management')).toBe('Clan management')
@@ -59,4 +59,8 @@ it('separates CWL action permissions from clan management and access settings',(
  expect(views(['cwl_send'])).toContain('bonuses')
  expect(views(['cwl_send'])).not.toContain('access')
  expect(views(['clans'])).not.toContain('manage-signups')
+})
+
+it('keeps issue history owner-only even for CWL staff',()=>{
+ expect(visibleNavigationSections(true,false,['cwl_signups']).flatMap(s=>s.items).some(i=>i.view==='issues')).toBe(false)
 })

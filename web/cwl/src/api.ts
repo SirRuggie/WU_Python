@@ -14,7 +14,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
   let response: Response
   try {
     response = await fetch(`/api/cwl${path}`, { method, credentials: 'same-origin', headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrfToken }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
-  } catch { throw new ApiError('The CWL service is unavailable. Check your connection and try again.', 0) }
+  } catch { void reportBrowserIssue('network_error'); throw new ApiError('The CWL service is unavailable. Check your connection and try again.', 0) }
   const data = await response.json().catch(() => null)
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
@@ -23,7 +23,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
     }
     const message = typeof data?.error === 'string' ? data.error : typeof data?.message === 'string' ? data.message : null
     const fallback: Record<number, string> = { 401: 'Your Discord session has expired. Sign in again.', 403: 'You do not have access to this action.', 404: 'This item is no longer available.', 409: 'This account is already signed up for the other CWL pool for this season.', 423: 'Signups are closed for this season.', 503: 'Linked accounts or game data are temporarily unavailable. Try again shortly.' }
-    throw new ApiError(message || fallback[response.status] || `Request failed (${response.status}). Try again.`, response.status)
+    throw new ApiError((message || fallback[response.status] || `Request failed (${response.status}). Try again.`) + (data?.issue_reference ? ` Reference: ${data.issue_reference}` : ''), response.status)
   }
   if (method !== 'GET') clearSnapshots()
   return data as T
@@ -32,6 +32,23 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
 export async function apiUpload<T>(path: string, file: File): Promise<T> {
   const response = await fetch(`/api/cwl${path}`, {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token':csrfToken, 'Content-Type':file.type||'application/octet-stream'}, body:file})
   const data = await response.json().catch(()=>null)
-  if(!response.ok) throw new ApiError(data?.error||'Image upload failed. Try a smaller PNG, JPEG, or WebP image.',response.status)
+  if(!response.ok) throw new ApiError((data?.error||'Image upload failed. Try a smaller PNG, JPEG, or WebP image.') + (data?.issue_reference ? ` Reference: ${data.issue_reference}` : ''),response.status)
   return data as T
+}
+
+let lastBrowserReport = 0
+export async function reportBrowserIssue(kind: 'browser_error' | 'unhandled_promise' | 'network_error') {
+  if (!csrfToken || Date.now() - lastBrowserReport < 60000) return
+  lastBrowserReport = Date.now()
+  try {
+    const response = await fetch('/api/cwl/issues/browser', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ kind }),
+    })
+    if (response.ok) {
+      const data = await response.json()
+      window.dispatchEvent(new CustomEvent('dashboard-issue', { detail: data.reference }))
+    }
+  } catch { /* Offline reports cannot be delivered; never retry a user action. */ }
 }

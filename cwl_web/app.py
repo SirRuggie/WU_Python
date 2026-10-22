@@ -19,6 +19,7 @@ import aiohttp
 from aiohttp import web
 from .access_control import PERMISSIONS, scopes, request_scopes, OWNER_IDS, CWL_PERMISSIONS
 from .access_settings import access_context
+from .issues import diagnostics, routes as issue_routes
 from .staff_tag_signups import routes as staff_tag_signup_routes
 
 from .providers import FixtureProviders, LiveProviders, ProviderUnavailable, tag
@@ -1694,7 +1695,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         raise ValueError("CWL_WEB_DB_PATH is required for the dashboard working copy")
     if dev_fixture and dev_identity is None:
         dev_identity = {"id": PERMANENT_OWNER_ID, "username": "Development owner", "guild_owner": False}
-    app = web.Application(middlewares=[errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
+    app = web.Application(middlewares=[diagnostics, errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
     app["store"] = Store(db_path, durability=durability)
     app["live_access"] = live_access
     if dev_fixture and providers is None:
@@ -1773,6 +1774,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     for module in (war_reminders, staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history):
         routes.extend(module.routes)
     manage_content.routes(app)
+    routes.extend(issue_routes)
     app.add_routes(routes)
     if static_dir is not None:
         from pathlib import Path
