@@ -1,39 +1,241 @@
-/* Keep every navigation item reachable without scrolling the main workspace. */
-.shell .sidebar{position:sticky;top:0;align-self:start;height:100vh;height:100dvh;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#858b98 #151517;padding-bottom:env(safe-area-inset-bottom,0px)}
-.shell .sidebar>.brand-wrap,.shell .sidebar>.community,.shell .sidebar>nav,.shell .sidebar>.sidebar-foot{flex-shrink:0}
-.shell .sidebar>nav{padding-bottom:12px}
-.shell .sidebar::-webkit-scrollbar{width:8px}
-.shell .sidebar::-webkit-scrollbar-track{background:#151517}
-.shell .sidebar::-webkit-scrollbar-thumb{background:#858b98;border:2px solid #151517;border-radius:8px}
-@media(max-width:900px){.shell .sidebar{position:fixed;inset:0 auto 0 0}}
-@media(max-width:900px){body:has(.sidebar.open){overflow:hidden}}
-/* Feature groups grow without adding every page to the top level. */
-.shell .sidebar .navigation-section{margin:7px 0}
-.shell .sidebar .navigation-toggle{min-height:44px;font-size:13px;font-weight:700;text-align:left;gap:9px;color:#dedee5}
-.shell .sidebar .navigation-icon{width:20px;flex:none;text-align:center}
-.shell .sidebar .navigation-chevron{margin-left:auto;font-size:20px;color:#aeb6c6}
-.shell .sidebar .navigation-section.contains-current>.navigation-toggle{color:#a9ccff}
-.shell .sidebar .navigation-children{margin:2px 0 8px 12px;padding-left:9px;border-left:1px solid #414653}
-.shell .sidebar .navigation-children[hidden]{display:none}
-.shell .sidebar .navigation-children button{min-height:44px;font-size:12px;gap:7px;padding:10px 8px;text-align:left;line-height:1.4}
-.shell .sidebar nav button:focus-visible{outline:2px solid #a9ccff;outline-offset:2px}
-.cwl-workspace-nav{display:flex;align-items:start;gap:12px;margin-bottom:20px;min-width:0}
-.cwl-roster-tabs{display:flex;gap:8px;flex:1;min-width:0}
-.cwl-roster-tabs button{flex:1;min-height:48px;white-space:normal}
-.cwl-roster-tabs button.active{background:#194a98;border:1px solid #8bb9ff;color:#fff}
-.cwl-more{flex:none}.cwl-more summary{cursor:pointer;padding:12px}.cwl-more button{display:block;margin:6px 0}
-.cwl-result-nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-@media(max-width:600px){.cwl-workspace-nav{flex-wrap:wrap;gap:4px}.cwl-roster-tabs{flex-basis:100%}.cwl-roster-tabs button{font-size:13px;padding:10px 6px}.cwl-more{margin-left:auto}}
-.shell .sidebar .strikes-subnav{margin:0 0 0 16px;padding-left:8px}
-.shell .sidebar .strikes-subnav button{font-size:12px;min-height:38px}
+/* Shared dashboard frame: one brand, a scrollable directory, and a visible account. */
+div.shell {
+  grid-template-columns: 256px minmax(0, 1fr);
+}
 
-/* Mobile navigation stays reachable while content and the drawer scroll. */
+.shell .sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: grid;
+  grid-template-rows: 70px minmax(0, 1fr) auto;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: #151517;
+}
+
+.shell .sidebar > .brand-wrap {
+  height: auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 12px 17px;
+  border-bottom: 1px solid #303035;
+}
+
+.shell .sidebar .brand {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.shell .sidebar .brand > span {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.shell .sidebar .brand strong,
+.shell .sidebar .brand small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell .sidebar > nav {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #666973 #151517;
+  padding: 12px 10px 18px;
+}
+
+.shell .sidebar > nav::-webkit-scrollbar { width: 7px; }
+.shell .sidebar > nav::-webkit-scrollbar-thumb {
+  background: #666973;
+  border: 2px solid #151517;
+  border-radius: 8px;
+}
+
+.shell .sidebar .navigation-section { margin: 0 0 9px; }
+.shell .sidebar .navigation-section + .navigation-section { margin-top: 12px; }
+.shell .sidebar .navigation-label {
+  margin: 0 11px 4px;
+  padding-top: 5px;
+  color: #a7a7ae;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.shell .sidebar nav button,
+.shell .sidebar .navigation-children button,
+.shell .sidebar .strikes-subnav button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 44px;
+  margin: 1px 0;
+  padding: 9px 10px;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #d1d1d7;
+  font-size: 13px;
+  font-weight: 580;
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+}
+
+.shell .sidebar nav button:hover { background: #252529; }
+.shell .sidebar nav button:focus-visible {
+  outline: 2px solid #f4cd64;
+  outline-offset: -2px;
+}
+.shell .sidebar .navigation-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  flex: 0 0 19px;
+  color: #aeb0b9;
+}
+.shell .sidebar .navigation-chevron {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: #aeb0b9;
+}
+.shell .sidebar .navigation-chevron .dashboard-icon { width: 16px; height: 16px; }
+.shell .sidebar .navigation-section.contains-current > .navigation-toggle {
+  color: #f5d785;
+}
+.shell .sidebar .navigation-section.contains-current > .navigation-toggle .navigation-icon {
+  color: #f5d785;
+}
+.shell .sidebar .navigation-section button[aria-current="page"] {
+  border-color: #8d7131;
+  background: #332a19;
+  color: #ffe098;
+  box-shadow: inset 3px 0 #e4b94b;
+  font-weight: 700;
+}
+.shell .sidebar .navigation-section button[aria-current="page"] .navigation-icon {
+  color: inherit;
+}
+.shell .sidebar .navigation-children {
+  margin: 1px 0 5px 18px;
+  padding-left: 8px;
+  border-left: 1px solid #38383e;
+}
+.shell .sidebar .navigation-children[hidden] { display: none; }
+.shell .sidebar .navigation-children button { font-size: 13px; }
+.shell .sidebar .navigation-children .navigation-children { margin-left: 15px; }
+.shell .sidebar .strikes-subnav { margin-left: 15px; padding-left: 8px; }
+
+.shell .sidebar > .sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 11px 12px max(12px, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid #303035;
+  background: #1b1b1f;
+}
+.shell .sidebar-account {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  min-height: 38px;
+  padding-left: 43px;
+}
+.shell .sidebar-account .user-pill {
+  display: block;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.shell .sidebar-account .user-avatar {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 34px;
+  height: 34px;
+}
+.shell .sidebar-account .user-display-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 750;
+}
+.shell .sidebar-account > small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #aeb0b9;
+  font-size: 11px;
+}
+.shell .sidebar-foot > button {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  border-color: #38383e;
+  background: #242428;
+  font-size: 12px;
+}
+
+.shell .workspace main {
+  width: min(100%, 1520px);
+  max-width: none;
+  margin: 0 auto 0 0;
+  padding: 25px 28px 72px;
+}
+.shell .topbar {
+  height: 70px;
+  padding: 0 28px;
+  background: #151517;
+}
+.shell .topbar > div { min-width: 0; }
+.shell .topbar > div > strong { font-size: 13px; }
+.shell .topbar .crumb { font-size: 11px; color: #a9a9b1; }
+.shell .topbar .user-pill { display: none; }
+
+.cwl-workspace-nav { display: flex; align-items: start; gap: 12px; margin-bottom: 20px; min-width: 0; }
+.cwl-roster-tabs { display: flex; gap: 8px; flex: 1; min-width: 0; }
+.cwl-roster-tabs button { flex: 1; min-height: 48px; white-space: normal; }
+.cwl-roster-tabs button.active { background: #194a98; border: 1px solid #8bb9ff; color: #fff; }
+.cwl-more { flex: none; }
+.cwl-more summary { cursor: pointer; padding: 12px; }
+.cwl-more button { display: block; margin: 6px 0; }
+.cwl-result-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+
 @media (max-width: 900px) {
+  div.shell { grid-template-columns: minmax(0, 1fr); }
+  .shell .sidebar { position: fixed; inset: 0 auto 0 0; width: min(290px, 88vw); }
+  body:has(.sidebar.open) { overflow: hidden; }
+  .shell .sidebar > .brand-wrap { padding-right: 58px; }
   .shell .topbar {
     position: sticky;
     top: 0;
     z-index: 3;
     box-shadow: 0 2px 8px #0005;
+  }
+  .shell .topbar .user-pill { display: inline-flex; flex-shrink: 1; min-width: 0; }
+  .shell .topbar > div { flex: 1; overflow: hidden; }
+  .shell .topbar > div > strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .shell .menu-open {
     flex: 0 0 auto;
@@ -43,25 +245,18 @@
     border-color: #8d7845;
     color: #ffe098;
   }
-  .shell .topbar > div { flex: 1; overflow: hidden; }
-  .shell .topbar > div > strong {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .shell .topbar .user-pill { flex-shrink: 1; min-width: 0; }
-  .shell .sidebar > .brand-wrap {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    background: #151517;
-    padding-right: 60px;
-  }
-  .shell .sidebar .brand-wrap .brand { min-width: 0; overflow: hidden; }
-  .shell .sidebar .brand-wrap .brand > div { overflow: hidden; }
-  .shell .sidebar .brand-wrap .brand strong { overflow: hidden; text-overflow: ellipsis; }
   .shell .workspace { scroll-padding-top: 80px; }
 }
+
+@media (max-width: 650px) {
+  .shell .workspace main { padding: 18px 15px 80px; }
+  .shell .topbar { height: 64px; padding: 0 15px; }
+  .cwl-workspace-nav { flex-wrap: wrap; gap: 4px; }
+  .cwl-roster-tabs { flex-basis: 100%; }
+  .cwl-roster-tabs button { font-size: 13px; padding: 10px 6px; }
+  .cwl-more { margin-left: auto; }
+}
+
 @media (max-width: 370px) {
   .shell .topbar { padding-inline: 10px; gap: 8px; }
   .shell .topbar .user-pill { max-width: 44px; padding: 6px; }

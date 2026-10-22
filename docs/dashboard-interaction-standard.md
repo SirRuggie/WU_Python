@@ -1010,3 +1010,29 @@ Desktop navigation is unchanged. 232 frontend tests and build passed. Isolated
 390px check opened navigation after 2448px page scroll, then scrolled the drawer
 953px and verified its close button stayed at 15px. 320px menu remained at 9.5px
 with a 44px target and no horizontal overflow. No data or API changes.
+
+## Shared dashboard frame — October 22
+
+Removed duplicate server branding and aligned page content 28px from the desktop
+sidebar instead of centering it across a large empty gutter. Navigation uses a
+consistent row style, gold active state and restrained section labels. The server
+header and account footer stay visible while only the navigation list scrolls.
+The footer reuses Discord avatar/name fallback and includes the username. Existing
+page components, permission filters, routes and unsaved-edit guards remain intact.
+Obsolete community-panel and conflicting navigation styles were removed.
+
+The mobile Menu stays sticky. Closed navigation is inert; open navigation has
+modal semantics, keeps keyboard focus inside, and restores focus to Menu on close.
+The page behind it is inert. Resizing to desktop closes the drawer. Native dialogs
+retain their own keyboard handling. No persistent data or API changes.
+
+Validation: Sol implemented the visual frame; Luna independently reviewed navigation
+permissions and keyboard risks. 232 frontend tests, 17 backend access/navigation
+regressions and the production build passed. Isolated sample-data checks covered
+1440px desktop, 390px mobile and 320x480px short mobile: no horizontal document
+overflow, 44px minimum menu targets, pinned close/account controls, nested active
+navigation, Tab/Shift+Tab wrapping and Escape focus restoration. Existing permission
+and history tests remain green. Native confirmation cancellation was not verified
+in the browser; existing canLeave handlers are unchanged. No live permissions,
+rosters or Discord messages were modified. Existing Vite bundle/import and aiohttp
+warnings remain; this is not a full assistive-technology audit.

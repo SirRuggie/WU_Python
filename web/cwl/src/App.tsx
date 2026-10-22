@@ -41,6 +41,7 @@ import type { ReadinessFilter } from './readiness'
 import './staffNavigation.css'
 import './sidebar.css'
 import { AccountIdentity } from './AccountIdentity'
+import { useMobileNavigation } from './useMobileNavigation'
 import RosterWorkspace from './RosterWorkspace'
 import PublicationWorkspace from './PublicationWorkspace'
 import ParticipationWorkspace from './ParticipationWorkspace'
@@ -74,6 +75,7 @@ function App() {
   const [staffSignupBusy, setStaffSignupBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const { drawerRef, triggerRef, mobile } = useMobileNavigation(menuOpen, () => setMenuOpen(false), Boolean(session))
   const [seasons, setSeasons] = useState<Season[]>([])
   const [staffSeasonId, setSeasonId] = useState(entryTarget.season)
   const [memberSeason, setMemberSeason] = useState<{season_id: number | null; revision: number}>({season_id: null, revision: 0})
@@ -496,16 +498,21 @@ function App() {
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
   return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className="shell">
-    <aside id="dashboard-navigation" className={`sidebar ${menuOpen ? 'open' : ''}`}>
+    <aside ref={drawerRef} id="dashboard-navigation" className={`sidebar ${menuOpen ? 'open' : ''}`} inert={mobile && !menuOpen} role={mobile && menuOpen ? 'dialog' : undefined} aria-modal={mobile && menuOpen ? true : undefined} aria-label={mobile && menuOpen ? 'Navigation' : undefined} tabIndex={-1}>
       <div className="brand-wrap"><Brand /><button className="menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button></div>
-      <div className="community"><img className="community-icon discord-server-icon" src={serverIconUrl} alt="Warriors United server icon" width={38} height={38} /><span><strong>Warriors United</strong><small>Member dashboard</small></span></div>
       <SidebarNavigation key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={changeView} />
-      {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
-      <div className="sidebar-foot"><strong>{session.user.display_name || session.user.username}</strong><small>Discord · {session.user.id}</small><button onClick={() => { if (!canLeave()) return; void run(async () => { const pushId = await stopPushOnSignout(); return api('/auth/logout', 'POST', { push_id: pushId }) }, 'Signed out.', async () => { signupRequest.current += 1; setAccounts([]); setSignups([]); setDrafts({main: {}, lazy: {}}); setCompletion(null); setSession(null); setAuthState('signed-out') }) }}>Sign out</button></div>
+      <div className="sidebar-foot">
+        <div className="sidebar-account">
+          <AccountIdentity user={session.user} />
+          <small>@{session.user.username}</small>
+        </div>
+        <button onClick={() => { if (!canLeave()) return; void run(async () => { const pushId = await stopPushOnSignout(); return api('/auth/logout', 'POST', { push_id: pushId }) }, 'Signed out.', async () => { signupRequest.current += 1; setAccounts([]); setSignups([]); setDrafts({main: {}, lazy: {}}); setCompletion(null); setSession(null); setAuthState('signed-out') }) }}>Sign out</button>
+      </div>
     </aside>
-    {menuOpen && <button className="scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
-    <div className="workspace">
-      <header className="topbar"><button className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">Warriors United{navigationSection(view) ? ` / ${navigationSection(view)}` : ''}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'manage-signups' ? 'Manage signups' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
+    {menuOpen && <button className="scrim" tabIndex={-1} aria-hidden="true" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
+    {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
+    <div className="workspace" inert={mobile && menuOpen}>
+      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'manage-signups' ? 'Manage signups' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Export season' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main>
         {seasonError && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}

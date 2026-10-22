@@ -66,8 +66,6 @@
   background: #302b20; color: #f4cd64; box-shadow: none;
 }
 .shell :is(.overview-filters, .clan-category-filters, .search-kind-filters) button:focus-visible { outline: 2px solid #f4cd64; outline-offset: -2px; }
-.shell .sidebar .navigation-label { margin: 20px 12px 6px; font-size: 11px; color: #b0aca3; font-weight: 600; }
-.shell .sidebar .navigation-everyday button { min-height: 44px; text-align: left; gap: 9px; }
 .shell .home-search-entry { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border-radius: 24px; margin: 20px 0 8px; background: #191919; color: #c6c3bb; min-height: 48px; }
 .home-search-entry span { flex: 1; }
 .home-search-entry kbd { font-size: 11px; white-space: nowrap; }
