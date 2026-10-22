@@ -45,6 +45,6 @@ it('renders the weight trial under clan management for clan staff only',async()=
  const React=await import('react')
  const {default:Sidebar}=await import('./SidebarNavigation')
  const render=(permissions:string[])=>renderToStaticMarkup(React.createElement(Sidebar,{userId:'1',view:'weight-trial',canEdit:false,isOwner:false,permissions,onNavigate:()=>{}}))
- expect(render(['clans'])).toContain('Weights · Test')
- expect(render([])).not.toContain('Weights · Test')
+ expect(render(['clans'])).toContain('Clan weights')
+ expect(render([])).not.toContain('Clan weights')
 })

@@ -318,6 +318,8 @@ class Store:
             from utils.cwl_bonus_raffle_store import SCHEMA as RAFFLE_SCHEMA
             db.executescript(RAFFLE_SCHEMA)
             migrate(db)
+            from utils.clan_weight_trial_store import initialize as initialize_clan_weights
+            initialize_clan_weights(db)
         self.durability = durability
 
     @contextmanager

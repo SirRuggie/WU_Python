@@ -1,4 +1,4 @@
-"""Staff-only trial editor using live clan membership and isolated saved weights."""
+"""Staff-only official weight editor using live membership and durable player weights."""
 from datetime import datetime, timezone
 from io import BytesIO
 from aiohttp import web
@@ -72,11 +72,13 @@ async def members(request):
     result['last_saved'] = last_saved(request, roster['tag'])
     try:
         lineup = await request.app['providers'].weight_war_lineup(roster['tag'])
+        request.app['clan_weight_trial'].remember_lineup(roster['tag'], lineup)
         result['war_order'] = lineup['order']
         result['war_source'] = {key: value for key, value in lineup.items() if key != 'order'}
     except (ProviderUnavailable, ValueError, TypeError):
-        result['war_order'] = None
-        result['war_source'] = None
+        lineup = request.app['clan_weight_trial'].saved_lineup(roster['tag'])
+        result['war_order'] = lineup['order'] if lineup else None
+        result['war_source'] = {key: value for key, value in lineup.items() if key != 'order'} if lineup else None
     return web.json_response(result)
 
 
@@ -125,7 +127,7 @@ def workbook(rows):
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
     book = Workbook()
     sheet = book.active
-    sheet.title = 'Saved test weights'
+    sheet.title = 'Clan weights'
     headers = ['Player tag','Player name','Town Hall','Weight (k)','Weight','Clan at last save','Clan tag at last save','Saved at','Storages','Loot']
     sheet.append(headers)
     for row in rows:
@@ -151,7 +153,7 @@ async def export(request):
     authorize(request)
     data = workbook(request.app['clan_weight_trial'].all())
     return web.Response(body=data, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        headers={'Content-Disposition':'attachment; filename="clan-weights-test.xlsx"'})
+                        headers={'Content-Disposition':'attachment; filename="clan-weights.xlsx"'})
 
 
 routes = [web.get('/api/cwl/weight-trial/clans',directory),

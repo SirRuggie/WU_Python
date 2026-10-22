@@ -202,11 +202,11 @@ export default function WeightTrial({
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = "clan-weights-test.xlsx";
+      link.download = "clan-weights.xlsx";
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNotice(
-        "Excel download started. It contains all saved test weights, including departed members.",
+        "Excel download started. It contains all saved weights, including departed members.",
       );
     } catch (cause) {
       setError(message(cause));
@@ -224,7 +224,7 @@ export default function WeightTrial({
     <div className="weight-trial">
       <div className="page-head">
         <div>
-          <p className="eyebrow">Clan management · Temporary test</p>
+          <p className="eyebrow">Clan management</p>
           <h1>Clan weights</h1>
           <p>
             Enter loot or full weight. Changing storages recalculates weight
@@ -233,7 +233,7 @@ export default function WeightTrial({
         </div>
       </div>
       <p className="weight-trial-note">
-        Test data only · These weights do not change live CWL calculations.
+        Official CWL weight source. Staff overrides take priority; FWA Stats is used only when no weight has been saved here.
       </p>
       {directoryError && (
         <p role="alert" className="notice error">
@@ -521,7 +521,7 @@ export default function WeightTrial({
           <details className="weight-trial-export">
             <summary>Export & copy weights</summary>
             <p>
-              Excel includes every saved test weight. “Clan at last save” may
+              Excel includes every saved weight. “Clan at last save” may
               differ from a player’s current clan. Unsaved edits are excluded.
             </p>
             <button disabled={busy || dirty} onClick={() => void exportAll()}>

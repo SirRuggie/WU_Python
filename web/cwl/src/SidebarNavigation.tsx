@@ -37,7 +37,7 @@ const sections: Section[] = [
   ] },
   { id: 'clans', label: 'Clan management', icon: 'shield', items: [
     {view:'clan-management',label:'Family clans',icon:'shield',permissions:['clans']},
-    {view:'weight-trial',label:'Weights · Test',icon:'roster',permissions:['clans']},
+    {view:'weight-trial',label:'Clan weights',icon:'roster',permissions:['clans']},
     {view:'strikes',label:'Strikes',icon:'flag',permissions:['strikes','strikes_add','strikes_remove']},
     {view:'replacements',label:'Replacements',icon:'replace',permissions:['strikes','strikes_add','strikes_remove']},
   ] },

@@ -1,3 +1,4 @@
+from utils.clan_weights import source_weights, saved_sources, overlay_accounts
 from utils.cwl_dashboard_state import DashboardDurabilityError
 from .ticket_browser import routes as ticket_browser_routes
 """Aiohttp CWL foundation. Read-only bot directory; no bot gateway or Discord sends."""
@@ -654,7 +655,7 @@ async def _dashboard_account_snapshot(request, user_id):
         # Optional enrichment must not prevent members viewing their accounts.
         try:
             weights = await asyncio.wait_for(
-                request.app["providers"].weights([account["tag"] for account in accounts]),
+                source_weights(_store(request), request.app["providers"], [account["tag"] for account in accounts]),
                 timeout=5,
             ) if accounts else {}
         except (ProviderUnavailable, asyncio.TimeoutError):
@@ -679,14 +680,14 @@ async def dashboard_accounts(request):
     _prune_dashboard_accounts(cache, time.monotonic())
     cached = cache.get(user_id)
     if cached is not None:
-        return web.json_response(cached[1])
+        return web.json_response(overlay_accounts(_store(request), cached[1]))
     inflight = request.app["dashboard_accounts_inflight"]
     task = inflight.get(user_id)
     if task is None:
         task = asyncio.create_task(_dashboard_account_snapshot(request, user_id))
         task.add_done_callback(_observe_dashboard_account_task)
         inflight[user_id] = task
-    return web.json_response(await asyncio.shield(task))
+    return web.json_response(overlay_accounts(_store(request), await asyncio.shield(task)))
 
 
 async def _dashboard_accounts_lifecycle(app):
@@ -941,9 +942,15 @@ def _roster_rows(db, sid):
         "LEFT JOIN roster_entries r ON r.season_id=s.season_id AND r.tag=s.tag "
         "WHERE s.season_id=? ORDER BY s.tag", (sid,)
     ).fetchall()
+    official = saved_sources(db, [row["tag"] for row in rows])
     result = []
     for raw in rows:
         row = dict(raw)
+        if row["tag"] in official:
+            source = official[row["tag"]]
+            row.update(source_weight=source["weight"], source_name=source["source_name"],
+                       source_modified_at=source["source_modified_at"], source_checked_at=source["source_checked_at"],
+                       source_status="current" if source["weight"] is not None else "missing")
         row["prefer_crystal_1_or_lower"] = bool(row["prefer_crystal_1_or_lower"])
         row["source_status"] = row["source_status"] or "missing"
         row["kept"] = bool(row["kept"])
@@ -1461,7 +1468,7 @@ async def refresh_weights(request):
         _check_revision(db, sid, body.get("revision"))
         tags = [row["tag"] for row in db.execute("SELECT tag FROM signups WHERE season_id=?", (sid,))]
     try:
-        found = await request.app["providers"].weights(tags)
+        found = await source_weights(_store(request), request.app["providers"], tags)
     except ProviderUnavailable:
         with _store(request).tx() as db:
             _check_revision(db, sid, body.get("revision"))
@@ -1752,6 +1759,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     from .clan_weight_trial import routes as weight_trial_routes
     from utils.clan_weight_trial_store import ClanWeightTrialStore
     app["clan_weight_trial"] = ClanWeightTrialStore(app["store"].path, transaction_factory=app["store"].tx)
+    from .clan_weights import lineup_lifecycle
+    app.cleanup_ctx.append(lineup_lifecycle)
     from .signup_activity import routes as signup_activity_routes
     routes = [*weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),

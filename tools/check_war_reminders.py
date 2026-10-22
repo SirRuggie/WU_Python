@@ -18,6 +18,8 @@ BACKEND = [
     'tests/test_war_operations_ux.py',
     'tests/test_cwl_web_foundation.py',
     'tests/test_cwl_dashboard_state.py',
+    'tests/test_official_clan_weights.py',
+    'tests/test_clan_weight_trial.py',
 ]
 COMMANDS = [
     [sys.executable, '-m', 'pytest', '-q', *BACKEND],

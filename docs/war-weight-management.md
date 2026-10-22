@@ -23,8 +23,50 @@ Dashboard manual weights carry into later signups by normalized player tag. Exis
 
 The roster write and local SQLite outbox commit together. The web service syncs every 30 seconds with majority Mongo acknowledgement, retrying queued events after failures/restarts without duplicates. Mongo events rebuild the local cache after recovery. SQLite and the full Mongo databases are covered by the existing backup jobs. No bot restart or Discord command changes are required.
 
-## Dashboard recovery coverage
+## Official clan weights (2026-10-21)
 
-Trial weights and their audit history now participate in the shared Mongo-backed
-dashboard checkpoint before a successful save response. Their business meaning
-remains isolated from production placement weights. See [dashboard recovery](cwl-dashboard.md#dashboard-database-recovery-2026-10-21) for restore steps and limits.
+**Clan management → Clan weights** is now the official saved source for CWL.
+Existing player-tag values, history, storage counts, and attribution are promoted
+in place. The legacy `weight-trial` view/API and `clan_weight_trial` table names
+remain for compatibility; there is no copied or second weight ledger.
+
+Precedence: explicit staff override, then saved clan weight, then FWA Stats only
+for a tag with no saved row. A saved blank deliberately means Not Available and
+suppresses external fallback. The official source follows the player if they
+leave their clan. Only current members of family FWA clans can be edited here.
+
+Current roster reads, placement calculations, member account weights, refreshes,
+and replacement suggestions use the saved source. A changed saved weight bumps
+all affected draft roster revisions in the same transaction, invalidating stale
+placement previews. Existing assignments and immutable published snapshots are
+not rewritten or automatically republished. Staff can retain deliberate manual
+overrides; those must be cleared through the existing override controls to use
+the official source for that account.
+
+## Persistent war ordering
+
+`clan_weight_war_lineups` stores one latest valid lineup per clan in the same
+durable database. Opening the editor captures valid current/preparation/ended
+wars; a server worker also checks FWA clans at startup and every ten minutes.
+Older responses, state regressions, malformed rosters, and unavailable/private
+wars cannot erase a saved lineup. API team size must match returned members.
+
+If the API stops returning a lineup, show the saved order with its capture time
+and a reminder to match the destination spreadsheet. Membership is always live;
+departed players are not reinserted into the editable member list. Existing
+Column F safety checks still reject copying if war members/weights are missing.
+This is the latest **observed** war, not guaranteed reconstruction of wars that
+finished while the service was offline and were never captured. A newly captured
+war replaces the previous lineup, preventing unbounded lineup history growth.
+
+## Recovery and validation
+
+Saved weights, audit history, and lineups participate in the shared Mongo-backed
+dashboard checkpoint before a successful save response. See [dashboard recovery](cwl-dashboard.md#dashboard-database-recovery-2026-10-21).
+
+Regression scope: source precedence, clearing, fallback outages, cached member
+views, preview revisions and replay, current-member filtering, capture without
+an editor visit, restart persistence, older/invalid responses, and Mongo recovery.
+UI checked with isolated 50-member fixtures at desktop, 390px, and 320px: official
+labels, compact FWA selector, readable fields, and no horizontal page overflow.
+No production weights were altered for verification; no live messages were sent.

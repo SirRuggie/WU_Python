@@ -119,3 +119,11 @@ it("compares adjacent actual war positions and reacts to unsaved edits", () => {
     ).toBe("");
   expect(rows[0].weight).toBe(150000);
 });
+
+it("labels persisted ordering as saved rather than current", () => {
+  const text = orderLabel({clan: {tag: "#R2Y", name: "Family"}, members: [], checked_at: "",
+    war_order: {"#P2Y": 1}, war_source: {state: "inWar", cached: true, captured_at: "2026-10-21T12:00:00Z"}});
+  expect(text).toContain("Saved war lineup");
+  expect(text).toContain("Check this matches the spreadsheet");
+  expect(text).not.toContain("Current war");
+});

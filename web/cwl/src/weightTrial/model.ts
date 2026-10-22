@@ -19,6 +19,8 @@ export type Roster = {
   } | null;
   war_source?: {
     state: string;
+    cached?: boolean;
+    captured_at?: string;
     end_time?: string | null;
     opponent?: string | null;
   } | null;
@@ -157,6 +159,11 @@ export function orderedMembers(roster: Roster | null): Member[] {
 export function orderLabel(roster: Roster): string {
   if (!roster.war_order)
     return "Clan order · War lineup unavailable. Positions are not war placements.";
+  if (roster.war_source?.cached) {
+    const captured = roster.war_source.captured_at;
+    const date = captured ? new Date(captured).toLocaleString() : "unknown time";
+    return `Saved war lineup · Captured ${date}. Check this matches the spreadsheet before copying.`;
+  }
   const state = roster.war_source?.state;
   return state === "preparation"
     ? "Preparation day · Upcoming war order"

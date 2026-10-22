@@ -275,6 +275,8 @@ class LiveProviders:
         rows = clan.get('members')
         if clan.get('tag') != clan_tag or not isinstance(rows, list) or not rows or len(rows) > 50:
             raise ProviderUnavailable('Incomplete war lineup.')
+        if 'teamSize' in body and (type(body['teamSize']) is not int or body['teamSize'] != len(rows)):
+            raise ProviderUnavailable('Incomplete war roster size.')
         order = {}
         for row in rows:
             if not isinstance(row, dict):

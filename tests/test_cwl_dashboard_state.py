@@ -78,6 +78,7 @@ def test_successful_save_recovers_on_empty_replacement_server(setup, tmp_path):
     trial.save({'tag': '#CLAN', 'name': 'FWA clan', 'members': [
         {'tag': '#ABC', 'name': 'Name', 'town_hall': 17}]},
         [{'tag': '#ABC', 'revision': 0, 'weight': 149000, 'storages': 5}], '123', 'Discord name')
+    trial.remember_lineup('#CLAN', {'order': {'#ABC': 1}, 'state': 'warEnded', 'end_time': '20261021T070000.000Z'})
     owner.close()
     replacement = tmp_path / 'new-server' / 'recovered.sqlite'
     recovered = MongoDashboardState(collection)
@@ -86,6 +87,7 @@ def test_successful_save_recovers_on_empty_replacement_server(setup, tmp_path):
     assert new.one('SELECT manual_weight FROM roster_entries')['manual_weight'] == 150000
     assert new.one('SELECT count(*) n FROM signups')['n'] == 1
     assert new.one('SELECT weight FROM clan_weight_trial')['weight'] == 149000
+    assert ClanWeightTrialStore(replacement).saved_lineup('#CLAN')['order'] == {'#ABC': 1}
     assert new.one('SELECT actor_name FROM clan_weight_trial_history')['actor_name'] == 'Discord name'
 
 

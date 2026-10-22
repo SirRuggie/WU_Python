@@ -462,7 +462,8 @@ async def replacements(request):
             {'guild_id': GUILD_ID, 'current_clan_tag': {'$in': allowed_tags}}).to_list(length=None)
         tags = [row['player_tag'] for row in profiles]
         try:
-            weights = await request.app['providers'].weights(tags) if tags else {}
+            from utils.clan_weights import source_weights
+            weights = await source_weights(request.app['store'], request.app['providers'], tags) if tags else {}
         except ProviderUnavailable as exc:
             if weight is not None:
                 raise web.HTTPServiceUnavailable(text='Current FWA weights are unavailable. Try again.') from exc

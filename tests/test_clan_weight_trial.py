@@ -93,6 +93,9 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         provider=LiveProviders()
         provider._league_get=AsyncMock(return_value={'state':'inWar','clan':{'tag':'#R2Y','members':[{'tag':'#P2Y','mapPosition':1}]}})
         self.assertEqual(await provider.weight_war_order('#R2Y'),{'#P2Y':1})
+        provider._league_get.return_value['teamSize'] = 2
+        with self.assertRaises(ProviderUnavailable): await provider.weight_war_order('#R2Y')
+        provider._league_get.return_value.pop('teamSize')
         provider._league_get.return_value['clan']['members'].append({'tag':'#Q2Y','mapPosition':1})
         with self.assertRaises(ProviderUnavailable): await provider.weight_war_order('#R2Y')
         self.roster()
@@ -171,3 +174,18 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
         with self.app['store'].tx() as db:
             db.execute("DELETE FROM sessions WHERE user_id='100'")
         self.assertEqual(store.last_saved('#R2Y')['actor_name'],'Saved Discord name')
+
+    async def test_cached_war_order_keeps_current_members_and_reports_capture_time(self):
+        self.roster()
+        self.providers.weight_war_lineup = AsyncMock(return_value={
+            'order': {'#P2Y': 2, '#Q2Y': 1}, 'state': 'warEnded',
+            'end_time': '20261021T070000.000Z', 'opponent': 'Opponent'})
+        first = await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
+        self.assertEqual(first['war_order'], {'#P2Y': 2, '#Q2Y': 1})
+        self.providers.weight_war_lineup.side_effect = ProviderUnavailable('No current war')
+        self.providers.clan_roster.return_value['members'] = [{'tag': '#P2Y', 'name': 'Still here', 'town_hall': 17}]
+        cached = await (await self.call('GET','/weight-trial/clans/%23R2Y',self.owner)).json()
+        self.assertTrue(cached['war_source']['cached'])
+        self.assertTrue(cached['war_source']['captured_at'])
+        self.assertEqual([row['tag'] for row in cached['members']], ['#P2Y'])
+        self.assertEqual(cached['war_order'], first['war_order'])
