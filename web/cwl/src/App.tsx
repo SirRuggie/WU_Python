@@ -98,7 +98,7 @@ function App() {
   currentSeason.current = seasonId
   const [signupStep, setSignupStep] = useState<1 | 2>(1)
   const stepHeadingRef = useRef<HTMLHeadingElement>(null)
-  useEffect(() => { setSignupStep(1); setPool(null); setReview(false); setCompletion(null); setAccounts([]); setSignups([]); setDrafts({main: {}, lazy: {}}) }, [seasonId])
+  useEffect(() => { setSignupStep(1); setPool(null); setReview(false); setCompletion(null); setAccounts([]); setSignups([]); setSavedSignupsLoaded(false); setDrafts({main: {}, lazy: {}}) }, [seasonId, session?.user.id])
   const [drafts, setDrafts] = useState<Record<Pool, Draft>>({ main: {}, lazy: {} })
   const selectionRef = useRef({ drafts })
   selectionRef.current = { drafts }
@@ -108,6 +108,7 @@ function App() {
   const [seasonsLoading, setSeasonsLoading] = useState(true)
   const [dataError, setDataError] = useState('')
   const [loadingData, setLoadingData] = useState(false)
+  const [savedSignupsLoaded, setSavedSignupsLoaded] = useState(false)
   const [pending, setPending] = useState(false)
   const [review, setReview] = useState(false)
   const [completion, setCompletion] = useState<Completion | null>(null)
@@ -206,8 +207,10 @@ function App() {
     const timer = window.setInterval(() => void refresh(), 60000)
     window.addEventListener('focus', refresh)
     return () => { seasonRequest.current++; clearInterval(timer); window.removeEventListener('focus', refresh) }
-  }, [session, loadSeasons])
+  }, [session?.user.id, loadSeasons])
 
+  // Access polling replaces the session object. Only a different member should
+  // restart signup reads; otherwise it interrupts the member's current draft.
   const loadSignup = useCallback(async () => {
     if (!seasonId) return
     setLoadingData(true)
@@ -217,7 +220,16 @@ function App() {
     setDataError('')
     const [accountsResult, signupsResult] = await Promise.allSettled([
       api<{ accounts: Account[]; link_instruction?: string | null }>('/linked-accounts'),
-      api<{ signups: Signup[] }>(`/seasons/${encodeURIComponent(seasonId)}/signups`),
+      api<{ signups: Signup[] }>(`/seasons/${encodeURIComponent(seasonId)}/signups`).then(result => {
+        if (requestId === signupRequest.current && currentSeason.current === seasonId) {
+          setSignups(result.signups)
+          setSavedSignupsLoaded(true)
+        }
+        return result
+      }, error => {
+        if (requestId === signupRequest.current && currentSeason.current === seasonId) setDataError(message(error))
+        throw error
+      }),
     ])
     if (requestId !== signupRequest.current || currentSeason.current !== seasonId) return { all: false, signups: false }
     let freshAccounts: Account[] | null = null
@@ -241,7 +253,7 @@ function App() {
     if (dashboardPrefill.current) { dashboardPrefill.current = false; return () => { signupRequest.current += 1 } }
     void loadSignup()
     return () => { signupRequest.current += 1 }
-  }, [session, seasonId, view, loadSignup])
+  }, [session?.user.id, seasonId, view, loadSignup])
 
   const loadStaff = useCallback(async () => {
     if (!session?.can_edit) return
@@ -582,7 +594,7 @@ function App() {
         {view === 'home' && <DashboardHome key={`${session.user.id}:${seasonId}`} session={session} seasonId={seasonId} seasons={seasons} onNavigate={next => { if (next === 'signup' || next === 'saved') { setSignupPanel(next === 'saved' ? 'saved' : 'register'); setSignupStep(1); setPool(null); setCompletion(null); setReview(false) }; changeView(next === 'saved' ? 'signup' : next, '', undefined, next === 'saved' ? 'saved' : 'register') }} onStart={(nextPool, tags, freshAccounts, freshSignups) => {
           dashboardPrefill.current = true
           signupRequest.current += 1
-          setAccounts(freshAccounts); setSignups(freshSignups); setLoadingData(false); setAccountError(''); setDataError('')
+          setAccounts(freshAccounts); setSignups(freshSignups); setSavedSignupsLoaded(true); setLoadingData(false); setAccountError(''); setDataError('')
           setDrafts({ main: {}, lazy: {}, [nextPool]: Object.fromEntries(tags.filter(tag => freshAccounts.some(account => account.tag === tag) && !freshSignups.some(signup => signup.tag === tag)).map(tag => [tag, false])) })
           setPool(nextPool); setSignupPanel('register'); setSignupStep(2); setReview(false); setCompletion(null); changeView('signup')
         }} />}
@@ -591,7 +603,7 @@ function App() {
           {dataError && !activeCompletion && <div className="notice error" role="alert">{dataError}<button disabled={loadingData || pending} onClick={() => void loadSignup()}>Retry</button></div>}
           {seasonsLoading && <p role="status">Loading seasons…</p>}
           {!seasonId && !seasonsLoading && <div className="card empty"><p>Staff will make the next CWL season available here.</p></div>}
-          {season && <>{!activeCompletion && loadingData && <p role="status">Loading linked accounts and saved signups…</p>}<div className="season-banner"><div><span className={`status-dot ${season.signup_open ? 'active' : ''}`} /> <strong>{season.label}</strong><span className="badge">{season.signup_open ? 'Signups open' : 'Signups closed'}</span></div><span>{season.status}</span></div>
+          {season && <>{!activeCompletion && loadingData && signupPanel === 'register' && <p role="status">Loading linked accounts…</p>}<div className="season-banner"><div><span className={`status-dot ${season.signup_open ? 'active' : ''}`} /> <strong>{season.label}</strong><span className="badge">{season.signup_open ? 'Signups open' : 'Signups closed'}</span></div><span>{season.status}</span></div>
             {activeCompletion ? <section className="completion-card card" aria-labelledby="completion-title"><div className="completion-mark" aria-hidden="true">✓</div><p className="eyebrow">Signup complete</p><h2 id="completion-title" ref={completionHeadingRef} tabIndex={-1}>You're signed up</h2><p><strong>{activeCompletion.accounts.length} {activeCompletion.accounts.length === 1 ? 'account is' : 'accounts are'} signed up</strong> for {poolName(activeCompletion.pool)} in {activeCompletion.seasonLabel}.</p><div className="completion-accounts">{activeCompletion.accounts.map(account => <div key={account.tag}><strong>{account.name}</strong><small>{account.tag}</small></div>)}</div><p>Your accounts are signed up. Staff will assign your accounts to clans. You can close this page, or sign up more accounts below.</p>{activeCompletion.refreshWarning && <div className="notice error" role="alert">Signup saved, but the latest account list could not be refreshed. You can check your saved signups later.</div>}<div className="completion-actions"><button className="primary" disabled={pending} onClick={() => void showSavedSignups()}>View my signups</button><button disabled={pending} onClick={() => changeView('assignments')}>My clan assignments</button><button disabled={pending} onClick={() => { setCompletion(null); setSignupPanel('register'); setSignupStep(1); setPool(null); setReview(false) }}>Sign up more accounts</button></div></section> : <><div className="signup-panel-tabs" role="group" aria-label="Signup sections"><button className={signupPanel === 'register' ? 'active' : ''} aria-pressed={signupPanel === 'register'} disabled={pending} onClick={() => changeSignupPanel('register')}>{season.signup_open ? 'Sign up' : 'Signup guide'}</button><button className={signupPanel === 'saved' ? 'active' : ''} aria-pressed={signupPanel === 'saved'} disabled={pending} onClick={() => changeSignupPanel('saved')}>My signups <span className="count-pill">{existing.length}</span></button></div>
             {signupPanel === 'register' && !season.signup_open && <section className="signup-guide" aria-label="Signup walkthrough"><p className="eyebrow">CWL signup guide</p><h2>Signups are closed</h2><p>View your saved signups or check your CWL clan. To make a change, ask staff for help.</p><div className="signup-action-buttons"><button onClick={() => changeSignupPanel('saved')}>My signups</button><button onClick={() => changeView('assignments')}>My CWL clans</button></div></section>}
             {signupPanel === 'register' && season.signup_open && <div className="signup-flow">
@@ -631,10 +643,12 @@ function App() {
             {review && pool && <section className="signup-review card" aria-label="Review selected accounts">{notice?.kind === 'error' && <div className="notice error" role="alert">{notice.text}</div>}<h3>{poolName(pool)} · {season.label}</h3><p>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected. Staff will assign your hosting clans.</p><div className="review-list">{selected.map(item => { const account = accounts.find(candidate => candidate.tag === item.tag)!; return <div className="review-row" key={item.tag}><div><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.current_clan_name || 'No current clan'}</small></div>{account.current_clan_type === 'FWA' && pool === 'main' && <span className="transfer-review">FWA account · Lazy CWL only.</span>}</div> })}</div><div className="signup-actions submit-bar"><button disabled={pending} onClick={() => setReview(false)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !season.signup_open || !!dataError || !!accountError} onClick={submit}>{pending ? 'Saving…' : `Sign up ${selected.length} ${selected.length === 1 ? 'account' : 'accounts'}`}</button></div></section>}
             </div>}
             {signupPanel === 'saved' && <section className="registered">
-              {loadingData ? <p role="status">Loading saved signups…</p> : dataError ? <p>Your saved signups could not be checked. Retry above.</p> : <>
-                <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={season.signup_open && season.status === 'draft'} busy={pending || loadingData} canMove={!accountError} headingRef={registeredHeadingRef} onDirty={setSavedSignupDirty} onSave={saveSavedSignups} onWithdraw={rows => void withdraw(rows)}/>
+              {!savedSignupsLoaded && !dataError ? <p role="status">Loading saved signups…</p> : dataError ? <p>Your saved signups could not be checked. Retry above.</p> : <>
+                {loadingData && <p role="status">Checking linked accounts…</p>}
+                {accountError && <div className="notice error" role="alert">{accountError}<button disabled={loadingData || pending} onClick={() => void loadSignup()}>Retry accounts</button></div>}
+                <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={season.signup_open && season.status === 'draft'} busy={pending || loadingData} canMove={!loadingData && !accountError} headingRef={registeredHeadingRef} onDirty={setSavedSignupDirty} onSave={saveSavedSignups} onWithdraw={rows => void withdraw(rows)}/>
                 {!existing.length && <div className="card empty"><p>No signed-up accounts for this season.</p>{season.signup_open && <button onClick={() => {changeSignupPanel('register');setSignupStep(1)}}>Choose accounts</button>}</div>}
-                <button disabled={pending || loadingData} onClick={() => { if (savedSignupDirty && !window.confirm('Refresh saved signups and discard pending pool changes?')) return; void loadSignup() }}>Refresh saved signups</button>
+                <button disabled={pending || loadingData} onClick={() => { if (savedSignupDirty && !window.confirm('Refresh saved signups and discard pending pool changes?')) return; setSavedSignupsLoaded(false); void loadSignup() }}>Refresh saved signups</button>
               </>}
             </section>}
           </>}

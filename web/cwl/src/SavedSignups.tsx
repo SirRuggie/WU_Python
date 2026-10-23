@@ -73,6 +73,7 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
           <small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small>
           {moves[signup.tag] && moves[signup.tag] !== signup.pool && <p className="inline-reason pending-switch" role="status"><strong>Not saved</strong> — switching from {poolName(signup.pool)} to {poolName(moves[signup.tag])}.<small>Select Save changes to finish.</small></p>}
           {(moves[signup.tag] || signup.pool) === 'main' && accounts.find(account => account.tag === signup.tag)?.current_clan_type === 'FWA' && <p className="inline-reason">This account is currently in FWA and can only choose Lazy CWL.</p>}
+          {canMove && !busy && !accounts.some(account => account.tag === signup.tag) && <p className="inline-reason">This account is not in your current linked accounts. Check its Discord link, then refresh before changing pools.</p>}
           {signup.has_staff_placement && <p className="inline-reason">Changing pools or withdrawing will remove this working placement and alert staff.</p>}
         </div>
       </div>
