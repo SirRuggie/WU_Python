@@ -48,8 +48,8 @@ literal from current source does not rotate or erase it from repository history.
 ## Verification
 
 - Independent UI and backend implementation agents; independent read-only review.
-- Full frontend suite: 301 tests passed before final request-status wording and
-  disabled-control refinements; final rerun is recorded in the task completion.
+- Final full frontend suite: 301 tests passed, including the final request-status
+  wording and disabled-control refinements. Final production build passed.
 - Root backend selection: 215 tests and 16 subtests passed. Backend agent's broader
   selection passed 269 tests and 9 subtests before the final UTC formatting tests.
 - Shared war-reminder gate passed: 185 backend tests, one existing skip, 32 frontend
