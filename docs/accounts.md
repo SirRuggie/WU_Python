@@ -20,8 +20,7 @@ one. Pages contain at most 20 linked tags and use Components V2 buttons.
 
 The command is self-only. In a guild its interaction response is ephemeral. In
 a DM it is an ordinary interaction response because Discord has no ephemeral DM
-messages. Adding a target-user option requires a separate privacy and permission
-decision; do not infer that authority from the current command.
+messages. The separate `/user-accounts` lookup below is explicitly public.
 
 ## Completeness policy
 
@@ -62,3 +61,21 @@ eight-request concurrency bound. Each new `/accounts` invocation revalidates the
 link list so an account linked moments ago appears immediately. A two-minute
 in-memory result cache keeps pagination from repeatedly requesting NotFound or
 temporarily failing profiles; rerunning `/accounts` bypasses that page cache.
+
+
+## Public lookup: `/user-accounts discord-id:<ID>`
+
+Anyone with access to this command can look up a numeric Discord user ID,
+including a user outside the server. Results are public, never ephemeral, and
+use the same rows, Town Hall sorting, and 20-account pagination as `/accounts`.
+The lookup merges forward links from ClashKing and ClashPerk and displays each
+tag once. It reports links, not verified ownership; reverse ownership disputes
+do not remove tags from this inventory. No user is pinged.
+
+Anyone viewing the message can page through it; buttons retain the target ID,
+never switch to the clicker's accounts, and work after restart by reloading.
+A separate two-minute cache reduces repeated requests. Concurrent clicks can
+finish out of order, but always display the requested target and labeled page.
+Rerunning the command refreshes links. Provider outages are labeled as incomplete,
+including when no accounts can be returned. Missing and failed player profiles
+retain their tags. `/accounts` keeps its existing private, ClashKing-only behavior.

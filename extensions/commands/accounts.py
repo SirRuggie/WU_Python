@@ -308,8 +308,24 @@ def _notice(title: str, description: str) -> list[Container]:
     )]
 
 
-def render_accounts(data: AccountsData, page: int = 0) -> list[Container]:
+def render_accounts(
+    data: AccountsData, page: int = 0, *, discord_id: int | None = None,
+) -> list[Container]:
     """Build a bounded Components V2 inventory page."""
+    if discord_id is not None and not data.entries:
+        if data.unavailable_sources:
+            return _notice(
+                "Account lookup incomplete",
+                f"Discord ID: `{discord_id}`\n"
+                f"Unavailable: {', '.join(data.unavailable_sources)}. "
+                "No accounts were returned by the available sources. "
+                "Try `/user-accounts` again shortly.",
+            )
+        return _notice(
+            "No linked accounts",
+            f"No accounts linked to Discord ID `{discord_id}` were found "
+            "in ClashKing or ClashPerk.",
+        )
     if data.problem == LINK_FAILURE:
         return _notice(
             "Couldn't reach the link service",
@@ -335,7 +351,8 @@ def render_accounts(data: AccountsData, page: int = 0) -> list[Container]:
     if data.loaded_count == data.linked_count:
         summary = (
             f"**{data.loaded_count} {_plural(data.loaded_count, 'player account')}** "
-            "linked to your Discord."
+            + ("linked to your Discord." if discord_id is None
+               else f"linked to Discord ID `{discord_id}`.")
         )
     else:
         summary = (
@@ -348,17 +365,25 @@ def render_accounts(data: AccountsData, page: int = 0) -> list[Container]:
         for index, entry in enumerate(window)
     ])
     body: list = [
-        Text(content="# 🪪 Your Player Accounts"),
+        Text(content=("# 🪪 Your Player Accounts" if discord_id is None
+                      else f"# 🪪 Player Accounts\nDiscord ID: `{discord_id}`")),
         Text(content=(
             f"{summary}\n"
-            "-# Every tag ClashKing currently links to you is included. "
-            "Loaded profiles are sorted by Town Hall."
+            + ("-# Every tag ClashKing currently links to you is included. "
+               if discord_id is None else
+               "-# Combined ClashKing + ClashPerk links, with duplicates removed. ")
+            + "Loaded profiles are sorted by Town Hall."
         )),
         Separator(divider=True),
     ]
     body.extend(Text(content=block) for block in row_blocks)
 
     notes: list[str] = []
+    if data.unavailable_sources:
+        notes.append(
+            f"⚠️ **Incomplete list:** {', '.join(data.unavailable_sources)} "
+            "couldn't be reached. More accounts may be linked; try again shortly."
+        )
     if data.error_count:
         if coc_maintenance.in_maintenance():
             notes.append(coc_maintenance.banner())
@@ -385,24 +410,26 @@ def render_accounts(data: AccountsData, page: int = 0) -> list[Container]:
         ])
 
     if pages > 1:
+        page_action = ("accounts_page:" if discord_id is None
+                       else f"user_accounts_page:{discord_id}:")
         # Unclamped ids stay unique on the first and last page; the renderer
         # clamps hostile/out-of-range values when they arrive.
         body.append(ActionRow(components=[
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"accounts_page:{page - 1}",
+                custom_id=f"{page_action}{page - 1}",
                 label="◀",
                 is_disabled=page == 0,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"accounts_page:{page}",
+                custom_id=f"{page_action}{page}",
                 label=f"Page {page + 1}/{pages}",
                 is_disabled=True,
             ),
             Button(
                 style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"accounts_page:{page + 1}",
+                custom_id=f"{page_action}{page + 1}",
                 label="▶",
                 is_disabled=page >= pages - 1,
             ),
