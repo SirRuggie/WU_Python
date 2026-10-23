@@ -469,11 +469,12 @@ async def replacements(request):
                 raise web.HTTPServiceUnavailable(text='Current FWA weights are unavailable. Try again.') from exc
             weights = {}
         from .app import _store
-        effective_weights = {}
-        for value in tags:
-            manual_weight = _store(request).one('SELECT weight FROM player_weights WHERE tag=?', (value,))
-            found = manual_weight['weight'] if manual_weight and manual_weight['weight'] is not None else (weights.get(value) or {}).get('weight')
-            effective_weights[value] = found
+        from utils.clan_weights import overlay_accounts
+        resolved = overlay_accounts(_store(request), {'accounts': [
+            {'tag': value, 'war_weight': (weights.get(value) or {}).get('weight')}
+            for value in tags
+        ]})
+        effective_weights = {row['tag']: row['war_weight'] for row in resolved['accounts']}
         rows = await ledger.replacement(GUILD_ID, weight, clan_tag=clan,
                                         limit=5000, weights=effective_weights,
                                         browse_all=browse_all, family_scope=scope,

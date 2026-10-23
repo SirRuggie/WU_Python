@@ -569,8 +569,8 @@ function App() {
         {view === 'tickets' && <TicketBrowser />}
         {view === 'clan-management' && <ClanManagement onDirty={setManageDirty} />}
         {view === 'weight-trial' && <WeightTrial onDirty={setManageDirty} />}
-        {view === 'strikes' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <StrikesWorkspace permissions={session.dashboard_permissions || []} isOwner={session.is_owner} userId={session.user.id} />}
-        {view === 'replacements' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <ReplacementWorkspace permissions={session.dashboard_permissions || []} isOwner={session.is_owner} />}
+        {view === 'strikes' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <StrikesWorkspace onDirty={setManageDirty} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} userId={session.user.id} />}
+        {view === 'replacements' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <ReplacementWorkspace onDirty={setManageDirty} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} />}
         {view === 'text-commands' && <TextCommands onDirty={setManageDirty} />}
         {isManagementArea(view) && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}

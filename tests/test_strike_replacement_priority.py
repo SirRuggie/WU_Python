@@ -210,7 +210,8 @@ def test_sync_roster_saves_town_hall_without_guessing_missing_values():
     asyncio.run(run())
 
 
-def test_dashboard_replacement_query_normalizes_weight_and_passes_filters():
+@pytest.mark.parametrize('official', ['absent', 152000, None])
+def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_path, official):
     import json
     from contextlib import asynccontextmanager
 
@@ -232,6 +233,7 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters():
 
     class Ledger:
         async def replacement(self, guild_id, weight, **options):
+            assert options['weights']['#PC9YGL0JL'] == (151000 if official == 'absent' else official)
             assert weight == 149000
             assert options['family_scope'] == 'all'
             assert options['browse_all'] is True
@@ -252,15 +254,22 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters():
         return [{'tag': '#2UVGQU9', 'name': 'FWA', 'is_fwa': True},
                 {'tag': '#8GG82', 'name': 'Main', 'is_fwa': False}]
 
+    from cwl_web.store import Store
+    store = Store(str(tmp_path / 'weights.sqlite'))
+    with store.tx() as db:
+        db.execute("INSERT INTO player_weights(tag,weight,updated_at) VALUES('#PC9YGL0JL',151000,'2026-10-23')")
+        if official != 'absent':
+            db.execute("INSERT INTO clan_player_weights(tag,weight,revision,player_name,town_hall,last_clan_tag,last_clan_name,updated_at,actor_id) VALUES('#PC9YGL0JL',?,1,'Sample',16,'#2UVGQU9','Sample','2026-10-23','1')", (official,))
+
     async def run():
-        request = SimpleNamespace(method='GET', query={'weight': '149k', 'scope': 'all',
+        request = SimpleNamespace(method='GET', query={'weight': '149k' , 'scope': 'all',
                                   'browse_all': 'true', 'town_hall': '16'},
-                                  app={'providers': Provider()})
+                                  app={'providers': Provider(), 'store': store})
         with patch.object(strikes.shared, 'require_manage', permit), \
              patch.object(strikes.shared, 'mongo', mongo), \
              patch.object(strikes, 'service', create_service), \
              patch.object(strikes, 'clan_rows', clans), \
-             patch('cwl_web.app._store', return_value=SimpleNamespace(one=lambda *args: None)):
+             patch('cwl_web.app._store', return_value=store):
             return await strikes.replacements(request)
     data = json.loads(asyncio.run(run()).text)
     assert data['matching_weight'] == 149000
