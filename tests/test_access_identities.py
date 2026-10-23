@@ -37,3 +37,20 @@ class IdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([g['identity_status'] for g in result['grants']], ['missing','unavailable','current'])
         self.assertEqual(result['grants'][1]['label'],'Saved name')
         self.assertEqual(len(result['grants']),3)
+
+    async def test_protected_owner_identities_are_decorated_but_not_grants(self):
+        data = {'owners':['123','456'], 'grants':[], 'revision':2}
+        async def discord(request, method, path):
+            self.assertEqual(method, 'GET')
+            if path.endswith('/456'):
+                raise web.HTTPServiceUnavailable()
+            return {'nick':'Owner nickname', 'user':{'username':'owner', 'avatar':'abc'}}
+        with patch('cwl_web.server_management.discord', discord):
+            result = await decorate_access(None, data)
+        self.assertEqual(result['owners'], ['123','456'])
+        self.assertEqual(result['grants'], [])
+        self.assertEqual(result['owner_identities'][0]['display_name'], 'Owner nickname')
+        self.assertIn('/avatars/123/abc.png', result['owner_identities'][0]['avatar_url'])
+        self.assertEqual(result['owner_identities'][1]['identity_status'], 'unavailable')
+        self.assertNotIn('owner_identities', data)
+        self.assertNotIn('permissions', result['owner_identities'][0])

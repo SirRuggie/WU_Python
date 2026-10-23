@@ -50,9 +50,10 @@ were not attempted and no real accounts were linked or transferred during tests.
    selection, manual-strike review, history return, leave confirmation, replacement
    editing and failed-save recovery were reviewed. See `strike-system.md` for
    evidence and remaining concurrency, device and live-integration limits.
-2. **High review priority: Permissions and member administration.** Owner-controlled
-   dashboard grants versus Discord member roles, least privilege, revocation,
-   scope clarity, and action recovery. These are separate permission systems.
+2. **Permissions and member administration: scoped cleanup completed October 23.**
+   Protected owner identities, permission disclosures, draft/change review, conflict
+   recovery and member-role selection were reviewed. See `dashboard-access-review.md`
+   for evidence and remaining live-integration/device limits.
 3. **Tickets and applications: scoped workflow cleanup completed October 23.**
    Ticket index/reader, application settings discovery, editing, recovery and
    publishing draft protection were reviewed. Replies and decisions remain in
@@ -79,4 +80,4 @@ to the user's accounts/current clans and the authorized family directory.
 Return reminders received a focused follow-up: FWA/Main separation, visible batch
 controls, shared dates with per-clan overrides, and scheduling/restart safeguards.
 See `dashboard-interaction-standard.md` for tests and browser limitations. This does
-not complete the deferred permissions or other journeys.
+not complete the other deferred journeys.

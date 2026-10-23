@@ -78,6 +78,7 @@ function Field({
   if (field.type === 'member' || field.source === 'members')
     return (
       <MemberPicker
+        compactSelection
         label={field.label}
         value={value}
         onChange={onChange}
@@ -1015,6 +1016,13 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       )}
       {selected && document && (
         <>
+          {document.id === 'roles' && (
+            <p className="small">
+              These controls change Discord roles. Dashboard access is managed
+              separately by the protected owners. Choose a member first; role
+              changes require confirmation.
+            </p>
+          )}
           {document.return_status && (
             <ReturnStatusSummary status={document.return_status} />
           )}
@@ -1120,10 +1128,21 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                       revision={document.revision}
                       field={field}
                       value={draft[field.key]}
-                      disabled={busy || !!document.readonly}
+                      disabled={
+                        busy ||
+                        !!document.readonly ||
+                        (document.id === 'roles' &&
+                          field.key === 'role_ids' &&
+                          !draft.member_id)
+                      }
                       onChange={(value) => {
                         setDraft((current) => ({
                           ...current,
+                          ...(document.id === 'roles' &&
+                          field.key === 'member_id' &&
+                          current.member_id !== value
+                            ? { role_ids: [] }
+                            : {}),
                           [field.key]: value,
                         }))
                         setNotice('')

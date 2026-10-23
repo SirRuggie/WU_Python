@@ -37,11 +37,22 @@ async def hierarchy(request, actor):
     return roles, guild, bot, member(actor['member'])
 
 
+async def dashboard_grant_roles(request, actor):
+    """Non-owners must not manage the roles that confer dashboard access."""
+    from utils.dashboard_access import OWNER_IDS, AccessRepository
+    if actor['user_id'] in OWNER_IDS:
+        return set()
+    async with mongo(request) as shared:
+        policy = await AccessRepository(shared.bot_config).read()
+    return {g['id'] for g in (policy or {}).get('grants', []) if g['kind'] == 'role'}
+
+
 async def page(request):
     actor = await require_manage(request, 'roles')
     role_map, guild, bot, actor_member = await hierarchy(request, actor)
+    protected = await dashboard_grant_roles(request, actor)
     options = [{'value': str(r.id), 'label': r.name} for r in role_map.values()
-               if role_is_manageable(guild, bot, r) and perms.actor_can_manage_role(actor_member, guild, r)]
+               if str(r.id) not in protected and role_is_manageable(guild, bot, r) and perms.actor_can_manage_role(actor_member, guild, r)]
     current_role_options = [{'value': str(r.id), 'label': r.name} for r in role_map.values() if r.id != GUILD_ID]
     return web.json_response({'id': 'roles', 'label': 'Member roles', 'description': 'Choose a member and roles, then add or remove them.',
         'group': 'Server', 'revision': 'live', 'fields': [
@@ -168,13 +179,9 @@ async def change(request):
     if not isinstance(selected, list) or not 1 <= len(selected) <= 25 or len(set(map(str, selected))) != len(selected):
         raise web.HTTPBadRequest(text='Choose between 1 and 25 different roles.')
     selected = [sid(value) for value in selected]
-    from utils.dashboard_access import OWNER_IDS, AccessRepository
-    if actor['user_id'] not in OWNER_IDS:
-        async with mongo(request) as shared:
-            policy = await AccessRepository(shared.bot_config).read()
-        protected = {g['id'] for g in (policy or {}).get('grants', []) if g['kind'] == 'role'}
-        if protected.intersection(selected):
-            raise web.HTTPForbidden(text='Only dashboard owners can add or remove roles that grant dashboard access.')
+    protected = await dashboard_grant_roles(request, actor)
+    if protected.intersection(selected):
+        raise web.HTTPForbidden(text='Only dashboard owners can add or remove roles that grant dashboard access.')
     target_data = await discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{target_id}')
     roles, guild, bot, actor_member = await hierarchy(request, actor)
     target = member(target_data)

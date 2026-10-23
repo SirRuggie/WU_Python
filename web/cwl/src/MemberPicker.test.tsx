@@ -13,9 +13,9 @@ vi.mock('./api',()=>({api:transport}))
 import MemberPicker,{type MemberOption} from './MemberPicker'
 const ada:MemberOption={value:'111111111111111111',id:'111111111111111111',label:'Ada (@ada)',display_name:'Ada',username:'ada',role_ids:['999']}
 const bob:MemberOption={...ada,value:'222222222222222222',id:'222222222222222222',label:'Bob (@bob)',display_name:'Bob',username:'bob',role_ids:[]}
-function draw(value:string|string[]='',onChange=vi.fn()){
+function draw(value:string|string[]='',onChange=vi.fn(),compactSelection=false){
  hook.index=0;hook.refIndex=0;hook.effects=[]
- return {tree:MemberPicker({label:'Member',value,onChange,disabled:false,roles:[{value:'999',label:'Leader'}]}),onChange}
+ return {tree:MemberPicker({label:'Member',value,onChange,disabled:false,roles:[{value:'999',label:'Leader'}],compactSelection}),onChange}
 }
 function elements(node:ReactNode):{type:unknown;props:Record<string,unknown>}[]{
  if(Array.isArray(node))return node.flatMap(elements)
@@ -90,4 +90,16 @@ it('shows selected member current role names in the profile summary',()=>{
  hook.values=['',[ada],[ada],null,false,'',false,0]
  const html=renderToStaticMarkup(draw(ada.value).tree)
  expect(html).toContain('Selected member');expect(html).toContain('Current roles: Leader');expect(html).not.toContain('Current roles: 999')
+})
+
+it('compact selection identifies the member and opens search only on request',()=>{
+ hook.values=['',[ada],[ada],null,false,'',false,0,false]
+ const {tree,onChange}=draw(ada.value,vi.fn(),true)
+ const html=renderToStaticMarkup(tree)
+ expect(html).toContain('Discord ID:');expect(html).toContain(ada.value)
+ const change=elements(tree).find(node=>node.type==='button'&&node.props.children==='Change member')!
+ expect(change).toBeDefined()
+ ;(change.props.onClick as ()=>void)()
+ expect(hook.values[8]).toBe(true)
+ expect(onChange).not.toHaveBeenCalled();expect(transport).not.toHaveBeenCalled()
 })

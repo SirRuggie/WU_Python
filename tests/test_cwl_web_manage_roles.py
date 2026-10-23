@@ -140,7 +140,7 @@ def test_page_only_offers_roles_actor_and_bot_can_manage():
             assert method=='GET'
             return {'id':'555555555555555555'} if path=='/users/@me' else {'user':{'id':'555555555555555555'},'roles':[bot_top]}
         with patch.object(roles,'require_manage',AsyncMock(return_value=actor)),patch.object(roles,'discord',api):
-            result=json.loads((await roles.page(NS())).text)
+            result=json.loads((await roles.page(NS(app={'server_management_mongo':NS(bot_config=AccessCollection())}))).text)
         member_field,role_field=result['fields']
         assert role_field['options']==[{'value':allowed,'label':'Member'}]
         assert {r['value'] for r in member_field['current_role_options']}=={actor_top,bot_top,allowed,managed,higher,privileged}
@@ -180,4 +180,15 @@ def test_failed_directory_load_does_not_cache_partial_results():
         with patch.object(roles,'discord',AsyncMock(side_effect=[page,web.HTTPServiceUnavailable()])):
             with pytest.raises(web.HTTPServiceUnavailable): await roles.searchable_members(request)
         assert 'rows' not in request.app['member_search_directory']
+    asyncio.run(scenario())
+
+
+def test_role_options_exclude_dashboard_grants_for_nonowners():
+    async def scenario():
+        import json
+        actor = {'user_id':'111111111111111111'}
+        available = {1:NS(id=1,name='Ordinary'),2:NS(id=2,name='Dashboard staff')}
+        with patch.object(roles, 'require_manage', AsyncMock(return_value=actor)), patch.object(roles, 'hierarchy', AsyncMock(return_value=(available,None,None,None))), patch.object(roles, 'dashboard_grant_roles', AsyncMock(return_value={'2'})), patch.object(roles, 'role_is_manageable', return_value=True), patch.object(roles.perms, 'actor_can_manage_role', return_value=True):
+            result=json.loads((await roles.page(NS())).text)
+        assert result['fields'][1]['options']==[{'value':'1','label':'Ordinary'}]
     asyncio.run(scenario())

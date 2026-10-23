@@ -38,4 +38,11 @@ async def decorate_access(request, data):
             pass
         return row
 
-    return dict(data, grants=await asyncio.gather(*(resolve(row) for row in data['grants'])))
+    # Keep the owner ID allowlist unchanged. Decoration is presentation only;
+    # owner identities never become editable grant entries or stored authority.
+    grants, owners = await asyncio.gather(
+        asyncio.gather(*(resolve(row) for row in data['grants'])),
+        asyncio.gather(*(resolve({'kind': 'user', 'id': owner, 'label': owner})
+                         for owner in data.get('owners', []))),
+    )
+    return dict(data, grants=grants, owner_identities=owners)
