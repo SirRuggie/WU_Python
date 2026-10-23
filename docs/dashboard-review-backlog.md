@@ -1,6 +1,6 @@
 # Dashboard workflow review coverage
 
-Updated 2026-10-21. These are review priorities, not confirmed defect severities.
+Updated 2026-10-23. These are review priorities, not confirmed defect severities.
 The owner asked to finish the member journey first, explain the staff areas, and
 return to the remaining list later. Do not silently mark deferred items complete
 because a shared CSS change or unit test covers part of them.
@@ -46,10 +46,10 @@ were not attempted and no real accounts were linked or transferred during tests.
 
 ## Deferred list — return to these when requested
 
-1. **High review priority: Strikes and replacements.** Full correct-account/clan
-   selection → review → result → correction/history journey. Strikes tracks war
-   infractions and leave. Replacements prioritizes accounts for staff recruitment
-   decisions, including FWA war-weight matching; it does not kick players in-game.
+1. **Strikes and replacements: scoped cleanup completed October 23.** Account
+   selection, manual-strike review, history return, leave confirmation, replacement
+   editing and failed-save recovery were reviewed. See `strike-system.md` for
+   evidence and remaining concurrency, device and live-integration limits.
 2. **High review priority: Permissions and member administration.** Owner-controlled
    dashboard grants versus Discord member roles, least privilege, revocation,
    scope clarity, and action recovery. These are separate permission systems.
@@ -78,4 +78,4 @@ to the user's accounts/current clans and the authorized family directory.
 Return reminders received a focused follow-up: FWA/Main separation, visible batch
 controls, shared dates with per-clan overrides, and scheduling/restart safeguards.
 See `dashboard-interaction-standard.md` for tests and browser limitations. This does
-not complete the deferred strikes/replacements, permissions, or other journeys.
+not complete the deferred permissions or other journeys.

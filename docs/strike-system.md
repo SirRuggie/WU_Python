@@ -61,8 +61,38 @@ CWL wars are recorded separately as informational history. They show each accoun
 
 ## Tracking health
 
-The History page has a compact Tracking status section. Each family clan shows its last completed check, last successful check, latest saved war, and any current problem. A failed or partial check preserves the previous successful timestamp. Old checks are shown as delayed rather than healthy; a successful check can contain no new wars. Saved error details use plain, safe messages instead of raw provider responses.
+The Accounts page has a compact Tracking status section. Each family clan shows its last completed check, last successful check, latest saved war, and any current problem. A failed or partial check preserves the previous successful timestamp. Old checks are shown as delayed rather than healthy; a successful check can contain no new wars. Saved error details use plain, safe messages instead of raw provider responses.
 
 Retry queues a durable clan check for the bot and requires Add strikes access, because checking a war can create strikes. Automatic checks continue normally. Tracking status is shared through MongoDB, so dashboard and bot restarts do not erase the previous result.
 
 Import past wars is a collapsed section under Settings for occasional backfills. It requires Add strikes access; exempt-role settings still require Manage strikes access. Existing import jobs and previews can be resumed there.
+
+## October 23 dashboard workflow review
+
+- Accounts is the default view. Manual strikes use a focused account/reason form,
+  then explicit review and confirmation. Member lookup requires an account choice;
+  late lookups cannot replace a newer selection. Failed saves retain the draft and
+  request ID. Account history returns to the previous search.
+- Approved leave remains visible; approval is disclosed on demand and ending leave
+  has inline confirmation. Settings retains role exclusions and collapsed imports.
+  No strike eligibility rules or data migrations changed.
+- Replacements uses compact clan-grouped rows, Edit/Cancel controls and an optional
+  Match recruit weight disclosure. Adding accounts is a focused flow; failed writes
+  refresh eligibility while retaining valid selections and notes. Drafts participate
+  in dashboard navigation and browser-exit protection.
+- Replacement weights use the shared official Clan weights overlay: saved clan
+  weights (including explicitly unknown values), then manual fallback, then the
+  external feed. This corrects the former manual-first behavior.
+
+Validation: production frontend build; 275 frontend tests; 178 strike/replacement
+backend tests, including official/manual/unknown weight precedence. Isolated browser
+checks at 320px, 390px and 1280px covered escaped player/reason text, delayed member
+lookup, manual review before saving, failed saves with the same request ID, retained
+replacement drafts, FWA weight matching, edit cancellation and mobile end-leave
+confirmation. No live strikes, roster entries or Discord messages were created.
+
+Limits: the browser tool stalled on the native discard confirmation, so its accept/
+cancel behavior was not fully exercised. Full screen-reader and physical-device
+testing remain outstanding. Existing simultaneous replacement edits and role-list
+settings are last-write-wins; this UI pass adds no version-conflict protocol.
+Notification/provider delivery was not verified by isolated fixture checks.
