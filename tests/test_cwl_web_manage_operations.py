@@ -151,3 +151,73 @@ class ManageOperationsTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(web.HTTPBadRequest):await operations.save(req)
         self.assertEqual(load.await_count,1)
         self.assertEqual(config['minimum_th'],9)
+
+    async def test_stale_band_status_does_not_claim_current_health(self):
+        import time
+        db = SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value={
+            'checked_at': time.time() - 300, 'task': 'Running', 'health': 'healthy',
+            'startup': 'Ready', 'key_ready': True, 'debug': True,
+            'last_success': '2026-10-23T10:00:00Z',
+        })))
+        doc = await load_document(db, 'band_monitor')
+        fields = {item['key']: item['value'] for item in doc['fields']}
+        for key in ('task', 'health', 'startup', 'key', 'debug'):
+            self.assertEqual(fields[key], 'Status unavailable')
+        self.assertEqual(fields['last_success'], '2026-10-23T10:00:00Z')
+        self.assertIn('checked_at', fields)
+        self.assertTrue(all(action['advanced'] for action in doc['actions'] if action['id'].startswith('debug')))
+
+    async def test_readonly_status_cannot_be_saved(self):
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+        from cwl_web import manage_operations as operations
+        db = SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value={})))
+        @asynccontextmanager
+        async def mongo(_): yield db
+        req = SimpleNamespace(match_info={'section': 'band_monitor'})
+        with patch.object(operations.shared, 'mongo', mongo), patch.object(operations.shared, 'require_manage', AsyncMock(return_value={'user_id': '1'})), patch('cwl_web.app._json', AsyncMock(return_value={'revision': revision({}), 'values': {'debug': True}})):
+            with self.assertRaises(web.HTTPBadRequest): await operations.save(req)
+
+    async def test_weights_reject_fractional_boolean_and_out_of_range_numbers(self):
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+        from cwl_web import manage_operations as operations
+        config = operations.war_weight.defaults()
+        @asynccontextmanager
+        async def mongo(_): yield SimpleNamespace()
+        req = SimpleNamespace(match_info={'section': 'fwa_weight', 'item': 'settings'})
+        for value in (9.5, True, 0, 100, '9'):
+            with self.subTest(value=value), patch.object(operations.war_weight, 'load', AsyncMock(return_value=config)), patch.object(operations.war_weight, 'save', AsyncMock()) as persist, patch.object(operations.shared, 'mongo', mongo), patch.object(operations.shared, 'require_manage', AsyncMock(return_value={'user_id': '1'})), patch('cwl_web.app._json', AsyncMock(return_value={'revision': revision(config), 'values': {'minimum_th': value}})):
+                with self.assertRaises(web.HTTPBadRequest): await operations.save(req)
+                persist.assert_not_awaited()
+
+    async def test_sync_channel_input_is_validated_before_discord_lookup(self):
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+        from cwl_web import manage_operations as operations
+        db = SimpleNamespace(bot_config=ConfigCollection(), fwa_sync_config=SimpleNamespace(find_one=AsyncMock(return_value={})))
+        @asynccontextmanager
+        async def mongo(_): yield db
+        req = SimpleNamespace(match_info={'section': 'fwa_sync'})
+        for value in ('../guilds/123', '123?secret=x', '-1', ''):
+            with self.subTest(value=value), patch.object(operations.shared, 'mongo', mongo), patch.object(operations.shared, 'require_manage', AsyncMock(return_value={'user_id': '1'})), patch.object(operations.shared, 'discord', AsyncMock()) as discord, patch('cwl_web.app._json', AsyncMock(return_value={'revision': revision({}), 'values': {'panel_channel_id': value}})):
+                with self.assertRaises(web.HTTPBadRequest): await operations.save(req)
+                discord.assert_not_awaited()
+
+    async def test_band_status_timestamp_is_readable_and_invalid_values_are_unknown(self):
+        for timestamp, expected in (
+            (0, '1970-01-01T00:00:00Z'),
+            (float('nan'), 'Not checked'),
+            (float('inf'), 'Not checked'),
+            (10 ** 100, 'Not checked'),
+            ('not a date', 'Not checked'),
+            (True, 'Not checked'),
+            (None, 'Not checked'),
+        ):
+            with self.subTest(timestamp=timestamp):
+                row = {'checked_at': timestamp}
+                db = SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value=row)))
+                doc = await load_document(db, 'band_monitor')
+                fields = {field['key']: field['value'] for field in doc['fields']}
+                self.assertEqual(fields['checked_at'], expected)
+                self.assertEqual(doc['revision'], revision(row))

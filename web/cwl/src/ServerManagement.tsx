@@ -1,3 +1,4 @@
+import ServerSettingsIndex from './ServerSettingsIndex'
 import ApplicationSettingsIndex from './ApplicationSettingsIndex'
 import ReturnReminderOverview, {
   ReturnStatusSummary,
@@ -18,6 +19,7 @@ import { api, apiUpload, ApiError } from './api'
 import {
   recordPickerCopy,
   actionConfirmation,
+  actionNeedsConfirmation,
   safeDiscordUrl,
   type ManagementResult,
   ManagementRequestIds,
@@ -416,6 +418,8 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
   const [previewStatus, setPreviewStatus] = useState(''),
     [mobilePane, setMobilePane] = useState<'edit' | 'preview'>('edit')
   const compactPreview = useCompactPreview(900)
+  const operationsWorkspace =
+    !area || area === 'fwa-settings' || area === 'connections-settings'
 
   const [catalogAttempt, setCatalogAttempt] = useState(0)
   const [returnDirty, setReturnDirty] = useState(false)
@@ -434,7 +438,8 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     selected && document
       ? `${selected.id}:${document.revision}:${draftPreviewKey}`
       : ''
-  const previewVisible = !compactPreview || mobilePane === 'preview'
+  const previewVisible =
+    (!operationsWorkspace && !compactPreview) || mobilePane === 'preview'
   useEffect(() => {
     onDirty?.(
       dirty ||
@@ -619,7 +624,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       if (wait) await new Promise((resolve) => window.setTimeout(resolve, 2000))
     }
     setNotice(
-      'Still waiting for the bot. Use Check status to see the result. Do not send the same request again.',
+      'Still waiting for the bot. Use Check request status to see the result. Do not send the same request again.',
     )
   }
   const save = async (review = false) => {
@@ -707,7 +712,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     )
   return (
     <section
-      className={`server-management ${area === 'applications-settings' ? 'applications-workspace' : ''}`}
+      className={`server-management ${area === 'applications-settings' ? 'applications-workspace' : ''} ${operationsWorkspace ? 'server-operations-workspace' : ''}`}
     >
       <header className="manage-heading">
         <div>
@@ -730,7 +735,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         </div>
         {selected && (
           <div className="manage-categories">
-            <button disabled={busy} onClick={home}>
+            <button disabled={busy || !!statusUrl} onClick={home}>
               ← {areaInfo?.title || 'All settings'}
             </button>
             <button
@@ -746,7 +751,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         <div className="manage-error" role="alert">
           <p>{error}</p>
           <button
-            disabled={busy}
+            disabled={busy || !!statusUrl}
             onClick={() =>
               selected
                 ? void open(selected)
@@ -811,13 +816,33 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       {statusUrl && (
         <button
           disabled={busy}
-          onClick={() =>
-            void checkAction(statusUrl).catch((error) =>
-              setError(message(error)),
-            )
-          }
+          onClick={async () => {
+            if (writing.current || !selected) return
+            const turn = sequence.current
+            const current = selected
+            writing.current = true
+            setBusy(true)
+            try {
+              const status = await checkAction(statusUrl)
+              if (status === 'done' && turn === sequence.current) {
+                const result = await api<ManagementDocument>(endpoint(current))
+                const fields = await hydrateFields(result.fields || [])
+                if (turn !== sequence.current) return
+                setDocument({ ...result, fields })
+                setDraft(fieldValues(fields))
+                setError('')
+                setConflict(false)
+                setPreview(result.preview || null)
+              }
+            } catch (error) {
+              if (turn === sequence.current) setError(message(error))
+            } finally {
+              writing.current = false
+              if (turn === sequence.current) setBusy(false)
+            }
+          }}
         >
-          Check status
+          Check request status
         </button>
       )}
       {area === 'cwl-returns' && (
@@ -845,7 +870,24 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       {!selected && area === 'applications-settings' && busy && (
         <p role="status">Loading application settings…</p>
       )}
+      {operationsWorkspace && (
+        <div hidden={!!selected || busy || !!error}>
+          <ServerSettingsIndex
+            sections={area ? areaSections(sections, area) : sections}
+            query={query}
+            onQuery={setQuery}
+            onOpen={(section, trigger) => {
+              indexTrigger.current = trigger
+              void open(section)
+            }}
+          />
+        </div>
+      )}
+      {!selected && operationsWorkspace && busy && (
+        <p role="status">Loading settings…</p>
+      )}
       {!selected &&
+        !operationsWorkspace &&
         area !== 'cwl-returns' &&
         area !== 'applications-settings' && (
           <>
@@ -1062,95 +1104,116 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                 void save()
               }}
             >
-              <fieldset disabled={busy || document.readonly}>
-                <legend className="manage-sr-only">
-                  {selected.label} settings
-                </legend>
-                {document.fields.length > 6 && (
-                  <label className="manage-record-picker">
-                    Message or setting to edit
-                    <select
-                      value={fieldPage}
-                      onChange={(event) =>
-                        setFieldPage(Number(event.target.value))
-                      }
-                    >
-                      {Array.from(
-                        { length: Math.ceil(document.fields.length / 4) },
-                        (_, index) => (
-                          <option key={index} value={index}>
-                            {document.fields[index * 4].label}
-                          </option>
-                        ),
-                      )}
-                    </select>
-                    <small>Save applies all edits.</small>
-                  </label>
-                )}
-                <div className="manage-fields">
-                  {(document.fields.length > 6
-                    ? document.fields.slice(fieldPage * 4, fieldPage * 4 + 4)
-                    : document.fields
-                  ).map((field) => (
-                    <Field
-                      key={field.key + ':' + (document.member_refresh || '')}
-                      memberRoles={
-                        document.fields.find((item) => item.key === 'role_ids')
-                          ?.options
-                      }
-                      onMemberOptions={(options) =>
-                        setDocument((current) =>
-                          current
-                            ? {
-                                ...current,
-                                fields: current.fields.map((item) =>
-                                  item.key === field.key
-                                    ? {
-                                        ...item,
-                                        options: [
-                                          ...new Map(
-                                            [
-                                              ...(item.options || []),
-                                              ...options,
-                                            ].map((option) => [
-                                              option.value,
-                                              option,
-                                            ]),
-                                          ).values(),
-                                        ],
-                                      }
-                                    : item,
-                                ),
-                              }
-                            : current,
-                        )
-                      }
-                      revision={document.revision}
-                      field={field}
-                      value={draft[field.key]}
-                      disabled={
-                        busy ||
-                        !!document.readonly ||
-                        (document.id === 'roles' &&
-                          field.key === 'role_ids' &&
-                          !draft.member_id)
-                      }
-                      onChange={(value) => {
-                        setDraft((current) => ({
-                          ...current,
-                          ...(document.id === 'roles' &&
-                          field.key === 'member_id' &&
-                          current.member_id !== value
-                            ? { role_ids: [] }
-                            : {}),
-                          [field.key]: value,
-                        }))
-                        setNotice('')
-                      }}
-                    />
+              {document.readonly && operationsWorkspace ? (
+                <dl
+                  className="manage-status-summary"
+                  aria-label="Current status"
+                >
+                  {document.fields.map((field) => (
+                    <div key={field.key}>
+                      <dt>{field.label}</dt>
+                      <dd>
+                        {typeof field.value === 'boolean'
+                          ? field.value
+                            ? 'On'
+                            : 'Off'
+                          : String(field.value ?? 'Not available')}
+                      </dd>
+                    </div>
                   ))}
-                </div>
-              </fieldset>
+                </dl>
+              ) : (
+                <fieldset disabled={busy || document.readonly}>
+                  <legend className="manage-sr-only">
+                    {selected.label} settings
+                  </legend>
+                  {document.fields.length > 6 && (
+                    <label className="manage-record-picker">
+                      Message or setting to edit
+                      <select
+                        value={fieldPage}
+                        onChange={(event) =>
+                          setFieldPage(Number(event.target.value))
+                        }
+                      >
+                        {Array.from(
+                          { length: Math.ceil(document.fields.length / 4) },
+                          (_, index) => (
+                            <option key={index} value={index}>
+                              {document.fields[index * 4].label}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                      <small>Save applies all edits.</small>
+                    </label>
+                  )}
+                  <div className="manage-fields">
+                    {(document.fields.length > 6
+                      ? document.fields.slice(fieldPage * 4, fieldPage * 4 + 4)
+                      : document.fields
+                    ).map((field) => (
+                      <Field
+                        key={field.key + ':' + (document.member_refresh || '')}
+                        memberRoles={
+                          document.fields.find(
+                            (item) => item.key === 'role_ids',
+                          )?.options
+                        }
+                        onMemberOptions={(options) =>
+                          setDocument((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  fields: current.fields.map((item) =>
+                                    item.key === field.key
+                                      ? {
+                                          ...item,
+                                          options: [
+                                            ...new Map(
+                                              [
+                                                ...(item.options || []),
+                                                ...options,
+                                              ].map((option) => [
+                                                option.value,
+                                                option,
+                                              ]),
+                                            ).values(),
+                                          ],
+                                        }
+                                      : item,
+                                  ),
+                                }
+                              : current,
+                          )
+                        }
+                        revision={document.revision}
+                        field={field}
+                        value={draft[field.key]}
+                        disabled={
+                          busy ||
+                          !!document.readonly ||
+                          (document.id === 'roles' &&
+                            field.key === 'role_ids' &&
+                            !draft.member_id)
+                        }
+                        onChange={(value) => {
+                          setDraft((current) => ({
+                            ...current,
+                            ...(document.id === 'roles' &&
+                            field.key === 'member_id' &&
+                            current.member_id !== value
+                              ? { role_ids: [] }
+                              : {}),
+                            [field.key]: value,
+                          }))
+                          setNotice('')
+                        }}
+                      />
+                    ))}
+                  </div>
+                </fieldset>
+              )}
               {!document.readonly && !document.action_only && (
                 <div className="manage-save">
                   <span aria-live="polite">
@@ -1161,18 +1224,20 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                         : 'All changes saved'}
                   </span>
                   <div>
-                    {document.preview_supported && !compactPreview && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          setMobilePane('preview')
-                          void save(true)
-                        }}
-                      >
-                        Preview
-                      </button>
-                    )}
+                    {document.preview_supported &&
+                      !compactPreview &&
+                      !operationsWorkspace && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            setMobilePane('preview')
+                            void save(true)
+                          }}
+                        >
+                          Preview
+                        </button>
+                      )}
                     <button
                       className="primary"
                       type="submit"
@@ -1244,6 +1309,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                             return
                           }
                           if (
+                            actionNeedsConfirmation(document.id, action.id) &&
                             !window.confirm(
                               actionConfirmation(
                                 action.confirm ||
@@ -1366,7 +1432,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               )
               return advanced ? (
                 <details className="manage-more-options" key="more">
-                  <summary>More options</summary>
+                  <summary>{document.id === 'band_monitor' ? 'Diagnostics' : 'More options'}</summary>
                   {content}
                 </details>
               ) : (

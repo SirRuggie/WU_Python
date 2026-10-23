@@ -11,8 +11,10 @@ the commit message when the item is completed so the fix remains traceable.
 ### P0 — credentials and commands that can change other users' data
 
 - **`SECRET-001` — Rotate the BAND API token and load it from the environment.**
-  A live token is hard-coded in `extensions/tasks/band_monitor.py` and exists in
-  Git history. Revoke/rotate it first; deleting the source text is not enough.
+  Environment-only loading is implemented in the October 23 settings review,
+  pending runtime provisioning/rotation authorization before deployment. The old
+  token remains in Git history and must be revoked/rotated; source removal alone
+  is not enough. See `server-settings-integrations-review.md`.
 - **`SECRET-002` — Rotate the Kawaii API token and load it from the environment.**
   A live token is hard-coded in `extensions/commands/slap.py` and exists in Git
   history. Revoke/rotate it before removing it from source.

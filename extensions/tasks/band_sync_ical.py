@@ -320,6 +320,20 @@ async def dm_one(user_id, embed):
     return result.sent
 
 
+async def send_test_dm(user_id, embed):
+    """One explicit dashboard test; an ambiguous send must never look retryable."""
+    if not bot_instance:
+        raise ValueError("The sync reminder connection is unavailable. No test was sent.")
+    result = await _try_dm(user_id, embed)
+    if result.sent:
+        return
+    if result.permanent:
+        raise ValueError("Discord rejected your test DM. Check your DM settings.")
+    # A timeout or transport error can happen after Discord accepts the message.
+    # The management worker persists this as uncertain, without automatic replay.
+    raise RuntimeError("Test DM delivery could not be confirmed")
+
+
 # ---- Durable event and delivery state ----
 def _event_state_id(uid):
     return f"event:{uid}"

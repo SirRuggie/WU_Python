@@ -42,7 +42,7 @@ def debug_print(*args, **kwargs):
 
 # BAND API Configuration
 BAND_API_BASE = "https://openapi.band.us/v2/band/posts"
-BAND_ACCESS_TOKEN = "ZQAAAR-9LGjvTxYmwok2WaTSYvcrA8M84ZK3s5BQSxxmggdJkyIFUUT4KCFvH1QNz2I3syNF_2aKaPLtownMSAVAC7pprIKu1TD_600hDD8GjhvX"
+BAND_ACCESS_TOKEN = os.getenv("BAND_ACCESS_TOKEN", "").strip()
 
 # Change these to monitor a different Band group
 TARGET_BAND_NAME = "FWA© New Sync"  # Must match the band name exactly as shown in BAND
@@ -125,6 +125,8 @@ def _record_poll_success(now: datetime | None = None) -> None:
 async def resolve_band_key():
     """Look up the band_key from TARGET_BAND_NO using the BAND API"""
     global BAND_KEY
+    if not BAND_ACCESS_TOKEN:
+        raise BandKeyResolutionError("BAND access token is not configured")
     url = "https://openapi.band.us/v2.1/bands"
     params = {"access_token": BAND_ACCESS_TOKEN}
 

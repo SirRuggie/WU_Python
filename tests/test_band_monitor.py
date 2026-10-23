@@ -340,3 +340,13 @@ def test_band_monitor_slash_commands_retired():
     from extensions.commands.help_catalog import command_paths
     assert "/toggle-debug" not in command_paths()
     assert "/band-monitor-status" not in command_paths()
+
+
+def test_missing_access_token_fails_before_network(monkeypatch):
+    import pytest
+    monkeypatch.setattr(band_monitor, "BAND_ACCESS_TOKEN", "")
+    def unexpected_network(*args, **kwargs):
+        raise AssertionError("Missing credentials must not open a network session")
+    monkeypatch.setattr(band_monitor.aiohttp, "ClientSession", unexpected_network)
+    with pytest.raises(band_monitor.BandKeyResolutionError, match="not configured"):
+        asyncio.run(band_monitor.resolve_band_key())

@@ -61,8 +61,10 @@ were not attempted and no real accounts were linked or transferred during tests.
 4. **Commands and image tools: scoped cleanup completed October 23.** Create/edit,
    preview, explicit tests, saved commands, image selection and gallery maintenance
    were reviewed. See `commands-images-review.md` for evidence and limits.
-5. **Medium review priority: Server settings, FWA, and integrations.** Configuration
-   dependencies, truthful state, save semantics, and recovery.
+5. **Server settings, FWA, and integrations: implemented and reviewed October 23; deployment pending BAND credential authorization.**
+   Compact settings discovery, runtime status, explicit previews, save conflicts,
+   input validation and queued-action recovery covered. See
+   `server-settings-integrations-review.md` for evidence and the credential gate.
 6. **Cross-cutting: Sign-in and staff deep links.** Approved member destinations
    have coverage; preserving staff destinations through OAuth remains outstanding.
 7. **Cross-cutting: Accessibility and devices.** Full screen-reader, high-zoom,

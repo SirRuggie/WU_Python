@@ -52,7 +52,7 @@ async def dispatch(bot, mongo, row, ctx):
     if (section,action) not in ACTIONS or not isinstance(values,dict):
         raise ValueError('Unknown management action.')
     if section=='clans':
-        from cwl_web.manage_operations import revision
+        from utils.manage_operations_runtime import revision
         from cwl_web.manage_clans import audit
         from utils.clan_dashboard_actions import replace_emoji,ensure_thread
         clan=await mongo.clans.find_one({'tag':values.get('tag')})
@@ -73,13 +73,14 @@ async def dispatch(bot, mongo, row, ctx):
         if type(values.get('every_minutes',60)) is not int or values.get('every_minutes',60) not in (30,60,120):
             raise ValueError('Choose every 30 minutes, 1 hour, or 2 hours.')
     if section in {'fwa_points','fwa_sync'}:
-        from cwl_web.manage_operations import load_document
-        current = await load_document(mongo, section)
-        if current['revision'] != row['revision']:
+        from utils.manage_operations_runtime import revision
+        collection = mongo.fwa_points if section == 'fwa_points' else mongo.fwa_sync_config
+        current = await collection.find_one({'_id': 'config'}) or {}
+        if revision(current) != row['revision']:
             raise ValueError('Settings changed. Reload and review before trying again.')
         if section == 'fwa_points':
             from extensions.tasks import fwa_points_monitor
-            stopped = await fwa_points_monitor.set_monitor_enabled(mongo, action=='enable')
+            stopped = await fwa_points_monitor.set_monitor_enabled(mongo, action=='enable', expected_config=current)
             return {'message':f"Points monitoring {'enabled' if action=='enable' else 'disabled'}. {stopped} pending checks stopped."}
         from extensions.tasks import band_sync_ical as sync
         config = await sync.load_config(mongo)
@@ -87,14 +88,16 @@ async def dispatch(bot, mongo, row, ctx):
         if action=='check_feed':
             return {'message':f'Found {len(events)} upcoming events. {len(errors)} feed errors. No messages sent.'}
         event = events[0] if events else {'uid':'preview','start':datetime.now(timezone.utc)+timedelta(minutes=61),'end':datetime.now(timezone.utc)+timedelta(minutes=101),'summary':'PREVIEW — Sync reminder','calendar':'Sync3'}
-        sent = await sync.dm_all([int(row['user_id'])],sync.build_embed(event,str(config['offsets'][0]) if config['offsets'] else 'discovery'))
-        return {'message':'Test reminder sent to your Discord DMs.' if sent else 'Discord could not deliver your test DM. Check your DM settings.'}
+        await sync.send_test_dm(int(row['user_id']), sync.build_embed(event,str(config['offsets'][0]) if config['offsets'] else 'discovery'))
+        return {'message': 'Test reminder sent to your Discord DMs.'}
     if section=='band_monitor':
         from extensions.tasks import band_monitor as monitor
         if action != 'status':
             monitor.DEBUG_MODE = action=='debug_on'
-        from cwl_web.manage_operations import runtime_snapshot
+        from utils.manage_operations_runtime import runtime_snapshot
         await mongo.bot_config.update_one({'_id':'manage-web-band-status'},{'$set':runtime_snapshot(monitor)},upsert=True)
+        if action == 'status':
+            return {'message': 'BAND status refreshed.'}
         return {'message':f"BAND debug is {'on' if monitor.DEBUG_MODE else 'off'}. This resets when the bot restarts."}
     if section=='ticket_settings':
         from extensions.commands.tickets import settings
@@ -209,7 +212,7 @@ async def poll(bot, mongo):
 
 
 async def _poll(bot, mongo):
-    from cwl_web.manage_operations import refresh_base_image_cache, runtime_snapshot
+    from utils.manage_operations_runtime import refresh_base_image_cache, runtime_snapshot
     from extensions.tasks import band_monitor
     try:
         await refresh_base_image_cache(mongo)

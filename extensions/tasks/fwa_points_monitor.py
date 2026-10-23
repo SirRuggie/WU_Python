@@ -962,11 +962,21 @@ async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
 
 # Admin controls now live in /manage -> FWA -> Points Monitor. Keep the
 # lifecycle listeners above loaded so the background detector remains active.
-async def set_monitor_enabled(mongo: MongoClient, enabled: bool) -> int:
+async def set_monitor_enabled(mongo: MongoClient, enabled: bool, *, expected_config: dict | None = None) -> int:
     """Persist a switch and stop in-progress retries when turning it off."""
-    await mongo.fwa_points.update_one(
-        {"_id": "config"}, {"$set": {"enabled": bool(enabled)}}, upsert=True,
-    )
+    query = {"_id": "config"}
+    if expected_config is not None:
+        query["enabled"] = expected_config.get("enabled", {"$exists": False})
+    from pymongo.errors import DuplicateKeyError
+    try:
+        result = await mongo.fwa_points.update_one(
+            query, {"$set": {"enabled": bool(enabled)}},
+            upsert=expected_config is None or not expected_config,
+        )
+    except DuplicateKeyError:
+        raise ValueError("Monitoring changed. Reload and review before trying again.") from None
+    if expected_config is not None and not result.matched_count and result.upserted_id is None:
+        raise ValueError("Monitoring changed. Reload and review before trying again.")
     if enabled:
         return 0
     pending = [task for task in list(active_catchups.values()) if not task.done()]

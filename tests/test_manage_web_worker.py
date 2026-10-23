@@ -51,9 +51,9 @@ class ManageWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(claim.args[1]['$set']['status'],'running')
 
     async def test_dispatch_points_checks_native_revision_before_toggle(self):
-        db=SimpleNamespace()
+        db=SimpleNamespace(fwa_points=SimpleNamespace(find_one=AsyncMock(return_value={'enabled': False})))
         from extensions.tasks import fwa_points_monitor
-        with patch('cwl_web.manage_operations.load_document',AsyncMock(return_value={'revision':'new'})),patch.object(fwa_points_monitor,'set_monitor_enabled',AsyncMock()) as toggle:
+        with patch.object(fwa_points_monitor,'set_monitor_enabled',AsyncMock()) as toggle:
             with self.assertRaises(ValueError):await worker.dispatch(None,db,self.row(),None)
             toggle.assert_not_awaited()
 
@@ -99,3 +99,37 @@ class ManageWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_return_interval_cannot_bypass_native_picker(self):
         row=self.row();row.update(section='cwl_rosters',action='start',values={'every_minutes':1})
         with self.assertRaises(ValueError):await worker.dispatch(None,None,row,None)
+
+    async def test_points_toggle_does_not_override_a_concurrent_switch(self):
+        from extensions.tasks import fwa_points_monitor
+        collection = SimpleNamespace(update_one=AsyncMock(return_value=SimpleNamespace(matched_count=0, upserted_id=None)))
+        db = SimpleNamespace(fwa_points=collection)
+        with self.assertRaisesRegex(ValueError, 'Monitoring changed'):
+            await fwa_points_monitor.set_monitor_enabled(db, False, expected_config={'_id': 'config', 'enabled': True})
+        collection.update_one.assert_awaited_once_with(
+            {'_id': 'config', 'enabled': True}, {'$set': {'enabled': False}}, upsert=False)
+
+    async def test_sync_test_dm_preserves_uncertain_delivery(self):
+        from extensions.tasks import band_sync_ical as sync
+        with patch.object(sync, 'bot_instance', object()), patch.object(sync, '_try_dm', AsyncMock(return_value=sync._DmResult(False, error_type='TimeoutError'))):
+            with self.assertRaisesRegex(RuntimeError, 'could not be confirmed'):
+                await sync.send_test_dm(123, object())
+        with patch.object(sync, 'bot_instance', object()), patch.object(sync, '_try_dm', AsyncMock(return_value=sync._DmResult(False, permanent=True))):
+            with self.assertRaisesRegex(ValueError, 'rejected'):
+                await sync.send_test_dm(123, object())
+
+    def test_band_snapshot_rejects_raw_upstream_error_secrets(self):
+        from utils.manage_operations_runtime import runtime_snapshot, public_band_error
+        monitor = SimpleNamespace(poll_health=SimpleNamespace(state='unhealthy', last_error='https://api.example/?access_token=private-value'), band_check_task=None, startup_reconciler=None, BAND_KEY='key-value', DEBUG_MODE=False)
+        snapshot = runtime_snapshot(monitor)
+        self.assertNotIn('private-value', str(snapshot))
+        self.assertNotIn('key-value', str(snapshot))
+        self.assertEqual(public_band_error('band_request_failed'), 'band_request_failed')
+        self.assertEqual(public_band_error('band_api_result_401'), 'band_api_result_401')
+
+    async def test_band_status_action_reports_status_refresh_not_debug_change(self):
+        row = self.row()
+        row.update(section='band_monitor', action='status')
+        db = SimpleNamespace(bot_config=SimpleNamespace(update_one=AsyncMock()))
+        result = await worker.dispatch(None, db, row, None)
+        self.assertEqual(result['message'], 'BAND status refreshed.')

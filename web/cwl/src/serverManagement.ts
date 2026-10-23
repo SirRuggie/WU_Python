@@ -41,3 +41,10 @@ export function recordPickerCopy(records:ManagementSection[]) {
  if(paths.includes('/return-'))return {label:'Clan or reminder setting',search:'Search clans or reminder settings',placeholder:'Clan name, tag or action'}
  return {label:'Setting',search:'Search settings',placeholder:'Setting name'}
 }
+
+
+/** Only known read-only bot checks can bypass mutation confirmation. */
+export function actionNeedsConfirmation(documentId: string, actionId: string): boolean {
+ return !((documentId === 'band_monitor' && actionId === 'status') ||
+   (documentId === 'fwa_sync' && actionId === 'check_feed'))
+}

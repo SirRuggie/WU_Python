@@ -11,3 +11,15 @@ it('links only to HTTPS Discord channels without allowing spoofed hosts',()=>{ex
 
 import {actionConfirmation} from './serverManagement'
 it('reviews selected clan names before a bulk action',()=>{const clans:ManagementField[]=[{key:'clans',label:'Choose clans',type:'multiselect',value:[],options:[{value:'FWA:#A',label:'Alpha · FWA'},{value:'MAIN:#B',label:'Beta · MAIN'}]}];expect(actionConfirmation('Send?',clans,{clans:['MAIN:#B','FWA:#A']})).toBe('Send?\n\n2 clans selected:\nBeta · MAIN\nAlpha · FWA');expect(actionConfirmation('Save?',fields,{})).toBe('Save?')})
+
+
+import {actionNeedsConfirmation} from './serverManagement'
+it('skips confirmation only for known read-only checks', () => {
+ expect(actionNeedsConfirmation('band_monitor','status')).toBe(false)
+ expect(actionNeedsConfirmation('fwa_sync','check_feed')).toBe(false)
+ for (const [section, action] of [
+  ['band_monitor','debug_on'], ['band_monitor','debug_off'],
+  ['fwa_sync','test_dm'], ['fwa_points','enable'], ['fwa_points','disable'],
+  ['unknown','status'], ['band_monitor','check_feed'], ['fwa_sync','status'],
+ ]) expect(actionNeedsConfirmation(section,action)).toBe(true)
+})

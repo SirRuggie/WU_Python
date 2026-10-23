@@ -1,22 +1,19 @@
 """FWA management adapters over the bot's existing Mongo records."""
 import copy
-import hashlib
-import json
 import re
 import time
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from aiohttp import web
 from pymongo.errors import DuplicateKeyError
 from utils import war_weight, fwa_blacklist
 from utils.fwa_points_parser import sanitize_tag
 from . import server_management as shared
+from utils.manage_operations_runtime import revision, runtime_snapshot, refresh_base_image_cache, public_band_error
 
 API = shared.API + '/operations'
 LABELS = {'fwa_points':'FWA points','fwa_sync':'FWA sync reminders','fwa_weight':'War weights','fwa_blacklist':'Clan blacklist','fwa_bases':'FWA bases','band_monitor':'BAND monitor'}
 BASE_FIELDS = {'fwa_base_links':'Base link','base_information':'Base instructions','base_upgrade_notes':'Upgrade notes','war_base_images':'War base image URL','active_base_images':'Active base image URL'}
-
-def revision(row):
-    return hashlib.sha256(json.dumps(row or {},sort_keys=True,default=str).encode()).hexdigest()
 
 def field(key,label,value,kind='text',**kw):
     return dict(key=key,label=label,value=value,type=kind,**kw)
@@ -54,8 +51,33 @@ def checked(values, allowed):
 async def load_document(db, section, item=None, *, source_snapshot=None):
     if section=='band_monitor':
         row=await db.bot_config.find_one({'_id':'manage-web-band-status'}) or {}
-        fresh=time.time()-row.get('checked_at',0)<120
-        return document(section,row,[field('task','Monitor',row.get('task','Not checked') if fresh else 'Status unavailable'),field('startup','Startup',row.get('startup','Not checked')),field('key','BAND connection','Configured' if row.get('key_ready') else 'Not checked or missing'),field('health','Poll health',row.get('health','Not checked')),field('last_success','Last successful check',str(row.get('last_success') or 'Not checked')),field('last_error','Last problem',row.get('last_error') or 'None recorded'),field('debug','Debug logging',bool(row.get('debug',False)),'boolean')],readonly=True,warning='Use Check status for current bot information. Debug resets when the bot restarts.',actions=[{'id':'status','label':'Check status'},{'id':'debug_on','label':'Enable debug logging'},{'id':'debug_off','label':'Disable debug logging'}])
+        checked_at = row.get('checked_at')
+        checked_at_label = 'Not checked'
+        fresh = False
+        if type(checked_at) in (int, float):
+            try:
+                checked_at_label = datetime.fromtimestamp(checked_at, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+                fresh = 0 <= time.time() - checked_at < 120
+            except (ValueError, OverflowError, OSError):
+                pass
+        unavailable = 'Status unavailable'
+        fields = [
+            field('task', 'Monitor', row.get('task', 'Not checked') if fresh else unavailable),
+            field('checked_at', 'Last status check', checked_at_label),
+            field('startup', 'Startup', row.get('startup', 'Not checked') if fresh else unavailable),
+            field('key', 'BAND connection', ('Configured' if row.get('key_ready') else 'Missing') if fresh else unavailable),
+            field('health', 'Poll health', row.get('health', 'Not checked') if fresh else unavailable),
+            field('last_success', 'Last successful check', str(row.get('last_success') or 'Not checked')),
+            field('last_error', 'Last recorded problem', public_band_error(row.get('last_error')) or 'None recorded'),
+            field('debug', 'Debug logging', bool(row.get('debug', False)) if fresh else unavailable,
+                  'boolean' if fresh else 'text'),
+        ]
+        return document(section, row, fields, readonly=True,
+                        warning=('Use Check status for current bot information. Debug resets when the bot restarts.'
+                                 if fresh else 'Status is outdated or unavailable. Check status before relying on these results.'),
+                        actions=[{'id': 'status', 'label': 'Check status'},
+                                 {'id': 'debug_on', 'label': 'Enable debug logging', 'advanced': True},
+                                 {'id': 'debug_off', 'label': 'Disable debug logging', 'advanced': True}])
     if section=='fwa_weight':
         row=await war_weight.load(db,shared.GUILD_ID)
         if source_snapshot is not None:source_snapshot.update(copy.deepcopy(row))
@@ -103,30 +125,12 @@ async def load_document(db, section, item=None, *, source_snapshot=None):
             return result
         return document(section,row,[field('enabled','Monitoring enabled',bool(row.get('enabled',monitor.DEFAULT_ENABLED)),'boolean',readonly=True),field('watch_list','Extra clans', '\n'.join(f'{c["tag"]} {c.get("name","")}' for c in row.get('watch_list',[])),'textarea',description='One clan per line: #TAG Clan name. Family FWA clans are included automatically.')],preview=[{'text':'Family FWA clans are included automatically. Extra clans can be edited below.'}],actions=[{'id':'enable','label':'Start monitoring'},{'id':'disable','label':'Pause monitoring'}],warning='Runtime status is supplied by the bot; saved settings alone do not prove it is running.')
     if section=='fwa_sync':
-        from extensions.tasks.band_sync_schema import CONFIG_ID
+        from extensions.tasks.band_sync_schema import CONFIG_ID, normalize_config
         row=await db.fwa_sync_config.find_one({'_id':CONFIG_ID}) or {}
         if source_snapshot is not None:source_snapshot.update(copy.deepcopy(row))
-        return document(section,row,[field('enabled','Reminders enabled',bool(row.get('enabled',False)),'boolean'),field('panel_channel_id','Signup channel',str(row.get('panel_channel_id') or ''),'channel'),field('band_url','BAND fallback link',row.get('band_url',''))],warning='Changes take effect on the next bot check, within 5 minutes.',actions=[{'id':'check_feed','label':'Check calendar','description':'Checks the feed without sending messages.'},{'id':'test_dm','label':'Send me a test DM','description':'Sends a test only to you.'}])
+        effective = normalize_config(row)
+        return document(section,row,[field('enabled','Reminders enabled',effective['enabled'],'boolean'),field('panel_channel_id','Signup channel',str(effective['panel_channel_id'] or ''),'channel'),field('band_url','BAND fallback link',effective['band_url'])],warning='Changes take effect on the next bot check, within 5 minutes.',actions=[{'id':'check_feed','label':'Check calendar','description':'Checks the feed without sending messages.'},{'id':'test_dm','label':'Send me a test DM','description':'Sends a test only to you.','advanced':True}])
     raise web.HTTPNotFound()
-
-def runtime_snapshot(monitor):
-    """Called only inside the bot worker; never expose the BAND credential."""
-    health=monitor.poll_health
-    return {'checked_at':time.time(),'task':'Running' if monitor.band_check_task and not monitor.band_check_task.done() else 'Stopped',
-            'startup':monitor.startup_reconciler.status_text() if monitor.startup_reconciler else 'Stopped',
-            'key_ready':bool(monitor.BAND_KEY),'health':str(getattr(health,'state','unknown')),
-            'last_success':str(getattr(health,'last_success_at',None) or ''),
-            'last_error':str(getattr(health,'last_error',None) or '')[:300], 'debug':bool(monitor.DEBUG_MODE)}
-
-async def refresh_base_image_cache(mongo):
-    """Bot-worker hook after a web base save, using the same native cache format."""
-    from utils.constants import FWA_WAR_BASE,FWA_ACTIVE_WAR_BASE
-    from utils.media_urls import optimized,DETAIL
-    row=await mongo.fwa_data.find_one({'_id':'fwa_config'}) or {}
-    for key,target in [('war_base_images',FWA_WAR_BASE),('active_base_images',FWA_ACTIVE_WAR_BASE)]:
-        for th,url in row.get(key,{}).items():
-            if url:target[th]=optimized(url,width=DETAIL)
-            else:target.pop(th,None)
 
 async def check_channel_permissions(request, channel):
     """Match Discord's overwrite precedence for the bot's destination access."""
@@ -164,9 +168,14 @@ async def save(request):
         source_snapshot={}
         current=await load_document(db,section,item,source_snapshot=source_snapshot)
         if body.get('revision')!=current['revision']:raise web.HTTPConflict(text='Settings changed in Discord or another browser. Refresh and review your edit.')
+        if current.get('readonly'):
+            raise web.HTTPBadRequest(text='This status is read-only. Use its available actions.')
         fields={f['key']:f for f in current['fields']};values=checked(body.get('values'),fields)
         if any(fields[k].get('readonly') for k in values):raise web.HTTPBadRequest(text='This setting cannot be edited.')
         for key,value in values.items():
+            if fields[key]['type'] == 'number':
+                if type(value) is not int or not fields[key].get('min', value) <= value <= fields[key].get('max', value):
+                    raise web.HTTPBadRequest(text='Enter a whole number within the displayed range.')
             if fields[key]['type'] in {'text','textarea','channel'} and (not isinstance(value,str) or len(value)>4000):raise web.HTTPBadRequest(text='Enter valid text within 4,000 characters.')
         from .change_history import begin, finish, fields as history_fields
         history_target=shared.API+'/operations/'+section+('/'+item if item else '')
@@ -217,6 +226,8 @@ async def save(request):
                 if 'enabled' in values and not isinstance(values['enabled'],bool):raise ValueError('Choose enabled or disabled.')
                 if values.get('band_url') and not public_url(values['band_url']):raise ValueError('Use a public HTTPS link.')
                 if 'panel_channel_id' in values:
+                    if not re.fullmatch(r'[0-9]{15,22}', values['panel_channel_id']):
+                        raise ValueError('Choose a signup channel in this server.')
                     channel=await shared.discord(request,'GET','/channels/'+values['panel_channel_id'])
                     if str(channel.get('guild_id'))!=str(shared.GUILD_ID) or channel.get('type') not in (0,5):raise ValueError('Choose a text channel in this server.')
                     await check_channel_permissions(request,channel)
