@@ -1785,7 +1785,8 @@ async def errors(request, handler):
             raise
         if request.path == API + "/auth/callback" and "text/html" in request.headers.get("Accept", ""):
             destination = saved_login_destination(request)
-            response = web.HTTPFound(destination + "?signin_error=discord" if destination else "/?signin_error=discord")
+            separator = "&" if "?" in destination else "?"
+            response = web.HTTPFound((destination or "/") + separator + "signin_error=discord")
             response.del_cookie(RETURN_COOKIE, path=API + "/auth")
             response.del_cookie(STATE_COOKIE, path=API + "/auth")
         else:

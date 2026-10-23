@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest'
-import {navigationSection,visibleNavigationSections} from './SidebarNavigation'
+import {navigationSection,navigationLabel,visibleNavigationSections} from './SidebarNavigation'
 it('keeps all personal pages together without staff grants',()=>{
  const sections=visibleNavigationSections(false,false)
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL'])
@@ -107,4 +107,10 @@ it('renders publish-only access and results exports in their CWL sidebar groups'
  expect(results).toContain('Exports &amp; history')
  expect(results).toContain('Results &amp; bonuses')
  expect(results).not.toContain('Publish roster')
+})
+
+it('names staff destinations without granting access',()=>{
+ expect(navigationLabel('publication')).toBe('Publish roster')
+ expect(navigationLabel('connections-settings')).toBe('Integrations')
+ expect(visibleNavigationSections(false,false).flatMap(section=>section.items).some(item=>item.view==='publication')).toBe(false)
 })

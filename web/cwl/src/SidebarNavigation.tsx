@@ -63,6 +63,10 @@ export function visibleNavigationSections(canEdit: boolean, isOwner: boolean, pe
       (item.access !== 'owner' || isOwner) && (isOwner || !item.permissions || item.permissions.some(scope => (permissions.includes(scope) || (scope.startsWith('cwl_') && permissions.includes('cwl')))))) }))
     .filter(section => section.items.length > 0)
 }
+export function navigationLabel(view: DashboardView): string {
+  return sections.flatMap(section => section.items).find(item => item.view === view)?.label
+    || (view === 'manage' ? 'Server management' : 'Dashboard')
+}
 export function navigationSection(view: DashboardView) {
   return sections.find(section => section.items.some(item => item.view === view))?.label
 }

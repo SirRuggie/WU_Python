@@ -578,9 +578,9 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("cwl_web.app.aiohttp.ClientSession", return_value=FakeSession()):
             response = await self.call("GET", f"/auth/callback?state={state}&code=code",
-                                       {"Cookie": "cwl_oauth_state=" + cookie + "; wu_login_page=/?view=signup&season=12"}, allow_redirects=False)
+                                       {"Cookie": "cwl_oauth_state=" + cookie + "; wu_login_page=/cwl/publish?season=12&step=announce"}, allow_redirects=False)
         self.assertEqual(response.status, 302)
-        self.assertEqual(response.headers["Location"], "/signup")
+        self.assertEqual(response.headers["Location"], "/cwl/publish?season=12&step=announce")
         self.assertEqual(response.cookies["wu_login_page"]["max-age"], "0")
         raw = response.cookies["cwl_session"].value
         self.assertEqual(int(response.cookies["cwl_session"]["max-age"]), 30 * 86400)

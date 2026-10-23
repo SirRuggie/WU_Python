@@ -52,8 +52,9 @@ class WeightLinksTests(unittest.IsolatedAsyncioTestCase):
                         response = await client.get(path + suffix + '?season=12')
                         self.assertEqual(response.status, 200)
                         self.assertIn('CWL dashboard', await response.text())
-                    self.assertEqual(login_destination({'view':view, 'season':'12'}), path+'?season=12')
-                    self.assertEqual(saved_login_destination(SimpleNamespace(cookies={'wu_login_page':path+'?season=12&view=access&redirect=https://evil.test'})), path+'?season=12')
+                    expected = '/cwl/roster' if view == 'manage-signups' else path
+                    self.assertEqual(login_destination({'view':view, 'season':'12'}), expected+'?season=12')
+                    self.assertEqual(saved_login_destination(SimpleNamespace(cookies={'wu_login_page':path+'?season=12&view=access&redirect=https://evil.test'})), expected+'?season=12')
                 self.assertEqual((await client.get('/api/cwl/seasons/1/signups?all=1')).status, 401)
                 self.assertEqual((await client.get('/cwl/not-a-page')).status, 404)
         self.assertEqual(login_destination({'view':'publication','season':'bad','step':'announce'}), '/cwl/publish?step=announce')

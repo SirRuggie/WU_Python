@@ -65,8 +65,9 @@ were not attempted and no real accounts were linked or transferred during tests.
    Compact settings discovery, runtime status, explicit previews, save conflicts,
    input validation and queued-action recovery covered. See
    `server-settings-integrations-review.md` for evidence and the credential gate.
-6. **Cross-cutting: Sign-in and staff deep links.** Approved member destinations
-   have coverage; preserving staff destinations through OAuth remains outstanding.
+6. **Cross-cutting: Sign-in and staff deep links: reviewed October 23.** Existing
+   staff destination routing was confirmed; failed-login query preservation and
+   the destination label were fixed. See `staff-signin-review.md`.
 7. **Cross-cutting: Accessibility and devices.** Full screen-reader, high-zoom,
    mobile-keyboard/landscape, and real-device testing remain outstanding.
 8. **Cross-cutting: Performance.** Measure the existing bundle-size warning on

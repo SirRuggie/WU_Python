@@ -11,8 +11,8 @@ import { strikePermissions } from './strikePermissions'
 import {isManagementArea, managementAreas} from './managementAreas'
 import { FilterPicker, leagueValue, matchesLeague } from './ClanFilters'
 import { sortClans, clanSortOptions, type ClanSort } from './clanSort'
-import SidebarNavigation, { navigationSection, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
-import { memberTarget, loginPath } from './memberLinks'
+import SidebarNavigation, { navigationSection, navigationLabel, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
+import { loginPath } from './memberLinks'
 import { DashboardHistory, dashboardTarget, seasonViews } from './dashboardHistory'
 import './Welcome.css'
 import './SignupFlow.css'
@@ -174,7 +174,7 @@ function App() {
   useEffect(() => {
     if (!session) return
     const allowed = visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === view))
-    if (!allowed) { setView('home'); setCwlDirty(false); setNotice({kind:'error', text:'Your dashboard access changed. Choose an available page.'}) }
+    if (!allowed) { setView('home'); setCwlDirty(false); setNotice({kind:'error', text:'You don’t have access to that page. Choose an available page.'}) }
   }, [session, view])
 
   useEffect(() => { if (['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) void api<{ dev_fixture: boolean }>('/config').then(result => setFixtureMode(result.dev_fixture)).catch(() => setFixtureMode(false)) }, [])
@@ -526,7 +526,7 @@ function App() {
   const currentStaffPage = Math.min(staffPage, staffLastPage)
   const staffPageSlice = <T,>(items: T[]) => items.slice(currentStaffPage * 8, (currentStaffPage + 1) * 8)
   if (authState === 'error') return <div className="center-screen"><Brand /><div className="card narrow"><h1>CWL is unavailable</h1><p role="alert">{authError}</p><button onClick={() => void loadAuth()}>Retry connection</button></div></div>
-  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><DashboardIcon name="war"/><div><strong>Tasks</strong><small>See attacks and events.</small></div></li><li><DashboardIcon name="shield"/><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><DashboardIcon name="trophy"/><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{memberTarget(window.location.search, window.location.pathname).view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' ? (entryTarget.signupPanel === 'saved' ? 'My signups' : 'CWL signups') : entryTarget.view === 'assignments' ? 'My clan assignments' : entryTarget.view === 'search' ? 'Search' : entryTarget.view === 'wars' ? 'Wars' : entryTarget.view === 'events' ? 'Events' : 'Tasks'}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError, window.location.pathname)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}<p className="small">Staff tools appear when you have access.</p></div></main>
+  if (authState === 'signed-out') return <main className="center-screen welcome-screen"><Brand /><div className="card login-card"><p className="eyebrow">Warriors United Dashboard</p><h1>Your accounts.<br />Your clans.<br />One place.</h1><p>Check your attacks, set reminders, and sign up for CWL.</p><ul className="welcome-features"><li><DashboardIcon name="war"/><div><strong>Tasks</strong><small>See attacks and events.</small></div></li><li><DashboardIcon name="shield"/><div><strong>My accounts</strong><small>View your linked accounts.</small></div></li><li><DashboardIcon name="trophy"/><div><strong>CWL</strong><small>Sign up and see your assigned clans.</small></div></li></ul>{entryTarget.view !== 'home' && <p className="welcome-destination">After sign-in: <strong>{entryTarget.view === 'signup' && entryTarget.signupPanel === 'saved' ? 'My signups' : navigationLabel(entryTarget.view)}</strong></p>}<a className="button primary" href={loginPath(window.location.search, !!authError, window.location.pathname)}>Continue with Discord</a>{fixtureMode && <button className="fixture-button" onClick={() => void api('/dev/login', 'POST').then(loadAuth).catch(error => setAuthError(message(error)))}>Open local test session</button>}{authError && <p className="inline-reason" role="alert">{authError}</p>}<p className="small">Staff tools appear when you have access.</p></div></main>
 
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 

@@ -76,3 +76,18 @@ class ManagementDashboardLinksTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(value=value):
                 self.assertEqual(saved_login_destination(SimpleNamespace(cookies={"wu_login_page": value})), "")
+
+    async def test_failed_oauth_preserves_staff_season_and_step(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app=create_app(db_path=str(Path(directory)/'test.sqlite'),dev_fixture=True,secure_cookies=False)
+            async with TestClient(TestServer(app)) as client:
+                for destination,expected in [
+                    ('/cwl/publish?season=12&step=announce','/cwl/publish?season=12&step=announce&signin_error=discord'),
+                    ('/cwl/roster?season=12','/cwl/roster?season=12&signin_error=discord'),
+                    ('/settings/access','/settings/access?signin_error=discord'),
+                    ('https://evil.test','/?signin_error=discord'),
+                ]:
+                    response=await client.get('/api/cwl/auth/callback?error=access_denied',headers={'Accept':'text/html','Cookie':'wu_login_page='+destination},allow_redirects=False)
+                    self.assertEqual(response.headers['Location'],expected)
+                    self.assertEqual(response.cookies['wu_login_page'].value,'')
+                    self.assertEqual(response.cookies['cwl_oauth_state'].value,'')
