@@ -85,9 +85,15 @@ class ActivityEndpoint(unittest.IsolatedAsyncioTestCase):
         response=await self.client.get('/api/cwl/clan-activity?scope=family',headers=headers)
         self.assertEqual(response.status,403)
 
+    async def test_discord_guild_owner_does_not_grant_dashboard_access(self):
+        response = await self.client.get(
+            '/api/cwl/clan-activity?scope=family', headers=self.auth('100', True))
+        self.assertEqual(response.status, 403)
+        self.providers.family_clans.assert_not_awaited()
+
     async def test_directory_failure_is_not_an_empty_family(self):
         self.providers.family_clans.side_effect=__import__('cwl_web.providers',fromlist=['ProviderUnavailable']).ProviderUnavailable('offline')
-        response=await self.client.get('/api/cwl/clan-activity?scope=family',headers=self.auth('100',True))
+        response=await self.client.get('/api/cwl/clan-activity?scope=family',headers=self.auth('505227988229554179'))
         self.assertEqual(response.status,503)
         self.assertFalse(self.app['clan_activity_cache'])
 

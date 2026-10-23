@@ -1,4 +1,5 @@
 """Push is explicit, account scoped, deadline bound and durable across restarts."""
+import asyncio
 import base64
 import hashlib
 import json
@@ -192,6 +193,55 @@ class PushTests(unittest.IsolatedAsyncioTestCase):
             self.app['providers'].linked_tags = AsyncMock(return_value={'#Q2Y': True})
             await push.fresh(self.app, '100')
             self.assertEqual(fetch.call_args.args[1], ['#Q2Y'])
+
+    async def test_slow_cwl_keeps_fresh_war_and_cancels_unfinished_read(self):
+        from utils.todo_data import ViewData, Row
+        await self.save()
+        now = int(time.time())
+        cancelled = asyncio.Event()
+
+        async def slow(*args, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        war = ViewData(rows=[Row('Player', '#P2Y', 'Clan', '#C2Y', 0, 2, now + 1800)])
+        with patch('cwl_web.todo.get_clash_client', new=AsyncMock(return_value=object())), \
+             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('utils.todo_data.fetch_accounts', new=AsyncMock(return_value=([], []))), \
+             patch('utils.todo_data.build_war_view', new=AsyncMock(return_value=war)), \
+             patch('utils.todo_data.build_cwl_view', new=slow), \
+             patch.object(push, 'FRESH_VIEW_TIMEOUT', 0.02):
+            result = await push.fresh(self.app, '100')
+        self.assertTrue(cancelled.is_set())
+        self.assertTrue(result['views']['war']['ok'])
+        self.assertFalse(result['views']['cwl']['ok'])
+        planned = push.plan(result, prefs(), now)
+        self.assertEqual([item['kind'] for item in planned], ['war'])
+        self.assertEqual(set(planned[0]['accounts']), {'#P2Y'})
+
+    async def test_disabled_kind_is_not_fetched(self):
+        from utils.todo_data import ViewData
+        await self.save()
+        with self.app['store'].tx() as db:
+            db.execute('UPDATE push_subscriptions SET cwl=0')
+        with patch('cwl_web.todo.get_clash_client', new=AsyncMock(return_value=object())), \
+             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('utils.todo_data.fetch_accounts', new=AsyncMock(return_value=([], []))), \
+             patch('utils.todo_data.build_war_view', new=AsyncMock(return_value=ViewData())), \
+             patch('utils.todo_data.build_cwl_view', new=AsyncMock()) as cwl:
+            result = await push.fresh(self.app, '100')
+        cwl.assert_not_awaited()
+        self.assertEqual(set(result['views']), {'war'})
+
+    async def test_view_failure_and_cancellation_never_become_empty_success(self):
+        with self.assertLogs(push.LOG, level='WARNING'):
+            result = await push._fresh_view('war', AsyncMock(side_effect=ValueError('bad data'))())
+        self.assertFalse(result['ok'])
+        self.assertEqual(push.plan({'views': {'war': result}}, prefs(), 10000), [])
+        with self.assertRaises(asyncio.CancelledError):
+            await push._fresh_view('war', AsyncMock(side_effect=asyncio.CancelledError())())
 
     async def test_logout_removes_only_this_users_device(self):
         saved, _ = await self.save()

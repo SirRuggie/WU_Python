@@ -15,6 +15,9 @@ API = '/api/cwl/push'
 LOG = logging.getLogger(__name__)
 MAX_OFFSET_MINUTES = 24 * 60
 MAX_REMINDER_TIMES = 5
+FRESH_ACCOUNTS_TIMEOUT = 20
+FRESH_VIEW_TIMEOUT = 20
+FRESH_CHECK_TIMEOUT = 75
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS push_subscriptions (
  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription TEXT NOT NULL,
@@ -209,12 +212,22 @@ def plan(snapshot, preferences, now):
     return list(groups.values())
 
 
+async def _fresh_view(kind, load):
+    """A slow/unavailable view must not discard the other fresh reminder view."""
+    from .todo import _view, _unavailable
+    try:
+        return _view(await asyncio.wait_for(load, FRESH_VIEW_TIMEOUT))
+    except Exception as exc:
+        LOG.warning('Push %s data check failed: %s', kind, type(exc).__name__)
+        return _unavailable('Fresh reminder data is unavailable')
+
+
 async def fresh(app, uid):
-    from .todo import get_clash_client, _history, _view
+    from .todo import get_clash_client, _history
     from utils import todo_data
     links = await asyncio.wait_for(app['providers'].linked_tags(uid), 10)
     with app['store'].tx() as db:
-        rows = db.execute('SELECT tags FROM push_subscriptions WHERE user_id=? AND enabled=1', (uid,)).fetchall()
+        rows = db.execute('SELECT tags,war,cwl FROM push_subscriptions WHERE user_id=? AND enabled=1', (uid,)).fetchall()
     selected = {tag for row in rows for tag in json.loads(row['tags'])}
     tags = [tag for tag in links if tag in selected][:100]
     if not tags:
@@ -232,10 +245,16 @@ async def fresh(app, uid):
     client = FreshClient()
     sem = todo_data.new_semaphore()
     with todo_data.fresh_reads():
-        accounts, _ = await todo_data.fetch_accounts(client, tags, sem=sem)
+        accounts, _ = await asyncio.wait_for(
+            todo_data.fetch_accounts(client, tags, sem=sem), FRESH_ACCOUNTS_TIMEOUT)
         candidates, _ = await _history(app, tags)
-        war, cwl = await asyncio.gather(todo_data.build_war_view(client, accounts, sem=sem, candidates=candidates), todo_data.build_cwl_view(client, accounts, sem=sem, candidates=candidates))
-    return {'views': {'war': _view(war), 'cwl': _view(cwl)}}
+        builders = {'war': todo_data.build_war_view, 'cwl': todo_data.build_cwl_view}
+        kinds = [kind for kind in builders if any(row[kind] for row in rows)]
+        views = await asyncio.gather(*(
+            _fresh_view(kind, builders[kind](client, accounts, sem=sem, candidates=candidates))
+            for kind in kinds
+        ))
+    return {'views': dict(zip(kinds, views))}
 
 
 def reminder_payload(item):
@@ -270,7 +289,7 @@ async def process_user(app, uid):
         active = db.execute('SELECT 1 FROM push_subscriptions WHERE user_id=? AND enabled=1 LIMIT 1', (uid,)).fetchone()
     if not active:
         return
-    snapshot = await asyncio.wait_for(fresh(app, uid), 60)
+    snapshot = await asyncio.wait_for(fresh(app, uid), FRESH_CHECK_TIMEOUT)
     now = int(time.time())
     with app['store'].tx() as db:
         subscriptions = db.execute('SELECT * FROM push_subscriptions WHERE user_id=? AND enabled=1', (uid,)).fetchall()

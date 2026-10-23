@@ -79,9 +79,12 @@ were not attempted and no real accounts were linked or transferred during tests.
    players without waiting for the slowest lookup; see `account-loading-review.md`.
    Cold link discovery and slower-device/network startup still need separate
    measurement; bundle size alone is not evidence of their bottleneck.
-9. **Cross-cutting: Live end-to-end integration.** Authenticated real clan/member
-   data and actual notification delivery need separate checks. Simulated browser
-   writes are not live Discord or provider verification.
+9. **Cross-cutting: Live integrations audited October 23.** Owner confirmed phone
+   notification delivery. Live Discord identity/directory, BAND, database, worker
+   health and real account/war reads checked; full regressions and isolated database
+   recovery passed. Scheduled push now isolates unavailable war/CWL views. See
+   `live-integrations-review.md` for evidence and remaining device/upstream limits.
+   Simulated writes are not live Discord delivery verification.
 
 Clan management, CWL staff workflows, and Activity/navigation already have substantial
 scoped coverage recorded in `dashboard-interaction-standard.md`. The event calendar
