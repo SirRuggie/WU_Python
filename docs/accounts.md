@@ -63,10 +63,10 @@ in-memory result cache keeps pagination from repeatedly requesting NotFound or
 temporarily failing profiles; rerunning `/accounts` bypasses that page cache.
 
 
-## Public lookup: `/user-accounts discord-id:<ID>`
+## Public lookup: `/user-accounts user:<user>`
 
-Anyone with access to this command can look up a numeric Discord user ID,
-including a user outside the server. Results are public, never ephemeral, and
+Anyone with access to this command can search and select a Discord user using
+Discord's native user picker. Results are public, never ephemeral, and
 use the same rows, Town Hall sorting, and 20-account pagination as `/accounts`.
 The lookup merges forward links from ClashKing and ClashPerk and displays each
 tag once. It reports links, not verified ownership; reverse ownership disputes

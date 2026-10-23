@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import hikari
 
 from extensions.commands import accounts, user_accounts
 from utils import recruit_links, todo_data
@@ -66,7 +67,7 @@ def test_public_invocation_uses_requested_id_and_disables_mentions(monkeypatch):
     ctx = SimpleNamespace(user=SimpleNamespace(id=999), defer=AsyncMock(),
                           interaction=SimpleNamespace(edit_initial_response=AsyncMock()))
     asyncio.run(user_accounts.UserAccounts.invoke(
-        SimpleNamespace(discord_id='123'), ctx, coc_client='client',
+        SimpleNamespace(user=SimpleNamespace(id=123)), ctx, coc_client='client',
     ))
     ctx.defer.assert_awaited_once_with(ephemeral=False)
     load.assert_awaited_once_with('client', 123, force=True)
@@ -100,3 +101,9 @@ def test_malformed_button_does_not_load_or_replace_panel(monkeypatch):
         ctx, 'invalid:1', coc_client='client',
     )) is None
     load.assert_not_awaited()
+
+
+def test_command_uses_native_discord_user_picker():
+    options = user_accounts.UserAccounts._command_data.options
+    assert set(options) == {"user"}
+    assert options["user"].type is hikari.OptionType.USER

@@ -59,10 +59,10 @@ async def user_accounts_page_handler(
 class UserAccounts(
     lightbulb.SlashCommand,
     name="user-accounts",
-    description="Publicly show merged ClashKing and ClashPerk accounts for a Discord ID",
+    description="Publicly show merged ClashKing and ClashPerk accounts for a user",
 ):
-    discord_id = lightbulb.string(
-        "discord-id", "Discord user ID to look up", min_length=1, max_length=20,
+    user = lightbulb.user(
+        "user", "Search for the Discord user whose accounts you want to see",
     )
 
     @lightbulb.invoke
@@ -72,10 +72,7 @@ class UserAccounts(
         ctx: lightbulb.Context,
         coc_client: coc.Client = lightbulb.di.INJECTED,
     ) -> None:
-        discord_id = parse_discord_id(self.discord_id)
-        if discord_id is None:
-            await ctx.respond("Enter a valid numeric Discord user ID.")
-            return
+        discord_id = int(self.user.id)
         await ctx.defer(ephemeral=False)
         data = await load_inventory(coc_client, discord_id, force=True)
         await ctx.interaction.edit_initial_response(
