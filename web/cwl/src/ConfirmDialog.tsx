@@ -39,7 +39,8 @@ export default function ConfirmDialog({
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
         const buttons =
-          dialog.current!.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+          Array.from(dialog.current!.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"))
+            .filter(button => button.getClientRects().length > 0);
         const first = buttons[0],
           last = buttons[buttons.length - 1];
         if (event.shiftKey && document.activeElement === first) {
