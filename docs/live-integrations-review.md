@@ -93,3 +93,16 @@ reads and historical delivery records supplement, but do not replace, future rea
 usage across devices and upstream outages. Native screen-reader speech, OS text
 scaling, and other untested device settings remain device-level checks. No claim
 of zero possible bugs or universal external delivery is made.
+
+## Deployment verification
+
+Implementation revision `cc26a52` pushed to origin/main and loaded by the web
+service on October 23 at 21:14:32 UTC. Startup restored Mongo revision 4340.
+An immediate request during restart returned 502; the subsequent complete public
+check passed after initialization. No frontend assets or bot restart were needed.
+Web service remained active with zero automatic restarts; public HTML/assets and
+signed-out authorization checks passed again. Post-restart read-only fresh reminder
+lookup completed in about 4.5 seconds. No push-check failure, traceback or durability
+error appeared during the initial post-restart observation. BAND and both Discord
+war monitors remained healthy. This short observation is not a long-term uptime
+or delivery guarantee.
