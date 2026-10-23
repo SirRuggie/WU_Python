@@ -28,3 +28,22 @@ No live signup changes or test notifications were sent.
 Deployment: narrow frontend patch over the last published member release; the
 separate server-settings/BAND rollout remains pending. Only the dashboard web
 service needs restart for the backend read adapter; the bot is not restarted.
+
+## Deployment interruption follow-up
+
+The reported reference 20256e3148d5 occurred at 15:14:14 during the web service's
+15:14:06–15:14:15 deployment shutdown. The screenshot's concurrent seasons 502
+is consistent with that service interruption, though it has no issue reference
+for independent request correlation. The original 0.4/1s browser backoff was too
+short to bridge this nine-second interval.
+
+Gateway (502/504) and network failures now wait 1.5s then 10s before retrying,
+retaining the three-attempt limit. Other transient HTTP failures keep their short
+backoff; upstream-handled failures still do not multiply retries. A fake-clock
+regression verifies recovery across a nine-second interruption. The complete
+frontend suite passed (319 tests), and the production build passed. A subsequent
+read-only live check loaded all 47 linked accounts; one lookup recovered after
+roughly 11 seconds. This is a point-in-time check, not an availability guarantee.
+
+This correction deploys static assets only, without restarting the web service
+or bot. Avoid restarting services for future frontend-only changes.
