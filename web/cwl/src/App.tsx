@@ -73,6 +73,9 @@ function App() {
   const [publicationStep, setPublicationStep] = useState<'review' | 'announce'>(entryTarget.step || 'review')
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
   const [view, setView] = useState<View>(entryTarget.view)
+  useEffect(() => {
+    document.title = `${navigationLabel(view)} · Warriors United`
+  }, [view])
   const [rosterBusy, setRosterBusy] = useState(false)
   const [declarationDirty, setDeclarationDirty] = useState(false)
   const [declarationBusy, setDeclarationBusy] = useState(false)
@@ -531,6 +534,7 @@ function App() {
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
   return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className="shell">
+    <a className="skip-to-content" href="#dashboard-main" inert={mobile && menuOpen}>Skip to content</a>
     <aside ref={drawerRef} id="dashboard-navigation" className={`sidebar ${menuOpen ? 'open' : ''}`} inert={mobile && !menuOpen} role={mobile && menuOpen ? 'dialog' : undefined} aria-modal={mobile && menuOpen ? true : undefined} aria-label={mobile && menuOpen ? 'Navigation' : undefined} tabIndex={-1}>
       <div className="brand-wrap"><Brand /><button className="menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button></div>
       <SidebarNavigation key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={changeView} />
@@ -546,7 +550,7 @@ function App() {
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     <div className="workspace" inert={mobile && menuOpen}>
       <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
-      <main>
+      <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view)}>
         <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
         {seasonError && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
@@ -575,7 +579,7 @@ function App() {
             ))}
           </nav>
         )}
-        {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}
+        {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}
         {view === 'staff-overview' && <StaffOverview onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
         {view === 'image-gallery' && <ImageGallery onDirty={setManageDirty} />}
         {view === 'tickets' && <TicketBrowser />}

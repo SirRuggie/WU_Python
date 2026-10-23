@@ -1,0 +1,46 @@
+/* Shared keyboard and constrained-viewport behavior; no workflow changes. */
+.skip-to-content {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  transform: translateY(-200%);
+  padding: 12px 16px;
+  min-height: 44px;
+  border: 2px solid #f4cd64;
+  border-radius: 8px;
+  background: #191b22;
+  color: #fff;
+}
+.skip-to-content:focus { transform: translateY(0); }
+#dashboard-main { scroll-margin-top: 80px; }
+#dashboard-main:focus-visible {
+  outline: 2px solid #f4cd64;
+  outline-offset: -3px;
+}
+textarea:focus-visible, summary:focus-visible, [role='switch']:focus-visible {
+  outline: 3px solid #e0b43c;
+  outline-offset: 3px;
+}
+.shell :is(input, select, textarea, button, summary, a[href]) {
+  scroll-margin-block: 90px 140px;
+}
+.shell .notice {
+  overflow-wrap: anywhere;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .shell .sidebar {
+    height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .shell textarea { font-size: 16px; }
+}
+@media (max-height: 500px) and (max-width: 900px) {
+  .shell .topbar { position: static; }
+  #dashboard-main { scroll-margin-top: 12px; }
+  .shell :is(input, select, textarea, button, summary, a[href]) {
+    scroll-margin-block: 24px;
+  }
+}

@@ -68,8 +68,10 @@ were not attempted and no real accounts were linked or transferred during tests.
 6. **Cross-cutting: Sign-in and staff deep links: reviewed October 23.** Existing
    staff destination routing was confirmed; failed-login query preservation and
    the destination label were fixed. See `staff-signin-review.md`.
-7. **Cross-cutting: Accessibility and devices.** Full screen-reader, high-zoom,
-   mobile-keyboard/landscape, and real-device testing remain outstanding.
+7. **Cross-cutting: Accessibility and devices: scoped browser pass completed October 23.**
+   Keyboard, focus, landmarks, 320px reflow and short landscape improvements reviewed;
+   see `dashboard-accessibility-review.md`. Native zoom, screen-reader speech and
+   real-device keyboard/OS text-scaling checks remain outstanding.
 8. **Cross-cutting: Performance.** Measure the existing bundle-size warning on
    slower devices/networks before claiming a measured performance defect.
 9. **Cross-cutting: Live end-to-end integration.** Authenticated real clan/member

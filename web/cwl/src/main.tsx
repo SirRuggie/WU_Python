@@ -7,6 +7,7 @@ window.addEventListener('unhandledrejection', () => { void reportBrowserIssue('u
 import './style.css'
 import './contrast.css'
 import './workflowControls.css'
+import './accessibility.css'
 import { registerPushWorker } from './webPush'
 
 // Installation support is passive; notification permission remains opt-in.

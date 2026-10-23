@@ -38,11 +38,12 @@ export default function ConfirmDialog({
       className="confirm-dialog"
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
-        const buttons =
-          Array.from(dialog.current!.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"))
-            .filter(button => button.getClientRects().length > 0);
-        const first = buttons[0],
-          last = buttons[buttons.length - 1];
+        const controls = Array.from(dialog.current!.querySelectorAll<HTMLElement>(
+          'button, a[href], input, select, textarea, summary, [tabindex]',
+        )).filter(element => element.tabIndex >= 0 && !element.matches(':disabled')
+          && element.getClientRects().length > 0 && !element.closest('[hidden], [inert]'));
+        const first = controls[0], last = controls[controls.length - 1];
+        if (!first || !last) return;
         if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
           last.focus();
