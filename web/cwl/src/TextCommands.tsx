@@ -1,30 +1,76 @@
 import CommandTest from './CommandTest'
 import CommandActivity from './CommandActivity'
-import type {RoleChoice} from './CommandExtras'
-import MentionText,{namedMentions,type MentionNames} from './MentionText'
+import type { RoleChoice } from './CommandExtras'
+import MentionText, { namedMentions, type MentionNames } from './MentionText'
 import ChangeHistory from './ChangeHistory'
-import {useEffect, useState, useRef} from 'react'
-import {api} from './api'
+import { useEffect, useState, useRef } from 'react'
+import { api, ApiError } from './api'
 import DiscordMessagePreview from './DiscordMessagePreview'
-import useCompactPreview from './useCompactPreview'
 import './TextCommands.css'
 
-import CommandBuilder,{hasRoleActions,commandBlocks,commandPreview,mapBlockText,type Command} from './CommandBuilder'
-export {commandPreview} from './CommandBuilder'
-const blank=():Command=>({command:'!',enabled:true,text:'',title:'',description:'',image_url:'',color:'#e2b332',blocks:[],allow_pings:false,choose_recipient:false,recipient_ping:false})
-export default function TextCommands({onDirty}:{onDirty:(value:boolean)=>void}) {
-  const editor=useRef<HTMLDivElement>(null),testArea=useRef<HTMLDivElement>(null),collapsedPanel=useRef<HTMLElement>(null)
-  const compactPreview = useCompactPreview(700)
-  const [collapsed,setCollapsed]=useState(false)
-  function collapseEditor(){setCollapsed(true);requestAnimationFrame(()=>{collapsedPanel.current?.focus();collapsedPanel.current?.scrollIntoView({block:'nearest'})})}
-  const [rows,setRows]=useState<Command[]>([]),[search,setSearch]=useState(''),[draft,setDraft]=useState<Command|null>(null),[saved,setSaved]=useState<Command|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[pane,setPane]=useState<'edit'|'preview'>('edit')
-  const [roles,setRoles]=useState<RoleChoice[]>([]),[roleError,setRoleError]=useState('')
-  const rolesLoaded = useRef(false), rolesLoading = useRef(false)
-  async function loadRoles(){
+import CommandBuilder, {
+  hasRoleActions,
+  commandBlocks,
+  commandPreview,
+  mapBlockText,
+  type Command,
+} from './CommandBuilder'
+export { commandPreview } from './CommandBuilder'
+const blank = (): Command => ({
+  command: '!',
+  enabled: true,
+  text: '',
+  title: '',
+  description: '',
+  image_url: '',
+  color: '#e2b332',
+  blocks: [],
+  allow_pings: false,
+  choose_recipient: false,
+  recipient_ping: false,
+})
+export default function TextCommands({
+  onDirty,
+}: {
+  onDirty: (value: boolean) => void
+}) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  const directory = useRef<HTMLHeadingElement>(null)
+  const mutation = useRef(false)
+  const sequence = useRef(0)
+  const [conflict, setConflict] = useState(false)
+  function closeEditor() {
+    if (
+      busy ||
+      mutation.current ||
+      (dirty && !window.confirm('Discard unsaved command changes?'))
+    )
+      return
+    setDraft(null)
+    setSaved(null)
+    setConflict(false)
+    requestAnimationFrame(() => directory.current?.focus())
+  }
+  const [rows, setRows] = useState<Command[]>([]),
+    [search, setSearch] = useState(''),
+    [draft, setDraft] = useState<Command | null>(null),
+    [saved, setSaved] = useState<Command | null>(null),
+    [error, setError] = useState(''),
+    [notice, setNotice] = useState(''),
+    [busy, setBusy] = useState(false),
+    [loading, setLoading] = useState(true),
+    [pane, setPane] = useState<'edit' | 'preview'>('edit')
+  const [roles, setRoles] = useState<RoleChoice[]>([]),
+    [roleError, setRoleError] = useState('')
+  const rolesLoaded = useRef(false),
+    rolesLoading = useRef(false)
+  async function loadRoles() {
     if (rolesLoading.current) return
     rolesLoading.current = true
     try {
-      const data = await api<{roles:RoleChoice[]}>('/manage/text-command-roles')
+      const data = await api<{ roles: RoleChoice[] }>(
+        '/manage/text-command-roles',
+      )
       setRoles(data.roles)
       setRoleError('')
       rolesLoaded.current = true
@@ -34,31 +80,549 @@ export default function TextCommands({onDirty}:{onDirty:(value:boolean)=>void}) 
       rolesLoading.current = false
     }
   }
-  const [mentionNames,setMentionNames]=useState<MentionNames>({})
-  const rememberMention=(key:string,name:string)=>setMentionNames(current=>current[key]===name?current:{...current,[key]:name})
-  const dirty=!!draft&&JSON.stringify(draft)!==JSON.stringify(saved)
-  async function load(){setLoading(true);try{const data=await api<{commands:Command[]}>('/manage/text-commands');setRows(data.commands);setError('')}catch(e){setError(e instanceof Error?e.message:'Could not load commands.')}finally{setLoading(false)}}
-  useEffect(()=>{void load()},[])
-  useEffect(()=>{onDirty(dirty);const guard=(e:BeforeUnloadEvent)=>{if(dirty){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',guard);return()=>{onDirty(false);window.removeEventListener('beforeunload',guard)}},[dirty,onDirty])
-  function choose(row:Command|null){if(dirty&&!window.confirm('Leave without saving your changes?'))return;if(!rolesLoaded.current)void loadRoles();setSaved(row);setDraft(row?{...row}:blank());setError('');setNotice('');setPane('edit');setCollapsed(false)}
-  function change(key:keyof Command,value:string|boolean){setDraft(current=>current?{...current,[key]:value}:current);setNotice('')}
-  async function save(){if(!draft)return;setBusy(true);setError('');try{const {revision,...values}=draft;const result=await api<Command>('/manage/text-commands'+(saved?'/'+encodeURIComponent(saved.command):''),saved?'PATCH':'POST',{values,revision});setRows(current=>[...current.filter(row=>row.command!==result.command),result].sort((a,b)=>a.command.localeCompare(b.command)));setSaved(result);setDraft(result);collapseEditor();setNotice(result.enabled?`${result.command} is ready to use in Discord.`:`${result.command} is saved and turned off.`)}catch(e){setError(e instanceof Error?e.message:'Could not save command.')}finally{setBusy(false)}}
-  async function remove(){if(!saved||!window.confirm(`Delete ${saved.command}? Its saved reply will be removed.`))return;setBusy(true);setError('');try{await api('/manage/text-commands/'+encodeURIComponent(saved.command),'DELETE',{revision:saved.revision});setRows(current=>current.filter(row=>row.command!==saved.command));setDraft(null);setSaved(null);setNotice('Command deleted.')}catch(e){setError(e instanceof Error?e.message:'Could not delete command.')}finally{setBusy(false)}}
-  return <section className="text-commands"><div className="page-head"><div><p className="eyebrow">SERVER TOOLS</p><h1>Command triggers</h1><p>Type a trigger like <strong>!trigger</strong> in Discord to post its saved reply.</p></div><button className="primary" disabled={busy} onClick={()=>choose(null)}>+ New command</button></div>
-    {error&&<div className="notice error" role="alert">{error}<button disabled={busy} onClick={async()=>{if(dirty&&!window.confirm('Discard edits and reload commands?'))return;setDraft(null);setSaved(null);await load()}}>Reload commands</button></div>}
-    {notice&&<p className="notice" role="status">{notice}</p>}
-    <div className="text-command-workspace"><aside className="card text-command-list"><label>Find a command<input type="search" placeholder="!trigger" value={search} onChange={e=>setSearch(e.target.value)}/></label>{loading?<p role="status">Loading commands…</p>:rows.length===0?<p>No commands yet. Select New command.</p>:<div className="text-command-rows">{rows.filter(row=>row.command.includes(search.trim().toLowerCase())).map(row=><button key={row.command} disabled={busy} aria-pressed={saved?.command===row.command} onClick={()=>choose(row)}><strong>{row.command}</strong><span>{row.enabled?'On':'Off'}</span></button>)}{rows.length>0&&!rows.some(row=>row.command.includes(search.trim().toLowerCase()))&&<p>No matching commands.</p>}</div>}</aside>
-    {draft&&collapsed?<section className="card command-collapsed" ref={collapsedPanel} tabIndex={-1} aria-label="Collapsed trigger editor"><h2>{draft.command==='!'?'New command':draft.command}</h2><p>{dirty?'Unsaved changes · kept here until you save or leave.':'Editor closed. Select Edit reply to make changes.'}</p><button type="button" className="primary" onClick={()=>{setCollapsed(false);setPane('edit')}}>Edit reply</button><button type="button" onClick={()=>{setCollapsed(false);setPane('preview')}}>Preview</button></section>:draft?<section><div className="command-editor-heading"><strong>{saved?saved.command:'New command'}</strong><button type="button" disabled={busy} onClick={collapseEditor} aria-label="Close trigger editor">Close ×</button></div><div className="text-command-tabs" role="group" aria-label="Command editor view"><button aria-pressed={pane==='edit'} onClick={()=>setPane('edit')}>Edit reply</button><button aria-pressed={pane==='preview'} onClick={()=>setPane('preview')}>Preview</button></div><div ref={editor} className={`text-command-editor mobile-${pane}`}><form className="card" onSubmit={e=>{e.preventDefault();void save()}}><fieldset disabled={busy}><legend>{saved?'Edit '+saved.command:'New command'}</legend>
-      <label>Command<input value={draft.command} readOnly={!!saved} required pattern="![a-zA-Z0-9][a-zA-Z0-9_-]{0,31}" maxLength={33} placeholder="!trigger" onChange={e=>change('command',e.target.value)}/><small>One word starting with !. Uppercase and lowercase work the same.</small></label>
-      <label className="text-command-enable"><input type="checkbox" checked={draft.enabled} onChange={e=>change('enabled',e.target.checked)}/>Enabled in Discord</label>
-      <div className="command-recipient-settings"><label className="text-command-enable"><input type="checkbox" checked={draft.allow_pings??false} onChange={e=>change('allow_pings',e.target.checked)}/>Allow pings in message and embed</label><small>Pings the roles and users you add to the reply, including @here and @everyone.</small><hr/><label className="text-command-enable"><input type="checkbox" checked={draft.choose_recipient??false} onChange={e=>change('choose_recipient',e.target.checked)}/>Mention a user or role with the trigger</label><small>Type !trigger @person or !trigger @role. Pings inside the embed, or above the text if there is no embed.</small></div>
-      <MentionText key={draft.command} label="Message text (outside embed)" value={draft.text} maxLength={2000} placeholder="Text shown above the embed…" onChange={text=>change('text',text)} onMention={rememberMention}/>
+  const [mentionNames, setMentionNames] = useState<MentionNames>({})
+  const rememberMention = (key: string, name: string) =>
+    setMentionNames((current) =>
+      current[key] === name ? current : { ...current, [key]: name },
+    )
+  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(saved)
+  async function load() {
+    const turn = ++sequence.current
+    setLoading(true)
+    try {
+      const data = await api<{ commands: Command[] }>('/manage/text-commands')
+      if (turn !== sequence.current) return
+      setRows(data.commands)
+      setError('')
+    } catch (e) {
+      if (turn !== sequence.current) return
+      if (e instanceof ApiError && [401, 403].includes(e.status)) {
+        setRows([])
+        setDraft(null)
+        setSaved(null)
+      }
+      setError(e instanceof Error ? e.message : 'Could not load commands.')
+    } finally {
+      if (turn === sequence.current) setLoading(false)
+    }
+  }
+  useEffect(() => {
+    void load()
+    return () => {
+      sequence.current++
+    }
+  }, [])
+  useEffect(() => {
+    onDirty(dirty || busy)
+    const guard = (e: BeforeUnloadEvent) => {
+      if (dirty || busy) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => {
+      onDirty(false)
+      window.removeEventListener('beforeunload', guard)
+    }
+  }, [dirty, busy, onDirty])
+  function choose(row: Command | null) {
+    if (busy || loading || mutation.current) return
+    if (dirty && !window.confirm('Leave without saving your changes?')) return
+    if (!rolesLoaded.current) void loadRoles()
+    setSaved(row)
+    setDraft(row ? { ...row } : blank())
+    setError('')
+    setNotice('')
+    setPane('edit')
+    setConflict(false)
+    requestAnimationFrame(() => heading.current?.focus())
+  }
+  function change(key: keyof Command, value: string | boolean) {
+    setDraft((current) => (current ? { ...current, [key]: value } : current))
+    setNotice('')
+  }
+  async function save() {
+    if (!draft || busy || mutation.current || conflict) return
+    mutation.current = true
+    setBusy(true)
+    setError('')
+    try {
+      const { revision, ...values } = draft
+      const result = await api<Command>(
+        '/manage/text-commands' +
+          (saved ? '/' + encodeURIComponent(saved.command) : ''),
+        saved ? 'PATCH' : 'POST',
+        { values, revision },
+      )
+      setRows((current) =>
+        [
+          ...current.filter((row) => row.command !== result.command),
+          result,
+        ].sort((a, b) => a.command.localeCompare(b.command)),
+      )
+      setSaved(result)
+      setDraft(result)
+      setConflict(false)
+      setNotice(
+        result.enabled
+          ? `${result.command} is ready to use in Discord.`
+          : `${result.command} is saved and turned off.`,
+      )
+    } catch (e) {
+      setConflict(e instanceof ApiError && e.status === 409)
+      if (e instanceof ApiError && [401, 403].includes(e.status)) {
+        setRows([])
+        setDraft(null)
+        setSaved(null)
+      }
+      setError(
+        e instanceof ApiError && e.status === 409
+          ? 'This command changed elsewhere. Your draft is kept. Reload commands to review the saved version.'
+          : e instanceof Error
+            ? e.message
+            : 'Could not save command.',
+      )
+    } finally {
+      mutation.current = false
+      setBusy(false)
+    }
+  }
+  async function remove() {
+    if (
+      !saved ||
+      busy ||
+      mutation.current ||
+      conflict ||
+      !window.confirm(
+        `Delete ${saved.command}? Its saved reply will be removed.`,
+      )
+    )
+      return
+    mutation.current = true
+    setBusy(true)
+    setError('')
+    try {
+      await api(
+        '/manage/text-commands/' + encodeURIComponent(saved.command),
+        'DELETE',
+        { revision: saved.revision },
+      )
+      setRows((current) =>
+        current.filter((row) => row.command !== saved.command),
+      )
+      setDraft(null)
+      setSaved(null)
+      setNotice('Command deleted.')
+      requestAnimationFrame(() => directory.current?.focus())
+    } catch (e) {
+      if (e instanceof ApiError && [401, 403].includes(e.status)) {
+        setRows([])
+        setDraft(null)
+        setSaved(null)
+      }
+      setError(e instanceof Error ? e.message : 'Could not delete command.')
+    } finally {
+      mutation.current = false
+      setBusy(false)
+    }
+  }
+  return (
+    <section className={`text-commands ${draft ? 'command-is-editing' : ''}`}>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">SERVER TOOLS</p>
+          <h1>Command triggers</h1>
+          <p>
+            Type a trigger like <strong>!trigger</strong> in Discord to post its
+            saved reply.
+          </p>
+        </div>
+        <button
+          className="primary"
+          disabled={busy || loading}
+          onClick={() => choose(null)}
+        >
+          + New command
+        </button>
+      </div>
+      {error && (
+        <div className="notice error" role="alert">
+          {error}
+          <button
+            disabled={busy}
+            onClick={async () => {
+              if (
+                dirty &&
+                !window.confirm('Discard edits and reload commands?')
+              )
+                return
+              setDraft(null)
+              setSaved(null)
+              await load()
+            }}
+          >
+            Reload commands
+          </button>
+        </div>
+      )}
+      {notice && (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      )}
+      <div className="text-command-workspace">
+        <aside className="card text-command-list">
+          <h2 ref={directory} tabIndex={-1}>
+            Saved commands
+          </h2>
+          <p className="small">
+            {rows.length} commands · {rows.filter((row) => row.enabled).length}{' '}
+            enabled
+          </p>
+          <label>
+            Find a command
+            <input
+              type="search"
+              placeholder="!trigger"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          {loading ? (
+            <p role="status">Loading commands…</p>
+          ) : error && rows.length === 0 ? (
+            <p>Commands could not be loaded. Use Reload commands above.</p>
+          ) : rows.length === 0 ? (
+            <p>No commands yet. Select New command.</p>
+          ) : (
+            <div className="text-command-rows">
+              {rows
+                .filter((row) =>
+                  row.command.includes(search.trim().toLowerCase()),
+                )
+                .map((row) => (
+                  <button
+                    key={row.command}
+                    disabled={busy}
+                    aria-pressed={saved?.command === row.command}
+                    onClick={() => choose(row)}
+                  >
+                    <strong>{row.command}</strong>
+                    <span>{row.enabled ? 'On' : 'Off'}</span>
+                  </button>
+                ))}
+              {rows.length > 0 &&
+                !rows.some((row) =>
+                  row.command.includes(search.trim().toLowerCase()),
+                ) && <p>No matching commands.</p>}
+            </div>
+          )}
+        </aside>
+        {draft ? (
+          <section>
+            <div className="command-editor-heading">
+              <h2 ref={heading} tabIndex={-1}>
+                {saved ? saved.command : 'New command'}
+              </h2>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={closeEditor}
+                aria-label="Back to commands"
+              >
+                ← Commands
+              </button>
+            </div>
+            <div
+              className="text-command-tabs"
+              role="group"
+              aria-label="Command editor view"
+            >
+              <button
+                aria-pressed={pane === 'edit'}
+                onClick={() => setPane('edit')}
+              >
+                Edit reply
+              </button>
+              <button
+                aria-pressed={pane === 'preview'}
+                onClick={() => setPane('preview')}
+              >
+                Preview
+              </button>
+            </div>
+            <div className={`text-command-editor mobile-${pane}`}>
+              <form
+                className="card"
+                id="command-reply-form"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void save()
+                }}
+              >
+                <fieldset disabled={busy}>
+                  <legend className="command-sr-only">
+                    {saved ? 'Edit ' + saved.command : 'New command'}
+                  </legend>
+                  <label>
+                    Command
+                    <input
+                      value={draft.command}
+                      readOnly={!!saved}
+                      required
+                      pattern="![a-zA-Z0-9][a-zA-Z0-9_-]{0,31}"
+                      maxLength={33}
+                      placeholder="!trigger"
+                      onChange={(e) => change('command', e.target.value)}
+                    />
+                    <small>
+                      One word starting with !. Uppercase and lowercase work the
+                      same.
+                    </small>
+                  </label>
+                  <label className="text-command-enable">
+                    <input
+                      type="checkbox"
+                      checked={draft.enabled}
+                      onChange={(e) => change('enabled', e.target.checked)}
+                    />
+                    Enabled in Discord
+                  </label>
+                  <MentionText
+                    key={draft.command}
+                    label="Message text (outside embed)"
+                    value={draft.text}
+                    maxLength={2000}
+                    placeholder="Text shown above the embed…"
+                    onChange={(text) => change('text', text)}
+                    onMention={rememberMention}
+                  />
 
-      {roleError&&<p role="status">{roleError} <button type="button" onClick={()=>void loadRoles()}>Retry roles</button></p>}<CommandBuilder roles={roles} commands={rows.filter(row=>row.enabled).map(row=>row.command)} onBusy={setBusy} key={draft.command+":"+(draft.revision||"new")} onMention={rememberMention} value={draft} onChange={blocks=>{setDraft(current=>current?{...current,blocks,title:'',description:'',image_url:''}:current);setNotice('')}}/>
-      <div className="command-color"><label>Embed color<input type="color" value={/^#[0-9a-f]{6}$/i.test(draft.color)?draft.color:'#e2b332'} onChange={e=>change('color',e.target.value)}/></label><label>Hex color<input type="text" value={draft.color} maxLength={7} pattern="#[0-9a-fA-F]{6}" required placeholder="#E2B332" spellCheck={false} aria-invalid={!/^#[0-9a-f]{6}$/i.test(draft.color)} onChange={e=>change('color',e.target.value.startsWith('#')?e.target.value:'#'+e.target.value)}/></label></div>{!/^#[0-9a-f]{6}$/i.test(draft.color)&&<small role="status">Enter # and six letters or numbers, for example #E2B332.</small>}
-
-      <p className="small">Anyone can use enabled commands. Replies appear in the same channel.</p>
-      <div className="text-command-save"><button className="primary" disabled={!dirty||!draft.command||!(draft.text.trim()||commandBlocks(draft).some(block=>block.type!=='separator'))}>Save command</button>{saved&&<button type="button" className="danger-link" onClick={()=>void remove()}>Delete</button>}</div>
-    </fieldset></form>{(!compactPreview || pane === 'preview') && <DiscordMessagePreview parts={commandPreview({...draft,text:namedMentions(draft.text,mentionNames),blocks:commandBlocks(draft).map(block=>mapBlockText(block,text=>namedMentions(text,mentionNames)))})} caption={draft.choose_recipient?"The mention goes inside the embed, or above the text if there is no embed. Saving does not post.":"Preview only. Saving does not post a message."}/>}</div><div className="command-quick-actions" aria-label="Editor actions"><button type="button" disabled={busy} onClick={()=>{setPane('edit');requestAnimationFrame(()=>editor.current?.querySelector('form')?.scrollIntoView({block:'start',behavior:'smooth'}))}}>Edit</button><button type="button" disabled={busy} onClick={()=>{setPane('preview');requestAnimationFrame(()=>editor.current?.querySelector('.discord-preview')?.scrollIntoView({block:'start',behavior:'smooth'}))}}>Preview</button><button type="button" disabled={busy} onClick={()=>{const details=testArea.current?.querySelector('details');if(details){details.open=true;details.scrollIntoView({block:'start',behavior:'smooth'})}}}>Test</button><button type="button" className="primary" disabled={busy||!dirty} onClick={()=>{setPane('edit');requestAnimationFrame(()=>editor.current?.querySelector('form')?.requestSubmit())}}>{busy?'Working…':'Save'}</button></div><div ref={testArea}><CommandTest key={draft.command} draft={draft} disabled={busy}/></div>{saved&&hasRoleActions(commandBlocks(saved))&&<CommandActivity key={'activity:'+saved.command} command={saved.command}/ >}{saved?.revision&&<ChangeHistory onBusy={setBusy} key={'history:'+saved.command} target={'/manage/text-commands/'+encodeURIComponent(saved.command)} revision={saved.revision} disabled={busy||dirty} labels={{text:'Reply message',title:'Card title',description:'Card text',image_url:'Card image',color:'Card color',enabled:'Enabled'}} onRestored={async()=>{const data=await api<{commands:Command[]}>('/manage/text-commands');setRows(data.commands);const row=data.commands.find(item=>item.command===saved.command)||null;setSaved(row);setDraft(row)}}/>}</section>:<section className="card"><h2>Create a saved reply</h2><p>Choose New command or select a command to edit.</p><p className="small">Example: !trigger → your saved reply.</p></section>}
-    </div></section>
+                  {roleError && (
+                    <p role="status">
+                      {roleError}{' '}
+                      <button type="button" onClick={() => void loadRoles()}>
+                        Retry roles
+                      </button>
+                    </p>
+                  )}
+                  <CommandBuilder
+                    roles={roles}
+                    commands={rows
+                      .filter((row) => row.enabled)
+                      .map((row) => row.command)}
+                    onBusy={setBusy}
+                    key={draft.command + ':' + (draft.revision || 'new')}
+                    onMention={rememberMention}
+                    value={draft}
+                    onChange={(blocks) => {
+                      setDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              blocks,
+                              title: '',
+                              description: '',
+                              image_url: '',
+                            }
+                          : current,
+                      )
+                      setNotice('')
+                    }}
+                  />
+                  <details className="command-recipient-settings">
+                    <summary>
+                      Mentions &amp; recipients ·{' '}
+                      {draft.allow_pings || draft.choose_recipient
+                        ? 'On'
+                        : 'Off'}
+                    </summary>
+                    <label className="text-command-enable">
+                      <input
+                        type="checkbox"
+                        checked={draft.allow_pings ?? false}
+                        onChange={(e) =>
+                          change('allow_pings', e.target.checked)
+                        }
+                      />
+                      Allow pings in message and embed
+                    </label>
+                    <small>
+                      Pings the roles and users you add to the reply, including
+                      @here and @everyone.
+                    </small>
+                    <hr />
+                    <label className="text-command-enable">
+                      <input
+                        type="checkbox"
+                        checked={draft.choose_recipient ?? false}
+                        onChange={(e) =>
+                          change('choose_recipient', e.target.checked)
+                        }
+                      />
+                      Mention a user or role with the trigger
+                    </label>
+                    <small>
+                      Type !trigger @person or !trigger @role. Pings inside the
+                      embed, or above the text if there is no embed.
+                    </small>
+                  </details>
+                  <details className="command-appearance">
+                    <summary>Appearance</summary>{' '}
+                    <div className="command-color">
+                      <label>
+                        Embed color
+                        <input
+                          type="color"
+                          value={
+                            /^#[0-9a-f]{6}$/i.test(draft.color)
+                              ? draft.color
+                              : '#e2b332'
+                          }
+                          onChange={(e) => change('color', e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Hex color
+                        <input
+                          type="text"
+                          value={draft.color}
+                          maxLength={7}
+                          pattern="#[0-9a-fA-F]{6}"
+                          required
+                          placeholder="#E2B332"
+                          spellCheck={false}
+                          aria-invalid={!/^#[0-9a-f]{6}$/i.test(draft.color)}
+                          onChange={(e) =>
+                            change(
+                              'color',
+                              e.target.value.startsWith('#')
+                                ? e.target.value
+                                : '#' + e.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                    </div>
+                    {!/^#[0-9a-f]{6}$/i.test(draft.color) && (
+                      <small role="status">
+                        Enter # and six letters or numbers, for example #E2B332.
+                      </small>
+                    )}
+                  </details>
+                  <p className="small">
+                    Anyone can use enabled commands. Replies appear in the same
+                    channel.
+                  </p>
+                </fieldset>
+              </form>
+              {pane === 'preview' && (
+                <DiscordMessagePreview
+                  parts={commandPreview({
+                    ...draft,
+                    text: namedMentions(draft.text, mentionNames),
+                    blocks: commandBlocks(draft).map((block) =>
+                      mapBlockText(block, (text) =>
+                        namedMentions(text, mentionNames),
+                      ),
+                    ),
+                  })}
+                  caption={
+                    draft.choose_recipient
+                      ? 'The mention goes inside the embed, or above the text if there is no embed. Saving does not post.'
+                      : 'Preview only. Saving does not post a message.'
+                  }
+                />
+              )}
+            </div>
+            <div className="text-command-save" aria-label="Save command">
+              <span role="status">
+                {busy ? 'Working…' : dirty ? 'Unsaved changes' : 'Saved'}
+              </span>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !dirty || conflict}
+                onClick={() => {
+                  setPane('edit')
+                  requestAnimationFrame(
+                    () =>
+                      document.getElementById('command-reply-form') &&
+                      (
+                        document.getElementById(
+                          'command-reply-form',
+                        ) as HTMLFormElement
+                      ).requestSubmit(),
+                  )
+                }}
+              >
+                Save command
+              </button>
+            </div>
+            <CommandTest draft={draft} disabled={busy} onBusy={setBusy} />
+            {saved && (
+              <details className="command-danger">
+                <summary>Delete command</summary>
+                <p>
+                  Removes the saved reply. Existing Discord posts stay in place.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy || dirty || conflict}
+                  onClick={() => void remove()}
+                >
+                  Delete {saved.command}
+                </button>
+                {dirty && <p>Save or discard your edits first.</p>}
+              </details>
+            )}
+            {saved && hasRoleActions(commandBlocks(saved)) && (
+              <CommandActivity
+                key={'activity:' + saved.command}
+                command={saved.command}
+              />
+            )}
+            {saved?.revision && (
+              <ChangeHistory
+                onBusy={setBusy}
+                key={'history:' + saved.command}
+                target={
+                  '/manage/text-commands/' + encodeURIComponent(saved.command)
+                }
+                revision={saved.revision}
+                disabled={busy || dirty}
+                labels={{
+                  text: 'Reply message',
+                  title: 'Card title',
+                  description: 'Card text',
+                  image_url: 'Card image',
+                  color: 'Card color',
+                  enabled: 'Enabled',
+                }}
+                onRestored={async () => {
+                  const data = await api<{ commands: Command[] }>(
+                    '/manage/text-commands',
+                  )
+                  setRows(data.commands)
+                  const row =
+                    data.commands.find(
+                      (item) => item.command === saved.command,
+                    ) || null
+                  setSaved(row)
+                  setDraft(row)
+                }}
+              />
+            )}
+          </section>
+        ) : (
+          <section className="card">
+            <h2>Create a saved reply</h2>
+            <p>Choose New command or select a command to edit.</p>
+            <p className="small">Example: !trigger → your saved reply.</p>
+          </section>
+        )}
+      </div>
+    </section>
+  )
 }

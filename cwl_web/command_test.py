@@ -1,5 +1,5 @@
 """Send an inert, mention-free draft preview without changing saved triggers."""
-import json,re
+import json,re,hashlib
 from datetime import datetime,timezone
 import aiohttp
 from aiohttp import web
@@ -30,6 +30,7 @@ async def send(request):
     if not isinstance(nonce,str) or not re.fullmatch(r'[a-f0-9]{24}',nonce):raise web.HTTPBadRequest(text='Reopen the test controls.')
     try:values=validate(body.get('values'))
     except ValueError as exc:raise web.HTTPBadRequest(text=str(exc)) from None
+    fingerprint=hashlib.sha256(json.dumps({'channel_id':channel,'values':values},sort_keys=True,separators=(',',':')).encode()).hexdigest()
     destination=await discord(request,'GET',f'/channels/{channel}')
     if str(destination.get('guild_id'))!=str(GUILD_ID) or destination.get('type') not in (0,5):raise web.HTTPBadRequest(text='Choose a text channel in this server.')
     async with mongo(request) as db:
@@ -45,9 +46,11 @@ async def send(request):
             form.add_field('payload_json',json.dumps(data),content_type='application/json')
         audit=db.bot_config.database.get_collection('text_command_tests',write_concern=WriteConcern(w='majority',wtimeout=10000))
         key=f'{GUILD_ID}:{actor["user_id"]}:{nonce}'
-        try:await audit.insert_one({'_id':key,'guild_id':GUILD_ID,'user_id':actor['user_id'],'command':values['command'],'channel_id':channel,'at':datetime.now(timezone.utc),'status':'sending'})
+        try:await audit.insert_one({'_id':key,'guild_id':GUILD_ID,'user_id':actor['user_id'],'command':values['command'],'channel_id':channel,'at':datetime.now(timezone.utc),'status':'sending','fingerprint':fingerprint})
         except DuplicateKeyError:
             existing=await audit.find_one({'_id':key})
+            if not existing or existing.get('fingerprint') != fingerprint:
+                raise web.HTTPConflict(text='This test request belongs to a different or older draft. Check Discord before preparing a new test.')
             if existing.get('url'):return web.json_response({'url':existing['url']})
             raise web.HTTPConflict(text='This test was already requested. Check the channel before sending another.') from None
         try:message=await discord(request,'POST',f'/channels/{channel}/messages',**({'data':form} if attachments else {'json':data}))

@@ -65,7 +65,7 @@ def test_sync_indexes_images_only_without_overwriting_names(monkeypatch):
     target=NS(bulk_write=AsyncMock())
     @asynccontextmanager
     async def mongo(request):yield object()
-    media=NS(_require_config=lambda:NS(bucket='public-art'),_s3=lambda:NS(list_objects_v2=Mock(return_value={'Contents':[{'Key':'clans/WU/logo.png'},{'Key':'archive.zip'},{'Key':'static/banner.webp'}],'IsTruncated':True,'NextContinuationToken':'next'})),public_url=lambda key:'https://img.example.com/'+key)
+    media=NS(list_objects=AsyncMock(return_value={'Contents':[{'Key':'clans/WU/logo.png'},{'Key':'archive.zip'},{'Key':'static/banner.webp'}],'IsTruncated':True,'NextContinuationToken':'next'}),public_url=lambda key:'https://img.example.com/'+key)
     monkeypatch.setattr(lib,'require_manage',AsyncMock(return_value={'user_id':'123'}))
     monkeypatch.setattr(lib,'mongo',mongo);monkeypatch.setattr(lib,'collection',lambda db:target)
     monkeypatch.setattr(command_images,'store',lambda req:media)
@@ -125,3 +125,29 @@ def test_builtin_flag_art_can_be_renamed_or_archived(monkeypatch):
     }))))
     assert response.status == 200
     assert target.update_one.call_args.args[1]['$set']['archived'] is True
+
+
+def test_saved_unsafe_urls_are_not_exposed():
+    assert lib.merge_images([{'url':'javascript:alert(1)','name':'Unsafe'}],[])==[]
+
+@pytest.mark.parametrize('stale', [True, False])
+def test_image_expected_metadata_rejects_stale_and_concurrent_updates(monkeypatch,stale):
+    from pymongo.errors import DuplicateKeyError
+    url='https://example.com/image.png'
+    item={'url':url,'name':'Current name','folder':'Clans','archived':False}
+    class Cursor:
+        def __init__(self,rows):self.rows=rows
+        async def to_list(self,**kw):return self.rows
+    target=NS(find=lambda q:Cursor([item]),update_one=AsyncMock(side_effect=DuplicateKeyError('raced')))
+    @asynccontextmanager
+    async def mongo(request):yield object()
+    monkeypatch.setattr(lib,'mongo',mongo);monkeypatch.setattr(lib,'collection',lambda db:target)
+    monkeypatch.setattr(lib,'commands',lambda db:NS(find=lambda q:Cursor([])))
+    monkeypatch.setattr(lib,'require_manage',AsyncMock(return_value={'user_id':'123'}))
+    expected={'name':'Old name' if stale else item['name'],'folder':'Clans','archived':False}
+    body={'url':url,'name':'My edit','folder':'Clans','archived':False,'expected':expected}
+    with pytest.raises(web.HTTPConflict):asyncio.run(lib.update(NS(json=AsyncMock(return_value=body))))
+    assert target.update_one.await_count==(0 if stale else 1)
+    if not stale:
+        query=target.update_one.await_args.args[0]
+        assert query['name']=='Current name' and query['updated_at']=={'$exists':False}

@@ -3,6 +3,7 @@ import hashlib
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, unquote
 from pymongo.write_concern import WriteConcern
+from pymongo.errors import DuplicateKeyError
 from aiohttp import web
 from utils.text_commands import GUILD_ID, collection as commands, walk_blocks, legacy_blocks, public_url
 from utils.ticket_flag_art import FLAG_ART
@@ -56,7 +57,12 @@ def merge_images(saved,rows,builtins=()):
             item=images.setdefault(url,{'url':url,'name':image_name(url,slot.get('description','')),'commands':[],'stored':False,'archived':False,'folder':''})
             if row['command'] not in item['commands']:item['commands'].append(row['command'])
     for item in images.values():item['commands'].sort()
-    return sorted(images.values(),key=lambda item:(item['name'].casefold(),item['url']))
+    safe = []
+    for item in images.values():
+        try: public_url(item['url'], 'image')
+        except ValueError: continue
+        safe.append(item)
+    return sorted(safe,key=lambda item:(item['name'].casefold(),item['url']))
 
 
 async def listing(request):
@@ -71,6 +77,9 @@ async def update(request):
     body=await request.json()
     if not isinstance(body,dict):raise web.HTTPBadRequest(text='Choose an image.')
     url=body.get('url');name=body.get('name');archived=body.get('archived');folder=body.get('folder')
+    expected=body.get('expected')
+    if expected is not None and (not isinstance(expected,dict) or set(expected)!={'name','folder','archived'} or not isinstance(expected['name'],str) or not isinstance(expected['folder'],str) or type(expected['archived']) is not bool):
+        raise web.HTTPBadRequest(text='Refresh the image details before saving.')
     if folder is not None and (not isinstance(folder,str) or len(folder)>120 or any(ord(c)<32 for c in folder)):raise web.HTTPBadRequest(text='Use a folder name up to 120 characters.')
     if not isinstance(name,str) or not 1<=len(name.strip())<=120 or not isinstance(archived,bool):raise web.HTTPBadRequest(text='Enter an image name up to 120 characters.')
     async with mongo(request) as db:
@@ -79,7 +88,19 @@ async def update(request):
         item=next((item for item in merge_images(saved,rows,builtin_flag_images()) if item['url']==url),None)
         if item is None:raise web.HTTPNotFound(text='Image not found. Reopen the library.')
         key=hashlib.sha256(f'{GUILD_ID}:{url}'.encode()).hexdigest()
-        await collection(db).update_one({'_id':key},{'$set':{'guild_id':GUILD_ID,'url':url,'name':name.strip(),'archived':archived,'folder':folder.strip() if folder is not None else item.get('folder',''),'stored':item['stored'],'updated_by':str(actor['user_id']),'updated_at':datetime.now(timezone.utc)}},upsert=True)
+        query={'_id':key}
+        if expected is not None:
+            current={'name':item['name'],'folder':item.get('folder',''),'archived':item.get('archived',False)}
+            if expected != current:
+                raise web.HTTPConflict(text='This image changed elsewhere. Refresh the gallery before saving.')
+            stored=next((row for row in saved if row['url']==url),None)
+            # Atomic precondition also catches edits between the read and update.
+            for field in ('name','folder','archived','updated_at'):
+                query[field]=stored[field] if stored and field in stored else {'$exists':False}
+        try:
+            await collection(db).update_one(query,{'$set':{'guild_id':GUILD_ID,'url':url,'name':name.strip(),'archived':archived,'folder':folder.strip() if folder is not None else item.get('folder',''),'stored':item['stored'],'updated_by':str(actor['user_id']),'updated_at':datetime.now(timezone.utc)}},upsert=True)
+        except DuplicateKeyError:
+            raise web.HTTPConflict(text='This image changed elsewhere. Refresh the gallery before saving.') from None
     return web.json_response({**item,'name':name.strip(),'archived':archived,'folder':folder.strip() if folder is not None else item.get('folder','')})
 
 routes=[web.get(API+'/text-command-images',listing),web.patch(API+'/text-command-images',update)]
@@ -87,7 +108,6 @@ routes=[web.get(API+'/text-command-images',listing),web.patch(API+'/text-command
 
 async def sync_r2(request):
     """Index one page of the public artwork bucket. Never rename/move/delete objects."""
-    import asyncio
     from pymongo import UpdateOne
     from .command_images import store
     await require_manage(request,'text_commands',write=True)
@@ -96,8 +116,7 @@ async def sync_r2(request):
     if cursor is not None and (not isinstance(cursor,str) or not 1<=len(cursor)<=4096):raise web.HTTPBadRequest(text='Refresh the gallery again.')
     media=store(request)
     try:
-        config=media._require_config()
-        page=await asyncio.to_thread(media._s3().list_objects_v2,Bucket=config.bucket,MaxKeys=1000,**({'ContinuationToken':cursor} if cursor else {}))
+        page=await media.list_objects(cursor)
     except Exception as exc:
         raise web.HTTPServiceUnavailable(text='Could not read the R2 image list. Saved images are still available.') from exc
     updates=[]

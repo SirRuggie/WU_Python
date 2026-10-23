@@ -351,3 +351,20 @@ def test_from_env_requires_every_variable(monkeypatch):
 
     monkeypatch.setenv("R2_BUCKET", "   ")
     assert MediaStore.from_env().configured is False
+
+
+def test_public_storage_page_uses_configured_bucket_and_cursor():
+    from unittest.mock import Mock
+    client = Mock()
+    client.list_objects_v2.return_value = {'Contents': [], 'IsTruncated': False}
+    result = asyncio.run(MediaStore(CONFIG, client=client).list_objects('next-page'))
+    assert result['Contents'] == []
+    client.list_objects_v2.assert_called_once_with(Bucket=CONFIG.bucket, MaxKeys=1000, ContinuationToken='next-page')
+
+
+def test_public_storage_page_wraps_provider_failure():
+    from unittest.mock import Mock
+    client = Mock()
+    client.list_objects_v2.side_effect = RuntimeError('provider unavailable')
+    with pytest.raises(MediaStoreError, match='Could not list'):
+        asyncio.run(MediaStore(CONFIG, client=client).list_objects())

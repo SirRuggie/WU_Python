@@ -236,6 +236,17 @@ class MediaStore:
         config = self._require_config()
         return f"{config.public_base_url}/{quote(key)}"
 
+    async def list_objects(self, cursor: str | None = None) -> dict:
+        """Read one storage page without exposing the bucket client to features."""
+        config = self._require_config()
+        try:
+            return await asyncio.to_thread(
+                self._s3().list_objects_v2, Bucket=config.bucket, MaxKeys=1000,
+                **({'ContinuationToken': cursor} if cursor else {}),
+            )
+        except Exception as exc:
+            raise MediaStoreError('Could not list stored images.') from exc
+
     def key_for_url(self, url: object) -> str | None:
         """The object key behind one of OUR public URLs, else None.
 

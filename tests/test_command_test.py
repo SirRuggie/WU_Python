@@ -39,6 +39,10 @@ def test_foreign_channel_rejected(setup):
 
 def test_duplicate_does_not_resend(setup):
     request,body,discord,audit=setup
+    import hashlib,json
+    from utils.text_commands import validate
+    fingerprint=hashlib.sha256(json.dumps({'channel_id':body['channel_id'],'values':validate(body['values'])},sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    audit.find_one.return_value={'url':'https://discord.com/test','fingerprint':fingerprint}
     audit.insert_one.side_effect=DuplicateKeyError('duplicate')
     assert 'discord.com/test' in asyncio.run(api.send(request)).text
     assert discord.await_count==1
@@ -61,3 +65,19 @@ def test_attachment_uses_multipart(setup,monkeypatch):
     monkeypatch.setattr(api,'payload',lambda *args:{'components':[],'attachments':[hikari.Bytes(b'hello','test.txt')]})
     asyncio.run(api.send(request))
     assert 'data' in discord.await_args.kwargs
+
+
+def test_duplicate_for_different_draft_never_claims_success_or_resends(setup):
+    request,body,discord,audit=setup
+    audit.insert_one.side_effect=DuplicateKeyError('duplicate')
+    audit.find_one.return_value={'url':'https://discord.com/old','fingerprint':'other'}
+    with pytest.raises(web.HTTPConflict):asyncio.run(api.send(request))
+    assert discord.await_count==1
+
+
+def test_unknown_delivery_is_recorded_and_not_retried(setup):
+    request,body,discord,audit=setup
+    discord.side_effect=[{'guild_id':str(GUILD_ID),'type':0},web.HTTPServiceUnavailable()]
+    with pytest.raises(web.HTTPServiceUnavailable):asyncio.run(api.send(request))
+    assert discord.await_count==2
+    assert audit.update_one.await_args.args[1]['$set']['status']=='unconfirmed'

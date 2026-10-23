@@ -58,8 +58,9 @@ were not attempted and no real accounts were linked or transferred during tests.
    Ticket index/reader, application settings discovery, editing, recovery and
    publishing draft protection were reviewed. Replies and decisions remain in
    Discord. See `ticket-dashboard-viewer.md` for tests and live-integration limits.
-4. **Medium review priority: Commands and image tools.** Create → preview → test →
-   publish → edit, draft protection, and advanced-option disclosure.
+4. **Commands and image tools: scoped cleanup completed October 23.** Create/edit,
+   preview, explicit tests, saved commands, image selection and gallery maintenance
+   were reviewed. See `commands-images-review.md` for evidence and limits.
 5. **Medium review priority: Server settings, FWA, and integrations.** Configuration
    dependencies, truthful state, save semantics, and recovery.
 6. **Cross-cutting: Sign-in and staff deep links.** Approved member destinations

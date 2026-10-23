@@ -565,7 +565,7 @@ function App() {
         )}
         {notice && !(view === 'signup' && review) && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button></div>}
         {view === 'staff-overview' && <StaffOverview onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
-        {view === 'image-gallery' && <ImageGallery />}
+        {view === 'image-gallery' && <ImageGallery onDirty={setManageDirty} />}
         {view === 'tickets' && <TicketBrowser />}
         {view === 'clan-management' && <ClanManagement onDirty={setManageDirty} />}
         {view === 'weight-trial' && <WeightTrial onDirty={setManageDirty} />}

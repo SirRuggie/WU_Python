@@ -1106,3 +1106,11 @@ at 1280/320px. Flag reasons and Approved status were visible; no horizontal
 document overflow was observed. Native labeled selects and existing focus/return
 behavior are retained. This is not a full assistive-technology audit. No live
 Discord writes were made.
+
+## Commands and image tools — October 23 review
+
+Command triggers and Image Gallery now follow the directory/editor pattern, with
+one save location, deliberate preview/testing, compact image filters and guarded
+drafts. Gallery storage indexing is an explicit maintenance action. See
+[the scoped review](commands-images-review.md) for browser widths, regression
+coverage, concurrency contracts and limits; simulated sends are not live delivery.
