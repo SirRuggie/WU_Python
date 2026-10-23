@@ -182,7 +182,7 @@ an emoji that looks right locally can render as a box, a mono glyph, or
 nothing at all on the Hetzner box. Two sanctioned approaches only:
 
 - **Supplied artwork**, pasted with real alpha (`paste_icon()`, cropped to
-  content via `getbbox()` and centered) — six assets, all verified as
+  content via `getbbox()` and centered) — seven assets, all verified as
   genuine RGBA transparency, not white-matted:
 
   | Asset | Used for |
@@ -191,6 +191,7 @@ nothing at all on the Hetzner box. Two sanctioned approaches only:
   | `flag_denied_before.png` | Denied before — yellow warning triangle |
   | `flag_not_loyal.png` | Not loyal to WU — orange broken heart |
   | `flag_ghosted.png` | Ghosted — cyan supplied artwork |
+  | `flag_flew_the_coop.png` | Flew the Coop — purple supplied artwork |
   | `clan_main.png` | Main clan badge |
   | `clan_fwa.png` | FWA clan badge |
 
@@ -198,7 +199,7 @@ nothing at all on the Hetzner box. Two sanctioned approaches only:
   font dependency, identical on any box. In use: check, plus and × (the
   three status-tile badges), the refresh arc, and the header bar glyph.
 
-The production renderer and these six production assets are listed in §10;
+The production renderer and these seven production assets are listed in §10;
 the similarly named renderer under `docs/ticket-console/` is a standalone
 visual reference only.
 
