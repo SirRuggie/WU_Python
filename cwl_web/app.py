@@ -663,6 +663,9 @@ async def _accounts(request, user_id):
 
 async def linked_accounts(request):
     session = _require(request)
+    if request.query.get("background") == "1":
+        from .account_display import snapshot
+        return web.json_response(await snapshot(request, session["user_id"]))
     return web.json_response({"accounts": await _accounts(request, session["user_id"]), "status": "ok", "link_url": None, "link_instruction": "Link your accounts with ClashKing or ClashPerk in Discord, then refresh."})
 
 
@@ -706,6 +709,9 @@ async def _dashboard_account_snapshot(request, user_id):
 
 async def dashboard_accounts(request):
     user_id = _require(request)["user_id"]
+    if request.query.get("background") == "1":
+        from .account_display import snapshot
+        return web.json_response(await snapshot(request, user_id))
     cache = request.app["dashboard_accounts_cache"]
     _prune_dashboard_accounts(cache, time.monotonic())
     cached = cache.get(user_id)
@@ -1833,6 +1839,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(durability_lifecycle)
     app.cleanup_ctx.append(participation_sync_lifecycle)
     app.cleanup_ctx.append(_dashboard_accounts_lifecycle)
+    from .account_display import lifecycle as account_display_lifecycle
+    app.cleanup_ctx.append(account_display_lifecycle)
     app.cleanup_ctx.append(todo_lifecycle)
     from .clan_activity import setup as setup_clan_activity
     setup_clan_activity(app)

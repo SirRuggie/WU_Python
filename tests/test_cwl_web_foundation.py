@@ -421,6 +421,18 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("POST", f"/seasons/{sid}/signups", self.member, json={"pool": "lazy", "accounts": [{"tag": "#P2Y", "prefer_crystal_1_or_lower": True}]})
         self.assertEqual(response.status, 200)
 
+    async def test_progressive_display_cache_does_not_authorize_unlinked_signup(self):
+        sid = await self.season()
+        response = await self.call("GET", "/linked-accounts?background=1", self.member)
+        self.assertEqual(response.status, 200)
+        job = self.app["account_display_jobs"].get("100")
+        if job: await job
+        self.assertTrue(self.app["account_display_states"]["100"]["accounts"])
+        self.providers.links["100"] = {}
+        response = await self.call("POST", f"/seasons/{sid}/signups", self.member,
+            json={"pool": "lazy", "accounts": [{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}]})
+        self.assertEqual(response.status, 403)
+
     async def test_unverified_linked_account_can_join_main(self):
         sid = await self.season()
         self.providers.links["100"]["#Q2Y"] = False

@@ -1,3 +1,4 @@
+import { loadAccountDisplay, mergeAccountProgress } from './accountDisplay'
 import { DashboardPermissions } from './DashboardPermissions'
 import FwaSignupDialog from './FwaSignupDialog'
 import {saveSignupMoves, type SignupMove} from './signupMoves'
@@ -214,7 +215,7 @@ function App() {
 
   // Access polling replaces the session object. Only a different member should
   // restart signup reads; otherwise it interrupts the member's current draft.
-  const loadSignup = useCallback(async () => {
+  const loadSignup = useCallback(async (force = true) => {
     if (!seasonId) return
     setLoadingData(true)
     setReview(false)
@@ -222,7 +223,8 @@ function App() {
     setAccountError('')
     setDataError('')
     const [accountsResult, signupsResult] = await Promise.allSettled([
-      api<{ accounts: Account[]; link_instruction?: string | null }>('/linked-accounts'),
+      loadAccountDisplay(snapshot => { if (snapshot.total !== null || !snapshot.updating) setAccounts(previous => mergeAccountProgress(previous, snapshot)) },
+        () => requestId === signupRequest.current && currentSeason.current === seasonId, force),
       api<{ signups: Signup[] }>(`/seasons/${encodeURIComponent(seasonId)}/signups`).then(result => {
         if (requestId === signupRequest.current && currentSeason.current === seasonId) {
           setSignups(result.signups)
@@ -238,7 +240,7 @@ function App() {
     let freshAccounts: Account[] | null = null
     let freshSignups: Signup[] | null = null
     if (accountsResult.status === 'fulfilled') { freshAccounts = accountsResult.value.accounts; setAccounts(freshAccounts) }
-    else { setAccounts([]); setAccountError(message(accountsResult.reason)) }
+    else { if (accountsResult.reason instanceof ApiError && [401,403].includes(accountsResult.reason.status)) setAccounts([]); setAccountError(message(accountsResult.reason)) }
     if (signupsResult.status === 'fulfilled') { freshSignups = signupsResult.value.signups; setSignups(freshSignups) }
     else { setSignups([]); setDataError(message(signupsResult.reason)) }
     if (freshAccounts !== null && freshSignups !== null) {
@@ -254,7 +256,7 @@ function App() {
   useEffect(() => {
     if (!session || !seasonId || view !== 'signup') return
     if (dashboardPrefill.current) { dashboardPrefill.current = false; return () => { signupRequest.current += 1 } }
-    void loadSignup()
+    void loadSignup(false)
     return () => { signupRequest.current += 1 }
   }, [session?.user.id, seasonId, view, loadSignup])
 

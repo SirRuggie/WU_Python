@@ -1,3 +1,4 @@
+import { loadAccountDisplay } from './accountDisplay'
 import { useEffect, useMemo, useState } from 'react'
 import { api, ApiError, type Account, type Clan } from './api'
 import DashboardIcon from './DashboardIcon'
@@ -17,15 +18,16 @@ export default function DashboardSearch({ includeFamily, query, onQuery, kind, o
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let active = true
+    let denied = false
     setBusy(true); setError(''); setFamilyError(''); setAccounts([]); setFamily([])
     void Promise.allSettled([
-      api<{accounts: Account[]}>('/dashboard/accounts'),
-      includeFamily ? api<{clans: Clan[]}>('/approved-clans') : Promise.resolve({clans: []}),
+      loadAccountDisplay(snapshot => { if (active && !denied) setAccounts(snapshot.accounts) }, () => active && !denied, attempt > 0).catch(error => { if (active && error instanceof ApiError && [401,403].includes(error.status)) { denied = true; setAccounts([]); setFamily([]) }; throw error }),
+      (includeFamily ? api<{clans: Clan[]}>('/approved-clans') : Promise.resolve({clans: []})).then(result => { if (active && !denied) setFamily(result.clans); return result }, error => { if (active && error instanceof ApiError && [401,403].includes(error.status)) { denied = true; setAccounts([]); setFamily([]) }; throw error }),
     ]).then(([players, clans]) => {
       if (!active) return
       // A revoked session must not leave any protected results visible.
       const denied = [players, clans].find(result => result.status === 'rejected' && result.reason instanceof ApiError && [401, 403].includes(result.reason.status))
-      if (denied?.status === 'rejected') setError(denied.reason.message)
+      if (denied?.status === 'rejected') { setAccounts([]); setFamily([]); setError(denied.reason.message) }
       else {
         if (players.status === 'fulfilled') setAccounts(players.value.accounts)
         else setError(players.reason instanceof Error ? players.reason.message : 'Could not load linked accounts.')

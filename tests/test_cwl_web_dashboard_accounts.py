@@ -68,6 +68,136 @@ class DashboardAccountTests(unittest.IsolatedAsyncioTestCase):
     async def get(self, headers=None):
         return await self.client.get("/api/cwl/dashboard/accounts", headers=headers)
 
+    async def progressive(self, headers=None, refresh=False):
+        return await self.client.get('/api/cwl/linked-accounts?background=1' + ('&refresh=1' if refresh else ''), headers=headers)
+
+    async def finish_progressive(self, user='100'):
+        job = self.app['account_display_jobs'].get(user)
+        if job:
+            await job
+
+    async def test_progressive_shows_fast_account_before_slow_and_shares_reads(self):
+        release = asyncio.Event()
+        self.providers.linked_tags = AsyncMock(return_value={'#P2Y': True, '#SLOW': True})
+        original = self.providers.player
+        async def player(tag):
+            if tag == '#SLOW':
+                await release.wait()
+            return await original(tag)
+        self.providers.player = AsyncMock(side_effect=player)
+        response = await asyncio.wait_for(self.progressive(self.a), .5)
+        self.assertTrue((await response.json())['updating'])
+        for _ in range(100):
+            if '#P2Y' in self.app['account_display_states']['100']['accounts']:
+                break
+            await asyncio.sleep(.001)
+        data = await (await self.progressive(self.a)).json()
+        self.assertTrue(data['updating'])
+        self.assertEqual([row['tag'] for row in data['accounts']], ['#P2Y'])
+        dashboard = await self.client.get('/api/cwl/dashboard/accounts?background=1', headers=self.a)
+        self.assertEqual((await dashboard.json())['accounts'], data['accounts'])
+        await self.progressive(self.a, refresh=True)
+        self.providers.linked_tags.assert_awaited_once()
+        release.set()
+        await self.finish_progressive()
+        final = await (await self.progressive(self.a)).json()
+        self.assertFalse(final['updating'])
+        self.assertEqual(final['status'], 'ok')
+        self.assertEqual(len(final['accounts']), 2)
+        self.assertEqual(self.providers.player.await_count, 2)
+
+    async def test_large_slow_member_does_not_block_another_member(self):
+        release = asyncio.Event()
+        async def links(uid):
+            return {f'#SLOW{i}': True for i in range(30)} if uid == '100' else {'#Q2Y': True}
+        original = self.providers.player
+        async def player(tag):
+            if tag.startswith('#SLOW'): await release.wait()
+            return await original(tag)
+        self.providers.linked_tags = links
+        self.providers.player = player
+        await self.progressive(self.a)
+        await asyncio.sleep(.01)
+        await self.progressive(self.b)
+        await asyncio.wait_for(self.finish_progressive('200'), 1)
+        other = await (await self.progressive(self.b)).json()
+        self.assertEqual(other['status'], 'ok')
+        self.assertEqual([row['tag'] for row in other['accounts']], ['#Q2Y'])
+        self.assertIn('100', self.app['account_display_jobs'])
+        release.set()
+        await self.finish_progressive()
+
+    async def test_progressive_one_failure_keeps_healthy_account_and_reports_partial(self):
+        self.providers.linked_tags = AsyncMock(return_value={'#P2Y': True, '#FAIL': True})
+        original = self.providers.player
+        async def player(tag):
+            if tag == '#FAIL': raise ProviderUnavailable('offline')
+            return await original(tag)
+        self.providers.player = player
+        await self.progressive(self.a)
+        await self.finish_progressive()
+        data = await (await self.progressive(self.a)).json()
+        self.assertFalse(data['updating'])
+        self.assertEqual(data['status'], 'partial')
+        self.assertTrue(data['error'])
+        self.assertEqual([row['tag'] for row in data['accounts']], ['#P2Y'])
+
+    async def test_progressive_auth_isolation_and_explicit_refresh_removes_unlinked(self):
+        self.assertEqual((await self.progressive()).status, 401)
+        self.assertFalse(self.app['account_display_states'])
+        await self.progressive(self.a)
+        await self.finish_progressive()
+        await self.progressive(self.b)
+        await self.finish_progressive('200')
+        self.assertEqual([a['tag'] for a in (await (await self.progressive(self.b)).json())['accounts']], ['#Q2Y'])
+        self.providers.linked_tags = AsyncMock(return_value={})
+        fresh = await (await self.progressive(self.a, refresh=True)).json()
+        self.assertEqual(fresh['accounts'], [])
+        await self.finish_progressive()
+        final = await (await self.progressive(self.a)).json()
+        self.assertEqual(final['accounts'], [])
+        self.assertEqual(final['status'], 'ok')
+        self.assertEqual(final['total'], 0)
+
+    async def test_progressive_failed_link_lookup_never_means_empty_success(self):
+        self.providers.fail = True
+        await self.progressive(self.a)
+        await self.finish_progressive()
+        data = await (await self.progressive(self.a)).json()
+        self.assertEqual(data['status'], 'partial')
+        self.assertIsNone(data['total'])
+        self.assertTrue(data['error'])
+        self.providers.fail = False
+        await self.progressive(self.a, refresh=True)
+        await self.finish_progressive()
+        self.assertEqual((await (await self.progressive(self.a)).json())['status'], 'ok')
+
+    async def test_progressive_shutdown_cancels_provider_children(self):
+        release = asyncio.Event()
+        self.providers.player = AsyncMock(side_effect=lambda tag: None)
+        started = asyncio.Event()
+        stopped = asyncio.Event()
+        async def player(tag):
+            started.set()
+            try: await release.wait()
+            finally: stopped.set()
+        self.providers.player = player
+        await self.progressive(self.a)
+        await asyncio.wait_for(started.wait(), 1)
+        job = self.app['account_display_jobs']['100']
+        await self.client.close()
+        self.assertTrue(job.cancelled())
+        self.assertTrue(stopped.is_set())
+        self.assertFalse(self.app['account_display_states'])
+
+    async def test_progressive_rejects_wrong_player_identity(self):
+        self.providers.player = AsyncMock(return_value={'tag': '#OTHER'})
+        await self.progressive(self.a)
+        await self.finish_progressive()
+        data = await (await self.progressive(self.a)).json()
+        self.assertEqual(data['accounts'], [])
+        self.assertEqual(data['status'], 'partial')
+
     async def test_weight_and_missing_weight(self):
         first = await self.get(self.a)
         self.assertEqual((await first.json())["accounts"][0]["war_weight"], 135000)
