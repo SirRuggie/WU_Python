@@ -1,3 +1,5 @@
+import PoolChangeDialog from './PoolChangeDialog'
+import {poolChangeDecision} from './signupMoves'
 import FwaSignupDialog from './FwaSignupDialog'
 import useUnsavedWork from './useUnsavedWork'
 import type {SignupMove} from './signupMoves'
@@ -20,6 +22,7 @@ type Props = {
 const poolName = (pool: Pool) => pool === 'main' ? 'Main CWL' : 'Lazy CWL'
 
 export default function SavedSignups({signups, accounts, editable, busy, canMove, headingRef, onSave, onDirty, onWithdraw}: Props) {
+  const [poolConfirmation, setPoolConfirmation] = useState<{rows: Signup[]; pool: Pool} | null>(null)
   const [fwaBlocked, setFwaBlocked] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [tags, setTags] = useState<string[]>([])
@@ -27,11 +30,31 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
   const [moves, setMoves] = useState<Record<string, Pool>>({})
   useUnsavedWork(Object.keys(moves).length > 0, onDirty)
   const changes = signups.filter(row => moves[row.tag] && moves[row.tag] !== row.pool).map(signup => ({signup, destination: moves[signup.tag]}))
-  const stage = (rows: Signup[], pool: Pool) => {
-    if (pool === 'main' && rows.some(row => row.pool !== pool && accounts.find(account => account.tag === row.tag)?.current_clan_type === 'FWA')) {
+  const stage = (rows: Signup[], pool: Pool, confirmed = false) => {
+    if (busy || !editable || !canMove) return
+    // Recheck the saved pool and current links when confirming an open dialog.
+    if (rows.some(row => !signups.some(current => current.tag === row.tag && current.pool === row.pool))) {
+      setPoolConfirmation(null)
+      setSaveError('These signups changed. Refresh before changing pools.')
+      return
+    }
+    const decision = poolChangeDecision(rows, pool, accounts)
+    if (decision === 'unavailable') {
+      setPoolConfirmation(null)
+      setSaveError('Account links changed. Refresh accounts before changing pools.')
+      return
+    }
+    setSaveError(null)
+    if (decision === 'fwa') {
+      setPoolConfirmation(null)
       setFwaBlocked(true)
       return
     }
+    if (decision === 'confirm' && !confirmed) {
+      setPoolConfirmation({rows, pool})
+      return
+    }
+    setPoolConfirmation(null)
     setMoves(current => {
       const next = {...current}
       for (const row of rows) { if (row.pool === pool) delete next[row.tag]; else next[row.tag] = pool }
@@ -48,7 +71,14 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
   const movable = (pool: Pool) => selected.filter(row => (moves[row.tag] || row.pool) !== pool)
   const canMoveRows = (rows: Signup[]) => canMove && rows.length > 0 && rows.every(row => accounts.some(account => account.tag === row.tag))
   return <>
+    {poolConfirmation && <PoolChangeDialog
+      rows={poolConfirmation.rows.filter(row => row.pool !== poolConfirmation.pool)}
+      destination={poolConfirmation.pool} disabled={busy || !editable || !canMove}
+      onCancel={() => setPoolConfirmation(null)}
+      onConfirm={() => stage(poolConfirmation.rows, poolConfirmation.pool, true)}
+    />}
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
+    {saveError && <p className="notice error" role="alert">{saveError}</p>}
     <div className="section-heading">
       <div><p className="eyebrow">Saved this season</p><h2 ref={headingRef} tabIndex={-1}>Signed-up accounts</h2></div>
       {editable && signups.length > 0 && <button disabled={busy} aria-pressed={selecting} onClick={() => {setSelecting(!selecting);setTags([])}}>{selecting ? 'Cancel selection' : 'Select accounts'}</button>}
@@ -83,7 +113,6 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
       </div>}
     </div>)}</div>
     {changes.length > 0 && <div className="saved-signup-savebar" aria-label="Pending CWL changes">
-      {saveError && <p className="notice error" role="alert">{saveError}</p>}
       <span>{changes.length} {changes.length === 1 ? 'change' : 'changes'} · Not saved yet</span>
       <button disabled={busy} onClick={() => {setMoves({});setSaveError(null)}}>Cancel</button>
       <button className="primary" disabled={busy || !editable || !changes.every(change => canMoveRows([change.signup]))} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'}</button>

@@ -1,0 +1,13 @@
+.pool-change-animation {
+  display: block;
+  width: min(220px, 100%);
+  height: auto;
+  max-height: 28dvh;
+  object-fit: contain;
+  margin: 0 auto 16px;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pool-change-animation { display: none; }
+}

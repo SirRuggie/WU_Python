@@ -25,3 +25,26 @@ it('stops after an uncertain first save and skips unchanged destinations', async
   expect(await saveSignupMoves([{signup:main,destination:'main'}],save)).toEqual({saved:[],error:null})
   expect(save).not.toHaveBeenCalled()
 })
+
+import {poolChangeDecision} from './signupMoves'
+import type {Account} from './api'
+const accounts = [
+  {tag:main.tag, current_clan_type:'FWA'} as Account,
+  {tag:lazy.tag, current_clan_type:'FWA'} as Account,
+]
+it('confirms Main to Lazy, including current FWA accounts', () => {
+  expect(poolChangeDecision([main], 'lazy', accounts)).toBe('confirm')
+})
+it('blocks Lazy to Main for FWA, including mixed bulk selections', () => {
+  expect(poolChangeDecision([lazy], 'main', accounts)).toBe('fwa')
+  expect(poolChangeDecision([main,lazy], 'main', accounts)).toBe('fwa')
+})
+it('confirms eligible Lazy to Main and rechecks changed account links', () => {
+  expect(poolChangeDecision([lazy], 'main', [{...accounts[1],current_clan_type:null}])).toBe('confirm')
+  expect(poolChangeDecision([lazy], 'main', [])).toBe('unavailable')
+})
+it('undoing an unsaved change is not a new pool change, even for FWA', () => {
+  expect(poolChangeDecision([main], 'main', accounts)).toBe('undo')
+  expect(poolChangeDecision([lazy], 'lazy', accounts)).toBe('undo')
+  expect(poolChangeDecision([], 'lazy', accounts)).toBe('unavailable')
+})

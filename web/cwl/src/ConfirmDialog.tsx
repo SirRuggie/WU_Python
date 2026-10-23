@@ -1,12 +1,20 @@
-import { useId, useLayoutEffect, useRef } from "react";
+import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import "./ConfirmDialog.css";
 export default function ConfirmDialog({
   text,
   onCancel,
   onConfirm,
+  heading = "Confirm change",
+  confirmLabel = "Confirm",
+  disabled = false,
+  children,
 }: {
   text: string;
+  heading?: string;
+  confirmLabel?: string;
+  disabled?: boolean;
+  children?: ReactNode;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -31,7 +39,7 @@ export default function ConfirmDialog({
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
         const buttons =
-          dialog.current!.querySelectorAll<HTMLButtonElement>("button");
+          dialog.current!.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
         const first = buttons[0],
           last = buttons[buttons.length - 1];
         if (event.shiftKey && document.activeElement === first) {
@@ -49,21 +57,23 @@ export default function ConfirmDialog({
         onCancel();
       }}
     >
-      <h2 id={title}>Confirm change</h2>
+      <h2 id={title}>{heading}</h2>
       <p id={description}>{text}</p>
+      {children}
       <div className="confirm-dialog-actions">
         <button autoFocus onClick={onCancel}>
           Cancel
         </button>
         <button
           className="primary"
+          disabled={disabled}
           onClick={() => {
-            if (submitted.current) return;
+            if (disabled || submitted.current) return;
             submitted.current = true;
             onConfirm();
           }}
         >
-          Confirm
+          {confirmLabel}
         </button>
       </div>
     </dialog>,
