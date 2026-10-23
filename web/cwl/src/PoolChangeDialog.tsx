@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { Pool, Signup } from './api'
 import ConfirmDialog from './ConfirmDialog'
 import animation from './assets/confirm-pool-change.gif'
@@ -11,7 +10,6 @@ export default function PoolChangeDialog({ rows, destination, disabled, onCancel
   onCancel: () => void
   onConfirm: () => void
 }) {
-  const [playAnimation, setPlayAnimation] = useState(false)
   const from = destination === 'lazy' ? 'Main CWL' : 'Lazy CWL'
   const to = destination === 'lazy' ? 'Lazy CWL' : 'Main CWL'
   const subject = rows.length === 1 ? rows[0].player_name || rows[0].tag : `${rows.length} accounts`
@@ -20,10 +18,8 @@ export default function PoolChangeDialog({ rows, destination, disabled, onCancel
     confirmLabel={`Choose ${to}`} disabled={disabled} onCancel={onCancel} onConfirm={onConfirm}>
     <div className="pool-change-content">
       <p className="pool-change-direction"><strong>{from}</strong><span aria-label="to">→</span><strong>{to}</strong></p>
-      <img className={`pool-change-animation${playAnimation ? ' is-playing' : ''}`} src={animation} width={480} height={480}
+      <img className="pool-change-animation" src={animation} width={480} height={480}
         alt="Tim Robinson asking: You sure about that?" />
-      <button className="pool-change-motion-control" aria-pressed={playAnimation}
-        onClick={() => setPlayAnimation(value => !value)}>{playAnimation ? 'Hide GIF' : 'Play GIF'}</button>
       <p className="pool-change-summary">{destination === 'lazy'
         ? 'Lazy CWL: for FWA players or players upgrading heroes.'
         : 'Main CWL: play to win. All heroes must be ready.'}</p>

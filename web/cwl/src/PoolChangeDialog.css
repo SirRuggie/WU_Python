@@ -20,7 +20,6 @@
   margin: 0 auto;
   border-radius: 8px;
 }
-.pool-change-motion-control { display: none; }
 .pool-change-summary { color: #f4f4f5; }
 .pool-change-warning {
   padding: 8px 12px;
@@ -28,12 +27,3 @@
   color: #ffe3a0;
 }
 .pool-change-save-note { font-size: .875rem; }
-@media (prefers-reduced-motion: reduce) {
-  .pool-change-animation { display: none; }
-  .pool-change-animation.is-playing { display: block; }
-  .pool-change-motion-control {
-    display: block;
-    justify-self: center;
-    min-height: 44px;
-  }
-}

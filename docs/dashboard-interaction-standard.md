@@ -1119,8 +1119,8 @@ coverage, concurrency contracts and limits; simulated sends are not live deliver
 
 Shortened both directions to an account name, explicit source → destination,
 one plain-language description and a save reminder. Placement removal remains
-visible when applicable. Reduced-motion users now have a Play/Hide GIF control
-instead of losing access to the supplied animation entirely. The FWA restriction
+visible when applicable. At the owner’s explicit request, the supplied GIF is always displayed without
+a Play/Hide control, including when reduced motion is enabled. The FWA restriction
 and save boundary are unchanged.
 
 Validation: 301 frontend tests; production builds; isolated browser checks at
