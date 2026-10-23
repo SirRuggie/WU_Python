@@ -61,7 +61,7 @@ were not attempted and no real accounts were linked or transferred during tests.
 4. **Commands and image tools: scoped cleanup completed October 23.** Create/edit,
    preview, explicit tests, saved commands, image selection and gallery maintenance
    were reviewed. See `commands-images-review.md` for evidence and limits.
-5. **Server settings, FWA, and integrations: implemented and reviewed October 23; deployment pending BAND credential authorization.**
+5. **Server settings, FWA, and integrations: implemented, reviewed and deployed October 23.**
    Compact settings discovery, runtime status, explicit previews, save conflicts,
    input validation and queued-action recovery covered. See
    `server-settings-integrations-review.md` for evidence and the credential gate.

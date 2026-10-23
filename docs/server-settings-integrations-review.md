@@ -34,16 +34,18 @@ No new account-link provider or parallel configuration store was introduced.
 
 ## Credential and deployment gate
 
-BAND now reads BAND_ACCESS_TOKEN from runtime environment and fails closed when
-missing. No token was printed. The current bot runtime environment was checked
-for key presence only and does not contain this variable. The existing bot has
-not been restarted by this task.
+BAND reads BAND_ACCESS_TOKEN from runtime environment and fails closed when
+missing. The owner explicitly authorized reuse of the existing token without
+rotation on October 23. It was transferred without printing into botrunner's
+private runtime .env (mode 0600), and loading was verified. The previous automatic
+approval block was resolved by that explicit authorization. No token rotation
+was performed; the historical token remains in Git history.
 
-Automatic approval review rejected provisioning the old exposed credential from
-source history into the private runtime environment without explicit owner
-approval. Rotation through the BAND account is preferable because the historical
-credential remains exposed. Deployment is pending this decision; removing a
-literal from current source does not rotate or erase it from repository history.
+The complete reviewed dashboard and bot code revision 86bacc8 was deployed.
+Runtime imports passed, BAND logged monitor_started after restart with no startup
+traceback or missing-token error, and both services were active/running with zero
+automatic restarts. Public settings routes, entry assets and ServerManagement
+chunks matched the full production build. No live test messages were sent.
 
 ## Verification
 
