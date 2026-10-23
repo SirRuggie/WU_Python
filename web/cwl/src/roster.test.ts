@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assignmentOptions, filterRosterAccounts, parseWeightK, sortRosterAccounts, weightInputText, weightText, type RosterAccount, type RosterClan } from './roster'
+import { mergeRosterMetadata, assignmentOptions, filterRosterAccounts, parseWeightK, sortRosterAccounts, weightInputText, weightText, type RosterAccount, type RosterClan } from './roster'
 const clans: RosterClan[] = [
   { tag: '#MAIN', name: 'Main host', archived: false, pool: 'main', capacity: 15, effective_capacity: 15, min_weight: null, max_weight: null, lower_league: null, assigned_count: 0 },
   { tag: '#LAZY', name: 'Lazy host', archived: false, pool: 'lazy', capacity: 30, effective_capacity: 30, min_weight: null, max_weight: null, lower_league: null, assigned_count: 0 },
@@ -17,3 +17,26 @@ describe('staff roster controls', () => {
   it('sorts numeric town hall and effective weight with missing values last in both directions', () => { expect(sortRosterAccounts(accounts, 'town_hall_asc').map(account => account.tag)).toEqual(['#TWO', '#ONE', '#THREE']); expect(sortRosterAccounts(accounts, 'town_hall_desc').map(account => account.tag)).toEqual(['#ONE', '#TWO', '#THREE']); expect(sortRosterAccounts(accounts, 'weight_asc').map(account => account.tag)).toEqual(['#THREE', '#ONE', '#TWO']); expect(sortRosterAccounts(accounts, 'weight_desc').map(account => account.tag)).toEqual(['#ONE', '#THREE', '#TWO']) })
   it('keeps missing weights visible and parses nullable rule boundaries', () => { expect(weightText(null)).toBe('Missing weight'); expect(weightText(174500)).toBe('174.5k'); expect(weightInputText(174500)).toBe('174.5'); expect(parseWeightK('')).toBeNull(); expect(parseWeightK('174')).toBe(174000); expect(parseWeightK('174.5')).toBe(174500); expect(() => parseWeightK('-1')).toThrow() })
 })
+
+describe('background roster metadata', () => {
+  const current = { revision: 3, accounts, clans, undo: null };
+  it('merges only live display fields without replacing placement, weight or membership', () => {
+    const incoming = { ...current, metadata_updating: false,
+      accounts: [{ ...accounts[0], assigned_clan_tag: '#WRONG', effective_weight: 1,
+        current_clan_name: 'Live clan', current_clan_status: 'current' as const }],
+      clans: [{ ...clans[0], capacity: 1, cwl_league: 'Gold League I' }] };
+    const result = mergeRosterMetadata(current, incoming);
+    expect(result.accounts).toHaveLength(3);
+    expect(result.accounts[0].assigned_clan_tag).toBe(null);
+    expect(result.accounts[0].effective_weight).toBe(175000);
+    expect(result.accounts[0].current_clan_name).toBe('Live clan');
+    expect(result.clans[0].capacity).toBe(15);
+    expect(result.clans[0].cwl_league).toBe('Gold League I');
+  });
+  it('rejects metadata from a different saved revision', () => {
+    const result = mergeRosterMetadata(current, { ...current, revision: 2, accounts: [], clans: [] });
+    expect(result.accounts).toBe(accounts);
+    expect(result.clans).toBe(clans);
+    expect(result.revision).toBe(3);
+  });
+});

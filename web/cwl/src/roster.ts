@@ -11,7 +11,7 @@ export type RosterAccount = {
 }
 export type RosterClan = { cwl_league?: string | null; cwl_league_stale?: boolean; tag: string; name: string; archived: boolean; pool: Pool | null; capacity: number | null; effective_capacity: number; min_weight: number | null; max_weight: number | null; lower_league: boolean | null; assigned_count: number }
 export type RosterUndo = { id: number; label: string; revision: number }
-export type RosterSnapshot = { revision: number; accounts: RosterAccount[]; clans: RosterClan[]; undo: RosterUndo | null }
+export type RosterSnapshot = { metadata_updating?: boolean; revision: number; accounts: RosterAccount[]; clans: RosterClan[]; undo: RosterUndo | null }
 export type AutoPreview = { revision: number; placements: { tag: string; assigned_clan_tag: string }[]; unassigned: { tag: string; reason: string }[] }
 export type RosterSort = 'name' | 'town_hall_asc' | 'town_hall_desc' | 'weight_asc' | 'weight_desc'
 export function assignmentOptions(clans: RosterClan[], pool?: Pool): RosterClan[] { return clans.filter(clan => !clan.archived && (pool !== 'lazy' || clan.pool === 'lazy')) }
@@ -40,4 +40,24 @@ export function parseWeightK(value: string): number | null {
   const fullWeight = parsed * 1000
   if (!Number.isFinite(parsed) || parsed < 0 || !Number.isSafeInteger(fullWeight)) throw new Error('Enter a weight in thousands, such as 174 or 174.5, or leave the field blank.')
   return fullWeight
+}
+
+// Live display refreshes must never overwrite placements, weights, or editor data.
+export function mergeRosterMetadata(current: RosterSnapshot, incoming: RosterSnapshot): RosterSnapshot {
+  if (current.revision !== incoming.revision) return { ...current, metadata_updating: false };
+  const accounts = new Map(incoming.accounts.map(account => [account.tag, account]));
+  const clans = new Map(incoming.clans.map(clan => [clan.tag, clan]));
+  return {
+    ...current, metadata_updating: incoming.metadata_updating,
+    accounts: current.accounts.map(account => {
+      const live = accounts.get(account.tag);
+      return live ? { ...account, current_clan_tag: live.current_clan_tag,
+        current_clan_name: live.current_clan_name, current_clan_status: live.current_clan_status,
+        outside_family_and_hosts: live.outside_family_and_hosts } : account;
+    }),
+    clans: current.clans.map(clan => {
+      const live = clans.get(clan.tag);
+      return live ? { ...clan, cwl_league: live.cwl_league, cwl_league_stale: live.cwl_league_stale } : clan;
+    }),
+  };
 }

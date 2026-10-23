@@ -45,26 +45,26 @@ async def background_enrich(request, accounts, *, force=False):
 
     async def check(key):
         try:
-            for attempt in range(3):
-                try:
-                    async with gate:
-                        player = await asyncio.wait_for(app['providers'].player(key), timeout=10)
-                    cache[key] = (time.monotonic(), {
-                        'current_clan_tag':player.get('current_clan_tag'),
-                        'current_clan_name':player.get('current_clan_name'),
-                        'current_clan_status':'current',
-                        'current_clan_checked_at':datetime.now(timezone.utc).isoformat()})
-                    failures.pop(key, None)
-                    return
-                except (ProviderUnavailable, TimeoutError):
-                    if attempt < 2:
-                        await asyncio.sleep((2,5)[attempt])
+            # The provider owns transport retries; do not multiply them here.
+            async with gate:
+                player = await asyncio.wait_for(app['providers'].player(key), timeout=35)
+            cache[key] = (time.monotonic(), {
+                'current_clan_tag': player.get('current_clan_tag'),
+                'current_clan_name': player.get('current_clan_name'),
+                'current_clan_status': 'current',
+                'current_clan_checked_at': datetime.now(timezone.utc).isoformat()})
+            failures.pop(key, None)
+            for old_key in list(cache)[:max(0, len(cache) - 5000)]:
+                cache.pop(old_key, None)
+        except (ProviderUnavailable, TimeoutError):
             failures[key] = time.monotonic()
         except Exception:
             failures[key] = time.monotonic()
             logging.getLogger(__name__).exception('Clan location lookup failed')
         finally:
             jobs.pop(key,None)
+            for old_key in list(failures)[:max(0, len(failures) - 5000)]:
+                failures.pop(old_key, None)
 
     for account in accounts:
         key = account['tag']

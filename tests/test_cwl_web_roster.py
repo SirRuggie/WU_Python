@@ -92,6 +92,54 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
                                          "min_weight": 150000, "max_weight": 180000, "lower_league": lower})
         self.assertEqual(response.status, 200)
 
+    async def test_saved_roster_does_not_wait_for_any_live_provider(self):
+        import asyncio
+        from unittest.mock import AsyncMock
+        await self.signup("lazy", "#Q2Y")
+        await self.host("#J2Y", "lazy")
+        release = asyncio.Event()
+        async def slow_player(tag):
+            await release.wait()
+            return self.providers.players[tag].copy()
+        async def slow_clan(tag):
+            await release.wait()
+            return {"cwl_league": "Gold League I"}
+        async def slow_family():
+            await release.wait()
+            return {"clans": [{"tag": "#R2Y"}]}
+        self.app.get("clan_league_cache", {}).clear()
+        self.app.get("roster_location_cache", {}).clear()
+        self.providers.player = AsyncMock(side_effect=slow_player)
+        self.providers.clan = AsyncMock(side_effect=slow_clan)
+        self.providers.family_clans = AsyncMock(side_effect=slow_family)
+        path = f"/seasons/{self.sid}/roster?background=1"
+        started = time.monotonic()
+        response = await asyncio.wait_for(self.call("GET", path, self.owner), 1)
+        data = await response.json()
+        self.assertEqual(response.status, 200)
+        self.assertTrue(data["metadata_updating"])
+        self.assertEqual(data["accounts"][0]["tag"], "#Q2Y")
+        self.assertEqual(data["accounts"][0]["current_clan_status"], "unavailable")
+        self.assertFalse(data["accounts"][0]["outside_family_and_hosts"])
+        await self.call("GET", path, self.owner)
+        self.assertEqual(len(self.app["roster_location_jobs"]), 1)
+        self.assertEqual(len(self.app["clan_league_jobs"]), 1)
+        self.assertLess(time.monotonic() - started, 1)
+        # The fast path must enforce the same staff authorization.
+        denied = await self.call("GET", path, self.member)
+        self.assertEqual(denied.status, 403)
+        jobs = [*self.app["roster_location_jobs"].values(),
+                *self.app["clan_league_jobs"].values(), self.app["roster_family_job"]]
+        release.set()
+        await asyncio.gather(*jobs)
+        data = await (await self.call("GET", path, self.owner)).json()
+        self.assertFalse(data["metadata_updating"])
+        self.assertEqual(data["clans"][0]["cwl_league"], "Gold League I")
+        self.assertEqual(data["accounts"][0]["current_clan_status"], "current")
+        self.providers.player.assert_awaited_once()
+        self.providers.clan.assert_awaited_once()
+        self.providers.family_clans.assert_awaited_once()
+
     async def test_outside_clan_highlight_requires_known_location_and_directory(self):
         from unittest.mock import AsyncMock
         await self.signup("main", "#P2Y")

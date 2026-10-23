@@ -72,8 +72,11 @@ were not attempted and no real accounts were linked or transferred during tests.
    Keyboard, focus, landmarks, 320px reflow and short landscape improvements reviewed;
    see `dashboard-accessibility-review.md`. Native zoom, screen-reader speech and
    real-device keyboard/OS text-scaling checks remain outstanding.
-8. **Cross-cutting: Performance.** Measure the existing bundle-size warning on
-   slower devices/networks before claiming a measured performance defect.
+8. **Cross-cutting: Performance: roster blocking fixed October 23.** Saved roster
+   data is returned ahead of optional live metadata; shared league lookups no longer
+   hold a global lock. See `roster-loading-review.md` for tests and browser limits.
+   Cold linked-account discovery and slower-device/network startup still need
+   separate measurement; bundle size alone is not evidence of their bottleneck.
 9. **Cross-cutting: Live end-to-end integration.** Authenticated real clan/member
    data and actual notification delivery need separate checks. Simulated browser
    writes are not live Discord or provider verification.

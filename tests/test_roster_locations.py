@@ -44,7 +44,7 @@ class LocationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(accounts[0]['current_clan_status'],'current')
         provider.player.assert_awaited_once()
 
-    async def test_failed_background_refresh_retries_and_never_marks_old_location_current(self):
+    async def test_failed_background_refresh_never_marks_old_location_current(self):
         import asyncio,time
         from unittest.mock import patch
         from cwl_web.roster_locations import background_enrich
@@ -55,7 +55,7 @@ class LocationTests(unittest.IsolatedAsyncioTestCase):
             await background_enrich(request,accounts,force=True)
             self.assertEqual(accounts[0]['current_clan_status'],'stale')
             await asyncio.gather(*list(request.app['roster_location_jobs'].values()))
-        self.assertEqual(provider.player.await_count,3)
+        self.assertEqual(provider.player.await_count,1)
         self.assertFalse(await background_enrich(request,accounts))
         self.assertEqual(accounts[0]['current_clan_status'],'stale')
         self.assertEqual(accounts[0]['current_clan_name'],'Old clan')

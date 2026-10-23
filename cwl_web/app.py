@@ -1037,11 +1037,15 @@ async def roster(request):
             reason = reasons.get(account["tag"])
             account["auto_placement_reason"] = reason
             account["auto_placement_note"] = explain_placement(account, result["clans"], reason) if reason else None
-    from .roster_locations import enrich as enrich_locations
-    family, _, _ = await asyncio.gather(
-        _family_tags(request), enrich_clan_metadata(request, result["clans"]),
-        enrich_locations(request, result["accounts"]),
-    )
+    if request.query.get("background") == "1":
+        from .roster_metadata import enrich as enrich_metadata
+        family = await enrich_metadata(request, result)
+    else:
+        from .roster_locations import enrich as enrich_locations
+        family, _, _ = await asyncio.gather(
+            _family_tags(request), enrich_clan_metadata(request, result["clans"]),
+            enrich_locations(request, result["accounts"]),
+        )
     hosting_tags = {clan["tag"] for clan in result["clans"] if not clan["archived"]}
     for account in result["accounts"]:
         # Unknown/stale locations or directory outages are not proof of an outside clan.
@@ -1835,6 +1839,10 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(push_lifecycle)
     from .roster_locations import lifecycle as location_lifecycle
     app.cleanup_ctx.append(location_lifecycle)
+    from .clan_metadata import lifecycle as clan_metadata_lifecycle
+    from .roster_metadata import lifecycle as roster_metadata_lifecycle
+    app.cleanup_ctx.append(clan_metadata_lifecycle)
+    app.cleanup_ctx.append(roster_metadata_lifecycle)
     from .player_weights import lifecycle as player_weights_lifecycle
     app.cleanup_ctx.append(player_weights_lifecycle)
     from .strikes import strike_jobs_lifecycle

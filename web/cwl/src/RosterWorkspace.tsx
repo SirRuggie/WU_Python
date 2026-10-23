@@ -34,6 +34,7 @@ import {
 import { api, ApiError, type Pool, type Season } from "./api";
 import {
   assignmentOptions,
+  mergeRosterMetadata,
   filterRosterAccounts,
   sortRosterAccounts,
   parseWeightK,
@@ -174,6 +175,8 @@ export default function RosterWorkspace({
   const listHeading = useRef<HTMLDivElement>(null);
   const focusListHeading = () => requestAnimationFrame(() => requestAnimationFrame(() => listHeading.current?.focus({ preventScroll: true })));
   const requestId = useRef(0);
+  const [metadataRequest, setMetadataRequest] = useState(0);
+  const [metadataNotice, setMetadataNotice] = useState("");
   const activeSeason = useRef(seasonId);
   activeSeason.current = seasonId;
 
@@ -182,12 +185,17 @@ export default function RosterWorkspace({
     const id = ++requestId.current;
     try {
       const snapshot = await api<RosterSnapshot>(
-        `/seasons/${encoded(seasonId)}/roster`,
+        `/seasons/${encoded(seasonId)}/roster?background=1`,
       );
       if (id !== requestId.current || activeSeason.current !== seasonId) return null;
       setRoster(snapshot);
+      setMetadataNotice("");
+      setMetadataRequest(id);
       return snapshot;
     } catch (error) {
+      if (id === requestId.current && activeSeason.current === seasonId) {
+        setRoster(current => current ? { ...current, metadata_updating: false } : current);
+      }
       if (id === requestId.current && activeSeason.current === seasonId &&
           error instanceof ApiError && [401, 403].includes(error.status)) {
         setRoster(null);
@@ -222,6 +230,47 @@ export default function RosterWorkspace({
       requestId.current++;
     };
   }, [seasonId, refresh]);
+
+  useEffect(() => {
+    if (!metadataRequest || !roster?.metadata_updating) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = Date.now() + 90_000;
+    const revision = roster.revision;
+    const poll = async () => {
+      if (!alive || metadataRequest !== requestId.current) return;
+      if (Date.now() >= deadline) {
+        setRoster(current => current ? { ...current, metadata_updating: false } : current);
+        setMetadataNotice("Some live clan details are still unavailable. Refresh roster to check again.");
+        return;
+      }
+      if (document.hidden) { timer = setTimeout(poll, 2000); return; }
+      try {
+        const snapshot = await api<RosterSnapshot>(`/seasons/${encoded(seasonId)}/roster?background=1`);
+        if (!alive || metadataRequest !== requestId.current || activeSeason.current !== seasonId) return;
+        if (snapshot.revision !== revision) {
+          setRoster(current => current ? { ...current, metadata_updating: false } : current);
+          setMetadataNotice("The roster changed. Refresh roster to see the latest assignments.");
+          return;
+        }
+        setRoster(current => current ? mergeRosterMetadata(current, snapshot) : current);
+        if (snapshot.metadata_updating) timer = setTimeout(poll, 2000);
+      } catch (error) {
+        if (!alive || metadataRequest !== requestId.current) return;
+        if (error instanceof ApiError && [401, 403].includes(error.status)) {
+          setRoster(null); setSelectedTags([]); setEditingTag(null); setManualTag(null); setPreview(null);
+          setFeedback({ kind: "error", text: errorText(error) });
+        } else {
+          setRoster(current => current ? { ...current, metadata_updating: false } : current);
+          setMetadataNotice("Live clan details could not refresh. Saved assignments are still shown.");
+        }
+      }
+    };
+    timer = setTimeout(poll, 1500);
+    return () => { alive = false; clearTimeout(timer); };
+    // A fresh saved snapshot starts one bounded, non-overlapping enrichment pass.
+    // Metadata updates themselves must not restart its deadline.
+  }, [metadataRequest, seasonId]);
 
   const afterWrite = async (success: string) => {
     setPreview(null);
@@ -697,6 +746,8 @@ export default function RosterWorkspace({
         </div>
       )}
       {loading && <p role="status">Loading roster…</p>}
+      {roster?.metadata_updating && <p className="muted" role="status">Updating live clan details… Saved assignments are ready.</p>}
+      {metadataNotice && <p role="status">{metadataNotice}</p>}
       {roster && (
         <>
           {canRoster && <div
