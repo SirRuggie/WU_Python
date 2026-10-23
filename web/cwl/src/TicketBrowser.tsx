@@ -12,6 +12,7 @@ type Ticket = {
   kind: string;
   status: string;
   created_at: string | null;
+  flags: { kind: string; label: string; reason: string }[];
 };
 type Message = {
   id: string;
@@ -39,6 +40,7 @@ const when = (value: string | null) =>
 export default function TicketBrowser() {
   const [status, setStatus] = useState("closed"),
     [kind, setKind] = useState("all"),
+    [flag, setFlag] = useState("all"),
     [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
     [from, setFrom] = useState(""),
@@ -79,6 +81,7 @@ export default function TicketBrowser() {
     const params = new URLSearchParams({
       status,
       kind,
+      flag,
       q: query,
       from,
       to,
@@ -106,7 +109,7 @@ export default function TicketBrowser() {
     return () => {
       alive = false;
     };
-  }, [selected, status, kind, query, from, to, page, reload]);
+  }, [selected, status, kind, flag, query, from, to, page, reload]);
   if (selected)
     return (
       <TicketConversation
@@ -137,7 +140,7 @@ export default function TicketBrowser() {
           Find a ticket
           <input
             type="search"
-            placeholder="Member name, Discord ID, ticket number or player tag"
+            placeholder="Member, Discord ID, ticket number, player tag or flag"
             maxLength={80}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -157,6 +160,17 @@ export default function TicketBrowser() {
             <option value="all">All tickets</option>
             <option value="approved">Approved</option>
             <option value="denied">Denied</option>
+          </select>
+        </label>
+        <label>
+          Applicant flag
+          <select value={flag} onChange={(e) => { setFlag(e.target.value); setPage(1); }}>
+            <option value="all">All flags</option>
+            <option value="blacklisted">Blacklisted</option>
+            <option value="denied_before">Previously denied</option>
+            <option value="not_loyal">Not loyal to WU</option>
+            <option value="ghosted">Ghosted</option>
+            <option value="flew_the_coop">Flew the Coop</option>
           </select>
         </label>
         <label>
@@ -204,7 +218,7 @@ export default function TicketBrowser() {
       </details>
       <p className="small">
         Closed tickets include approved, denied and archived applications.
-        Search finds ticket details, not words inside conversations.
+        Search finds ticket details and flag names, not words inside conversations.
       </p>
       {error && (
         <p className="notice error" role="alert">
@@ -223,6 +237,7 @@ export default function TicketBrowser() {
               setQuery("");
               setStatus("all");
               setKind("all");
+              setFlag("all");
               setFrom("");
               setTo("");
               setPage(1);
@@ -243,6 +258,9 @@ export default function TicketBrowser() {
                   {t.kind.toUpperCase()} · {statusName(t.status)} · Opened{" "}
                   {when(t.created_at)}
                 </small>
+                {t.flags.length > 0 && <ul className="ticket-flags" aria-label="Applicant flags">
+                  {t.flags.map((item, index) => <li key={`${item.kind}-${index}`}><strong>{item.label}</strong>{item.reason ? ` · ${item.reason}` : ""}</li>)}
+                </ul>}
               </div>
               <button
                 ref={(node) => {
@@ -357,6 +375,10 @@ function TicketConversation({
             #{ticket.number} · {ticket.name}
           </h1>
           <p>Opening this page does not reopen the ticket.</p>
+          {ticket.flags.length > 0 && <div className="ticket-flag-details" aria-label="Applicant flags">
+            <h2>Applicant flags</h2>
+            {ticket.flags.map((item, index) => <p key={`${item.kind}-${index}`}><strong>{item.label}</strong>{item.reason ? ` · ${item.reason}` : ""}</p>)}
+          </div>}
         </div>
       </div>
       <div

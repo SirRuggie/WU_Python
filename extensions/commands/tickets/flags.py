@@ -40,6 +40,7 @@ FLAG_LABELS = {
     flag_store.FLAG_DENIED_BEFORE: "Previously denied",
     flag_store.FLAG_NOT_LOYAL: "Not loyal to WU",
     flag_store.FLAG_GHOSTED: "Ghosted",
+    flag_store.FLAG_FLEW_THE_COOP: "Flew the Coop",
 }
 FLAG_SOURCES = flag_store.FLAG_SOURCES
 DISCORD_ID_RE = re.compile(r"^\d{17,20}$")
@@ -133,6 +134,7 @@ class FlagAddCommand(
             lightbulb.Choice(name="Previously denied", value=flag_store.FLAG_DENIED_BEFORE),
             lightbulb.Choice(name="Not loyal to WU", value=flag_store.FLAG_NOT_LOYAL),
             lightbulb.Choice(name="Ghosted", value=flag_store.FLAG_GHOSTED),
+            lightbulb.Choice(name="Flew the Coop", value=flag_store.FLAG_FLEW_THE_COOP),
         ],
     )
     reason = lightbulb.string(

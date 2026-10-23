@@ -29,3 +29,23 @@ Drafts use the shared 30-minute component-state TTL. New tickets snapshot their
 saved template before opening-message delivery. Recovery uses that snapshot so
 later template edits cannot duplicate or alter a partially delivered sequence.
 Tickets created before this feature continue to use the original default text.
+
+## Flew the Coop flag
+
+Recruiters can choose **Flew the Coop** in Manage flags or `/tickets flag-add`.
+A reason is required. This durable identity flag appears with its reason on
+future staff context cards alongside previous ticket decisions; a new ticket
+remains open for recruiter review. It does not automatically approve applicants.
+
+Applying or removing the flag reconciles both applicant and staff thread names,
+including closed tickets, preserving archive/lock state through durable recovery.
+The additive marker matches `🐔 ✅ main-404-iankellum`: existing status emojis and
+custom title text remain. Discord's 100-character name limit still applies, so
+adding the marker to a maximum-length title truncates its ending. No data
+migration is required. The web ticket browser shows active reasons and supports
+flag filtering/name search behind its existing recruiter authorization.
+
+Validation: 356 ticket regression tests and 275 frontend tests passed, as did
+the frontend build. Dashboard visual-review scope is recorded in the interaction
+standard. Discord thread metadata was read to confirm the naming example; no
+live flag writes, test messages, or production deployment were performed.

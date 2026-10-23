@@ -172,6 +172,7 @@ def test_flag_sources_preserve_the_decided_human_authority():
         flag_store.FLAG_DENIED_BEFORE: "Warriors United ticket history",
         flag_store.FLAG_NOT_LOYAL: "Warriors United recruiter note",
         flag_store.FLAG_GHOSTED: "Warriors United recruiter ghosting report",
+        flag_store.FLAG_FLEW_THE_COOP: "Warriors United recruiter departure report",
     }
     assert flag_store.normalize_kind("GHOSTED") == flag_store.FLAG_GHOSTED
 

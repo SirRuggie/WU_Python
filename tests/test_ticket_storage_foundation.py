@@ -5038,6 +5038,7 @@ def test_hub_payload_produces_chart_counts_from_real_documents(monkeypatch):
         flag_store.FLAG_DENIED_BEFORE: 1,
         flag_store.FLAG_NOT_LOYAL: 0,
         flag_store.FLAG_GHOSTED: 1,
+        flag_store.FLAG_FLEW_THE_COOP: 0,
     }
 
     container, _attachments = components[0].build()

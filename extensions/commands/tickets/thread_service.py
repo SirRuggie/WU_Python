@@ -210,7 +210,8 @@ _STATUS_NAME_PREFIXES = {
     "closed": "📁 ",
 }
 _GHOSTED_NAME_PREFIX = "👻 "
-_KNOWN_NAME_PREFIXES = (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX)
+_FLEW_THE_COOP_NAME_PREFIX = "🐔 "
+_KNOWN_NAME_PREFIXES = (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX, _FLEW_THE_COOP_NAME_PREFIX)
 THREAD_NAME_RECONCILE_LEASE = timedelta(minutes=10)
 _CANONICAL_THREAD_NAME = re.compile(
     r"^(?:staff-)?(?:main|fwa)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
@@ -224,23 +225,27 @@ def thread_names(
     *,
     status: str = "open",
     ghosted: bool = False,
+    flew_the_coop: bool = False,
     test: bool = False,
 ) -> tuple[str, str]:
     """Return the pair's canonical Discord names for one durable status.
 
-    Closed applications use a folder; an active Ghosted flag takes priority
-    over every status on both thread names.
+    Closed applications use a folder. An active departure flag prepends a
+    chicken marker before the existing Ghosted or durable status emoji.
     """
     number = (testing_service.number_label(ticket_number) if test else str(int(ticket_number)))
     suffix = f"{ticket_type}-{number}-{_slug(username)}"
-    # A current ghost report is deliberately more visible than the durable
-    # decision. Removing it immediately restores the status prefix.
-    prefix = _GHOSTED_NAME_PREFIX if ghosted else _STATUS_NAME_PREFIXES.get(str(status), "")
+    # A ghost report supersedes the durable decision emoji; a departure
+    # report sits before either emoji and leaves that decision visible.
+    prefix = (
+        (_FLEW_THE_COOP_NAME_PREFIX if flew_the_coop else "")
+        + (_GHOSTED_NAME_PREFIX if ghosted else _STATUS_NAME_PREFIXES.get(str(status), ""))
+    )
     return (prefix + suffix)[:100], (prefix + f"staff-{suffix}")[:100]
 
 
 async def thread_names_for_ticket(mongo: MongoClient, ticket: Mapping[str, Any]) -> tuple[str, str]:
-    """Resolve names from the current durable status and identity-wide ghost flag."""
+    """Resolve names from durable status and identity-wide naming flags."""
     from extensions.commands.tickets import flag_store
 
     snapshot = account_sync.snapshot_from_ticket(ticket)
@@ -253,34 +258,42 @@ async def thread_names_for_ticket(mongo: MongoClient, ticket: Mapping[str, Any])
     flags = [] if not hasattr(mongo, "ticket_flags") else await flag_store.list_for_identity(
         mongo, discord_ids=ticket.get("user_id"), player_tags=tags,
     )
-    ghosted = any(str(flag.get("kind") or "") == flag_store.FLAG_GHOSTED for flag in flags)
+    kinds = {str(flag.get("kind") or "") for flag in flags}
+    ghosted = flag_store.FLAG_GHOSTED in kinds
+    flew_the_coop = flag_store.FLAG_FLEW_THE_COOP in kinds
     return thread_names(
         str(ticket.get("ticket_type") or ""),
         _as_int(ticket.get("ticket_number")),
         str(ticket.get("username") or "candidate"),
         status=str(ticket.get("status") or ""),
         ghosted=ghosted,
+        flew_the_coop=flew_the_coop,
         test=testing_service.is_test_ticket(ticket),
     )
 
 
-def _name_variants(name: str) -> frozenset[str]:
-    """Return only canonical legacy/current spellings of ``name``.
+def _with_coop_marker(name: str, *, enabled: bool) -> str:
+    """Add or remove only the departure emoji; preserve every other character."""
+    body = str(name or "")
+    if body.startswith(_FLEW_THE_COOP_NAME_PREFIX):
+        body = body[len(_FLEW_THE_COOP_NAME_PREFIX):]
+    return ((_FLEW_THE_COOP_NAME_PREFIX if enabled else "") + body)[:100]
 
-    Creation and migration checkpoints created before status emojis must keep
-    recovering their stored unprefixed pair.  This accepts precisely those old
-    spellings and the three known prefixes; it never turns an arbitrary thread
-    name into a recovery candidate.
-    """
+
+def _name_variants(name: str) -> frozenset[str]:
+    """Return only canonical legacy/current spellings of ``name``."""
     raw = str(name or "")
     base = raw
-    for prefix in _KNOWN_NAME_PREFIXES:
+    if base.startswith(_FLEW_THE_COOP_NAME_PREFIX):
+        base = base[len(_FLEW_THE_COOP_NAME_PREFIX):]
+    for prefix in (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX):
         if base.startswith(prefix):
             base = base[len(prefix):]
             break
     if len(base) > 100 or not _CANONICAL_THREAD_NAME.fullmatch(base):
         return frozenset({raw})
-    return frozenset({base, *(prefix + base for prefix in _KNOWN_NAME_PREFIXES)})
+    inner = (base, *(prefix + base for prefix in (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX)))
+    return frozenset({*inner, *(_FLEW_THE_COOP_NAME_PREFIX + variant for variant in inner)})
 
 
 def _permission_names(value: hikari.Permissions) -> str:
@@ -2523,7 +2536,7 @@ async def rename_ticket_thread_for_status(
 async def reconcile_thread_names_for_flag(
     bot: hikari.GatewayBot, mongo: MongoClient, flag_doc: Mapping[str, Any],
 ) -> None:
-    """Durably rename every ticket reached by a changed GHOSTED identity.
+    """Durably rename every ticket reached by a changed naming flag identity.
 
     The flag mutation has already won before this runs.  Each ticket records
     its own checkpoint so an archived/locked pair is restored on the next
@@ -2531,7 +2544,7 @@ async def reconcile_thread_names_for_flag(
     """
     from extensions.commands.tickets import flag_store
 
-    if str(flag_doc.get("kind") or "") != flag_store.FLAG_GHOSTED:
+    if str(flag_doc.get("kind") or "") not in {flag_store.FLAG_GHOSTED, flag_store.FLAG_FLEW_THE_COOP}:
         return
     ids = [*flag_store._discord_ids(flag_doc.get("discord_ids")),
            *flag_store._discord_ids(flag_doc.get("discordIds"))]
@@ -2568,6 +2581,7 @@ async def reconcile_thread_names_for_flag(
                 replace_filter,
                 {"$set": {"thread_name_reconcile": {
                     "marker": marker, "complete": False, "request_rev": 1,
+                    "kind": str(flag_doc.get("kind") or ""),
                 }}},
             )
             if not getattr(replaced, "matched_count", 0):
@@ -2582,14 +2596,16 @@ async def reconcile_thread_names_for_flag(
                     {"_id": ticket["_id"], **store.RUNTIME_FILTER,
                      "thread_name_reconcile.marker": marker},
                     {"$inc": {"thread_name_reconcile.request_rev": 1},
-                     "$set": {"thread_name_reconcile.complete": False}},
+                     "$set": {"thread_name_reconcile.complete": False,
+                              "thread_name_reconcile.kind": str(flag_doc.get("kind") or "")}},
                 )
         else:
             await mongo.tickets.update_one(
                 {"_id": ticket["_id"], **store.RUNTIME_FILTER,
                  "thread_name_reconcile.marker": marker},
                 {"$inc": {"thread_name_reconcile.request_rev": 1},
-                 "$set": {"thread_name_reconcile.complete": False}},
+                 "$set": {"thread_name_reconcile.complete": False,
+                          "thread_name_reconcile.kind": str(flag_doc.get("kind") or "")}},
             )
         latest = await mongo.tickets.find_one({"_id": ticket["_id"], **store.RUNTIME_FILTER})
         if latest is not None:
@@ -2659,7 +2675,24 @@ async def _reconcile_ticket_thread_names_owned(
         })
         if latest is None:
             return
-        target = (await thread_names_for_ticket(mongo, latest))[index]
+        canonical = (await thread_names_for_ticket(mongo, latest))[index]
+        reconcile_kind = str((latest.get("thread_name_reconcile") or {}).get("kind") or "")
+        coop_change = reconcile_kind == "flew_the_coop"
+        coop_enabled = canonical.startswith(_FLEW_THE_COOP_NAME_PREFIX)
+        # A departure flag is an additive marker. Leave the status emoji and
+        # recruiter-customized title exactly as Discord currently shows them.
+        try:
+            existing = await bot.rest.fetch_channel(thread_id)
+        except hikari.NotFoundError:
+            await mongo.tickets.update_one(
+                {"_id": ticket["_id"], "thread_name_reconcile.marker": marker,
+                 "thread_name_reconcile.lease_owner": owner},
+                {"$set": {f"thread_name_reconcile.{role}": {"skipped": True}}},
+            )
+            continue
+        original_name = str(getattr(existing, "name", ""))
+        target = (_with_coop_marker(original_name, enabled=coop_enabled)
+                  if coop_change else canonical)
 
         async def checkpoint(flags, *, _role=role, _target=target):
             await mongo.tickets.update_one(
@@ -2676,8 +2709,14 @@ async def _reconcile_ticket_thread_names_owned(
                 "thread_name_reconcile.marker": marker,
                 "thread_name_reconcile.lease_owner": owner,
             })
-            if current is None or (await thread_names_for_ticket(mongo, current))[index] != _target:
-                raise RuntimeError("ticket status or GHOSTED flag changed before thread rename")
+            current_canonical = (await thread_names_for_ticket(mongo, current))[index] if current else ""
+            current_kind = str(((current or {}).get("thread_name_reconcile") or {}).get("kind") or "")
+            if current is None or current_canonical != canonical or current_kind != reconcile_kind:
+                raise RuntimeError("ticket status or naming flag changed before thread rename")
+            if coop_change:
+                observed = await bot.rest.fetch_channel(thread_id)
+                if str(getattr(observed, "name", "")) not in {original_name, _target}:
+                    raise RuntimeError("ticket thread name changed before flag rename")
 
         try:
             await rename_ticket_thread_for_status(

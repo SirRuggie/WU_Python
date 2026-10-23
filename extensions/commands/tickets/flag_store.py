@@ -26,14 +26,17 @@ FLAG_BLACKLISTED = "blacklisted"
 FLAG_DENIED_BEFORE = "denied_before"
 FLAG_NOT_LOYAL = "not_loyal"
 FLAG_GHOSTED = "ghosted"
+FLAG_FLEW_THE_COOP = "flew_the_coop"
 FLAG_KINDS = frozenset({
     FLAG_BLACKLISTED, FLAG_DENIED_BEFORE, FLAG_NOT_LOYAL, FLAG_GHOSTED,
+    FLAG_FLEW_THE_COOP,
 })
 FLAG_SOURCES = {
     FLAG_BLACKLISTED: "FWA Chocolate · FWA ban list",
     FLAG_DENIED_BEFORE: "Warriors United ticket history",
     FLAG_NOT_LOYAL: "Warriors United recruiter note",
     FLAG_GHOSTED: "Warriors United recruiter ghosting report",
+    FLAG_FLEW_THE_COOP: "Warriors United recruiter departure report",
 }
 AUTOMATIC_PRIOR_DENIAL_SOURCE = "Automatic earlier denied ticket history"
 AUTOMATIC_LEGACY_GHOSTED_SOURCE = "Automatic legacy ghost marker"
@@ -421,6 +424,8 @@ async def _set_flag_unlocked(
     actor = schema.snowflake(added_by, field="added_by")
     actor_name = str(added_by_name or "").strip() or str(actor)
     source_name = str(source or "").strip()
+    if flag_kind == FLAG_FLEW_THE_COOP and len(str(reason or "").strip()) < 2:
+        raise ValueError("Flew the Coop requires a reason of at least 2 characters")
     if not source_name:
         raise ValueError("flag source is required")
     checked = schema.normalize_datetime(checked_at, field="checked_at")

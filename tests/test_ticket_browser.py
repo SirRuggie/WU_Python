@@ -99,3 +99,34 @@ def test_thread_choice_and_cursor_are_validated(setup):
  for params in [{'space':'secret'},{'before':'not-an-id'}]:
   req.query=params
   with pytest.raises(web.HTTPBadRequest):asyncio.run(api.conversation(req))
+
+
+def test_flew_the_coop_filter_and_text_search_are_identity_scoped():
+    identities = {
+        api.flag_store.FLAG_FLEW_THE_COOP: ([123456789012345678], ['#ABC123']),
+    }
+    filtered = api.filters({'flag': 'flew_the_coop'}, identities)
+    assert filtered['$and'][0]['$or'] == [
+        {'user_id': {'$in': [123456789012345678, '123456789012345678']}},
+        {'player_tags': {'$in': ['#ABC123']}},
+        {'playerTags': {'$in': ['#ABC123']}},
+        {'player_tag': {'$in': ['#ABC123']}},
+        {'tag': {'$in': ['#ABC123']}},
+    ]
+    searched = api.filters({'q': 'Flew the Coop'}, identities)
+    assert searched['$or'][-5:] == filtered['$and'][0]['$or']
+    with pytest.raises(web.HTTPBadRequest):
+        api.filters({'flag': 'unknown'})
+
+
+def test_public_ticket_includes_flag_reason_but_only_safe_summary_fields():
+    ticket = api.public_ticket(
+        {'_id': 'ticket_555', 'ticket_number': 7, 'username': 'Example', 'user_id': 123,
+         'ticket_type': 'main', 'status': 'approved'},
+        [{'kind': api.flag_store.FLAG_FLEW_THE_COOP, 'active': True,
+          'reason': 'Left after applying', 'discord_ids': [123], 'added_by': 999}],
+    )
+    assert ticket['status'] == 'approved'
+    assert ticket['flags'] == [{'kind': 'flew_the_coop', 'label': 'Flew the Coop', 'reason': 'Left after applying'}]
+    assert 'discord_ids' not in ticket['flags'][0]
+    assert 'added_by' not in ticket['flags'][0]

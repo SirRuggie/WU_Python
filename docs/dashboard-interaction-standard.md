@@ -1085,3 +1085,24 @@ permissions and unsaved-edit history guards remain in force.
 Validation totals: 256 frontend tests, 46 backend tests and 49 route subtests passed;
 TypeScript/Vite build passed. Existing aiohttp warnings and bundle-size warning
 remain. No live messages were sent.
+
+
+## Ticket browser applicant flags — October 23
+
+Ticket browser results and conversation details show active applicant flag names
+and recruiter reasons. The archive search matches flag names, and an explicit
+flag filter can be combined with status, ticket type, and opened-date filters.
+Flag summaries are limited to kind, label, and reason and remain behind the
+existing recruiter and dashboard authorization checks. Approved tickets retain
+their approved status alongside the flag.
+
+Validation for this scope: ticket browser backend tests (10 passed), frontend
+suite (68 files / 275 tests passed), and frontend production build passed. The
+new flag and reason were represented in the isolated preview fixture at
+`http://127.0.0.1:8784/manage/tickets` using `/tmp/wu-ticket-preview-flew.py`
+and `/tmp/wu-ticket-browser`. Isolated headless Chrome checks covered the list
+at 1280/390/320px, selecting Flew the Coop, and opening conversation details
+at 1280/320px. Flag reasons and Approved status were visible; no horizontal
+document overflow was observed. Native labeled selects and existing focus/return
+behavior are retained. This is not a full assistive-technology audit. No live
+Discord writes were made.

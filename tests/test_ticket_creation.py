@@ -273,6 +273,22 @@ def test_active_ghost_flag_name_resolution_reverts_to_each_ticket_status(monkeyp
     assert (public, staff) == ("✅ main-8-applicant", "✅ staff-main-8-applicant")
 
 
+def test_flew_the_coop_names_override_ghosted_and_preserve_custom_title():
+    candidate, staff = thread_service.thread_names(
+        "main", 8, "Applicant", status="approved",
+        ghosted=True, flew_the_coop=True,
+    )
+    assert candidate == "🐔 👻 main-8-applicant"
+    assert staff == "🐔 👻 staff-main-8-applicant"
+    assert thread_service._with_coop_marker(
+        "✅ My custom recruit name", enabled=True
+    ) == "🐔 ✅ My custom recruit name"
+    assert thread_service._with_coop_marker(
+        "🐔 ✅ My custom recruit name", enabled=False
+    ) == "✅ My custom recruit name"
+    assert "🐔 ✅ main-1-applicant" in thread_service._name_variants("main-1-applicant")
+
+
 def test_ghost_reconcile_stale_completed_init_preserves_active_checkpoint(monkeypatch):
     """A second flag click cannot replace an in-flight archive/lock baseline."""
     original = {
@@ -4372,3 +4388,71 @@ def test_explicit_staff_viewer_access_does_not_change_recruiter_role():
         _valid_parent_rest(mentionable=True, bot_can_mention=False, staff_role_leak=True),
         parents, bot_user_id=99,
     ))
+
+
+def test_departure_reconcile_add_remove_preserves_both_custom_titles_and_archive(monkeypatch):
+    ticket = {
+        "_id": "ticket_404", "runtime": "thread_v2", "ticket_type": "main",
+        "ticket_number": 404, "username": "iankellum", "status": "approved",
+        "location": {"id": 101, "staff_space_id": 102},
+        "thread_name_reconcile": {
+            "marker": "m", "kind": "flew_the_coop", "request_rev": 1,
+        },
+    }
+    channels = {
+        101: SimpleNamespace(name="✅ main-404-iankellum", is_archived=True, is_locked=True),
+        102: SimpleNamespace(name="✅ staff-main-404-custom-title", is_archived=True, is_locked=True),
+    }
+    enabled = True
+
+    class Rest:
+        def __init__(self):
+            self.edits = []
+
+        async def fetch_channel(self, channel_id):
+            return channels[channel_id]
+
+        async def edit_channel(self, channel_id, **kwargs):
+            self.edits.append((channel_id, kwargs))
+            channel = channels[channel_id]
+            channel.name = kwargs.get("name", channel.name)
+            channel.is_archived = kwargs.get("archived", channel.is_archived)
+            channel.is_locked = kwargs.get("locked", channel.is_locked)
+
+    class Tickets:
+        async def find_one(self, _query):
+            return ticket
+
+        async def update_one(self, _query, _update):
+            return SimpleNamespace(matched_count=1)
+
+    async def names(_mongo, _ticket):
+        marker = "🐔 " if enabled else ""
+        return (marker + "✅ main-404-iankellum", marker + "✅ staff-main-404-iankellum")
+
+    monkeypatch.setattr(thread_service, "thread_names_for_ticket", names)
+    rest = Rest()
+    mongo = SimpleNamespace(tickets=Tickets())
+    bot = SimpleNamespace(rest=rest)
+
+    asyncio.run(thread_service._reconcile_ticket_thread_names_owned(bot, mongo, ticket, "m", "owner"))
+    assert [channels[channel_id].name for channel_id in (101, 102)] == [
+        "🐔 ✅ main-404-iankellum", "🐔 ✅ staff-main-404-custom-title",
+    ]
+    assert all(channels[channel_id].is_archived and channels[channel_id].is_locked for channel_id in (101, 102))
+
+    enabled = False
+    asyncio.run(thread_service._reconcile_ticket_thread_names_owned(bot, mongo, ticket, "m", "owner"))
+    assert [channels[channel_id].name for channel_id in (101, 102)] == [
+        "✅ main-404-iankellum", "✅ staff-main-404-custom-title",
+    ]
+    assert all(channels[channel_id].is_archived and channels[channel_id].is_locked for channel_id in (101, 102))
+
+
+def test_departure_flag_requires_a_staff_reason_before_storage():
+    with pytest.raises(ValueError, match="requires a reason"):
+        asyncio.run(flag_store._set_flag_unlocked(
+            SimpleNamespace(), kind=flag_store.FLAG_FLEW_THE_COOP,
+            discord_ids=223456789012345678, source="Recruiter report",
+            added_by=323456789012345678, added_by_name="Recruiter", reason=" ",
+        ))

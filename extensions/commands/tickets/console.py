@@ -84,18 +84,21 @@ HUB_FLAG_ROW_ATTACHMENTS = {
     "denied_before": "ticket_flag_denied_before.png",
     "not_loyal": "ticket_flag_not_loyal.png",
     "ghosted": "ticket_flag_ghosted.png",
+    "flew_the_coop": "ticket_flag_flew_the_coop.png",
 }
 HUB_FLAG_ROWS = (
     ("blacklisted", "BLACKLISTED", "#dd1c1d", "flag_blacklisted.png"),
     ("denied_before", "DENIED BEFORE", "#ffcc00", "flag_denied_before.png"),
     ("not_loyal", "NOT LOYAL TO WU", "#f17511", "flag_not_loyal.png"),
     ("ghosted", "GHOSTED", GHOSTED, "flag_ghosted.png"),
+    ("flew_the_coop", "FLEW THE COOP", "#bd00df", "flag_flew_the_coop.png"),
 )
 HUB_FLAG_ACCESSIBLE_LABELS = {
     "blacklisted": "Blacklisted",
     "denied_before": "Denied before",
     "not_loyal": "Not loyal to WU",
     "ghosted": "Ghosted",
+    "flew_the_coop": "Flew the Coop",
 }
 HUB_THUMBNAIL_FILENAMES = (
     "clan_main.png",
@@ -171,6 +174,7 @@ FLAG_META = {
     flag_store.FLAG_DENIED_BEFORE: ("Previously denied", "⚠️", False),
     flag_store.FLAG_NOT_LOYAL: ("Not loyal to WU", "⚠️", False),
     flag_store.FLAG_GHOSTED: ("Ghosted", "👻", False),
+    flag_store.FLAG_FLEW_THE_COOP: ("Flew the Coop", "🐔", False),
 }
 FLAG_SOURCES = flag_store.FLAG_SOURCES
 MAX_FLAG_MANAGER_OPTIONS = 25
@@ -793,6 +797,8 @@ def build_hub_components(
             flag_row("not_loyal"),
             Separator(divider=True),
             flag_row("ghosted"),
+            Separator(divider=True),
+            flag_row("flew_the_coop"),
 
         ],
     )]
@@ -2043,6 +2049,7 @@ BROWSE_FLAG_OPTIONS: tuple[tuple[str, str, str], ...] = (
     (flag_store.FLAG_DENIED_BEFORE, "Denied before", "⚠️"),
     (flag_store.FLAG_NOT_LOYAL, "Not loyal to WU", "💔"),
     (flag_store.FLAG_GHOSTED, "Ghosted", "👻"),
+    (flag_store.FLAG_FLEW_THE_COOP, "Flew the Coop", "🐔"),
 )
 BROWSE_PERIOD_DAYS = {"7": 7, "30": 30, "90": 90}
 BROWSE_MONTH_NAMES = (

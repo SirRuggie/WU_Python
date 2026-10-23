@@ -271,10 +271,11 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
         "clan_fwa.png", "ticket_fwa_status.png",
         "ticket_flag_blacklisted.png", "ticket_flag_denied_before.png",
         "ticket_flag_not_loyal.png", "ticket_flag_ghosted.png",
+        "ticket_flag_flew_the_coop.png",
     ]
     assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 2
-    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 7
-    assert len(attachments) == 9
+    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 8
+    assert len(attachments) == 10
     assert container["id"] == console.HUB_STATS_COMPONENT_ID
     assert not any(child["type"] == hikari.ComponentType.ACTION_ROW for child in container["components"])
     assert container["components"][-1]["type"] == hikari.ComponentType.MEDIA_GALLERY
@@ -283,11 +284,12 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
         if child["type"] == hikari.ComponentType.MEDIA_GALLERY
         and child["items"][0]["description"].startswith((
             "Blacklisted:", "Denied before:", "Not loyal to WU:",
-            "Ghosted:",
+            "Ghosted:", "Flew the Coop:",
         ))
     ]
-    assert len(flag_indices) == 4
+    assert len(flag_indices) == 5
     assert [container["components"][index + 1]["type"] for index in flag_indices[:-1]] == [
+        hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
         hikari.ComponentType.SEPARATOR,
@@ -338,6 +340,7 @@ def test_hub_payload_prewarms_all_thumbnail_decoding_off_the_gateway_loop(monkey
     assert [call["filename"] for call in flag_calls] == [
         "flag_blacklisted.png", "flag_denied_before.png",
         "flag_not_loyal.png", "flag_ghosted.png",
+        "flag_flew_the_coop.png",
     ]
     _assert_component_limits(view)
 
@@ -479,6 +482,7 @@ def test_browse_panel_renders_ten_rows_status_type_period_selects_and_open_picke
     )
     assert [option["value"] for option in flag_select["options"]] == [
         "all", "blacklisted", "denied_before", "not_loyal", "ghosted",
+        "flew_the_coop",
     ]
     picker = next(
         select for select in selects
@@ -1382,7 +1386,7 @@ def test_flag_manager_offers_ghosted_as_a_caution_only_flag():
 
     assert ghosted["custom_id"] == f"ticket_v2_flag_set:{'h' * 32}|ghosted"
     assert ghosted["style"] == hikari.ButtonStyle.SECONDARY
-    assert len(buttons) == 4
+    assert len(buttons) == 5
 
 
 def test_detail_shows_flag_conflict_notice_and_leaves_approve_enabled():
@@ -1835,6 +1839,36 @@ def test_history_panel_keeps_newest_entries_within_one_message_text_budget():
         str(node["content"]) for node in _nodes(view) if "content" in node
     )
     _assert_component_limits(view)
+
+
+def test_future_ticket_shows_prior_approval_and_departure_reason(monkeypatch):
+    ticket = _ticket(19, status="open")
+    earlier = _ticket(7, status="approved")
+    departure = [{
+        "_id": "flag_departure", "kind": console.flag_store.FLAG_FLEW_THE_COOP,
+        "active": True, "reason": "Joined WU, then left shortly afterward.",
+    }]
+
+    async def matching_flags(*_args, **_kwargs):
+        return departure
+
+    async def prior_tickets(*_args, **_kwargs):
+        return [earlier]
+
+    monkeypatch.setattr(console.flag_store, "list_for_identity", matching_flags)
+    monkeypatch.setattr(console.store, "history_for", prior_tickets)
+    context = asyncio.run(console.build_staff_identity_context(object(), ticket))
+    assert context is not None
+    context_text = "\n".join(str(node["content"]) for node in _nodes(context) if "content" in node)
+    assert "Approved" in context_text
+    assert "Flew the Coop" in context_text
+    assert "Joined WU, then left shortly afterward." in context_text
+
+    detail = console.build_ticket_detail(ticket, action_id="f" * 32, flags=departure, history=[earlier])
+    buttons = [node for node in _nodes(detail) if node.get("label") == "Approve"]
+    assert len(buttons) == 1 and buttons[0].get("disabled", False) is False
+    _assert_component_limits(context)
+    _assert_component_limits(detail)
 
 
 def test_staff_context_worst_case_payload_has_no_marker_and_stays_within_limit(

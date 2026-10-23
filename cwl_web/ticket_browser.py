@@ -8,10 +8,18 @@ from aiohttp import web
 from .server_management import API, GUILD_ID, identity, allowed, mongo, discord
 from extensions.commands.tickets.perms import is_recruiter
 from extensions.commands.tickets.store import RUNTIME_FILTER, BROWSE_PROJECTION
+from extensions.commands.tickets import flag_store
 
 PAGE_SIZE = 20
 READ = (1 << 10) | (1 << 16)
 MANAGE_THREADS = 1 << 34
+FLAG_LABELS = {
+    flag_store.FLAG_BLACKLISTED: 'Blacklisted',
+    flag_store.FLAG_DENIED_BEFORE: 'Previously denied',
+    flag_store.FLAG_NOT_LOYAL: 'Not loyal to WU',
+    flag_store.FLAG_GHOSTED: 'Ghosted',
+    flag_store.FLAG_FLEW_THE_COOP: 'Flew the Coop',
+}
 
 async def authorize(request, db):
     actor = await identity(request)
@@ -29,7 +37,7 @@ def date_value(raw):
     except (ValueError, TypeError):
         raise web.HTTPBadRequest(text='Choose a valid date.')
 
-def filters(params):
+def filters(params, flag_identities=None):
     query = {**RUNTIME_FILTER, 'guild_id': GUILD_ID}
     status = params.get('status', 'closed')
     if status == 'closed': query['status'] = {'$in':['approved','denied','closed']}
@@ -38,6 +46,9 @@ def filters(params):
     kind = params.get('kind','all')
     if kind in {'main','fwa'}: query['ticket_type'] = kind
     elif kind != 'all': raise web.HTTPBadRequest(text='Choose Main, FWA or All.')
+    flag_kind = params.get('flag', 'all')
+    if flag_kind != 'all' and flag_kind not in FLAG_LABELS:
+        raise web.HTTPBadRequest(text='Choose a valid applicant flag.')
     text = params.get('q','').strip()
     if len(text)>80: raise web.HTTPBadRequest(text='Use a shorter search.')
     if text:
@@ -47,7 +58,17 @@ def filters(params):
         if number.isdigit() and len(number)<=22:
             choices += [{'user_id':number}]
             if int(number)<=9223372036854775807: choices += [{'ticket_number':int(number)}, {'user_id':int(number)}]
+        matched_flags = [value for value, label in FLAG_LABELS.items() if text.casefold() in label.casefold()]
+        for matched_flag in matched_flags:
+            ids, tags = (flag_identities or {}).get(matched_flag, ([], []))
+            choices.extend(_flag_ticket_identity_clauses(ids, tags))
         query['$or'] = choices
+    if flag_kind != 'all':
+        ids, tags = (flag_identities or {}).get(flag_kind, ([], []))
+        previous = query.pop('$or', None)
+        query['$and'] = ([{'$or': previous}] if previous else []) + [
+            {'$or': _flag_ticket_identity_clauses(ids, tags) or [{'_id': {'$exists': False}}]}
+        ]
     start,end = params.get('from',''),params.get('to','')
     if start or end:
         dates={}
@@ -59,11 +80,43 @@ def filters(params):
         query['created_at']=dates
     return query
 
-def public_ticket(row):
+
+def _flag_ticket_identity_clauses(ids, tags):
+    clauses = []
+    if ids:
+        mixed = [item for value in ids for item in (value, str(value))]
+        clauses.append({'user_id': {'$in': mixed}})
+    if tags:
+        clauses.extend(({'player_tags': {'$in': tags}}, {'playerTags': {'$in': tags}},
+                        {'player_tag': {'$in': tags}}, {'tag': {'$in': tags}}))
+    return clauses
+
+
+def public_ticket(row, flags=()):
     created=row.get('created_at')
     return {'id':str(row['_id']), 'number':row.get('ticket_number'), 'name':row.get('display_name') or row.get('username') or 'Unknown member',
             'user_id':str(row.get('user_id') or ''), 'kind':row.get('ticket_type',''), 'status':row.get('status',''),
-            'created_at':created.isoformat() if isinstance(created,datetime) else None}
+            'created_at':created.isoformat() if isinstance(created,datetime) else None,
+            'flags':[{'kind': str(item.get('kind') or ''), 'label': FLAG_LABELS.get(str(item.get('kind') or ''), 'Applicant flag'),
+                      'reason': str(item.get('reason') or '')[:500]} for item in flags if item.get('active', True)]}
+
+
+async def _ticket_flags(db, row):
+    if not hasattr(db, 'ticket_flags'):
+        return []
+    from extensions.commands.tickets import account_sync
+    identity_row = dict(row)
+    identity_row['player_tags'] = row.get('player_tags') or row.get('playerTags') or row.get('player_tag') or row.get('tag') or ()
+    tags = account_sync.snapshot_from_ticket(identity_row).observed_tags
+    return await flag_store.list_for_identity(db, discord_ids=row.get('user_id'), player_tags=tags)
+
+
+async def _flags_for_rows(db, rows):
+    result = []
+    for row in rows:
+        result.append(public_ticket(row, await _ticket_flags(db, row)))
+    return result
+
 
 async def listing(request):
     query=filters(request.query)
@@ -72,8 +125,19 @@ async def listing(request):
     if not 1<=page<=10000: raise web.HTTPBadRequest(text='Invalid page.')
     async with mongo(request) as db:
         await authorize(request, db)
-        rows=await db.tickets.find(query,{**BROWSE_PROJECTION,'display_name':1}).sort([('created_at',-1),('_id',-1)]).skip((page-1)*PAGE_SIZE).limit(PAGE_SIZE+1).to_list(length=PAGE_SIZE+1)
-    return web.json_response({'tickets':[public_ticket(row) for row in rows[:PAGE_SIZE]],'has_more':len(rows)>PAGE_SIZE,'page':page})
+        active_flag_identities = {}
+        if hasattr(db, 'ticket_flags'):
+            text = str(request.query.get('q', '')).strip().casefold()
+            requested_flags = {request.query.get('flag', 'all')} - {'all'}
+            if text:
+                requested_flags.update(kind for kind, label in FLAG_LABELS.items() if text in label.casefold())
+            for flag_kind in requested_flags:
+                if flag_kind in FLAG_LABELS:
+                    active_flag_identities[flag_kind] = await flag_store.active_identities_for_kind(db, flag_kind)
+            query = filters(request.query, active_flag_identities)
+        rows=await db.tickets.find(query,{**BROWSE_PROJECTION,'display_name':1,'player_tags':1,'linked_accounts':1,'player_tag':1,'playerTags':1,'tag':1}).sort([('created_at',-1),('_id',-1)]).skip((page-1)*PAGE_SIZE).limit(PAGE_SIZE+1).to_list(length=PAGE_SIZE+1)
+        tickets = await _flags_for_rows(db, rows[:PAGE_SIZE])
+    return web.json_response({'tickets':tickets,'has_more':len(rows)>PAGE_SIZE,'page':page})
 
 def effective_permissions(actor, channel):
     permissions=int(actor['permissions'])
@@ -165,7 +229,8 @@ async def conversation(request):
     if before and not re.fullmatch(r'[0-9]{1,22}',before):raise web.HTTPBadRequest(text='Invalid message page.')
     async with mongo(request) as db:
         actor=await authorize(request,db)
-        row=await db.tickets.find_one({**RUNTIME_FILTER,'guild_id':GUILD_ID,'_id':ticket_id}, BROWSE_PROJECTION)
+        row=await db.tickets.find_one({**RUNTIME_FILTER,'guild_id':GUILD_ID,'_id':ticket_id}, {**BROWSE_PROJECTION,'player_tags':1,'linked_accounts':1,'player_tag':1,'playerTags':1,'tag':1})
+        flags = await _ticket_flags(db, row) if row else []
     if not row:raise web.HTTPNotFound(text='Ticket not found.')
     location=row.get('location') or {}
     channel_id=str(location.get('staff_space_id' if space=='staff' else 'id') or '')
@@ -187,7 +252,7 @@ async def conversation(request):
         payload={'messages':[message_view(item) for item in reversed(raw)], 'older':str(raw[-1]['id']) if len(raw)==50 else None,'checked_at':time.time()}
         if len(cache)>=128:cache.pop(next(iter(cache)))
         cache[key]=(now,payload)
-    response=web.json_response({**payload,'ticket':public_ticket(row),'archived':bool((channel.get('thread_metadata') or {}).get('archived')),
+    response=web.json_response({**payload,'ticket':public_ticket(row, flags),'archived':bool((channel.get('thread_metadata') or {}).get('archived')),
                               'discord_url':f'https://discord.com/channels/{GUILD_ID}/{channel_id}'})
     response.headers['Cache-Control']='no-store'
     return response
