@@ -45,6 +45,25 @@ adding the marker to a maximum-length title truncates its ending. No data
 migration is required. The web ticket browser shows active reasons and supports
 flag filtering/name search behind its existing recruiter authorization.
 
+## Flag artwork and slash choices
+
+Discord slash-command choices accept a text name and value, not a PNG or image
+thumbnail. `/tickets flag-add kind` therefore uses a distinct Unicode symbol
+beside each of the five names; the choice value remains the stable stored kind.
+The recruiter console renders the actual supplied PNG artwork beside live flag
+counts.
+
+`utils/ticket_flag_art.py` maps each flag to one local PNG under
+`assets/tickets/` and the matching public R2 key `tickets/<filename>`.
+The console composites those local bytes, so refreshing the chart never fetches
+R2. The same five files are mirrored to R2 for the command image gallery, which
+lists them even before a manual **Refresh R2**. Saved gallery names and archive
+choices take precedence over the built-in catalog entries.
+
+The five public R2 objects were checked against the repository files: SHA-256
+bytes and `image/png` content type matched for every flag. This verifies the
+static artwork copies, not live Discord command registration or message delivery.
+
 Validation: 356 ticket regression tests and 275 frontend tests passed, as did
 the frontend build. Dashboard visual-review scope is recorded in the interaction
 standard. Discord thread metadata was read to confirm the naming example; no

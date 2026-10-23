@@ -20,6 +20,7 @@ from extensions.commands.tickets.console import (
     request_hub_refresh_best_effort,
 )
 from utils.mongo import MongoClient
+from utils.ticket_flag_art import FLAG_ART
 
 
 ACCENT_BLUE = 0x4A90F5
@@ -130,11 +131,11 @@ class FlagAddCommand(
         "kind",
         "Flag type",
         choices=[
-            lightbulb.Choice(name="Blacklisted", value=flag_store.FLAG_BLACKLISTED),
-            lightbulb.Choice(name="Previously denied", value=flag_store.FLAG_DENIED_BEFORE),
-            lightbulb.Choice(name="Not loyal to WU", value=flag_store.FLAG_NOT_LOYAL),
-            lightbulb.Choice(name="Ghosted", value=flag_store.FLAG_GHOSTED),
-            lightbulb.Choice(name="Flew the Coop", value=flag_store.FLAG_FLEW_THE_COOP),
+            lightbulb.Choice(name=f"{FLAG_ART[flag_store.FLAG_BLACKLISTED].emoji} Blacklisted", value=flag_store.FLAG_BLACKLISTED),
+            lightbulb.Choice(name=f"{FLAG_ART[flag_store.FLAG_DENIED_BEFORE].emoji} Previously denied", value=flag_store.FLAG_DENIED_BEFORE),
+            lightbulb.Choice(name=f"{FLAG_ART[flag_store.FLAG_NOT_LOYAL].emoji} Not loyal to WU", value=flag_store.FLAG_NOT_LOYAL),
+            lightbulb.Choice(name=f"{FLAG_ART[flag_store.FLAG_GHOSTED].emoji} Ghosted", value=flag_store.FLAG_GHOSTED),
+            lightbulb.Choice(name=f"{FLAG_ART[flag_store.FLAG_FLEW_THE_COOP].emoji} Flew the Coop", value=flag_store.FLAG_FLEW_THE_COOP),
         ],
     )
     reason = lightbulb.string(

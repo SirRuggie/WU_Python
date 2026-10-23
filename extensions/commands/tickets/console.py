@@ -67,6 +67,7 @@ from extensions.commands.tickets.console_render import (
 from extensions.components import register_action
 from utils.component_state import get_state, insert_state, update_state
 from utils.mongo import MongoClient
+from utils.ticket_flag_art import FLAG_ART
 from utils.startup_reconciler import StartupReconciler
 
 
@@ -86,12 +87,9 @@ HUB_FLAG_ROW_ATTACHMENTS = {
     "ghosted": "ticket_flag_ghosted.png",
     "flew_the_coop": "ticket_flag_flew_the_coop.png",
 }
-HUB_FLAG_ROWS = (
-    ("blacklisted", "BLACKLISTED", "#dd1c1d", "flag_blacklisted.png"),
-    ("denied_before", "DENIED BEFORE", "#ffcc00", "flag_denied_before.png"),
-    ("not_loyal", "NOT LOYAL TO WU", "#f17511", "flag_not_loyal.png"),
-    ("ghosted", "GHOSTED", GHOSTED, "flag_ghosted.png"),
-    ("flew_the_coop", "FLEW THE COOP", "#bd00df", "flag_flew_the_coop.png"),
+HUB_FLAG_ROWS = tuple(
+    (kind, art.hub_label or art.label.upper(), art.color, art.filename)
+    for kind, art in FLAG_ART.items()
 )
 HUB_FLAG_ACCESSIBLE_LABELS = {
     "blacklisted": "Blacklisted",

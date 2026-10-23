@@ -5,6 +5,7 @@ from urllib.parse import urlsplit, unquote
 from pymongo.write_concern import WriteConcern
 from aiohttp import web
 from utils.text_commands import GUILD_ID, collection as commands, walk_blocks, legacy_blocks, public_url
+from utils.ticket_flag_art import FLAG_ART
 from .server_management import mongo, require_manage, API
 
 
@@ -34,8 +35,19 @@ async def remember(request,url,name='',actor=None,category=None):
             'created_at':datetime.now(timezone.utc),'created_by':str((actor or {}).get('user_id',''))}},upsert=True)
 
 
-def merge_images(saved,rows):
+def builtin_flag_images():
+    """Catalog the shipped ticket art even before a manual R2 index refresh."""
+    return [
+        {"url": url, "name": art.label, "folder": "tickets", "stored": True,
+         "archived": False, "commands": []}
+        for art in FLAG_ART.values() if (url := art.public_url())
+    ]
+
+
+def merge_images(saved,rows,builtins=()):
     images={item['url']:{'url':item['url'],'name':item['name'],'commands':[],'stored':item.get('stored',True),'archived':item.get('archived',False),'folder':item.get('folder','')} for item in saved}
+    for item in builtins:
+        images.setdefault(item["url"], dict(item))
     for row in rows:
         for slot in image_slots(row):
             url=slot['url']
@@ -52,7 +64,7 @@ async def listing(request):
     async with mongo(request) as db:
         saved=await collection(db).find({'guild_id':GUILD_ID}).to_list(length=None)
         rows=await commands(db).find({'guild_id':GUILD_ID}).to_list(length=None)
-    return web.json_response({'images':merge_images(saved,rows)})
+    return web.json_response({'images':merge_images(saved,rows,builtin_flag_images())})
 
 async def update(request):
     actor=await require_manage(request,'text_commands',write=True)
@@ -64,7 +76,7 @@ async def update(request):
     async with mongo(request) as db:
         saved=await collection(db).find({'guild_id':GUILD_ID}).to_list(length=None)
         rows=await commands(db).find({'guild_id':GUILD_ID}).to_list(length=None)
-        item=next((item for item in merge_images(saved,rows) if item['url']==url),None)
+        item=next((item for item in merge_images(saved,rows,builtin_flag_images()) if item['url']==url),None)
         if item is None:raise web.HTTPNotFound(text='Image not found. Reopen the library.')
         key=hashlib.sha256(f'{GUILD_ID}:{url}'.encode()).hexdigest()
         await collection(db).update_one({'_id':key},{'$set':{'guild_id':GUILD_ID,'url':url,'name':name.strip(),'archived':archived,'folder':folder.strip() if folder is not None else item.get('folder',''),'stored':item['stored'],'updated_by':str(actor['user_id']),'updated_at':datetime.now(timezone.utc)}},upsert=True)

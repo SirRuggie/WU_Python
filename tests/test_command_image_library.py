@@ -88,3 +88,40 @@ def test_folder_metadata_is_preserved_and_validated(monkeypatch):
     assert result[0]['folder']=='Announcements'
     monkeypatch.setattr(lib,'require_manage',AsyncMock(return_value={'user_id':'123'}))
     with pytest.raises(web.HTTPBadRequest):asyncio.run(lib.update(NS(json=AsyncMock(return_value={'url':result[0]['url'],'name':'Welcome','archived':False,'folder':'bad\nfolder'}))))
+
+
+def test_builtin_flag_art_uses_mirrored_r2_keys_and_keeps_saved_metadata(monkeypatch):
+    from utils.ticket_flag_art import FLAG_ART
+    monkeypatch.setenv('R2_PUBLIC_BASE_URL', 'https://img.example.com/')
+    builtins = lib.builtin_flag_images()
+    assert len(builtins) == 5
+    assert {item['url'] for item in builtins} == {
+        f'https://img.example.com/{art.r2_key}' for art in FLAG_ART.values()
+    }
+    assert all(art.local_path.is_file() for art in FLAG_ART.values())
+    archived = {**builtins[0], 'name': 'Saved name', 'archived': True}
+    merged = lib.merge_images([archived], [], builtins)
+    same = next(item for item in merged if item['url'] == archived['url'])
+    assert same['name'] == 'Saved name'
+    assert same['archived'] is True
+    assert len(merged) == 5
+
+
+def test_builtin_flag_art_can_be_renamed_or_archived(monkeypatch):
+    from cwl_web import command_image_library as lib
+    monkeypatch.setenv('R2_PUBLIC_BASE_URL', 'https://img.example.com')
+    url = lib.builtin_flag_images()[0]['url']
+    class Cursor:
+        async def to_list(self, **_kwargs): return []
+    target = NS(find=lambda _query: Cursor(), update_one=AsyncMock())
+    @asynccontextmanager
+    async def mongo(_request): yield object()
+    monkeypatch.setattr(lib, 'mongo', mongo)
+    monkeypatch.setattr(lib, 'collection', lambda _db: target)
+    monkeypatch.setattr(lib, 'commands', lambda _db: NS(find=lambda _query: Cursor()))
+    monkeypatch.setattr(lib, 'require_manage', AsyncMock(return_value={'user_id': '123'}))
+    response = asyncio.run(lib.update(NS(json=AsyncMock(return_value={
+        'url': url, 'name': 'Recruitment flags', 'archived': True,
+    }))))
+    assert response.status == 200
+    assert target.update_one.call_args.args[1]['$set']['archived'] is True
