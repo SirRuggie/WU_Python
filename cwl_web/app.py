@@ -1775,6 +1775,8 @@ async def errors(request, handler):
         response = web.json_response({"error": str(exc)}, status=503)
     except ProviderUnavailable as exc:
         response = web.json_response({"error": str(exc)}, status=503)
+        if getattr(exc, "read_retries_exhausted", False) or getattr(exc, "read_retry_blocked", False):
+            response.headers["X-Read-Retries-Exhausted"] = "1"
     except web.HTTPException as exc:
         if isinstance(exc, web.HTTPRedirection):
             if request.path.startswith(API):

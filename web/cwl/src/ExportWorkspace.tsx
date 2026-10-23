@@ -1,3 +1,4 @@
+import { fetchReadWithRetry } from './readRetry'
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Season } from './api';
 import { syncStatusLabel } from './participation';
@@ -155,7 +156,7 @@ export default function ExportWorkspace({ seasonId, seasons, onSeasonChange }: P
     const chosenBasis = kind === 'accounts' ? basis : 'current';
     try {
       const params = new URLSearchParams({ kind, basis: chosenBasis });
-      const response = await fetch(`/api/cwl/seasons/${encodeURIComponent(seasonId)}/export.csv?${params}`, {
+      const response = await fetchReadWithRetry(`/api/cwl/seasons/${encodeURIComponent(seasonId)}/export.csv?${params}`, {
         credentials: 'same-origin', signal: controller.signal,
       });
       if (controller.signal.aborted) return;

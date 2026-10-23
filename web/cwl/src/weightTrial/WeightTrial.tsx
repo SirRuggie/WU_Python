@@ -1,3 +1,4 @@
+import { fetchReadWithRetry } from '../readRetry'
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import TownHallIcon from "../TownHallIcon";
@@ -189,7 +190,7 @@ export default function WeightTrial({
     setError("");
     setNotice("");
     try {
-      const response = await fetch("/api/cwl/weight-trial/export.xlsx", {
+      const response = await fetchReadWithRetry("/api/cwl/weight-trial/export.xlsx", {
         credentials: "same-origin",
       });
       if ([401, 403].includes(response.status)) {

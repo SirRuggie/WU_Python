@@ -196,16 +196,7 @@ class LiveProviders:
     async def _coc(self, kind, value):
         if not self.coc_token:
             raise ProviderUnavailable("Clash API is not configured")
-        timeout = aiohttp.ClientTimeout(total=10)
-        url = f"https://api.clashofclans.com/v1/{kind}/{quote(tag(value), safe='')}"
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, headers={"Authorization": f"Bearer {self.coc_token}"}) as response:
-                    if response.status != 200:
-                        raise ProviderUnavailable(f"Clash API returned {response.status}")
-                    body = await response.json()
-        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-            raise ProviderUnavailable("Clash API unavailable") from exc
+        body = await self._clash_json(f"/{kind}/{quote(tag(value), safe='')}")
         try:
             valid = isinstance(body, dict) and tag(body.get("tag")) == tag(value)
         except ValueError:
@@ -294,21 +285,34 @@ class LiveProviders:
     async def weight_war_order(self, value):
         return (await self.weight_war_lineup(value))["order"]
 
-    async def _league_get(self, path):
+    async def _clash_json(self, path):
+        """Retry only this failed upstream read, never a whole dashboard action."""
         if not self.coc_token:
             raise ProviderUnavailable("Clash API is not configured")
         timeout = aiohttp.ClientTimeout(total=10)
         url = f"https://api.clashofclans.com/v1{path}"
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, headers={"Authorization": f"Bearer {self.coc_token}"}) as response:
-                    if response.status != 200:
-                        error = ProviderUnavailable(f"Clash API returned {response.status}")
-                        error.status_code = response.status
-                        raise error
-                    body = await response.json()
-        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-            raise ProviderUnavailable("Clash API unavailable") from exc
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for attempt in range(3):
+                try:
+                    async with session.get(url, headers={"Authorization": f"Bearer {self.coc_token}"}) as response:
+                        if response.status != 200:
+                            error = ProviderUnavailable(f"Clash API returned {response.status}")
+                            error.status_code = response.status
+                            if response.status not in (500, 502, 503, 504):
+                                error.read_retry_blocked = True
+                                raise error
+                        else:
+                            return await response.json()
+                except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+                    error = ProviderUnavailable("Couldn’t refresh game data. Try again shortly.")
+                    error.__cause__ = exc
+                if attempt == 2:
+                    error.read_retries_exhausted = True
+                    raise error
+                await asyncio.sleep((0.4, 1.0)[attempt])
+
+    async def _league_get(self, path):
+        body = await self._clash_json(path)
         if not isinstance(body, dict):
             raise ProviderUnavailable("Invalid Clash API response")
         return body

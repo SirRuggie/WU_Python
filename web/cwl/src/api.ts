@@ -1,3 +1,4 @@
+import { fetchReadWithRetry } from './readRetry'
 import { clearSnapshots } from './snapshotCache'
 export type Pool = 'main' | 'lazy'
 export type Session = { authenticated: true; access_warning?: string | null; user: { id: string; username: string; display_name?: string; avatar_url?: string | null }; dashboard_permissions?: string[]; is_owner: boolean; can_edit: boolean; csrf_token: string }
@@ -13,7 +14,7 @@ export function setCsrfToken(token: string) { csrfToken = token }
 export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`/api/cwl${path}`, { method, credentials: 'same-origin', headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrfToken }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+    response = await fetchReadWithRetry(`/api/cwl${path}`, { method, credentials: 'same-origin', headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(method === 'GET' ? {} : { 'X-CSRF-Token': csrfToken }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
   } catch { void reportBrowserIssue('network_error'); throw new ApiError('The CWL service is unavailable. Check your connection and try again.', 0) }
   const data = await response.json().catch(() => null)
   if (!response.ok) {
@@ -30,7 +31,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
 }
 
 export async function apiUpload<T>(path: string, file: File): Promise<T> {
-  const response = await fetch(`/api/cwl${path}`, {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token':csrfToken, 'Content-Type':file.type||'application/octet-stream'}, body:file})
+  const response = await fetchReadWithRetry(`/api/cwl${path}`, {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token':csrfToken, 'Content-Type':file.type||'application/octet-stream'}, body:file})
   const data = await response.json().catch(()=>null)
   if(!response.ok) throw new ApiError((data?.error||'Image upload failed. Try a smaller PNG, JPEG, or WebP image.') + (data?.issue_reference ? ` Reference: ${data.issue_reference}` : ''),response.status)
   return data as T
