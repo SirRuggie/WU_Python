@@ -53,9 +53,10 @@ were not attempted and no real accounts were linked or transferred during tests.
 2. **High review priority: Permissions and member administration.** Owner-controlled
    dashboard grants versus Discord member roles, least privilege, revocation,
    scope clarity, and action recovery. These are separate permission systems.
-3. **Medium review priority: Tickets and applications.** Full inbox/search/status/
-   detail/action/return journey, large lists, mobile, and failures. Earlier ticket
-   and focus fixes are useful coverage, not a full pass on every application flow.
+3. **Tickets and applications: scoped workflow cleanup completed October 23.**
+   Ticket index/reader, application settings discovery, editing, recovery and
+   publishing draft protection were reviewed. Replies and decisions remain in
+   Discord. See `ticket-dashboard-viewer.md` for tests and live-integration limits.
 4. **Medium review priority: Commands and image tools.** Create → preview → test →
    publish → edit, draft protection, and advanced-option disclosure.
 5. **Medium review priority: Server settings, FWA, and integrations.** Configuration

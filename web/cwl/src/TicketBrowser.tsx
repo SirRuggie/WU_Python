@@ -1,83 +1,64 @@
-import DashboardIcon from './DashboardIcon'
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { api, ApiError } from "./api";
-import "./TicketBrowser.css";
-type Ticket = {
-  id: string;
-  number: number;
-  name: string;
-  user_id: string;
-  kind: string;
-  status: string;
-  created_at: string | null;
-  flags: { kind: string; label: string; reason: string }[];
-};
-type Message = {
-  id: string;
-  author: string;
-  at: string | null;
-  edited: boolean;
-  text: string;
-  attachments: { name: string; url: string }[];
-  bot: boolean;
-};
-type Conversation = {
-  ticket: Ticket;
-  messages: Message[];
-  older: string | null;
-  discord_url: string;
-  archived: boolean;
-  checked_at: number;
-};
+import TicketConversation from './TicketConversation'
+import { useEffect, useRef, useState } from 'react'
+import { api } from './api'
+import './TicketBrowser.css'
+export type Ticket = {
+  id: string
+  number: number
+  name: string
+  user_id: string
+  kind: string
+  status: string
+  created_at: string | null
+  flags: { kind: string; label: string; reason: string }[]
+}
 const statusName = (value: string) =>
-  ({ open: "Open", approved: "Approved", denied: "Denied", closed: "Closed" })[
+  ({ open: 'Open', approved: 'Approved', denied: 'Denied', closed: 'Closed' })[
     value
-  ] || value;
+  ] || value
 const when = (value: string | null) =>
-  value ? new Date(value).toLocaleString() : "Date unavailable";
+  value ? new Date(value).toLocaleString() : 'Date unavailable'
 export default function TicketBrowser() {
-  const [status, setStatus] = useState("closed"),
-    [kind, setKind] = useState("all"),
-    [flag, setFlag] = useState("all"),
-    [search, setSearch] = useState(""),
-    [query, setQuery] = useState(""),
-    [from, setFrom] = useState(""),
-    [to, setTo] = useState(""),
+  const [status, setStatus] = useState('open'),
+    [kind, setKind] = useState('all'),
+    [flag, setFlag] = useState('all'),
+    [search, setSearch] = useState(''),
+    [query, setQuery] = useState(''),
+    [from, setFrom] = useState(''),
+    [to, setTo] = useState(''),
     [page, setPage] = useState(1),
     [tickets, setTickets] = useState<Ticket[]>([]),
     [more, setMore] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
+    [error, setError] = useState(''),
     [reload, setReload] = useState(0),
-    [selected, setSelected] = useState<Ticket | null>(null);
-  const returnTicket = useRef<string | null>(null);
-  const returnReady = useRef(false);
-  const heading = useRef<HTMLHeadingElement>(null);
-  const ticketButtons = useRef(new Map<string, HTMLButtonElement>());
+    [selected, setSelected] = useState<Ticket | null>(null)
+  const returnTicket = useRef<string | null>(null)
+  const returnReady = useRef(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const ticketButtons = useRef(new Map<string, HTMLButtonElement>())
   useEffect(() => {
     if (selected || busy || !returnReady.current || !returnTicket.current)
-      return;
-    (
+      return
+    ;(
       ticketButtons.current.get(returnTicket.current) || heading.current
-    )?.focus();
-    returnTicket.current = null;
-    returnReady.current = false;
-  }, [selected, busy, tickets, error]);
+    )?.focus()
+    returnTicket.current = null
+    returnReady.current = false
+  }, [selected, busy, tickets, error])
   useEffect(() => {
     const timer = setTimeout(() => {
-      setQuery(search);
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
+      setQuery(search)
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
   useEffect(() => {
-    if (selected) return;
-    let alive = true;
-    setBusy(true);
-    setError("");
-    setTickets([]);
+    if (selected) return
+    let alive = true
+    setBusy(true)
+    setError('')
+    setTickets([])
     const params = new URLSearchParams({
       status,
       kind,
@@ -86,41 +67,52 @@ export default function TicketBrowser() {
       from,
       to,
       page: String(page),
-    });
+    })
     api<{ tickets: Ticket[]; has_more: boolean }>(`/manage/tickets?${params}`)
       .then((result) => {
         if (alive) {
-          setTickets(result.tickets);
-          setMore(result.has_more);
+          setTickets(result.tickets)
+          setMore(result.has_more)
         }
       })
       .catch((e) => {
         if (alive) {
-          setError(e.message);
-          setMore(false);
+          setError(e.message)
+          setMore(false)
         }
       })
       .finally(() => {
         if (alive) {
-          returnReady.current = true;
-          setBusy(false);
+          returnReady.current = true
+          setBusy(false)
         }
-      });
+      })
     return () => {
-      alive = false;
-    };
-  }, [selected, status, kind, flag, query, from, to, page, reload]);
+      alive = false
+    }
+  }, [selected, status, kind, flag, query, from, to, page, reload])
+  const extraFilters = Number(flag !== 'all') + Number(!!from) + Number(!!to)
+  const clearFilters = () => {
+    setSearch('')
+    setQuery('')
+    setStatus('all')
+    setKind('all')
+    setFlag('all')
+    setFrom('')
+    setTo('')
+    setPage(1)
+  }
   if (selected)
     return (
       <TicketConversation
         ticket={selected}
         onBack={() => {
-          returnReady.current = false;
-          setBusy(true);
-          setSelected(null);
+          returnReady.current = false
+          setBusy(true)
+          setSelected(null)
         }}
       />
-    );
+    )
   return (
     <section className="ticket-browser">
       <div className="page-head">
@@ -129,7 +121,10 @@ export default function TicketBrowser() {
           <h1 ref={heading} tabIndex={-1}>
             Tickets
           </h1>
-          <p>Find open and closed tickets. Read their Discord conversations.</p>
+          <p>
+            Review applications and conversations. Reply or make decisions in
+            Discord.
+          </p>
         </div>
         <button disabled={busy} onClick={() => setReload((n) => n + 1)}>
           Refresh
@@ -140,7 +135,7 @@ export default function TicketBrowser() {
           Find a ticket
           <input
             type="search"
-            placeholder="Member, Discord ID, ticket number, player tag or flag"
+            placeholder="Member, ticket # or player tag"
             maxLength={80}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -151,8 +146,8 @@ export default function TicketBrowser() {
           <select
             value={status}
             onChange={(e) => {
-              setStatus(e.target.value);
-              setPage(1);
+              setStatus(e.target.value)
+              setPage(1)
             }}
           >
             <option value="closed">Closed tickets</option>
@@ -163,23 +158,12 @@ export default function TicketBrowser() {
           </select>
         </label>
         <label>
-          Applicant flag
-          <select value={flag} onChange={(e) => { setFlag(e.target.value); setPage(1); }}>
-            <option value="all">All flags</option>
-            <option value="blacklisted">Blacklisted</option>
-            <option value="denied_before">Previously denied</option>
-            <option value="not_loyal">Not loyal to WU</option>
-            <option value="ghosted">Ghosted</option>
-            <option value="flew_the_coop">Flew the Coop</option>
-          </select>
-        </label>
-        <label>
           Type
           <select
             value={kind}
             onChange={(e) => {
-              setKind(e.target.value);
-              setPage(1);
+              setKind(e.target.value)
+              setPage(1)
             }}
           >
             <option value="all">Main and FWA</option>
@@ -189,16 +173,35 @@ export default function TicketBrowser() {
         </label>
       </div>
       <details className="ticket-date-filter">
-        <summary>Filter by date opened</summary>
+        <summary>
+          More filters{extraFilters ? ` · ${extraFilters} active` : ''}
+        </summary>
         <div>
+          <label>
+            Applicant flag
+            <select
+              value={flag}
+              onChange={(e) => {
+                setFlag(e.target.value)
+                setPage(1)
+              }}
+            >
+              <option value="all">All flags</option>
+              <option value="blacklisted">Blacklisted</option>
+              <option value="denied_before">Previously denied</option>
+              <option value="not_loyal">Not loyal to WU</option>
+              <option value="ghosted">Ghosted</option>
+              <option value="flew_the_coop">Flew the Coop</option>
+            </select>
+          </label>
           <label>
             From
             <input
               type="date"
               value={from}
               onChange={(e) => {
-                setFrom(e.target.value);
-                setPage(1);
+                setFrom(e.target.value)
+                setPage(1)
               }}
             />
           </label>
@@ -208,21 +211,35 @@ export default function TicketBrowser() {
               type="date"
               value={to}
               onChange={(e) => {
-                setTo(e.target.value);
-                setPage(1);
+                setTo(e.target.value)
+                setPage(1)
               }}
             />
           </label>
           <small>Dates use UTC.</small>
         </div>
       </details>
-      <p className="small">
-        Closed tickets include approved, denied and archived applications.
-        Search finds ticket details and flag names, not words inside conversations.
-      </p>
+      <div className="ticket-list-summary">
+        <span>
+          {busy
+            ? 'Loading…'
+            : error
+              ? 'Tickets unavailable'
+              : `${tickets.length} tickets on this page`}
+        </span>
+        {(search ||
+          status !== 'open' ||
+          kind !== 'all' ||
+          extraFilters > 0) && (
+          <button onClick={clearFilters}>Clear filters</button>
+        )}
+      </div>
       {error && (
         <p className="notice error" role="alert">
           {error}
+          <button onClick={() => setReload((n) => n + 1)}>
+            Retry loading tickets
+          </button>
         </p>
       )}
       {busy ? (
@@ -231,49 +248,40 @@ export default function TicketBrowser() {
         <div className="card empty">
           <h2>No tickets found</h2>
           <p>Try another name, status or date.</p>
-          <button
-            onClick={() => {
-              setSearch("");
-              setQuery("");
-              setStatus("all");
-              setKind("all");
-              setFlag("all");
-              setFrom("");
-              setTo("");
-              setPage(1);
-            }}
-          >
-            Clear filters
-          </button>
+          <button onClick={clearFilters}>Clear filters</button>
         </div>
       ) : (
         <div className="ticket-list">
           {tickets.map((t) => (
-            <article className="card ticket-row" key={t.id}>
+            <article className="ticket-row" key={t.id}>
               <div>
                 <strong>
                   #{t.number} · {t.name}
                 </strong>
                 <small>
-                  {t.kind.toUpperCase()} · {statusName(t.status)} · Opened{" "}
+                  {t.kind.toUpperCase()} · {statusName(t.status)} · Opened{' '}
                   {when(t.created_at)}
                 </small>
-                {t.flags.length > 0 && <ul className="ticket-flags" aria-label="Applicant flags">
-                  {t.flags.map((item, index) => <li key={`${item.kind}-${index}`}><strong>{item.label}</strong>{item.reason ? ` · ${item.reason}` : ""}</li>)}
-                </ul>}
+                {t.flags.length > 0 && (
+                  <ul className="ticket-flags" aria-label="Applicant flags">
+                    {t.flags.map((item, index) => (
+                      <li key={`${item.kind}-${index}`}>{item.label}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <button
                 ref={(node) => {
-                  if (node) ticketButtons.current.set(t.id, node);
-                  else ticketButtons.current.delete(t.id);
+                  if (node) ticketButtons.current.set(t.id, node)
+                  else ticketButtons.current.delete(t.id)
                 }}
                 aria-label={`Read ticket ${t.number} · ${t.name}`}
                 onClick={() => {
-                  returnTicket.current = t.id;
-                  setSelected(t);
+                  returnTicket.current = t.id
+                  setSelected(t)
                 }}
               >
-                Read ticket →
+                Read →
               </button>
             </article>
           ))}
@@ -291,255 +299,5 @@ export default function TicketBrowser() {
         </nav>
       )}
     </section>
-  );
-}
-function TicketConversation({
-  ticket,
-  onBack,
-}: {
-  ticket: Ticket;
-  onBack: () => void;
-}) {
-  const [space, setSpace] = useState("applicant"),
-    [before, setBefore] = useState(""),
-    [data, setData] = useState<Conversation | null>(null),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [reload, setReload] = useState(0),
-    [search, setSearch] = useState(""),
-    [paused, setPaused] = useState(false);
-  const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    heading.current?.focus();
-  }, [ticket.id]);
-  useEffect(() => {
-    let alive = true,
-      inFlight = false;
-    setData(null);
-    setError("");
-    setSearch("");
-    const load = async () => {
-      if (!alive || inFlight) return;
-      inFlight = true;
-      setBusy(true);
-      try {
-        const result = await api<Conversation>(
-          `/manage/tickets/${encodeURIComponent(ticket.id)}/messages?${new URLSearchParams({ space, before })}`,
-        );
-        if (alive) {
-          setData(result);
-          setError("");
-        }
-      } catch (e) {
-        if (alive) {
-          if (e instanceof ApiError && [401, 403, 404].includes(e.status))
-            setData(null);
-          setError(e instanceof Error ? e.message : "Could not load messages.");
-        }
-      } finally {
-        inFlight = false;
-        if (alive) setBusy(false);
-      }
-    };
-    void load();
-    const timer = setInterval(() => {
-      if (!paused && !before && !document.hidden) void load();
-    }, 30000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [ticket.id, space, before, reload, paused]);
-  const messages =
-    data?.messages.filter((m) =>
-      (
-        m.author +
-        " " +
-        m.text +
-        " " +
-        m.attachments.map((a) => a.name).join(" ")
-      )
-        .toLocaleLowerCase()
-        .includes(search.toLocaleLowerCase()),
-    ) || [];
-  return (
-    <section className="ticket-browser">
-      <button onClick={onBack}>← Back to tickets</button>
-      <div className="page-head ticket-heading">
-        <div>
-          <p className="eyebrow">
-            {ticket.kind.toUpperCase()} · {statusName(ticket.status)} · Read
-            only
-          </p>
-          <h1 ref={heading} tabIndex={-1}>
-            #{ticket.number} · {ticket.name}
-          </h1>
-          <p>Opening this page does not reopen the ticket.</p>
-          {ticket.flags.length > 0 && <div className="ticket-flag-details" aria-label="Applicant flags">
-            <h2>Applicant flags</h2>
-            {ticket.flags.map((item, index) => <p key={`${item.kind}-${index}`}><strong>{item.label}</strong>{item.reason ? ` · ${item.reason}` : ""}</p>)}
-          </div>}
-        </div>
-      </div>
-      <div
-        className="ticket-conversation-tabs"
-        role="group"
-        aria-label="Ticket conversation"
-      >
-        <button
-          aria-pressed={space === "applicant"}
-          onClick={() => {
-            setSpace("applicant");
-            setBefore("");
-          }}
-        >
-          Applicant conversation
-        </button>
-        <button
-          aria-pressed={space === "staff"}
-          onClick={() => {
-            setSpace("staff");
-            setBefore("");
-          }}
-        >
-          Staff conversation
-        </button>
-      </div>
-      <div className="ticket-reader-tools">
-        <button disabled={busy} onClick={() => setReload((n) => n + 1)}>
-          Refresh messages
-        </button>
-        {data && (
-          <a
-            className="button"
-            href={data.discord_url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open in Discord ↗
-          </a>
-        )}
-        <label>
-          <input
-            type="checkbox"
-            checked={paused}
-            onChange={(e) => setPaused(e.target.checked)}
-          />
-          Pause refresh
-        </label>
-      </div>
-      <p className="small">
-        {before
-          ? "Reading older messages. Automatic refresh is paused."
-          : paused
-            ? "Automatic refresh paused."
-            : "New messages refresh every 30 seconds."}
-        {data
-          ? ` Updated ${new Date(data.checked_at * 1000).toLocaleTimeString()}.`
-          : ""}
-      </p>
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          {data ? " Showing the last update." : ""}
-        </p>
-      )}
-      {busy && !data && <p role="status">Loading conversation…</p>}
-      {data && (
-        <>
-          <label>
-            Find in these {data.messages.length} messages
-            <input
-              type="search"
-              placeholder="Name or words in this page"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
-          <nav className="ticket-pages" aria-label="Message pages">
-            <button
-              disabled={busy || !data.older}
-              onClick={() => setBefore(data.older || "")}
-            >
-              Older messages
-            </button>
-            {before && (
-              <button disabled={busy} onClick={() => setBefore("")}>
-                Latest messages
-              </button>
-            )}
-          </nav>
-          <div className="ticket-messages">
-            {messages.map((m) => (
-              <article className="ticket-message" key={m.id}>
-                <header>
-                  <strong>
-                    {m.author}
-                    {m.bot ? " · Bot" : ""}
-                  </strong>
-                  <small>
-                    {when(m.at)}
-                    {m.edited ? " · Edited" : ""}
-                  </small>
-                </header>
-                {m.text ? (
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    skipHtml
-                    components={{
-                      a: ({ children, href }) => (
-                        <a href={href} target="_blank" rel="noreferrer">
-                          {children}
-                        </a>
-                      ),
-                      img: ({ src, alt }) => (
-                        <a
-                          href={typeof src === "string" ? src : undefined}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {alt || "View image"} ↗
-                        </a>
-                      ),
-                    }}
-                  >
-                    {m.text}
-                  </ReactMarkdown>
-                ) : (
-                  !m.attachments.length && (
-                    <p className="small">
-                      System message or content unavailable. Open in Discord to
-                      check.
-                    </p>
-                  )
-                )}
-                {m.attachments.length > 0 && (
-                  <ul className="ticket-attachments">
-                    {m.attachments.map((a, i) => (
-                      <li key={i}>
-                        <a href={a.url} target="_blank" rel="noreferrer">
-                          <DashboardIcon name="attachment"/> {a.name} ↗
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </article>
-            ))}
-            {!messages.length && (
-              <p>
-                {search
-                  ? "No matches in these messages."
-                  : "No messages returned. If Discord shows messages, ask an owner to check the bot’s Read Message History and Message Content access."}
-              </p>
-            )}
-          </div>
-          <p className="small">
-            Attachments open from Discord. Deleted messages and threads may no
-            longer be available.
-          </p>
-        </>
-      )}
-    </section>
-  );
+  )
 }

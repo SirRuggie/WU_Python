@@ -1,7 +1,7 @@
 import type {ManagementSection} from './serverManagement'
 export const managementAreas = {
   'members-settings': {title:'Members & roles',description:'Find members and manage their roles.'},
-  'applications-settings': {title:'Applications & tickets',description:'Manage application messages, ticket channels and testing.'},
+  'applications-settings': {title:'Applications & tickets',description:'Set up the applicant journey and staff tools. Review live conversations in Tickets.'},
   'fwa-settings': {title:'FWA tools',description:'Manage war messages, bases and clan settings.'},
   'connections-settings': {title:'Integrations',description:'Check connected services and technical settings.'},
   'cwl-returns': {title:'Return reminders',description:'Manage saved CWL clans and reminders to return home.'},

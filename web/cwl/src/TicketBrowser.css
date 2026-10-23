@@ -1,29 +1,229 @@
-.ticket-browser{min-width:0}.ticket-filters{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px}.ticket-date-filter{margin:14px 0;border:1px solid #42444e;border-radius:10px;padding:12px}.ticket-date-filter>div{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-top:12px}.ticket-list{display:grid;gap:12px}.ticket-row{display:flex;align-items:center;justify-content:space-between;gap:14px}.ticket-row>div{min-width:0;overflow-wrap:anywhere}.ticket-row small{display:block;margin-top:7px}.ticket-row button{flex:none}.ticket-pages,.ticket-reader-tools,.ticket-conversation-tabs{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0}.ticket-reader-tools label{display:flex;gap:8px;align-items:center}.ticket-conversation-tabs button[aria-pressed=true]{background:#2055aa;border-color:#80b5ff;color:#fff}.ticket-heading{margin-top:22px}.ticket-heading h1{overflow-wrap:anywhere}.ticket-message{padding:18px;border:1px solid #3b3f49;border-radius:12px;background:#191b21;min-width:0;overflow-wrap:anywhere}.ticket-message header{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}.ticket-messages{display:grid;gap:12px}.ticket-message pre{white-space:pre-wrap;overflow-wrap:anywhere}.ticket-message table{display:block;max-width:100%;overflow:auto}.ticket-message a{color:#a7cfff;text-decoration:underline}.ticket-message p:last-child{margin-bottom:0}.ticket-attachments{padding-left:20px}.ticket-pages button,.ticket-reader-tools button,.ticket-conversation-tabs button{min-height:44px}
-@media(max-width:650px){.ticket-filters{grid-template-columns:1fr 1fr}.ticket-filters>label:first-child{grid-column:1/-1}.ticket-row{align-items:start;flex-direction:column}.ticket-row button{align-self:flex-end}.ticket-conversation-tabs button{flex:1;white-space:normal}.ticket-reader-tools a{font-size:13px}}
-.ticket-flags {
-  margin: 8px 0 0;
-  padding-left: 20px;
+.ticket-browser {
+  min-width: 0;
 }
-
-.ticket-flags li {
-  margin-top: 4px;
+.ticket-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.ticket-filters input,
+.ticket-filters select,
+.ticket-date-filter input,
+.ticket-date-filter select {
+  min-width: 0;
+  width: 100%;
+}
+.ticket-date-filter {
+  margin: 14px 0;
+  border-bottom: 1px solid #34343b;
+  padding-bottom: 12px;
+}
+.ticket-date-filter summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+}
+.ticket-date-filter > div {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.ticket-date-filter > div > label {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.ticket-list-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  min-height: 44px;
+  font-size: 0.875rem;
+  color: var(--muted, #b6b6bf);
+}
+.ticket-list-summary button {
+  background: transparent;
+  border-color: transparent;
+  min-height: 44px;
+}
+.ticket-list {
+  display: grid;
+  border: 1px solid #34343b;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ticket-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #34343b;
+  background: #171719;
+}
+.ticket-row:last-child {
+  border-bottom: 0;
+}
+.ticket-row > div {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
-
+.ticket-row button {
+  flex: none;
+  min-height: 44px;
+  background: transparent;
+  border-color: transparent;
+  padding: 8px 12px;
+}
+.ticket-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted, #b6b6bf);
+}
+.ticket-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.ticket-flags li {
+  border-radius: 5px;
+  padding: 3px 7px;
+  background: #493622;
+  color: #f2d6a5;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.ticket-pages,
+.ticket-reader-tools,
+.ticket-conversation-tabs {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 18px 0;
+}
+.ticket-pages button,
+.ticket-reader-tools button,
+.ticket-conversation-tabs button {
+  min-height: 44px;
+}
+.ticket-conversation-tabs {
+  gap: 0;
+  border-bottom: 1px solid #34343b;
+}
+.ticket-conversation-tabs button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+.ticket-conversation-tabs button[aria-pressed='true'] {
+  color: #f5d46c;
+  background: #f5d46c0a;
+  border-color: #f5d46c;
+}
+.ticket-reader-tools {
+  gap: 8px;
+}
+.ticket-reader-tools label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+}
+.ticket-heading {
+  margin-top: 22px;
+}
+.ticket-heading h1 {
+  overflow-wrap: anywhere;
+}
+.ticket-messages {
+  display: grid;
+}
+.ticket-message {
+  border-bottom: 1px solid #34343b;
+  padding: 16px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ticket-message header {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.ticket-message p {
+  margin-top: 6px;
+}
+.ticket-message p:last-child {
+  margin-bottom: 0;
+}
+.ticket-message pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ticket-message table {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+}
+.ticket-message a {
+  color: #a7cfff;
+  text-decoration: underline;
+}
+.ticket-attachments {
+  padding-left: 20px;
+}
 .ticket-flag-details {
   margin-top: 16px;
-  padding: 14px;
-  border: 1px solid #5b4b22;
-  border-radius: 10px;
-  background: #211d13;
+  padding: 12px;
+  border-left: 3px solid #d4a34d;
+  background: #d4a34d14;
 }
-
 .ticket-flag-details h2 {
   margin: 0 0 8px;
   font-size: 1rem;
 }
-
 .ticket-flag-details p {
   margin: 6px 0;
   overflow-wrap: anywhere;
+}
+.ticket-browser .notice button {
+  margin: 8px;
+  min-height: 44px;
+}
+.ticket-browser :focus-visible {
+  outline: 2px solid #f5d46c;
+  outline-offset: -2px;
+}
+@media (max-width: 650px) {
+  .ticket-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ticket-filters > label:first-child {
+    grid-column: 1/-1;
+  }
+  .ticket-row {
+    padding: 12px;
+    gap: 8px;
+  }
+  .ticket-browser input,
+  .ticket-browser select {
+    font-size: 16px;
+  }
+  .ticket-conversation-tabs button {
+    flex: 1;
+    white-space: normal;
+  }
+  .ticket-reader-tools a {
+    font-size: 14px;
+    min-height: 44px;
+  }
 }

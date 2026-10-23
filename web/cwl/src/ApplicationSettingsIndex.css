@@ -1,0 +1,141 @@
+.application-index {
+  max-width: 960px;
+}
+.application-index > label {
+  display: grid;
+  gap: 8px;
+}
+.application-index > details {
+  border-bottom: 1px solid var(--border, #34343b);
+}
+.application-index summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  min-height: 44px;
+  cursor: pointer;
+}
+.application-index summary > span:first-child {
+  display: grid;
+  gap: 5px;
+}
+.application-index summary > span:first-child::before {
+  content: '▸';
+  position: absolute;
+  margin-left: -18px;
+}
+.application-index summary {
+  padding-left: 20px;
+}
+.application-index details[open] summary > span:first-child::before {
+  content: '▾';
+}
+.application-index small {
+  color: var(--muted, #b6b6bf);
+  font-weight: 400;
+}
+.application-setting-list {
+  border: 1px solid var(--border, #34343b);
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 0 0 16px;
+}
+.application-setting-list button {
+  width: 100%;
+  display: flex;
+  text-align: left;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border, #34343b);
+  padding: 12px 16px;
+  min-height: 44px;
+  background: #171719;
+}
+.application-setting-list button:last-child {
+  border-bottom: 0;
+}
+.application-setting-list button > span:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.application-setting-list button:hover {
+  background: #242428;
+}
+.application-index :focus-visible {
+  outline: 2px solid #f5d46c;
+  outline-offset: -2px;
+}
+@media (max-width: 650px) {
+  .application-index input {
+    font-size: 16px;
+  }
+  .application-setting-list button {
+    padding: 12px;
+  }
+}
+
+.applications-workspace .manage-heading h2 {
+  scroll-margin-top: 100px;
+}
+.applications-workspace .manage-preview-toggle {
+  display: none;
+  border-bottom: 1px solid #34343b;
+  margin-bottom: 16px;
+}
+.applications-workspace .manage-preview-toggle button {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 3px solid transparent;
+  min-height: 44px;
+  padding: 8px;
+}
+.applications-workspace .manage-preview-toggle button[aria-pressed='true'] {
+  background: #f5d46c0a;
+  color: #f5d46c;
+  border-bottom-color: #f5d46c;
+}
+.applications-workspace .manage-save {
+  background: #202023;
+  border-color: #45454b;
+  box-shadow: none;
+}
+.applications-workspace .manage-action {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid #34343b;
+  border-radius: 0;
+  padding: 16px 0;
+}
+@media (max-width: 650px) {
+  .applications-workspace .manage-save {
+    position: static;
+    padding: 12px;
+    gap: 10px;
+  }
+  .applications-workspace .manage-heading {
+    gap: 8px;
+  }
+  .applications-workspace .manage-heading .manage-categories {
+    margin: 4px 0;
+  }
+}
+@media (max-height: 600px) {
+  .applications-workspace .manage-save {
+    position: static;
+  }
+}
+
+@media (max-width: 900px) {
+  .applications-workspace .manage-preview-toggle {
+    display: flex;
+  }
+}
