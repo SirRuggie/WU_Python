@@ -78,3 +78,10 @@ Both DNS-resolved official API addresses were tested; no alternate provider or
 credential destination was introduced. This proves a live-data dependency problem
 in addition to the fixed application bugs, not complete live recovery. Do not mark
 Tasks fully resolved until all expected linked accounts and activities load.
+
+Follow-up deployed revision `2191a2a`: runtime imports passed, web service active
+with zero restarts, public routes 200 and served entry/Tasks assets matched the
+build. Protected endpoints remained 401 and invalid OAuth callback 403. An
+additional 163 shared Tasks/account/maintenance tests passed. Live browser reached
+the correct sign-in destination; no signed-in browser session was available, so
+real account checks used the isolated authenticated HTTP app described above.
