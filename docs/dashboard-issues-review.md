@@ -37,3 +37,10 @@ Validation:
 - Live read-only Discord directory lookup resolved both protected owners with
   avatars. No production permissions, notifications or roster data changed.
 - Whitespace checks passed. Existing framework warnings remain.
+
+Deployment: implementation revision da60898 pushed to origin/main. Web runtime
+import/startup passed and restored Mongo revision 7870; service active/running with
+zero automatic restarts. Public entry assets and the Issues JavaScript/CSS chunks
+returned 200 and matched the isolated build byte-for-byte. Production fixture mode
+remained disabled; signed-out protected API probes were rejected. No bot restart
+was required. Temporary browser fixture was stopped after validation.
