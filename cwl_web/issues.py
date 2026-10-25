@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import re
 import secrets
 import time
 from aiohttp import web
@@ -70,7 +71,32 @@ async def listing(request):
     _require(request, 'owner')
     async with mongo(request) as db:
         items = await IssueRepository(db.bot_config).recent()
-    return web.json_response({'items': items}, headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+    members, profiles_available = await issue_members(request, items)
+    return web.json_response({'items': items, 'members': members,
+                              'profiles_available': profiles_available}, headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+async def issue_members(request, items):
+    """Decorate only identities present in the owner-authorized report history."""
+    from .manage_roles import searchable_members, member_option
+    ids = {item.get('member') for item in items
+           if isinstance(item.get('member'), str) and re.fullmatch(r'[0-9]{15,22}', item['member'])}
+    if not ids:
+        return {}, True
+    try:
+        rows = await asyncio.wait_for(searchable_members(request), 5)
+        members = {}
+        for row in rows:
+            uid = str(row.get('user', {}).get('id', ''))
+            if uid in ids:
+                profile = member_option(row)
+                profile['role_ids'] = []
+                profile['role_names'] = []
+                members[uid] = profile
+        return members, True
+    except Exception as exc:
+        log.warning('Issue profile lookup unavailable: %s', type(exc).__name__)
+        return {}, False
 
 
 async def browser_report(request):

@@ -1,8 +1,10 @@
+import asyncio
 import hashlib
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 from types import SimpleNamespace
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
@@ -88,6 +90,38 @@ class IssuesTests(unittest.IsolatedAsyncioTestCase):
         response=await self.client.get('/api/cwl/test/account',headers=self.member)
         self.assertEqual(response.status,500)
         self.assertTrue((await response.json())['issue_reference'])
+
+    async def test_profiles_only_include_affected_members_and_strip_roles(self):
+        uid = '123456789012345678'
+        self.collection.items = [{'id': 'abc', 'at': time.time(), 'member': uid}]
+        rows = [{'user': {'id': uid, 'username': 'tester', 'global_name': '<Tester>', 'avatar': 'abc'},
+                 'roles': ['private-role']},
+                {'user': {'id': '223456789012345678', 'username': 'unrelated'}}]
+        with patch('cwl_web.manage_roles.searchable_members', new=AsyncMock(return_value=rows)) as lookup:
+            response = await self.client.get('/api/cwl/issues', headers=self.member)
+            self.assertEqual(response.status, 403)
+            lookup.assert_not_awaited()
+            response = await self.client.get('/api/cwl/issues', headers=self.owner)
+        result = await response.json()
+        self.assertEqual(set(result['members']), {uid})
+        self.assertEqual(result['members'][uid]['display_name'], '<Tester>')
+        self.assertIn('cdn.discordapp.com/avatars/', result['members'][uid]['avatar_url'])
+        self.assertEqual(result['members'][uid]['role_ids'], [])
+        self.assertTrue(result['profiles_available'])
+
+    async def test_profile_outage_preserves_history_and_cancellation_propagates(self):
+        from cwl_web.issues import issue_members
+        self.collection.items = [{'id': 'abc', 'at': time.time(), 'member': '123456789012345678'}]
+        with patch('cwl_web.manage_roles.searchable_members', new=AsyncMock(side_effect=TimeoutError())):
+            response = await self.client.get('/api/cwl/issues', headers=self.owner)
+        result = await response.json()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(result['items']), 1)
+        self.assertEqual(result['members'], {})
+        self.assertFalse(result['profiles_available'])
+        with patch('cwl_web.manage_roles.searchable_members', new=AsyncMock(side_effect=asyncio.CancelledError())):
+            with self.assertRaises(asyncio.CancelledError):
+                await issue_members(None, self.collection.items)
 
     async def test_bounded_history_survives_new_repository(self):
         repo=IssueRepository(self.collection)
