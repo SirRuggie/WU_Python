@@ -17,6 +17,7 @@ API = "/api/cwl/todo"
 CACHE_SECONDS = 60
 CACHE_MAX = 1024
 VIEW_TIMEOUT = 35
+ACCOUNT_LOOKUP_TIMEOUT = 3
 logger = logging.getLogger(__name__)
 
 
@@ -120,11 +121,31 @@ async def _section(fn, *args, **kwargs):
         return None
 
 
-async def _task_accounts(client, tags, sem):
+async def _task_accounts(client, tags, sem, on_progress=None):
     """Keep completed player reads when one account stalls; never use stale identity."""
-    tasks = [asyncio.create_task(todo_data.fetch_accounts(client, [tag], sem=sem, lookup_timeout=3)) for tag in tags]
+    tasks = [asyncio.create_task(todo_data.fetch_accounts(client, [tag], sem=sem, lookup_timeout=ACCOUNT_LOOKUP_TIMEOUT)) for tag in tags]
     try:
-        done, _ = await asyncio.wait(tasks, timeout=min(VIEW_TIMEOUT, 8))
+        # Include semaphore queue time: a fixed eight-second cap cancelled later
+        # accounts before they could start when the first batch stalled.
+        waves = (len(tags) + todo_data.FETCH_CONCURRENCY - 1) // todo_data.FETCH_CONCURRENCY
+        budget = min(VIEW_TIMEOUT, waves * ACCOUNT_LOOKUP_TIMEOUT + 1)
+        pending = set(tasks)
+        done = set()
+        deadline = time.monotonic() + budget
+        while pending:
+            finished, pending = await asyncio.wait(
+                pending, timeout=max(0, deadline - time.monotonic()),
+                return_when=asyncio.FIRST_COMPLETED)
+            done.update(finished)
+            if not finished:
+                break
+            if on_progress:
+                available = []
+                for task in tasks:
+                    if task in done and not task.cancelled() and task.exception() is None:
+                        available.extend(task.result()[0])
+                if available:
+                    on_progress(available)
         accounts, errors = [], []
         for tag, task in zip(tags, tasks):
             if task not in done:
@@ -148,8 +169,15 @@ async def _live_snapshot(app, tags, publish=None):
     client = await get_clash_client(app)
 
     sem = todo_data.new_semaphore()
+    def account_progress(available):
+        if publish:
+            publish({"checked_at": _now(), "accounts": [_account(account) for account in available],
+                "linked_account_count": len(tags),
+                "views": {key: dict(_unavailable('Checking this activity…'), loading=True)
+                          for key in ('war', 'cwl', 'raid', 'private', 'games')}})
+
     accounts_result, history_result = await asyncio.gather(
-        _task_accounts(client, tags, sem),
+        _task_accounts(client, tags, sem, on_progress=account_progress),
         _history(app, tags),
     )
     accounts, errors = accounts_result
@@ -163,7 +191,7 @@ async def _live_snapshot(app, tags, publish=None):
               for key in ('war', 'cwl', 'raid', 'private', 'games')}
     def snapshot():
         return {"checked_at": _now(), "accounts": [_account(account) for account in accounts],
-                "views": dict(result)}
+                "views": dict(result), "linked_account_count": len(tags)}
     def notify():
         if publish:
             publish(snapshot())
@@ -203,6 +231,9 @@ async def _live_snapshot(app, tags, publish=None):
         tasks.create_task(load('raid', todo_data.build_raid_view))
         tasks.create_task(load('private', todo_data.build_blocked_view, candidates=candidates))
         tasks.create_task(games())
+    incomplete = [key for key, view in result.items() if not view['ok'] or view.get('incomplete')]
+    if incomplete:
+        logger.warning('Tasks incomplete: linked=%d loaded=%d views=%s', len(tags), len(accounts), ','.join(incomplete))
     return snapshot()
 
 

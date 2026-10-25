@@ -353,3 +353,44 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 release.set()
                 await task
+
+    async def test_later_linked_accounts_get_a_turn_after_slow_first_wave(self):
+        from cwl_web.todo import _task_accounts
+        from types import SimpleNamespace
+        started = []
+        class Client:
+            async def get_player(self, tag):
+                started.append(tag)
+                if tag.startswith('#SLOW'):
+                    await asyncio.Event().wait()
+                return SimpleNamespace(tag=tag, name='Later account', clan=None, town_hall=18)
+        tags = [f'#SLOW{i}' for i in range(24)] + ['#LATER']
+        with todo_data.fresh_reads(), patch('cwl_web.todo.ACCOUNT_LOOKUP_TIMEOUT', .02):
+            accounts, errors = await _task_accounts(Client(), tags, todo_data.new_semaphore())
+        self.assertEqual(set(started), set(tags))
+        self.assertEqual([account.tag for account in accounts], ['#LATER'])
+        self.assertEqual(len(errors), 24)
+
+    async def test_account_progress_is_visible_before_slow_accounts_finish(self):
+        from cwl_web.todo import _task_accounts
+        from types import SimpleNamespace
+        release = asyncio.Event()
+        progress = []
+        class Client:
+            async def get_player(self, tag):
+                if tag == '#WAIT':
+                    await release.wait()
+                return SimpleNamespace(tag=tag, name='Account', clan=None, town_hall=18)
+        with todo_data.fresh_reads():
+            task = asyncio.create_task(_task_accounts(Client(), ['#READY','#WAIT'], todo_data.new_semaphore(), on_progress=lambda rows: progress.append([row.tag for row in rows])))
+            try:
+                for _ in range(100):
+                    if progress:
+                        break
+                    await asyncio.sleep(.001)
+                self.assertEqual(progress, [['#READY']])
+                self.assertFalse(task.done())
+            finally:
+                release.set()
+                await task
+        self.assertEqual(progress[-1], ['#READY','#WAIT'])

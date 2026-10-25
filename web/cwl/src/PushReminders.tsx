@@ -30,7 +30,7 @@ type InstallEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: string }>
 }
-export default function PushReminders({ accounts }: { accounts: Account[] }) {
+export default function PushReminders({ accounts, accountsComplete = true }: { accounts: Account[]; accountsComplete?: boolean }) {
   const { support, refreshPermission } = usePushPermission()
   const inFlight = useRef(false)
   const mounted = useRef(true)
@@ -389,6 +389,7 @@ export default function PushReminders({ accounts }: { accounts: Account[] }) {
           <div className="push-options">
             <button
               type="button"
+              disabled={!accountsComplete}
               onClick={() => setTags(accounts.map((account) => account.tag))}
             >
               Select all linked accounts
@@ -397,6 +398,7 @@ export default function PushReminders({ accounts }: { accounts: Account[] }) {
               Clear
             </button>
           </div>
+          {!accountsComplete && <p>Some accounts haven’t loaded. Your saved selections are kept.</p>}
           <div className="push-accounts">
             {visible.map((account) => (
               <label key={account.tag}>
@@ -422,7 +424,7 @@ export default function PushReminders({ accounts }: { accounts: Account[] }) {
               </label>
             ))}
           </div>
-          {!accounts.length && (
+          {accountsComplete && !accounts.length && (
             <p>Link your Clash accounts to select them here.</p>
           )}
         </fieldset>

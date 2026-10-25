@@ -1310,7 +1310,8 @@ async def build_cwl_view(
     if unreadable:
         notes.append(_gap_note(unreadable, "CWL"))
 
-    return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows))
+    return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows),
+                    incomplete=_gap_note(unreadable, "CWL") if unreadable else "")
 
 
 async def build_blocked_view(
@@ -1585,7 +1586,8 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
         )
 
     return ViewData(rows=rows, notes=notes, ok=not (unreadable and not rows),
-                    unavailable=unavailable)
+                    unavailable=unavailable,
+                    incomplete=_gap_note(unreadable, "raid") if unreadable else "")
 
 
 async def fetch_clan_overview(client, clan_tag: str, kind: str):

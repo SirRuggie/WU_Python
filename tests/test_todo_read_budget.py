@@ -39,3 +39,20 @@ class ReadBudgetTests(unittest.IsolatedAsyncioTestCase):
             accounts, errors = await todo_data.fetch_accounts(Client(), ['#SLOW', '#FAST'], concurrency=1, lookup_timeout=.02)
         assert [account.tag for account in accounts] == ['#FAST']
         assert len(errors) == 1
+
+    async def test_mixed_cwl_and_raid_results_are_explicitly_partial(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+        accounts = [todo_data.Account('#ONE', 'One', '#CLAN1', 'Clan1', 18),
+                    todo_data.Account('#TWO', 'Two', '#CLAN2', 'Clan2', 18)]
+        war = SimpleNamespace(state='inWar', start_time=None, end_time=None,
+            clan=SimpleNamespace(tag='#CLAN1', members=[SimpleNamespace(tag='#ONE', attacks=[])]), opponent=None)
+        raid = SimpleNamespace(end_time=None, get_member=lambda tag: None)
+        with patch('utils.todo_data.gather_clans', new=AsyncMock(return_value=[('war',war),('error',None)])):
+            cwl = await todo_data.build_cwl_view(None, accounts)
+        with patch('utils.todo_data.gather_clans', new=AsyncMock(return_value=[('raid',raid),('error',None)])), patch('utils.todo_data.DIAG',False):
+            raids = await todo_data.build_raid_view(None, accounts)
+        for view in (cwl, raids):
+            assert view.ok
+            assert len(view.rows) == 1
+            assert view.incomplete

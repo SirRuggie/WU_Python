@@ -102,3 +102,43 @@ and each diagnostic appeared once. Direct player requests still timed out with a
 a cache-busting query, and smaller TCP segments did not restore the failed player
 lookup. No host networking settings or API provider were changed. These UI fixes
 are not evidence of live data recovery; the unresolved dependency remains recorded.
+
+## Full failure audit and queue correction
+
+The official endpoint itself returned **504 after 60.12 seconds**, HTML response,
+for `/v1/players/%23QGYUCG8RV`, using an independent authenticated aiohttp request.
+This is stronger evidence than a locally imposed timeout. A direct bounded audit
+attempted all 47 linked accounts, with eight concurrent reads: seven returned 200
+within 0.03–0.15s, forty did not respond within four seconds. Successful payloads
+included TH18 and 23KB responses, so neither all TH18 accounts nor large responses
+universally fail. Normal DNS/TLS connections work, both official destination IPs
+were checked, no proxy environment is configured, and the same credential works
+on successful player and location reads. An attempted header-only packet capture
+was unavailable because sudo requires interactive authentication; no network or
+firewall settings were changed. Do not describe this as a proven global outage.
+
+Additional application fixes:
+
+- Account batch time now includes the bounded request queue instead of cancelling
+  later accounts at eight seconds, often before they started. Completed accounts
+  publish immediately while remaining reads run; identities still come only from
+  the current authenticated link lookup and successful player reads.
+- CWL and Raids mark mixed successful/failed clan reads explicitly incomplete.
+- The picker shows loaded versus linked account count during incomplete checks.
+- Notifications cannot replace saved account selections with a partial list using
+  Select all. Individual choices remain available. An unavailable account list no
+  longer tells members to link their accounts again.
+- Sanitized server logs summarize linked/loaded counts and incomplete activities.
+
+Validation: 210 focused backend tests, 338 frontend tests and production build
+passed. The war-reminder gate also passed (186 backend, one skipped; 32 frontend).
+New tests cover a late account behind three stalled request waves, immediate
+account progress, partial CWL/Raid rows, and notification selection protection.
+Browser checks at 390px and 1280px verified the count and disabled partial-list
+selection action; no desktop page overflow. No real notification was sent.
+
+An authenticated HTTP test with real providers and the owner's account links
+showed the first accounts at 0.72s and finished in 24.33s, with nine accounts and
+two War rows. Earlier consecutive runs returned 15 and 17 accounts plus two Raid
+rows. All remained incomplete. This variability and the origin 504 are unresolved
+upstream-data limitations; full Tasks recovery is not verified.
