@@ -122,9 +122,9 @@ async def _section(fn, *args, **kwargs):
 
 async def _task_accounts(client, tags, sem):
     """Keep completed player reads when one account stalls; never use stale identity."""
-    tasks = [asyncio.create_task(todo_data.fetch_accounts(client, [tag], sem=sem)) for tag in tags]
+    tasks = [asyncio.create_task(todo_data.fetch_accounts(client, [tag], sem=sem, lookup_timeout=3)) for tag in tags]
     try:
-        done, _ = await asyncio.wait(tasks, timeout=min(VIEW_TIMEOUT, 20))
+        done, _ = await asyncio.wait(tasks, timeout=min(VIEW_TIMEOUT, 8))
         accounts, errors = [], []
         for tag, task in zip(tags, tasks):
             if task not in done:
@@ -170,7 +170,10 @@ async def _live_snapshot(app, tags, publish=None):
     notify()
 
     async def load(key, builder, **kwargs):
-        view = await _section(builder, client, accounts, sem=sem, **kwargs)
+        with todo_data.bounded_clan_reads(8):
+            # Four activity builders get two slots each. Slow war reads must
+            # not occupy every slot and prevent raids/CWL from even starting.
+            view = await _section(builder, client, accounts, sem=todo_data.new_semaphore(2), **kwargs)
         extra = account_note
         if key in ('war', 'cwl', 'private') and history_note:
             extra = '; '.join(filter(None, (extra, history_note)))
@@ -265,7 +268,8 @@ async def _snapshot(app, user_id, progress=None):
                     view["ok"] = False
                     view["incomplete"] = "More than 100 linked accounts; some were not checked"
         cache = app["todo_cache"]
-        cache[user_id] = (time.monotonic() + CACHE_SECONDS, result)
+        ttl = 15 if any(not view["ok"] or view.get("incomplete") for view in result["views"].values()) else CACHE_SECONDS
+        cache[user_id] = (time.monotonic() + ttl, result)
         _prune(cache)
         return result
     except Exception:

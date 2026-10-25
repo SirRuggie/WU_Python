@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 import { ApiError } from './api'
 import { clanDeepLink } from './publication'
 import TownHallIcon from './TownHallIcon'
-import { todoEmptyText, todoTabs, visibleTodoRows, type TodoKind, type TodoSnapshot, type TodoRow } from './todo'
+import { todoHasGaps, todoEmptyText, todoTabs, visibleTodoRows, type TodoKind, type TodoSnapshot, type TodoRow } from './todo'
 import './TodoWorkspace.css'
 import { readTodoPreferences, saveTodoPreferences } from './todoPreferences'
 function Badge({ url }: { url?: string | null }) {
@@ -65,6 +65,7 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
     return () => { cancelled=true;clearInterval(timer);document.removeEventListener('visibilitychange',check);window.removeEventListener('online',check) }
   },[paused,refresh])
   useEffect(() => { setPage(0) },[tab,selected,search,sort])
+  const gaps=todoHasGaps(data)
   const view=data?.views[tab]
   const config=todoTabs.find(item=>item.key===tab)!
   const rows=visibleTodoRows(view?.rows || [],selected,search,sort, !!initialSearch && search === initialSearch)
@@ -78,7 +79,7 @@ export default function TodoWorkspace({ userId, initialSearch = '', initialTab }
   const unreadable=data?.views.private.rows.length || 0
   return <div className="todo-workspace">
     <div className="page-head"><div><p className="eyebrow">Activity</p><h1>Tasks</h1><p>Your accounts’ remaining attacks and personal progress. For whole-clan scores, open Wars.</p></div><button onClick={()=>setRefresh(value=>value+1)} disabled={loading}>↻ {loading ? 'Checking…' : 'Check now'}</button></div>
-    <div className="todo-refresh"><span role="status"><span className={`status-dot ${data && !error ? 'active' : ''}`} />{cached ? (error ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : loading ? 'Checking linked accounts and clan activity…' : error ? 'Refresh needs attention' : data ? `Last checked ${new Date(data.checked_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` : 'Loading your activity…'}</span><button aria-pressed={paused} onClick={()=>setPaused(value=>!value)}>{paused ? '▶ Resume auto-refresh' : 'Ⅱ Pause auto-refresh'}</button></div>
+    <div className="todo-refresh"><span role="status"><span className={`status-dot ${data && !error && !gaps && !loading ? 'active' : ''}`} />{cached ? (error ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : loading ? 'Checking linked accounts and clan activity…' : error ? 'Refresh needs attention' : gaps ? 'Some activity could not be checked · try again shortly' : data ? `Last checked ${new Date(data.checked_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` : 'Loading your activity…'}</span><button aria-pressed={paused} onClick={()=>setPaused(value=>!value)}>{paused ? '▶ Resume auto-refresh' : 'Ⅱ Pause auto-refresh'}</button></div>
     {error && <div className="notice error" role="alert"><div>{error}{data && <small>Showing your last update. It may be out of date.</small>}</div><button onClick={()=>setRefresh(value=>value+1)}>Retry</button></div>}
     {!data && !error && <div className="card todo-loading" role="status"><strong>Loading your tasks…</strong><p>Checking your linked accounts and clans.</p></div>}
     {data && <>

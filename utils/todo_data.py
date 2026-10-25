@@ -114,6 +114,22 @@ FETCH_CONCURRENCY = 8
 
 
 _bypass_cache = contextvars.ContextVar("todo_bypass_cache", default=False)
+_clan_batch_budget = contextvars.ContextVar("todo_clan_batch_budget", default=None)
+
+
+@contextlib.contextmanager
+def bounded_clan_reads(seconds: float):
+    """Preserve completed clan reads within an interactive caller's time budget.
+
+    Task-local: background reminders retain their existing freshness and timing
+    policy. Waiting for a semaphore or shared clan lock counts toward the budget.
+    """
+    token = _clan_batch_budget.set(seconds)
+    try:
+        yield
+    finally:
+        _clan_batch_budget.reset(token)
+
 
 
 @contextlib.contextmanager
@@ -556,7 +572,7 @@ class Account:
 # Fetching
 # ---------------------------------------------------------------------------
 
-async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semaphore):
+async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semaphore, lookup_timeout: float | None = None):
     """One player lookup. NEVER RAISES - returns (tag, Account|None, error|None).
 
     Swallowing here rather than at the gather is deliberate. asyncio.gather with
@@ -570,7 +586,10 @@ async def _fetch_one_player(coc_client: coc.Client, tag: str, sem: asyncio.Semap
     async with sem:
         try:
             with timed_call("player"):
-                player = await coc_client.get_player(tag)
+                if lookup_timeout is None:
+                    player = await coc_client.get_player(tag)
+                else:
+                    player = await asyncio.wait_for(coc_client.get_player(tag), lookup_timeout)
         except coc.NotFound:
             # A linked tag for an account that no longer exists. Common with
             # abandoned alts; not an error worth surfacing to the user.
@@ -637,7 +656,20 @@ async def gather_clans(sem: asyncio.Semaphore, clan_tags: list[str], fn):
                   f"{type(exc).__name__}: {exc}", flush=True)
             return ("error", None)
 
-    return await asyncio.gather(*(one(tag) for tag in clan_tags))
+    budget = _clan_batch_budget.get()
+    if budget is None:
+        return await asyncio.gather(*(one(tag) for tag in clan_tags))
+    tasks = [asyncio.create_task(one(tag)) for tag in clan_tags]
+    if not tasks:
+        return []
+    try:
+        done, _ = await asyncio.wait(tasks, timeout=budget)
+        return [task.result() if task in done else ("error", None) for task in tasks]
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def fetch_accounts(
@@ -645,6 +677,7 @@ async def fetch_accounts(
     tags: list[str],
     concurrency: int = FETCH_CONCURRENCY,
     sem: asyncio.Semaphore | None = None,
+    lookup_timeout: float | None = None,
 ) -> tuple[list[Account], list[str]]:
     """Resolve tags to accounts, CONCURRENTLY. Returns (accounts, errors).
 
@@ -682,7 +715,7 @@ async def fetch_accounts(
         # to its own so fetch_accounts stays callable on its own.
         sem = sem or new_semaphore(concurrency)
         results = await asyncio.gather(
-            *(_fetch_one_player(coc_client, tag, sem) for tag in misses)
+            *(_fetch_one_player(coc_client, tag, sem, lookup_timeout) for tag in misses)
         )
         for tag, account, error in results:
             if error:

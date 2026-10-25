@@ -45,3 +45,36 @@ Runtime import passed; service active with zero restarts. Public Tasks and other
 checked dashboard routes returned 200; served entry JS, CSS and Tasks chunk matched
 the build. Unauthenticated Tasks requests returned 401; invalid login callback
 returned 403. Production fixtures remain disabled.
+
+## Follow-up: unavailable activities after first fix
+
+The first deployment did not resolve live activity availability. Further review
+found a shared request queue could allow stalled War reads to block CWL and Raids;
+the remaining whole-clan gather also discarded completed clans at its timeout.
+
+The follow-up gives each of four activity builders two concurrent request slots
+(eight total), preserves finished clan results within an eight-second batch budget,
+and cancels unfinished requests, including queued work. Player batches have an
+eight-second limit and individual player requests release their slot after three
+seconds. These limits apply to interactive Tasks; other callers retain their
+existing behavior. Failed snapshots expire after 15 seconds instead of 60.
+A failed or incomplete check no longer shows the green successful-check status.
+
+Verification includes 134 targeted backend tests, 334 frontend tests, the war
+reminder validation gate (186 backend passed, one skipped; 32 frontend passed),
+and the production build. Additional tests exercise real view builders with a
+stalled clan, queue starvation, cancellation and partial rows. Isolated mobile
+390px and desktop 1280px previews retained War results while Raids failed and
+showed the incomplete global status.
+
+Live read-only testing used authenticated HTTP requests against an isolated app
+with the real providers and owner's linked accounts, without writing production
+sessions or data. Requests returned progress in milliseconds; full checks took
+about 16–17 seconds, including usable War rows and Games scores in some runs.
+Coverage remained partial. Direct authenticated curl and aiohttp probes outside
+the app confirmed player/clan/raid endpoint timeouts (one player exceeded 25s),
+while locations returned 200 around 0.15s and a war read intermittently succeeded.
+Both DNS-resolved official API addresses were tested; no alternate provider or
+credential destination was introduced. This proves a live-data dependency problem
+in addition to the fixed application bugs, not complete live recovery. Do not mark
+Tasks fully resolved until all expected linked accounts and activities load.

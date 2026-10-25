@@ -32,3 +32,7 @@ export function todoTime(epoch: number | null, now: number) {
   const days = Math.floor(minutes / 1440), hours = Math.floor(minutes % 1440 / 60), mins = minutes % 60
   return days ? `${days}d ${hours}h` : hours ? `${hours}h ${mins}m` : `${mins}m`
 }
+
+export function todoHasGaps(snapshot: TodoSnapshot | null) {
+  return !!snapshot && Object.values(snapshot.views).some(view => !view.loading && (!view.ok || !!view.incomplete))
+}

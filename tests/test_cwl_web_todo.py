@@ -291,3 +291,65 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([a.tag for a in accounts], ['#FAST'])
         self.assertEqual(len(errors), 1)
         self.assertTrue(cancelled.is_set())
+
+    async def test_slow_clan_keeps_successful_war_rows(self):
+        from cwl_web.todo import _live_snapshot
+        from types import SimpleNamespace
+        account = todo_data.Account('#P2Y', 'Scout', '#R2Y', 'Home', 16)
+        other = todo_data.Account('#Q2Y', 'Other', '#SLOW', 'Slow', 16)
+        cancelled = asyncio.Event()
+        async def war(client, tag, **kwargs):
+            if tag == '#SLOW':
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+            return 'war', SimpleNamespace(state='inWar', end_time=None, start_time=None,
+                attacks_per_member=2, clan=SimpleNamespace(tag='#R2Y', members=[SimpleNamespace(tag='#P2Y', attacks=[])]), opponent=None)
+        bounded_reads = todo_data.bounded_clan_reads
+        # Exercise the actual builder, grouping, semaphore and timeout.
+        with patch('cwl_web.todo._task_accounts', new=AsyncMock(return_value=([account, other], []))), \
+             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('utils.todo_data._get_war', side_effect=war), \
+             patch('cwl_web.todo.todo_data.bounded_clan_reads', new=lambda seconds: bounded_reads(.02)), \
+             patch('cwl_web.todo.todo_data.build_cwl_view', new=AsyncMock(return_value=todo_data.ViewData())), \
+             patch('cwl_web.todo.todo_data.build_raid_view', new=AsyncMock(return_value=todo_data.ViewData())), \
+             patch('cwl_web.todo.todo_data.build_blocked_view', new=AsyncMock(return_value=todo_data.ViewData())), \
+             patch('cwl_web.todo._fwa_outcomes', new=AsyncMock(return_value=([None], ''))):
+            result = await _live_snapshot(self.app, ['#P2Y', '#Q2Y'])
+        self.assertEqual([r['tag'] for r in result['views']['war']['rows']], ['#P2Y'])
+        self.assertTrue(result['views']['war']['incomplete'])
+        self.assertTrue(cancelled.is_set())
+
+    async def test_stalled_war_reads_do_not_starve_raids(self):
+        from cwl_web.todo import _live_snapshot
+        started, raid_finished, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        held = 0
+        async def war(client, accounts, sem, **kwargs):
+            async def hold():
+                nonlocal held
+                async with sem:
+                    held += 1
+                    if held >= 2:
+                        started.set()
+                    await release.wait()
+            await asyncio.gather(*(hold() for _ in range(8)))
+            return todo_data.ViewData()
+        async def raid(client, accounts, sem, **kwargs):
+            await started.wait()
+            async with sem:
+                raid_finished.set()
+            return todo_data.ViewData()
+        with patch('cwl_web.todo._task_accounts', new=AsyncMock(return_value=([todo_data.Account('#P2Y','Scout','#R2Y','Home',16)], []))), \
+             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('cwl_web.todo.todo_data.build_war_view', new=war), \
+             patch('cwl_web.todo.todo_data.build_raid_view', new=raid), \
+             patch('cwl_web.todo.todo_data.build_cwl_view', new=AsyncMock(return_value=todo_data.ViewData())), \
+             patch('cwl_web.todo.todo_data.build_blocked_view', new=AsyncMock(return_value=todo_data.ViewData())):
+            task = asyncio.create_task(_live_snapshot(self.app, ['#P2Y']))
+            try:
+                await asyncio.wait_for(raid_finished.wait(), 1)
+                self.assertFalse(task.done())
+            finally:
+                release.set()
+                await task

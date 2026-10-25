@@ -27,3 +27,12 @@ it('keeps a search handoff exact while allowing normal partial task searches', (
   expect(visibleTodoRows(rows, null, '#CLAN', 'name', true)).toHaveLength(2)
   expect(visibleTodoRows(rows, null, '#ABC', 'name')).toHaveLength(2)
 })
+
+it('does not give an all-clear status to failed or partial checks', async () => {
+  const { todoHasGaps } = await import('./todo')
+  const snapshot = (war: TodoView) => ({ checked_at: '', accounts: [], views: { war, cwl:view, raid:view, games:view, private:view } })
+  expect(todoHasGaps(snapshot(view))).toBe(false)
+  expect(todoHasGaps(snapshot({...view,ok:false}))).toBe(true)
+  expect(todoHasGaps(snapshot({...view,incomplete:'1 account unreadable'}))).toBe(true)
+  expect(todoHasGaps(snapshot({...view,ok:false,loading:true}))).toBe(false)
+})
