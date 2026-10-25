@@ -234,3 +234,60 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await task
         self.assertTrue(games_cancelled.is_set())
+
+    async def test_background_returns_fast_views_before_slow_cwl_finishes(self):
+        release = asyncio.Event()
+        async def slow(*args, **kwargs):
+            await release.wait()
+            return todo_data.ViewData()
+        with patch('cwl_web.todo.todo_data.fetch_accounts', new=AsyncMock(return_value=([todo_data.Account('#P2Y', 'Scout', '#R2Y', 'Home', 16)], []))), \
+             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('cwl_web.todo.todo_data.build_war_view', new=AsyncMock(return_value=todo_data.ViewData())), \
+             patch('cwl_web.todo.todo_data.build_raid_view', new=AsyncMock(return_value=todo_data.ViewData())), \
+             patch('cwl_web.todo.todo_data.build_blocked_view', new=AsyncMock(return_value=todo_data.ViewData())), \
+             patch('cwl_web.todo.todo_data.build_cwl_view', new=slow):
+            headers = self.auth('100')
+            response = await self.client.get('/api/cwl/todo?background=1', headers=headers)
+            self.assertTrue((await response.json())['updating'])
+            for _ in range(100):
+                response = await self.client.get('/api/cwl/todo?background=1', headers=headers)
+                body = await response.json()
+                if body['snapshot'] and not body['snapshot']['views']['war'].get('loading'):
+                    break
+                await asyncio.sleep(.001)
+            self.assertTrue(body['updating'])
+            self.assertTrue(body['snapshot']['views']['war']['ok'])
+            self.assertTrue(body['snapshot']['views']['cwl']['loading'])
+            self.assertEqual(len(self.app['todo_inflight']), 1)
+            release.set()
+            await asyncio.gather(*list(self.app['todo_inflight'].values()))
+            final = await (await self.client.get('/api/cwl/todo?background=1', headers=headers)).json()
+            self.assertFalse(final['updating'])
+            self.assertNotIn('loading', final['snapshot']['views']['cwl'])
+
+    async def test_background_failure_stops_polling_without_restarting_job(self):
+        self.providers.fail = True
+        headers = self.auth('100')
+        await self.client.get('/api/cwl/todo?background=1', headers=headers)
+        await asyncio.gather(*list(self.app['todo_inflight'].values()), return_exceptions=True)
+        body = await (await self.client.get('/api/cwl/todo?background=1', headers=headers)).json()
+        self.assertFalse(body['updating'])
+        self.assertTrue(body['error'])
+        self.assertFalse(self.app['todo_inflight'])
+        self.assertEqual((await self.client.get('/api/cwl/todo?background=1')).status, 401)
+
+    async def test_slow_account_does_not_discard_completed_accounts(self):
+        from cwl_web.todo import _task_accounts
+        cancelled = asyncio.Event()
+        async def fetch(client, tags, **kwargs):
+            if tags == ['#SLOW']:
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+            return [todo_data.Account(tags[0], 'Scout', '#R2Y', 'Home', 16)], []
+        with patch('cwl_web.todo.todo_data.fetch_accounts', new=fetch), patch('cwl_web.todo.VIEW_TIMEOUT', .02):
+            accounts, errors = await _task_accounts(None, ['#FAST', '#SLOW'], asyncio.Semaphore(8))
+        self.assertEqual([a.tag for a in accounts], ['#FAST'])
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(cancelled.is_set())

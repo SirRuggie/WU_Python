@@ -120,58 +120,87 @@ async def _section(fn, *args, **kwargs):
         return None
 
 
-async def _live_snapshot(app, tags):
+async def _task_accounts(client, tags, sem):
+    """Keep completed player reads when one account stalls; never use stale identity."""
+    tasks = [asyncio.create_task(todo_data.fetch_accounts(client, [tag], sem=sem)) for tag in tags]
+    try:
+        done, _ = await asyncio.wait(tasks, timeout=min(VIEW_TIMEOUT, 20))
+        accounts, errors = [], []
+        for tag, task in zip(tags, tasks):
+            if task not in done:
+                errors.append(f'{tag}: lookup timed out')
+                continue
+            try:
+                found, failed = task.result()
+                accounts.extend(found)
+                errors.extend(failed)
+            except Exception:
+                errors.append(f'{tag}: lookup unavailable')
+        return accounts, errors
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _live_snapshot(app, tags, publish=None):
     client = await get_clash_client(app)
 
     sem = todo_data.new_semaphore()
     accounts_result, history_result = await asyncio.gather(
-        _section(todo_data.fetch_accounts, client, tags, sem=sem),
+        _task_accounts(client, tags, sem),
         _history(app, tags),
     )
-    if accounts_result is None:
-        accounts, errors = [], ["Account lookups timed out"]
-    else:
-        accounts, errors = accounts_result
+    accounts, errors = accounts_result
     candidates, history_note = history_result
     account_note = f"{len(errors)} linked account(s) could not be checked" if errors else ""
     if tags and not accounts:
         raise ProviderUnavailable(account_note or "Linked accounts could not be checked")
 
     from .todo_games import build_games_view
-    games_task = asyncio.create_task(_section(build_games_view, accounts))
-    try:
-        war, cwl, raid = await asyncio.gather(
-            _section(todo_data.build_war_view, client, accounts, sem=sem, candidates=candidates),
-            _section(todo_data.build_cwl_view, client, accounts, sem=sem, candidates=candidates),
-            _section(todo_data.build_raid_view, client, accounts, sem=sem),
-        )
-        private = await _section(todo_data.build_blocked_view, client, accounts, sem=sem, candidates=candidates)
-        result = {}
-        for key, view in (("war", war), ("cwl", cwl), ("raid", raid), ("private", private)):
-            extra = account_note
-            if key in ("war", "cwl", "private") and history_note:
-                extra = "; ".join(filter(None, (extra, history_note)))
-            result[key] = _view(view, extra) if view else _unavailable(f"{key.title()} status could not be checked")
+    result = {key: dict(_unavailable('Checking this activity…'), loading=True)
+              for key in ('war', 'cwl', 'raid', 'private', 'games')}
+    def snapshot():
+        return {"checked_at": _now(), "accounts": [_account(account) for account in accounts],
+                "views": dict(result)}
+    def notify():
+        if publish:
+            publish(snapshot())
+    notify()
 
-        if war:
-            outcomes, fwa_note = await _fwa_outcomes(app, war.rows)
-            for row, outcome in zip(result['war']['rows'], outcomes):
-                row['fwa_outcome'] = outcome
+    async def load(key, builder, **kwargs):
+        view = await _section(builder, client, accounts, sem=sem, **kwargs)
+        extra = account_note
+        if key in ('war', 'cwl', 'private') and history_note:
+            extra = '; '.join(filter(None, (extra, history_note)))
+        result[key] = _view(view, extra) if view else _unavailable(f'{key.title()} status could not be checked')
+        notify()
+        if key == 'war' and view:
+            outcomes, fwa_note = await _fwa_outcomes(app, view.rows)
+            enriched = dict(result[key], rows=[dict(row, fwa_outcome=outcome)
+                for row, outcome in zip(result[key]['rows'], outcomes)])
             if fwa_note:
-                result['war']['notes'].append(fwa_note)
+                enriched['notes'] = [*enriched['notes'], fwa_note]
+            result[key] = enriched
+            notify()
 
-        games = await games_task
-        result["games"] = games if games is not None else _unavailable("Current Clan Games progress is unavailable")
+    async def games():
+        view = await _section(build_games_view, accounts)
+        result['games'] = view if view is not None else _unavailable('Current Clan Games progress is unavailable')
         if account_note:
-            games_view = result["games"]
-            games_view["incomplete"] = "; ".join(filter(None, (games_view.get("incomplete"), account_note)))
-            games_view["note"] = "; ".join(filter(None, (games_view.get("note"), account_note)))
-    finally:
-        if not games_task.done():
-            games_task.cancel()
-            await asyncio.gather(games_task, return_exceptions=True)
-    return {"checked_at": _now(), "accounts": [_account(account) for account in accounts],
-            "views": result}
+            result['games'] = dict(result['games'],
+                incomplete='; '.join(filter(None, (result['games'].get('incomplete'), account_note))),
+                note='; '.join(filter(None, (result['games'].get('note'), account_note))))
+        notify()
+
+    async with asyncio.TaskGroup() as tasks:
+        tasks.create_task(load('war', todo_data.build_war_view, candidates=candidates))
+        tasks.create_task(load('cwl', todo_data.build_cwl_view, candidates=candidates))
+        tasks.create_task(load('raid', todo_data.build_raid_view))
+        tasks.create_task(load('private', todo_data.build_blocked_view, candidates=candidates))
+        tasks.create_task(games())
+    return snapshot()
 
 
 def _fixture(app, tags):
@@ -217,7 +246,7 @@ def _prune(cache):
         cache.pop(next(iter(cache)))
 
 
-async def _snapshot(app, user_id):
+async def _snapshot(app, user_id, progress=None):
     try:
         try:
             links = await asyncio.wait_for(app["providers"].linked_tags(user_id), 10)
@@ -230,7 +259,7 @@ async def _snapshot(app, user_id):
             result = {"checked_at": _now(), "accounts": [],
                       "views": {key: dict(empty) for key in ("war", "cwl", "raid", "private", "games")}}
         else:
-            result = _fixture(app, tags) if app["dev_fixture"] and hasattr(app["providers"], "players") else await _live_snapshot(app, tags)
+            result = _fixture(app, tags) if app["dev_fixture"] and hasattr(app["providers"], "players") else await _live_snapshot(app, tags, publish=(lambda value: progress.update(snapshot=value)) if progress is not None else None)
             if len(links) > 100:
                 for view in result["views"].values():
                     view["ok"] = False
@@ -239,7 +268,13 @@ async def _snapshot(app, user_id):
         cache[user_id] = (time.monotonic() + CACHE_SECONDS, result)
         _prune(cache)
         return result
+    except Exception:
+        if progress is not None:
+            progress.update(error='Tasks could not be updated. Please try again.', expires=time.monotonic() + 5)
+        raise
     finally:
+        if progress is not None:
+            progress['updating'] = False
         app["todo_inflight"].pop(user_id, None)
 
 
@@ -256,12 +291,27 @@ async def todo(request):
     _prune(app["todo_cache"])
     cached = app["todo_cache"].get(user_id)
     if cached:
-        return web.json_response(cached[1])
-    task = app["todo_inflight"].get(user_id)
-    if task is None:
-        task = asyncio.create_task(_snapshot(app, user_id))
+        return web.json_response({'snapshot': cached[1], 'updating': False} if request.query.get('background') == '1' else cached[1],
+            headers={'Cache-Control': 'no-store'})
+    background = request.query.get('background') == '1'
+    states = app.setdefault('todo_progress', {})
+    for uid, state in list(states.items()):
+        if uid not in app['todo_inflight'] and state.get('expires', 0) <= time.monotonic():
+            states.pop(uid, None)
+    task = app['todo_inflight'].get(user_id)
+    state = states.get(user_id)
+    if task is None and not (background and state and state.get('error')):
+        if len(app['todo_inflight']) >= 100:
+            raise web.HTTPServiceUnavailable(text='Tasks are busy. Please try again shortly.')
+        state = {'snapshot': None, 'updating': True}
+        states[user_id] = state
+        task = asyncio.create_task(_snapshot(app, user_id, state))
         task.add_done_callback(_observe)
-        app["todo_inflight"][user_id] = task
+        app['todo_inflight'][user_id] = task
+    if background:
+        return web.json_response({'snapshot': state.get('snapshot'),
+            'updating': state.get('updating', False), 'error': state.get('error')},
+            headers={'Cache-Control': 'no-store'})
     return web.json_response(await asyncio.shield(task))
 
 
@@ -277,6 +327,7 @@ async def lifecycle(app):
         await client.close()
     app["todo_inflight"].clear()
     app["todo_cache"].clear()
+    app.get("todo_progress", {}).clear()
 
 
 def routes():
