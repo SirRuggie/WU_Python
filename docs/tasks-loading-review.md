@@ -142,3 +142,10 @@ showed the first accounts at 0.72s and finished in 24.33s, with nine accounts an
 two War rows. Earlier consecutive runs returned 15 and 17 accounts plus two Raid
 rows. All remained incomplete. This variability and the origin 504 are unresolved
 upstream-data limitations; full Tasks recovery is not verified.
+
+Deployment `05116eb` verified: pushed revision matched origin, runtime imports
+passed, dashboard service active with zero restarts, checked public routes 200,
+entry JS/CSS and Tasks chunk matched the build. Protected endpoints remained 401
+and invalid login callback 403; production fixtures disabled. Existing hashed
+assets were retained. Full live account availability remains unverified because
+of the API failures above.
