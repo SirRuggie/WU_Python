@@ -4,7 +4,7 @@ The Tasks page previously waited for a complete snapshot before rendering any
 activity. Account reads and history preceded several activity reads; the blocked
 war view ran after the other views. Slow official API calls could therefore hold
 the request beyond the reverse proxy deadline. A stalled account batch also
- discarded successful player reads.
+discarded successful player reads.
 
 ## Change
 
@@ -37,3 +37,11 @@ the request beyond the reverse proxy deadline. A stalled account batch also
   change does not guarantee fresh results during an upstream outage.
 - No live messages or test notifications were sent. Browser tests used isolated
   sample data and do not prove live notification delivery.
+
+## Deployment
+
+Implementation `9be3cdc` pushed to main and deployed to the dashboard service.
+Runtime import passed; service active with zero restarts. Public Tasks and other
+checked dashboard routes returned 200; served entry JS, CSS and Tasks chunk matched
+the build. Unauthenticated Tasks requests returned 401; invalid login callback
+returned 403. Production fixtures remain disabled.
