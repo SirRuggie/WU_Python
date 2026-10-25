@@ -85,3 +85,20 @@ build. Protected endpoints remained 401 and invalid OAuth callback 403. An
 additional 163 shared Tasks/account/maintenance tests passed. Live browser reached
 the correct sign-in destination; no signed-in browser session was available, so
 real account checks used the isolated authenticated HTTP app described above.
+
+## Failure-screen cleanup
+
+The subsequent screenshot exposed duplicate error output from four render paths.
+A single activity-status component now owns that notice, with deduplicated details
+behind a native disclosure. Empty failed results do not also render an empty-state
+card or misleading zero-count badge. Search/sort are omitted when there are no
+results to filter; existing searches remain editable. Regular-war diagnostics no
+longer appear as a separate warning in CWL. Actual partial rows remain visible.
+
+336 frontend tests and the build passed. The screenshot's repeated messages were
+reproduced in an isolated mobile fixture; the notice rendered once, details opened
+and each diagnostic appeared once. Direct player requests still timed out with a
+50-second allowance while a current-war request returned 200 in 0.18s. Compression,
+a cache-busting query, and smaller TCP segments did not restore the failed player
+lookup. No host networking settings or API provider were changed. These UI fixes
+are not evidence of live data recovery; the unresolved dependency remains recorded.
