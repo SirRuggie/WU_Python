@@ -49,8 +49,8 @@ class ActivityEndpoint(unittest.IsolatedAsyncioTestCase):
         self.app=create_app(db_path=str(Path(self.tmp.name)/'web.sqlite'),providers=self.providers,secure_cookies=False)
         self.client=TestClient(TestServer(self.app));await self.client.start_server()
         self.app['todo_client']=NS(close=AsyncMock())
-        async def accounts(client,tags):
-            return [NS(clan_tag=tags[0],clan_name='Personal clan')],[]
+        async def accounts(client,tags, **kwargs):
+            return [NS(tag=tags[0],name='Player',clan_tag=tags[0],clan_name='Personal clan')],[]
         self.accounts=patch('utils.todo_data.fetch_accounts',new=AsyncMock(side_effect=accounts));self.accounts.start()
         self.fetch=patch('utils.todo_data.fetch_clan_overview',new=AsyncMock(return_value={'regular':{'state':'none'},'cwl':{'state':'private'}}));self.overview=self.fetch.start()
 
@@ -102,3 +102,55 @@ class SharedReads(unittest.IsolatedAsyncioTestCase):
         with patch('utils.todo_data._get_war',new=AsyncMock(side_effect=TimeoutError())), patch('utils.todo_data._get_cwl_round',new=AsyncMock(return_value=('none',None))):
             result=await todo_data.fetch_clan_overview(object(),'#ONE','war')
         self.assertEqual(result,{'regular':{'state':'error'},'cwl':{'state':'none'}})
+
+
+class PersonalWars(unittest.IsolatedAsyncioTestCase):
+    def test_own_side_only_and_unknown_attacks(self):
+        war = Projections().war()
+        war.clan.members = [NS(tag='#A', attacks=[object()]), NS(tag='#B', attacks=None)]
+        war.opponent.members = [NS(tag='#OTHER', attacks=[])]
+        accounts = [NS(tag=tag, name=tag) for tag in ('#A', '#B', '#OTHER')]
+        result = war_summary('war', war, '#ONE', accounts=accounts, now=0)
+        self.assertEqual([a['tag'] for a in result['my_accounts']], ['#A', '#B'])
+        self.assertEqual(result['my_accounts'][0]['attacks_left'], 1)
+        self.assertIsNone(result['my_accounts'][1]['attacks_left'])
+        reverse = war_summary('war', war, '#TWO', accounts=accounts, now=0)
+        self.assertEqual([a['tag'] for a in reverse['my_accounts']], ['#OTHER'])
+
+    async def test_recent_clan_needs_verified_active_cwl_membership(self):
+        from cwl_web.clan_activity import build_snapshot
+        from utils.clan_history import ClanCandidate
+        player = todo_data.Account('#A', 'Player', '#HOME', 'Home')
+        app = {'providers': NS(linked_tags=AsyncMock(return_value={'#A': True}))}
+        async def overview(client, tag, kind, **kwargs):
+            members = [{'tag': '#A', 'name': 'Player', 'attacks_left': 1, 'attacks_total': 1}] if tag == '#HOST' else []
+            return {'regular': {'state': 'inWar'}, 'cwl': {'state': 'inWar', 'my_accounts': members}}
+        candidates = {'#A': [ClanCandidate('#HOST'), ClanCandidate('#UNRELATED')]}
+        with patch('cwl_web.clan_activity.get_clash_client', AsyncMock(return_value=object())), patch('utils.todo_data.fetch_accounts', AsyncMock(return_value=([player], []))) as fetch, patch('cwl_web.clan_activity.load_recent_clans', AsyncMock(return_value=(candidates, ''))), patch('utils.todo_data.fetch_clan_overview', AsyncMock(side_effect=overview)):
+            result = await build_snapshot(app, '100', 'mine', 'war')
+        self.assertEqual([c['tag'] for c in result['clans']], ['#HOME', '#HOST'])
+        self.assertEqual(result['clans'][1]['regular'], {'state': 'none'})
+        self.assertFalse(result['clans'][1]['current_member'])
+        self.assertEqual(fetch.call_args.kwargs['max_cache_age'], 60)
+
+    async def test_recent_unavailable_clan_is_warning_not_unrelated_card(self):
+        from cwl_web.clan_activity import build_snapshot
+        from utils.clan_history import ClanCandidate
+        player = todo_data.Account('#A', 'Player', '#HOME', 'Home')
+        app = {'providers': NS(linked_tags=AsyncMock(return_value={'#A': True}))}
+        with patch('cwl_web.clan_activity.get_clash_client', AsyncMock(return_value=object())), patch('utils.todo_data.fetch_accounts', AsyncMock(return_value=([player], []))), patch('cwl_web.clan_activity.load_recent_clans', AsyncMock(return_value=({'#A': [ClanCandidate('#OLD')]}, ''))), patch('utils.todo_data.fetch_clan_overview', AsyncMock(return_value={'regular': {'state': 'error'}, 'cwl': {'state': 'private'}})):
+            result = await build_snapshot(app, '100', 'mine', 'war')
+        self.assertEqual([c['tag'] for c in result['clans']], ['#HOME'])
+        self.assertTrue(result['warnings'])
+
+    async def test_short_membership_cache_does_not_change_default_task_cache(self):
+        account = todo_data.Account('#CACHE', 'Old', '#OLD', 'Old')
+        current = todo_data.Account('#CACHE', 'New', '#NEW', 'New')
+        todo_data.cache_put('player:#CACHE', account, 600)
+        with patch('utils.todo_data.time.time', return_value=time.time() + 120), patch('utils.todo_data._fetch_one_player', AsyncMock(return_value=('#CACHE', current, None))) as fetch:
+            default, _ = await todo_data.fetch_accounts(object(), ['#CACHE'])
+            self.assertEqual(default[0].clan_tag, '#OLD')
+            fresh, _ = await todo_data.fetch_accounts(object(), ['#CACHE'], max_cache_age=60)
+            self.assertEqual(fresh[0].clan_tag, '#NEW')
+            fetch.assert_awaited_once()
+        todo_data._cache.pop('player:#CACHE', None)

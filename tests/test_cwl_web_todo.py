@@ -81,7 +81,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
              patch("cwl_web.todo.todo_data.build_cwl_view", side_effect=view), \
              patch("cwl_web.todo.todo_data.build_raid_view", side_effect=view), \
              patch("cwl_web.todo.todo_data.build_blocked_view", side_effect=view), \
-             patch("cwl_web.todo._history", side_effect=history):
+             patch("cwl_web.todo.load_recent_clans", side_effect=history):
             a = await self.client.get("/api/cwl/todo", headers=self.auth("100"))
             b = await self.client.get("/api/cwl/todo", headers=self.auth("200"))
         self.assertEqual(a.status, 200)
@@ -109,7 +109,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
              patch("cwl_web.todo.todo_data.build_cwl_view", side_effect=failed), \
              patch("cwl_web.todo.todo_data.build_raid_view", side_effect=good), \
              patch("cwl_web.todo.todo_data.build_blocked_view", side_effect=good), \
-             patch("cwl_web.todo._history", side_effect=history):
+             patch("cwl_web.todo.load_recent_clans", side_effect=history):
             response = await self.client.get("/api/cwl/todo", headers=self.auth("100"))
         body = await response.json()
         self.assertTrue(body["views"]["war"]["ok"])
@@ -139,7 +139,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
              patch("cwl_web.todo.todo_data.build_cwl_view", side_effect=view), \
              patch("cwl_web.todo.todo_data.build_raid_view", side_effect=view), \
              patch("cwl_web.todo.todo_data.build_blocked_view", side_effect=view), \
-             patch("cwl_web.todo._history", side_effect=history):
+             patch("cwl_web.todo.load_recent_clans", side_effect=history):
             auth = self.auth("100")
             first = asyncio.create_task(self.client.get("/api/cwl/todo", headers=auth))
             second = asyncio.create_task(self.client.get("/api/cwl/todo", headers=auth))
@@ -178,7 +178,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
         async def history(*args):
             return {}, ""
         with patch("cwl_web.todo.todo_data.fetch_accounts", side_effect=no_accounts), \
-             patch("cwl_web.todo._history", side_effect=history):
+             patch("cwl_web.todo.load_recent_clans", side_effect=history):
             failed_players = await self.client.get("/api/cwl/todo", headers=auth)
         self.assertEqual(failed_players.status, 503)
         self.assertNotIn("100", self.app["todo_cache"])
@@ -186,7 +186,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_links_is_success_without_external_reads(self):
         self.providers.empty = True
         with patch("cwl_web.todo.get_clash_client") as clash, \
-             patch("cwl_web.todo._history") as history:
+             patch("cwl_web.todo.load_recent_clans") as history:
             response = await self.client.get("/api/cwl/todo", headers=self.auth("100"))
         self.assertEqual(response.status, 200)
         body = await response.json()
@@ -223,7 +223,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
             return todo_data.ViewData()
 
         with patch("cwl_web.todo.todo_data.fetch_accounts", side_effect=accounts), \
-             patch("cwl_web.todo._history", side_effect=history), \
+             patch("cwl_web.todo.load_recent_clans", side_effect=history), \
              patch("cwl_web.todo.todo_data.build_war_view", side_effect=pending_war), \
              patch("cwl_web.todo.todo_data.build_cwl_view", side_effect=view), \
              patch("cwl_web.todo.todo_data.build_raid_view", side_effect=view), \
@@ -241,7 +241,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
             await release.wait()
             return todo_data.ViewData()
         with patch('cwl_web.todo.todo_data.fetch_accounts', new=AsyncMock(return_value=([todo_data.Account('#P2Y', 'Scout', '#R2Y', 'Home', 16)], []))), \
-             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('cwl_web.todo.load_recent_clans', new=AsyncMock(return_value=({}, ''))), \
              patch('cwl_web.todo.todo_data.build_war_view', new=AsyncMock(return_value=todo_data.ViewData())), \
              patch('cwl_web.todo.todo_data.build_raid_view', new=AsyncMock(return_value=todo_data.ViewData())), \
              patch('cwl_web.todo.todo_data.build_blocked_view', new=AsyncMock(return_value=todo_data.ViewData())), \
@@ -309,7 +309,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
         bounded_reads = todo_data.bounded_clan_reads
         # Exercise the actual builder, grouping, semaphore and timeout.
         with patch('cwl_web.todo._task_accounts', new=AsyncMock(return_value=([account, other], []))), \
-             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('cwl_web.todo.load_recent_clans', new=AsyncMock(return_value=({}, ''))), \
              patch('utils.todo_data._get_war', side_effect=war), \
              patch('cwl_web.todo.todo_data.bounded_clan_reads', new=lambda seconds: bounded_reads(.02)), \
              patch('cwl_web.todo.todo_data.build_cwl_view', new=AsyncMock(return_value=todo_data.ViewData())), \
@@ -341,7 +341,7 @@ class TodoWebTests(unittest.IsolatedAsyncioTestCase):
                 raid_finished.set()
             return todo_data.ViewData()
         with patch('cwl_web.todo._task_accounts', new=AsyncMock(return_value=([todo_data.Account('#P2Y','Scout','#R2Y','Home',16)], []))), \
-             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('cwl_web.todo.load_recent_clans', new=AsyncMock(return_value=({}, ''))), \
              patch('cwl_web.todo.todo_data.build_war_view', new=war), \
              patch('cwl_web.todo.todo_data.build_raid_view', new=raid), \
              patch('cwl_web.todo.todo_data.build_cwl_view', new=AsyncMock(return_value=todo_data.ViewData())), \

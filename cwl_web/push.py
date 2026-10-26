@@ -223,7 +223,7 @@ async def _fresh_view(kind, load):
 
 
 async def fresh(app, uid):
-    from .todo import get_clash_client, _history
+    from .todo import get_clash_client, load_recent_clans
     from utils import todo_data
     links = await asyncio.wait_for(app['providers'].linked_tags(uid), 10)
     with app['store'].tx() as db:
@@ -247,7 +247,7 @@ async def fresh(app, uid):
     with todo_data.fresh_reads():
         accounts, _ = await asyncio.wait_for(
             todo_data.fetch_accounts(client, tags, sem=sem), FRESH_ACCOUNTS_TIMEOUT)
-        candidates, _ = await _history(app, tags)
+        candidates, _ = await load_recent_clans(app, tags)
         builders = {'war': todo_data.build_war_view, 'cwl': todo_data.build_cwl_view}
         kinds = [kind for kind in builders if any(row[kind] for row in rows)]
         views = await asyncio.gather(*(

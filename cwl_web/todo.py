@@ -79,7 +79,7 @@ async def get_clash_client(app):
     return client
 
 
-async def _history(app, tags):
+async def load_recent_clans(app, tags):
     uri = getattr(app["providers"], "mongo_uri", "")
     if not uri:
         return {}, "Recent clan history is unavailable"
@@ -178,7 +178,7 @@ async def _live_snapshot(app, tags, publish=None):
 
     accounts_result, history_result = await asyncio.gather(
         _task_accounts(client, tags, sem, on_progress=account_progress),
-        _history(app, tags),
+        load_recent_clans(app, tags),
     )
     accounts, errors = accounts_result
     candidates, history_note = history_result

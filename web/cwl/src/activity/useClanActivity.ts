@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '../api'
-export type WarSide = {tag: string; name: string; stars: number | null; destruction: number | null; attacks: number | null}
-export type War = {state: string; clan?: WarSide; opponent?: WarSide; team_size?: number | null; attacks_total?: number | null; starts_at?: number | null; ends_at?: number | null}
+export type WarSide = {badge_url?: string | null; tag: string; name: string; stars: number | null; destruction: number | null; attacks: number | null}
+export type War = {my_accounts?: {tag: string; name: string; attacks_left: number | null; attacks_total: number | null}[]; state: string; clan?: WarSide; opponent?: WarSide; team_size?: number | null; attacks_total?: number | null; starts_at?: number | null; ends_at?: number | null}
 export type Raid = {state: string; starts_at?: number | null; ends_at?: number | null; attacks?: number | null; districts?: number | null; loot?: number | null}
-export type ClanActivity = {tag: string; name: string; regular?: War; cwl?: War; raid?: Raid}
+export type ClanActivity = {current_member?: boolean; accounts?: {tag: string; name: string}[]; tag: string; name: string; regular?: War; cwl?: War; raid?: Raid}
 type Snapshot = {scope: string; checked_at: string; clans: ClanActivity[]; warnings: string[]}
 export function useClanActivity(kind: 'war' | 'raid', scope: 'mine' | 'family') {
   const [data, setData] = useState<Snapshot | null>(null)

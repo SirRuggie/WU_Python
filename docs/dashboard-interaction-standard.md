@@ -1127,3 +1127,11 @@ Validation: 301 frontend tests; production builds; isolated browser checks at
 320px and desktop for both directions, GIF playback and cancellation/focus return.
 No live signups were changed. Released as a frontend-only patch over 2042b0b;
 the separate server-settings/BAND rollout remains pending credential setup.
+
+### Wars — October 26
+
+Use compact matchup cards with personal accounts visible, exact dates and task
+handoff under Details, and inactive clans in a disclosure. Current-member scope is
+the default; staff explicitly opt into family scope. Unknown/private results remain
+visible. See [Wars review](wars-review.md) for membership and hosting-clan rules,
+regression evidence, responsive checks, and limitations.

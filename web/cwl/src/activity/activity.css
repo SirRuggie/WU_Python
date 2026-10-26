@@ -32,12 +32,6 @@
 .activity-toolbar > label:first-child { flex: 1; }
 .activity-toolbar input { width: 100%; }
 .activity-refresh { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; color: #b8b3a9; font-size: 13px; }
-.war-score { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0; }
-.war-score > div { display: grid; gap: 8px; }
-.war-score strong { font-size: 28px; }
-.war-score span { font-size: 12px; color: #c3bfb6; }
-.war-attacks { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; }
-.war-opponent small { display: block; }
 .raid-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
 .raid-totals dt { font-size: 12px; color: #b8b3a9; }
 .raid-totals dd { margin: 8px 0; font-size: 22px; overflow-wrap: anywhere; }
@@ -47,7 +41,47 @@
   .activity-card header { flex-wrap: wrap; gap: 8px; }
   .activity-toolbar { flex-direction: column; align-items: stretch; }
   .activity-dates { gap: 12px; }
-  .war-score strong { font-size: 24px; }
 }
 .shell .clan-activity-workspace > .workflow-tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: thin; scrollbar-color: #807351 #191919; }
 .shell .clan-activity-workspace > .workflow-tabs > button { flex: 0 0 auto; white-space: nowrap; }
+
+/* Wars: compact matchups, with personal context and secondary detail on demand. */
+.wars-workspace .activity-card-grid { align-items: start; }
+.war-card { padding: 18px 20px 8px; }
+.war-card .war-card-meta { align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; color: #c3bfb6; font-size: 12px; }
+.war-card-kind { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.war-card-kind > svg { width: 16px; height: 16px; }
+.war-card .activity-state { padding: 3px 7px; }
+.war-matchup { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 12px; }
+.war-team { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 4px 8px; overflow-wrap: anywhere; }
+.war-team img { grid-column: 1; grid-row: 1 / span 2; object-fit: contain; }
+.war-team strong { grid-column: 2; grid-row: 1; font-size: 15px; }
+.war-team small { grid-column: 2; font-size: 12px; }
+.war-team:last-child { text-align: right; }
+.war-matchup-score { display: grid; text-align: center; gap: 3px; }
+.war-matchup-score strong { white-space: nowrap; font-size: 23px; }
+.war-matchup-score small { font-size: 11px; }
+.war-attacks { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0; font-size: 12px; color: #c3bfb6; }
+.war-personal { border-top: 1px solid #333; padding-top: 12px; }
+.war-personal h3 { font-size: 12px; color: #b8b3a9; font-weight: 500; margin-bottom: 8px; }
+.war-personal ul { padding: 0; margin: 0; list-style: none; }
+.war-personal li { display: flex; justify-content: space-between; gap: 14px; margin: 7px 0; font-size: 13px; }
+.war-personal li span { min-width: 0; overflow-wrap: anywhere; }
+.war-personal li strong { font-size: 12px; text-align: right; flex-shrink: 0; }
+.war-personal p { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.war-personal > small { display: block; margin-top: 8px; }
+.war-details > summary, .war-inactive > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; color: #c3bfb6; font-size: 13px; }
+.war-details > summary::before,.war-inactive > summary::before { content: '▸'; }
+.war-details[open] > summary::before,.war-inactive[open] > summary::before { content: '▾'; }
+.war-details footer { margin-top: 8px; }
+.shell .war-text-action { background: transparent; border: 0; padding: 8px 0; color: #f4cd64; min-height: 44px; }
+.war-inactive { margin-top: 16px; }
+@media(max-width:480px) {
+  .war-card { padding: 14px 14px 4px; }
+  .war-matchup { gap: 8px; }
+  .war-team { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+  .war-team:last-child { align-items: flex-end; }
+  .war-team strong { font-size: 14px; }
+  .war-matchup-score strong { font-size: 21px; }
+  .war-personal li { gap: 8px; }
+}

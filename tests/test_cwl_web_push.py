@@ -189,7 +189,7 @@ class PushTests(unittest.IsolatedAsyncioTestCase):
     async def test_unlinked_accounts_not_delivered(self):
         await self.save()
         # Fresh lookup excludes an account after unlinking, regardless of saved preferences.
-        with patch('cwl_web.todo.get_clash_client', new=AsyncMock(return_value=object())), patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), patch('utils.todo_data.fetch_accounts', new=AsyncMock(return_value=([], []))) as fetch, patch('utils.todo_data.build_war_view', new=AsyncMock(return_value=__import__('utils.todo_data', fromlist=['ViewData']).ViewData())), patch('utils.todo_data.build_cwl_view', new=AsyncMock(return_value=__import__('utils.todo_data', fromlist=['ViewData']).ViewData())):
+        with patch('cwl_web.todo.get_clash_client', new=AsyncMock(return_value=object())), patch('cwl_web.todo.load_recent_clans', new=AsyncMock(return_value=({}, ''))), patch('utils.todo_data.fetch_accounts', new=AsyncMock(return_value=([], []))) as fetch, patch('utils.todo_data.build_war_view', new=AsyncMock(return_value=__import__('utils.todo_data', fromlist=['ViewData']).ViewData())), patch('utils.todo_data.build_cwl_view', new=AsyncMock(return_value=__import__('utils.todo_data', fromlist=['ViewData']).ViewData())):
             self.app['providers'].linked_tags = AsyncMock(return_value={'#Q2Y': True})
             await push.fresh(self.app, '100')
             self.assertEqual(fetch.call_args.args[1], ['#Q2Y'])
@@ -208,7 +208,7 @@ class PushTests(unittest.IsolatedAsyncioTestCase):
 
         war = ViewData(rows=[Row('Player', '#P2Y', 'Clan', '#C2Y', 0, 2, now + 1800)])
         with patch('cwl_web.todo.get_clash_client', new=AsyncMock(return_value=object())), \
-             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('cwl_web.todo.load_recent_clans', new=AsyncMock(return_value=({}, ''))), \
              patch('utils.todo_data.fetch_accounts', new=AsyncMock(return_value=([], []))), \
              patch('utils.todo_data.build_war_view', new=AsyncMock(return_value=war)), \
              patch('utils.todo_data.build_cwl_view', new=slow), \
@@ -227,7 +227,7 @@ class PushTests(unittest.IsolatedAsyncioTestCase):
         with self.app['store'].tx() as db:
             db.execute('UPDATE push_subscriptions SET cwl=0')
         with patch('cwl_web.todo.get_clash_client', new=AsyncMock(return_value=object())), \
-             patch('cwl_web.todo._history', new=AsyncMock(return_value=({}, ''))), \
+             patch('cwl_web.todo.load_recent_clans', new=AsyncMock(return_value=({}, ''))), \
              patch('utils.todo_data.fetch_accounts', new=AsyncMock(return_value=([], []))), \
              patch('utils.todo_data.build_war_view', new=AsyncMock(return_value=ViewData())), \
              patch('utils.todo_data.build_cwl_view', new=AsyncMock()) as cwl:

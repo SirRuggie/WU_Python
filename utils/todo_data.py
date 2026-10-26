@@ -678,6 +678,7 @@ async def fetch_accounts(
     concurrency: int = FETCH_CONCURRENCY,
     sem: asyncio.Semaphore | None = None,
     lookup_timeout: float | None = None,
+    max_cache_age: float | None = None,
 ) -> tuple[list[Account], list[str]]:
     """Resolve tags to accounts, CONCURRENTLY. Returns (accounts, errors).
 
@@ -705,6 +706,9 @@ async def fetch_accounts(
     misses: list[str] = []
     for tag in tags:
         cached = cache_get(f"player:{tag}")
+        hit = _cache.get(f"player:{tag}")
+        if max_cache_age is not None and hit and time.time() - hit[1] >= max_cache_age:
+            cached = None
         if cached is not None:
             resolved[tag] = cached
         else:
@@ -1590,7 +1594,7 @@ async def build_raid_view(coc_client: coc.Client, accounts: list[Account], sem: 
                     incomplete=_gap_note(unreadable, "raid") if unreadable else "")
 
 
-async def fetch_clan_overview(client, clan_tag: str, kind: str):
+async def fetch_clan_overview(client, clan_tag: str, kind: str, *, accounts=None):
     """Public clan-level read using the existing coalesced game-data caches.
 
     Recheck old negative war results after a minute; incomplete data must never
@@ -1607,7 +1611,9 @@ async def fetch_clan_overview(client, clan_tag: str, kind: str):
     if kind == 'raid':
         status, raid = await bounded(_get_raid(client, clan_tag))
         return {'raid': raid_summary(status, raid)}
-    regular_status, regular = await bounded(_get_war(client, clan_tag, recheck_negative_after=60))
-    league_status, league = await bounded(_get_cwl_round(client, clan_tag, recheck_negative_after=60))
-    return {'regular': war_summary(regular_status, regular, clan_tag),
-            'cwl': war_summary(league_status, league, clan_tag)}
+    (regular_status, regular), (league_status, league) = await asyncio.gather(
+        bounded(_get_war(client, clan_tag, recheck_negative_after=60)),
+        bounded(_get_cwl_round(client, clan_tag, recheck_negative_after=60)),
+    )
+    return {'regular': war_summary(regular_status, regular, clan_tag, accounts=accounts),
+            'cwl': war_summary(league_status, league, clan_tag, accounts=accounts)}
