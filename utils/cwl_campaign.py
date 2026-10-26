@@ -561,6 +561,7 @@ async def render_message(config: dict, message_id: str, variant: str, preview: b
     if buttons:
         children.append(ActionRow(components=buttons))
     if message_id == "signup" or message_id.startswith("reminder:"):
+        children.append(Separator(divider=True))
         children.append(Text(content=SIGNUP_HELP_LINE))
     return [Container(accent_color=int(message.get("accent_color", GOLDENROD_ACCENT)), components=children)]
 

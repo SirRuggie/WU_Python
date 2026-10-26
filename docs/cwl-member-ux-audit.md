@@ -196,3 +196,7 @@ receipts, then edited six existing announcements/reminders in place. All edit
 requests explicitly disabled role/user/everyone/reply mentions; no new messages
 were sent. Discord returned each updated footer successfully. Existing content,
 images and controls were preserved. Historical prior-cycle messages were untouched.
+
+Follow-up: added a visible separator immediately above the help footer in shared
+renders and the same six live messages, with mentions disabled. The 37 relevant
+entry, delivery and integration tests passed, including footer/divider ordering.

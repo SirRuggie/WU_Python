@@ -67,8 +67,10 @@ def test_signup_help_footer_covers_both_pools_and_all_reminders_only():
             assert str(built).count(cwl_campaign.SIGNUP_HELP_LINE) == int(signup)
             if signup:
                 assert children[-1]['content'] == cwl_campaign.SIGNUP_HELP_LINE
-                assert children[-2]['type'] == 1
-                assert len(children[-2]['components']) == 1
-                assert children[-2]['components'][0]['url'] == cwl_campaign.SIGNUP_URL
+                assert children[-2]['type'] == 14
+                assert children[-2]['divider'] is True
+                assert children[-3]['type'] == 1
+                assert len(children[-3]['components']) == 1
+                assert children[-3]['components'][0]['url'] == cwl_campaign.SIGNUP_URL
             assert 'cwl signup' not in str(built)
     assert campaign == original
