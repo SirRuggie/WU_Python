@@ -98,3 +98,25 @@ under the repository's manual-deployment rules. No push, runtime-checkout update
 service restart or live message was performed. Changes are retained in a local
 review branch pending explicit authorization for this release. Existing production
 services were observed active at revision `5becff2` during read-only checks.
+
+### Authorized release — 2026-10-26, 10:44 EDT
+
+The user explicitly authorized this release after the approval block. Approval
+review accepted deployment. Commit `98a665e` was fast-forwarded into main,
+pushed, and installed in both clean local runtime checkouts. Web restarted at
+10:44:51 EDT and bot at 10:44:52 EDT. No secrets, member records, schema or served
+frontend assets were changed by deployment.
+
+Verification: both runtime imports passed; main/origin/main/bot checkout matched
+`98a665e`; both services stayed active/running with zero automatic restarts.
+Post-start web and bot journals had zero ERROR/CRITICAL/Traceback lines. Local
+config returned 200. Public signup and both existing entry JS/CSS assets returned
+200 via curl; anonymous auth/me returned 401. Python urllib was rejected by the
+public edge (403), so its response was not treated as an application failure.
+Read-only Discord API confirmed `/cwl-member` registration with no default member
+permission restriction. An authenticated bot-runtime bridge probe with JSON null
+returned the expected 400 before any member/provider lookup or mutation.
+
+No live test messages or real signup changes were performed. Existing panels may
+expire after restart; run `/cwl-member` again to open the updated private flow.
+This documentation-only follow-up needs no second service restart.
