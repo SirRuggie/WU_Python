@@ -114,3 +114,22 @@ it('names staff destinations without granting access',()=>{
  expect(navigationLabel('connections-settings')).toBe('Integrations')
  expect(visibleNavigationSections(false,false).flatMap(section=>section.items).some(item=>item.view==='publication')).toBe(false)
 })
+
+it('puts member destinations first and collapses permission-filtered staff tools', async () => {
+ const {renderToStaticMarkup} = await import('react-dom/server')
+ const React = await import('react')
+ const {default: Sidebar} = await import('./SidebarNavigation')
+ const render = (view: 'home' | 'roster', permissions: string[]) => renderToStaticMarkup(React.createElement(Sidebar, {
+  userId: 'audit', view, canEdit: permissions.length > 0, isOwner: false, permissions, onNavigate: () => {},
+ }))
+ const member = render('home', ['cwl_roster'])
+ expect(member.indexOf('My clan assignments')).toBeLessThan(member.indexOf('Staff tools'))
+ expect(member).toContain('aria-expanded="false" aria-controls="navigation-staff-tools"')
+ expect(member).toContain('id="navigation-staff-tools" class="navigation-children navigation-staff-children" hidden=""')
+ expect(member.indexOf('Staff tools')).toBeLessThan(member.indexOf('Staff overview'))
+ const staff = render('roster', ['cwl_roster'])
+ expect(staff).toContain('aria-expanded="true" aria-controls="navigation-staff-tools"')
+ expect(staff).toContain('aria-current="page"')
+ expect(staff).toContain('Roster')
+ expect(render('home', [])).not.toContain('Staff tools')
+})

@@ -1159,3 +1159,12 @@ must not inherit an unrelated prior tab. Tasks has a direct clan-score link and 
 explicit search reset. See [journey audit](home-tasks-wars-audit.md) for reviewed
 boundaries, browser evidence and limitations. Signup selections and notifications
 remain outside the new transient view-state helper.
+
+
+### Home and mobile menu hierarchy — October 26
+
+Keep the collapsible mobile Menu; do not add permanent bottom navigation. Put frequent member destinations before a permission-filtered Staff tools disclosure. Opening a staff destination must expose its active navigation group. Home should emphasize one CWL next action and keep secondary activity links compact. Incomplete, cached, or failed account reads must not appear as settled totals or invite account selection. Keep existing signup review and save boundaries.
+
+The scoped implementation and usability/accessibility checks are recorded in [the comparative review](clashperk-dashboard-review-2026-10-26.md#homemenu-implementation-review--october-26).
+
+Before validation builds, check the configured static asset directory. On this host the live web service serves web/cwl/dist; use an isolated Vite --outDir under /tmp for testing. Only a deliberate release should replace the served index, after copying its assets and retaining older hashed files for active sessions.

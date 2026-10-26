@@ -12,6 +12,16 @@ import TownHallIcon from './TownHallIcon'
 import './DashboardHome.css'
 
 type Snapshot = { season?: Season; accounts: Account[]; signups: Signup[]; assignments: MyAssignments; checkedAt: string; linkInstruction: string }
+export function homeNextStep(complete: boolean, season: Season | undefined, accountCount: number, unsigned: number, issue: 'loading' | 'saved' | 'error' = 'loading') {
+  if (!complete && issue === 'error') return { title: 'Could not check CWL status', detail: 'Refresh to confirm your latest signups and assignments. Any account details shown may be out of date.', destination: null }
+  if (!complete && issue === 'saved') return { title: 'Checking saved CWL status', detail: 'Saved account details may be out of date. Checking signup availability…', destination: null }
+  if (!complete) return { title: 'Checking your CWL status', detail: 'Account and signup details are still loading. Review the latest status below when the check finishes.', destination: null }
+  if (!season) return { title: 'Your next CWL starts here', detail: 'Staff will open a season when signups are ready.', destination: null }
+  if (!accountCount) return { title: 'Link your accounts to get started', detail: 'Link your Clash accounts in Discord, then refresh this page.', destination: 'help' as const }
+  if (season.signup_open && season.status === 'draft' && unsigned) return { title: `${unsigned} account${unsigned === 1 ? '' : 's'} to sign up`, detail: 'Choose Main or Lazy for your accounts, then review before saving.', destination: 'signup' as const }
+  if (season.signup_open && season.status === 'draft') return { title: 'Your accounts are signed up', detail: 'Your saved signups and clan assignments are ready to review.', destination: 'assignments' as const }
+  return { title: 'Review your CWL status', detail: 'Signups are closed. Your saved accounts and clan assignments remain available.', destination: 'assignments' as const }
+}
 type Props = {
   session: Session; seasonId: string; seasons: Season[];
   onNavigate: (view: 'search' | 'wars' | 'events' | 'todo' | 'saved' | 'signup' | 'assignments' | 'roster' | 'publication' | 'staff') => void;
@@ -26,6 +36,7 @@ export default function DashboardHome(props: Props) {
   const cacheKey = `home:${session.user.id}:${seasonId}`
   const [data, setData] = useState<Snapshot | null>(() => readSnapshot<Snapshot>(cacheKey, (value): value is Snapshot => { const v = value as Snapshot; return !!v && Array.isArray(v.accounts) && Array.isArray(v.signups) && Array.isArray(v.assignments?.accounts) && typeof v.checkedAt === 'string' }))
   const [cached, setCached] = useState(!!data)
+  const [partial, setPartial] = useState(false)
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -50,6 +61,7 @@ export default function DashboardHome(props: Props) {
           if (cancelled || !accepting || !context || !progress || (progress.total === null && progress.updating)) return
           const partial = progress
           const resolved = context
+          setPartial(true)
           setData(previous => ({ ...resolved, accounts: mergeAccountProgress(previous?.accounts || [], partial), checkedAt: new Date().toISOString(), linkInstruction: partial.link_instruction }))
           // Partial results are view-only and never persisted as a complete snapshot.
         }
@@ -66,11 +78,11 @@ export default function DashboardHome(props: Props) {
         const [accounts, resolved] = await Promise.all([accountRead, contextRead])
         if (!cancelled) {
           const snapshot: Snapshot = { ...resolved, accounts: accounts.accounts, checkedAt: new Date().toISOString(), linkInstruction: accounts.link_instruction }
-          setData(snapshot); writeSnapshot(cacheKey, snapshot); setCached(false)
+          setData(snapshot); writeSnapshot(cacheKey, snapshot); setCached(false); setPartial(false)
           setSelected(current => availableSelection(current, dashboardRows(accounts.accounts, resolved.signups, resolved.assignments.accounts)))
           setError('')
         }
-      } catch (cause) { accepting = false; if (!cancelled) { if (cause instanceof ApiError && [401,403].includes(cause.status)) { setData(null); setCached(false) }; setError(cause instanceof Error ? cause.message : 'Could not refresh your dashboard.') } }
+      } catch (cause) { accepting = false; if (!cancelled) { if (cause instanceof ApiError && [401,403].includes(cause.status)) { setData(null); setCached(false); setPartial(false) }; setError(cause instanceof Error ? cause.message : 'Could not refresh your dashboard.') } }
       finally { accepting = false; inFlight = false; if (!cancelled) setRefreshing(false) }
     }
     void load()
@@ -85,6 +97,8 @@ export default function DashboardHome(props: Props) {
   const unsigned = rows.filter(row => !row.signup).length
   const assigned = data?.assignments.accounts.filter(item => item.assigned_clan_tag).length || 0
   const waiting = (data?.signups.length || 0) - assigned
+  const complete = !!data && !cached && !partial && !error
+  const nextStep = homeNextStep(complete, season, rows.length, unsigned, error ? 'error' : cached ? 'saved' : 'loading')
   const lastPage = Math.max(0, Math.ceil(visible.length / 12) - 1)
   const currentPage = Math.min(page, lastPage)
   const pageRows = visible.slice(currentPage * 12, (currentPage + 1) * 12)
@@ -98,14 +112,31 @@ export default function DashboardHome(props: Props) {
     <div className="page-head"><div><p className="eyebrow">Your Warriors United home</p><h1>Hey, {session.user.display_name || session.user.username}</h1><p>Your accounts, your clans, and what to do next.</p></div><p className="season-choice">{seasons.find(item => String(item.id) === seasonId)?.label || 'No CWL season available'}</p></div>
     <div className="hub-sync"><span role="status"><span className={`status-dot ${!error && data ? 'active' : ''}`} />{cached ? (error ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : refreshing ? 'Refreshing…' : error ? 'Refresh needs attention' : data ? `Updated ${new Date(data.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Loading your accounts…'}</span><div><small>{paused ? 'Auto-refresh paused' : 'Auto-refresh every 30 seconds'}</small><button onClick={() => setPaused(value => !value)} aria-pressed={paused}>{paused ? 'Resume' : 'Pause'}</button><button disabled={refreshing} onClick={() => setRefreshKey(value => value + 1)} aria-label="Refresh dashboard">↻ Refresh</button></div></div>
     {error && <div className="notice error" role="alert"><div>{error}{data && <small>Showing available account details. Saved signups have not been removed.</small>}</div><button onClick={() => setRefreshKey(value => value + 1)}>Retry</button></div>}
-    <button className="home-search-entry" onClick={() => onNavigate('search')}><DashboardIcon name="search"/><span>Search players and clans by name or tag</span><kbd>Ctrl / ⌘ K</kbd></button>
-    <nav className="home-activity-links" aria-label="Activity"><button onClick={() => onNavigate('todo')}><DashboardIcon name="tasks"/> Tasks</button><button onClick={() => onNavigate('wars')}><DashboardIcon name="war"/> Wars</button><button onClick={() => onNavigate('events')}><DashboardIcon name="calendar"/> Events</button></nav>
-    <section className="hub-next" aria-labelledby="hub-next-title"><div className="hub-next-symbol" aria-hidden="true"><DashboardIcon name="war"/></div><div><p className="eyebrow">CWL · {season?.label || 'Season coming soon'}</p><h2 id="hub-next-title">{!data || (refreshing && !rows.length) ? 'Getting your next steps ready' : !season ? 'Your next CWL starts here' : !rows.length ? 'Link your accounts to get started' : !season.signup_open ? 'Check your clan assignments' : unsigned ? 'Choose accounts for CWL' : 'Your accounts are signed up'}</h2><p>{!data || (refreshing && !rows.length) ? 'Loading your accounts and signup status…' : cached ? 'Showing saved accounts. Checking signup availability…' : !season ? 'Staff will open a season here when signups are ready.' : !rows.length ? (data?.linkInstruction || 'Link your Clash accounts in Discord, then refresh here.') : season?.signup_open && unsigned > 0 ? 'Select accounts, choose Main or Lazy, then review your signup.' : season?.signup_open ? 'Your signups are saved. Open My assignments to see your clans.' : 'Signups are closed. Your saved accounts and clan assignments are still available.'}</p></div>{data && !refreshing && !error && rows.length === 0 && <button className="primary" onClick={() => { const target = document.getElementById('first-account-help'); target?.scrollIntoView({block:'start'}); target?.focus({preventScroll:true}) }}>How to link accounts</button>}{data && rows.length > 0 && season && <button className="primary" onClick={() => onNavigate(season.signup_open && unsigned > 0 ? 'signup' : 'assignments')}>{season.signup_open && unsigned > 0 ? 'Go to signups →' : 'My assignments →'}</button>}</section>
-    <section className="todo-home-link"><DashboardIcon name="tasks"/><div><h2>Your tasks</h2><p>War and CWL attacks, raids, and Clan Games across your linked accounts.</p></div><button onClick={() => onNavigate('todo')}>Open tasks →</button></section>
-    <div className="hub-stats" aria-label="Account overview">
-      {([{ filter: 'all', icon: 'accounts', label: 'Linked accounts', value: rows.length }, { filter: 'unsigned', icon: 'signup', label: 'Not signed up', value: unsigned }, { filter: 'waiting', icon: 'waiting', label: 'Waiting for a clan', value: Math.max(0, waiting) }, { filter: 'assigned', icon: 'shield', label: 'Assigned accounts', value: assigned }] as const).map(item => <button key={item.filter} aria-pressed={filter === item.filter} onClick={() => setFilter(item.filter)}><span aria-hidden="true"><DashboardIcon name={item.icon}/></span><strong>{data ? item.value : '—'}</strong><small>{item.label}</small></button>)}
+    <section className="hub-next" aria-labelledby="hub-next-title">
+      <div className="hub-next-symbol" aria-hidden="true"><DashboardIcon name="war"/></div>
+      <div className="hub-next-copy">
+        <p className="eyebrow">CWL · {season?.label || 'Season coming soon'}</p>
+        <h2 id="hub-next-title">{nextStep.title}</h2>
+        <p>{complete && !rows.length && data?.linkInstruction ? data.linkInstruction : nextStep.detail}</p>
+      </div>
+      {nextStep.destination === 'help' && <button className="primary" onClick={() => { const target = document.getElementById('first-account-help'); target?.scrollIntoView({block:'start'}); target?.focus({preventScroll:true}) }}>How to link accounts</button>}
+      {nextStep.destination === 'signup' && <button className="primary" onClick={() => onNavigate('signup')}>Go to signups →</button>}
+      {nextStep.destination === 'assignments' && <button className="primary" onClick={() => onNavigate('assignments')}>My assignments →</button>}
+    </section>
+    <section className="home-task-entry" aria-labelledby="home-task-title">
+      <DashboardIcon name="tasks"/>
+      <div><h2 id="home-task-title">Your tasks</h2><p>Check war and CWL attacks, raids, and Clan Games for your linked accounts.</p></div>
+      <button onClick={() => onNavigate('todo')}>Open tasks →</button>
+    </section>
+    <div className="home-quick-links">
+      <button className="home-search-entry" onClick={() => onNavigate('search')}><DashboardIcon name="search"/><span>Search your players and clans</span><kbd>Ctrl / ⌘ K</kbd></button>
+      <nav className="home-activity-links" aria-label="Activity"><button onClick={() => onNavigate('wars')}><DashboardIcon name="war"/> Wars</button><button onClick={() => onNavigate('events')}><DashboardIcon name="calendar"/> Events</button></nav>
     </div>
-    <div className="hub-section-heading"><div><h2>My accounts</h2><p>Select accounts to sign up. Signed-up accounts show their assigned clan.</p></div><button onClick={() => onNavigate('assignments')}>My assignments ↗</button></div>
+    <div className="hub-stats" aria-label="Account overview">
+      {([{ filter: 'all', icon: 'accounts', label: 'Linked accounts', value: rows.length }, { filter: 'unsigned', icon: 'signup', label: 'Not signed up', value: unsigned }, { filter: 'waiting', icon: 'waiting', label: 'Waiting for a clan', value: Math.max(0, waiting) }, { filter: 'assigned', icon: 'shield', label: 'Assigned accounts', value: assigned }] as const).map(item => <button key={item.filter} aria-pressed={filter === item.filter} onClick={() => setFilter(item.filter)}><span aria-hidden="true"><DashboardIcon name={item.icon}/></span><strong>{complete ? item.value : '—'}</strong><small>{item.label}</small></button>)}
+    </div>
+    {!complete && <p className="hub-data-note" role="status">{error ? "Account summary needs a successful refresh." : cached ? "Checking saved account data before showing totals." : "Checking account data before showing totals."}</p>}
+    <div className="hub-section-heading"><div><h2>My accounts</h2><p>{canSignup ? 'Select accounts to sign up. Signed-up accounts show their assigned clan.' : 'Your linked accounts, saved signups, and clan assignments.'}</p></div><button onClick={() => onNavigate('assignments')}>My assignments ↗</button></div>
     <div className="hub-toolbar"><label>Find an account or clan<input type="search" placeholder="Name, player tag or clan…" value={search} onChange={event => setSearch(event.target.value)} /></label><label>Show<select value={filter} onChange={event => setFilter(event.target.value as AccountFilter)}><option value="all">All accounts</option><option value="unsigned">Not signed up</option><option value="waiting">Waiting for a clan</option><option value="assigned">Assigned</option></select></label><label>Sort<select value={sort} onChange={event => setSort(event.target.value)}><option value="th">Town Hall · highest first</option><option value="name">Account name · A–Z</option></select></label></div>
     {data && <><div className="hub-selection"><span>{selected.length} selected · {visible.length} matching accounts</span><div><button disabled={!canSignup || !visible.some(row => !row.signup)} onClick={selectVisible}>Select accounts not signed up</button><button disabled={!selected.length} onClick={() => setSelected([])}>Clear</button></div></div>
       {!rows.length && refreshing ? <p role="status">Loading account details…</p> : !rows.length && error ? null : !rows.length ? <div className="card empty"><h3 id="first-account-help" tabIndex={-1}>Link your first account</h3><AccountLinkHelp busy={refreshing} onRefresh={() => setRefreshKey(value => value + 1)} /></div> : !visible.length ? <div className="card empty"><h3>No accounts match</h3><p>Try another name or choose All accounts.</p><button onClick={() => { setSearch(''); setFilter('all') }}>Show all accounts</button></div> : <div className="hub-clans">{[...groups.entries()].map(([key, members]) => <section className="hub-clan" key={key}><header><ClanBadge url={members[0].current_clan_badge_url} name={members[0].current_clan_name || 'No current clan'} /><div><h3>{members[0].current_clan_name || 'No current clan'}</h3><small>Current clan{key !== 'none' ? ` · ${key}` : ''}</small></div>{key !== 'none' && <a className="hub-clan-link" href={clanDeepLink(key)} target="_blank" rel="noopener noreferrer">Open Clan ↗</a>}</header><div>{members.map(row => <article className={`hub-account ${selected.includes(row.tag) ? 'is-selected' : ''}`} key={row.tag}><label className="hub-account-pick"><input type="checkbox" aria-label={`Select ${row.name}`} disabled={!canSignup || !!row.signup} checked={selected.includes(row.tag)} onChange={event => setSelected(current => event.target.checked ? [...new Set([...current, row.tag])] : current.filter(tag => tag !== row.tag))} /><TownHallIcon level={row.town_hall} /><span><strong>{row.name}</strong><small>{row.tag}</small><small title="Saved clan weight, staff override, or FWA Stats fallback">War weight: {row.war_weight == null ? 'Not Available' : weightText(row.war_weight)}</small></span></label><div className="hub-account-status"><span className={`hub-state ${row.signup ? 'saved' : ''}`}>{row.signup ? `✓ ${row.signup.pool === 'main' ? 'Main' : 'Lazy'} CWL · Signed Up` : 'Not signed up'}</span>{row.signup && <small>{row.assignment?.assigned_clan_tag ? `${row.assignment.assigned_clan_name || row.assignment.assigned_clan_tag}` : 'Waiting for a clan'}{row.assignment?.assigned_clan_tag && data.assignments && memberPlacementStatus(data.assignments) === 'provisional' ? ' · May change' : ''}</small>}</div>{row.signup && <button className="hub-account-action" onClick={() => onNavigate(row.assignment?.assigned_clan_tag ? 'assignments' : 'saved')}>{row.assignment?.assigned_clan_tag ? 'View clan' : 'Manage signup'} →</button>}</article>)}</div></section>)}</div>}

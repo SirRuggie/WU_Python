@@ -74,6 +74,10 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
   userId: string; view: DashboardView; canEdit: boolean; isOwner: boolean; permissions?: string[]; onNavigate: (view: DashboardView) => void
 }) {
   const key = `wu-navigation-v2:${userId}`
+  const [staffExpanded, setStaffExpanded] = useState(() => {
+    const active = sections.find(section => section.items.some(item => item.view === view))
+    return !!active && !['my-dashboard', 'activity', 'my-cwl'].includes(active.id)
+  })
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(key) || '{}')
@@ -82,6 +86,7 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
   })
   useEffect(() => {
     const active = sections.find(section => section.items.some(item => item.view === view))
+    if (active && !['my-dashboard', 'activity', 'my-cwl'].includes(active.id)) setStaffExpanded(true)
     const group = ['reminders','cwl-returns'].includes(view) ? 'cwl-reminders' : ['participation','bonuses','exports'].includes(view) ? 'cwl-results' : null
     if (group) setExpanded(current => ({...current,[group]:true}))
     if (active) setExpanded(current => ({ ...current, [active.id]: true }))
@@ -89,9 +94,11 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(expanded)) } catch { /* Preferences are optional. */ } }, [expanded, key])
   const itemActive = (item: Item) => view === item.view || (item.view === 'roster' && view === 'publication')
   const itemButton = (item: Item) => <button key={item.view} aria-current={itemActive(item) ? 'page' : undefined} onClick={() => onNavigate(item.view)}><span className="navigation-icon" aria-hidden="true"><DashboardIcon name={item.icon} /></span><span>{item.label}</span></button>
-  return <nav aria-label="Warriors United navigation">
-    {visibleNavigationSections(canEdit, isOwner, permissions).map(section => {
-      if (['my-dashboard', 'activity', 'my-cwl', 'staff-overview'].includes(section.id)) {
+  const visible = visibleNavigationSections(canEdit, isOwner, permissions)
+  const memberSections = visible.filter(section => ['my-dashboard', 'activity', 'my-cwl'].includes(section.id))
+  const staffSections = visible.filter(section => !['my-dashboard', 'activity', 'my-cwl'].includes(section.id))
+  const renderSection = (section: Section) => {
+    if (['my-dashboard', 'activity', 'my-cwl', 'staff-overview'].includes(section.id)) {
         return <section className="navigation-section navigation-everyday" key={section.id}>
           {section.id !== 'my-dashboard' && <h2 className="navigation-label">{section.label}</h2>}
           {section.items.map(itemButton)}
@@ -114,6 +121,17 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
           </div>}
         </> : section.items.map(itemButton)}</div>
       </section>
-    })}
+  }
+  return <nav aria-label="Warriors United navigation">
+    {memberSections.map(renderSection)}
+    {staffSections.length > 0 && <section className={`navigation-section navigation-staff${staffSections.some(section => section.items.some(item => itemActive(item))) ? ' contains-current' : ''}`}>
+      <button className="navigation-toggle" aria-expanded={staffExpanded} aria-controls="navigation-staff-tools" onClick={() => setStaffExpanded(current => !current)}>
+        <span className="navigation-icon" aria-hidden="true"><DashboardIcon name="tools" /></span><span>Staff tools</span>
+        <span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={staffExpanded ? 'chevronDown' : 'chevronRight'} /></span>
+      </button>
+      <div id="navigation-staff-tools" className="navigation-children navigation-staff-children" hidden={!staffExpanded}>
+        {staffSections.map(renderSection)}
+      </div>
+    </section>}
   </nav>
 }
