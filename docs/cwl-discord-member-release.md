@@ -1,10 +1,11 @@
 # Operator release: Discord CWL member flow
 
-This is an operator handoff, not a deployment record. Automatic approval review
-rejected production pull/restart actions under the manual-deployment instruction
-in `docs/deployment.md`. Do not run these steps until that block is resolved.
-The user's deployment request is recorded; no production change was made by this
-review. Do not use the historical Arcane SSH host.
+This operator handoff was prepared while approval review blocked deployment.
+The user subsequently renewed explicit authorization, approval review accepted
+the actions, and release `c81a070` was deployed on 2026-10-25. See the deployment
+evidence in [CWL member access](cwl-discord-member.md). These commands are retained
+for reference; do not rerun secret provisioning or restarts unnecessarily.
+Do not use the historical Arcane SSH host.
 
 The coordinating task verified these current local services:
 

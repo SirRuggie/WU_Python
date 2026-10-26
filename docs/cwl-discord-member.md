@@ -143,3 +143,40 @@ approval block is resolved, with the normal runtime checks still outstanding.
 See [operator release commands](cwl-discord-member-release.md). The current web
 service uses port **8766**, so the bot must override the default bridge origin to
 `http://127.0.0.1:8766`. The shared secret has not yet been provisioned.
+
+## Authorized deployment — 2026-10-25, 21:03 EDT
+
+The user explicitly renewed deployment authorization after the earlier block.
+Approval review accepted the deployment actions. Release `c81a070` was
+fast-forwarded into main and pushed; both clean production checkouts were updated
+without force or replacing newer changes. The dashboard was at `77a7ecd`; the bot
+was at ancestor `287d8b1` and also received the intervening main changes.
+
+A fresh shared secret was installed without disclosure in the dashboard private
+environment and bot `.env`. The bot bridge origin is `http://127.0.0.1:8766`.
+Private configuration backups are dated `20261026T010325Z`; the bot backup is under
+its ignored `.local/` directory, and the dashboard backup remains under `.local/`.
+No schema or member-data migration was performed.
+
+Both runtime import checks passed. The dashboard user service restarted at
+21:03:46 EDT and system bot service at 21:03:47 EDT. Both remained active/running
+with zero automatic restarts. Post-start logs showed successful Mongo restore,
+no tracebacks and no ERROR/CRITICAL entries. The pushed main revision and both
+runtime checkout HEADs matched `c81a070` at verification.
+
+Live read-only checks confirmed:
+
+- Global Discord slash command `cwl-member` is registered (type 1), with null
+  default member permissions rather than administrator-only restrictions.
+- A bot-runtime request using the configured shared secret reached bridge
+  validation and returned the expected 400 for JSON `null`, before identity
+  lookup, provider access or writes. This verifies matching runtime secrets.
+- Local dashboard config and public `/signup` returned 200; anonymous
+  `/api/cwl/auth/me` returned 401.
+- Served entry assets `index-xJ_Ye5GU.js` and `index-CIbS_aXo.css` returned 200.
+  Existing served assets were retained; this feature changes no frontend source.
+
+No live test messages were sent and no real signup was changed. Command
+registration and service health are verified; a real member's interactive signup
+and physical mobile rendering were not exercised. A documentation-only follow-up
+records this evidence without requiring another service restart.
