@@ -145,3 +145,19 @@ does not redefine the linking service's ownership policy.
 Correction validation: **827 backend tests passed**, **22 subtests passed**, one
 existing dedicated-Mongo recovery skip. Independent Sol audit passed, and diff
 hygiene is clean. Tests are isolated; no live signup was submitted.
+
+## Account ordering and page guidance — 2026-10-26
+
+The picker and signup review now list highest Town Halls first, with stable tag
+ties and unknown Town Halls last. Multi-select is named explicitly in the text
+and select placeholder. Multi-page lists show Page N of M and explain Next page;
+selections remain selected across pages. Next page is primary before the final
+page; Review signup becomes primary on the final page. Reviewing early remains
+available when a member has already found every account they want.
+
+Validation: 84 command/bridge/end-to-end/component/startup tests passed, six
+subtests passed. An independent Sol review found no concrete regression and
+added ordering coverage for ties and malformed/missing Town Halls. A complete
+three-page test verifies selecting, advancing, returning, page-only deselection,
+and reviewing the preserved choices. The 320px isolated native-component
+approximation was regenerated and inspected. No live signup was used for tests.

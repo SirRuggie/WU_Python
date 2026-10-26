@@ -107,7 +107,15 @@ def _account_label(account: dict) -> str:
 
 def _accounts(session: MemberSession) -> list[dict]:
     accounts = session.view.get("accounts") or []
-    return [row for row in accounts if isinstance(row, dict) and row.get("tag")]
+    linked = [row for row in accounts if isinstance(row, dict) and row.get("tag")]
+    return sorted(linked, key=_account_order)
+
+
+def _account_order(account: dict) -> tuple[int, str]:
+    # Provider Town Halls are integers; unknown values belong at the end.
+    town_hall = account.get("town_hall")
+    level = town_hall if type(town_hall) is int and town_hall > 0 else 0
+    return -level, str(account.get("tag") or "")
 
 
 def _eligible_accounts(session: MemberSession) -> list[dict]:
@@ -174,9 +182,15 @@ def _main_text(session: MemberSession) -> str:
         pages = max(1, (len(accounts) + PAGE_SIZE - 1) // PAGE_SIZE)
         season = _safe((session.view.get("season") or {}).get("label") or "CWL season", 45)
         lines = [f"## {('Main' if session.pool == 'main' else 'Lazy')} CWL · {season} · Choose accounts",
-                 "Select linked accounts below, then review your signup."]
+                 "Choose one or more accounts from the list.",
+                 f"Highest TH first · {len(session.selected)} selected total."]
         if pages > 1:
-            lines.append(f"Page {session.page + 1} of {pages} · {len(session.selected)} selected across pages.")
+            lines.append(f"**Page {session.page + 1} of {pages}**")
+            if session.page < pages - 1:
+                lines.append("Use **Next page** to see more accounts. Your choices stay selected.")
+            else:
+                lines.append("This is the last page.")
+        lines.append("When you have chosen all your accounts, use **Review signup**.")
         if session.pool == "main" and any(str(row.get("current_clan_type") or "").casefold() == "fwa" for row in _accounts(session)):
             lines.append("FWA accounts use Lazy CWL.")
         if session.pool == "main" and any(main_signup_error(row) and row.get("current_clan_type") != "FWA" for row in _accounts(session)):
@@ -186,7 +200,8 @@ def _main_text(session: MemberSession) -> str:
         return "\n".join(lines)
     if session.screen == "review":
         labels = {str(row["tag"]): _account_label(row) for row in _accounts(session)}
-        selected = sorted(session.selected)
+        by_tag = {str(row["tag"]): row for row in _accounts(session)}
+        selected = sorted(session.selected, key=lambda tag: _account_order(by_tag.get(tag, {"tag": tag})))
         pages = max(1, (len(selected) + 9) // 10)
         visible = selected[session.page * 10:(session.page + 1) * 10]
         existing = {str(row["tag"]): row for row in _signups(session)}
@@ -303,7 +318,7 @@ def _components(token: str, session: MemberSession) -> list:
         visible = accounts[session.page * PAGE_SIZE:(session.page + 1) * PAGE_SIZE]
         rows = []
         if visible:
-            menu = c.TextSelectMenuBuilder(custom_id=_id("select", token, version), placeholder="Select accounts", min_values=0,
+            menu = c.TextSelectMenuBuilder(custom_id=_id("select", token, version), placeholder="Choose one or more accounts", min_values=0,
                                            max_values=min(len(visible), 20))
             signups = {str(row["tag"]): row for row in _signups(session)}
             for account in visible:
@@ -320,18 +335,21 @@ def _components(token: str, session: MemberSession) -> list:
             rows.append(c.MessageActionRowBuilder().add_component(menu))
         else:
             rows.append(c.MessageActionRowBuilder().add_interactive_button(hikari.ButtonStyle.SECONDARY, _id("refresh", token, version), label="Refresh linked accounts"))
+        more_pages = session.page < pages - 1
+        if pages > 1:
+            rows.append(_row(
+                (hikari.ButtonStyle.SECONDARY, _id("prev", token, version), "Previous page", session.page == 0),
+                (hikari.ButtonStyle.PRIMARY if more_pages else hikari.ButtonStyle.SECONDARY,
+                 _id("next", token, version), "Next page", not more_pages),
+            ))
         rows.append(_row(
-            (hikari.ButtonStyle.PRIMARY, _id("review", token, version), f"Review ({len(session.selected)})", not session.selected),
+            (hikari.ButtonStyle.SECONDARY if more_pages else hikari.ButtonStyle.PRIMARY,
+             _id("review", token, version), "Review signup", not session.selected),
             (hikari.ButtonStyle.SECONDARY, _id("signup", token, version), "Back", False),
         ))
         if session.selected:
             rows.append(_row(
                 (hikari.ButtonStyle.SECONDARY, _id("clear_selection", token, version), "Clear selected", False),
-            ))
-        if pages > 1:
-            rows.append(_row(
-                (hikari.ButtonStyle.SECONDARY, _id("prev", token, version), "Previous", session.page == 0),
-                (hikari.ButtonStyle.SECONDARY, _id("next", token, version), "Next", session.page >= pages - 1),
             ))
         return rows
     if session.screen == "review":

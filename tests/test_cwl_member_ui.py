@@ -50,7 +50,7 @@ def test_select_menu_owns_account_list_and_allows_page_deselection():
     assert "Player 0" not in member._main_text(panel)
     assert rows[0].components[0].min_values == 0
     assert rows[0].components[0].options[0].is_default
-    assert [len(row.components) for row in rows] == [1, 2, 1, 2]  # Select, actions, clear, pages.
+    assert [len(row.components) for row in rows] == [1, 2, 2, 1]  # Select, pages, actions, clear.
 
 
 def test_closed_signups_are_read_only_and_without_dead_pagination():
@@ -140,3 +140,73 @@ def test_pool_change_holds_when_account_provider_is_unavailable():
         assert "temporarily unavailable" in edits[-1]["components"][0].components[0].content
     finally:
         member._sessions.pop("outage", None)
+
+
+def test_highest_town_hall_first_with_stable_ties_unknown_last_and_review_order():
+    rows = [
+        {"tag": "#B", "town_hall": 12, "name": "Low"},
+        {"tag": "#Z", "town_hall": 18, "name": "High Z"},
+        {"tag": "#A", "town_hall": 18, "name": "High A"},
+        {"tag": "#Q", "town_hall": None, "name": "Unknown"},
+        {"tag": "#R", "town_hall": "bad", "name": "Malformed"},
+    ]
+    current = session("select_accounts", accounts=rows)
+    current.pool = "lazy"
+    assert [x["tag"] for x in member._accounts(current)] == ["#A", "#Z", "#B", "#Q", "#R"]
+    assert rows[0]["tag"] == "#B"  # Sorting does not mutate the provider snapshot.
+    current.selected = {"#B", "#Z", "#A"}
+    current.screen = "review"
+    text = member._main_text(current)
+    assert text.index("High A") < text.index("High Z") < text.index("Low")
+
+
+def test_multi_page_selection_has_clear_next_and_keeps_all_choices():
+    from test_cwl_discord_member import Context
+    rows = [{"tag": f"#P{i:03}", "name": f"Player {i}", "town_hall": 18 - i // 5}
+            for i in reversed(range(31))]
+    current = session("select_accounts", accounts=rows)
+    current.pool = "lazy"
+    token = "page-flow"
+    member._sessions[token] = current
+
+    def button(action):
+        return next(b for row in member._components(token, current) for b in row.components
+                    if getattr(b, "custom_id", "").startswith(f"cwl_member_{action}:"))
+
+    async def click(action, values=()):
+        await member._handle(Context(values=values), f"{token}:{current.version}", action)
+
+    async def run():
+        text = member._main_text(current)
+        assert "one or more" in text and "Page 1 of 3" in text
+        assert "Next page" in text and "stay selected" in text
+        assert button("next").style == hikari.ButtonStyle.PRIMARY
+        assert button("review").is_disabled
+        menu = member._components(token, current)[0].components[0]
+        first = [o.value for o in menu.options[:2]]
+        assert menu.placeholder == "Choose one or more accounts"
+        await click("select", first)
+        await click("next")
+        second = member._components(token, current)[0].components[0].options[0].value
+        await click("select", [second])
+        await click("next")
+        assert "Page 3 of 3" in member._main_text(current)
+        assert "last page" in member._main_text(current)
+        assert button("next").is_disabled
+        assert button("review").label == "Review signup"
+        assert button("review").style == hikari.ButtonStyle.PRIMARY
+        assert current.selected == {*first, second}
+        await click("prev")
+        await click("select", [])  # Deselect this page only.
+        assert current.selected == set(first)
+        await click("prev")
+        menu = member._components(token, current)[0].components[0]
+        assert {o.value for o in menu.options if o.is_default} == set(first)
+        await click("review")
+        assert current.screen == "review"
+        assert current.selected == set(first)
+
+    try:
+        asyncio.run(run())
+    finally:
+        member._sessions.pop(token, None)

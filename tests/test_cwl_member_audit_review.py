@@ -74,6 +74,28 @@ class MemberInteractionAuditTests(unittest.IsolatedAsyncioTestCase):
         current.pool = "main"
         self.assertEqual([row["tag"] for row in member._eligible_accounts(current)], ["#P2Y"])
 
+    def test_picker_and_review_share_highest_th_order_with_stable_ties(self):
+        accounts = [
+            {"tag": "#P2Y", "name": "Low", "town_hall": 12},
+            {"tag": "#Q2Y", "name": "High B", "town_hall": 17},
+            {"tag": "#R2Y", "name": "Unknown"},
+            {"tag": "#G2Y", "name": "High A", "town_hall": 17},
+            {"tag": "#J2Y", "name": "Invalid", "town_hall": True},
+        ]
+        current = session(screen="select_accounts", accounts=accounts)
+        current.pool = "lazy"
+        order = ["#G2Y", "#Q2Y", "#P2Y", "#J2Y", "#R2Y"]
+
+        self.assertEqual([row["tag"] for row in member._accounts(current)], order)
+        menu = member._components("audit", current)[0].components[0]
+        self.assertEqual([option.value for option in menu.options], order)
+        current.screen = "review"
+        current.selected = set(order)
+        review = member._main_text(current)
+        names = ["High A", "High B", "Low", "Invalid", "Unknown"]
+        positions = [review.index(name) for name in names]
+        self.assertEqual(positions, sorted(positions))
+
     def test_linked_unverified_fwa_account_still_uses_lazy_only(self):
         current = session(screen="select_accounts", accounts=[
             {"tag": "#P2Y", "name": "FWA", "verified": False, "town_hall": 16,
