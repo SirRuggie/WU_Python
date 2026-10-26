@@ -37,6 +37,7 @@ LEGACY_WU_GUILD_ID = WARRIORS_UNITED_GUILD_ID
 AUDIENCES = ("main", "lazy")
 MESSAGE_ORDER = ("signup", "reminder:1", "reminder:2", "reminder:3", "reminder:4", "reminder:5", "roster")
 HISTORY_LIMIT = 100
+SIGNUP_HELP_LINE = "-# Having trouble with the dashboard? Ping staff—we can help."
 _CYCLE_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _SKIP_OCCURRENCE = object()
 
@@ -486,6 +487,8 @@ def validate_campaign(campaign: dict) -> None:
                 raise ValueError(f"{message_id}/{variant} pings are invalid")
             mention_text = " ".join(f"<@&{role}>" for role in roles)
             rendered_length = len(mention_text) + len(item["title"]) + 3 + len(item["body"])
+            if message_id == "signup" or message_id.startswith("reminder:"):
+                rendered_length += len(SIGNUP_HELP_LINE)
             if "{signup_deadline}" in item["body"]:
                 rendered_length += 32
             if rendered_length > 4000:
@@ -557,6 +560,8 @@ async def render_message(config: dict, message_id: str, variant: str, preview: b
         buttons.append(LinkButton(**kwargs))
     if buttons:
         children.append(ActionRow(components=buttons))
+    if message_id == "signup" or message_id.startswith("reminder:"):
+        children.append(Text(content=SIGNUP_HELP_LINE))
     return [Container(accent_color=int(message.get("accent_color", GOLDENROD_ACCENT)), components=children)]
 
 

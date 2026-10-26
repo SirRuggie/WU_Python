@@ -177,3 +177,22 @@ private acknowledgement before network IO, direct home rendering without links,
 wrong-server rejection, retired staff permissions and component/startup suites.
 Independent Sol review found no concrete issue. Runtime command synchronization
 must confirm the new subcommand and removal of the old top-level command.
+
+### 2026-10-26 — Quiet signup help footer
+
+All campaign signup and reminder renders (Main and Lazy, including saved custom
+campaigns) now append Discord small text beneath the existing dashboard link:
+“Having trouble with the dashboard? Ping staff—we can help.” No alternative
+command or button is advertised. The shared renderer covers previews and sends;
+validation reserves space for the footer. Roster announcements remain unchanged.
+
+Validation: 59 signup entry, sequence, delivery and dashboard integration tests
+passed. Reviewed both audiences/all reminder variants, unchanged source campaigns,
+one existing dashboard button, footer placement, and exclusion from roster posts.
+This is a small text-only Discord change; no dashboard assets changed.
+
+Live maintenance: verified guild and bot ownership from current-cycle delivery
+receipts, then edited six existing announcements/reminders in place. All edit
+requests explicitly disabled role/user/everyone/reply mentions; no new messages
+were sent. Discord returned each updated footer successfully. Existing content,
+images and controls were preserved. Historical prior-cycle messages were untouched.

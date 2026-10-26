@@ -53,3 +53,22 @@ def test_saved_roster_links_upgrade_and_keep_guide_and_custom_copy():
     assert saved['buttons'][1] == guide
     assert saved['body'] == 'Custom instructions'
     assert item['buttons'][0]['url'] == cwl_campaign.LEGACY_ROSTER_URLS[1]
+
+
+def test_signup_help_footer_covers_both_pools_and_all_reminders_only():
+    import asyncio
+    campaign = cwl_campaign.default_campaign()
+    original = deepcopy(campaign)
+    for key, message in campaign['messages'].items():
+        for pool in message['variants']:
+            built = asyncio.run(cwl_campaign.render_message(campaign, key, pool, preview=False))[0].build()[0]
+            children = built['components']
+            signup = key == 'signup' or key.startswith('reminder:')
+            assert str(built).count(cwl_campaign.SIGNUP_HELP_LINE) == int(signup)
+            if signup:
+                assert children[-1]['content'] == cwl_campaign.SIGNUP_HELP_LINE
+                assert children[-2]['type'] == 1
+                assert len(children[-2]['components']) == 1
+                assert children[-2]['components'][0]['url'] == cwl_campaign.SIGNUP_URL
+            assert 'cwl signup' not in str(built)
+    assert campaign == original
