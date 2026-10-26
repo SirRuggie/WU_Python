@@ -86,3 +86,20 @@ horizontal document overflow. These checks use fictional data, not live member
 writes, real Discord delivery, a physical phone, or full screen-reader certification.
 Provider outages and cache freshness still apply; this is current-war detail, not
 historical war storage. No live messages were sent.
+
+### Release verification
+
+Implementation revision `9f1a683` was pushed and the remote revision verified.
+The guarded dashboard service restarted successfully from Mongo revision 12866;
+service remained active/running with zero automatic restarts. The new endpoint
+returns 401 without a session. A private SQLite backup was taken before restart,
+and before/after row counts and content digests matched for all 90 signups,
+82 roster entries, one roster publication, and one season.
+
+The isolated build was copied with an atomic index replacement and previous hashed
+assets retained. All 200 served artifact files matched the validated build bytes.
+The public `/wars` page returned 200 and rendered its correct Discord sign-in
+return destination; browser DOM confirmed `/assets/index-DCokAI9-.js`. Authenticated
+live game detail was not exercised because the browser was signed out. Upstream
+behavior is covered by isolated regression/fixture checks, not claimed as a live
+provider end-to-end verification.
