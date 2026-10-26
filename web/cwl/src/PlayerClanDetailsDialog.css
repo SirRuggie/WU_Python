@@ -1,0 +1,82 @@
+.player-clan-details {
+  width: min(34rem, calc(100% - 1.5rem));
+  max-height: calc(100dvh - 1.5rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid #515968;
+  border-radius: 14px;
+  background: #191b22;
+  color: #f4f4f5;
+  overflow-wrap: anywhere;
+}
+
+.player-clan-details::backdrop { background: rgb(0 0 0 / 70%); }
+.player-clan-details button, .player-clan-details summary { min-height: 44px; }
+.player-clan-details :is(button, summary):focus-visible { outline: 2px solid #e8bf62; outline-offset: 2px; }
+
+.player-clan-details-head {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+}
+
+.player-clan-details-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #292e37;
+}
+
+.player-clan-details-icon img { width: 40px; height: 40px; object-fit: contain; }
+.player-clan-details-identity { min-width: 0; flex: 1; }
+.player-clan-details-identity .eyebrow { margin: 0 0 .2rem; }
+.player-clan-details-identity h2 { margin: 0; font-size: 1.25rem; line-height: 1.25; }
+.player-clan-details-identity > span { color: #bbc2cc; font-size: .85rem; }
+.player-clan-details-close { flex: 0 0 auto; padding: .35rem .7rem; }
+.player-clan-details-freshness { margin: 1rem 0; color: #c4c9d0; font-size: .875rem; }
+
+.player-clan-details-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: .5rem;
+  margin: 0;
+}
+
+.player-clan-details-facts > div { min-width: 0; padding: .7rem; border: 1px solid #39404a; border-radius: 9px; }
+.player-clan-details-facts dt { color: #bbc2cc; font-size: .8rem; }
+.player-clan-details-facts dd { margin: .2rem 0 0; font-weight: 600; }
+.player-clan-details-clan-meta { margin: 0; color: #c4c9d0; font-size: .875rem; }
+.player-clan-details-section { margin-top: 1.1rem; }
+.player-clan-details-section h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.player-clan-details-section p { margin: 0; }
+.player-clan-details-section small { color: #bbc2cc; }
+.player-clan-details-section summary { display: flex; align-items: center; cursor: pointer; color: #e8bf62; list-style: none; }
+.player-clan-details-section summary::-webkit-details-marker { display: none; }
+.player-clan-details-section summary::before { content: "▸"; width: 1.25rem; flex: 0 0 1.25rem; color: #bbc2cc; }
+.player-clan-details-section details[open] > summary::before { content: "▾"; }
+.player-clan-details-section ul { margin: .35rem 0 0; padding: 0; list-style: none; }
+.player-clan-details-section li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .25rem .75rem; padding: .55rem 0; border-top: 1px solid #39404a; }
+.player-clan-details-section li span { color: #bbc2cc; }
+.player-clan-details-note { margin: 1.1rem 0 0; color: #bbc2cc; font-size: .8rem; }
+
+@media (max-width: 390px) {
+  .player-clan-details { padding: 1rem; }
+  .player-clan-details-head {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    grid-template-areas: "icon close" "identity identity";
+  }
+  .player-clan-details-icon { grid-area: icon; }
+  .player-clan-details-identity { grid-area: identity; }
+  .player-clan-details-close { grid-area: close; justify-self: end; }
+}
+
+.player-clan-details-discord { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.player-clan-details-discord .access-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; object-fit: cover; }
+.player-clan-details-discord .access-avatar-fallback { display: grid; place-items: center; background: #4b3b19; color: #f5d77d; font-weight: 700; }
+.player-clan-details-discord p { min-width: 0; }
+.player-clan-details-footer { margin-top: 1.1rem; padding-top: .8rem; border-top: 1px solid #39404a; }
+.player-clan-details-footer a { display: inline-flex; align-items: center; min-height: 44px; color: #e8bf62; }
+.player-clan-details-footer a:focus-visible { outline: 2px solid #e8bf62; outline-offset: 2px; }

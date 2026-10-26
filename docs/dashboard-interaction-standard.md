@@ -1168,3 +1168,16 @@ Keep the collapsible mobile Menu; do not add permanent bottom navigation. Put fr
 The scoped implementation and usability/accessibility checks are recorded in [the comparative review](clashperk-dashboard-review-2026-10-26.md#homemenu-implementation-review--october-26).
 
 Before validation builds, check the configured static asset directory. On this host the live web service serves web/cwl/dist; use an isolated Vite --outDir under /tmp for testing. Only a deliberate release should replace the served index, after copying its assets and retaining older hashed files for active sessions.
+
+
+### Member player and clan details — October 26
+
+Home and Search use the same compact, read-only details dialog. Opening details must not toggle an account checkbox, clear selections, navigate away, or save anything. Preserve the underlying search/filter/page/scroll state; Close and Escape restore focus to the opener, falling back to the focusable dashboard main region if it disappears.
+
+Use known linked-account identity immediately. Discord identity is contextual to the signed-in member and is passed only for that member's linked accounts; it is not a general Discord-owner lookup. Label timestamps as data loaded, not proof of fresh game-source verification. Missing optional league fields do not deserve empty cards. A clan's linked-player subset is not its full roster; partial/unavailable reads must say so.
+
+War & CWL is opt-in and uses the existing authenticated member-scope activity endpoint, without polling while closed. Select regular war for the current clan and CWL independently by the exact linked player tag, including recent hosting clans after the player returns home. Missing lineup data, explicit nonparticipation, unavailable counts, private logs, no returned war, and failed requests remain distinct. Never borrow another account's attacks or infer absent history. Permission failures clear protected detail/list data and invalidate in-flight reads.
+
+Review evidence: Sol built the base dialog, Luna built on-demand activity, and a separate Sol adversarial pass reviewed integration, ownership, URL constraints, authorization loss, stale-response races, and signup boundaries. Parent browser fixtures used fictional data and rejected all writes. Checked 320px/390px/1280px layouts, long names, avatar fallback, keyboard focus trapping/Escape, retained checkbox selection and Search query, member vs family-directory clan scope, separate home-war/CWL-host activity, activity error recovery UI, close during slow read, and immediate modal/list clearing on 403. Basic dialogs made zero activity requests before expansion.
+
+Validation: 85 frontend test files / 361 tests passed; TypeScript and Vite isolated build passed; backend navigation regression suite passed (2 tests); diff whitespace check passed. Tests include malformed URLs and stats, absent/partial activity, unrelated players, and CWL hosting after returning home. No backend routes, durable storage, signup writes, schema migrations, or live notifications changed. Historical clan statistics and full attack logs remain separate backlog work. Fixture checks do not establish live game-data freshness or real-phone behavior.

@@ -694,3 +694,25 @@
     min-width: 0;
   }
 }
+
+
+.hub-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.dashboard-home .hub-account-detail,
+.dashboard-home .hub-clan-link {
+  min-height: 44px;
+  padding: 6px 8px;
+  background: transparent;
+  border-color: transparent;
+  color: #f4cd64;
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .hub-account-actions { width: 100%; justify-content: flex-end; }
+}

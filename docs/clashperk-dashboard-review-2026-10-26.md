@@ -358,3 +358,8 @@ Build safety incident: the default frontend build targets the same dist director
 
 
 Release: implementation revision `3e32fec` was pushed to origin/main. The verified isolated frontend was installed by copying assets first and atomically replacing index.html; older hashed assets were retained for open sessions. The web service remained active without a restart. Local HTTP checks matched entry and Home chunks to the build. The public browser rendered the sign-in page and referenced `index-C8CxfDKP.js`. A direct non-browser public request returned 403, so public verification used the browser. Authenticated live signup submission was intentionally not performed.
+
+
+## Player/clan details implementation — October 26
+
+Shortlist item 3 now has compact read-only Home/Search details with member Discord identity/avatar, known clan/TH/weight, labeled freshness, linked-player subsets, and opt-in current War/CWL summaries. No new profile endpoint or blocking background fetch was added. Unknown optional league information is omitted rather than taking a card. The current member-scope activity API is reused only after expansion; separate hosting-clan CWL is preserved. Full historical clan/player analytics and attack-log/lineup browsing are not implemented by this change. See the interaction standard's member-details section for review evidence and limits.

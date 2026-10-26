@@ -6,10 +6,12 @@ import DashboardIcon from './DashboardIcon'
 import { readSnapshot, writeSnapshot } from './snapshotCache'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, type Account, type Pool, type Season, type Session, type Signup } from './api'
-import { clanDeepLink, memberPlacementStatus, type MyAssignments } from './publication'
+import { memberPlacementStatus, type MyAssignments } from './publication'
 import { availableSelection, dashboardRows, filterDashboardRows, type AccountFilter } from './dashboard'
 import TownHallIcon from './TownHallIcon'
 import './DashboardHome.css'
+import PlayerClanDetailsDialog from './PlayerClanDetailsDialog'
+import MemberDetailActivity from './MemberDetailActivity'
 
 type Snapshot = { season?: Season; accounts: Account[]; signups: Signup[]; assignments: MyAssignments; checkedAt: string; linkInstruction: string }
 export function homeNextStep(complete: boolean, season: Season | undefined, accountCount: number, unsigned: number, issue: 'loading' | 'saved' | 'error' = 'loading') {
@@ -35,8 +37,10 @@ export default function DashboardHome(props: Props) {
   const { session, seasonId, seasons, onNavigate, onStart } = props
   const cacheKey = `home:${session.user.id}:${seasonId}`
   const [data, setData] = useState<Snapshot | null>(() => readSnapshot<Snapshot>(cacheKey, (value): value is Snapshot => { const v = value as Snapshot; return !!v && Array.isArray(v.accounts) && Array.isArray(v.signups) && Array.isArray(v.assignments?.accounts) && typeof v.checkedAt === 'string' }))
+  const readGeneration = useRef(0)
   const [cached, setCached] = useState(!!data)
   const [partial, setPartial] = useState(false)
+  const [detail, setDetail] = useState<{kind: 'player' | 'clan'; tag: string} | null>(null)
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -49,23 +53,24 @@ export default function DashboardHome(props: Props) {
   useJourneyPosition(`home:${session.user.id}`, !!data || !!error)
   const season = data ? data.season : seasons.find(item => String(item.id) === seasonId)
   useEffect(() => {
+    const generation = ++readGeneration.current
     let cancelled = false, inFlight = false
     const load = async () => {
-      if (inFlight || cancelled || document.hidden) return
+      if (inFlight || cancelled || generation !== readGeneration.current || document.hidden) return
       inFlight = true; setRefreshing(true)
       let accepting = true
       try {
         let progress: AccountDisplay | null = null
         let context: { signups: Signup[]; assignments: MyAssignments; season?: Season } | null = null
         const showProgress = () => {
-          if (cancelled || !accepting || !context || !progress || (progress.total === null && progress.updating)) return
+          if (cancelled || generation !== readGeneration.current || !accepting || !context || !progress || (progress.total === null && progress.updating)) return
           const partial = progress
           const resolved = context
           setPartial(true)
           setData(previous => ({ ...resolved, accounts: mergeAccountProgress(previous?.accounts || [], partial), checkedAt: new Date().toISOString(), linkInstruction: partial.link_instruction }))
           // Partial results are view-only and never persisted as a complete snapshot.
         }
-        const accountRead = loadAccountDisplay(snapshot => { progress = snapshot; showProgress() }, () => !cancelled && accepting, refreshKey > 0)
+        const accountRead = loadAccountDisplay(snapshot => { progress = snapshot; showProgress() }, () => !cancelled && generation === readGeneration.current && accepting, refreshKey > 0)
         const contextRead = Promise.all([
           seasonId ? api<{ signups: Signup[] }>(`/seasons/${encodeURIComponent(seasonId)}/signups`) : Promise.resolve({ signups: [] }),
           seasonId ? api<MyAssignments>(`/seasons/${encodeURIComponent(seasonId)}/my-assignments`) : Promise.resolve({ accounts: [], published: null, visibility: 'current' as const, draft_changed: false }),
@@ -76,13 +81,13 @@ export default function DashboardHome(props: Props) {
           return context
         })
         const [accounts, resolved] = await Promise.all([accountRead, contextRead])
-        if (!cancelled) {
+        if (!cancelled && generation === readGeneration.current) {
           const snapshot: Snapshot = { ...resolved, accounts: accounts.accounts, checkedAt: new Date().toISOString(), linkInstruction: accounts.link_instruction }
           setData(snapshot); writeSnapshot(cacheKey, snapshot); setCached(false); setPartial(false)
           setSelected(current => availableSelection(current, dashboardRows(accounts.accounts, resolved.signups, resolved.assignments.accounts)))
           setError('')
         }
-      } catch (cause) { accepting = false; if (!cancelled) { if (cause instanceof ApiError && [401,403].includes(cause.status)) { setData(null); setCached(false); setPartial(false) }; setError(cause instanceof Error ? cause.message : 'Could not refresh your dashboard.') } }
+      } catch (cause) { accepting = false; if (!cancelled && generation === readGeneration.current) { if (cause instanceof ApiError && [401,403].includes(cause.status)) { setData(null); setCached(false); setPartial(false); setDetail(null) }; setError(cause instanceof Error ? cause.message : 'Could not refresh your dashboard.') } }
       finally { accepting = false; inFlight = false; if (!cancelled) setRefreshing(false) }
     }
     void load()
@@ -94,6 +99,10 @@ export default function DashboardHome(props: Props) {
   }, [seasonId, refreshKey, paused])
   const rows = useMemo(() => dashboardRows(data?.accounts || [], data?.signups || [], data?.assignments.accounts || []), [data])
   const visible = useMemo(() => filterDashboardRows(rows, filter, search, sort), [rows, filter, search, sort])
+  const detailPlayer = detail?.kind === 'player' ? rows.find(row => row.tag === detail.tag) : undefined
+  const detailClanAccount = detail?.kind === 'clan' ? rows.find(row => row.current_clan_tag === detail.tag) : undefined
+  const denyDetails = () => { readGeneration.current++; setSelected([]); setRefreshing(false); setDetail(null); setData(null); setCached(false); setPartial(false); setError('Your account access changed. Refresh or sign in again.') }
+  const detailFreshness = error ? 'unavailable' : partial ? 'partial' : cached ? 'saved' : 'current'
   const unsigned = rows.filter(row => !row.signup).length
   const assigned = data?.assignments.accounts.filter(item => item.assigned_clan_tag).length || 0
   const waiting = (data?.signups.length || 0) - assigned
@@ -139,10 +148,93 @@ export default function DashboardHome(props: Props) {
     <div className="hub-section-heading"><div><h2>My accounts</h2><p>{canSignup ? 'Select accounts to sign up. Signed-up accounts show their assigned clan.' : 'Your linked accounts, saved signups, and clan assignments.'}</p></div><button onClick={() => onNavigate('assignments')}>My assignments ↗</button></div>
     <div className="hub-toolbar"><label>Find an account or clan<input type="search" placeholder="Name, player tag or clan…" value={search} onChange={event => setSearch(event.target.value)} /></label><label>Show<select value={filter} onChange={event => setFilter(event.target.value as AccountFilter)}><option value="all">All accounts</option><option value="unsigned">Not signed up</option><option value="waiting">Waiting for a clan</option><option value="assigned">Assigned</option></select></label><label>Sort<select value={sort} onChange={event => setSort(event.target.value)}><option value="th">Town Hall · highest first</option><option value="name">Account name · A–Z</option></select></label></div>
     {data && <><div className="hub-selection"><span>{selected.length} selected · {visible.length} matching accounts</span><div><button disabled={!canSignup || !visible.some(row => !row.signup)} onClick={selectVisible}>Select accounts not signed up</button><button disabled={!selected.length} onClick={() => setSelected([])}>Clear</button></div></div>
-      {!rows.length && refreshing ? <p role="status">Loading account details…</p> : !rows.length && error ? null : !rows.length ? <div className="card empty"><h3 id="first-account-help" tabIndex={-1}>Link your first account</h3><AccountLinkHelp busy={refreshing} onRefresh={() => setRefreshKey(value => value + 1)} /></div> : !visible.length ? <div className="card empty"><h3>No accounts match</h3><p>Try another name or choose All accounts.</p><button onClick={() => { setSearch(''); setFilter('all') }}>Show all accounts</button></div> : <div className="hub-clans">{[...groups.entries()].map(([key, members]) => <section className="hub-clan" key={key}><header><ClanBadge url={members[0].current_clan_badge_url} name={members[0].current_clan_name || 'No current clan'} /><div><h3>{members[0].current_clan_name || 'No current clan'}</h3><small>Current clan{key !== 'none' ? ` · ${key}` : ''}</small></div>{key !== 'none' && <a className="hub-clan-link" href={clanDeepLink(key)} target="_blank" rel="noopener noreferrer">Open Clan ↗</a>}</header><div>{members.map(row => <article className={`hub-account ${selected.includes(row.tag) ? 'is-selected' : ''}`} key={row.tag}><label className="hub-account-pick"><input type="checkbox" aria-label={`Select ${row.name}`} disabled={!canSignup || !!row.signup} checked={selected.includes(row.tag)} onChange={event => setSelected(current => event.target.checked ? [...new Set([...current, row.tag])] : current.filter(tag => tag !== row.tag))} /><TownHallIcon level={row.town_hall} /><span><strong>{row.name}</strong><small>{row.tag}</small><small title="Saved clan weight, staff override, or FWA Stats fallback">War weight: {row.war_weight == null ? 'Not Available' : weightText(row.war_weight)}</small></span></label><div className="hub-account-status"><span className={`hub-state ${row.signup ? 'saved' : ''}`}>{row.signup ? `✓ ${row.signup.pool === 'main' ? 'Main' : 'Lazy'} CWL · Signed Up` : 'Not signed up'}</span>{row.signup && <small>{row.assignment?.assigned_clan_tag ? `${row.assignment.assigned_clan_name || row.assignment.assigned_clan_tag}` : 'Waiting for a clan'}{row.assignment?.assigned_clan_tag && data.assignments && memberPlacementStatus(data.assignments) === 'provisional' ? ' · May change' : ''}</small>}</div>{row.signup && <button className="hub-account-action" onClick={() => onNavigate(row.assignment?.assigned_clan_tag ? 'assignments' : 'saved')}>{row.assignment?.assigned_clan_tag ? 'View clan' : 'Manage signup'} →</button>}</article>)}</div></section>)}</div>}
+      {!rows.length && refreshing ? <p role="status">Loading account details…</p>
+        : !rows.length && error ? null
+        : !rows.length ? <div className="card empty">
+          <h3 id="first-account-help" tabIndex={-1}>Link your first account</h3>
+          <AccountLinkHelp busy={refreshing} onRefresh={() => setRefreshKey(value => value + 1)} />
+        </div>
+        : !visible.length ? <div className="card empty">
+          <h3>No accounts match</h3>
+          <p>Try another name or choose All accounts.</p>
+          <button onClick={() => { setSearch(''); setFilter('all') }}>Show all accounts</button>
+        </div>
+        : <div className="hub-clans">
+          {[...groups.entries()].map(([key, members]) => <section className="hub-clan" key={key}>
+            <header>
+              <ClanBadge url={members[0].current_clan_badge_url} name={members[0].current_clan_name || 'No current clan'} />
+              <div>
+                <h3>{members[0].current_clan_name || 'No current clan'}</h3>
+                <small>Current clan{key !== 'none' ? ` · ${key}` : ''}</small>
+              </div>
+              {key !== 'none' && <button
+                className="hub-clan-link"
+                onClick={() => setDetail({ kind: 'clan', tag: key })}
+                aria-label={`Details for ${members[0].current_clan_name || key}`}
+              >Clan details</button>}
+            </header>
+            <div>{members.map(row => <article
+              className={`hub-account ${selected.includes(row.tag) ? 'is-selected' : ''}`}
+              key={row.tag}
+            >
+              <label className="hub-account-pick">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${row.name}`}
+                  disabled={!canSignup || !!row.signup}
+                  checked={selected.includes(row.tag)}
+                  onChange={event => setSelected(current => event.target.checked
+                    ? [...new Set([...current, row.tag])]
+                    : current.filter(tag => tag !== row.tag))}
+                />
+                <TownHallIcon level={row.town_hall} />
+                <span>
+                  <strong>{row.name}</strong>
+                  <small>{row.tag}</small>
+                  <small title="Saved clan weight, staff override, or FWA Stats fallback">
+                    War weight: {row.war_weight == null ? 'Not Available' : weightText(row.war_weight)}
+                  </small>
+                </span>
+              </label>
+              <div className="hub-account-status">
+                <span className={`hub-state ${row.signup ? 'saved' : ''}`}>
+                  {row.signup ? `✓ ${row.signup.pool === 'main' ? 'Main' : 'Lazy'} CWL · Signed Up` : 'Not signed up'}
+                </span>
+                {row.signup && <small>
+                  {row.assignment?.assigned_clan_tag
+                    ? `${row.assignment.assigned_clan_name || row.assignment.assigned_clan_tag}`
+                    : 'Waiting for a clan'}
+                  {row.assignment?.assigned_clan_tag && data.assignments && memberPlacementStatus(data.assignments) === 'provisional'
+                    ? ' · May change' : ''}
+                </small>}
+              </div>
+              <div className="hub-account-actions">
+                <button
+                  className="hub-account-detail"
+                  onClick={() => setDetail({ kind: 'player', tag: row.tag })}
+                  aria-label={`Details for ${row.name}`}
+                >Details</button>
+                {row.signup && <button
+                  className="hub-account-action"
+                  onClick={() => onNavigate(row.assignment?.assigned_clan_tag ? 'assignments' : 'saved')}
+                >{row.assignment?.assigned_clan_tag ? 'View clan' : 'Manage signup'} →</button>}
+              </div>
+            </article>)}</div>
+          </section>)}
+        </div>}
       {lastPage > 0 && <nav className="hub-pagination" aria-label="Account pages"><button disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>← Previous</button><span>Page {currentPage + 1} of {lastPage + 1}</span><button disabled={currentPage >= lastPage} onClick={() => setPage(currentPage + 1)}>Next →</button></nav>}
       {selected.length > 0 && <div className="hub-selected-bar"><div><strong>{selected.length} account{selected.length === 1 ? '' : 's'} selected</strong><small>Choose a pool, then review. Nothing is submitted yet.</small></div><button className="primary" disabled={!canSignup} onClick={() => onStart('main', selected, data.accounts, data.signups)}>Main CWL →</button><button className="primary" disabled={!canSignup} onClick={() => onStart('lazy', selected, data.accounts, data.signups)}>Lazy CWL →</button></div>}
     </>}
     <div className="hub-bottom"><details className="hub-help"><summary>Missing an account?</summary><AccountLinkHelp busy={refreshing} onRefresh={() => setRefreshKey(value => value + 1)} /><p>Already signed-up accounts can be moved or withdrawn in My signups.</p><button onClick={() => onNavigate('saved')}>Open My signups →</button></details>{session.can_edit && <section className="hub-staff"><h3>Staff tools</h3><div><button onClick={() => onNavigate('roster')}>Build roster →</button><button onClick={() => onNavigate('publication')}>Publish roster →</button><button onClick={() => onNavigate('staff')}>Seasons & clans →</button></div></section>}</div>
+    {detailPlayer && <PlayerClanDetailsDialog kind="player" account={detailPlayer} session={session} freshness={detailFreshness} loadedAt={data?.checkedAt} returnFocusFallbackId="dashboard-main" onClose={() => setDetail(null)}>
+      {detailPlayer.signup && <section className="player-clan-details-section">
+        <h3>{season?.label || 'This season'} · {detailPlayer.signup.pool === 'main' ? 'Main CWL' : 'Lazy CWL'}</h3>
+        <p>{detailPlayer.assignment?.assigned_clan_name || detailPlayer.assignment?.assigned_clan_tag || 'Waiting for a clan'}{detailPlayer.assignment?.assigned_clan_tag && data && memberPlacementStatus(data.assignments) === 'provisional' ? ' · May change' : ''}</p>
+      </section>}
+      <MemberDetailActivity onDenied={denyDetails} key={detailPlayer.tag} target="player" tag={detailPlayer.tag} clanTag={detailPlayer.current_clan_tag} />
+    </PlayerClanDetailsDialog>}
+    {detail?.kind === 'clan' && detailClanAccount && <PlayerClanDetailsDialog kind="clan" tag={detail.tag} name={detailClanAccount.current_clan_name || detail.tag} badgeUrl={detailClanAccount.current_clan_badge_url} linkedAccounts={data?.accounts} freshness={detailFreshness} loadedAt={data?.checkedAt} returnFocusFallbackId="dashboard-main" onClose={() => setDetail(null)}>
+      <MemberDetailActivity onDenied={denyDetails} key={detail.tag} target="clan" tag={detail.tag} />
+    </PlayerClanDetailsDialog>}
   </div>
 }
