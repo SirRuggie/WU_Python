@@ -38,7 +38,7 @@ class AccountProviders:
         return {"#P2Y": {"weight": 135000}}
 
     async def family_clans(self):
-        return {"clans": [{"tag": "#R2Y", "name": "Family"}]}
+        return {"clans": [{"tag": "#R2Y", "name": "Family", "type": "Tactical"}]}
 
 
 class DashboardAccountTests(unittest.IsolatedAsyncioTestCase):

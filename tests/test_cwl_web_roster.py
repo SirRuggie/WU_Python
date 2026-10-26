@@ -38,7 +38,7 @@ class Providers:
 
     async def family_clans(self):
         return {"source": "fixture", "status": "ok", "checked_at": "2026-10-14T00:00:00Z",
-                "clans": [{"tag": "#R2Y", "name": "Family"}]}
+                "clans": [{"tag": "#R2Y", "name": "Family", "type": "Tactical"}]}
 
     async def weights(self, tags):
         if self.fail_weights:

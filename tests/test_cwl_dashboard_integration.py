@@ -528,6 +528,13 @@ def test_restart_restores_campaign_job_instead_of_deleting_as_legacy(monkeypatch
 
 
 def test_monthly_reconcile_creates_next_cycle_and_rollover_job(monkeypatch):
+    # The assertion targets September -> October; freeze that date rather than
+    # letting the next-cycle expectation change with the test runner's month.
+    monkeypatch.setattr(
+        cwl_reminder.pendulum, "now",
+        lambda tz=None: pendulum.datetime(2026, 9, 25, tz=tz or "UTC"),
+    )
+
     async def scenario():
         mongo = MemoryMongo()
         monkeypatch.setattr(cwl_reminder, "mongo_client", None)

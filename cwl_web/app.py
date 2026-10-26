@@ -641,24 +641,8 @@ def _check_signup_pool(pool, accounts):
 
 
 async def _accounts(request, user_id):
-    provider = request.app["providers"]
-    links = await provider.linked_tags(user_id)
-    limit = asyncio.Semaphore(5)
-
-    async def fetch(value):
-        async with limit:
-            return await provider.player(value)
-
-    accounts = await asyncio.gather(*(fetch(value) for value in links))
-    directory = await _family_directory(request)
-    approved = None if directory is None else set(directory)
-    for account in accounts:
-        account["verified"] = bool(links[account["tag"]])
-        account["family_clan_status"] = _family_status(account["current_clan_tag"], approved)
-        account["current_clan_type"] = (directory or {}).get(account["current_clan_tag"], {}).get("type")
-        account["lazy_eligible"] = True
-        account["lazy_ineligible_reason"] = None
-    return accounts
+    from utils.cwl_member_service import accounts_for_member
+    return await accounts_for_member(request.app["providers"], user_id)
 
 
 async def linked_accounts(request):
@@ -770,72 +754,20 @@ async def signups(request):
 
 
 async def submit_signup(request):
+    from utils.cwl_member_service import MemberError, submit
+
     session = _require(request)
     body = await _json(request)
-    pool = body.get("pool")
-    selections = body.get("accounts")
-    if pool not in ("main", "lazy") or not isinstance(selections, list) or len(selections) > 100:
-        _fail(400, "Invalid signup")
-    requested = {}
-    for item in selections:
-        if not isinstance(item, dict) or type(item.get("prefer_crystal_1_or_lower")) is not bool:
-            _fail(400, "Invalid account signup")
-        try:
-            value = tag(item.get("tag"))
-        except ValueError:
-            _fail(400, "Invalid player tag")
-        if value in requested:
-            _fail(400, "Duplicate account in submission")
-        move_from_pool = item.get("move_from_pool")
-        if "move_from_pool" in item and move_from_pool not in ("main", "lazy"):
-            _fail(400, "Invalid source pool")
-        requested[value] = (item["prefer_crystal_1_or_lower"], move_from_pool)
-    # Refresh links and current game data immediately before the transaction.
-    available = {a["tag"]: a for a in await _accounts(request, session["user_id"])}
-    if not set(requested) <= set(available):
-        _fail(403, "Account is not linked to your Discord identity")
-    _check_signup_pool(pool, [available[value] for value in requested])
     sid = _sid(request)
-    with _store(request).tx() as db:
-        season = _season(db, sid)
-        if not season["signup_open"] or season["status"] != "draft":
-            _fail(423, "Signups are closed")
-        moved = 0
-        # Validate every account before the first write. BEGIN IMMEDIATE keeps
-        # another request from changing source pools between checks and updates.
-        for value, (_, move_from_pool) in requested.items():
-            existing = db.execute("SELECT user_id,pool FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
-            if existing is None:
-                if move_from_pool is not None:
-                    _fail(409, "Pool transfer is stale; refresh signups")
-                continue
-            if existing["user_id"] != session["user_id"]:
-                _fail(409, "Account already registered by another member")
-            if existing["pool"] == pool:
-                if move_from_pool is not None:
-                    _fail(409, "Pool transfer is stale; refresh signups")
-                continue
-            if move_from_pool != existing["pool"]:
-                _fail(409, "Confirm the account's current pool before moving it")
-            moved += 1
-        for value, (preference, _) in requested.items():
-            account = available[value]
-            old = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
-            db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall,signup_clan_tag,signup_clan_name) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET pool=excluded.pool,prefer_crystal_1_or_lower=excluded.prefer_crystal_1_or_lower,player_name=excluded.player_name,town_hall=excluded.town_hall,updated_at=CURRENT_TIMESTAMP", (sid, value, session["user_id"], pool, int(preference), account["name"], account["town_hall"], account["current_clan_tag"], account["current_clan_name"]))
-            if account.get("current_clan_type"):
-                db.execute("UPDATE signups SET signup_clan_type=CASE WHEN signup_clan_type='FWA' OR ?='FWA' THEN 'FWA' ELSE COALESCE(signup_clan_type,?) END WHERE season_id=? AND tag=?", (account["current_clan_type"], account["current_clan_type"], sid, value))
-            after = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=?", (sid, value)).fetchone()
-            before = dict(old) if old else None
-            changed_pool = old is not None and old['pool'] != pool
-            if changed_pool:
-                placement = db.execute('SELECT r.assigned_clan_tag, c.name AS assigned_clan_name FROM roster_entries r LEFT JOIN clans c ON c.tag=r.assigned_clan_tag WHERE r.season_id=? AND r.tag=?', (sid, value)).fetchone()
-                before['assigned_clan_tag'] = placement['assigned_clan_tag'] if placement else None
-                before['assigned_clan_name'] = placement['assigned_clan_name'] if placement else None
-                db.execute('UPDATE roster_entries SET assigned_clan_tag=NULL,kept=0 WHERE season_id=? AND tag=?', (sid, value))
-            _audit(db, sid, value, session["user_id"], "member_pool_change" if changed_pool else "member_signup", before, dict(after))
-        if requested:
-            _bump(db, sid)
-    return web.json_response({"ok": True, "count": len(requested), "moved": moved})
+    try:
+        result = await submit(
+            _store(request), request.app["providers"], sid, session["user_id"],
+            body.get("pool"), body.get("accounts"), verified_only=False,
+            selected_only=not _editor(request, session)
+        )
+    except MemberError as exc:
+        _fail(exc.status, str(exc))
+    return web.json_response(result)
 
 
 async def staff_signup_members(request):
@@ -957,25 +889,18 @@ async def staff_remove_signup(request):
 
 
 async def withdraw(request):
+    from utils.cwl_member_service import MemberError, withdraw as member_withdraw
+
     session = _require(request)
     sid = _sid(request)
     try:
-        value = tag(request.match_info["tag"])
-    except ValueError:
-        _fail(400, "Invalid player tag")
-    with _store(request).tx() as db:
-        season = _season(db, sid)
-        if not season["signup_open"] or season["status"] != "draft":
-            _fail(423, "Signups are closed")
-        before = db.execute("SELECT * FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"])).fetchone()
-        if before:
-            assigned = db.execute("SELECT r.assigned_clan_tag, c.name AS assigned_clan_name FROM roster_entries r LEFT JOIN clans c ON c.tag=r.assigned_clan_tag WHERE r.season_id=? AND r.tag=?", (sid, value)).fetchone()
-            before = {**dict(before), "assigned_clan_tag": assigned["assigned_clan_tag"] if assigned else None,
-                      "assigned_clan_name": assigned["assigned_clan_name"] if assigned else None}
-            db.execute("DELETE FROM signups WHERE season_id=? AND tag=? AND user_id=?", (sid, value, session["user_id"]))
-            _audit(db, sid, value, session["user_id"], "member_withdrawal", dict(before), None)
-            _bump(db, sid)
-    return web.json_response({"ok": True})
+        result = member_withdraw(
+            _store(request), sid, session["user_id"], request.match_info["tag"],
+            selected_only=not _editor(request, session),
+        )
+    except MemberError as exc:
+        _fail(exc.status, str(exc))
+    return web.json_response({"ok": result["ok"]})
 
 
 def _roster_rows(db, sid):
@@ -1623,14 +1548,6 @@ def _publication_meta(row):
     )}
 
 
-def _member_publication_meta(row):
-    if row is None:
-        return None
-    return {key: row[key] for key in (
-        "version", "published_at", "joining_instructions",
-    )}
-
-
 def _latest_publication(db, sid):
     return db.execute(
         "SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1",
@@ -1773,24 +1690,18 @@ async def withdraw_publication(request):
 
 
 async def my_assignments(request):
+    from utils.cwl_member_service import MemberError, assignment_view
+
     session = _require(request)
     sid = _sid(request)
-    with _store(request).tx() as db:
-        _season(db, sid)
-        latest = _latest_publication(db, sid)
-        rows = db.execute(
-            "SELECT s.tag,s.player_name,s.town_hall,s.pool,p.assigned_clan_tag,p.assigned_clan_name "
-            "FROM signups s LEFT JOIN publication_accounts p ON p.publication_id=? "
-            "AND p.tag=s.tag AND p.user_id=s.user_id AND p.pool=s.pool "
-            "WHERE s.season_id=? AND s.user_id=? ORDER BY s.tag",
-            (latest["id"] if latest else None, sid, session["user_id"]),
-        ).fetchall()
-        return web.json_response({
-            "published": _member_publication_meta(latest),
-            "visibility": "current",
-            "draft_changed": False,
-            "accounts": [dict(row) for row in rows],
-        })
+    try:
+        result = assignment_view(
+            _store(request), session["user_id"], sid,
+            selected_only=not _editor(request, session),
+        )
+    except MemberError as exc:
+        _fail(exc.status, str(exc))
+    return web.json_response(result)
 
 
 @web.middleware
@@ -1897,7 +1808,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     from .clan_weights import lineup_lifecycle
     app.cleanup_ctx.append(lineup_lifecycle)
     from .signup_activity import routes as signup_activity_routes
-    routes = [*staff_signup_change_routes, *weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
+    from .discord_member import routes as discord_member_routes
+    routes = [*discord_member_routes, *staff_signup_change_routes, *weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.put(API + "/member-season", set_member_season), web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
         web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),

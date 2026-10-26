@@ -31,7 +31,7 @@ class FakeProviders:
 
     async def family_clans(self):
         return {"source": "fixture", "status": "ok", "checked_at": "2026-10-14T00:00:00Z",
-                "clans": [{"tag": "#R2Y", "name": "Family"}]}
+                "clans": [{"tag": "#R2Y", "name": "Family", "type": "Tactical"}]}
 
     async def linked_tags(self, user_id):
         return self.links.get(user_id, {}).copy()
@@ -674,7 +674,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         payload = await response.json()
         self.assertEqual(payload["source"], "fixture")
-        self.assertEqual(payload["clans"], [{"tag": "#R2Y", "name": "Family", "cwl_league": None, "cwl_league_stale": False}])
+        self.assertEqual(payload["clans"], [{"tag": "#R2Y", "name": "Family", "type": "Tactical", "cwl_league": None, "cwl_league_stale": False}])
         response = await self.call("POST", "/approved-clans", self.owner, json={"tag": "#J2Y"})
         self.assertEqual(response.status, 405)
         response = await self.call("DELETE", "/approved-clans/%23R2Y", self.owner)
