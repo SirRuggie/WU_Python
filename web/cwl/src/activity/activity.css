@@ -10,9 +10,10 @@
 .state-preparation { color: #f4cd64; background: #332c1d; }
 .state-private,.state-error,.state-awaitingResult { color: #f4cd64; background: #332c1d; }
 .calendar-title { display: flex; align-items: center; gap: 12px; }
-.calendar-title > svg { width: 22px; height: 22px; color: #b8b3a9; }
+.calendar-event-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; background: #30291c; color: #f4cd64; }
+.calendar-event-icon > svg { width: 24px; height: 24px; }
 .calendar-card { display: flex; flex-direction: column; }
-.calendar-card > p:not(.activity-countdown) { flex: 1; }
+.calendar-card .calendar-description { flex: 1; }
 .activity-card .activity-countdown { font-size: 22px; font-weight: 650; color: #f1eee7; margin: 18px 0 12px; }
 .activity-card progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 6px; overflow: hidden; margin: 10px 0 18px; background: #323232; accent-color: #e7b338; }
 .activity-card progress::-webkit-progress-bar { background: #323232; }
@@ -84,4 +85,27 @@
   .war-team strong { font-size: 14px; }
   .war-matchup-score strong { font-size: 21px; }
   .war-personal li { gap: 8px; }
+}
+
+/* Events hierarchy stays scoped so Wars and raid cards retain their layout. */
+.events-workspace .calendar-card { padding: 20px; }
+.events-workspace .calendar-title { min-width: 0; gap: 12px; }
+.events-workspace .calendar-title h2 { margin: 0; font-size: 20px; line-height: 1.3; }
+.events-workspace .calendar-card > header { align-items: center; gap: 12px; }
+.events-workspace .calendar-games .calendar-event-icon { background: #20362d; color: #aee4c8; }
+.events-workspace .calendar-raid .calendar-event-icon { background: #282d40; color: #c2cbf2; }
+.events-workspace .calendar-countdown { display: grid; gap: 4px; margin: 22px 0 12px; line-height: 1.3; }
+.events-workspace .calendar-countdown > span { font-size: 13px; color: #c3bfb6; }
+.events-workspace .calendar-countdown > strong { font-size: 27px; font-weight: 650; color: #f5f1e8; font-variant-numeric: tabular-nums; }
+.events-workspace .calendar-description { margin: 0 0 18px; font-size: 14px; line-height: 1.5; color: #c3bfb6; }
+.events-workspace .calendar-card progress { margin: 0 0 16px; height: 4px; }
+.events-workspace .calendar-card .activity-dates { gap: 16px; }
+.events-workspace .calendar-card .activity-dates small { color: #aaa69d; font-size: 12px; }
+.events-workspace .calendar-card .activity-dates time { line-height: 1.5; color: #c3bfb6; }
+.events-workspace .clan-event-status { margin-top: 28px; }
+@media(max-width:480px) {
+  .events-workspace .calendar-card { padding: 16px; }
+  .events-workspace .calendar-title h2 { font-size: 19px; }
+  .events-workspace .calendar-countdown { margin-top: 18px; }
+  .events-workspace .calendar-countdown > strong { font-size: 25px; }
 }

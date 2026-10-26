@@ -1135,3 +1135,18 @@ handoff under Details, and inactive clans in a disclosure. Current-member scope 
 the default; staff explicitly opt into family scope. Unknown/private results remain
 visible. See [Wars review](wars-review.md) for membership and hosting-clan rules,
 regression evidence, responsive checks, and limitations.
+
+### Events visual clarity — October 26
+
+Events now uses 40px icon containers with the established 24px interface icons,
+stronger event titles, countdowns above descriptions, and quieter exact dates.
+Styles are scoped to Events. Event order, recurring schedule calculations, timezone
+controls, staff raid scope, refresh, sources disclosure and CWL navigation are unchanged.
+
+Review: 346 frontend tests, 13 activity backend tests and production build passed.
+Isolated browser checks at 1280/390/320px covered no document overflow, timezone
+switching, staff scope, member control exclusion, sources disclosure, CWL handoff,
+and last-known raid data after failed refresh. Screenshots were inspected at desktop
+and narrow mobile widths. Calendar tests cover event boundaries and signup versus
+battle timing. No live records or notifications were modified; fixture checks are
+not proof of live game data or a full assistive-technology audit.

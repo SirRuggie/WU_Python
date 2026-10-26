@@ -15,16 +15,16 @@ export default function EventsWorkspace({canEdit,onWars}: {canEdit:boolean; onWa
   const {data,error,busy,refresh} = useClanActivity('raid',scope)
   const zone = utc ? 'UTC' : undefined
   const zoneName = utc ? 'UTC' : Intl.DateTimeFormat().resolvedOptions().timeZone
-  return <section className="clan-activity-workspace">
+  return <section className="clan-activity-workspace events-workspace">
     <header className="page-head"><div><p className="eyebrow">Activity · Game calendar</p><h1>Events</h1><p>What’s live and what’s next. Times shown in {zoneName}.</p></div><label className="activity-timezone"><input type="checkbox" checked={utc} onChange={event=>setUtc(event.target.checked)}/>Show UTC</label></header>
     <div className="activity-card-grid">{gameCalendar(now).map(event=>{
       const live = now >= event.start && now < event.end
       const signup = event.id === 'cwl'
       const target = live ? event.end : event.start
-      return <article className="activity-card calendar-card" key={event.id}>
-        <header><div className="calendar-title"><DashboardIcon name={event.icon}/><h2>{event.title}</h2></div><span className={`activity-state ${live?'state-inWar':''}`}>{live ? (signup?'Signup open':'Live') : 'Upcoming'}</span></header>
-        <p>{event.description}</p>
-        <p className="activity-countdown">{live ? (signup?'Signup closes':'Ends') : (signup?'Signup opens':'Starts')} in {countdown(target,now)}</p>
+      return <article className={`activity-card calendar-card calendar-${event.id}`} key={event.id}>
+        <header><div className="calendar-title"><span className="calendar-event-icon"><DashboardIcon name={event.icon}/></span><h2>{event.title}</h2></div><span className={`activity-state ${live?'state-inWar':''}`}>{live ? (signup?'Signup open':'Live') : 'Upcoming'}</span></header>
+        <p className="calendar-countdown"><span>{live ? (signup?'Signup closes':'Ends') : (signup?'Signup opens':'Starts')} in</span><strong>{countdown(target,now)}</strong></p>
+        <p className="calendar-description">{event.description}</p>
         {live && <progress value={Math.min(1,Math.max(0,(now-event.start)/(event.end-event.start)))} max={1} aria-label={`${event.title} time elapsed`}/>}
         <div className="activity-dates"><div><small>{signup?'Signup opens':'Starts'}</small><time dateTime={new Date(event.start).toISOString()}>{localTime(event.start,zone)}</time></div><div><small>{event.endLabel || 'Ends'}</small><time dateTime={new Date(event.end).toISOString()}>{localTime(event.end,zone)}</time></div></div>
         {signup && <button className="calendar-link" onClick={onWars}>View clan battle schedules →</button>}
