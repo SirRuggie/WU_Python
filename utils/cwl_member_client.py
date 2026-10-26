@@ -28,7 +28,7 @@ def bridge_config() -> tuple[str, str]:
     except ValueError:
         valid = False
     if not valid or len(secret) < 32:
-        raise MemberClientError('Discord CWL is unavailable. Please use the dashboard or try again later.')
+        raise MemberClientError('Discord CWL is unavailable. Please try again later.')
     return base + '/api/cwl/discord/member', secret
 
 
@@ -53,7 +53,7 @@ async def request(action: str, *, user_id: int | str, guild_id: int | str, **pay
                     raise ValueError('Invalid response')
                 if response.status != 200:
                     if response.status in {400, 403, 409, 423}:
-                        raise MemberClientError(str(data.get('error') or 'This action is no longer available. Reopen /cwl-member.'))
+                        raise MemberClientError(str(data.get('error') or 'This action is no longer available. Reopen /cwl signup.'))
                     raise MemberClientError(
                         'CWL is unavailable. Check My signups before trying to save again.' if writing
                         else 'CWL is unavailable. Please try again later.', uncertain=writing)

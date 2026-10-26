@@ -210,3 +210,60 @@ def test_multi_page_selection_has_clear_next_and_keeps_all_choices():
         asyncio.run(run())
     finally:
         member._sessions.pop(token, None)
+
+
+def test_public_cwl_group_contains_only_signup_and_retired_staff_group_stays_unregistered():
+    from extensions.commands import cwl_dashboard
+    assert member.cwl.name == "cwl"
+    assert set(member.cwl.subcommands) == {"signup"}
+    assert member.cwl.default_member_permissions in (hikari.UNDEFINED, None)
+    registered = [getattr(x, "_command", None) for x in member.loader._loadables]
+    assert registered == [member.cwl]
+    assert not cwl_dashboard.cwl.subcommands
+    assert not any(getattr(x, "_command", None) for x in cwl_dashboard.loader._loadables)
+
+
+def test_signup_command_opens_private_home_without_dashboard_link_or_extra_click():
+    from test_cwl_discord_member import Context
+    from unittest.mock import patch
+    ctx = Context()
+
+    async def request(action, **fields):
+        # Initial response must acknowledge privately before any network wait.
+        assert len(ctx.followups) == 1
+        assert action == "view"
+        assert fields["include_accounts"] is False
+        return {"season": OPEN, "signups": [], "accounts": [], "accounts_status": "not_loaded"}
+
+    async def run():
+        with patch("utils.cwl_member_client.request", request):
+            await member.CwlMember.invoke(SimpleNamespace(), ctx)
+
+    old_tokens = set(member._sessions)
+    try:
+        asyncio.run(run())
+        initial = ctx.followups[0][1]
+        assert initial["flags"] & hikari.MessageFlag.EPHEMERAL
+        assert initial["flags"] & hikari.MessageFlag.IS_COMPONENTS_V2
+        assert initial["user_mentions"] is False
+        assert len(initial["components"][0].components) == 1  # Loading text only.
+        rendered = ctx.interaction.edits[-1]["components"][0]
+        controls = [b for row in rendered.components[1:] for b in row.components]
+        assert {b.custom_id.split(":")[0] for b in controls} == {
+            "cwl_member_signup", "cwl_member_my_signups", "cwl_member_assignments"}
+        assert all(b.style != hikari.ButtonStyle.LINK for b in controls)
+        assert "dashboard" not in rendered.components[0].content.lower()
+    finally:
+        for token in set(member._sessions) - old_tokens:
+            member._sessions.pop(token, None)
+
+
+def test_signup_command_rejects_other_server_before_loading():
+    from test_cwl_discord_member import Context
+    from unittest.mock import patch
+    ctx = Context(guild_id=999)
+    with patch("utils.cwl_member_client.request") as request:
+        asyncio.run(member.CwlMember.invoke(SimpleNamespace(), ctx))
+    request.assert_not_called()
+    assert ctx.interaction.edits == []
+    assert ctx.followups[0][1]["ephemeral"] is True

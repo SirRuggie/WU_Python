@@ -161,3 +161,19 @@ added ordering coverage for ties and malformed/missing Town Halls. A complete
 three-page test verifies selecting, advancing, returning, page-only deselection,
 and reviewing the preserved choices. The 320px isolated native-component
 approximation was regenerated and inspected. No live signup was used for tests.
+
+## Direct command entry — 2026-10-26
+
+The user requested `/cwl signup`, removal of the dashboard entry gate, and no
+future shared button yet. The public member-only `cwl` group contains `signup`;
+it does not register or modify the retired administrator CWL group. Staff controls
+remain under `/manage`. The initial response is private Components V2 loading
+text before any bridge work, then becomes the existing home panel. No link or
+extra click is needed. Existing owner-bound entry buttons remain compatible.
+All recovery instructions use `/cwl signup`.
+
+Validation: **107 tests passed**, six subtests passed, including command registry,
+private acknowledgement before network IO, direct home rendering without links,
+wrong-server rejection, retired staff permissions and component/startup suites.
+Independent Sol review found no concrete issue. Runtime command synchronization
+must confirm the new subcommand and removal of the old top-level command.

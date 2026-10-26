@@ -15,14 +15,12 @@ import lightbulb
 
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
-from utils import cwl_campaign
 from utils.cwl_signup_policy import main_signup_error
 
 
 PAGE_SIZE = 15
 ASSIGNMENT_PAGE_SIZE = 5
 SESSION_TTL = 12 * 60
-DASHBOARD_URL = cwl_campaign.SIGNUP_URL
 _sessions: dict[str, "MemberSession"] = {}
 _log = logging.getLogger(__name__)
 
@@ -95,7 +93,7 @@ def _session_from(action_id: str, ctx) -> tuple[str, MemberSession, int]:
         raise StaleSession
     user_id, guild_id = _member_identity(ctx)
     if user_id != session.user_id or guild_id != session.guild_id:
-        raise ValueError("This CWL panel belongs to another member. Run `/cwl-member` for your own private panel.")
+        raise ValueError("This CWL panel belongs to another member. Run `/cwl signup` for your own private panel.")
     if int(version) != session.version:
         raise StaleSession
     return token, session, int(version)
@@ -285,7 +283,7 @@ def _main_text(session: MemberSession) -> str:
         if not pages:
             return "## Joining instructions\nNo joining instructions were included with this publication."
         return f"## Joining instructions · {session.page + 1} of {len(pages)}\n{pages[session.page]}"
-    return "This panel is out of date. Run `/cwl-member` to open a fresh one."
+    return "This panel is out of date. Run `/cwl signup` to open a fresh one."
 
 
 def _components(token: str, session: MemberSession) -> list:
@@ -482,13 +480,13 @@ async def _edit(ctx, token: str, session: MemberSession, note: str | None = None
         # The screen generation has already advanced. A followup must not
         # restore the old confirmation or invite a duplicate write.
         try:
-            await ctx.respond("This panel could not update. Run `/cwl-member` for a fresh private panel and check My signups before retrying a save.",
+            await ctx.respond("This panel could not update. Run `/cwl signup` for a fresh private panel and check My signups before retrying a save.",
                               ephemeral=True, user_mentions=False, role_mentions=False, mentions_everyone=False)
         except Exception:
             pass
 
 
-class CwlMember(lightbulb.SlashCommand, name="cwl-member", description="Open your private CWL signup and assignment options"):
+class CwlMember(lightbulb.SlashCommand, name="signup", description="Sign up for CWL and view your clan assignments privately"):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         try:
@@ -496,20 +494,23 @@ class CwlMember(lightbulb.SlashCommand, name="cwl-member", description="Open you
         except ValueError as exc:
             await ctx.respond(str(exc), ephemeral=True)
             return
-        row = hikari.impl.MessageActionRowBuilder()
-        row.add_link_button(DASHBOARD_URL, label="Open CWL dashboard")
-        row.add_interactive_button(hikari.ButtonStyle.SECONDARY,
-                                   f"cwl_member_start:{int(ctx.user.id)}:{int(ctx.interaction.guild_id)}",
-                                   label="Use Discord instead")
+        # Acknowledge privately before the saved-data read. No dashboard gate
+        # and no shared message/button is created by this command.
         await ctx.respond(
-            components=_panel("## CWL signups\nOpen the dashboard, or manage your signup here in Discord.", [row]),
+            components=_panel("## CWL signups\nLoading your signups…", []),
             flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
             user_mentions=False, role_mentions=False, mentions_everyone=False,
         )
+        await start(ctx, f"{int(ctx.user.id)}:{int(ctx.interaction.guild_id)}")
 
 
 loader = lightbulb.Loader()
-loader.command(CwlMember)
+# Staff campaign/roster controls live under /manage. This public group contains
+# only member self-service; it does not register the retired staff CWL group.
+cwl = lightbulb.Group("cwl", "Your CWL signup and clan assignments")
+cwl.register(CwlMember)
+loader.command(cwl)
+
 
 
 def _new_session(ctx) -> tuple[str, MemberSession]:
@@ -530,7 +531,7 @@ async def start(ctx, action_id: str, **_):
         bound_user, sep, bound_guild = action_id.partition(":")
         user_id, guild_id = _member_identity(ctx)
         if not sep or bound_user != str(user_id) or bound_guild != str(guild_id):
-            raise ValueError("This CWL entry button belongs to another member. Run /cwl-member for your own private panel.")
+            raise ValueError("This CWL entry button belongs to another member. Run /cwl signup for your own private panel.")
         token, session = _new_session(ctx)
         async with session.lock:
             await _refresh(session, session.user_id, session.guild_id, include_accounts=False)
@@ -547,7 +548,7 @@ async def start(ctx, action_id: str, **_):
         flags = getattr(message, "flags", hikari.MessageFlag.IS_COMPONENTS_V2)
         legacy_clear = {"content": None, "embeds": []} if not flags & hikari.MessageFlag.IS_COMPONENTS_V2 else {}
         await ctx.interaction.edit_initial_response(
-            components=_panel("The CWL service is temporarily unavailable. Your signups have not been changed. Run `/cwl-member` again shortly.", []),
+            components=_panel("The CWL service is temporarily unavailable. Your signups have not been changed. Run `/cwl signup` again shortly.", []),
             user_mentions=False, role_mentions=False, mentions_everyone=False,
             **legacy_clear,
         )
@@ -557,7 +558,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
     try:
         token, session, _ = _session_from(action_id, ctx)
     except StaleSession:
-        await ctx.respond("This CWL panel expired or changed. Run `/cwl-member` to start again.", ephemeral=True,
+        await ctx.respond("This CWL panel expired or changed. Run `/cwl signup` to start again.", ephemeral=True,
                           user_mentions=False, role_mentions=False, mentions_everyone=False)
         return
     except ValueError as exc:
@@ -569,7 +570,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
             _, current, _ = _session_from(action_id, ctx)
             assert current is session
         except (StaleSession, ValueError):
-            await ctx.respond("This CWL panel changed. Run `/cwl-member` to start again.", ephemeral=True,
+            await ctx.respond("This CWL panel changed. Run `/cwl signup` to start again.", ephemeral=True,
                               user_mentions=False, role_mentions=False, mentions_everyone=False)
             return
         user_id, guild_id = _member_identity(ctx)
@@ -608,7 +609,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                     else:
                         note = "Signups closed while this panel was open. Your saved signups remain available to view."
                 except Exception:
-                    note = "Linked accounts could not be loaded. Run `/cwl-member` again shortly; no signup was changed."
+                    note = "Linked accounts could not be loaded. Run `/cwl signup` again shortly; no signup was changed."
         elif action == "pool_main" or action == "pool_lazy":
             session.pool = "main" if action.endswith("main") else "lazy"
             session.selected.clear()
@@ -687,11 +688,11 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                     session.selected.clear()
                     session.source_pools.clear()
                     if accounts:
-                        note = "Signup saved. It is now visible on the CWL dashboard."
+                        note = "Signup saved. Use My signups to check your accounts."
                         try:
                             await _refresh(session, user_id, guild_id, include_accounts=False)
                         except Exception:
-                            note += " Refresh /cwl-member to reload current details."
+                            note += " Refresh /cwl signup to reload current details."
                     else:
                         note = "Those accounts are already saved for this pool. No changes were needed."
                 except MemberClientError as exc:
@@ -707,7 +708,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 session.screen = "my_signups"
             except Exception:
                 session.screen = "home"
-                note = "CWL is temporarily unavailable. No signups were changed. Try /cwl-member again shortly."
+                note = "CWL is temporarily unavailable. No signups were changed. Try /cwl signup again shortly."
         elif action == "signup_pick":
             values = list(getattr(ctx.interaction, "values", ()) or ())
             known = {str(row["tag"]) for row in _signups(session)}
@@ -785,11 +786,11 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                     await request("submit", user_id=user_id, guild_id=str(guild_id), season_id=season_id,
                                   expected_revision=expected_revision, pool=destination,
                                   accounts=[{"tag": tag, "prefer_crystal_1_or_lower": preference, "move_from_pool": source}])
-                    note = "Pool changed. The dashboard now shows the change."
+                    note = "Pool changed. Use My signups to check your accounts."
                     try:
                         await _refresh(session, user_id, guild_id, include_accounts=False)
                     except Exception:
-                        note += " Refresh /cwl-member to reload current signup details."
+                        note += " Refresh /cwl signup to reload current signup details."
                 except MemberClientError as exc:
                     note = ("The save result is unclear. Refresh My signups before trying again." if getattr(exc, "uncertain", False)
                             else str(exc) or "The pool could not be changed. Refresh My signups.")
@@ -817,11 +818,11 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 try:
                     await request("withdraw", user_id=user_id, guild_id=str(guild_id), season_id=season_id,
                                   expected_revision=expected_revision, expected_pool=session.source_pools.get(tag), tag=tag)
-                    note = "Signup withdrawn. It is now removed from the CWL dashboard."
+                    note = "Signup withdrawn."
                     try:
                         await _refresh(session, user_id, guild_id, include_accounts=False)
                     except Exception:
-                        note += " Refresh /cwl-member to reload current details."
+                        note += " Refresh /cwl signup to reload current details."
                 except MemberClientError as exc:
                     note = ("The save result is unclear. Refresh My signups before trying again." if getattr(exc, "uncertain", False)
                             else str(exc) or "The signup could not be withdrawn. Refresh My signups.")
@@ -838,7 +839,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 session.screen = "assignments"
             except Exception:
                 session.screen = "home"
-                note = "CWL is temporarily unavailable. Your saved signups are unchanged. Try /cwl-member again shortly."
+                note = "CWL is temporarily unavailable. Your saved signups are unchanged. Try /cwl signup again shortly."
         elif action == "refresh":
             try:
                 previous_season = (session.view.get("season") or {}).get("id")
@@ -850,7 +851,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 else:
                     note = "Linked accounts refreshed."
             except Exception:
-                note = "CWL is temporarily unavailable. Your saved signups are unchanged. Try /cwl-member again shortly."
+                note = "CWL is temporarily unavailable. Your saved signups are unchanged. Try /cwl signup again shortly."
         else:
             note = "That action is no longer available."
         await _edit(ctx, token, session, note)

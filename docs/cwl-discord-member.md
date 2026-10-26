@@ -1,9 +1,14 @@
 # CWL member access in Discord
 
-`/cwl-member` opens a private panel with **Open CWL dashboard** as the recommended
-entry and **Use Discord instead** as the alternative. Opening the command does
-not create a signup, publish a panel, or alter announcement/reminder campaigns.
-The administrator-only `/cwl` group and staff roster tools remain unchanged.
+`/cwl signup` opens the private Discord signup panel directly. There is no
+dashboard link or extra entry step. Opening the command does not create a signup,
+publish a shared button, or alter announcement/reminder campaigns. The public
+`/cwl` group contains only the member `signup` subcommand. Staff tools remain under
+`/manage`; the retired staff CWL group is not registered.
+
+This replaces `/cwl-member` as of October 26. Previously sent owner-bound entry
+buttons still work, but this change does not create or configure a future button.
+Older release notes below refer to the command name at the time of those releases.
 
 The alternative supports Main/Lazy signup with linked accounts, review
 and confirmation, saved-signup pool changes/withdrawal, and the member's published
