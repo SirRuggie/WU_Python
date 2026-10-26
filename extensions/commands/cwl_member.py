@@ -167,8 +167,14 @@ def _main_text(session: MemberSession) -> str:
         if not season.get("id"):
             return "## CWL signups\nCWL is not set up for this season yet. Check back later or ask staff."
         label = _safe(season.get("label") or "CWL season", 60)
-        status = "Signups open" if _signup_is_open(session) else "Signups closed"
-        return f"## CWL · {label}\n{status}. Choose what you want to do."
+        is_open = _signup_is_open(session)
+        status = "Signups open" if is_open else "Signups closed"
+        signup_help = "Choose accounts for Main or Lazy CWL." if is_open else "Closed for this season."
+        saved_help = "View, change, or cancel your signups." if is_open else "View your saved signups."
+        return (f"## CWL · {label}\n{status}.\n\n"
+                f"**Sign up** — {signup_help}\n"
+                f"**My signups** — {saved_help}\n"
+                "**Clan assignments** — See your clans when staff publish the roster.")
     if session.screen == "signup_pool":
         season = _safe((session.view.get("season") or {}).get("label") or "CWL season", 45)
         return (f"## Choose your CWL · {season}\n"
