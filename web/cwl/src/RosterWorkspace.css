@@ -374,3 +374,18 @@
 .roster-balance p { margin: 0; }
 .roster-balance button, .roster-balance summary { min-height: 44px; }
 .roster-balance summary { display: list-item; align-content: center; }
+
+/* Selection presents a task, not a destination dropdown shared by unrelated tasks. */
+.roster-selection-actions,
+.roster-signup-bulk-disclosure { width: 100%; min-width: 0; }
+.roster-selection-actions { display: grid; gap: 8px; justify-items: start; }
+.roster-selection-actions > details { width: 100%; }
+.roster-selection-actions summary,
+.roster-signup-bulk-disclosure > summary { min-height: 44px; align-content: center; cursor: pointer; }
+.roster-selection-hint { margin: 10px 0; color: #c6c8cf; font-size: 13px; }
+.roster-balance fieldset > .roster-balance-choice {
+  padding: 10px; border: 1px solid #45454d; border-radius: 8px;
+}
+.roster-balance fieldset > .roster-balance-choice.is-selected {
+  border-color: #e1b632; background: rgb(225 182 50 / 10%);
+}

@@ -568,9 +568,9 @@ export default function RosterWorkspace({
     if (
       destination &&
       destination !== "__unassign__" &&
-      !assignmentOptions(roster.clans, poolFilter).some(
+      (!selectedPool || !assignmentOptions(roster.clans, selectedPool).some(
         (clan) => clan.tag === destination,
-      )
+      ))
     ) {
       setFeedback({ kind: "error", text: "Choose an active hosting clan." });
       return;
@@ -703,6 +703,8 @@ export default function RosterWorkspace({
   const selectedAccounts = selectedTags
     .map((tag) => roster?.accounts.find((account) => account.tag === tag))
     .filter((account): account is NonNullable<typeof account> => !!account);
+  const selectedPool = selectedAccounts.length && selectedAccounts.every(account => account.pool === selectedAccounts[0].pool)
+    ? selectedAccounts[0].pool : null;
   const clanName = (tag: string | null) =>
     roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
 
@@ -871,7 +873,7 @@ export default function RosterWorkspace({
           )}
           <div className="roster-toolbar">
             {mode === "assign" && canRoster && viewPool === "all" && (
-              <span>Choose Main or Lazy CWL above to preview automatic placements.</span>
+              <span>To auto-place unassigned accounts, choose Main or Lazy CWL above.</span>
             )}
             <button
               disabled={uiLocked}
@@ -889,7 +891,7 @@ export default function RosterWorkspace({
                 disabled={uiLocked || archived || !activeClans.length}
                 onClick={() => void previewPlacement()}
               >
-                Auto-place preview
+                Auto-place unassigned…
               </button>
             )}
             {canRoster && onReviewPublication && mode !== "assign" && (
@@ -1147,7 +1149,7 @@ export default function RosterWorkspace({
                   <label>Maximum weight (k)<input type="number" min="0" step="any" placeholder="Any" value={maxWeight} disabled={uiLocked} onChange={e => { setMaxWeight(e.target.value); setSelectedTags([]); setPage(0); }} /></label>
                 </div>
                 {minWeight && maxWeight && Number(minWeight) > Number(maxWeight) && <p role="alert">Maximum weight must be at least the minimum.</p>}
-                <label>Hosting clan<select value={hostFilter} disabled={uiLocked} onChange={e => { setHostFilter(e.target.value); setSelectedTags([]); setPage(0); }}><option value="">All hosting clans</option>{roster.clans.map(c => <option key={c.tag} value={c.tag}>{c.name}</option>)}</select></label>
+                <label>Show accounts currently in<select value={hostFilter} disabled={uiLocked} onChange={e => { setHostFilter(e.target.value); setSelectedTags([]); setPage(0); }}><option value="">All hosting clans</option>{roster.clans.map(c => <option key={c.tag} value={c.tag}>{c.name}</option>)}</select></label>
                 {hostFilter && canRoster && <details><summary>Clan actions</summary>
                   <label className="roster-group-toggle"><input type="checkbox" checked={includeLockedBulk} disabled={uiLocked} onChange={e => setIncludeLockedBulk(e.target.checked)} />Include locked placements</label>
                   <button disabled={uiLocked || archived} onClick={() => void bulkAssign(true)}>Clear clan assignments</button>
@@ -1240,6 +1242,7 @@ export default function RosterWorkspace({
                 </div>
               </details>
               </div>
+              {!selectedTags.length && canRoster && <p className="roster-selection-hint">To balance clans, select accounts below, then choose <strong>Balance across clans</strong>.</p>}
               <div className="roster-list-heading" ref={listHeading} tabIndex={-1}>
                 <label className="roster-select-all">
                   <input
@@ -1271,36 +1274,42 @@ export default function RosterWorkspace({
                 <div className="roster-bulk card roster-selection-bar">
                   <strong>{selectedTags.length}/50 selected{hiddenSelection ? ` · ${hiddenSelection} on other pages` : ""}</strong>
                   {canRoster && !signupReviewOpen && (
-                    <div className="roster-placement-bulk">
-                      <label>
-                        Hosting clan
-                        <select
-                          value={bulkDestination}
-                          disabled={working || archived}
-                          onChange={(event) => setBulkDestination(event.target.value)}
-                        >
-                          <option value="">Choose a destination</option>
-                          <option value="__unassign__">Unassign selected</option>
-                          {viewPool !== "all" && <ClanDestinationOptions clans={roster.clans} pool={poolFilter} />}
-                        </select>
-                      </label>
-                      <button
-                        className="primary"
-                        disabled={working || archived || !!staleSelection || selectedTags.length > 50 || !bulkDestination}
-                        onClick={() => void bulkAssign()}
-                      >
-                        {bulkDestination === "__unassign__" ? `Unassign ${selectedTags.length}` : `Assign ${selectedTags.length}`}
+                    <div className="roster-selection-actions">
+                      <button className="primary"
+                        disabled={working || archived || !!staleSelection || selectedTags.length > 50}
+                        onClick={() => setBalanceOpen(true)}>
+                        Balance across clans…
                       </button>
+                      <small>Choose multiple clans next, then review the moves.</small>
+                      <details>
+                        <summary>Move to one clan or unassign</summary>
+                        <div className="roster-placement-bulk">
+                          <label>
+                            Move selected accounts to
+                            <select value={bulkDestination} disabled={working || archived}
+                              onChange={(event) => setBulkDestination(event.target.value)}>
+                              <option value="">Choose one clan or unassign</option>
+                              <option value="__unassign__">Unassign selected</option>
+                              {selectedPool && <ClanDestinationOptions clans={roster.clans} pool={selectedPool} />}
+                            </select>
+                          </label>
+                          <button disabled={working || archived || !!staleSelection || selectedTags.length > 50 || !bulkDestination}
+                            onClick={() => void bulkAssign()}>
+                            {bulkDestination === "__unassign__" ? "Review unassign" : "Review move"}
+                          </button>
+                        </div>
+                        {!selectedPool && <small>To move to one clan, select accounts from only Main or only Lazy CWL.</small>}
+                        <label className="roster-group-toggle">
+                          <input type="checkbox" checked={includeLockedBulk} disabled={working}
+                            onChange={e => setIncludeLockedBulk(e.target.checked)} />
+                          Include locked placements for this move
+                        </label>
+                      </details>
                     </div>
                   )}
-                  {canRoster && !signupReviewOpen && <>
-                    <label className="roster-group-toggle"><input type="checkbox" checked={includeLockedBulk} disabled={working} onChange={e => setIncludeLockedBulk(e.target.checked)} />Include locked placements for assign/unassign</label>
-                    <button disabled={working || archived || !!staleSelection || selectedTags.length > 50} onClick={() => setBalanceOpen(true)}>Balance selected…</button>
-                  </>}
-                  {canRoster && viewPool === "all" && !canSignups && (
-                    <small>Choose Main or Lazy CWL above to bulk assign placements.</small>
-                  )}
                   {canSignups && !archived && (
+                    <details className="roster-signup-bulk-disclosure">
+                    <summary>Change or remove signups</summary>
                     <RosterSignupActions
                       key={roster.revision}
                       accounts={selectedAccounts}
@@ -1310,6 +1319,7 @@ export default function RosterWorkspace({
                       onApply={bulkChangeSignups}
                       onReviewChange={setSignupReviewOpen}
                     />
+                    </details>
                   )}
                   {staleSelection > 0 && <small role="alert">Roster changed. Clear selection and choose accounts again.</small>}
                   <button disabled={working || signupReviewOpen} onClick={() => setSelectedTags([])}>Clear selection</button>

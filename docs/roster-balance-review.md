@@ -66,3 +66,29 @@ RosterWorkspace-CTOUD1jG.js matched built bytes. Older hashed assets retained fo
 already-open sessions. No production roster data was edited for verification.
 Compare clans was also opened with sample Lazy rosters after the balance/undo
 checks. Temporary sample server stopped; responsive viewport override reset.
+
+## Follow-up: distinguish balancing from a single-clan move
+
+Owner feedback identified the single-clan assignment dropdown as an apparent
+prerequisite for balancing. Selection now leads with **Balance across clans**
+and a one-line next-step cue. Single-clan move/unassign and signup changes are
+separate closed disclosures. The hosting filter is labeled **Show accounts
+currently in**, and the existing auto-place entry explicitly says **unassigned**.
+
+The balance dialog explains that multiple clans are selected with checkboxes,
+highlights checked rows, reports the selected count, and requires two clans in
+the UI before preview. One-clan moves remain available in the separate action.
+Choose-clans and review-moves steps are visible; existing placements need not be
+cleared. No balancing algorithm, API, authorization, storage or publishing changes.
+
+Validation: 338 frontend tests and production build passed. Isolated real-handler
+fixture verified the default selection bar has no visible destination dropdown,
+one checked clan cannot preview, three checked clans yield the expected preview,
+and the locked account stays excluded. Responsive and disclosure checks covered
+390/320/1280px, with no page overflow in inspected states. No live roster edits.
+
+Single-clan destinations now use the selected accounts' common pool even from
+All accounts, avoiding another pool-tab prerequisite. Mixed-pool selection still
+requires narrowing before a single-clan move; balancing handles each pool's
+eligible clans separately. Final browser check confirmed the single-clan list
+remains reachable from its disclosure and defaults closed after reload.
