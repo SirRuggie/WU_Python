@@ -186,8 +186,12 @@ def assignment_view(store, user_id, season_id, *, selected_only=True):
                 "draft_changed": False, "accounts": assignments}
 
 
-async def member_snapshot(store, provider, user_id):
+async def member_snapshot(store, provider, user_id, *, include_accounts=True):
     initial = member_view(store, user_id)
+    if not include_accounts:
+        # Saved records do not depend on live game/provider availability.
+        # A skipped lookup is distinct from an empty account list.
+        return {**initial, "accounts": [], "accounts_status": "not_loaded"}
     if initial["season"] is None:
         return {**initial, "accounts": [], "accounts_status": "ok"}
     try:

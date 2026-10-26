@@ -80,7 +80,12 @@ async def dispatch(request):
         action = body.get("action")
         store, provider = request.app["store"], request.app["providers"]
         if action == "view":
-            result = await member.member_snapshot(store, provider, user_id)
+            include_accounts = body.get("include_accounts", True)
+            if type(include_accounts) is not bool:
+                raise member.MemberError(400, "Invalid account lookup option")
+            result = await member.member_snapshot(
+                store, provider, user_id, include_accounts=include_accounts
+            )
             if "season_id" in body and (result["season"] is None or
                                         result["season"]["id"] != _season_id(body)):
                 raise member.MemberError(409, "The member season changed. Reopen CWL.")

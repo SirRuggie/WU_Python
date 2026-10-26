@@ -22,6 +22,7 @@ def session(screen):
         view={
             "season": {"id": 1, "label": "October", "signup_open": True, "status": "draft"},
             "revision": 1,
+            "accounts": [{"tag": "#P2Y", "name": "Player", "verified": True}],
             "signups": [{"tag": "#P2Y", "pool": "lazy", "player_name": "Player"}],
         },
         pending_tag="#P2Y",
@@ -65,7 +66,7 @@ class SolReviewTests(unittest.IsolatedAsyncioTestCase):
         await cwl_member._handle(ctx, "review:0", "signup_action")
 
         self.assertEqual(current.screen, "signup_action")
-        self.assertNotIn("no longer available", ctx.edits[-1]["content"])
+        self.assertNotIn("no longer available", ctx.edits[-1]["components"][0].components[0].content)
 
 
     async def test_rendered_pool_change_buttons_reach_single_confirmed_write(self):

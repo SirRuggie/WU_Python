@@ -33,6 +33,10 @@ class Context:
         self.followups.append((args, kwargs))
 
 
+def edited_text(edit):
+    return edit["components"][0].components[0].content
+
+
 def make_session(**kwargs):
     return member.MemberSession(123, GUILD_ID, member.time.monotonic(), **kwargs)
 
@@ -84,7 +88,7 @@ class CwlMemberTransportTests(unittest.IsolatedAsyncioTestCase):
 
         await member._handle(ctx, f"{token}:0", "pool_main")
 
-        content = ctx.interaction.edits[-1]["content"]
+        content = edited_text(ctx.interaction.edits[-1])
         self.assertIn("temporarily unavailable", content)
         self.assertNotIn("No verified linked accounts", content)
         self.assertEqual(session.view["signups"][0]["tag"], "#ABC23")
@@ -99,7 +103,9 @@ class CwlMemberTransportTests(unittest.IsolatedAsyncioTestCase):
         menu = components[0].components[0]
         self.assertEqual(len(menu.options), member.PAGE_SIZE)
         self.assertTrue(menu.options[2].is_default)
-        self.assertFalse(components[1].components[1].is_disabled)
+        next_button = next(button for row in components for button in row.components
+                           if getattr(button, "custom_id", "").startswith("cwl_member_next:"))
+        self.assertFalse(next_button.is_disabled)
 
     def test_unpublished_view_never_uses_draft_assignments(self):
         session = make_session(view={
@@ -168,7 +174,7 @@ class CwlMemberTransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(payload["season_id"], 77)
             self.assertEqual(payload["expected_revision"], 12)
             self.assertEqual(payload["accounts"], [{"tag": "#ABC23", "prefer_crystal_1_or_lower": True, "move_from_pool": "main"}])
-            self.assertIn("result is unclear", ctx.interaction.edits[-1]["content"])
+            self.assertIn("result is unclear", edited_text(ctx.interaction.edits[-1]))
 
             # The old confirmation is consumed; a duplicate click cannot issue another write.
             await member._handle(ctx, f"{token}:0", "confirm")
@@ -192,7 +198,7 @@ class CwlMemberTransportTests(unittest.IsolatedAsyncioTestCase):
         with patch("utils.cwl_member_client.request") as request:
             await member._handle(ctx, f"{token}:0", "confirm")
         request.assert_not_called()
-        self.assertIn("out of date", ctx.interaction.edits[-1]["content"])
+        self.assertIn("out of date", edited_text(ctx.interaction.edits[-1]))
 
     async def test_closed_season_blocks_writes_but_keeps_read_controls(self):
         token = "closed-token"
@@ -212,4 +218,4 @@ class CwlMemberTransportTests(unittest.IsolatedAsyncioTestCase):
         with patch("utils.cwl_member_client.request") as request:
             await member._handle(ctx, f"{token}:0", "confirm")
         request.assert_not_called()
-        self.assertIn("Signups are closed", ctx.interaction.edits[-1]["content"])
+        self.assertIn("Signups are closed", edited_text(ctx.interaction.edits[-1]))

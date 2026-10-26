@@ -1,0 +1,100 @@
+# Discord CWL member workflow audit — 2026-10-26
+
+## Scope and design
+
+`/cwl-member` remains a private alternative to the dashboard. The entry keeps
+Open CWL dashboard first; choosing Discord supports signup, changing pools,
+withdrawal, and published assignments without opening the website.
+
+Use the shared `GOLDENROD_ACCENT` in native Discord Components V2 containers.
+Use concise action labels, explicit confirmations, and a small number of controls
+per row. Discord owns button colors, typography, native select behavior and final
+responsive rendering; do not promise a pixel-identical dashboard theme.
+
+The signup journey is pool → accounts → review → save. Explain Main and Lazy
+before choosing. Identify saved pools in account options and transfers in the
+review. Show pagination only when multiple pages exist. Do not repeat all account
+options above the same select menu. Closed seasons are view-only; an absent
+member season has its own status. A changed season requires the member to review
+it before starting again.
+
+Assignments show only the current member's published snapshot. Joining
+instructions are available through a separate disclosure with pagination so long
+instructions remain accessible in Discord. Draft placements remain private.
+
+## Findings addressed
+
+- Saved-data reads unnecessarily fetched every linked player. The authenticated
+  bridge now supports a strict boolean `include_accounts` option. Skipped account
+  data is `not_loaded`, never a false empty result. Signup still loads current
+  account facts and every save verifies ownership and policy independently.
+- Unknown current-clan categories could be offered Main and rejected only at
+  save. The picker now shares Main eligibility policy with the service.
+- Rejecting a selection over the 100-account limit could erase prior choices.
+  Rejected choices must leave the original selection intact.
+- Old panels could silently enter a newly selected season. A season transition
+  must clear pending choices and return to the current-season summary.
+- A lost Discord edit response could strand the panel. Keep its consumed version
+  and give a private reopening instruction; never replay an uncertain write.
+- Joining instructions, closed-season context, and named withdrawal confirmation
+  were missing or unclear. Long button groups and redundant account lists added
+  unnecessary clutter on narrow screens.
+
+## Primary research
+
+- [Discord component reference](https://docs.discord.com/developers/components/reference):
+  native container accents, Components V2 payload restrictions, select limits,
+  concise action labels and one primary action per group.
+- [Discord interaction responses](https://docs.discord.com/developers/interactions/receiving-and-responding):
+  acknowledge within three seconds, ephemeral responses and interaction-token
+  lifetime. The existing dispatcher defers component work before network calls.
+- Repository standards: `dashboard-interaction-standard.md` and `cwl-design-guide.md`.
+
+## Verification
+
+Final results and release status are recorded below after integration checks.
+Visual artifacts use fictional data and actual serialized Hikari components,
+rendered in an isolated HTML approximation. They assess density and wrapping;
+they are not proof of Discord's exact Android/iOS rendering or live delivery.
+No real member signup changes or live test messages are authorized by this audit.
+
+### Final audit evidence
+
+- Full CWL, component action/dispatch, startup and shared architecture regressions:
+  **822 passed**, **22 subtests passed**, one existing real-Mongo recovery drill
+  skipped because its dedicated server was not configured.
+- All **338 frontend tests** passed. The dashboard production build passed into
+  `/tmp/cwl-member-ux-build`; no served frontend assets were replaced.
+- Independent Sol review added six state-integrity and serialized-payload tests.
+  Rejected >100 selections, cross-season transitions, provider outages, uncertain
+  edits and old-panel conversion are covered. No concrete unresolved issue remained
+  in the reviewed paths. Existing aiohttp AppKey warnings remain.
+- Bridge regressions prove saved-only reads make zero player/link/family provider
+  calls, still recheck server membership, and do not weaken write verification.
+- Isolated visual previews at 320px, 390px and 1280px use fictional long names and
+  actual serialized Hikari containers. Compact rows were revised after the 320px
+  check. Native menu options are shown only in a separately labeled approximation.
+- Hikari's actual REST payload builder adds `IS_COMPONENTS_V2` for containers.
+  Editing an old entry also clears legacy content/embeds; a regression verifies
+  the serialized request without making a Discord request.
+
+The existing Discord command name and dashboard entry remain unchanged. The
+bridge flag is additive with the old full-snapshot default, so a previously
+running bot remains compatible during a web-first restart. No schema or stored
+member-data migration is required. Existing sessions expire on bot restart;
+opening `/cwl-member` creates a fresh private panel.
+
+After the final two-button account-selection row adjustment, all **54 focused
+member transport/service/end-to-end/red-team tests** passed (six subtests), runtime
+imports passed, and `git diff --check` was clean. The separate Clear selected
+control appears only when accounts are selected. The final visual fixture was
+regenerated from those components.
+
+### Release status
+
+Automatic approval review rejected the proposed main-branch commit/push because
+this new audit request did not explicitly authorize default-branch publication
+under the repository's manual-deployment rules. No push, runtime-checkout update,
+service restart or live message was performed. Changes are retained in a local
+review branch pending explicit authorization for this release. Existing production
+services were observed active at revision `5becff2` during read-only checks.

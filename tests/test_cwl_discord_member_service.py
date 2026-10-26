@@ -70,6 +70,48 @@ class DiscordMemberBridgeTests(unittest.IsolatedAsyncioTestCase):
         )
         return response.status, await response.json()
 
+    async def test_saved_only_view_skips_game_providers_but_keeps_membership_and_ownership(self):
+        _, initial = await self.call()
+        status, _ = await self.call(
+            "submit", season_id=self.sid, expected_revision=initial["revision"],
+            pool="lazy", accounts=[{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}],
+        )
+        self.assertEqual(status, 200)
+        self.providers.linked_tags = AsyncMock(side_effect=RuntimeError("offline"))
+        self.providers.player = AsyncMock(side_effect=RuntimeError("offline"))
+        self.providers.family_clans = AsyncMock(side_effect=RuntimeError("offline"))
+        self.member_check.reset_mock()
+        status, view = await self.call(include_accounts=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(view["accounts_status"], "not_loaded")
+        self.assertEqual(view["accounts"], [])
+        self.assertEqual([row["tag"] for row in view["signups"]], ["#P2Y"])
+        self.member_check.assert_awaited_once()
+        self.assertEqual((await self.call(uid="200", include_accounts=False))[1]["signups"], [])
+        self.providers.linked_tags.assert_not_awaited()
+        self.providers.player.assert_not_awaited()
+        self.providers.family_clans.assert_not_awaited()
+        # A read shortcut must never bypass ownership verification on a write.
+        status, _ = await self.call(
+            "submit", include_accounts=False, season_id=self.sid,
+            expected_revision=view["revision"], pool="lazy",
+            accounts=[{"tag": "#Q2Y", "prefer_crystal_1_or_lower": False}],
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(len(self.app["store"].rows("SELECT * FROM signups")), 1)
+
+    async def test_saved_only_view_validates_flag_and_still_checks_season(self):
+        for value in (None, 0, 1, "false", [], {}):
+            with self.subTest(value=value):
+                self.assertEqual((await self.call(include_accounts=value))[0], 400)
+        with self.app["store"].tx() as db:
+            db.execute("UPDATE member_season SET season_id=NULL WHERE id=1")
+        status, view = await self.call(include_accounts=False)
+        self.assertEqual(status, 200)
+        self.assertIsNone(view["season"])
+        self.assertEqual(view["signups"], [])
+        self.assertEqual((await self.call(include_accounts=False, season_id=self.sid))[0], 409)
+
     async def test_open_is_read_only_and_only_verified_accounts_are_offered(self):
         self.providers.links["100"]["#Q2Y"] = False
         status, result = await self.call()
@@ -122,6 +164,13 @@ class DiscordMemberBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(view["signups"][0]["tag"], "#P2Y")
         self.assertEqual(view["assignments"][0]["assigned_clan_tag"], "#R2Y")
         self.assertEqual((await self.call(uid="200"))[1]["assignments"], [])
+        # Published assignments must also remain available without any player IO.
+        self.providers.player = AsyncMock(side_effect=RuntimeError("offline"))
+        status, saved = await self.call(include_accounts=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(saved["assignments"], view["assignments"])
+        self.assertEqual(saved["published"], view["published"])
+        self.providers.player.assert_not_awaited()
         self.assertEqual((await self.call("submit", **{**fields, "expected_revision": 1}))[0], 503)
 
     async def test_partial_family_category_fails_main_but_keeps_lazy_available(self):

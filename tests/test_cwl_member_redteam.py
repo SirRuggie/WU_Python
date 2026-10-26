@@ -89,7 +89,7 @@ class CwlMemberReviewRedteamTests(unittest.TestCase):
 
             content = cwl_member._main_text(session)
 
-            self.assertIn("Any working placement will be cleared", content)
+            self.assertIn("Staff will need to assign a clan again", content)
 
     def test_assignments_without_signup_dont_claim_signup_saved(self):
         session = cwl_member.MemberSession(
@@ -129,7 +129,7 @@ class CwlMemberUnicodeRedteamTests(unittest.TestCase):
             guild_id=644963518025826315,
             created_at=time.monotonic(),
             screen="my_signups",
-            view={"signups": [{"tag": "#P2Y", "player_name": emoji_name, "pool": "lazy"}]},
+            view={"season": {"signup_open": True, "status": "draft"}, "signups": [{"tag": "#P2Y", "player_name": emoji_name, "pool": "lazy"}]},
         )
 
         option = cwl_member._components("panel", session)[0].components[0].options[0]
