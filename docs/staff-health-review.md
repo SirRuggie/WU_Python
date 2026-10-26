@@ -57,3 +57,17 @@ changes were used as tests. Fictional browser data and mocked transport tests ar
 not evidence of live notification delivery or upstream availability. This is not a
 full screen-reader or real-phone certification. Existing scheduling and durable
 receipt behavior is unchanged.
+
+## Release verification
+
+Implementation revision `40433054f836ce25cbead0dc41b2265ea1b8014a` was verified
+on origin/main before atomic frontend installation. All 161 served build files
+matched the isolated build. Public HTML and browser entry script matched
+`index-B41UBkHI.js`; the signed-out Integrations page retained its intended
+sign-in destination. The web service remained active/running without restart.
+
+Read-only before/after hashes confirmed protected data unchanged: 90 signups,
+88 roster entries, one publication and one season. Old hashed assets and a private
+rollback index were retained. The isolated browser fixture recorded zero mutation
+requests. Final browser checks also verified readable local timestamps, a 44px
+status disclosure and cached channel names clearing after a denied choice read.
