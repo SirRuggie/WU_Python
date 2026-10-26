@@ -366,3 +366,13 @@ Shortlist item 3 now has compact read-only Home/Search details with member Disco
 
 
 Release verification: implementation `f3d7fda` was pushed to origin/main and its isolated build installed with an atomic index replacement, retaining older hashed assets. Local entry and details-related chunks matched the built files; the web service remained active without restart. The public browser rendered the sign-in page with `index-DybmHwrq.js`. Isolated fixture logs recorded zero non-GET API attempts. No authenticated production signup submission was used as a test.
+
+## Attention and missing-link consolidation — October 26
+
+Shortlist item 5 now consolidates existing member Home/Search/signup read warnings
+and missing-link guidance without extra background checks or a new navigation item.
+Staff directory failures remain explicitly separate from member account failures.
+See [member attention review](member-attention-review.md) for scope and evidence.
+Shortlist item 4 (Wars lineups and attack log) was also implemented; see
+[wars review](wars-review.md). Larger analytics/history/planning ideas remain opt-in
+backlog work, not automatically authorized feature-parity tasks.

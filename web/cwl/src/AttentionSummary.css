@@ -1,0 +1,24 @@
+.attention-summary {
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border: 1px solid #806843;
+  border-radius: 12px;
+  background: #29251d;
+}
+
+.attention-summary h2 { margin: 0 0 8px; color: #f5d584; font-size: 15px; }
+.attention-summary ul { margin: 0; padding: 0; list-style: none; }
+.attention-summary li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.attention-summary li + li { border-top: 1px solid #64553c; }
+.attention-summary-copy { min-width: 0; }
+.attention-summary strong { color: #fff; overflow-wrap: anywhere; }
+.attention-summary p { margin: 3px 0 0; color: #d5d9df; font-size: 13px; overflow-wrap: anywhere; }
+.attention-summary details { margin-top: 5px; font-size: 12px; }
+.attention-summary details p { white-space: pre-line; }
+.attention-summary summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.attention-summary button { flex: none; min-height: 44px; }
+
+@media (max-width: 520px) {
+  .attention-summary li { align-items: stretch; flex-direction: column; }
+  .attention-summary button { align-self: flex-start; }
+}

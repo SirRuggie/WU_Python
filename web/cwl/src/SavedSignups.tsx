@@ -7,6 +7,7 @@ import {useState, type RefObject} from 'react'
 import type {Account, Pool, Signup} from './api'
 import TownHallIcon from './TownHallIcon'
 import './SavedSignups.css'
+import AttentionSummary from './AttentionSummary'
 
 type Props = {
   signups: Signup[]
@@ -18,10 +19,11 @@ type Props = {
   onSave: (moves: SignupMove[]) => Promise<{saved: string[]; error: string | null}>
   onDirty: (dirty: boolean) => void
   onWithdraw: (rows: Signup[]) => void
+  onRefreshAccounts?: () => void
 }
 const poolName = (pool: Pool) => pool === 'main' ? 'Main CWL' : 'Lazy CWL'
 
-export default function SavedSignups({signups, accounts, editable, busy, canMove, headingRef, onSave, onDirty, onWithdraw}: Props) {
+export default function SavedSignups({signups, accounts, editable, busy, canMove, headingRef, onSave, onDirty, onWithdraw, onRefreshAccounts}: Props) {
   const [poolConfirmation, setPoolConfirmation] = useState<{rows: Signup[]; pool: Pool} | null>(null)
   const [fwaBlocked, setFwaBlocked] = useState(false)
   const [selecting, setSelecting] = useState(false)
@@ -66,6 +68,7 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
     setSaveError(result.error)
     setMoves(current => Object.fromEntries(Object.entries(current).filter(([tag]) => !result.saved.includes(tag))))
   }
+  const missingAccounts = signups.filter(row => !accounts.some(account => account.tag === row.tag))
   const available = signups
   const selected = available.filter(row => tags.includes(row.tag))
   const movable = (pool: Pool) => selected.filter(row => (moves[row.tag] || row.pool) !== pool)
@@ -94,8 +97,9 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
         <button className="withdraw-button" disabled={busy || !!changes.length || !selected.length} onClick={() => onWithdraw(selected)}>Withdraw selected ({selected.length})</button>
       </div>
       <small>Changes stay here until you select Save changes. Accounts already in that pool stay there. Staff will be alerted to withdrawals and pool changes.</small>
-      {selected.some(row => !accounts.some(account => account.tag === row.tag)) && <small>Some accounts could not be found in your linked accounts. Refresh accounts before moving them.</small>}
+      {selected.some(row => missingAccounts.some(missing => missing.tag === row.tag)) && <small>Some selected accounts need their links checked before they can be moved.</small>}
     </div>}
+    {canMove && !busy && missingAccounts.length > 0 && <AttentionSummary items={[{ title: `${missingAccounts.length} saved ${missingAccounts.length === 1 ? 'account is' : 'accounts are'} missing from the current linked-account list`, detail: 'Check these account links before changing CWL pools.', detailsLabel: 'Accounts to check', technicalDetail: missingAccounts.map(row => `${row.player_name || row.tag} · ${row.tag}`).join('\n'), ...(onRefreshAccounts ? { action: { label: 'Refresh accounts', onClick: onRefreshAccounts, disabled: busy } } : {}) }]} />}
     <div className="registered-grid">{signups.map(signup => <div className={`card registered-card saved-signup-card ${moves[signup.tag] && moves[signup.tag] !== signup.pool ? 'pool-change-pending' : selecting && tags.includes(signup.tag) ? 'account-selected' : ''}`} key={signup.tag}>
       <div className="saved-signup-account">
         {selecting && editable && <input type="checkbox" aria-label={`Select ${signup.player_name || signup.tag} ${signup.tag}`} disabled={busy} checked={tags.includes(signup.tag)} onChange={event => setTags(current => event.target.checked ? [...current,signup.tag] : current.filter(tag => tag !== signup.tag))}/>}
@@ -103,7 +107,7 @@ export default function SavedSignups({signups, accounts, editable, busy, canMove
           <small>{signup.tag} · {poolName(signup.pool)}</small><small>Clan at signup: {signup.signup_clan_name || signup.signup_clan_tag || 'Not available'}</small>
           {moves[signup.tag] && moves[signup.tag] !== signup.pool && <p className="inline-reason pending-switch" role="status"><strong>Not saved</strong> — switching from {poolName(signup.pool)} to {poolName(moves[signup.tag])}.<small>Select Save changes to finish.</small></p>}
           {(moves[signup.tag] || signup.pool) === 'main' && accounts.find(account => account.tag === signup.tag)?.current_clan_type === 'FWA' && <p className="inline-reason">This account is currently in FWA and can only choose Lazy CWL.</p>}
-          {canMove && !busy && !accounts.some(account => account.tag === signup.tag) && <p className="inline-reason">This account is not in your current linked accounts. Check its Discord link, then refresh before changing pools.</p>}
+          {canMove && !busy && missingAccounts.some(row => row.tag === signup.tag) && <p className="inline-reason">Link needs checking.</p>}
           {signup.has_staff_placement && <p className="inline-reason">Changing pools or withdrawing will remove this working placement and alert staff.</p>}
         </div>
       </div>

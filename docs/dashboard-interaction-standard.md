@@ -1195,3 +1195,21 @@ close/change; reject stale responses; clear protected data on permission loss.
 Missing/private/partial data must not imply no attacks or a complete lineup. Do not
 add historical claims, stored member records, or extra overview polling for details.
 See wars-review.md for validation scope and limitations.
+
+### Member attention and linking recovery — October 26
+
+Use one compact Needs attention summary for related read failures on Home, Search,
+and CWL signups. Each recovery action names its purpose. Retain separate save errors,
+consent, withdrawal and placement warnings; do not combine them with read status.
+Technical diagnostics start collapsed, but the failure and recovery action stay
+visible. A failed check is not a missing link or zero signups. Only a completed
+successful account lookup may offer confirmed-empty linking guidance.
+
+Keep linking instructions in one disclosure per applicable page. Link accounts must
+open it, focus its summary and leave focus below the sticky mobile header. Summarize
+missing links for saved accounts with a count, Accounts to check disclosure, and
+Refresh accounts; retain a brief row hint explaining unavailable pool changes.
+Refresh must retain the existing unsaved-change confirmation. Family-directory
+failures remain staff-specific; do not fetch staff diagnostics on member Home.
+
+See member-attention-review.md for scope, test evidence and limitations.

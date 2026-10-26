@@ -6,6 +6,9 @@ import TownHallIcon from './TownHallIcon'
 import PlayerClanDetailsDialog from './PlayerClanDetailsDialog'
 import MemberDetailActivity from './MemberDetailActivity'
 import { matchingResults, searchIndex } from './dashboardSearch'
+import { dashboardSearchAttention } from './dashboardSearchAttention'
+import AttentionSummary from './AttentionSummary'
+import AccountLinkHelp from './AccountLinkHelp'
 
 export default function DashboardSearch({ session, includeFamily, query, onQuery, kind, onKind: setKind, page, onPage: setPage, onTasks }: {
   session: Session;
@@ -34,7 +37,7 @@ export default function DashboardSearch({ session, includeFamily, query, onQuery
       if (!active || generation !== readGeneration.current) return
       // A revoked session must not leave any protected results visible.
       const denied = [players, clans].find(result => result.status === 'rejected' && result.reason instanceof ApiError && [401, 403].includes(result.reason.status))
-      if (denied?.status === 'rejected') { setAccounts([]); setFamily([]); setError(denied.reason.message) }
+      if (denied?.status === 'rejected') { setAccounts([]); setFamily([]); setError('Your dashboard access changed. Refresh or sign in again.') }
       else {
         if (players.status === 'fulfilled') { setAccounts(players.value.accounts); setLoadedAt(new Date().toISOString()) }
         else setError(players.reason instanceof Error ? players.reason.message : 'Could not load linked accounts.')
@@ -60,9 +63,9 @@ export default function DashboardSearch({ session, includeFamily, query, onQuery
     <label className="global-search-field" htmlFor="dashboard-search"><DashboardIcon name="search"/><span className="sr-only">Search players and clans</span><input id="dashboard-search" autoFocus type="search" placeholder="Player or clan name, or #tag" value={query} maxLength={100} onChange={event => onQuery(event.target.value)}/></label>
     <div className="search-kind-filters" role="group" aria-label="Search result type">{(['all','player','clan'] as const).map(value => <button key={value} aria-pressed={kind === value} onClick={() => setKind(value)}>{value === 'all' ? 'All' : value === 'player' ? 'Players' : 'Clans'} <small>{matchingResults(index, query, value).length}</small></button>)}</div>
     {busy && <p role="status">Loading searchable accounts and clans…</p>}
-    {(error || familyError) && <div className="notice error" role="alert"><p>{error || familyError}</p><button disabled={busy} onClick={() => setAttempt(value => value + 1)}>Retry search data</button></div>}
+    {(error || familyError) && <AttentionSummary items={dashboardSearchAttention(error, familyError, busy, () => setAttempt(value => value + 1))} urgent />}
     {!busy && <p role="status">{results.length} result{results.length === 1 ? '' : 's'}</p>}
-    {!busy && !error && !results.length && <div className="card empty"><h2>{index.length ? 'No matches' : 'No accounts to search yet'}</h2><p>{index.length ? 'Try another name or tag, or choose All.' : 'Link your accounts in Discord, then refresh search data.'}</p><button onClick={() => { onQuery(''); setKind('all'); if (!index.length) setAttempt(value => value + 1) }}>{index.length ? 'Clear filters' : 'Refresh search data'}</button></div>}
+    {!busy && !error && !results.length && <div className="card empty"><h2>{index.length ? familyError ? 'No matches in available results' : 'No matches' : 'No accounts to search yet'}</h2>{index.length ? <><p>Try another name or tag, or choose All.</p><button onClick={() => { onQuery(''); setKind('all') }}>Clear filters</button></> : <><p>Your linked-account check succeeded and returned no accounts.</p><details><summary>Link accounts</summary><AccountLinkHelp busy={busy} onRefresh={() => setAttempt(value => value + 1)} /></details>{!familyError && <button disabled={busy} onClick={() => setAttempt(value => value + 1)}>Refresh search data</button>}</>}</div>}
     <div className="search-results">{results.slice(currentPage * 20, (currentPage + 1) * 20).map(item => <article className="search-result" key={`${item.kind}:${item.tag}`}>
       {item.kind === 'player' ? <TownHallIcon level={item.townHall ?? null}/> : <DashboardIcon name="shield"/>}
       <div><strong>{item.name}</strong><small>{item.tag} · {item.detail}</small></div>

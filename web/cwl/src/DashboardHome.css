@@ -364,6 +364,10 @@
   border-radius:14px
 }
 
+.hub-help {
+  scroll-margin-top: 88px;
+}
+
 .hub-help summary {
   cursor:pointer;
   font-weight:700;
@@ -388,11 +392,6 @@
 
 .hub-staff button {
   font-size:12px
-}
-
-.dashboard-home .notice small {
-  display:block;
-  margin-top:6px
 }
 
 .dashboard-home .empty {

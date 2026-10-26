@@ -2,6 +2,7 @@ import { useJourneyState, useJourneyPosition } from './journeyState'
 import { loadAccountDisplay, mergeAccountProgress, type AccountDisplay } from './accountDisplay'
 import { weightText } from './roster'
 import AccountLinkHelp from './AccountLinkHelp'
+import AttentionSummary, { type AttentionItem } from './AttentionSummary'
 import DashboardIcon from './DashboardIcon'
 import { readSnapshot, writeSnapshot } from './snapshotCache'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -14,8 +15,13 @@ import PlayerClanDetailsDialog from './PlayerClanDetailsDialog'
 import MemberDetailActivity from './MemberDetailActivity'
 
 type Snapshot = { season?: Season; accounts: Account[]; signups: Signup[]; assignments: MyAssignments; checkedAt: string; linkInstruction: string }
-export function homeNextStep(complete: boolean, season: Season | undefined, accountCount: number, unsigned: number, issue: 'loading' | 'saved' | 'error' = 'loading') {
-  if (!complete && issue === 'error') return { title: 'Could not check CWL status', detail: 'Refresh to confirm your latest signups and assignments. Any account details shown may be out of date.', destination: null }
+export function homeAttentionState(complete: boolean, error: string, hasData: boolean, accountCount: number) {
+  if (error) return { kind: 'error' as const, title: 'Could not refresh your dashboard', detail: hasData ? `${error} Account details shown may be out of date.` : error, actionLabel: 'Refresh' }
+  if (complete && accountCount === 0) return { kind: 'empty' as const, title: 'No linked accounts found', detail: 'Link your Clash accounts in Discord, then check again here.', actionLabel: 'Link accounts' }
+  return null
+}
+
+export function homeNextStep(complete: boolean, season: Season | undefined, accountCount: number, unsigned: number, issue: 'loading' | 'saved' = 'loading') {
   if (!complete && issue === 'saved') return { title: 'Checking saved CWL status', detail: 'Saved account details may be out of date. Checking signup availability…', destination: null }
   if (!complete) return { title: 'Checking your CWL status', detail: 'Account and signup details are still loading. Review the latest status below when the check finishes.', destination: null }
   if (!season) return { title: 'Your next CWL starts here', detail: 'Staff will open a season when signups are ready.', destination: null }
@@ -26,6 +32,7 @@ export function homeNextStep(complete: boolean, season: Season | undefined, acco
 }
 type Props = {
   session: Session; seasonId: string; seasons: Season[];
+  seasonError?: string; onRetrySeasons?: () => void;
   onNavigate: (view: 'search' | 'wars' | 'events' | 'todo' | 'saved' | 'signup' | 'assignments' | 'roster' | 'publication' | 'staff') => void;
   onStart: (pool: Pool, tags: string[], accounts: Account[], signups: Signup[]) => void;
 }
@@ -34,7 +41,7 @@ function ClanBadge({ url, name }: { url?: string | null; name: string }) {
   return url && failed !== url ? <img className="hub-clan-badge" src={url} alt={`${name} badge`} width={40} height={40} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(url)} /> : <span className="hub-clan-fallback" aria-hidden="true"><DashboardIcon name="shield"/></span>
 }
 export default function DashboardHome(props: Props) {
-  const { session, seasonId, seasons, onNavigate, onStart } = props
+  const { session, seasonId, seasons, seasonError = '', onRetrySeasons, onNavigate, onStart } = props
   const cacheKey = `home:${session.user.id}:${seasonId}`
   const [data, setData] = useState<Snapshot | null>(() => readSnapshot<Snapshot>(cacheKey, (value): value is Snapshot => { const v = value as Snapshot; return !!v && Array.isArray(v.accounts) && Array.isArray(v.signups) && Array.isArray(v.assignments?.accounts) && typeof v.checkedAt === 'string' }))
   const readGeneration = useRef(0)
@@ -102,12 +109,12 @@ export default function DashboardHome(props: Props) {
   const detailPlayer = detail?.kind === 'player' ? rows.find(row => row.tag === detail.tag) : undefined
   const detailClanAccount = detail?.kind === 'clan' ? rows.find(row => row.current_clan_tag === detail.tag) : undefined
   const denyDetails = () => { readGeneration.current++; setSelected([]); setRefreshing(false); setDetail(null); setData(null); setCached(false); setPartial(false); setError('Your account access changed. Refresh or sign in again.') }
-  const detailFreshness = error ? 'unavailable' : partial ? 'partial' : cached ? 'saved' : 'current'
+  const detailFreshness = error || seasonError ? 'unavailable' : partial ? 'partial' : cached ? 'saved' : 'current'
   const unsigned = rows.filter(row => !row.signup).length
   const assigned = data?.assignments.accounts.filter(item => item.assigned_clan_tag).length || 0
   const waiting = (data?.signups.length || 0) - assigned
-  const complete = !!data && !cached && !partial && !error
-  const nextStep = homeNextStep(complete, season, rows.length, unsigned, error ? 'error' : cached ? 'saved' : 'loading')
+  const complete = !!data && !cached && !partial && !error && !seasonError
+  const nextStep = homeNextStep(complete, season, rows.length, unsigned, cached ? 'saved' : 'loading')
   const lastPage = Math.max(0, Math.ceil(visible.length / 12) - 1)
   const currentPage = Math.min(page, lastPage)
   const pageRows = visible.slice(currentPage * 12, (currentPage + 1) * 12)
@@ -115,23 +122,42 @@ export default function DashboardHome(props: Props) {
   useEffect(() => { const next = [filter, search, sort]; if (next.some((value, index) => value !== previousFilters.current[index])) setPage(0); previousFilters.current = next }, [filter, search, sort])
   const groups = new Map<string, typeof rows>()
   for (const row of pageRows) { const key = row.current_clan_tag || 'none'; groups.set(key, [...(groups.get(key) || []), row]) }
-  const canSignup = !cached && !error && !refreshing && !!season?.signup_open && season.status === 'draft'
+  const canSignup = complete && !refreshing && !!season?.signup_open && season.status === 'draft'
   const selectVisible = () => setSelected(current => [...new Set([...current, ...visible.filter(row => !row.signup).map(row => row.tag)])])
+  const refreshDashboard = () => {
+    setRefreshKey(value => value + 1)
+    if (seasonError) onRetrySeasons?.()
+  }
+  const attentionError = error && seasonError && error !== seasonError ? `${error} Season check: ${seasonError}` : error || seasonError
+  const attentionState = homeAttentionState(complete, attentionError, !!data, rows.length)
+  const openAccountHelp = () => {
+    const target = document.getElementById('home-account-help') as HTMLDetailsElement | null
+    if (!target) return
+    target.open = true
+    target.scrollIntoView({ block: 'start' })
+    target.querySelector('summary')?.focus({ preventScroll: true })
+  }
+  const attentionItems: AttentionItem[] = attentionState ? [{
+    title: attentionState.title,
+    detail: attentionState.detail,
+    action: attentionState.kind === 'error'
+      ? { label: attentionState.actionLabel, onClick: refreshDashboard, disabled: refreshing }
+      : { label: attentionState.actionLabel, onClick: openAccountHelp },
+  }] : []
   return <div className="dashboard-home">
-    <div className="page-head"><div><p className="eyebrow">Your Warriors United home</p><h1>Hey, {session.user.display_name || session.user.username}</h1><p>Your accounts, your clans, and what to do next.</p></div><p className="season-choice">{seasons.find(item => String(item.id) === seasonId)?.label || 'No CWL season available'}</p></div>
-    <div className="hub-sync"><span role="status"><span className={`status-dot ${!error && data ? 'active' : ''}`} />{cached ? (error ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : refreshing ? 'Refreshing…' : error ? 'Refresh needs attention' : data ? `Updated ${new Date(data.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Loading your accounts…'}</span><div><small>{paused ? 'Auto-refresh paused' : 'Auto-refresh every 30 seconds'}</small><button onClick={() => setPaused(value => !value)} aria-pressed={paused}>{paused ? 'Resume' : 'Pause'}</button><button disabled={refreshing} onClick={() => setRefreshKey(value => value + 1)} aria-label="Refresh dashboard">↻ Refresh</button></div></div>
-    {error && <div className="notice error" role="alert"><div>{error}{data && <small>Showing available account details. Saved signups have not been removed.</small>}</div><button onClick={() => setRefreshKey(value => value + 1)}>Retry</button></div>}
-    <section className="hub-next" aria-labelledby="hub-next-title">
+    <div className="page-head"><div><p className="eyebrow">Your Warriors United home</p><h1>Hey, {session.user.display_name || session.user.username}</h1><p>Your accounts, your clans, and what to do next.</p></div><p className="season-choice">{seasons.find(item => String(item.id) === seasonId)?.label || (seasonError ? 'Season unavailable' : 'No CWL season available')}</p></div>
+    <div className="hub-sync"><span role="status"><span className={`status-dot ${!error && !seasonError && data ? 'active' : ''}`} />{cached ? (error || seasonError ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : refreshing ? 'Refreshing…' : error || seasonError ? 'Refresh needs attention' : data ? `Updated ${new Date(data.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Loading your accounts…'}</span><div><small>{paused ? 'Auto-refresh paused' : 'Auto-refresh every 30 seconds'}</small><button onClick={() => setPaused(value => !value)} aria-pressed={paused}>{paused ? 'Resume' : 'Pause'}</button><button disabled={refreshing} onClick={refreshDashboard} aria-label="Refresh dashboard">↻ Refresh</button></div></div>
+    <AttentionSummary items={attentionItems} urgent={attentionState?.kind === 'error'} />
+    {!attentionState && <section className="hub-next" aria-labelledby="hub-next-title">
       <div className="hub-next-symbol" aria-hidden="true"><DashboardIcon name="war"/></div>
       <div className="hub-next-copy">
         <p className="eyebrow">CWL · {season?.label || 'Season coming soon'}</p>
         <h2 id="hub-next-title">{nextStep.title}</h2>
-        <p>{complete && !rows.length && data?.linkInstruction ? data.linkInstruction : nextStep.detail}</p>
+        <p>{nextStep.detail}</p>
       </div>
-      {nextStep.destination === 'help' && <button className="primary" onClick={() => { const target = document.getElementById('first-account-help'); target?.scrollIntoView({block:'start'}); target?.focus({preventScroll:true}) }}>How to link accounts</button>}
       {nextStep.destination === 'signup' && <button className="primary" onClick={() => onNavigate('signup')}>Go to signups →</button>}
       {nextStep.destination === 'assignments' && <button className="primary" onClick={() => onNavigate('assignments')}>My assignments →</button>}
-    </section>
+    </section>}
     <section className="home-task-entry" aria-labelledby="home-task-title">
       <DashboardIcon name="tasks"/>
       <div><h2 id="home-task-title">Your tasks</h2><p>Check war and CWL attacks, raids, and Clan Games for your linked accounts.</p></div>
@@ -141,19 +167,16 @@ export default function DashboardHome(props: Props) {
       <button className="home-search-entry" onClick={() => onNavigate('search')}><DashboardIcon name="search"/><span>Search your players and clans</span><kbd>Ctrl / ⌘ K</kbd></button>
       <nav className="home-activity-links" aria-label="Activity"><button onClick={() => onNavigate('wars')}><DashboardIcon name="war"/> Wars</button><button onClick={() => onNavigate('events')}><DashboardIcon name="calendar"/> Events</button></nav>
     </div>
+    {(rows.length > 0 || !attentionState) && <>
     <div className="hub-stats" aria-label="Account overview">
       {([{ filter: 'all', icon: 'accounts', label: 'Linked accounts', value: rows.length }, { filter: 'unsigned', icon: 'signup', label: 'Not signed up', value: unsigned }, { filter: 'waiting', icon: 'waiting', label: 'Waiting for a clan', value: Math.max(0, waiting) }, { filter: 'assigned', icon: 'shield', label: 'Assigned accounts', value: assigned }] as const).map(item => <button key={item.filter} aria-pressed={filter === item.filter} onClick={() => setFilter(item.filter)}><span aria-hidden="true"><DashboardIcon name={item.icon}/></span><strong>{complete ? item.value : '—'}</strong><small>{item.label}</small></button>)}
     </div>
-    {!complete && <p className="hub-data-note" role="status">{error ? "Account summary needs a successful refresh." : cached ? "Checking saved account data before showing totals." : "Checking account data before showing totals."}</p>}
+    {!complete && !attentionError && <p className="hub-data-note" role="status">{cached ? "Checking saved account data before showing totals." : "Checking account data before showing totals."}</p>}
     <div className="hub-section-heading"><div><h2>My accounts</h2><p>{canSignup ? 'Select accounts to sign up. Signed-up accounts show their assigned clan.' : 'Your linked accounts, saved signups, and clan assignments.'}</p></div><button onClick={() => onNavigate('assignments')}>My assignments ↗</button></div>
     <div className="hub-toolbar"><label>Find an account or clan<input type="search" placeholder="Name, player tag or clan…" value={search} onChange={event => setSearch(event.target.value)} /></label><label>Show<select value={filter} onChange={event => setFilter(event.target.value as AccountFilter)}><option value="all">All accounts</option><option value="unsigned">Not signed up</option><option value="waiting">Waiting for a clan</option><option value="assigned">Assigned</option></select></label><label>Sort<select value={sort} onChange={event => setSort(event.target.value)}><option value="th">Town Hall · highest first</option><option value="name">Account name · A–Z</option></select></label></div>
     {data && <><div className="hub-selection"><span>{selected.length} selected · {visible.length} matching accounts</span><div><button disabled={!canSignup || !visible.some(row => !row.signup)} onClick={selectVisible}>Select accounts not signed up</button><button disabled={!selected.length} onClick={() => setSelected([])}>Clear</button></div></div>
       {!rows.length && refreshing ? <p role="status">Loading account details…</p>
-        : !rows.length && error ? null
-        : !rows.length ? <div className="card empty">
-          <h3 id="first-account-help" tabIndex={-1}>Link your first account</h3>
-          <AccountLinkHelp busy={refreshing} onRefresh={() => setRefreshKey(value => value + 1)} />
-        </div>
+        : !rows.length ? null
         : !visible.length ? <div className="card empty">
           <h3>No accounts match</h3>
           <p>Try another name or choose All accounts.</p>
@@ -225,7 +248,8 @@ export default function DashboardHome(props: Props) {
       {lastPage > 0 && <nav className="hub-pagination" aria-label="Account pages"><button disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>← Previous</button><span>Page {currentPage + 1} of {lastPage + 1}</span><button disabled={currentPage >= lastPage} onClick={() => setPage(currentPage + 1)}>Next →</button></nav>}
       {selected.length > 0 && <div className="hub-selected-bar"><div><strong>{selected.length} account{selected.length === 1 ? '' : 's'} selected</strong><small>Choose a pool, then review. Nothing is submitted yet.</small></div><button className="primary" disabled={!canSignup} onClick={() => onStart('main', selected, data.accounts, data.signups)}>Main CWL →</button><button className="primary" disabled={!canSignup} onClick={() => onStart('lazy', selected, data.accounts, data.signups)}>Lazy CWL →</button></div>}
     </>}
-    <div className="hub-bottom"><details className="hub-help"><summary>Missing an account?</summary><AccountLinkHelp busy={refreshing} onRefresh={() => setRefreshKey(value => value + 1)} /><p>Already signed-up accounts can be moved or withdrawn in My signups.</p><button onClick={() => onNavigate('saved')}>Open My signups →</button></details>{session.can_edit && <section className="hub-staff"><h3>Staff tools</h3><div><button onClick={() => onNavigate('roster')}>Build roster →</button><button onClick={() => onNavigate('publication')}>Publish roster →</button><button onClick={() => onNavigate('staff')}>Seasons & clans →</button></div></section>}</div>
+    </>}
+    <div className="hub-bottom"><details className="hub-help" id="home-account-help"><summary>{complete && !rows.length ? 'How to link accounts' : 'Missing an account?'}</summary><AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} /><p>Already signed-up accounts can be moved or withdrawn in My signups.</p><button onClick={() => onNavigate('saved')}>Open My signups →</button></details>{session.can_edit && <section className="hub-staff"><h3>Staff tools</h3><div><button onClick={() => onNavigate('roster')}>Build roster →</button><button onClick={() => onNavigate('publication')}>Publish roster →</button><button onClick={() => onNavigate('staff')}>Seasons & clans →</button></div></section>}</div>
     {detailPlayer && <PlayerClanDetailsDialog kind="player" account={detailPlayer} session={session} freshness={detailFreshness} loadedAt={data?.checkedAt} returnFocusFallbackId="dashboard-main" onClose={() => setDetail(null)}>
       {detailPlayer.signup && <section className="player-clan-details-section">
         <h3>{season?.label || 'This season'} · {detailPlayer.signup.pool === 'main' ? 'Main CWL' : 'Lazy CWL'}</h3>
