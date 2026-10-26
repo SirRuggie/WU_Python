@@ -363,3 +363,6 @@ Release: implementation revision `3e32fec` was pushed to origin/main. The verifi
 ## Player/clan details implementation — October 26
 
 Shortlist item 3 now has compact read-only Home/Search details with member Discord identity/avatar, known clan/TH/weight, labeled freshness, linked-player subsets, and opt-in current War/CWL summaries. No new profile endpoint or blocking background fetch was added. Unknown optional league information is omitted rather than taking a card. The current member-scope activity API is reused only after expansion; separate hosting-clan CWL is preserved. Full historical clan/player analytics and attack-log/lineup browsing are not implemented by this change. See the interaction standard's member-details section for review evidence and limits.
+
+
+Release verification: implementation `f3d7fda` was pushed to origin/main and its isolated build installed with an atomic index replacement, retaining older hashed assets. Local entry and details-related chunks matched the built files; the web service remained active without restart. The public browser rendered the sign-in page with `index-DybmHwrq.js`. Isolated fixture logs recorded zero non-GET API attempts. No authenticated production signup submission was used as a test.
