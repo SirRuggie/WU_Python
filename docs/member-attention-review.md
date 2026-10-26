@@ -51,3 +51,16 @@ cancellation branch was not verified interactively. No live signup or notificati
 was sent. Fixture data does not prove upstream availability or real-phone and
 screen-reader behavior. Staff operational issue views remain separate and unchanged;
 this is member read-recovery consolidation, not a new global monitoring system.
+
+## Release verification
+
+Deployed frontend revision `6b81a0bb836ed8ed5160aa190a91e975c7444a48`
+after confirming the same revision on origin/main. All 241 served build files
+matched the isolated build. Public HTML and browser entry script both served
+`index-CsTzewF2.js`; the signed-out My signups route retained its intended login
+destination. The service remained active/running without a restart.
+
+The frontend index was replaced atomically, retaining prior hashed assets and a
+private rollback index. Read-only before/after hashes confirmed all protected
+records unchanged: 90 signups, 88 roster entries, one roster publication and one
+season. No live signup or notification was submitted during release verification.
