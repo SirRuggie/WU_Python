@@ -1150,3 +1150,12 @@ and last-known raid data after failed refresh. Screenshots were inspected at des
 and narrow mobile widths. Calendar tests cover event boundaries and signup versus
 battle timing. No live records or notifications were modified; fixture checks are
 not proof of live game data or a full assistive-technology audit.
+
+### Home / Tasks / Wars journey — October 26
+
+Preserve view-only search, sort, page and scroll position across the activity journey.
+Store clan-task handoff context in its browser history entry; new explicit CWL links
+must not inherit an unrelated prior tab. Tasks has a direct clan-score link and an
+explicit search reset. See [journey audit](home-tasks-wars-audit.md) for reviewed
+boundaries, browser evidence and limitations. Signup selections and notifications
+remain outside the new transient view-state helper.

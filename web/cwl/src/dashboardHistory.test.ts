@@ -169,3 +169,27 @@ it('round trips every staff CWL destination, including legacy links and OAuth re
  expect(loginPath('?season=bad&step=unsafe',false,'/cwl/publish')).toBe('/api/cwl/auth/discord?view=publication')
  expect(loginPath('?view=roster',false,'/tasks')).toBe('/api/cwl/auth/discord?view=todo')
 })
+
+it('restores bounded activity context only for its own destination', async () => {
+ const {activityContext} = await import('./dashboardHistory')
+ const state = {wuActivity: {view:'todo', filter:'#ABC123', kind:'cwl'}}
+ expect(activityContext(state,'todo')).toEqual({activityFilter:'#ABC123',activityKind:'cwl'})
+ expect(activityContext(state,'wars')).toEqual({})
+ expect(activityContext(state,'signup')).toEqual({})
+ expect(activityContext({wuActivity:{view:'todo',filter:'<script>',kind:'evil'}},'todo')).toEqual({activityFilter:''})
+ expect(dashboardPath({view:'todo',season:'',activityFilter:'#ABC123',activityKind:'cwl'})).toBe('/tasks')
+})
+
+it('keeps each task handoff with its history entry through Back and Forward', async () => {
+ const {activityContext} = await import('./dashboardHistory')
+ const f = fixture()
+ f.controller.write({view:'wars',season:'',activityKind:'cwl'},true)
+ f.controller.write({view:'todo',season:'',activityKind:'cwl',activityFilter:'#ABC'},true)
+ f.controller.write({view:'home',season:''},true)
+ expect(f.controller.pop(f.travel(-1),()=>true)).toBe(true)
+ expect(activityContext(f.current().state,'todo')).toEqual({activityFilter:'#ABC',activityKind:'cwl'})
+ expect(f.controller.pop(f.travel(-1),()=>true)).toBe(true)
+ expect(activityContext(f.current().state,'wars')).toEqual({activityFilter:'',activityKind:'cwl'})
+ expect(f.controller.pop(f.travel(1),()=>true)).toBe(true)
+ expect(activityContext(f.current().state,'todo').activityFilter).toBe('#ABC')
+})

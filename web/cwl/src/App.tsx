@@ -1,3 +1,4 @@
+import { clearJourneyState } from './journeyState'
 import { loadAccountDisplay, mergeAccountProgress } from './accountDisplay'
 import { DashboardPermissions } from './DashboardPermissions'
 import FwaSignupDialog from './FwaSignupDialog'
@@ -14,7 +15,7 @@ import { FilterPicker, leagueValue, matchesLeague } from './ClanFilters'
 import { sortClans, clanSortOptions, type ClanSort } from './clanSort'
 import SidebarNavigation, { navigationSection, navigationLabel, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
 import { loginPath } from './memberLinks'
-import { DashboardHistory, dashboardTarget, seasonViews } from './dashboardHistory'
+import { DashboardHistory, dashboardTarget, seasonViews, activityContext } from './dashboardHistory'
 import './Welcome.css'
 import './SignupFlow.css'
 import TownHallIcon from './TownHallIcon'
@@ -352,13 +353,20 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchKind, setSearchKind] = useState<'all' | 'player' | 'clan'>('all')
   const [searchPage, setSearchPage] = useState(0)
-  const [activitySearch, setActivitySearch] = useState('')
-  const [activityKind, setActivityKind] = useState<'war'|'cwl'|undefined>()
-  useEffect(() => { setSearchQuery(''); setSearchKind('all'); setSearchPage(0); setActivitySearch('') }, [session?.user.id])
+  const [activitySearch, setActivitySearch] = useState(() => activityContext(window.history.state, entryTarget.view).activityFilter || '')
+  const [activityKind, setActivityKind] = useState<'war'|'cwl'|undefined>(() => activityContext(window.history.state, entryTarget.view).activityKind)
+  useEffect(() => { setSearchQuery(''); setSearchKind('all'); setSearchPage(0) }, [session?.user.id])
+  const previousJourneyUser = useRef<string | null>(null)
+  useEffect(() => {
+    if (previousJourneyUser.current && previousJourneyUser.current !== session?.user.id) { clearJourneyState(); setActivitySearch(''); setActivityKind(undefined) }
+    previousJourneyUser.current = session?.user.id || null
+  }, [session?.user.id])
+  const [activityVisit, setActivityVisit] = useState<number>(() => window.history.state?.wuDashboardIndex || 0)
   const changeView = (next: View, filter = '', kind?: 'war'|'cwl', panel: 'register'|'saved' = 'register') => {
     if (navigation.current?.pending || ((next !== view || (next === 'signup' && panel !== signupPanel)) && !canLeave())) return
     const destination = allowedView(next)
-    if (destination !== view || (destination === 'signup' && signupPanel !== panel)) navigation.current?.write({ view: destination, ...(destination === 'signup' ? {signupPanel: panel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, true)
+    if (destination !== view || (destination === 'signup' && signupPanel !== panel)) navigation.current?.write({ view: destination, activityFilter: filter, activityKind: kind, ...(destination === 'signup' ? {signupPanel: panel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, true)
+    setActivityVisit(window.history.state?.wuDashboardIndex || 0)
     if (destination === 'signup') setSignupPanel(panel)
     setActivitySearch(filter)
     setActivityKind(kind)
@@ -394,7 +402,11 @@ function App() {
     navigation.current = controller
     const pop = (event: PopStateEvent) => {
       if (!controller.pop(event.state, () => navigationState.current.canLeave())) return
-      const target = dashboardTarget(window.location.search, window.location.pathname)
+      const route = dashboardTarget(window.location.search, window.location.pathname)
+      const target = {...route, ...activityContext(event.state, route.view)}
+      setActivityVisit(event.state?.wuDashboardIndex || 0)
+      setActivitySearch(target.activityFilter || '')
+      setActivityKind(target.activityKind)
       const destination = navigationState.current.allowedView(target.view)
       if (target.season && seasonViews.has(destination)) setSeasonId(target.season)
       setPublicationStep(target.step || 'review')
@@ -409,8 +421,8 @@ function App() {
     if (authState !== 'ready') return
     const destination = allowedView(view)
     if (destination !== view) setView(destination)
-    navigation.current?.write({ view: destination, ...(destination === 'signup' ? {signupPanel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, false)
-  }, [view, signupPanel, seasonId, publicationStep, authState, session])
+    navigation.current?.write({ view: destination, activityFilter: activitySearch, activityKind, ...(destination === 'signup' ? {signupPanel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, false)
+  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
@@ -594,8 +606,8 @@ function App() {
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {view === 'reminders' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL management</p><h1>Messages &amp; reminders</h1></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!reminderDirty || window.confirm('Discard unsaved reminder edits and change season?')) setSeasonId(event.target.value) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId ? <ReminderWorkspace key={seasonId} seasonId={seasonId} archived={season?.status === 'archived'} onDirty={setReminderDirty} /> : <p>Choose a season to manage its reminders.</p>}</>}
         {view === 'search' && <DashboardSearch key={session.user.id} includeFamily={session.can_edit} query={searchQuery} onQuery={value => { setSearchQuery(value); setSearchPage(0) }} kind={searchKind} onKind={value => { setSearchKind(value); setSearchPage(0) }} page={searchPage} onPage={setSearchPage} onTasks={tag => changeView('todo', tag)} />}
-        {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} />}
-        {view === 'wars' && <WarsWorkspace key={session.user.id} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
+        {view === 'todo' && <TodoWorkspace key={`${session.user.id}:${activitySearch}:${activityKind || "default"}`} userId={session.user.id} initialSearch={activitySearch} initialTab={activityKind} onWars={kind => changeView('wars', '', kind)} />}
+        {view === 'wars' && <WarsWorkspace key={`${session.user.id}:${activityVisit}:${activityKind || "default"}`} userId={session.user.id} visit={activityVisit} initialType={activityKind === 'cwl' ? 'cwl' : 'regular'} canEdit={session.can_edit} onTasks={(tag,kind) => changeView('todo', tag,kind)} />}
         {view === 'events' && <EventsWorkspace key={session.user.id} canEdit={session.can_edit} onWars={() => changeView('wars', '', 'cwl')} />}
         {view === 'home' && <DashboardHome key={`${session.user.id}:${seasonId}`} session={session} seasonId={seasonId} seasons={seasons} onNavigate={next => { if (next === 'signup' || next === 'saved') { setSignupPanel(next === 'saved' ? 'saved' : 'register'); setSignupStep(1); setPool(null); setCompletion(null); setReview(false) }; changeView(next === 'saved' ? 'signup' : next, '', undefined, next === 'saved' ? 'saved' : 'register') }} onStart={(nextPool, tags, freshAccounts, freshSignups) => {
           dashboardPrefill.current = true

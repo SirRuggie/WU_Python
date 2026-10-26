@@ -1,9 +1,10 @@
+import { useJourneyState, useJourneyPosition } from './journeyState'
 import { loadAccountDisplay, mergeAccountProgress, type AccountDisplay } from './accountDisplay'
 import { weightText } from './roster'
 import AccountLinkHelp from './AccountLinkHelp'
 import DashboardIcon from './DashboardIcon'
 import { readSnapshot, writeSnapshot } from './snapshotCache'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { clanDeepLink, memberPlacementStatus, type MyAssignments } from './publication'
 import { availableSelection, dashboardRows, filterDashboardRows, type AccountFilter } from './dashboard'
@@ -30,10 +31,11 @@ export default function DashboardHome(props: Props) {
   const [refreshKey, setRefreshKey] = useState(0)
   const [paused, setPaused] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
-  const [filter, setFilter] = useState<AccountFilter>('all')
-  const [search, setSearch] = useState('')
-  const [sort, setSort] = useState('th')
-  const [page, setPage] = useState(0)
+  const [filter, setFilter] = useJourneyState<AccountFilter>(`home:${session.user.id}:filter`, 'all')
+  const [search, setSearch] = useJourneyState(`home:${session.user.id}:search`, '')
+  const [sort, setSort] = useJourneyState(`home:${session.user.id}:sort`, 'th')
+  const [page, setPage] = useJourneyState(`home:${session.user.id}:page`, 0)
+  useJourneyPosition(`home:${session.user.id}`, !!data || !!error)
   const season = data ? data.season : seasons.find(item => String(item.id) === seasonId)
   useEffect(() => {
     let cancelled = false, inFlight = false
@@ -86,7 +88,8 @@ export default function DashboardHome(props: Props) {
   const lastPage = Math.max(0, Math.ceil(visible.length / 12) - 1)
   const currentPage = Math.min(page, lastPage)
   const pageRows = visible.slice(currentPage * 12, (currentPage + 1) * 12)
-  useEffect(() => { setPage(0) }, [filter, search, sort])
+  const previousFilters = useRef([filter, search, sort])
+  useEffect(() => { const next = [filter, search, sort]; if (next.some((value, index) => value !== previousFilters.current[index])) setPage(0); previousFilters.current = next }, [filter, search, sort])
   const groups = new Map<string, typeof rows>()
   for (const row of pageRows) { const key = row.current_clan_tag || 'none'; groups.set(key, [...(groups.get(key) || []), row]) }
   const canSignup = !cached && !error && !refreshing && !!season?.signup_open && season.status === 'draft'

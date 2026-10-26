@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useJourneyState, useJourneyPosition } from '../journeyState'
 import DashboardIcon from '../DashboardIcon'
 import { clanDeepLink } from '../publication'
 import { countdown, localTime } from './calendar'
@@ -49,12 +49,13 @@ export function WarCard({clan, type, scope, now, onTasks}: {
     </details>
   </article>
 }
-export default function WarsWorkspace({canEdit, onTasks, initialType = 'regular'}: {initialType?: 'regular' | 'cwl'; canEdit: boolean; onTasks: (tag: string, kind: 'war' | 'cwl') => void}) {
-  const [chosenScope, setScope] = useState<'mine' | 'family'>('mine')
+export default function WarsWorkspace({canEdit, onTasks, userId = 'anonymous', visit = 0, initialType = 'regular'}: {userId?: string; visit?: number; initialType?: 'regular' | 'cwl'; canEdit: boolean; onTasks: (tag: string, kind: 'war' | 'cwl') => void}) {
+  const [chosenScope, setScope] = useJourneyState<'mine' | 'family'>(`wars:${userId}:${visit}:scope`, 'mine')
   const scope = canEdit ? chosenScope : 'mine'
-  const [type, setType] = useState<'regular' | 'cwl'>(initialType)
-  const [query, setQuery] = useState('')
+  const [type, setType] = useJourneyState<'regular' | 'cwl'>(`wars:${userId}:${visit}:type`, initialType)
+  const [query, setQuery] = useJourneyState(`wars:${userId}:${visit}:query`, '')
   const {data, error, busy, refresh} = useClanActivity('war', scope)
+  useJourneyPosition(`wars:${userId}:${visit}`, !!data || !!error)
   const now = useClock()
   const clans = (data?.clans || []).filter(clan => clan[type]?.state !== 'private' && (type === 'cwl' || scope === 'family' || clan.current_member !== false) && `${clan.name} ${clan.tag}`.toLowerCase().includes(query.toLowerCase().trim()))
   const active = clans.filter(clan => !inactive.has(clan[type]?.state || 'error'))

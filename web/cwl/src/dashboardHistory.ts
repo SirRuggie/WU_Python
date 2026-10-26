@@ -4,7 +4,7 @@ import { cwlPaths } from "./staffLinks";
 import { managementPaths } from "./managementLinks";
 const staffPaths: Record<string, string> = { ...cwlPaths, ...managementPaths, "weight-trial": "/clan-weights" };
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
-export type DashboardRoute = { view: DashboardView; season: string; signupPanel?: "register" | "saved"; step?: "review" | "announce" };
+export type DashboardRoute = { view: DashboardView; season: string; signupPanel?: "register" | "saved"; step?: "review" | "announce"; activityFilter?: string; activityKind?: "war" | "cwl" };
 export function dashboardTarget(search: string, pathname = '/'): DashboardRoute {
   pathname = pathname === '/' ? '/' : pathname.replace(/\/$/, '');
   const params = new URLSearchParams(search);
@@ -55,7 +55,7 @@ export class DashboardHistory {
     if (this.restoring) return;
     if (push) this.index++;
     this.history[push ? "pushState" : "replaceState"](
-      { wuDashboardIndex: this.index },
+      { wuDashboardIndex: this.index, wuActivity: {view: route.view, filter: route.activityFilter || "", kind: route.activityKind} },
       "",
       dashboardPath(route),
     );
@@ -80,5 +80,16 @@ export class DashboardHistory {
     }
     this.index = target!;
     return true;
+  }
+}
+
+
+export function activityContext(state: unknown, view: DashboardView): Pick<DashboardRoute, 'activityFilter' | 'activityKind'> {
+  if (view !== 'todo' && view !== 'wars') return {}
+  const value = (state as {wuActivity?: {view?: unknown; filter?: unknown; kind?: unknown}} | null)?.wuActivity
+  if (!value || value.view !== view) return {}
+  return {
+    activityFilter: typeof value.filter === 'string' && /^#[A-Z0-9]{1,20}$/i.test(value.filter) ? value.filter : '',
+    ...(value.kind === 'war' || value.kind === 'cwl' ? {activityKind: value.kind} : {}),
   }
 }
