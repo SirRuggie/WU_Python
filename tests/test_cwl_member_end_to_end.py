@@ -56,6 +56,27 @@ class MemberEndToEndTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(self.member_check.await_count, 5)
             ui._sessions.pop(token, None)
 
+    async def test_provider_unverified_link_is_visible_and_saves_through_discord(self):
+        self.providers.links["100"]["#Q2Y"] = False
+        with patch.dict('os.environ', {'CWL_DISCORD_BRIDGE_URL': str(self.client.make_url('')).rstrip('/')}):
+            session = ui.MemberSession(100, ui.WARRIORS_UNITED_GUILD_ID, ui.time.monotonic())
+            session.view = await request('view', user_id=100, guild_id=session.guild_id, include_accounts=False)
+            token = 'e2e-linked-parity'
+            ui._sessions[token] = session
+            try:
+                await self.click(token, session, 'signup')
+                await self.click(token, session, 'pool_lazy')
+                menu = ui._components(token, session)[0].components[0]
+                self.assertEqual({option.value for option in menu.options}, {'#P2Y', '#Q2Y'})
+                await self.click(token, session, 'select', ('#P2Y', '#Q2Y'))
+                await self.click(token, session, 'review')
+                await self.click(token, session, 'confirm')
+                response = await self.client.get(f'/api/cwl/seasons/{self.sid}/signups', headers=self.auth('100'))
+                self.assertEqual(response.status, 200)
+                self.assertEqual({row['tag'] for row in (await response.json())['signups']}, {'#P2Y', '#Q2Y'})
+            finally:
+                ui._sessions.pop(token, None)
+
     async def test_entry_owner_rejection_leaves_original_panel_untouched(self):
         ctx = Context(user_id=200)
         await ui.start(ctx, f"100:{ui.WARRIORS_UNITED_GUILD_ID}")

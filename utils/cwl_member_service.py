@@ -195,7 +195,9 @@ async def member_snapshot(store, provider, user_id, *, include_accounts=True):
     if initial["season"] is None:
         return {**initial, "accounts": [], "accounts_status": "ok"}
     try:
-        accounts = await accounts_for_member(provider, user_id, verified_only=True)
+        # Match dashboard eligibility: provider verification is metadata, not a
+        # requirement for an account already linked to this Discord identity.
+        accounts = await accounts_for_member(provider, user_id, verified_only=False)
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -238,7 +240,8 @@ async def submit(store, provider, season_id, user_id, pool, selections, *, verif
     except Exception as exc:
         raise MemberError(503, "Linked accounts are temporarily unavailable. Nothing was saved.") from exc
     if not set(requested) <= set(available):
-        raise MemberError(403, "Account is not verified and linked to your Discord identity")
+        raise MemberError(403, "Account is not linked to your Discord identity" if not verified_only
+                          else "Account is not verified and linked to your Discord identity")
     if pool == "main":
         for value in requested:
             problem = main_signup_error(available[value])

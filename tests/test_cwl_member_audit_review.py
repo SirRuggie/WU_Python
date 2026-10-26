@@ -1,5 +1,6 @@
 """Independent regressions for the private CWL member interaction lifecycle."""
 
+import tempfile
 import time
 import unittest
 from unittest.mock import patch
@@ -8,6 +9,8 @@ import hikari
 from hikari.impl.rest import RESTClientImpl
 
 from extensions.commands import cwl_member as member
+from cwl_web.store import Store
+from utils.cwl_member_service import MemberError, submit
 
 
 GUILD_ID = 644963518025826315
@@ -55,6 +58,32 @@ def session(*, screen="home", season_id=1, accounts=None):
 class MemberInteractionAuditTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         member._sessions.clear()
+
+    def test_linked_unverified_account_appears_but_malformed_rows_do_not(self):
+        current = session(screen="select_accounts", accounts=[
+            {"tag": "#P2Y", "name": "Linked", "verified": False, "town_hall": 16},
+            {"name": "Missing tag", "verified": True},
+            {"tag": None, "name": "Null tag", "verified": True},
+            "not an account",
+        ])
+        current.pool = "lazy"
+
+        self.assertEqual([row["tag"] for row in member._accounts(current)], ["#P2Y"])
+        menu = member._components("audit", current)[0].components[0]
+        self.assertEqual([option.value for option in menu.options], ["#P2Y"])
+        current.pool = "main"
+        self.assertEqual([row["tag"] for row in member._eligible_accounts(current)], ["#P2Y"])
+
+    def test_linked_unverified_fwa_account_still_uses_lazy_only(self):
+        current = session(screen="select_accounts", accounts=[
+            {"tag": "#P2Y", "name": "FWA", "verified": False, "town_hall": 16,
+             "current_clan_tag": "#R2Y", "current_clan_type": "FWA",
+             "family_clan_status": "approved"},
+        ])
+        current.pool = "main"
+        self.assertEqual(member._eligible_accounts(current), [])
+        current.pool = "lazy"
+        self.assertEqual([row["tag"] for row in member._eligible_accounts(current)], ["#P2Y"])
 
     async def test_over_limit_select_keeps_every_prior_choice(self):
         accounts = [{"tag": f"#P{i:03d}", "name": f"Player {i}", "verified": True}
@@ -188,6 +217,45 @@ class MemberInteractionAuditTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("fresh private panel", first.responses[0][0][0])
         self.assertTrue(retry.responses)
         self.assertIn("expired or changed", retry.responses[0][0][0])
+
+
+class MemberOwnershipAuditTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unverified_link_cannot_spoof_unlinked_tag_and_fwa_stays_lazy(self):
+        class Provider:
+            async def linked_tags(self, user_id):
+                return {"#P2Y": False} if user_id == "123" else {}
+
+            async def player(self, tag):
+                return {"tag": tag, "name": "Player", "town_hall": 16,
+                        "current_clan_tag": "#R2Y", "current_clan_name": "FWA Family"}
+
+            async def family_clans(self):
+                return {"status": "ok", "clans": [
+                    {"tag": "#R2Y", "name": "FWA Family", "type": "FWA"}]}
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(f"{directory}/cwl.sqlite")
+            with store.tx() as db:
+                db.execute("INSERT INTO seasons(label, signup_open) VALUES ('October', 1)")
+                season_id = db.execute("SELECT id FROM seasons").fetchone()[0]
+                db.execute("UPDATE member_season SET season_id=? WHERE id=1", (season_id,))
+            fields = {"tag": "#P2Y", "prefer_crystal_1_or_lower": False}
+            with self.assertRaises(MemberError) as fwa:
+                await submit(store, Provider(), season_id, "123", "main", [fields],
+                             verified_only=False, expected_revision=0)
+            self.assertEqual(fwa.exception.status, 409)
+            saved = await submit(store, Provider(), season_id, "123", "lazy", [fields],
+                                 verified_only=False, expected_revision=0)
+            self.assertEqual(saved["count"], 1)
+            with self.assertRaises(MemberError) as spoof:
+                await submit(store, Provider(), season_id, "123", "lazy",
+                             [{"tag": "#Q2Y", "prefer_crystal_1_or_lower": False}],
+                             verified_only=False, expected_revision=1)
+            self.assertEqual(spoof.exception.status, 403)
+            self.assertEqual(
+                [dict(row) for row in store.rows("SELECT tag,user_id,pool FROM signups")],
+                [{"tag": "#P2Y", "user_id": "123", "pool": "lazy"}],
+            )
 
 
 if __name__ == "__main__":

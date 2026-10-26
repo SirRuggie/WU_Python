@@ -112,14 +112,36 @@ class DiscordMemberBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(view["signups"], [])
         self.assertEqual((await self.call(include_accounts=False, season_id=self.sid))[0], 409)
 
-    async def test_open_is_read_only_and_only_verified_accounts_are_offered(self):
+    async def test_open_offers_all_linked_accounts_like_dashboard_without_writes(self):
         self.providers.links["100"]["#Q2Y"] = False
         status, result = await self.call()
         self.assertEqual(status, 200)
-        self.assertEqual([item["tag"] for item in result["accounts"]], ["#P2Y"])
+        self.assertEqual([item["tag"] for item in result["accounts"]], ["#P2Y", "#Q2Y"])
+        self.assertFalse(result["accounts"][1]["verified"])
         self.assertEqual(result["revision"], 0)
         self.assertEqual(self.app["store"].rows("SELECT * FROM signups"), [])
         self.member_check.assert_awaited_once()
+
+    async def test_linked_without_verification_can_save_but_unlinked_and_fwa_main_cannot(self):
+        self.providers.links["100"]["#Q2Y"] = False
+        self.providers.links["100"]["#P2Y"] = False
+        _, view = await self.call()
+        fields = {"season_id": self.sid, "expected_revision": view["revision"],
+                  "pool": "main", "accounts": [
+                      {"tag": "#Q2Y", "prefer_crystal_1_or_lower": False}]}
+        self.assertEqual((await self.call("submit", **fields))[0], 200)
+        _, current = await self.call()
+        fields["expected_revision"] = current["revision"]
+        fields["accounts"] = [{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}]
+        self.assertEqual((await self.call("submit", **fields))[0], 409)
+        fields["pool"] = "lazy"
+        fields["accounts"] = [{"tag": "#G2Y", "prefer_crystal_1_or_lower": False}]
+        self.assertEqual((await self.call("submit", **fields))[0], 403)
+        # A link removed after the picker loads is rechecked on save.
+        self.providers.links["100"].pop("#P2Y")
+        fields["accounts"] = [{"tag": "#P2Y", "prefer_crystal_1_or_lower": False}]
+        self.assertEqual((await self.call("submit", **fields))[0], 403)
+        self.assertEqual([row["tag"] for row in self.app["store"].rows("SELECT tag FROM signups")], ["#Q2Y"])
 
     async def test_save_uses_dashboard_rows_and_fwa_policy_with_stale_review(self):
         status, view = await self.call()

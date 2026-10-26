@@ -120,3 +120,28 @@ returned the expected 400 before any member/provider lookup or mutation.
 No live test messages or real signup changes were performed. Existing panels may
 expire after restart; run `/cwl-member` again to open the updated private flow.
 This documentation-only follow-up needs no second service restart.
+
+## Linked-account parity correction — 2026-10-26
+
+A member reported seeing only one of several linked accounts. Investigation found
+three Discord-only filters: snapshot lookup, picker rendering, and submit each
+required the provider's optional verification flag. The dashboard has no such
+requirement. This flag is separate from the provider's Discord-account link.
+
+Discord now uses the same linked-account eligibility as the dashboard. Both
+provider sources still load; unavailable upstreams remain unavailable rather than
+empty. Every submit still refreshes links for the authenticated Discord identity,
+rejects unlinked or removed tags, applies Main/FWA rules, and checks the selected
+season, signup window, source pool, ownership conflicts and roster revision.
+Provider verification metadata is retained, but does not hide linked accounts.
+
+Regression coverage includes the real loopback bridge → command picker → save →
+dashboard read path with a verification-false link; Main/FWA rejection, another
+member's tag rejection, and a link removed after selection. Independent Sol tests
+also cover malformed picker rows and authorization. Cross-provider contradictory
+ownership records retain existing dashboard/provider handling; this correction
+does not redefine the linking service's ownership policy.
+
+Correction validation: **827 backend tests passed**, **22 subtests passed**, one
+existing dedicated-Mongo recovery skip. Independent Sol audit passed, and diff
+hygiene is clean. Tests are isolated; no live signup was submitted.

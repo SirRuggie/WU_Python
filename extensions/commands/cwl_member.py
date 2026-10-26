@@ -107,7 +107,7 @@ def _account_label(account: dict) -> str:
 
 def _accounts(session: MemberSession) -> list[dict]:
     accounts = session.view.get("accounts") or []
-    return [row for row in accounts if isinstance(row, dict) and row.get("tag") and row.get("verified") is True]
+    return [row for row in accounts if isinstance(row, dict) and row.get("tag")]
 
 
 def _eligible_accounts(session: MemberSession) -> list[dict]:
@@ -598,7 +598,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
             if session.view.get("accounts_status") == "unavailable":
                 note = "Linked accounts are temporarily unavailable. Your saved signups are still safe."
             elif not _accounts(session):
-                note = "No verified linked accounts were found. Use ClashKing /link (or link through ClashPerk), then choose Refresh accounts."
+                note = "No linked accounts were found. Use ClashKing /link (or link through ClashPerk), then choose Refresh accounts."
             elif not _eligible_accounts(session):
                 note = ("Your FWA accounts can sign up for Lazy CWL only." if all(
                     str(row.get("current_clan_type") or "").casefold() == "fwa" for row in _accounts(session)
@@ -722,7 +722,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                         note = "Linked accounts are temporarily unavailable. No signup was changed; try again shortly."
                         session.screen = "signup_action"
                     elif session.pending_tag not in {str(row["tag"]) for row in _accounts(session)}:
-                        note = "This saved account is no longer verified as linked to you. Re-link it before changing pools."
+                        note = "This saved account is no longer linked to you. Re-link it before changing pools."
                         session.screen = "signup_action"
                     else:
                         session.screen = "change_pool"

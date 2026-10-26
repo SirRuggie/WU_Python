@@ -97,6 +97,7 @@ async def dispatch(request):
             result = await member.submit(
                 store, provider, _season_id(body), user_id, body.get("pool"),
                 body.get("accounts"), expected_revision=body["expected_revision"],
+                verified_only=False,
             )
         elif action == "withdraw":
             if type(body.get("expected_revision")) is not int or body.get("expected_pool") not in ("main", "lazy"):

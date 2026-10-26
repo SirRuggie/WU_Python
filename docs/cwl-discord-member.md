@@ -5,7 +5,7 @@ entry and **Use Discord instead** as the alternative. Opening the command does
 not create a signup, publish a panel, or alter announcement/reminder campaigns.
 The administrator-only `/cwl` group and staff roster tools remain unchanged.
 
-The alternative supports Main/Lazy signup with verified linked accounts, review
+The alternative supports Main/Lazy signup with linked accounts, review
 and confirmation, saved-signup pool changes/withdrawal, and the member's published
 clan assignments. Account controls paginate. Sessions expire after 12 minutes and
 are discarded on bot restart; rerun the command to start again. Unsaved selections
