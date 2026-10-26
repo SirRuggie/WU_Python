@@ -1213,3 +1213,14 @@ Refresh must retain the existing unsaved-change confirmation. Family-directory
 failures remain staff-specific; do not fetch staff diagnostics on member Home.
 
 See member-attention-review.md for scope, test evidence and limitations.
+
+### Staff integration and reminder health — October 26
+
+Keep operational failures and last scheduled outcomes visible; put technical
+status details behind a disclosure. A missing destination must not replace an
+unconfirmed-delivery warning. Use the existing editor for Review destination.
+Cached channel names may remain during an ordinary outage, but are not current
+inventory until a successful read; clear them on permission denial and ignore
+older requests. Do not invent exact next-run times or infer send permissions from
+channel presence. See [staff health review](staff-health-review.md) for scope,
+validation and limits.

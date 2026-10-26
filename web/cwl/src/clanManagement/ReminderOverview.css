@@ -213,3 +213,10 @@
     margin-bottom: 4px;
   }
 }
+
+.reminder-overview details.overview-note > summary {
+  min-height: 44px;
+  box-sizing: border-box;
+  padding-block: 12px;
+  cursor: pointer;
+}

@@ -8,3 +8,15 @@
 
 .manage-section-choices{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 24px}.manage-section-choices button{display:flex;justify-content:space-between;align-items:center;gap:16px;min-height:48px;text-align:left;white-space:normal}.manage-section-choices button[aria-pressed=true]{background:#194d9f;color:#fff;border-color:#91bcff}.manage-record-picker label{display:grid;gap:8px}@media(max-width:650px){.manage-section-choices{display:grid;grid-template-columns:1fr}.manage-section-choices button{width:100%}}
 .manage-more-options{margin-top:20px;border-top:1px solid #414149;padding-top:16px}.manage-more-options>summary{cursor:pointer;font-weight:650;padding:8px 0}.manage-publish{margin-top:20px}.manage-publish .manage-categories{margin-top:16px}.manage-publish a{color:#a9cbff}.manage-publish .manage-fields{margin-top:14px}
+
+.band-status .manage-more-options > summary {
+  min-height: 44px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+}
+
+.band-status .manage-more-options > summary:focus-visible {
+  outline: 3px solid #a6c8ff;
+  outline-offset: 3px;
+}

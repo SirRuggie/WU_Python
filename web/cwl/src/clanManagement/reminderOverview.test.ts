@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { rowHealth, visibleRows, type OverviewRow } from "./reminderOverview";
+import {
+  deliveryLabel,
+  destinationIssue,
+  rowHealth,
+  visibleRows,
+  type OverviewRow,
+} from "./reminderOverview";
 const row: OverviewRow = {
   clan: { tag: "#ONE", name: "Alpha", type: "Main", logo: "", revision: "1" },
   settings: {
@@ -21,6 +27,9 @@ describe("Family overview filters and honest states", () => {
   it("does not report missing channels when channel lookup is unavailable", () => {
     expect(rowHealth(row, new Set(), false).category).toBe("tracking");
     expect(rowHealth(row, new Set(), true).category).toBe("attention");
+    expect(destinationIssue(row, new Set(), true)).toContain(
+      "removed or become inaccessible",
+    );
     expect(
       rowHealth(
         {
@@ -32,6 +41,34 @@ describe("Family overview filters and honest states", () => {
         true,
       ).category,
     ).toBe("off");
+  });
+  it("keeps a delivery or stale-check alert visible when the channel is missing", () => {
+    const failed = {
+      ...row,
+      health: {
+        category: "attention" as const,
+        label: "Check delivery",
+        detail: "Check the channel.",
+      },
+    };
+    expect(rowHealth(failed, new Set(), true).label).toBe("Check delivery");
+    expect(destinationIssue(failed, new Set(), true)).toContain(
+      "removed or become inaccessible",
+    );
+    expect(destinationIssue(row, new Set(), false)).toBeNull();
+    expect(
+      destinationIssue(
+        { ...row, settings: { ...row.settings, enabled: false } },
+        new Set(),
+        true,
+      ),
+    ).toBeNull();
+  });
+  it("labels last scheduled outcomes without turning skipped reminders into failures", () => {
+    expect(deliveryLabel("sending")).toContain("check the channel before acting");
+    expect(deliveryLabel("uncertain")).toContain("check the channel before acting");
+    expect(deliveryLabel("failed")).toBe("Failed");
+    expect(deliveryLabel("skipped")).toBe("Skipped");
   });
   it("searches channel names and tags without mutating the source order", () => {
     const rows = [

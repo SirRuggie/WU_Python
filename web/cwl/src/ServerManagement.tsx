@@ -1,4 +1,5 @@
 import ServerSettingsIndex from './ServerSettingsIndex'
+import BandStatusSummary, { bandStatusWarning } from './BandStatusSummary'
 import ApplicationSettingsIndex from './ApplicationSettingsIndex'
 import ReturnReminderOverview, {
   ReturnStatusSummary,
@@ -1069,7 +1070,11 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             <ReturnStatusSummary status={document.return_status} />
           )}
           {document.warning && (
-            <p className="manage-notice">{document.warning}</p>
+            <p className="manage-notice">
+              {document.id === 'band_monitor'
+                ? bandStatusWarning(document.warning)
+                : document.warning}
+            </p>
           )}
           {document.preview_supported && (
             <div
@@ -1105,23 +1110,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               }}
             >
               {document.readonly && operationsWorkspace ? (
-                <dl
-                  className="manage-status-summary"
-                  aria-label="Current status"
-                >
-                  {document.fields.map((field) => (
-                    <div key={field.key}>
-                      <dt>{field.label}</dt>
-                      <dd>
-                        {typeof field.value === 'boolean'
-                          ? field.value
-                            ? 'On'
-                            : 'Off'
-                          : String(field.value ?? 'Not available')}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
+                <BandStatusSummary fields={document.fields} />
               ) : (
                 <fieldset disabled={busy || document.readonly}>
                   <legend className="manage-sr-only">

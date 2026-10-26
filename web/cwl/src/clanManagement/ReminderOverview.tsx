@@ -6,6 +6,8 @@ import type { AnnouncementChannel } from "../announcements";
 import type { Clan } from "./types";
 import {
   rowHealth,
+  destinationIssue,
+  deliveryLabel,
   visibleRows,
   type OverviewData,
   type OverviewFilter,
@@ -225,14 +227,14 @@ export default function ReminderOverview({
             <table className="overview-table">
               <caption className="overview-sr-only">
                 Saved family war reminder settings and latest scheduled
-                delivery. Test messages are excluded.
+                outcome. Test messages are excluded.
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Clan</th>
                   <th scope="col">Reminders</th>
                   <th scope="col">Channel &amp; schedule</th>
-                  <th scope="col">Latest activity</th>
+                  <th scope="col">Latest scheduled outcome</th>
                   <th scope="col">
                     <span className="overview-sr-only">Actions</span>
                   </th>
@@ -241,6 +243,7 @@ export default function ReminderOverview({
               <tbody>
                 {visible.map((row) => {
                   const state = rowHealth(row, ids, channelsReady),
+                    issue = destinationIssue(row, ids, channelsReady),
                     config = row.settings;
                   return (
                     <tr key={row.clan.tag}>
@@ -299,17 +302,18 @@ export default function ReminderOverview({
                             config.minutes.length > 3 &&
                             ` · +${config.minutes.length - 3} more`}
                         </small>
+                        {issue && <small role="status">{issue}</small>}
                       </td>
                       <td>
                         <span
                           className="overview-mobile-label"
                           aria-hidden="true"
                         >
-                          Latest activity
+                          Latest scheduled outcome
                         </span>
                         <span>
                           {row.last_delivery
-                            ? `Scheduled: ${row.last_delivery.status === "sending" ? "unconfirmed" : row.last_delivery.status}`
+                            ? deliveryLabel(row.last_delivery.status)
                             : "No scheduled deliveries yet"}
                         </span>
                         {row.last_delivery && (
@@ -329,10 +333,10 @@ export default function ReminderOverview({
                             if (el) buttons.current.set(row.clan.tag, el);
                             else buttons.current.delete(row.clan.tag);
                           }}
-                          aria-label={`Manage reminders for ${row.clan.name} ${row.clan.tag}`}
+                          aria-label={`${issue ? "Review destination" : "Manage reminders"} for ${row.clan.name} ${row.clan.tag}`}
                           onClick={() => onOpen(row.clan)}
                         >
-                          Manage reminders <span aria-hidden="true">→</span>
+                          {issue ? "Review destination" : "Manage reminders"} <span aria-hidden="true">→</span>
                         </button>
                       </td>
                     </tr>
@@ -342,10 +346,19 @@ export default function ReminderOverview({
             </table>
           )}
           <p className="overview-note">
-            Status reflects saved settings and stored bot checks. “Monitoring”
-            does not guarantee delivery. Test messages are shown only in each
-            clan’s delivery history.
+            Reminder times are relative to the active war. Monitoring is not
+            proof of delivery.
           </p>
+          <details className="overview-note">
+            <summary>About reminder status</summary>
+            <p>
+              Exact upcoming timing depends on the active war’s end time, which
+              is not available in this overview. A channel appearing in the
+              server list does not confirm the bot can send there. Status uses
+              saved settings and stored bot checks. Test messages appear only in
+              each clan’s delivery history.
+            </p>
+          </details>
         </>
       )}
     </section>

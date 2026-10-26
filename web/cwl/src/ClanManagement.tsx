@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { api, apiUpload } from "./api";
+import { useClanChoices } from "./useClanChoices";
 import ReminderOverview from "./clanManagement/ReminderOverview";
 import ClanDirectory from "./clanManagement/ClanDirectory";
 import ClanSettingsNavigation from "./clanManagement/ClanSettingsNavigation";
 import ClanFields from "./clanManagement/ClanFields";
 import type { Clan } from "./clanManagement/types";
-import type { AnnouncementChannel } from "./announcements";
 import "./ClanManagement.css";
 import ClanHistory from "./ClanHistory";
 import WarReminders from "./WarReminders";
@@ -30,14 +30,14 @@ export default function ClanManagement({
   const [overviewReturnTag, setOverviewReturnTag] = useState<string | null>(
     null,
   );
-  const [channelsReady, setChannelsReady] = useState(false);
+  const { channelsReady, choicesError, loadChoices, roles, channels } =
+    useClanChoices();
   const editGeneration = useRef(0),
     loadGeneration = useRef(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const running = useRef(false);
   const [directoryLoading, setDirectoryLoading] = useState(true);
   const [directoryError, setDirectoryError] = useState("");
-  const [choicesError, setChoicesError] = useState("");
   const [reminderBusy, setReminderBusy] = useState(false);
   const reminderActivityChanged = useCallback((value: boolean) => {
     ++editGeneration.current;
@@ -61,8 +61,6 @@ export default function ClanManagement({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
-    [roles, setRoles] = useState<Choice[]>([]),
-    [channels, setChannels] = useState<AnnouncementChannel[]>([]),
     [memberQuery, setMemberQuery] = useState(""),
     [members, setMembers] = useState<Choice[]>([]),
     [memberError, setMemberError] = useState(""),
@@ -96,22 +94,6 @@ export default function ClanManagement({
     }
   }
 
-  async function loadChoices() {
-    setChoicesError("");
-    try {
-      const result = await api<{
-        roles: Choice[];
-        channels: AnnouncementChannel[];
-      }>("/manage/clan-choices");
-      setRoles(result.roles);
-      setChannels(result.channels);
-      setChannelsReady(true);
-    } catch (e) {
-      setChoicesError(
-        e instanceof Error ? e.message : "Could not load roles and channels.",
-      );
-    }
-  }
   useEffect(() => {
     void load();
     void loadChoices();

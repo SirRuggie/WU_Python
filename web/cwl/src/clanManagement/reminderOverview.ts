@@ -19,6 +19,9 @@ export function rowHealth(
   channels: Set<string>,
   available: boolean,
 ): Health {
+  // Keep delivery/check failures as the primary health state. Destination
+  // inventory is displayed separately so it cannot hide an uncertain send.
+  if (row.health.category === "attention") return row.health;
   if (
     row.settings.enabled &&
     available &&
@@ -31,6 +34,28 @@ export function rowHealth(
         "The saved channel is missing from the current server channel list. Review the destination.",
     };
   return row.health;
+}
+export function destinationIssue(
+  row: OverviewRow,
+  channels: Set<string>,
+  available: boolean,
+): string | null {
+  if (!row.settings.enabled || !row.settings.channel_id || !available)
+    return null;
+  if (channels.has(row.settings.channel_id)) return null;
+  return "Saved channel is missing from the current server channel list. It may have been removed or become inaccessible.";
+}
+
+export function deliveryLabel(status: string): string {
+  switch (status) {
+    case "sent": return "Sent";
+    case "sending":
+    case "uncertain":
+      return "Unconfirmed; check the channel before acting";
+    case "failed": return "Failed";
+    case "skipped": return "Skipped";
+    default: return status;
+  }
 }
 export function visibleRows(
   rows: OverviewRow[],
