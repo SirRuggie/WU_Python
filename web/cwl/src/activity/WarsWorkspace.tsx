@@ -56,7 +56,7 @@ export default function WarsWorkspace({canEdit, onTasks, initialType = 'regular'
   const [query, setQuery] = useState('')
   const {data, error, busy, refresh} = useClanActivity('war', scope)
   const now = useClock()
-  const clans = (data?.clans || []).filter(clan => (type === 'cwl' || scope === 'family' || clan.current_member !== false) && `${clan.name} ${clan.tag}`.toLowerCase().includes(query.toLowerCase().trim()))
+  const clans = (data?.clans || []).filter(clan => clan[type]?.state !== 'private' && (type === 'cwl' || scope === 'family' || clan.current_member !== false) && `${clan.name} ${clan.tag}`.toLowerCase().includes(query.toLowerCase().trim()))
   const active = clans.filter(clan => !inactive.has(clan[type]?.state || 'error'))
   const quiet = clans.filter(clan => inactive.has(clan[type]?.state || 'error'))
   const card = (clan: ClanActivity) => <WarCard key={clan.tag} {...{clan, type, scope, now, onTasks}}/>
@@ -66,7 +66,7 @@ export default function WarsWorkspace({canEdit, onTasks, initialType = 'regular'
     <div className="activity-toolbar"><label>Find a clan<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Clan name or tag"/></label>{canEdit && <button aria-pressed={scope === 'family'} onClick={() => setScope(scope === 'mine' ? 'family' : 'mine')}>{scope === 'mine' ? 'Show all clans' : 'Show my clans'}</button>}</div>
     <ClanActivityStatus error={error} busy={busy} checkedAt={data?.checked_at} warnings={data?.warnings || []} refresh={refresh}/>
     {!data && busy && <p role="status">Loading your wars…</p>}
-    {data && !clans.length && <p>{query ? 'No clans match this search.' : scope === 'mine' ? 'No clans found for your linked accounts.' : 'No family clans found.'}</p>}
+    {data && !clans.length && <p>{query ? 'No clans match this search.' : 'No wars to show. Private war logs are hidden.'}</p>}
     {data && clans.length > 0 && !active.length && <p>No active {type === 'cwl' ? 'CWL rounds' : 'wars'}{query ? ' match this search' : scope === 'mine' ? ' in your clans' : ''}.</p>}
     <div className="activity-card-grid">{active.map(card)}</div>
     {quiet.length > 0 && <details className="war-inactive"><summary>No active war · {quiet.length} {quiet.length === 1 ? 'clan' : 'clans'}</summary><div className="activity-card-grid">{quiet.map(card)}</div></details>}

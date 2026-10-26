@@ -37,3 +37,12 @@ it('does not show former CWL hosts in regular wars and explains CWL participatio
   expect(renderToStaticMarkup(<WarsWorkspace canEdit={false} onTasks={vi.fn()}/>)).not.toContain('Your accounts in this war')
   expect(renderToStaticMarkup(<WarsWorkspace canEdit={false} initialType="cwl" onTasks={vi.fn()}/>)).toContain('CWL hosting clan')
 })
+
+it('hides private war log cards in both regular and CWL views', () => {
+  state.data = {scope: 'mine', warnings: [], clans: [clan, {tag: '#CAMP', name: 'Camping clan', current_member: true, regular: {state: 'private'}, cwl: {state: 'private'}}]}
+  for (const type of ['regular', 'cwl'] as const) {
+    const html = renderToStaticMarkup(<WarsWorkspace canEdit initialType={type} onTasks={vi.fn()}/> )
+    expect(html).not.toContain('Camping clan')
+    expect(html).not.toContain('This clan’s war log is private')
+  }
+})

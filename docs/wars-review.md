@@ -46,3 +46,12 @@ A failed refresh retained labeled last-known results. Native buttons and disclos
 retain keyboard behavior and 44px controls. Screenshot inspection is not a full
 screen-reader certification or a physical-phone test. No live Discord messages or
 member records were modified. Live provider success is not proven by fixture tests.
+
+## Owner follow-up: private war logs
+
+Private-war-log cards are now excluded from both war tabs, including staff family
+view, at the owner's request. This supersedes the private-card visibility rule
+above; failed lookups remain visible. Empty-state wording acknowledges hidden logs
+without claiming their wars have ended. 343 frontend tests and production build
+passed. A read-only account-link investigation confirmed the reported unexpected
+account is returned for the owner by both upstream providers; no links were edited.
