@@ -92,3 +92,8 @@ All accounts, avoiding another pool-tab prerequisite. Mixed-pool selection still
 requires narrowing before a single-clan move; balancing handles each pool's
 eligible clans separately. Final browser check confirmed the single-clan list
 remains reachable from its disclosure and defaults closed after reload.
+
+Flow follow-up deployed from `7118462` as a frontend-only update. Public entry
+JS/CSS and RosterWorkspace-DIoXYMKF.js match built bytes; protected anonymous
+APIs, production fixture status, and public page checks passed. Web service stayed
+active/running with zero restarts; no restart or live roster mutation required.
