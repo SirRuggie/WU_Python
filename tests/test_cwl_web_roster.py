@@ -903,3 +903,52 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class BalanceRequestTests(RosterTests):
+    async def setup_balance(self):
+        await self.signup('lazy', '#Q2Y')
+        await self.host('#J2Y', 'lazy')
+        await self.host('#R2Y', 'lazy')
+        with self.app['store'].tx() as db:
+            db.execute('INSERT INTO roster_entries(season_id,tag,assigned_clan_tag,kept,manual_weight) VALUES (?,?,?,?,?)',
+                       (self.sid, '#Q2Y', '#J2Y', 1, 174000))
+        return {'revision': await self.revision(), 'mode': 'balance', 'tags': ['#Q2Y'],
+                'clan_tags': ['#R2Y'], 'include_locked': False}
+
+    async def test_balance_lock_apply_replay_and_undo(self):
+        body = await self.setup_balance()
+        path = f'/seasons/{self.sid}/roster'
+        response = await self.call('POST', path + '/auto-preview', self.owner, json=body)
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())['unassigned'], [{'tag': '#Q2Y', 'reason': 'locked'}])
+        body['include_locked'] = True
+        response = await self.call('POST', path + '/auto-preview', self.owner, json=body)
+        preview = await response.json()
+        body['placements'] = preview['placements']
+        self.assertEqual(body['placements'], [{'tag': '#Q2Y', 'assigned_clan_tag': '#R2Y'}])
+        response = await self.call('POST', path + '/auto-apply', self.owner, json=body)
+        self.assertEqual(response.status, 200)
+        response = await self.call('POST', path + '/auto-apply', self.owner, json=body)
+        self.assertEqual(response.status, 409)
+        with self.app['store'].tx() as db:
+            row = db.execute('SELECT * FROM roster_entries WHERE season_id=? AND tag=?', (self.sid, '#Q2Y')).fetchone()
+            self.assertEqual(row['assigned_clan_tag'], '#R2Y')
+            self.assertTrue(row['kept'])
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM signups WHERE season_id=?', (self.sid,)).fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM roster_undo WHERE season_id=?', (self.sid,)).fetchone()[0], 1)
+
+    async def test_balance_rejects_tampering_and_member(self):
+        body = await self.setup_balance()
+        path = f'/seasons/{self.sid}/roster'
+        response = await self.call('POST', path + '/auto-preview', self.member, json=body)
+        self.assertEqual(response.status, 403)
+        for patch, status in [({'tags': ['#Q2Y', '#Q2Y']}, 400), ({'clan_tags': ['#P2Y']}, 409),
+                              ({'include_locked': 'yes'}, 400), ({'tags': []}, 400)]:
+            response = await self.call('POST', path + '/auto-preview', self.owner, json={**body, **patch})
+            self.assertEqual(response.status, status)
+        response = await self.call('POST', path + '/auto-apply', self.owner,
+                                   json={**body, 'placements': [{'tag': '#Q2Y', 'assigned_clan_tag': '#R2Y'}]})
+        self.assertEqual(response.status, 409)
+        response = await self.call('PATCH', path + '/assignments', self.owner,
+                                   json={'revision': body['revision'], 'tags': ['#Q2Y'], 'assigned_clan_tag': None, 'include_locked': False})
+        self.assertEqual(response.status, 409)

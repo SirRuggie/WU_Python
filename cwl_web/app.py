@@ -1170,7 +1170,7 @@ def _active_destination_capacity(db, sid, clan_tag):
 async def bulk_assign_roster(request):
     session = _require(request, "editor")
     body = await _json(request)
-    if set(body) != {"revision", "tags", "assigned_clan_tag"}:
+    if not {"revision", "tags", "assigned_clan_tag"} <= set(body) or not set(body) <= {"revision", "tags", "assigned_clan_tag", "include_locked"}:
         _fail(400, "Expected revision, tags, and assigned_clan_tag")
     supplied = body["tags"]
     if not isinstance(supplied, list) or not 1 <= len(supplied) <= 50:
@@ -1200,6 +1200,14 @@ async def bulk_assign_roster(request):
         ).fetchall()
         if len(rows) != len(tags):
             _fail(404, "One or more signed-up accounts were not found")
+        if "include_locked" in body:
+            if type(body["include_locked"]) is not bool:
+                _fail(400, "Invalid lock option")
+            if not body["include_locked"] and db.execute(
+                f"SELECT 1 FROM roster_entries WHERE season_id=? AND kept=1 AND tag IN ({placeholders})",
+                (sid, *tags),
+            ).fetchone():
+                _fail(409, "Locked placements changed; refresh and select again")
         if destination is not None:
             capacity = _active_destination_capacity(db, sid, destination)
             selected_already = db.execute(
@@ -1469,6 +1477,34 @@ def _auto_plan(db, sid, pool=None):
     return placements, unassigned
 
 
+def _requested_plan(db, sid, body, pool):
+    if body.get("mode") != "balance":
+        if body.get("mode") is not None:
+            _fail(400, "Invalid placement mode")
+        return _auto_plan(db, sid, pool)
+    from utils.cwl_balance import balance_accounts
+    def tags_field(field):
+        values = body.get(field)
+        if not isinstance(values, list) or not 1 <= len(values) <= 50:
+            _fail(400, "Choose 1 to 50 accounts or clans")
+        try:
+            result = [tag(value) for value in values]
+        except (ValueError, TypeError):
+            _fail(400, "Invalid tag")
+        if len(set(result)) != len(result):
+            _fail(400, "Duplicate tag")
+        return result
+    selected, destinations = tags_field("tags"), tags_field("clan_tags")
+    if type(body.get("include_locked", False)) is not bool:
+        _fail(400, "Invalid lock option")
+    accounts, clans = _roster_rows(db, sid), _rule_rows(db, sid)
+    if not set(selected) <= {a['tag'] for a in accounts}:
+        _fail(409, "Selected accounts changed; refresh the roster")
+    if not set(destinations) <= {c['tag'] for c in clans if not c['archived']}:
+        _fail(409, "Selected hosting clans changed; refresh the roster")
+    return balance_accounts(accounts, clans, selected, destinations, body.get("include_locked", False))
+
+
 async def auto_preview(request):
     _require(request, "editor")
     body = await _json(request)
@@ -1481,7 +1517,7 @@ async def auto_preview(request):
         if season["status"] != "draft":
             _fail(423, "Season is archived")
         _check_revision(db, sid, body.get("revision"))
-        placements, unassigned = _auto_plan(db, sid, pool)
+        placements, unassigned = _requested_plan(db, sid, body, pool)
         revision = _revision(db, sid)
     return web.json_response({"revision": revision, "placements": placements, "unassigned": unassigned})
 
@@ -1501,7 +1537,7 @@ async def auto_apply(request):
         if season["status"] != "draft":
             _fail(423, "Season is archived")
         _check_revision(db, sid, body.get("revision"))
-        placements, _ = _auto_plan(db, sid, pool)
+        placements, _ = _requested_plan(db, sid, body, pool)
         if submitted != placements:
             _fail(409, "Preview changed; refresh before applying")
         changes = []
@@ -1514,12 +1550,12 @@ async def auto_apply(request):
                        "ON CONFLICT(season_id,tag) DO UPDATE SET assigned_clan_tag=excluded.assigned_clan_tag",
                        (sid, player_tag, clan_tag))
             after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone())
-            _audit(db, sid, player_tag, session["user_id"], "auto_place", before, after)
+            _audit(db, sid, player_tag, session["user_id"], "balance_place" if body.get("mode") == "balance" else "auto_place", before, after)
             changes.append({"tag": player_tag, "before": _placement(before),
                             "after": _placement(after)})
         revision = _bump(db, sid) if placements else _revision(db, sid)
         if placements:
-            _record_undo(db, sid, session["user_id"], "Auto-place accounts", revision, changes)
+            _record_undo(db, sid, session["user_id"], "Balance selected accounts" if body.get("mode") == "balance" else "Auto-place accounts", revision, changes)
     return web.json_response({"revision": revision, "applied": len(placements)})
 
 

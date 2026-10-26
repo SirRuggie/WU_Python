@@ -361,3 +361,16 @@
     width: 100%;
   }
 }
+
+.roster-balance { display: grid; gap: 16px; min-width: 0; }
+.roster-balance .row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+.roster-balance fieldset { min-width: 0; border: 0; padding: 0; }
+.roster-balance-choice { display: flex; gap: 12px; align-items: center; min-height: 44px; padding: 6px 0; }
+.roster-balance-choice small, .roster-balance-totals span { display: block; }
+.roster-balance-totals > div { padding: 12px 0; border-bottom: 1px solid var(--border, #39393f); }
+.roster-balance p, .roster-balance strong { overflow-wrap: anywhere; }
+.roster-weight-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.roster-weight-range input { width: 100%; min-width: 0; }
+.roster-balance p { margin: 0; }
+.roster-balance button, .roster-balance summary { min-height: 44px; }
+.roster-balance summary { display: list-item; align-content: center; }
