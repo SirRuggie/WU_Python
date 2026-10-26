@@ -54,3 +54,15 @@ Both use the shared dashboard confirmation dialog instead of a browser prompt.
 Existing aiohttp AppKey/deprecation and Vite bundle warnings remain. Exact totals
 can differ with locks, unequal capacities, clan rules, or missing weights. This
 review is scoped to these roster controls, not a certification of the entire app.
+
+## Deployment verification
+
+Implementation revision `45baa82` pushed to origin/main. Runtime imports passed;
+web service restarted active/running with zero restarts. The first immediate
+probe caught startup (502); the subsequent complete audit passed: production
+fixture disabled, protected anonymous APIs 401, invalid OAuth callback 403,
+and roster/readiness/bonuses/tasks/weights pages 200. Public entry JS/CSS and
+RosterWorkspace-CTOUD1jG.js matched built bytes. Older hashed assets retained for
+already-open sessions. No production roster data was edited for verification.
+Compare clans was also opened with sample Lazy rosters after the balance/undo
+checks. Temporary sample server stopped; responsive viewport override reset.
