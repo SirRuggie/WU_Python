@@ -155,16 +155,19 @@ def member_view(store, user_id):
         }
 
 
-def _published_assignments(db, season_id, user_id):
+def _published_assignments(db, season_id, user_id, *, include_pending=False):
     latest = db.execute(
         "SELECT id,version,published_at,joining_instructions FROM roster_publications "
         "WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1",
         (season_id,),
     ).fetchone()
-    # A changed pool or ownership must not inherit an old publication.
+    # The dashboard retains pending rows beside published placements. Discord
+    # shows only accounts actually included in the published snapshot. Both
+    # paths require matching current ownership and pool for any placement.
+    join = "LEFT JOIN" if include_pending else "JOIN"
     assignments = [dict(row) for row in db.execute(
         "SELECT s.tag,s.player_name,s.town_hall,s.pool,p.assigned_clan_tag,p.assigned_clan_name "
-        "FROM signups s LEFT JOIN publication_accounts p ON p.publication_id=? "
+        f"FROM signups s {join} publication_accounts p ON p.publication_id=? "
         "AND p.tag=s.tag AND p.user_id=s.user_id AND p.pool=s.pool "
         "WHERE s.season_id=? AND s.user_id=? ORDER BY s.tag",
         (latest["id"] if latest else None, season_id, str(user_id)),
@@ -178,7 +181,7 @@ def assignment_view(store, user_id, season_id, *, selected_only=True):
     """Dashboard and Discord use one publication visibility rule."""
     with store.tx() as db:
         _season(db, season_id, selected_only=selected_only)
-        published, assignments = _published_assignments(db, season_id, user_id)
+        published, assignments = _published_assignments(db, season_id, user_id, include_pending=True)
         return {"published": published, "visibility": "current",
                 "draft_changed": False, "accounts": assignments}
 

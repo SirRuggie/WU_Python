@@ -106,3 +106,40 @@ were not visually verified. Existing aiohttp AppKey/deprecation warnings remain.
 The broad suite exposed a pre-existing scheduler test tied to September 2026; its
 clock is now explicitly frozen to that intended month. Account-provider fixtures
 now include realistic clan category fields to exercise fail-closed Main eligibility.
+
+## Independent Sol review and release handoff
+
+At the user's correction, a fresh `gpt-6-sol` agent independently reviewed the
+completed implementation at `0fa686f`. This is the final requested independent
+review; the earlier Luna review remains historical evidence, not a substitute.
+
+Sol reproduced and the orchestrator resolved two findings:
+
+- The pool-change review screen lacked its Confirm controls, and Cancel/Keep
+  signup did not navigate back. The screen now renders Confirm pool change,
+  Back and Cancel; returning to the saved signup clears the pending destination.
+  A rendered Move → Confirm regression proves one submit and rejects reuse of
+  the old confirmation. Navigation itself makes no write.
+- Discord's assignment list included signups added after the latest publication
+  as pending rows. Discord now selects only matching publication-account rows.
+  The dashboard deliberately retains its existing pending-row presentation.
+  Both paths still require current owner/pool matches for published placements;
+  draft roster data remains excluded.
+
+Sol added four independent regressions in `tests/test_cwl_member_sol_review.py`
+and reported no remaining concrete finding in the inspected paths. Final full
+CWL/component/startup suite: **804 passed, one skipped, 16 subtests passed**.
+The skip is the isolated real-Mongo recovery drill requiring
+`CWL_RECOVERY_MONGOD`. The required war-reminder gate passed again, including
+**186 backend tests**, **32 frontend tests**, production build and diff hygiene.
+Existing aiohttp warnings remain. Tests used isolated fixtures and loopback HTTP;
+no live Discord delivery, mobile rendering or production startup was validated.
+
+The user subsequently authorized deployment, but automatic approval review
+rejected production pull/restart actions under the repository's manual-deployment
+instruction. No production configuration, services or member records were changed
+by this review. Code is ready for integration and operator release after that
+approval block is resolved, with the normal runtime checks still outstanding.
+See [operator release commands](cwl-discord-member-release.md). The current web
+service uses port **8766**, so the bot must override the default bridge origin to
+`http://127.0.0.1:8766`. The shared secret has not yet been provisioned.

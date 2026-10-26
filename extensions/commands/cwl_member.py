@@ -285,6 +285,12 @@ def _components(token: str, session: MemberSession) -> list:
             (hikari.ButtonStyle.SECONDARY, _id("move_lazy", token, version), "Move to Lazy", False),
             (hikari.ButtonStyle.SECONDARY, _id("signup_action", token, version), "Cancel", False),
         )]
+    if session.screen == "pool_change_confirm":
+        return [_row(
+            (hikari.ButtonStyle.SUCCESS, _id("confirm_move", token, version), "Confirm pool change", False),
+            (hikari.ButtonStyle.SECONDARY, _id("change_pool", token, version), "Back", False),
+            (hikari.ButtonStyle.SECONDARY, _id("signup_action", token, version), "Cancel", False),
+        )]
     if session.screen == "withdraw_confirm":
         return [_row(
             (hikari.ButtonStyle.DANGER, _id("withdraw_confirm", token, version), "Confirm withdrawal", False),
@@ -545,6 +551,9 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 row = next(row for row in _signups(session) if str(row["tag"]) == session.pending_tag)
                 session.source_pools[session.pending_tag] = str(row.get("pool"))
                 session.screen = "signup_action"
+        elif action == "signup_action":
+            session.pending_pool = None
+            session.screen = "signup_action"
         elif action == "change_pool":
             session.screen = "change_pool"
         elif action in {"move_main", "move_lazy"}:
