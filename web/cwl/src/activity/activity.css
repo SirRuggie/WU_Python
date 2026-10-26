@@ -109,3 +109,35 @@
   .events-workspace .calendar-countdown { margin-top: 18px; }
   .events-workspace .calendar-countdown > strong { font-size: 25px; }
 }
+
+/* War details mount only while open and keep the long records paged. */
+.war-detail-panel { margin-top: 16px; padding-top: 14px; border-top: 1px solid #333; min-width: 0; }
+.war-detail-freshness { color: #b8b3a9; font-size: 12px; margin: 0 0 12px; }
+.war-detail-view,.war-detail-side { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.shell .war-detail-view button,.shell .war-detail-side button,.shell .war-detail-pages button,.shell .war-detail-error button { min-height: 44px; }
+.war-detail-view button[aria-pressed="true"],.war-detail-side button[aria-pressed="true"] { border-color: #dcae38; color: #f4cd64; }
+.war-detail-panel h3 { margin: 12px 0 8px; font-size: 14px; }
+.war-detail-panel h3 small { color: #b8b3a9; font-weight: 400; }
+.war-detail-lineup-list,.war-detail-attack-list { list-style: none; padding: 0; margin: 0; }
+.war-detail-member,.war-detail-attack-list > li { display: grid; gap: 5px; padding: 10px 0; border-top: 1px solid #303030; font-size: 13px; min-width: 0; }
+.war-detail-member-title,.war-detail-member-meta,.war-detail-attack-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.war-detail-member-title small,.war-detail-attack-list small { color: #aaa69d; margin-left: 5px; }
+.war-detail-member-meta,.war-detail-attack-list strong { color: #c3bfb6; font-size: 12px; }
+.war-detail-linked { display: inline-flex; margin-left: 8px; padding: 2px 7px; border: 1px solid #566b50; border-radius: 12px; color: #b9dfa8; font-size: 11px; white-space: nowrap; }
+.war-detail-attacks > header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.war-detail-attacks > header > span { color: #b8b3a9; font-size: 12px; }
+.war-detail-attack-list li > div:last-child { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; }
+.war-detail-attack-list strong { text-align: right; }
+.war-detail-pages { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 10px 0; }
+.war-detail-pages span { color: #c3bfb6; font-size: 12px; }
+.war-detail-error { padding: 8px 0; }
+.war-detail-error p,.war-detail-partial { color: #f4cd64; font-size: 13px; }
+.war-detail-error button + button { margin-left: 8px; }
+.war-detail-partial { padding-left: 20px; }
+@media(max-width:480px) {
+  .war-detail-view,.war-detail-side { display: grid; grid-template-columns: 1fr 1fr; }
+  .war-detail-view button,.war-detail-side button { min-width: 0; overflow-wrap: anywhere; }
+  .war-detail-attack-list li > div:last-child { display: grid; }
+  .war-detail-attack-list strong { text-align: left; }
+}
+.war-detail-attack-side { color: #b8b3a9; font-size: 11px; margin-right: 6px; }

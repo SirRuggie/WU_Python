@@ -15,6 +15,9 @@ it('keeps personal attack counts visible and secondary dates/actions inside deta
   expect(html.indexOf('attacks left')).toBeLessThan(html.indexOf('<details'))
   expect(html.indexOf('Battle starts')).toBeGreaterThan(html.indexOf('<details'))
   expect(html).toContain('View my tasks')
+  expect(html).toContain('War details · dates, lineup &amp; attacks')
+  expect(html).not.toContain('Loading lineups and attacks')
+  expect(html).not.toContain('Attack log')
 })
 it('offers all clans only to staff and keeps current wars separate from inactive clans', () => {
   state.data = {scope: 'mine', warnings: [], clans: [clan, {tag: '#Q', name: 'Quiet clan', current_member: true, regular: {state: 'none'}}]}
@@ -45,4 +48,11 @@ it('hides private war log cards in both regular and CWL views', () => {
     expect(html).not.toContain('Camping clan')
     expect(html).not.toContain('This clan’s war log is private')
   }
+})
+
+it('does not mount the lineups and attack log in a closed war disclosure', () => {
+  const html = renderToStaticMarkup(<WarCard clan={clan} type="regular" scope="mine" now={0} onTasks={vi.fn()}/> )
+  expect(html).toContain('<details class="war-details">')
+  expect(html).not.toContain('war-detail-panel')
+  expect(html).not.toContain('/api/cwl/war-detail')
 })

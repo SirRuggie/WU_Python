@@ -1617,3 +1617,14 @@ async def fetch_clan_overview(client, clan_tag: str, kind: str, *, accounts=None
     )
     return {'regular': war_summary(regular_status, regular, clan_tag, accounts=accounts),
             'cwl': war_summary(league_status, league, clan_tag, accounts=accounts)}
+
+
+async def fetch_current_war(client, clan_tag: str, kind: str):
+    """Public bounded read through the coalesced current-war cache."""
+    if kind not in ('regular', 'cwl'):
+        raise ValueError('Invalid war kind')
+    lookup = _get_war if kind == 'regular' else _get_cwl_round
+    try:
+        return await asyncio.wait_for(lookup(client, clan_tag, recheck_negative_after=60), 10)
+    except Exception:
+        return 'error', None

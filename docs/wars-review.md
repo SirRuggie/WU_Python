@@ -55,3 +55,34 @@ above; failed lookups remain visible. Empty-state wording acknowledges hidden lo
 without claiming their wars have ended. 343 frontend tests and production build
 passed. A read-only account-link investigation confirmed the reported unexpected
 account is returned for the owner by both upstream providers; no links were edited.
+
+## Optional lineups and attack log — October 26
+
+Added a read-only, scope-checked current-war detail endpoint through a public shared
+provider helper. No database schema, signup, roster, assignment, or notification
+write behavior changed. Access is checked per request; own clans require current
+linked membership, or recent CWL hosting plus verified own-side participation.
+Family scope requires staff permission and the family directory allowlist.
+
+Details fetch only while expanded. The panel uses twenty-row pages, separate lineup
+and attack views, clan/opponent selectors and side labels, and linked-account
+markers. Existing compact matchup, private-log exclusion, dates, clan link, and
+Tasks handoff remain. War identity prevents details attaching to a replacement war.
+Slow/cancelled responses cannot repopulate a closed panel, and access denial clears
+the protected overview. Unknown statistics stay unknown; incomplete or capped data
+is labeled partial. Shared game caches contain no per-user attribution.
+
+Sol implemented the backend, Luna the UI, and a separate Sol reviewed adversarially.
+Review caught and corrected clock-driven refetching, stale war IDs, incomplete data
+presented as complete, invalid statistics, duplicate attack keys, and opponent-side
+ownership attribution. Final automated checks: 64 relevant backend tests, 367
+frontend tests, TypeScript and isolated Vite build. Existing aiohttp warnings remain.
+
+Isolated browser fixtures at 320, 390, and 1280px covered closed-state zero detail
+requests, opening/closing during a slow read, both lineup sides, paging, regular/CWL
+switching, staff scope switching, private-clan exclusion, partial logs, stale-war
+refresh messaging, and clearing data on 403. Long/multilingual names wrap without
+horizontal document overflow. These checks use fictional data, not live member
+writes, real Discord delivery, a physical phone, or full screen-reader certification.
+Provider outages and cache freshness still apply; this is current-war detail, not
+historical war storage. No live messages were sent.

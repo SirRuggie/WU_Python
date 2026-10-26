@@ -1181,3 +1181,17 @@ War & CWL is opt-in and uses the existing authenticated member-scope activity en
 Review evidence: Sol built the base dialog, Luna built on-demand activity, and a separate Sol adversarial pass reviewed integration, ownership, URL constraints, authorization loss, stale-response races, and signup boundaries. Parent browser fixtures used fictional data and rejected all writes. Checked 320px/390px/1280px layouts, long names, avatar fallback, keyboard focus trapping/Escape, retained checkbox selection and Search query, member vs family-directory clan scope, separate home-war/CWL-host activity, activity error recovery UI, close during slow read, and immediate modal/list clearing on 403. Basic dialogs made zero activity requests before expansion.
 
 Validation: 85 frontend test files / 361 tests passed; TypeScript and Vite isolated build passed; backend navigation regression suite passed (2 tests); diff whitespace check passed. Tests include malformed URLs and stats, absent/partial activity, unrelated players, and CWL hosting after returning home. No backend routes, durable storage, signup writes, schema migrations, or live notifications changed. Historical clan statistics and full attack logs remain separate backlog work. Fixture checks do not establish live game-data freshness or real-phone behavior.
+
+### Wars lineups and attack log — October 26
+
+Keep matchup, timing, scores, and personal remaining attacks on the compact card.
+Place lineups and attacks inside its existing War details disclosure and fetch only
+while open. Show one view at a time: Lineup (clan/opponent selector) or Attack log;
+paginate twenty rows. Identify each attack's side and mark only verified own-side
+linked accounts. Use the established goldenrod selected state and native controls.
+
+Tie detail responses to the displayed war identity and authorized scope. Cancel on
+close/change; reject stale responses; clear protected data on permission loss.
+Missing/private/partial data must not imply no attacks or a complete lineup. Do not
+add historical claims, stored member records, or extra overview polling for details.
+See wars-review.md for validation scope and limitations.

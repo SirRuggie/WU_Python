@@ -1791,6 +1791,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(todo_lifecycle)
     from .clan_activity import setup as setup_clan_activity
     setup_clan_activity(app)
+    from .war_detail import setup as setup_war_detail
+    setup_war_detail(app)
     app.cleanup_ctx.append(push_lifecycle)
     from .roster_locations import lifecycle as location_lifecycle
     app.cleanup_ctx.append(location_lifecycle)

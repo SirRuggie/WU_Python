@@ -1,4 +1,6 @@
 import { useJourneyState, useJourneyPosition } from '../journeyState'
+import { useState } from 'react'
+import WarDetailPanel from './WarDetailPanel'
 import DashboardIcon from '../DashboardIcon'
 import { clanDeepLink } from '../publication'
 import { countdown, localTime } from './calendar'
@@ -23,13 +25,15 @@ function Side({side}: {side: WarSide}) {
     <small>{side.destruction == null ? 'Destruction unknown' : `${side.destruction.toFixed(1)}%`}</small>
   </div>
 }
-export function WarCard({clan, type, scope, now, onTasks}: {
+export function WarCard({clan, type, scope, now, onTasks, onAccessDenied, onRefreshOverview}: {
   clan: ClanActivity; type: 'regular' | 'cwl'; scope: 'mine' | 'family'; now: number
   onTasks: (tag: string, kind: 'war' | 'cwl') => void
+  onAccessDenied?: () => void; onRefreshOverview?: () => void
 }) {
   const war = clan[type] || {state: 'error'}
   const accounts = war.my_accounts || []
   const matchup = war.clan && war.opponent
+  const [detailOpen, setDetailOpen] = useState(false)
   return <article className="activity-card war-card" aria-label={`${clan.name} ${type === 'cwl' ? 'CWL' : 'war'}`}>
     <header className="war-card-meta">
       <span className="war-card-kind"><DashboardIcon name={type === 'cwl' ? 'trophy' : 'war'}/>{war.team_size ? `${war.team_size} vs ${war.team_size}` : type === 'cwl' ? 'CWL' : 'War'} <span className={`activity-state state-${war.state}`}>{labels[war.state] || 'Unknown'}</span></span>
@@ -42,8 +46,9 @@ export function WarCard({clan, type, scope, now, onTasks}: {
     {scope === 'mine' && <div className="war-personal">
       {accounts.length > 0 ? <><h3>Your accounts in this war</h3><ul>{accounts.map(account => <li key={account.tag}><span>{account.name}</span><strong>{account.attacks_left == null ? 'Attacks unknown' : war.state === 'warEnded' ? `${account.attacks_left} unused attacks` : `${account.attacks_left} of ${account.attacks_total ?? '—'} attacks left`}</strong></li>)}</ul>{clan.current_member === false && <small>CWL hosting clan · participating from another clan</small>}</> : <><h3>Your accounts in this clan</h3><p>{clan.accounts?.map(account => account.name).join(', ') || 'Account details unavailable'}</p>{matchup && <small>No linked accounts in this war lineup.</small>}</>}
     </div>}
-    <details className="war-details"><summary>Details</summary>
+    <details className="war-details" onToggle={event => setDetailOpen(event.currentTarget.open)}><summary>War details · dates, lineup & attacks</summary>
       <div className="activity-dates"><div><small>Battle starts</small><span>{war.starts_at ? localTime(war.starts_at * 1000) : 'Unavailable'}</span></div><div><small>Battle ends</small><span>{war.ends_at ? localTime(war.ends_at * 1000) : 'Unavailable'}</span></div></div>
+      {detailOpen && (war.war_id ? <WarDetailPanel key={`${scope}:${type}:${clan.tag}:${war.war_id}`} clanTag={clan.tag} type={type} scope={scope} war={war} onAccessDenied={onAccessDenied || (() => {})} onRefreshOverview={onRefreshOverview || (() => {})}/> : <p role="status">Lineup and attack details are unavailable for this war.</p>)}
       <footer><a href={clanDeepLink(clan.tag)} target="_blank" rel="noopener noreferrer">Open clan ↗</a>{scope === 'mine' && <button className="war-text-action" onClick={() => onTasks(clan.tag, type === 'regular' ? 'war' : 'cwl')}>View my tasks →</button>}</footer>
       <small>{clan.tag}</small>
     </details>
@@ -54,13 +59,13 @@ export default function WarsWorkspace({canEdit, onTasks, userId = 'anonymous', v
   const scope = canEdit ? chosenScope : 'mine'
   const [type, setType] = useJourneyState<'regular' | 'cwl'>(`wars:${userId}:${visit}:type`, initialType)
   const [query, setQuery] = useJourneyState(`wars:${userId}:${visit}:query`, '')
-  const {data, error, busy, refresh} = useClanActivity('war', scope)
+  const {data, error, busy, refresh, invalidateAccess} = useClanActivity('war', scope)
   useJourneyPosition(`wars:${userId}:${visit}`, !!data || !!error)
   const now = useClock()
   const clans = (data?.clans || []).filter(clan => clan[type]?.state !== 'private' && (type === 'cwl' || scope === 'family' || clan.current_member !== false) && `${clan.name} ${clan.tag}`.toLowerCase().includes(query.toLowerCase().trim()))
   const active = clans.filter(clan => !inactive.has(clan[type]?.state || 'error'))
   const quiet = clans.filter(clan => inactive.has(clan[type]?.state || 'error'))
-  const card = (clan: ClanActivity) => <WarCard key={clan.tag} {...{clan, type, scope, now, onTasks}}/>
+  const card = (clan: ClanActivity) => <WarCard key={clan.tag} {...{clan, type, scope, now, onTasks}} onAccessDenied={invalidateAccess} onRefreshOverview={refresh}/>
   return <section className="clan-activity-workspace wars-workspace">
     <header className="page-head"><div><p className="eyebrow">Activity</p><h1>Wars</h1><p>{scope === 'mine' ? 'Your clans’ wars, scores, and your accounts’ remaining attacks.' : 'All family clans · war scores and battle times.'}</p></div></header>
     <div className="workflow-tabs" role="group" aria-label="War type">{(['regular', 'cwl'] as const).map(value => <button key={value} aria-pressed={type === value} onClick={() => setType(value)}><DashboardIcon name={value === 'regular' ? 'war' : 'trophy'}/>{value === 'regular' ? 'Clan wars' : 'CWL rounds'} {data && <small>{data.clans.filter(clan => ['inWar', 'preparation'].includes(clan[value]?.state || '')).length}</small>}</button>)}</div>
