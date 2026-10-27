@@ -1,14 +1,8 @@
-import { useId, useRef } from "react";
-import {
-  ArrowRightLeft,
-  Info,
-  LockKeyhole,
-  MoreHorizontal,
-  UserRoundPen,
-} from "lucide-react";
-import DiscordContact from "./DiscordContact";
+import { useId } from "react";
+import { LockKeyhole } from "lucide-react";
+import RosterAccountMenu from "./RosterAccountMenu";
 import TownHallIcon from "./TownHallIcon";
-import { Button, Chip } from "./rosterUi/primitives";
+import { Chip } from "./rosterUi/primitives";
 import { compactRosterWeight } from "./rosterCompactWeight";
 import type { RosterAccount } from "./roster";
 import "./RosterAccountCard.css";
@@ -44,15 +38,9 @@ export default function RosterAccountCard({
   onAssign,
   onSignup,
 }: Props) {
-  const menu = useRef<HTMLDetailsElement>(null);
-  const trigger = useRef<HTMLElement>(null);
   const descriptionId = useId();
   const maySelect = !archived && (canRoster || canSignups);
   const currentClanKnown = account.current_clan_status === "current";
-  const closeAnd = (action: () => void) => {
-    menu.current?.removeAttribute("open");
-    action();
-  };
   return (
     <article
       className={`roster-player-card${account.assigned_clan_tag ? " is-assigned" : ""}${selected ? " is-selected" : ""}`}
@@ -138,58 +126,16 @@ export default function RosterAccountCard({
         {compactRosterWeight(account.effective_weight)}. Assigned clan:{" "}
         {assignedClanName}.{account.kept ? " Locked placement." : ""}
       </span>
-      <details
-        className="roster-player-menu"
-        ref={menu}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            menu.current?.removeAttribute("open");
-            trigger.current?.focus();
-            event.stopPropagation();
-          }
-        }}
-      >
-        <summary
-          ref={trigger}
-          aria-label={`Actions for ${account.player_name}`}
-          aria-disabled={disabled}
-          onClick={(event) => {
-            if (disabled) event.preventDefault();
-          }}
-        >
-          <MoreHorizontal size={22} aria-hidden="true" />
-        </summary>
-        <div className="roster-player-actions">
-          {canRoster && !archived && (
-            <Button
-              icon={ArrowRightLeft}
-              onClick={() =>
-                closeAnd(() => {
-                  if (trigger.current) onAssign(trigger.current);
-                })
-              }
-            >
-              Assign
-            </Button>
-          )}
-          {canSignups && !archived && (
-            <Button
-              icon={UserRoundPen}
-              onClick={() =>
-                closeAnd(() => {
-                  if (trigger.current) onSignup(trigger.current);
-                })
-              }
-            >
-              Change signup
-            </Button>
-          )}
-          <DiscordContact userId={account.user_id} compact />
-          <Button icon={Info} onClick={() => closeAnd(onDetails)}>
-            Details
-          </Button>
-        </div>
-      </details>
+      <RosterAccountMenu
+        account={account}
+        disabled={disabled}
+        canRoster={canRoster}
+        canSignups={canSignups}
+        archived={archived}
+        onDetails={onDetails}
+        onAssign={onAssign}
+        onSignup={onSignup}
+      />
     </article>
   );
 }

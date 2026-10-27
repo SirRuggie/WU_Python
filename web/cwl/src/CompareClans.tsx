@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, RotateCw, Settings2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, RotateCw, X } from "lucide-react";
 import RosterMenu from "./rosterUi/Menu";
-import { Button, StatusPill } from "./rosterUi/primitives";
+import { Button } from "./rosterUi/primitives";
 import { type Pool } from "./api";
 import { useComparisonLocations } from "./useComparisonLocations";
 import {
@@ -12,20 +12,18 @@ import {
 } from "./ClanFilters";
 import { sortClans, clanSortOptions, type ClanSort } from "./clanSort";
 import {
-  clanSummary,
   compareClanAccounts,
   comparisonOrder,
   moveComparisonClan,
 } from "./compare";
-import { comparisonLocation } from "./comparisonLocation";
-import DiscordContact from "./DiscordContact";
+import ComparePlayerCard from "./ComparePlayerCard";
+import CompareClanHeader from "./CompareClanHeader";
 import {
   assignmentOptions,
   type RosterSnapshot,
   type RosterSort,
 } from "./roster";
 import "./CompareClans.css";
-import { compactRosterWeight } from "./rosterCompactWeight";
 
 type Props = {
   pool: Pool;
@@ -43,16 +41,6 @@ const playerSortOptions: { value: RosterSort; label: string }[] = [
   { value: "weight_asc", label: "Weight: low to high" },
   { value: "name", label: "Name A–Z" },
 ];
-
-function averageText(value: number | null) {
-  return value === null
-    ? "—"
-    : value.toLocaleString(undefined, { maximumFractionDigits: 1 });
-}
-
-function totalWeightText(value: number | null) {
-  return value === null ? "—" : compactRosterWeight(value);
-}
 
 export default function CompareClans({
   pool,
@@ -94,6 +82,7 @@ export default function CompareClans({
     checking,
     error: locationError,
     now,
+    published,
     refresh,
   } = useComparisonLocations(
     seasonId,
@@ -527,49 +516,17 @@ export default function CompareClans({
               ).filter((account) =>
                 matchesTownHall(account.town_hall, townHalls),
               );
-              const summary = clanSummary(roster.accounts, clanTag);
-              const unknownWeights = summary.count - summary.knownWeights;
               return (
                 <section
                   className={`compare-side ${clanTag === selectedFocus ? "mobile-current" : ""}`}
                   key={clanTag}
                   aria-label={`${clan.name} comparison`}
                 >
-                  <header className="compare-clan-summary">
-                    <div>
-                      <h3>{clan.name}</h3>
-                      <small>
-                        {clan.cwl_league || "League unavailable"}
-                        {clan.cwl_league_stale && clan.cwl_league
-                          ? " · last known"
-                          : ""}{" "}
-                        · {clan.tag}
-                      </small>
-                    </div>
-                    <div className="compare-clan-stats">
-                      <span>
-                        {summary.count}/{clan.effective_capacity} occupied
-                      </span>
-                      <span
-                        title={
-                          summary.totalWeight === null
-                            ? "No weights known"
-                            : `${compactRosterWeight(summary.totalWeight)} total weight`
-                        }
-                      >
-                        Total weight {totalWeightText(summary.totalWeight)}
-                      </span>
-                      <span>
-                        {unknownWeights
-                          ? `${unknownWeights} unknown weight${unknownWeights === 1 ? "" : "s"}`
-                          : "All weights known"}
-                      </span>
-                      <span>
-                        Avg TH {averageText(summary.averageTownHall)} ·{" "}
-                        {summary.knownTownHalls}/{summary.count} known
-                      </span>
-                    </div>
-                  </header>
+                  <CompareClanHeader
+                    clan={clan}
+                    accounts={roster.accounts}
+                    locations={locations}
+                  />
                   <details className="compare-column-change">
                     <summary>Change clan in this column</summary>
                     <RosterMenu
@@ -596,48 +553,18 @@ export default function CompareClans({
                   </details>
                   <div className="compare-player-list">
                     {members.length ? (
-                      members.map((account) => {
-                        const location = comparisonLocation(
-                          locations[account.tag],
-                          clanTag,
-                          now,
-                        );
-                        return (
-                          <div
-                            key={account.tag}
-                            className={`compare-account compare-account-${location.state}`}
-                          >
-                            <div className="compare-player-info">
-                              <strong>{account.player_name}</strong>
-                              <small>
-                                {account.tag} · TH {account.town_hall ?? "—"} ·{" "}
-                                {compactRosterWeight(account.effective_weight)}
-                              </small>
-                              <StatusPill
-                                tone={
-                                  location.state === "arrived"
-                                    ? "success"
-                                    : location.state === "missing"
-                                      ? "danger"
-                                      : "neutral"
-                                }
-                              >
-                                {location.label}
-                              </StatusPill>
-                            </div>
-                            <Button
-                              className="compare-details"
-                              disabled={busy}
-                              onClick={() => onEdit(account.tag)}
-                              label={`Details for ${account.player_name}`}
-                              icon={Settings2}
-                            >
-                              Details
-                            </Button>
-                            <DiscordContact userId={account.user_id} compact />
-                          </div>
-                        );
-                      })
+                      members.map((account) => (
+                        <ComparePlayerCard
+                          key={account.tag}
+                          account={account}
+                          clan={clan}
+                          record={locations[account.tag]}
+                          now={now}
+                          published={published}
+                          busy={busy}
+                          onDetails={() => onEdit(account.tag)}
+                        />
+                      ))
                     ) : (
                       <p>No accounts match in this clan.</p>
                     )}

@@ -230,37 +230,40 @@
   background: #1b1c20;
 }
 .compare-workspace .compare-clan-summary {
-  display: block;
-  min-height: 0;
-  margin: 0;
-  padding: 11px;
-  border-bottom: 1px solid #38383f;
-  background: #24252b;
-}
-.compare-clan-summary h3 {
-  margin: 0 0 2px;
-  font-size: 15px;
-  overflow-wrap: anywhere;
-}
-.compare-workspace .compare-clan-summary small {
-  padding: 0;
-  background: none;
-  font-size: 11px;
-  color: #bfc8d3;
-  overflow-wrap: anywhere;
-}
-.compare-clan-stats {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 9px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #202126;
 }
-.compare-clan-stats span {
-  padding: 4px 7px;
-  border-radius: 5px;
-  background: #302817;
-  color: #e7d19a;
-  font-size: 11px;
+.compare-clan-top {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+}
+.compare-clan-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.compare-clan-top > strong:last-of-type {
+  flex-shrink: 0;
+}
+.compare-total,
+.compare-clan-top > strong {
+  font-size: 16px;
+  font-weight: 700;
+}
+.compare-clan-summary small {
+  color: #c2c5cd;
+  font-size: 12px;
+}
+.compare-warning {
+  color: #efc16b;
+}
+.compare-clan-summary .roster-ui-progress {
+  margin-top: auto;
 }
 .compare-column-change {
   border-bottom: 1px solid #38383f;
@@ -284,83 +287,106 @@
   padding: 10px;
 }
 .compare-workspace .compare-account {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  align-items: start;
   min-width: 0;
-  padding: 6px 8px;
-  border: 0;
-  border-bottom: 1px solid #38383f;
-  border-radius: 0;
-  background: transparent;
-}
-.compare-workspace .compare-account:last-child {
-  border-bottom: 0;
+  margin: 8px;
+  border: 1px solid #44464b;
+  border-radius: 14px;
+  background: #24252b;
 }
 .compare-workspace .compare-account-arrived {
   background: #2b4b38;
-  box-shadow: inset 3px 0 #90ee90;
+  border-left: 3px solid #90ee90;
 }
 .compare-workspace .compare-account-missing {
   background: #3c2425;
-  box-shadow: inset 3px 0 #d58d90;
+  border-left: 3px solid #d58d90;
 }
-.compare-player-info {
+.compare-workspace .compare-player-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   min-width: 0;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #f0f1f3;
+  text-align: left;
+}
+.compare-player-body:focus-visible {
+  outline: 2px solid white;
+  outline-offset: -2px;
+}
+.compare-player-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.compare-player-top > strong:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compare-player-top > strong:last-child {
+  flex-shrink: 0;
+}
+.compare-player-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #d0d3d8;
+}
+.compare-location-line,
+.compare-publish-note {
+  color: #c8cbd2;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
-.compare-player-info strong {
-  display: block;
-  font-size: 13px;
+.compare-player-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
-.compare-player-info small {
-  display: block;
-  color: #c7c9cf;
-  font-size: 11px;
-}
-.compare-player-info > span {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  color: #c9d2db;
-}
-.compare-account-arrived .compare-player-info > span {
-  color: #b8eed4;
-}
-.compare-account-missing .compare-player-info > span {
-  color: #ffbdc0;
-}
-.compare-account .compare-details,
-.compare-account .discord-contact {
-  min-height: 44px;
-  margin: 0;
-  padding: 7px;
-  font-size: 11px;
-}
-.compare-account .compare-details {
-  border: 0;
-  background: transparent;
-  color: #bdd4f3;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.compare-account .compare-details:hover {
-  background: #ffffff10;
-}
-.compare-account .discord-contact {
+.compare-tag {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  border: 0;
-  background: transparent;
+  padding: 3px 7px;
+  border: 1px solid #a3a8b1;
+  border-radius: 999px;
+  background: #191b20;
+  color: #e1e4ea;
+  font-size: 11px;
+  line-height: 1.4;
 }
-.compare-account > small {
-  grid-column: 2 / -1;
-  font-size: 10px;
+.compare-tag.is-arrived {
+  color: #b8f1c2;
+  border-color: #8ecb98;
 }
-
+.compare-tag.is-missing,
+.compare-tag.is-danger {
+  color: #ffc4c4;
+  border-color: #de9fa2;
+}
+.compare-tag.is-warning {
+  color: #f4d18c;
+  border-color: #c2a36c;
+}
+.compare-account .roster-player-menu {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+}
+.compare-account .roster-player-actions {
+  z-index: 10;
+}
 @media (max-width: 720px) {
   .compare-workspace.card {
     padding: 12px;

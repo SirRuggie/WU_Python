@@ -1,3 +1,4 @@
+import { totalRosterWeight } from "./rosterTotalWeight";
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
 import { Button, ProgressBar } from "./rosterUi/primitives";
@@ -19,10 +20,6 @@ export type RosterClanChipSummary = {
   totalWeight: number | null;
   capacity: number | null;
 };
-
-const totalWeightFormat = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 1,
-});
 
 const GROUPS: { pool: Pool | null; label: string }[] = [
   { pool: "main", label: "Main" },
@@ -139,10 +136,7 @@ export default function RosterClanChips({
                   summary.capacity === null
                     ? `${summary.assignedCount} assigned`
                     : `${summary.assignedCount} of ${summary.capacity} assigned`;
-                const totalLabel =
-                  summary.totalWeight === null
-                    ? "Total —"
-                    : `Total ${totalWeightFormat.format(summary.totalWeight / 1000)}k`;
+                const totalLabel = totalRosterWeight(summary.totalWeight);
                 const weighedLabel = summary.missingWeightCount
                   ? `, ${summary.knownWeightCount} of ${summary.assignedCount} weighed`
                   : "";
