@@ -69,6 +69,26 @@
   border-color: #9db9dc;
   background: #283446;
 }
+.roster-assign-clan:active:not(:disabled) {
+  border-color: #d5b95e;
+  background: #303a48;
+  transform: translateY(1px);
+}
+.roster-assign-unassign {
+  border-color: #4a5060;
+  background: #1d222a;
+}
+.roster-assign-unassign .roster-assign-clan-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.roster-assign-chevron {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: #cbd4e1;
+}
 .roster-assign-clan:focus-visible {
   outline: 3px solid #a6c8ff;
   outline-offset: 2px;

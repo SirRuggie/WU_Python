@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  actionPanelAnchor,
   backOutOfPanelEntry,
   installPanelBackHandler,
   isTopActionPanel,
@@ -9,30 +8,6 @@ import {
 } from "./actionPanelHistory";
 
 describe("action panel history", () => {
-  it("places a panel above a low trigger and clamps its height to available space", () => {
-    const anchor = actionPanelAnchor(
-      { top: 720, right: 280, bottom: 760 },
-      { width: 320, height: 800 },
-    );
-    expect(anchor["--action-panel-top"]).toBe("auto");
-    expect(anchor["--action-panel-bottom"]).toBe("88px");
-    expect(
-      Number.parseFloat(anchor["--action-panel-max-height"]),
-    ).toBeLessThanOrEqual(708);
-    expect(anchor["--action-panel-right"]).toBe("40px");
-  });
-
-  it("clamps panel width and right offset when the trigger extends beyond the viewport", () => {
-    const anchor = actionPanelAnchor(
-      { top: 40, right: 600, bottom: 80 },
-      { width: 320, height: 640 },
-    );
-    expect(anchor["--action-panel-right"]).toBe("12px");
-    expect(
-      Number.parseFloat(anchor["--action-panel-width"]),
-    ).toBeLessThanOrEqual(296);
-  });
-
   it("copies the dashboard history state and its index into the panel entry", () => {
     expect(
       panelHistoryState({ wuDashboardIndex: 9, route: "roster" }, "panel-1"),
@@ -151,6 +126,34 @@ describe("action panel history", () => {
     expect(listeners).toHaveLength(1);
     expect(listeners[0].capture).toBe(true);
     expect(historyPort.back).toHaveBeenCalledOnce();
+  });
+
+  it("restores the panel marker when a dirty-form Back dismissal is vetoed", () => {
+    const windowPort = new EventTarget() as Window;
+    Object.defineProperty(windowPort, "location", {
+      value: { href: "/manage-roster" },
+    });
+    const panelState = { wuDashboardIndex: 9, wuActionPanel: "panel-1" };
+    const historyPort = { state: { wuDashboardIndex: 9 }, pushState: vi.fn() };
+    const close = vi.fn(() => false);
+    const remove = installPanelBackHandler({
+      windowPort,
+      historyPort: historyPort as never,
+      marker: "panel-1",
+      panelState,
+      isBusy: () => false,
+      close,
+    });
+    const back = new Event("popstate") as PopStateEvent;
+    Object.defineProperty(back, "state", { value: { wuDashboardIndex: 9 } });
+    windowPort.dispatchEvent(back);
+    expect(close).toHaveBeenCalledOnce();
+    expect(historyPort.pushState).toHaveBeenCalledWith(
+      panelState,
+      "",
+      "/manage-roster",
+    );
+    remove();
   });
 
   it("keeps the same dashboard index and panel open when Back arrives during work", () => {

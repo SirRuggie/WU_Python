@@ -1,0 +1,120 @@
+.roster-header {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.roster-header-title-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.roster-header-title .eyebrow {
+  margin: 0 0 2px;
+}
+.roster-header-title h1 {
+  margin: 0;
+  font-size: clamp(1.25rem, 2vw, 1.7rem);
+}
+.roster-header-title-row > .roster-menu {
+  width: min(320px, 42%);
+}
+.roster-header-publication {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 34px;
+}
+.roster-header-publication small {
+  color: var(--roster-text-muted);
+}
+.roster-header-publication > .roster-ui-button {
+  margin-left: auto;
+}
+.roster-header-working {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.roster-header-working > .roster-ui-button,
+.roster-header-unplaced > .roster-ui-button {
+  min-height: 44px;
+  padding: 6px 10px;
+}
+.roster-header-working strong {
+  font-size: 1rem;
+}
+.roster-header-unplaced {
+  display: flex;
+  gap: 6px;
+}
+.roster-header-more {
+  position: relative;
+  margin-left: auto;
+}
+.roster-header-more summary {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--roster-border);
+  border-radius: var(--roster-radius-pill);
+  background: var(--roster-surface-raised);
+  cursor: pointer;
+  list-style: none;
+}
+.roster-header-more summary::-webkit-details-marker {
+  display: none;
+}
+.roster-header-more summary[aria-disabled="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.roster-header-more summary:focus-visible {
+  outline: 3px solid var(--roster-focus);
+  outline-offset: 2px;
+}
+.roster-header-actions {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid var(--roster-border);
+  border-radius: var(--roster-radius-card);
+  background: var(--roster-surface);
+  box-shadow: 0 10px 26px #0009;
+}
+.roster-header-actions .roster-ui-button {
+  justify-content: flex-start;
+}
+@media (max-width: 650px) {
+  .roster-header-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .roster-header-title-row > .roster-menu {
+    width: 100%;
+  }
+  .roster-header-publication > .roster-ui-button {
+    margin-left: 0;
+  }
+  .roster-header-working {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .roster-header-unplaced {
+    grid-column: 1 / -1;
+  }
+  .roster-header-unplaced > .roster-ui-button:first-child {
+    flex: 1;
+  }
+  .roster-header-more {
+    margin-left: 0;
+  }
+}

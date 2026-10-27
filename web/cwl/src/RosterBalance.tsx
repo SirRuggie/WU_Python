@@ -237,7 +237,9 @@ export default function RosterBalance({
               }
               onClick={() => void run(true)}
             >
-              {busy ? "Applying…" : "Apply placements"}
+              {busy
+                ? "Applying…"
+                : `Apply ${preview.placements.length} move${preview.placements.length === 1 ? "" : "s"}`}
             </Button>
           </>
         ) : (

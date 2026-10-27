@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
-import { Button, Input, ProgressBar } from "./rosterUi/primitives";
-import { Search, Unlink, X } from "lucide-react";
+import { Input, ProgressBar } from "./rosterUi/primitives";
+import { ChevronRight, Search, Unlink } from "lucide-react";
 import ActionPanel from "./ActionPanel";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
 import { compactRosterWeight } from "./rosterCompactWeight";
@@ -133,26 +133,6 @@ export default function RosterAssignPanel({
       trigger={trigger}
       busy={busy || submitting}
       expandOnSearchFocus
-      footer={
-        <>
-          <Button
-            icon={X}
-            disabled={busy || submitting}
-            onClick={() => {
-              if (!pending.current) onClose();
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            icon={Unlink}
-            disabled={unavailable || !canUnassign}
-            onClick={() => void assign(null)}
-          >
-            Unassign
-          </Button>
-        </>
-      }
       onClose={() => {
         if (!pending.current) onClose();
       }}
@@ -189,23 +169,31 @@ export default function RosterAssignPanel({
             choose one pool to assign a clan.
           </p>
         )}
-        {pool !== null && (
+        {(pool !== null || canUnassign) && (
           <section
             className="roster-assign-destinations"
             aria-label="Hosting clan destinations"
           >
             <div className="roster-assign-destinations-heading">
-              <h3>{pool === "main" ? "Main" : "Lazy"} CWL hosting clans</h3>
-              <small>
-                {shownDestinations.length} of {destinations.length}
-              </small>
+              <h3>
+                {pool === null
+                  ? "Placement"
+                  : `${pool === "main" ? "Main" : "Lazy"} CWL hosting clans`}
+              </h3>
+              {pool !== null && (
+                <small>
+                  {shownDestinations.length} of {destinations.length}
+                </small>
+              )}
             </div>
-            {destinations.length === 0 && (
+            {pool !== null && destinations.length === 0 && (
               <p>No active hosting clans are available for this pool.</p>
             )}
-            {destinations.length > 0 && shownDestinations.length === 0 && (
-              <p>No hosting clans match “{search.trim()}”.</p>
-            )}
+            {pool !== null &&
+              destinations.length > 0 &&
+              shownDestinations.length === 0 && (
+                <p>No hosting clans match “{search.trim()}”.</p>
+              )}
             <ul>
               {shownDestinations.map(
                 ({
@@ -277,10 +265,38 @@ export default function RosterAssignPanel({
                           label={`${clan.name} projected capacity`}
                           valueText={`${projectedCount} of ${clan.effective_capacity}`}
                         />
+                        <ChevronRight
+                          className="roster-assign-chevron"
+                          aria-hidden="true"
+                        />
                       </button>
                     </li>
                   );
                 },
+              )}
+              {canUnassign && (
+                <li>
+                  <button
+                    type="button"
+                    className="roster-assign-clan roster-assign-unassign"
+                    disabled={unavailable}
+                    onClick={() => void assign(null)}
+                  >
+                    <span className="roster-assign-clan-head">
+                      <span className="roster-assign-clan-name">
+                        <Unlink aria-hidden="true" />
+                        <strong>Unassign selected accounts</strong>
+                      </span>
+                      <ChevronRight
+                        className="roster-assign-chevron"
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span className="roster-assign-clan-meta">
+                      Keeps signups and clears placement locks.
+                    </span>
+                  </button>
+                </li>
               )}
             </ul>
           </section>
@@ -324,7 +340,6 @@ export default function RosterAssignPanel({
             </details>
           )}
         </div>
-        <small>Unassign keeps signups and clears placement locks.</small>
         {error && (
           <p role="alert" className="roster-assign-error">
             {error}

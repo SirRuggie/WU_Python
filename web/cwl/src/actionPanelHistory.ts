@@ -40,7 +40,7 @@ export function installPanelBackHandler({
   panelState: Record<string, unknown>;
   isBusy: () => boolean;
   isTop?: () => boolean;
-  close: () => void;
+  close: () => void | boolean;
 }) {
   const onPopState = (event: PopStateEvent) => {
     if (!isTop()) return;
@@ -56,7 +56,11 @@ export function installPanelBackHandler({
       historyPort.pushState(panelState, "", windowPort.location.href);
       return;
     }
-    close();
+    if (close() === false) {
+      // A discard confirmation was cancelled after Back consumed this marker.
+      // Restore it so the next Back still targets the panel.
+      historyPort.pushState(panelState, "", windowPort.location.href);
+    }
   };
   windowPort.addEventListener("popstate", onPopState, true);
   return () => windowPort.removeEventListener("popstate", onPopState, true);
@@ -89,40 +93,4 @@ export function backOutOfPanelEntry({
     1500,
   );
   historyPort.back();
-}
-
-export type TriggerRect = { top: number; right: number; bottom: number };
-export type ViewportSize = { width: number; height: number };
-export type PanelAnchorStyle = {
-  "--action-panel-top": string;
-  "--action-panel-bottom": string;
-  "--action-panel-right": string;
-  "--action-panel-width": string;
-  "--action-panel-max-height": string;
-};
-
-export function actionPanelAnchor(
-  rect: TriggerRect,
-  viewport: ViewportSize,
-): PanelAnchorStyle {
-  const margin = 12;
-  const gap = 8;
-  const spaceBelow = Math.max(0, viewport.height - rect.bottom - margin - gap);
-  const spaceAbove = Math.max(0, rect.top - margin - gap);
-  const placeAbove = spaceBelow < 280 && spaceAbove > spaceBelow;
-  const available = placeAbove ? spaceAbove : spaceBelow;
-  const right = Math.max(margin, viewport.width - rect.right);
-  const width = Math.max(0, Math.min(544, viewport.width - right - margin));
-
-  return {
-    "--action-panel-top": placeAbove
-      ? "auto"
-      : `${Math.min(viewport.height - margin, rect.bottom + gap)}px`,
-    "--action-panel-bottom": placeAbove
-      ? `${Math.min(viewport.height - margin, viewport.height - rect.top + gap)}px`
-      : "auto",
-    "--action-panel-right": `${right}px`,
-    "--action-panel-width": `${width}px`,
-    "--action-panel-max-height": `${Math.max(120, Math.min(available || viewport.height - margin * 2, viewport.height - margin * 2))}px`,
-  };
 }

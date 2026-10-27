@@ -6,7 +6,9 @@
   border-color: var(--roster-border-subtle);
 }
 .roster-workspace.roster-ui
-  button:not(.roster-menu-trigger):not([role="tab"]):not(.roster-assign-clan) {
+  button:not(.roster-menu-trigger):not([role="tab"]):not(
+    .roster-assign-clan
+  ):not(.roster-player-body) {
   min-height: var(--roster-height-control);
   border-radius: var(--roster-radius-pill);
 }
@@ -105,6 +107,8 @@
   color-scheme: dark;
 }
 .roster-ui .roster-assign-clan {
+  position: relative;
+  padding-right: 2.3rem;
   grid-template-columns: minmax(0, 1fr);
   justify-content: stretch;
   justify-items: stretch;
@@ -120,4 +124,17 @@
   input:not([type="checkbox"]):not([type="radio"]) {
   min-height: var(--roster-height-control-comfortable);
   border-radius: var(--roster-radius-card);
+}
+
+.roster-ui .roster-assign-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.roster-workspace
+  :is(.roster-workflow-nav, .roster-list-pool-tabs, .roster-clan-chips) {
+  scrollbar-width: thin;
+  scrollbar-color: #807351 #191919;
 }

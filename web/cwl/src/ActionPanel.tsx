@@ -8,7 +8,6 @@ import {
 import { createPortal } from "react-dom";
 import "./ActionPanel.css";
 import {
-  actionPanelAnchor,
   backOutOfPanelEntry,
   installPanelBackHandler,
   isTopActionPanel,
@@ -22,7 +21,7 @@ type Props = {
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
-  onClose: () => void;
+  onClose: () => void | boolean;
   busy?: boolean;
   trigger: HTMLElement | null;
   expandOnSearchFocus?: boolean;
@@ -66,7 +65,6 @@ export default function ActionPanel({
   const panelId = useId();
   const marker = `action-panel:${panelId}`;
   const [searchFocused, setSearchFocused] = useState(false);
-  const [anchorStyle, setAnchorStyle] = useState<React.CSSProperties>({});
   busyRef.current = busy;
   onCloseRef.current = onClose;
 
@@ -76,14 +74,6 @@ export default function ActionPanel({
     const unregisterPanel = registerActionPanel(marker);
     const panelState = panelHistoryState(history.state, marker);
     history.pushState(panelState, "", location.href);
-    if (variant === "default" && trigger) {
-      setAnchorStyle(
-        actionPanelAnchor(trigger.getBoundingClientRect(), {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        }) as React.CSSProperties,
-      );
-    }
     modal.showModal();
     // Focus the explicit close control. Search inputs remain unfocused on open.
     closeButton.current?.focus({ preventScroll: true });
@@ -114,6 +104,13 @@ export default function ActionPanel({
       }
       unregisterPanel();
       window.requestAnimationFrame(() => {
+        // A menu may hand off to another modal in the same render. Its initial
+        // focus belongs to that modal, not to the now-inert menu trigger.
+        if (
+          document.querySelector("dialog[open]") &&
+          !trigger?.closest("dialog[open]")
+        )
+          return;
         if (canRestoreFocus(trigger)) trigger?.focus({ preventScroll: true });
         else focusFallback();
       });
@@ -130,13 +127,17 @@ export default function ActionPanel({
     <dialog
       ref={dialog}
       className={`action-panel action-panel-${variant}${searchFocused ? " is-search-focused" : ""}${className ? ` ${className}` : ""}`}
-      style={variant === "default" ? anchorStyle : undefined}
       aria-labelledby={`${panelId}-title`}
       onKeyDown={(event) => {
-        if (isTopActionPanel(marker) && dialog.current)
+        if (
+          isTopActionPanel(marker) &&
+          dialog.current?.contains(event.target as Node)
+        )
           cycleDialogTab(dialog.current, event, document.activeElement);
       }}
       onCancel={(event) => {
+        // React portal events from a nested native dialog are not this panel's cancel.
+        if (event.target !== dialog.current) return;
         if (!isTopActionPanel(marker)) {
           event.preventDefault();
           event.stopPropagation();
