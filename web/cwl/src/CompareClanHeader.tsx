@@ -36,18 +36,30 @@ export default function CompareClanHeader({
         </strong>
         {menu}
       </div>
+      <div className="compare-clan-metrics">
+        <strong className="compare-total">
+          {totalRosterWeight(summary.totalWeight)}
+        </strong>
+        {summary.knownWeights < summary.count && (
+          <small>
+            {summary.knownWeights} of {summary.count} weighed
+          </small>
+        )}
+        <small>
+          Avg TH{" "}
+          {summary.averageTownHall === null
+            ? "—"
+            : summary.averageTownHall.toLocaleString(undefined, {
+                maximumFractionDigits: 1,
+              })}
+          {summary.knownTownHalls < summary.count &&
+            ` · ${summary.knownTownHalls} of ${summary.count} known`}
+        </small>
+      </div>
       {!compact && (
         <small>
           {clan.cwl_league || "League unavailable"} · {clan.tag}
           {range && ` · ${range}`}
-        </small>
-      )}
-      <strong className="compare-total">
-        {totalRosterWeight(summary.totalWeight)}
-      </strong>
-      {summary.knownWeights < summary.count && (
-        <small>
-          {summary.knownWeights} of {summary.count} weighed
         </small>
       )}
       <small className="compare-tally">
@@ -60,18 +72,6 @@ export default function CompareClanHeader({
           </span>
         )}
       </small>
-      {!compact && (
-        <small>
-          Avg TH{" "}
-          {summary.averageTownHall === null
-            ? "—"
-            : summary.averageTownHall.toLocaleString(undefined, {
-                maximumFractionDigits: 1,
-              })}
-          {summary.knownTownHalls < summary.count &&
-            ` · ${summary.knownTownHalls} of ${summary.count} known`}
-        </small>
-      )}
       <ProgressBar
         className={
           summary.count > clan.effective_capacity

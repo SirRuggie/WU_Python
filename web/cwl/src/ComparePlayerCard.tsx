@@ -51,13 +51,15 @@ export default function ComparePlayerCard({
             )}
           </strong>
         </span>
-        <span className="compare-player-meta">
-          {account.tag} · TH {account.town_hall ?? "—"}{" "}
-          {account.kept && (
-            <LockKeyhole size={15} aria-label="Locked placement" />
-          )}
+        <span className="compare-player-context">
+          <span className="compare-player-meta">
+            {account.tag} · TH {account.town_hall ?? "—"}{" "}
+            {account.kept && (
+              <LockKeyhole size={15} aria-label="Locked placement" />
+            )}
+          </span>
+          <span className="compare-location-line">{location.detail}</span>
         </span>
-        <span className="compare-location-line">{location.detail}</span>
         <span className="compare-player-tags">
           <span className={`compare-tag is-${location.state}`}>
             {location.label}

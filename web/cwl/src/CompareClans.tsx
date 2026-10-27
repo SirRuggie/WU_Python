@@ -165,10 +165,9 @@ export default function CompareClans({
     const measure = () => {
       setOverflow(el.scrollWidth > el.clientWidth + 2);
       updateEdges();
-      const top = el.getBoundingClientRect().top;
-      setColumnHeight(
-        Math.max(280, window.innerHeight - Math.max(0, top) - 24),
-      );
+      const top =
+        document.querySelector(".topbar")?.getBoundingClientRect().height ?? 74;
+      setColumnHeight(Math.max(280, window.innerHeight - top - 24));
     };
     const observer = new ResizeObserver(measure);
     observer.observe(el);
