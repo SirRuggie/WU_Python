@@ -1,3 +1,4 @@
+import { placementMessage } from "./publicationAwareness";
 import { createComparisonMemory } from "./comparisonMemory";
 import SortTrigger from "./rosterUi/SortTrigger";
 import { rosterSortOptions } from "./rosterSortOptions";
@@ -94,6 +95,7 @@ export default function RosterWorkspace({
   const [roster, setRoster] = useState<RosterSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hasPublication, setHasPublication] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [panel, setPanel] = useState<
     "assign" | "signup" | "balance" | "auto" | null
@@ -391,12 +393,16 @@ export default function RosterWorkspace({
     }
   }, [roster, canRoster, canSignups]);
 
-  const afterWrite = async (success: string) => {
+  const afterWrite = async (success: string, placement = false) => {
+    if (placement) success = placementMessage(success, hasPublication);
     try {
       const latest = await refresh();
       if (latest?.undo && latest.undo.revision === latest.revision) {
         undoReceipt.current = latest.undo;
-        setUndoToast({ status: "available", label: latest.undo.label });
+        setUndoToast({
+          status: "available",
+          label: placementMessage(latest.undo.label, hasPublication),
+        });
       }
       setFeedback({ kind: "success", text: success });
     } catch (error) {
@@ -446,7 +452,11 @@ export default function RosterWorkspace({
         revision: roster.revision,
         ...body,
       });
-      if (activeSeason.current === sid) await afterWrite(success);
+      if (activeSeason.current === sid)
+        await afterWrite(
+          success,
+          "assigned_clan_tag" in body || "kept" in body,
+        );
       return true;
     } catch (error) {
       if (activeSeason.current === sid) await fail(error);
@@ -621,6 +631,7 @@ export default function RosterWorkspace({
           destination
             ? "Accounts assigned. Placements locked."
             : "Accounts unassigned. Signups kept.",
+          true,
         );
       return true;
     } catch (cause) {
@@ -699,7 +710,10 @@ export default function RosterWorkspace({
       return;
     const sid = seasonId;
     mutationPending.current = true;
-    setUndoToast({ status: "pending", label: undoReceipt.current.label });
+    setUndoToast({
+      status: "pending",
+      label: placementMessage(undoReceipt.current.label, hasPublication),
+    });
     setBusy(true);
     setFeedback(null);
     try {
@@ -710,7 +724,7 @@ export default function RosterWorkspace({
       if (activeSeason.current === sid) {
         undoReceipt.current = null;
         setUndoToast(null);
-        await afterWrite("Last placement change undone.");
+        await afterWrite("Last placement change undone.", true);
       }
     } catch (error) {
       if (activeSeason.current === sid) {
@@ -788,9 +802,7 @@ export default function RosterWorkspace({
           onBusy={setBusy}
           onPermissionError={(error) => void fail(error)}
           onSaved={async () => {
-            await afterWrite(
-              "Placements applied. Signups unchanged. Publish when ready.",
-            );
+            await afterWrite("Placements applied. Signups unchanged.", true);
           }}
         />
       )}
@@ -822,6 +834,8 @@ export default function RosterWorkspace({
         seasonId={seasonId}
         seasons={seasons}
         roster={roster}
+        showAwareness={mode !== "weights"}
+        onPublication={(draft) => setHasPublication(!!draft.published)}
         pool={viewPool}
         canRoster={canRoster}
         canSignups={canSignups}

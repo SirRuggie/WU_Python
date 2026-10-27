@@ -102,6 +102,8 @@ A3 readability + fixes: three text levels with a 12px minimum, softened location
 
 A4 fixes: reset selected Compare rail text-fill to currentColor; queue one forced Refresh during an in-flight read; time out location reads after 20 seconds without advancing freshness. Hidden pages pause scheduling but allow pending reads to complete; dispose/season/pool changes still abort. Re-check 5 minutes after the last completed read (about 6.5 minutes between starts after a full follow-up cycle). Tally labels include accessible separators and red fills use a softer tint. C4 remains on hold.
 
+C4 publish awareness: reuse the header publication response for a persistent placement-only banner with permission-based review actions. Placement-edit messages identify draft-only changes; signup messages remain unchanged. Finalize fetches the existing published account export only while its review is open, compares assignments/pools and available saved account fields, and includes Other changes for weight/details differences or otherwise unexplained changed status. A version mismatch requires refresh; publishing remains revision-checked and always requires an explicit confirmation.
+
 ## Backend facts (from code discovery)
 
 - Endpoints (prefix `/api/cwl`):
