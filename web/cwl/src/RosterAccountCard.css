@@ -173,6 +173,12 @@
     text-overflow: ellipsis;
     font-size: 15px;
   }
+  .roster-player-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
   .roster-player-identity > strong img {
     flex: 0 0 22px;
     width: 22px;
@@ -232,6 +238,8 @@
   .roster-player-assignment > strong svg {
     width: 13px;
     height: 13px;
+    margin-inline-end: 5px;
+    vertical-align: -2px;
   }
   .roster-player-current > span::before {
     content: "· ";

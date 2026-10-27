@@ -70,8 +70,9 @@ export default function RosterSelectionBar({
             <StatusPill tone="info">{unloadedCount} not shown yet</StatusPill>
           )}
           {overLimit && (
-            <span role="alert">
+            <span role="alert" className="roster-selection-limit">
               <StatusPill tone="danger">Max 50 per action</StatusPill>
+              <span>Narrow your selection to 50 or fewer</span>
             </span>
           )}
         </div>

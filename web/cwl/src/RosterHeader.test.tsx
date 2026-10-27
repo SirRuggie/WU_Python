@@ -37,11 +37,17 @@ const roster: RosterSnapshot = {
   ],
 };
 
-function render(pool: "main" | "lazy" | "all", seasonId = "1") {
+function render(
+  pool: "main" | "lazy" | "all",
+  seasonId = "1",
+  seasonLabel = "June",
+) {
   return renderToStaticMarkup(
     <RosterHeader
       seasonId={seasonId}
-      seasons={[{ id: 1, label: "June", status: "active", signup_open: true }]}
+      seasons={[
+        { id: 1, label: seasonLabel, status: "active", signup_open: true },
+      ]}
       roster={roster}
       pool={pool}
       canRoster
@@ -61,6 +67,19 @@ function render(pool: "main" | "lazy" | "all", seasonId = "1") {
 describe("roster header counts", () => {
   it("keeps the season selector available before a season is selected", () => {
     expect(render("all", "")).toContain("Select a season");
+  });
+  it("shows a compact month while retaining the full accessible season and menu label", () => {
+    const html = render("all", "1", "November 2026");
+    expect(html).toContain('aria-label="Season: November 2026"');
+    expect(html).toContain(
+      'class="roster-header-season-short" aria-hidden="true">Nov 2026</span>',
+    );
+    expect(html).toContain('class="roster-menu-current">November 2026</span>');
+  });
+  it("keeps custom season names intact in the compact label", () => {
+    expect(render("all", "1", "Championship season")).toContain(
+      'class="roster-header-season-short" aria-hidden="true">Championship season</span>',
+    );
   });
   it("scopes signed and unplaced to the chosen pool but keeps missing weight global", () => {
     expect(render("main")).toContain("<strong>2</strong> signed");

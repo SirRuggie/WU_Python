@@ -9,6 +9,30 @@ import "./RosterHeader.css";
 
 type StatusFilter = "all" | "unassigned" | "missing_weight";
 
+const monthNames = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function compactSeasonLabel(label: string): string {
+  const match = /^(\S+)\s+(\d{4})$/.exec(label.trim());
+  if (!match) return label;
+  const month = monthNames.find(
+    (name) => name.toLowerCase() === match[1].toLowerCase(),
+  );
+  return month ? `${month.slice(0, 3)} ${match[2]}` : label;
+}
+
 type Props = {
   seasonId: string;
   seasons: Season[];
@@ -130,6 +154,19 @@ export default function RosterHeader({
       : publicationStatus === "changed" || publicationStatus === "unavailable"
         ? "warning"
         : "neutral";
+  const mobilePublicationLabel =
+    publicationStatus === "unpublished"
+      ? "Draft"
+      : publicationStatus === "changed"
+        ? "Changes"
+        : publicationStatus === "current"
+          ? "Published"
+          : publicationStatus === "unavailable"
+            ? "Unavailable"
+            : "Checking";
+  const selectedSeasonLabel = seasons.find(
+    (season) => String(season.id) === seasonId,
+  )?.label;
   const canAutoPlace =
     canRoster &&
     !archived &&
@@ -152,7 +189,12 @@ export default function RosterHeader({
               className="roster-header-draft-pill"
               tone={publicationTone}
             >
-              {publicationLabel}
+              <span className="roster-header-status-full">
+                {publicationLabel}
+              </span>
+              <span className="roster-header-status-short" aria-hidden="true">
+                {mobilePublicationLabel}
+              </span>
             </StatusPill>
           )}
           {canPublish && onFinalize && publicationStatus !== "current" && (
@@ -222,6 +264,7 @@ export default function RosterHeader({
         <RosterMenu
           label="Season"
           value={seasonId}
+          aria-label={`Season: ${selectedSeasonLabel || "Select a season"}`}
           disabled={uiLocked}
           onValueChange={onSeasonChange}
           options={[
@@ -232,6 +275,11 @@ export default function RosterHeader({
             })),
           ]}
         />
+        <span className="roster-header-season-short" aria-hidden="true">
+          {selectedSeasonLabel
+            ? compactSeasonLabel(selectedSeasonLabel)
+            : "Season"}
+        </span>
         {publicationStatus === "unavailable" && (
           <Button onClick={() => setPublicationAttempt((value) => value + 1)}>
             Retry status

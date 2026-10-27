@@ -230,3 +230,113 @@
     font-size: 13px;
   }
 }
+
+.roster-header-status-short,
+.roster-header-season-short {
+  display: none;
+}
+
+@media (max-width: 650px) {
+  .roster-header {
+    grid-template-columns: 90px minmax(0, 1fr) auto auto;
+    column-gap: 4px;
+  }
+  .roster-header-title-row,
+  .roster-header-title-actions,
+  .roster-header-publication {
+    display: contents;
+  }
+  .roster-header-title {
+    grid-column: 1 / -1;
+  }
+  .roster-header-publication > .roster-menu {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+    min-width: 0;
+  }
+  .roster-header-publication .roster-menu-trigger {
+    position: relative;
+    isolation: isolate;
+    box-sizing: border-box;
+    height: 44px;
+    min-height: 44px;
+    padding: 4px 8px;
+    border: 0;
+    background: transparent;
+  }
+  .roster-header-publication .roster-menu-chevron {
+    position: absolute;
+    right: 6px;
+    width: 14px;
+    height: 14px;
+  }
+  .roster-header-publication .roster-menu-trigger::before {
+    position: absolute;
+    z-index: -1;
+    inset: 4px 0;
+    border: 1px solid var(--roster-border);
+    border-radius: var(--roster-radius-control);
+    background: var(--roster-surface-raised);
+    content: "";
+  }
+  .roster-header-publication .roster-menu-trigger-copy {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .roster-header-season-short {
+    z-index: 1;
+    grid-column: 1;
+    grid-row: 2;
+    display: block;
+    align-self: center;
+    min-width: 0;
+    padding-left: 9px;
+    padding-right: 20px;
+    overflow: hidden;
+    color: var(--roster-text);
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 36px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .roster-header-draft-pill {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: stretch;
+    align-self: center;
+    max-width: none;
+    min-width: 0;
+    height: 36px;
+    min-height: 36px;
+  }
+  .roster-header-status-full {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .roster-header-status-short {
+    display: inline;
+  }
+  .roster-header-finalize {
+    grid-column: 3;
+    grid-row: 2;
+  }
+  .roster-header-more {
+    grid-column: 4;
+    grid-row: 2;
+  }
+  .roster-header-publication > .roster-ui-button,
+  .roster-header-working {
+    grid-column: 1 / -1;
+  }
+}

@@ -50,6 +50,7 @@ describe("roster account card", () => {
     const html = render();
     expect(html).toContain("&lt;Alpha &amp; Beta&gt;");
     expect(html).not.toContain("<Alpha & Beta>");
+    expect(html).toContain('aria-label="Select &lt;Alpha &amp; Beta&gt;"');
     expect(html).toContain("No weight");
     expect(html).toContain("Held unassigned");
     expect(html).toContain('is-unknown">—</span>');
