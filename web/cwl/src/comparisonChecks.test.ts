@@ -51,7 +51,7 @@ describe("Compare check scheduler", () => {
     vi.useFakeTimers();
     let resolve!: (value: boolean) => void;
     const check = vi.fn(
-      () =>
+      (_force: boolean, _signal: AbortSignal) =>
         new Promise<boolean>((r) => {
           resolve = r;
         }),
@@ -59,7 +59,9 @@ describe("Compare check scheduler", () => {
     const busy = vi.fn();
     const run = createComparisonChecks(check, busy);
     run.setActive(true);
+    const signal = check.mock.calls[0][1];
     run.dispose();
+    expect(signal.aborted).toBe(true);
     resolve(true);
     await vi.advanceTimersByTimeAsync(90000);
     expect(check).toHaveBeenCalledTimes(1);
@@ -175,5 +177,29 @@ it("retries failed empty first loads every two seconds for a bounded cycle", asy
   expect(check).toHaveBeenCalledTimes(45);
   await vi.advanceTimersByTimeAsync(1);
   expect(check).toHaveBeenCalledTimes(46);
+  run.dispose();
+});
+
+it("retains one queued forced Refresh while hidden and clears checking", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: boolean) => void;
+  const check = vi.fn(
+    (_force: boolean, _signal: AbortSignal) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const busy = vi.fn();
+  const run = createComparisonChecks(check, busy);
+  run.setActive(true);
+  run.refresh();
+  run.setActive(false);
+  expect(busy).toHaveBeenLastCalledWith(false);
+  finish(false);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(check).toHaveBeenCalledTimes(1);
+  run.setActive(true);
+  expect(check).toHaveBeenCalledTimes(2);
+  expect(check.mock.calls[1][0]).toBe(true);
   run.dispose();
 });

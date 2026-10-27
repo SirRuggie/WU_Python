@@ -7,11 +7,18 @@ import { useComparisonLocations } from "./useComparisonLocations";
 let host: HTMLDivElement, root: Root;
 let memory = createComparisonMemory();
 const fetcher = vi.fn();
-function Probe({ pool = "main" }: { pool?: string }) {
-  const result = useComparisonLocations(memory, "1", pool, true, 1, 0);
+function Probe({
+  pool = "main",
+  season = "1",
+}: {
+  pool?: string;
+  season?: string;
+}) {
+  const result = useComparisonLocations(memory, season, pool, true, 1, 0);
   return (
     <>
       <output>{JSON.stringify(result.records)}</output>
+      <p>{result.error}</p>
       <button onClick={result.refresh}>Refresh</button>
     </>
   );
@@ -172,4 +179,38 @@ it("pending Refresh clicks produce exactly one refresh=1 request after settling"
   expect(
     fetcher.mock.calls.filter((call) => String(call[0]).includes("refresh=1")),
   ).toHaveLength(1);
+});
+
+it("pool, season and disposal abort their pending transport signals", async () => {
+  fetcher.mockImplementation(() => new Promise(() => {}));
+  await mount();
+  let signals = fetcher.mock.calls.map((call) => call[1].signal as AbortSignal);
+  await mount("lazy");
+  expect(signals.every((signal) => signal.aborted)).toBe(true);
+  signals = fetcher.mock.calls
+    .slice(-2)
+    .map((call) => call[1].signal as AbortSignal);
+  await act(async () => root.render(<Probe pool="lazy" season="2" />));
+  expect(signals.every((signal) => signal.aborted)).toBe(true);
+  signals = fetcher.mock.calls
+    .slice(-2)
+    .map((call) => call[1].signal as AbortSignal);
+  await leave();
+  expect(signals.every((signal) => signal.aborted)).toBe(true);
+});
+it("timeout displays the last-results error without advancing freshness", async () => {
+  fetcher.mockImplementation(
+    (_url: string, options: RequestInit) =>
+      new Promise((_, reject) =>
+        options.signal!.addEventListener("abort", () =>
+          reject(options.signal!.reason),
+        ),
+      ),
+  );
+  await mount();
+  await act(async () => vi.advanceTimersByTimeAsync(20000));
+  expect(host.textContent).toContain(
+    "Couldn't update locations · showing last results",
+  );
+  expect(memory.pools.get("main")!.lastCheck).toBe(-Infinity);
 });

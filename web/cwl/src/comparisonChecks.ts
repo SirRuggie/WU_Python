@@ -93,7 +93,7 @@ export function createComparisonChecks(
       active = value;
       if (!value) {
         clearTimeout(timer);
-        if (!pending) busy(false);
+        busy(false);
       } else if (pending) return;
       else if (queuedRefresh) {
         queuedRefresh = false;

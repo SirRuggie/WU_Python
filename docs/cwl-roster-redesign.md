@@ -122,7 +122,7 @@ A4 fixes: reset selected Compare rail text-fill to currentColor; queue one force
 - Permissions (`cwl_permissions.py`): `cwl_roster`, `cwl_signups`, `cwl_settings`, `cwl_publish`, plus send permissions. Keep these capabilities separate in the UI.
 - Archived seasons are read-only; draft seasons are editable regardless of date.
 
-- Compare clans loads locations from the cache (no forced lookup), re-checks every 5 min while visible with ≥1 clan chosen, and forces only via Refresh. Stale server entries still carry current_clan_checked_at; outside_family is only sent while current.
+- Compare clans loads locations from the cache (no forced lookup), re-checks 5 minutes after the last completed read while visible with ≥1 clan chosen, and forces only via Refresh. Stale server entries still carry current_clan_checked_at; outside_family is only sent while current.
 
 ## Release plan
 

@@ -8,7 +8,7 @@ import type { RosterSnapshot } from "./roster";
 vi.mock("./useComparisonLocations", () => ({
   useComparisonLocations: () => ({
     records: {},
-    checking: false,
+    checking: true,
     error: "",
     now: 0,
     published: null,
@@ -84,6 +84,11 @@ it("filters the real Compare view to league Y then sorts without losing chosen l
         />,
       ),
     );
+    const refresh = host.querySelector<HTMLButtonElement>(
+      '.compare-toolbar button[aria-busy="true"]',
+    )!;
+    expect(refresh).not.toBeNull();
+    expect(refresh.disabled).toBe(false);
     await act(async () => button("Filters").click());
     const checkbox = [
       ...document.querySelectorAll('input[type="checkbox"]'),
