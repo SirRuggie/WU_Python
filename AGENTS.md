@@ -48,3 +48,17 @@ For war reminders, run `./.venv/bin/python tools/check_war_reminders.py`. The
 architecture tests enforce the shared-service and storage boundaries; add
 regressions for any newly discovered failure. See `docs/war-reminders.md` for
 storage lifetime, scheduling, and delivery guarantees.
+
+## Production frontend isolation
+
+- The production dashboard frontend is served from
+  `/home/ruggie/.local/share/wu-dashboard/current`, an atomic symlink to an
+  external immutable release directory. Workspace `web/cwl/dist` is never a
+  deployment target. Do not restore the old shared-output configuration.
+- Build deployable frontend assets only from a clean tagged isolated checkout;
+  follow `docs/dashboard-frontend-releases.md`. Preserve other deployed features.
+- Never report "not deployed" without fetching the public page and comparing its
+  entry and affected feature asset hashes to the known deployed release.
+- For approved deployments, record backup/count evidence, retain rollback assets,
+  verify public hashes, and use read-only smoke checks unless writes are explicitly
+  authorized. A successful local build is not deployment evidence.
