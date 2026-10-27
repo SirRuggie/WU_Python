@@ -211,20 +211,21 @@
   content: "· ";
 }
 .compare-workspace .compare-tally {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   column-gap: 6px;
 }
-.compare-tally .compare-count-arrived {
+.compare-workspace .compare-tally .compare-count-arrived {
   color: var(--roster-success);
 }
-.compare-tally .compare-count-missing {
+.compare-workspace .compare-tally .compare-count-missing {
   color: var(--roster-danger);
 }
-.compare-tally .compare-count-checking {
+.compare-workspace .compare-tally .compare-count-checking {
   color: var(--roster-text-muted);
 }
-.compare-tally .compare-count-outside {
+.compare-workspace .compare-tally .compare-count-outside {
   color: var(--roster-warning);
 }
 .compare-clan-summary .roster-ui-progress {
@@ -557,6 +558,8 @@
 
 .compare-tally-separator {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   overflow: hidden;
