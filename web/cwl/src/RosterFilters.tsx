@@ -1,3 +1,4 @@
+import RosterFilterOptions from "./RosterFilterOptions";
 import { useEffect, useState, type ReactNode } from "react";
 import { Filter, Search, SlidersHorizontal } from "lucide-react";
 import ActionPanel from "./ActionPanel";
@@ -290,32 +291,22 @@ export default function RosterFilters({
               Choose any status within a section. Different sections narrow the
               result together.
             </p>
-            <fieldset>
-              <legend>Status</legend>
-              <div className="roster-filters-options">
-                {ROSTER_RELEASE_STATUSES.map((status) => (
-                  <label key={status}>
-                    <input
-                      type="checkbox"
-                      checked={draft.statuses.includes(status)}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          statuses: event.target.checked
-                            ? [...current.statuses, status]
-                            : current.statuses.filter(
-                                (item) => item !== status,
-                              ),
-                        }))
-                      }
-                    />
-                    <span>{statusLabels[status]}</span>
-                    <small>{result.facets.status[status]}</small>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+            <RosterFilterOptions
+              title="Status"
+              options={ROSTER_RELEASE_STATUSES.map((status) => ({
+                value: status,
+                label: statusLabels[status],
+                count: result.facets.status[status],
+              }))}
+              selected={draft.statuses}
+              disabled={disabled}
+              onChange={(statuses) =>
+                setDraft((current) => ({
+                  ...current,
+                  statuses: statuses as RosterReleaseStatus[],
+                }))
+              }
+            />
             <fieldset>
               <legend>Weight range (k)</legend>
               <div className="roster-filters-weight">

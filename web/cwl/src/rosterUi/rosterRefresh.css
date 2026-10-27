@@ -6,11 +6,11 @@
   border-color: var(--roster-border-subtle);
 }
 .roster-workspace.roster-ui
-  button:not(.roster-menu-trigger):not([role="tab"]):not(
-    .roster-assign-clan
-  ):not(.roster-player-body):not(.roster-clan-chip):not(
-    .cwl-pool-tabs > button
-  ):not(.roster-list-pool-tabs > button) {
+  button:not(.compare-mobile-card):not(.compare-player-body):not(
+    .roster-menu-trigger
+  ):not([role="tab"]):not(.roster-assign-clan):not(.roster-player-body):not(
+    .roster-clan-chip
+  ):not(.cwl-pool-tabs > button):not(.roster-list-pool-tabs > button) {
   min-height: var(--roster-height-control);
   border-radius: var(--roster-radius-pill);
 }

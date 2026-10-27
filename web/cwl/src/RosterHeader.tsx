@@ -6,6 +6,7 @@ import type { RosterSnapshot } from "./roster";
 import RosterMenu from "./rosterUi/Menu";
 import { Button, StatusPill } from "./rosterUi/primitives";
 import "./RosterHeader.css";
+import PublicationAwarenessBanner from "./PublicationAwarenessBanner";
 
 type StatusFilter = "all" | "unassigned" | "missing_weight";
 
@@ -51,6 +52,8 @@ type Props = {
   onFinalize?: () => void;
   onStatusFilter: (status: StatusFilter) => void;
   onAccessError: (error: ApiError) => void;
+  showAwareness?: boolean;
+  onPublication?: (draft: PublicationDraft) => void;
 };
 
 export default function RosterHeader({
@@ -71,11 +74,14 @@ export default function RosterHeader({
   onFinalize,
   onStatusFilter,
   onAccessError,
+  showAwareness = true,
+  onPublication,
 }: Props) {
   const [publication, setPublication] = useState<{
     seasonId: string;
     status: ReturnType<typeof draftPublicationStatus> | "unavailable";
     publishedAt: string | null;
+    draft?: PublicationDraft;
   } | null>(null);
   const [publicationAttempt, setPublicationAttempt] = useState(0);
   const actions = useRef<HTMLDetailsElement>(null);
@@ -83,6 +89,8 @@ export default function RosterHeader({
   const request = useRef(0);
   const onAccessErrorRef = useRef(onAccessError);
   onAccessErrorRef.current = onAccessError;
+  const publicationCallback = useRef(onPublication);
+  publicationCallback.current = onPublication;
 
   useEffect(() => {
     if (!seasonId || (!canRoster && !canSignups && !canPublish)) {
@@ -91,7 +99,7 @@ export default function RosterHeader({
     }
     const turn = ++request.current;
     let active = true;
-    setPublication(null);
+    // Retain this season’s last status until the replacement read completes.
     void api<PublicationDraft>(
       `/seasons/${encodeURIComponent(seasonId)}/publication`,
     )
@@ -101,7 +109,9 @@ export default function RosterHeader({
           seasonId,
           status: draftPublicationStatus(draft),
           publishedAt: draft.published?.published_at ?? null,
+          draft,
         });
+        publicationCallback.current?.(draft);
       })
       .catch((error) => {
         if (!active || turn !== request.current) return;
@@ -288,6 +298,17 @@ export default function RosterHeader({
           </Button>
         )}
       </div>
+      {showAwareness &&
+        publication?.seasonId === seasonId &&
+        publication.draft && (
+          <PublicationAwarenessBanner
+            published={publication.draft.published}
+            changed={publication.draft.draft_changed}
+            canPublish={canPublish}
+            onReview={onFinalize}
+            disabled={uiLocked}
+          />
+        )}
       {roster && (
         <div
           className="roster-header-working"

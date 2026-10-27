@@ -1,3 +1,8 @@
+import { placementMessage } from "./publicationAwareness";
+import { createComparisonMemory } from "./comparisonMemory";
+import SortTrigger from "./rosterUi/SortTrigger";
+import { rosterSortOptions } from "./rosterSortOptions";
+import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
 import RosterBalance from "./RosterBalance";
 import ActionPanel from "./ActionPanel";
 import type { MemberOption } from "./MemberPicker";
@@ -38,6 +43,7 @@ import CompareClans from "./CompareClans";
 import {
   Fragment,
   useCallback,
+  useMemo,
   useEffect,
   useRef,
   useState,
@@ -82,12 +88,14 @@ export default function RosterWorkspace({
   const canRoster = useDashboardPermission("cwl_roster");
   const canSignups = useDashboardPermission("cwl_signups");
   const canPublish = useDashboardPermission("cwl_publish");
+  const comparisonMemory = useMemo(createComparisonMemory, [seasonId]);
   const season = seasons.find((item) => String(item.id) === seasonId);
   const archived = season?.status === "archived";
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hasPublication, setHasPublication] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [panel, setPanel] = useState<
     "assign" | "signup" | "balance" | "auto" | null
@@ -385,12 +393,16 @@ export default function RosterWorkspace({
     }
   }, [roster, canRoster, canSignups]);
 
-  const afterWrite = async (success: string) => {
+  const afterWrite = async (success: string, placement = false) => {
+    if (placement) success = placementMessage(success, hasPublication);
     try {
       const latest = await refresh();
       if (latest?.undo && latest.undo.revision === latest.revision) {
         undoReceipt.current = latest.undo;
-        setUndoToast({ status: "available", label: latest.undo.label });
+        setUndoToast({
+          status: "available",
+          label: placementMessage(latest.undo.label, hasPublication),
+        });
       }
       setFeedback({ kind: "success", text: success });
     } catch (error) {
@@ -440,7 +452,11 @@ export default function RosterWorkspace({
         revision: roster.revision,
         ...body,
       });
-      if (activeSeason.current === sid) await afterWrite(success);
+      if (activeSeason.current === sid)
+        await afterWrite(
+          success,
+          "assigned_clan_tag" in body || "kept" in body,
+        );
       return true;
     } catch (error) {
       if (activeSeason.current === sid) await fail(error);
@@ -615,6 +631,7 @@ export default function RosterWorkspace({
           destination
             ? "Accounts assigned. Placements locked."
             : "Accounts unassigned. Signups kept.",
+          true,
         );
       return true;
     } catch (cause) {
@@ -693,7 +710,10 @@ export default function RosterWorkspace({
       return;
     const sid = seasonId;
     mutationPending.current = true;
-    setUndoToast({ status: "pending", label: undoReceipt.current.label });
+    setUndoToast({
+      status: "pending",
+      label: placementMessage(undoReceipt.current.label, hasPublication),
+    });
     setBusy(true);
     setFeedback(null);
     try {
@@ -704,7 +724,7 @@ export default function RosterWorkspace({
       if (activeSeason.current === sid) {
         undoReceipt.current = null;
         setUndoToast(null);
-        await afterWrite("Last placement change undone.");
+        await afterWrite("Last placement change undone.", true);
       }
     } catch (error) {
       if (activeSeason.current === sid) {
@@ -738,6 +758,8 @@ export default function RosterWorkspace({
     activeClans.find((clan) => clan.tag === ruleTag) || activeClans[0];
   const clanName = (tag: string | null) =>
     roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
+
+  useEffect(() => closeRosterActionMenus(), [seasonId, poolFilter, mode]);
 
   return (
     <div
@@ -780,9 +802,7 @@ export default function RosterWorkspace({
           onBusy={setBusy}
           onPermissionError={(error) => void fail(error)}
           onSaved={async () => {
-            await afterWrite(
-              "Placements applied. Signups unchanged. Publish when ready.",
-            );
+            await afterWrite("Placements applied. Signups unchanged.", true);
           }}
         />
       )}
@@ -814,6 +834,8 @@ export default function RosterWorkspace({
         seasonId={seasonId}
         seasons={seasons}
         roster={roster}
+        showAwareness={mode !== "weights"}
+        onPublication={(draft) => setHasPublication(!!draft.published)}
         pool={viewPool}
         canRoster={canRoster}
         canSignups={canSignups}
@@ -1090,7 +1112,9 @@ export default function RosterWorkspace({
           )}
           {canRoster && mode === "compare" && (
             <CompareClans
-              key={`${seasonId}:${poolFilter}`}
+              memory={comparisonMemory}
+              refreshKey={refreshEpoch}
+              key={seasonId}
               pool={poolFilter}
               seasonId={seasonId}
               roster={roster}
@@ -1112,16 +1136,18 @@ export default function RosterWorkspace({
                   setReleasePreferences((current) => ({ ...current, ...next }))
                 }
               >
-                <button
+                <SortTrigger
                   ref={sortTrigger}
                   disabled={uiLocked || !!editingTag}
-                  type="button"
-                  className="roster-ui-button roster-sort-trigger"
+                  label={
+                    rosterSortOptions.find(
+                      ([value]) => value === releasePreferences.sort,
+                    )?.[1] || "Unassigned first"
+                  }
+                  grouped={groupByDiscord}
                   aria-expanded={sortOpen}
                   onClick={() => setSortOpen(true)}
-                >
-                  Sort{groupByDiscord ? " · Grouped" : ""}
-                </button>
+                />
                 {sortOpen && (
                   <ActionPanel
                     title="Sort accounts"
@@ -1130,17 +1156,7 @@ export default function RosterWorkspace({
                     onClose={() => setSortOpen(false)}
                   >
                     <div className="roster-sort-options">
-                      {[
-                        ["unassigned_first", "Unassigned first"],
-                        ["weight_desc", "Weight: highest first"],
-                        ["weight_asc", "Weight: lowest first"],
-                        ["name", "Name A–Z"],
-                        ["town_hall_desc", "TH: highest first"],
-                        ["town_hall_asc", "TH: lowest first"],
-                        ["assigned_clan", "Assigned clan"],
-                        ["signed_up_desc", "Signup: newest first"],
-                        ["signed_up_asc", "Signup: oldest first"],
-                      ].map(([value, label]) => (
+                      {rosterSortOptions.map(([value, label]) => (
                         <Button
                           key={value}
                           aria-pressed={releasePreferences.sort === value}

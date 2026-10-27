@@ -1,3 +1,4 @@
+import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
 import {
   useId,
   useLayoutEffect,
@@ -69,6 +70,7 @@ export default function ActionPanel({
   onCloseRef.current = onClose;
 
   useLayoutEffect(() => {
+    closeRosterActionMenus();
     const modal = dialog.current;
     if (!modal) return;
     const unregisterPanel = registerActionPanel(marker);

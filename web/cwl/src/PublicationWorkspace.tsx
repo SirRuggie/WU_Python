@@ -1,3 +1,5 @@
+import PublicationChanges from "./PublicationChanges";
+import ConfirmDialog from "./ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Season } from './api';
 import ClanRosterImages from './ClanRosterImages';
@@ -37,6 +39,8 @@ export default function PublicationWorkspace({
   const canManage = useDashboardPermission('cwl_publish');
   const [pool, setPool] = useCwlPool();
   const [imagesOpen, setImagesOpen] = useState(false);
+  const [changesReady, setChangesReady] = useState(false);
+  const [confirmRevision, setConfirmRevision] = useState<number | null>(null);
   const [draft, setDraft] = useState<PublicationDraft | null>(null);
   const [rosterSearch, setRosterSearch] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
@@ -97,11 +101,14 @@ export default function PublicationWorkspace({
   useEffect(() => {
     requestId.current += 1;
     setDraft(null);
+    setConfirmRevision(null);
+    setChangesReady(false);
     setAcknowledged(false);
     setError('');
     setSuccess('');
     setRosterSearch('');
     if (seasonId) void load();
+    return () => { requestId.current += 1; };
   }, [seasonId, load]);
 
   const archived = seasons.find(season => String(season.id) === seasonId)?.status.toLowerCase() === 'archived';
@@ -112,17 +119,17 @@ export default function PublicationWorkspace({
   }));
   const hasWarnings = checks.some(check => check.accounts.length > 0);
   const canPublish = Boolean(draft && canManage && !locked && !loading && !error && !archived
-    && draft.preview.accounts.length
+    && changesReady && draft.preview.accounts.length
     && (draft.preview.unassigned_count === 0 || acknowledged));
 
   async function publish() {
     if (!draft || !seasonId || !canPublish || mutationPending.current) return;
-    const total = draft.preview.accounts.length;
-    const assigned = draft.preview.assigned_count;
-    const unassigned = draft.preview.unassigned_count;
-    if (!window.confirm(
-      `Publish this working roster for both Main and Lazy CWL? ${total} accounts: ${assigned} assigned and ${unassigned} awaiting placement. Members will be able to see these assignments. This does not send a Discord announcement.`,
-    )) return;
+    if (confirmRevision !== draft.draft_revision) {
+      setConfirmRevision(null);
+      setError('The draft changed. Review it again before publishing.');
+      return;
+    }
+    setConfirmRevision(null);
     const sid = seasonId;
     mutationPending.current = true;
     setBusy(true);
@@ -226,6 +233,17 @@ export default function PublicationWorkspace({
 
   return (
     <div className="publication-workspace">
+      {confirmRevision !== null && draft && (
+        <ConfirmDialog
+          heading={`Publish version ${(draft.published?.version ?? 0) + 1}?`}
+          confirmLabel="Publish roster"
+          text={`Publish the current draft for Main and Lazy? ${draft.preview.accounts.length} accounts: ${draft.preview.assigned_count} assigned and ${draft.preview.unassigned_count} awaiting placement. Members will see these assignments. No Discord message is sent.`}
+          onCancel={() => setConfirmRevision(null)}
+          onConfirm={() => void publish()}
+          disabled={!canPublish}
+        />
+      )}
+
       <div className="page-head">
         <div>
           <p className="eyebrow">Staff · CWL</p>
@@ -386,10 +404,16 @@ export default function PublicationWorkspace({
                   <span>I understand {draft.preview.unassigned_count} account{draft.preview.unassigned_count === 1 ? ' is' : 's are'} still awaiting placement and will appear that way to members.</span>
                 </label>
               )}
-              <p className="publication-publish-note">Publishes Main and Lazy assignments to members. Discord announcements are separate.</p>
+              {step === "review" && (
+                <PublicationChanges
+                  seasonId={seasonId}
+                  draft={draft}
+                  onReady={setChangesReady}
+                />
+              )}
               {archived && <p className="inline-reason">This season is archived. Its roster cannot be published or republished.</p>}
               {!draft.preview.accounts.length && <p className="inline-reason">No signed-up accounts are in this roster yet.</p>}
-              <button className="primary" disabled={!canPublish} onClick={() => void publish()}>
+              <button className="primary" disabled={!canPublish} onClick={() => setConfirmRevision(draft.draft_revision)}>
                 {busy ? 'Publishing…' : draft.published ? 'Publish updated roster' : 'Publish roster'}
               </button>
             </section>
