@@ -1090,6 +1090,7 @@ export default function RosterWorkspace({
           )}
           {canRoster && mode === "compare" && (
             <CompareClans
+              refreshKey={refreshEpoch}
               key={`${seasonId}:${poolFilter}`}
               pool={poolFilter}
               seasonId={seasonId}

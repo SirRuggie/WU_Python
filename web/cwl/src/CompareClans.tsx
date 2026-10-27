@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, RotateCw, Settings2, X } from "lucide-react";
 import RosterMenu from "./rosterUi/Menu";
 import { Button, StatusPill } from "./rosterUi/primitives";
-import { api, type Pool } from "./api";
+import { type Pool } from "./api";
+import { useComparisonLocations } from "./useComparisonLocations";
 import {
   FilterPicker,
   leagueValue,
@@ -16,10 +17,7 @@ import {
   comparisonOrder,
   moveComparisonClan,
 } from "./compare";
-import {
-  comparisonLocation,
-  type ComparisonLocation,
-} from "./comparisonLocation";
+import { comparisonLocation } from "./comparisonLocation";
 import DiscordContact from "./DiscordContact";
 import {
   assignmentOptions,
@@ -34,6 +32,7 @@ type Props = {
   seasonId: string;
   roster: RosterSnapshot;
   busy: boolean;
+  refreshKey?: number;
   onEdit: (tag: string) => void;
 };
 
@@ -61,14 +60,8 @@ export default function CompareClans({
   roster,
   busy,
   onEdit,
+  refreshKey = 0,
 }: Props) {
-  const [locations, setLocations] = useState<
-    Record<string, ComparisonLocation>
-  >({});
-  const [checking, setChecking] = useState(false);
-  const [locationError, setLocationError] = useState("");
-  const [refreshLocations, setRefreshLocations] = useState(0);
-  const [now, setNow] = useState(Date.now());
   const [clanSort, setClanSort] = useState<ClanSort>("name");
   const [leagues, setLeagues] = useState<string[]>([]);
   const [townHalls, setTownHalls] = useState<string[]>([]);
@@ -81,47 +74,6 @@ export default function CompareClans({
   const scroller = useRef<HTMLDivElement>(null);
   const chooseButton = useRef<HTMLButtonElement>(null);
   const clanSearchInput = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    setLocations({});
-    setChecking(true);
-    setLocationError("");
-    async function check(force = false) {
-      try {
-        const suffix = force ? "&refresh=1" : "";
-        const result = await api<{
-          updating: boolean;
-          accounts: (ComparisonLocation & { tag: string })[];
-        }>(
-          `/seasons/${encodeURIComponent(seasonId)}/arrival-check?background=1&source=draft${suffix}`,
-        );
-        if (cancelled) return;
-        setLocations(
-          Object.fromEntries(
-            result.accounts.map((account) => [account.tag, account]),
-          ),
-        );
-        setChecking(result.updating);
-        setNow(Date.now());
-        if (result.updating) timer = setTimeout(() => void check(), 2000);
-      } catch {
-        if (!cancelled) {
-          setChecking(false);
-          setLocationError("Could not update locations. Try again.");
-          setLocations({});
-        }
-      }
-    }
-    void check(true);
-    const clock = setInterval(() => setNow(Date.now()), 30000);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      clearInterval(clock);
-    };
-  }, [seasonId, refreshLocations]);
 
   const allClans = sortClans(
     assignmentOptions(roster.clans).filter((clan) => clan.pool === pool),
@@ -136,6 +88,19 @@ export default function CompareClans({
     .join("|");
   const visibleClans = clans.filter((tag) =>
     available.some((clan) => clan.tag === tag),
+  );
+  const {
+    records: locations,
+    checking,
+    error: locationError,
+    now,
+    refresh,
+  } = useComparisonLocations(
+    seasonId,
+    pool,
+    clans.length > 0,
+    roster.revision,
+    refreshKey,
   );
   const matchingClans = available.filter((clan) =>
     `${clan.name} ${clan.tag}`
@@ -264,10 +229,25 @@ export default function CompareClans({
         <FilterPicker
           label="Town Halls"
           options={[
-            ...new Set(roster.accounts.map((account) => account.town_hall)),
-          ]
-            .sort((a, b) => (b ?? -1) - (a ?? -1))
-            .map((value) => (value == null ? "Unknown TH" : `TH ${value}`))}
+            ...new Set([
+              ...roster.accounts
+                .filter((account) =>
+                  allClans.some(
+                    (clan) => clan.tag === account.assigned_clan_tag,
+                  ),
+                )
+                .map((account) =>
+                  account.town_hall == null
+                    ? "Unknown TH"
+                    : `TH ${account.town_hall}`,
+                ),
+              ...townHalls,
+            ]),
+          ].sort(
+            (a, b) =>
+              (Number(b.replace("TH ", "")) || -1) -
+              (Number(a.replace("TH ", "")) || -1),
+          )}
           selected={townHalls}
           onChange={setTownHalls}
           disabled={busy}
@@ -289,11 +269,7 @@ export default function CompareClans({
         >
           Clear filters
         </Button>
-        <Button
-          icon={RotateCw}
-          disabled={busy || checking}
-          onClick={() => setRefreshLocations((value) => value + 1)}
-        >
+        <Button icon={RotateCw} disabled={busy || checking} onClick={refresh}>
           {checking ? "Updating locations…" : "Refresh locations"}
         </Button>
       </div>
@@ -311,7 +287,7 @@ export default function CompareClans({
         </details>
       </div>
       {locationError && (
-        <p className="notice error" role="alert">
+        <p className="compare-toolbar-note" role="status">
           {locationError}
         </p>
       )}
