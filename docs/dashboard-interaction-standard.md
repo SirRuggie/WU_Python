@@ -1224,3 +1224,12 @@ inventory until a successful read; clear them on permission denial and ignore
 older requests. Do not invent exact next-run times or infer send permissions from
 channel presence. See [staff health review](staff-health-review.md) for scope,
 validation and limits.
+
+### Member join/leave history — October 26
+
+Use compact identity rows with saved avatars, explicit Joined/Left labels and
+local event times. Color supports the label; it never replaces it. Keep search
+and activity type visible; put date range and uncommon identity/delivery details
+behind labeled disclosures. Staff-only avatar reads follow history permissions.
+Never use current profile availability as a prerequisite for viewing an archived
+identity. See [member activity review](member-activity-review.md) for validation.

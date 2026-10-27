@@ -5,6 +5,7 @@ export const managementPaths: Record<string, string> = {
   strikes: '/clans/strikes',
   replacements: '/clans/replacements',
   'members-settings': '/server/members',
+  'member-activity': '/server/member-activity',
   'applications-settings': '/server/applications',
   'fwa-settings': '/server/fwa',
   'connections-settings': '/settings/integrations',

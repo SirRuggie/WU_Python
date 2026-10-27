@@ -1,7 +1,7 @@
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
 import { useEffect, useState } from 'react'
 
-export const dashboardViews = ['weight-trial', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access', 'issues'] as const
+export const dashboardViews = ['weight-trial', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'member-activity', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access', 'issues'] as const
 export type DashboardView = typeof dashboardViews[number]
 type Item = { view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: DashboardIconName; items: Item[]; access?: 'staff' | 'owner' }
@@ -45,6 +45,7 @@ const sections: Section[] = [
   ] },
   { id: 'server-tools', label: 'Server tools', icon: 'tools', items: [
     { view: 'members-settings', label: 'Members & roles', icon: 'users', permissions: ['member_roles'] },
+    { view: 'member-activity', label: 'Member activity', icon: 'users', permissions: ['member_roles'] },
     { view: 'applications-settings', label: 'Applications & tickets', icon: 'mail', permissions: ['recruitment','tickets'] },
     { view: 'fwa-settings', label: 'FWA tools', icon: 'war', permissions: ['fwa'] },
     { view: 'text-commands', label: 'Command triggers', icon: 'command', permissions: ['text_commands'] },
