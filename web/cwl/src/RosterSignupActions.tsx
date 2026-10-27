@@ -107,7 +107,7 @@ export function RosterSignupReview({
               {account.kept && (action === "remove" || account.pool !== action)
                 ? " · Locked — affected"
                 : ""}
-              {hiddenTags.includes(account.tag) ? " · Hidden by filters" : ""}
+              {hiddenTags.includes(account.tag) ? " · Not visible in list" : ""}
               {account.assigned_clan_tag
                 ? ` · Assigned to ${hostName(account.assigned_clan_tag)}`
                 : " · unassigned"}
@@ -209,7 +209,7 @@ export default function RosterSignupActions({
             <details>
               <summary>
                 <Chip tone="info">
-                  {hiddenTags.length} selected accounts hidden by filters
+                  {hiddenTags.length} selected accounts not visible in the list
                 </Chip>
               </summary>
               <ul>

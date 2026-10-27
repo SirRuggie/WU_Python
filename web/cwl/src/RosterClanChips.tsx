@@ -1,7 +1,7 @@
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
 import { compactRosterWeight } from "./rosterCompactWeight";
-import { Button, ProgressBar, StatusPill } from "./rosterUi/primitives";
+import { Button, ProgressBar } from "./rosterUi/primitives";
 import "./RosterClanChips.css";
 
 type Props = {
@@ -131,11 +131,24 @@ export default function RosterClanChips({
                 const over =
                   summary.capacity !== null &&
                   summary.assignedCount > summary.capacity;
+                const countLabel =
+                  summary.capacity === null
+                    ? `${summary.assignedCount} assigned`
+                    : `${summary.assignedCount} of ${summary.capacity} assigned`;
+                const weighedLabel = summary.missingWeightCount
+                  ? `, ${summary.knownWeightCount} of ${summary.assignedCount} weighed`
+                  : "";
+                const statusLabel = over
+                  ? ", over capacity"
+                  : full
+                    ? ", full"
+                    : "";
                 return (
                   <Button
                     key={summary.clan.tag}
                     className={`roster-clan-chip${active ? " is-selected" : ""}${over ? " is-over" : full ? " is-full" : " is-room"}`}
                     aria-pressed={active}
+                    aria-label={`${summary.clan.name}, ${countLabel}${weighedLabel}${statusLabel}`}
                     disabled={disabled}
                     onClick={() => onSelect(summary.clan.tag)}
                   >
@@ -156,13 +169,11 @@ export default function RosterClanChips({
                           <span>
                             Avg {compactRosterWeight(summary.averageWeight)}
                           </span>
-                          <span>
-                            {summary.knownWeightCount} of{" "}
-                            {summary.assignedCount} weighed
-                          </span>
-                          {over && <StatusPill tone="danger">Over</StatusPill>}
-                          {!over && full && (
-                            <StatusPill tone="warning">Full</StatusPill>
+                          {summary.missingWeightCount > 0 && (
+                            <small>
+                              {summary.knownWeightCount} of{" "}
+                              {summary.assignedCount} weighed
+                            </small>
                           )}
                         </span>
                       )}

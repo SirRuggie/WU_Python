@@ -58,3 +58,10 @@
     min-width: 0;
   }
 }
+.roster-selection-dock-summary {
+  flex-wrap: nowrap;
+}
+.roster-selection-dock-summary > div {
+  flex: 1;
+  min-width: 0;
+}

@@ -272,7 +272,7 @@ export default function RosterFilters({
                   setMaxText("");
                 }}
               >
-                Clear draft
+                Reset
               </Button>
               <Button
                 variant="primary"

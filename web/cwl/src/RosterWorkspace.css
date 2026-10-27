@@ -62,9 +62,10 @@
   background: #171719;
 }
 
-.roster-pagination {
+.roster-load-more {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
   margin: 18px 0;

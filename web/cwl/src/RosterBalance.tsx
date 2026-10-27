@@ -276,7 +276,7 @@ export default function RosterBalance({
             {!!hiddenTags.length && (
               <details>
                 <summary>
-                  {hiddenTags.length} selected accounts hidden by filters
+                  {hiddenTags.length} selected accounts not visible in the list
                 </summary>
                 <ul>
                   {roster.accounts
@@ -460,7 +460,7 @@ export default function RosterBalance({
                         {clanName(p.assigned_clan_tag)}
                       </span>
                       {hiddenTags.includes(p.tag) && (
-                        <small>Hidden by filters</small>
+                        <small>Not visible in list</small>
                       )}
                     </li>
                   );
@@ -475,7 +475,7 @@ export default function RosterBalance({
                     {roster.accounts.find((a) => a.tag === p.tag)
                       ?.player_name || p.tag}{" "}
                     · {reasons[p.reason] || p.reason}
-                    {hiddenTags.includes(p.tag) && " · Hidden by filters"}
+                    {hiddenTags.includes(p.tag) && " · Not visible in list"}
                   </li>
                 ))}
               </ul>
@@ -486,7 +486,7 @@ export default function RosterBalance({
                 {summary?.unchanged.map((a) => (
                   <li key={a.tag}>
                     {a.player_name} · {clanName(a.assigned_clan_tag)}
-                    {hiddenTags.includes(a.tag) && " · Hidden by filters"}
+                    {hiddenTags.includes(a.tag) && " · Not visible in list"}
                   </li>
                 ))}
               </ul>

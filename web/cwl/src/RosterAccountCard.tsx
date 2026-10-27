@@ -48,6 +48,7 @@ export default function RosterAccountCard({
   const trigger = useRef<HTMLElement>(null);
   const descriptionId = useId();
   const maySelect = !archived && (canRoster || canSignups);
+  const currentClanKnown = account.current_clan_status === "current";
   const closeAnd = (action: () => void) => {
     menu.current?.removeAttribute("open");
     action();
@@ -110,13 +111,12 @@ export default function RosterAccountCard({
             Current clan
             {account.current_clan_status === "stale" ? " · Last checked" : ""}
           </small>
-          <span>
-            {!account.current_clan_status ||
-            account.current_clan_status === "unavailable"
-              ? "Unavailable"
-              : account.current_clan_name ||
+          <span className={currentClanKnown ? undefined : "is-unknown"}>
+            {currentClanKnown
+              ? account.current_clan_name ||
                 account.current_clan_tag ||
-                "No clan"}
+                "No clan"
+              : "—"}
           </span>
         </span>
         {account.outside_family_and_hosts && (

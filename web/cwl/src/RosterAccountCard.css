@@ -83,6 +83,10 @@
 }
 .roster-player-current {
   font-size: 13px;
+  color: #aab1ba;
+}
+.roster-player-current .is-unknown {
+  color: #89929d;
 }
 .roster-player-warning,
 .roster-player-note {
@@ -147,15 +151,96 @@
   outline-offset: -3px;
 }
 @media (max-width: 700px) {
-  .roster-workspace button.roster-player-body {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-    padding: 14px 2px;
+  .roster-workspace .roster-player-card {
+    min-height: 94px;
   }
-  .roster-player-weight {
-    grid-row: 2;
+  .roster-workspace button.roster-player-body {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    column-gap: 8px;
+    row-gap: 3px;
+    padding: 9px 2px;
+    align-content: center;
+  }
+  .roster-player-identity {
+    display: contents;
   }
   .roster-player-identity > strong {
-    font-size: 16px;
+    grid-column: 1;
+    grid-row: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 15px;
+  }
+  .roster-player-identity > strong img {
+    flex: 0 0 22px;
+    width: 22px;
+    height: 22px;
+  }
+  .roster-player-identity > small {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .roster-player-weight {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .roster-player-weight .roster-ui-chip {
+    min-height: 22px;
+    padding: 1px 6px;
+    font-size: 11px;
+  }
+  .roster-player-assignment {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .roster-player-current {
+    grid-column: 2;
+    grid-row: 3;
+    max-width: 100px;
+    text-align: right;
+  }
+  .roster-player-assignment > small,
+  .roster-player-current > small,
+  .roster-workspace .roster-player-body .roster-player-note {
+    display: none;
+  }
+  .roster-player-assignment > strong,
+  .roster-player-current > span {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
+  }
+  .roster-player-assignment > strong {
+    display: block;
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 1.25;
+  }
+  .roster-player-assignment > strong svg {
+    width: 13px;
+    height: 13px;
+  }
+  .roster-player-current > span::before {
+    content: "· ";
+  }
+  .roster-player-warning {
+    grid-row: 4;
+  }
+  .roster-player-menu {
+    padding-top: 0;
+    align-self: center;
   }
 }

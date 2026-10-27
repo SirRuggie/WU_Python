@@ -164,4 +164,22 @@
   .roster-filters-footer .roster-ui-button {
     flex: 1 1 0;
   }
+
+  .roster-filters-active {
+    position: relative;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 14px;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+  }
+
+  .roster-filters-active::-webkit-scrollbar {
+    display: none;
+  }
+  .roster-filters-active > * {
+    flex: 0 0 auto;
+  }
 }

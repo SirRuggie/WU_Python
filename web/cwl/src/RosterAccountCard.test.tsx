@@ -52,8 +52,30 @@ describe("roster account card", () => {
     expect(html).not.toContain("<Alpha & Beta>");
     expect(html).toContain("No weight");
     expect(html).toContain("Held unassigned");
-    expect(html).toContain("Unavailable");
+    expect(html).toContain('is-unknown">—</span>');
+    expect(html).not.toContain("Unavailable");
     expect(html).toContain("Main CWL");
+  });
+
+  it("shows a dim dash for stale clan data, and the name for current data", () => {
+    const stale = render({
+      account: {
+        ...account,
+        current_clan_status: "stale",
+        current_clan_name: "Old clan",
+      },
+    });
+    expect(stale).toContain('is-unknown">—</span>');
+    expect(stale).not.toContain("Old clan");
+    const current = render({
+      account: {
+        ...account,
+        current_clan_status: "current",
+        current_clan_name: "Home clan",
+      },
+    });
+    expect(current).toContain("Home clan");
+    expect(current).not.toContain("is-unknown");
   });
 
   it("prevents selection in archived or read-only views while retaining Details", () => {

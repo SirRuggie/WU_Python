@@ -159,8 +159,8 @@ export default function RosterAssignPanel({
         {hiddenTags.length > 0 && (
           <p className="roster-assign-warning">
             {hiddenTags.length} selected account
-            {hiddenTags.length === 1 ? " is" : "s are"} hidden by current
-            filters and will be included below.
+            {hiddenTags.length === 1 ? " is" : "s are"} not visible in the list
+            and will be included below.
           </p>
         )}
         {pool === null && selectedAccounts.length > 0 && (
@@ -317,7 +317,7 @@ export default function RosterAssignPanel({
                   </span>
                   {hidden.has(account.tag) && (
                     <small className="roster-assign-hidden">
-                      Hidden by filters
+                      Not visible in list
                     </small>
                   )}
                 </li>

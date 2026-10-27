@@ -8,7 +8,9 @@
 .roster-workspace.roster-ui
   button:not(.roster-menu-trigger):not([role="tab"]):not(
     .roster-assign-clan
-  ):not(.roster-player-body) {
+  ):not(.roster-player-body):not(.roster-clan-chip):not(
+    .cwl-pool-tabs > button
+  ):not(.roster-list-pool-tabs > button) {
   min-height: var(--roster-height-control);
   border-radius: var(--roster-radius-pill);
 }
@@ -133,8 +135,63 @@
   transform: translateY(-50%);
 }
 
-.roster-workspace
-  :is(.roster-workflow-nav, .roster-list-pool-tabs, .roster-clan-chips) {
-  scrollbar-width: thin;
-  scrollbar-color: #807351 #191919;
+/* Section navigation uses a pill; pool navigation uses only an underline. */
+.shell .roster-workspace .roster-workflow-nav > button {
+  border: 1px solid transparent;
+  border-radius: var(--roster-radius-pill);
+}
+.shell
+  .roster-workspace
+  .roster-workflow-nav
+  > button:is(.active, [aria-pressed="true"]) {
+  background: rgb(237 198 77 / 14%);
+  border-color: transparent;
+  box-shadow: none;
+}
+.shell .roster-workspace .roster-list-pool-tabs > button {
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+}
+.shell
+  .roster-workspace
+  .roster-list-pool-tabs
+  > button:is(.active, [aria-pressed="true"]) {
+  background: transparent;
+  border-bottom-color: var(--roster-gold);
+  box-shadow: none;
+}
+@media (max-width: 680px) {
+  .shell .roster-workspace :is(.roster-workflow-nav, .roster-list-pool-tabs) {
+    scrollbar-width: none;
+    mask-image: linear-gradient(
+      to right,
+      #000 0,
+      #000 calc(100% - 12px),
+      transparent
+    );
+    padding-right: 12px;
+  }
+  .shell
+    .roster-workspace
+    :is(.roster-workflow-nav, .roster-list-pool-tabs)::-webkit-scrollbar {
+    display: none;
+  }
+}
+.roster-ui .roster-assign-unassign:hover:not(:disabled) {
+  border-color: var(--roster-text-muted);
+}
+.roster-workspace .staff-signup-bar .roster-ui-status,
+.roster-workspace .staff-signup-bar-actions .roster-ui-button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+@media (max-width: 400px) {
+  .roster-workspace .staff-signup-bar .roster-ui-status {
+    font-size: 11px;
+  }
+  .roster-workspace .staff-signup-bar-actions .roster-ui-button {
+    padding-inline: 8px;
+  }
 }

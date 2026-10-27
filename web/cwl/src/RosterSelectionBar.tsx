@@ -6,6 +6,7 @@ import "./RosterSelectionBar.css";
 type Props = {
   selectedCount: number;
   hiddenCount: number;
+  unloadedCount?: number;
   busy: boolean;
   hidden?: boolean;
   canRoster: boolean;
@@ -20,6 +21,7 @@ type Props = {
 export default function RosterSelectionBar({
   selectedCount,
   hiddenCount,
+  unloadedCount = 0,
   busy,
   hidden = false,
   canRoster,
@@ -64,11 +66,12 @@ export default function RosterSelectionBar({
           {hiddenCount > 0 && (
             <StatusPill tone="info">{hiddenCount} hidden by filters</StatusPill>
           )}
+          {unloadedCount > 0 && (
+            <StatusPill tone="info">{unloadedCount} not shown yet</StatusPill>
+          )}
           {overLimit && (
             <span role="alert">
-              <StatusPill tone="danger">
-                Select at most 50 accounts to use an action.
-              </StatusPill>
+              <StatusPill tone="danger">Max 50 per action</StatusPill>
             </span>
           )}
         </div>

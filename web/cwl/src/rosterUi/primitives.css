@@ -258,3 +258,11 @@
 .roster-menu-item:has(.roster-menu-item-check) {
   background: rgb(237 198 77 / 12%);
 }
+
+/* Destructive actions retain red feedback, including keyboard focus. */
+.roster-ui .roster-ui-button.is-danger:hover:not(:disabled) {
+  border-color: var(--roster-danger);
+}
+.roster-ui .roster-ui-button.is-danger:focus-visible {
+  outline-color: var(--roster-danger);
+}

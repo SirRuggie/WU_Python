@@ -37,10 +37,10 @@ const roster: RosterSnapshot = {
   ],
 };
 
-function render(pool: "main" | "lazy" | "all") {
+function render(pool: "main" | "lazy" | "all", seasonId = "1") {
   return renderToStaticMarkup(
     <RosterHeader
-      seasonId="1"
+      seasonId={seasonId}
       seasons={[{ id: 1, label: "June", status: "active", signup_open: true }]}
       roster={roster}
       pool={pool}
@@ -59,14 +59,23 @@ function render(pool: "main" | "lazy" | "all") {
 }
 
 describe("roster header counts", () => {
+  it("keeps the season selector available before a season is selected", () => {
+    expect(render("all", "")).toContain("Select a season");
+  });
   it("scopes signed and unplaced to the chosen pool but keeps missing weight global", () => {
     expect(render("main")).toContain("<strong>2</strong> signed");
     expect(render("main")).toContain("<strong>1</strong> unplaced");
-    expect(render("main")).toContain("<strong>2</strong> no weight · all");
+    expect(render("main")).toContain(
+      "<strong>2</strong> no weight (all pools)",
+    );
     expect(render("lazy")).toContain("<strong>1</strong> signed");
     expect(render("lazy")).toContain("<strong>1</strong> unplaced");
-    expect(render("lazy")).toContain("<strong>2</strong> no weight · all");
+    expect(render("lazy")).toContain(
+      "<strong>2</strong> no weight (all pools)",
+    );
     expect(render("all")).toContain("<strong>3</strong> signed");
     expect(render("all")).toContain("<strong>2</strong> unplaced");
+    expect(render("all")).toContain("<strong>2</strong> no weight");
+    expect(render("all")).not.toContain("(all pools)");
   });
 });

@@ -6,9 +6,10 @@ import RosterHeader from "./RosterHeader";
 import RosterAccountCard from "./RosterAccountCard";
 import RosterFilters from "./RosterFilters";
 import RosterClanChips from "./RosterClanChips";
-import { rosterAccountPages, rosterMemberKey } from "./rosterGrouping";
+import { rosterMemberKey } from "./rosterGrouping";
 import SignupActivity from "./SignupActivity";
 import useWorkspacePreference from "./useWorkspacePreference";
+import useRosterPreferences from "./useRosterPreferences";
 import useUnsavedWork from "./useUnsavedWork";
 import RosterMenu from "./rosterUi/Menu";
 import { Button, Input } from "./rosterUi/primitives";
@@ -25,7 +26,8 @@ import {
   reconcileRosterSelection,
   deriveRosterRelease,
   orderRosterReleaseAccounts,
-  DEFAULT_ROSTER_RELEASE_PREFERENCES,
+  progressiveRosterReleaseAccounts,
+  toggleAllRosterMatches,
   type RosterReleasePreferences,
 } from "./rosterReleaseModel";
 import StaffSignupControls from "./StaffSignupControls";
@@ -119,19 +121,13 @@ export default function RosterWorkspace({
   const [mode, setMode] = useWorkspacePreference<
     "assign" | "compare" | "rules" | "weights"
   >(`wu-roster-${seasonId}-mode`, "assign");
-  const [page, setPage] = useWorkspacePreference(
-    `wu-roster-${seasonId}-page`,
-    0,
-  );
+  const [renderCount, setRenderCount] = useState(50);
   const [ruleTag, setRuleTag] = useWorkspacePreference(
     `wu-roster-${seasonId}-clan`,
     "",
   );
   const [releasePreferences, setReleasePreferences] =
-    useWorkspacePreference<RosterReleasePreferences>(
-      `wu-roster-${seasonId}-release-v1`,
-      DEFAULT_ROSTER_RELEASE_PREFERENCES,
-    );
+    useRosterPreferences(seasonId);
   const [poolFilter, setPoolFilter] = useCwlPool();
   const [refreshEpoch, setRefreshEpoch] = useState(0);
   const viewPool =
@@ -552,32 +548,37 @@ export default function RosterWorkspace({
         groupByDiscord,
       )
     : [];
-  const accountPages = rosterAccountPages(filtered, groupByDiscord);
-  const lastPage = Math.max(0, accountPages.length - 1);
-  const currentPage = Math.min(page, lastPage);
-  const pageAccounts = accountPages[currentPage] || [];
-  const filterKey = JSON.stringify([releasePreferences, viewPool]);
+  const progressive = progressiveRosterReleaseAccounts(
+    filtered,
+    renderCount,
+    groupByDiscord,
+  );
+  const pageAccounts = progressive.visible;
+  const filterKey = JSON.stringify([seasonId, releasePreferences, viewPool]);
   const previousFilter = useRef(filterKey);
   useEffect(() => {
     if (previousFilter.current !== filterKey) {
-      setPage(0);
+      setRenderCount(50);
       previousFilter.current = filterKey;
     }
   }, [filterKey]);
-  const visibleTags = pageAccounts.map((account) => account.tag);
+  const matchingTags = filtered.map((account) => account.tag);
   const hiddenTags = selectedTags.filter(
-    (tag) => !filtered.some((account) => account.tag === tag),
+    (tag) => !pageAccounts.some((account) => account.tag === tag),
   );
-  const hiddenSelection = hiddenTags.length;
+  const hiddenSelection = selectedTags.filter(
+    (tag) => !matchingTags.includes(tag),
+  ).length;
+  const unloadedSelection = hiddenTags.length - hiddenSelection;
   const panelHiddenTags = panelTags.filter(
-    (tag) => !filtered.some((account) => account.tag === tag),
+    (tag) => !pageAccounts.some((account) => account.tag === tag),
   );
   const panelAccounts = panelTags
     .map((tag) => roster?.accounts.find((account) => account.tag === tag))
     .filter((account): account is NonNullable<typeof account> => !!account);
-  const allVisibleSelected =
-    visibleTags.length > 0 &&
-    visibleTags.every((tag) => selectedTags.includes(tag));
+  const allMatchingSelected =
+    matchingTags.length > 0 &&
+    matchingTags.every((tag) => selectedTags.includes(tag));
   const toggleSelected = (tag: string) =>
     setSelectedTags((current) =>
       current.includes(tag)
@@ -797,6 +798,7 @@ export default function RosterWorkspace({
         <RosterSelectionBar
           selectedCount={selectedTags.length}
           hiddenCount={hiddenSelection}
+          unloadedCount={unloadedSelection}
           busy={working}
           canRoster={canRoster}
           canSignups={canSignups}
@@ -1111,6 +1113,7 @@ export default function RosterWorkspace({
               >
                 <button
                   ref={sortTrigger}
+                  disabled={uiLocked || !!editingTag}
                   type="button"
                   className="roster-ui-button roster-sort-trigger"
                   aria-expanded={sortOpen}
@@ -1177,49 +1180,29 @@ export default function RosterWorkspace({
                 <label className="roster-select-all">
                   <input
                     type="checkbox"
-                    checked={allVisibleSelected}
+                    checked={allMatchingSelected}
                     disabled={
                       uiLocked ||
                       archived ||
                       (!canRoster && !canSignups) ||
-                      !visibleTags.length
+                      !matchingTags.length
                     }
                     onChange={(event) =>
-                      setSelectedTags(
-                        event.target.checked
-                          ? [...new Set([...selectedTags, ...visibleTags])]
-                          : selectedTags.filter(
-                              (tag) => !visibleTags.includes(tag),
-                            ),
+                      setSelectedTags((current) =>
+                        toggleAllRosterMatches(
+                          current,
+                          filtered,
+                          event.target.checked,
+                        ),
                       )
                     }
                   />{" "}
-                  Select all {visibleTags.length} on this page
+                  Select all {matchingTags.length} matching
                 </label>
                 <span>
                   {`${filtered.length} matching · ${selectedTags.length} selected`}
                 </span>
               </div>
-              {filtered.length > visibleTags.length &&
-                filtered.length <= 50 && (
-                  <Button
-                    disabled={
-                      uiLocked || archived || (!canRoster && !canSignups)
-                    }
-                    onClick={() =>
-                      setSelectedTags((current) =>
-                        [
-                          ...new Set([
-                            ...current,
-                            ...filtered.map((a) => a.tag),
-                          ]),
-                        ].slice(0, 50),
-                      )
-                    }
-                  >
-                    Select all {filtered.length} matching accounts
-                  </Button>
-                )}
               {groupByDiscord && groupNamesError && (
                 <p role="status">
                   Discord profiles could not be loaded. Accounts remain grouped
@@ -1290,31 +1273,20 @@ export default function RosterWorkspace({
                   <p>No accounts match these filters.</p>
                 </div>
               )}
-              {accountPages.length > 1 && (
-                <nav className="roster-pagination" aria-label="Account pages">
+              <div className="roster-load-more" aria-live="polite">
+                <span>
+                  Showing {pageAccounts.length} of {filtered.length} matching
+                  accounts
+                </span>
+                {progressive.hasMore && (
                   <Button
-                    disabled={uiLocked || currentPage === 0}
-                    onClick={() => {
-                      setPage(currentPage - 1);
-                      listHeading.current?.scrollIntoView({ block: "start" });
-                    }}
+                    disabled={uiLocked}
+                    onClick={() => setRenderCount(progressive.nextCount)}
                   >
-                    ← Previous
+                    Load more
                   </Button>
-                  <span>
-                    Page {currentPage + 1} of {lastPage + 1}
-                  </span>
-                  <Button
-                    disabled={uiLocked || currentPage === lastPage}
-                    onClick={() => {
-                      setPage(currentPage + 1);
-                      listHeading.current?.scrollIntoView({ block: "start" });
-                    }}
-                  >
-                    Next →
-                  </Button>
-                </nav>
-              )}
+                )}
+              </div>
             </>
           )}
         </>

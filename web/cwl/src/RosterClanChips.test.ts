@@ -106,6 +106,7 @@ describe("clan filter summaries", () => {
     expect(html).toContain("roster-clan-chip is-room");
     expect(html).toContain("Avg 170k");
     expect(html).toContain("1 of 2 weighed");
+    expect(html).not.toContain("1 of 1 weighed");
     const unconfigured = html.slice(html.indexOf("#ALL"));
     expect(unconfigured).toContain(">1</span>");
     expect(unconfigured).not.toContain("Avg 190k");

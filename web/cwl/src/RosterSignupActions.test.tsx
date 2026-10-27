@@ -77,7 +77,7 @@ it("lists hidden and locked accounts and explains immediate pool visibility", ()
     />,
   );
   expect(html).toContain("Locked — affected");
-  expect(html).toContain("Hidden by filters");
+  expect(html).toContain("Not visible in list");
   expect(html).toContain("placement and lock are cleared");
   expect(html).toContain("visible to members immediately");
 });

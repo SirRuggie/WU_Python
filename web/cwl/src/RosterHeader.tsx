@@ -146,6 +146,79 @@ export default function RosterHeader({
           <p className="eyebrow">Staff roster</p>
           <h1>CWL roster &amp; signups</h1>
         </div>
+        <div className="roster-header-title-actions">
+          {seasonId && (
+            <StatusPill
+              className="roster-header-draft-pill"
+              tone={publicationTone}
+            >
+              {publicationLabel}
+            </StatusPill>
+          )}
+          {canPublish && onFinalize && publicationStatus !== "current" && (
+            <Button
+              className="roster-header-finalize"
+              disabled={uiLocked || !roster || archived}
+              onClick={onFinalize}
+            >
+              Finalize →
+            </Button>
+          )}
+          {roster && (
+            <details
+              ref={actions}
+              className="roster-header-more"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  actions.current?.removeAttribute("open");
+                  actionsTrigger.current?.focus();
+                }
+              }}
+            >
+              <summary
+                ref={actionsTrigger}
+                aria-label="More roster actions"
+                aria-disabled={uiLocked}
+                onClick={(event) => {
+                  if (uiLocked) event.preventDefault();
+                }}
+                onKeyDown={(event) => {
+                  if (uiLocked && (event.key === "Enter" || event.key === " "))
+                    event.preventDefault();
+                }}
+              >
+                <MoreHorizontal aria-hidden="true" />
+              </summary>
+              <div className="roster-header-actions">
+                <Button
+                  icon={RefreshCw}
+                  disabled={uiLocked}
+                  onClick={() => {
+                    actions.current?.removeAttribute("open");
+                    onRefresh();
+                  }}
+                >
+                  Refresh roster
+                </Button>
+                {canAutoPlace && (
+                  <Button
+                    icon={WandSparkles}
+                    disabled={uiLocked}
+                    onClick={() => {
+                      actions.current?.removeAttribute("open");
+                      if (actionsTrigger.current)
+                        onAutoPlace(actionsTrigger.current);
+                    }}
+                  >
+                    Auto-place unassigned
+                  </Button>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+      <div className="roster-header-publication" role="status">
         <RosterMenu
           label="Season"
           value={seasonId}
@@ -159,25 +232,12 @@ export default function RosterHeader({
             })),
           ]}
         />
+        {publicationStatus === "unavailable" && (
+          <Button onClick={() => setPublicationAttempt((value) => value + 1)}>
+            Retry status
+          </Button>
+        )}
       </div>
-      {seasonId && (
-        <div className="roster-header-publication" role="status">
-          <StatusPill tone={publicationTone}>{publicationLabel}</StatusPill>
-          {publicationStatus === "unavailable" && (
-            <Button onClick={() => setPublicationAttempt((value) => value + 1)}>
-              Retry status
-            </Button>
-          )}
-          {canPublish && onFinalize && publicationStatus !== "current" && (
-            <Button
-              disabled={uiLocked || !roster || archived}
-              onClick={onFinalize}
-            >
-              Finalize →
-            </Button>
-          )}
-        </div>
-      )}
       {roster && (
         <div
           className="roster-header-working"
@@ -207,58 +267,9 @@ export default function RosterHeader({
             onClick={() => onStatusFilter("missing_weight")}
             disabled={uiLocked}
           >
-            <strong>{missingWeight}</strong> no weight · all
+            <strong>{missingWeight}</strong> no weight
+            {pool === "all" ? "" : " (all pools)"}
           </Button>
-          <details
-            ref={actions}
-            className="roster-header-more"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                actions.current?.removeAttribute("open");
-                actionsTrigger.current?.focus();
-              }
-            }}
-          >
-            <summary
-              ref={actionsTrigger}
-              aria-label="More roster actions"
-              aria-disabled={uiLocked}
-              onClick={(event) => {
-                if (uiLocked) event.preventDefault();
-              }}
-              onKeyDown={(event) => {
-                if (uiLocked && (event.key === "Enter" || event.key === " "))
-                  event.preventDefault();
-              }}
-            >
-              <MoreHorizontal aria-hidden="true" />
-            </summary>
-            <div className="roster-header-actions">
-              <Button
-                icon={RefreshCw}
-                disabled={uiLocked}
-                onClick={() => {
-                  actions.current?.removeAttribute("open");
-                  onRefresh();
-                }}
-              >
-                Refresh roster
-              </Button>
-              {canAutoPlace && (
-                <Button
-                  icon={WandSparkles}
-                  disabled={uiLocked}
-                  onClick={() => {
-                    actions.current?.removeAttribute("open");
-                    if (actionsTrigger.current)
-                      onAutoPlace(actionsTrigger.current);
-                  }}
-                >
-                  Auto-place unassigned
-                </Button>
-              )}
-            </div>
-          </details>
         </div>
       )}
     </header>
