@@ -4,6 +4,13 @@ Read before any work on the CWL roster:
 1. `docs/cwl-roster-redesign.md`: decisions, behavior contracts, backend facts, release status, next stages.
 2. `docs/roster-ui-patterns.md`: UI system: shapes, states, components, layout targets, sources.
 
+## Process (these win on conflict)
+Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.md`, `docs/editing-this-repo.md`, `AGENTS.md`. Where this file differs from `~/.claude/CLAUDE.md`, this file wins.
+- **Roles.** Claude Code = planner and reviewer. It reads the code, walks Ruggie through decisions one item at a time (restate in plain terms, recommend with pros/cons, wait for "next"), writes ONE Codex prompt per decision batch, and reviews Codex's HTML report. It does not edit code or docs, build, commit, push or deploy in this workspace; it may use read-only agents for review. **Codex is the only writer**: code, docs, commits, pushes, deploys. One writer avoids conflicting edits. For this project Codex replaces the `builder` role in `.claude/rules/orchestration.md`.
+- **Loop.** Walkthrough → decisions confirmed → one Codex prompt (scope, exact behavior, contracts, checkpoints, red-team rule, self-contained HTML review with embedded screenshots at 360×800 and 1440×1000, exact doc update) → Codex implements → Ruggie brings back the HTML report → Claude Code reviews it against the decisions and docs, lists every issue (evidence vs inference), and writes the next prompt.
+- **Record.** `docs/cwl-roster-redesign.md` is the decision record. Every Codex prompt carries its exact update (decisions, status, Later list).
+- No `sed -i` / `awk` / `perl -pi`. Commit only what Ruggie or a Ruggie-approved prompt asks for. Conventional Commits. No Co-Authored-By or Claude-Session trailers.
+
 ## Stack
 - Frontend: `web/cwl/`, React 19 + TypeScript + Vite, plain CSS, Lucide icons, React Aria (custom menus). Routing: custom History API (`dashboardHistory.ts`, `App.tsx`), not React Router.
 - Backend: Python. Roster logic in `app.py` (`_auto_plan`), `cwl_balance.py`, `cwl_permissions.py`, `roster_locations.py`. API prefix `/api/cwl`.
@@ -24,7 +31,7 @@ Read before any work on the CWL roster:
 - No UI path may write signups, assignments, locks, weights or publications without an explicit user action through the existing endpoints and their revision checks.
 - The workspace is shared with a concurrent moderation task. Never format or edit its files (`ChannelCombobox.tsx`, `ModerationSettings.tsx`, `moderationSettingsModel.ts`, and the rest of the moderation work). Run Prettier only on files you changed.
 
-## Red-team checklist (every commit; report how each item was verified)
+## Red-team checklist (every change, before commit; report how each item was verified)
 1. List every changed file; confirm the scope.
 2. Run all tests, the type check and the build, not just the new tests.
 3. Can any path write without explicit confirmation (double tap, Back, closing mid-request, stale preview)?
@@ -40,7 +47,7 @@ Read before any work on the CWL roster:
 - Terse and direct. Answer first. Assume a systems engineer; don't explain general IT concepts. Label evidence vs. inference.
 - Design discussions: go one item at a time. Restate what he said in plain language, confirm, and wait for "next" before moving on.
 - Ask only when the decision is his to make (product behavior, policy, scope). Give a recommendation with pros/cons.
-- Work in small commits. Stop at agreed checkpoints with screenshots before continuing.
+- Keep changes small and reviewable; commit only when asked. Stop at agreed checkpoints with screenshots before continuing.
 - Review artifacts must be ONE self-contained HTML file with every screenshot embedded as base64 (no relative/`/tmp` links; he reviews on other devices and in other chats). Viewports: 360×800 and 1440×1000. Include the changed files, test results, before/after counts, and the red-team results.
 - When changing a script: return the full updated script.
 - He reviews on his phone; mobile layout matters as much as desktop.
