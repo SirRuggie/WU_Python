@@ -74,3 +74,25 @@ When Discord omits a cached member, the latest saved join identifies a leave's
 membership episode. If neither exists, deduplication uses a ten-second window.
 A Discord profile link may stop working after deletion; the saved name, ID and
 captured avatar remain available. An unavailable avatar uses a fallback.
+
+## Release verification
+
+Released implementation `8d2cb1aa25927973014a9e13de273aa1d0dca0d8` is verified
+on origin/main and both deployment checkouts. The desktop credential helper
+stalled, so the connected GitHub publisher created an identical tree
+`380dcd716ad8e4a08bfc37cced11ba1317eaeac1`; clean checkouts were aligned to that
+published commit. Runtime imports passed. Bot and web services restarted and
+remained active; the current bot process logged successful member-event extension
+loading and zero errors. All five Mongo indexes exist, including the unique event
+key; no TTL was created.
+
+All 166 installed files match the isolated build. Public HTML and eight entry/new
+feature assets match; signed-out history requests return 401. Old hashed assets
+and a private rollback index remain available. The private SQLite backup confirmed
+all 93 signups, 90 original roster rows, one publication and one season preserved.
+One additional roster row appeared during the live work and matches a preexisting
+signup; it was preserved. No old records were overwritten or restored.
+
+No live test messages or fake production activity records were generated. Channel
+ownership and bot send/attachment permissions were checked read-only. Actual
+message delivery and Discord client rendering await a real join/leave event.
