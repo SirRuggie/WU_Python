@@ -6,10 +6,12 @@ export const COMPARISON_CYCLE_LIMIT = 90_000;
 export function createComparisonChecks(
   check: (force: boolean, signal: AbortSignal) => Promise<boolean>,
   busy: (value: boolean) => void,
+  initialLast = -Infinity,
+  onStart: (time: number) => void = () => {},
 ) {
   let active = false;
   let disposed = false;
-  let last = -Infinity;
+  let last = initialLast;
   let started = 0;
   let generation = 0;
   let pending = false;
@@ -35,6 +37,7 @@ export function createComparisonChecks(
     }
     if (!followup) {
       last = started = Date.now();
+      onStart(last);
     }
     const id = generation;
     controller = new AbortController();

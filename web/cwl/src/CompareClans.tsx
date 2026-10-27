@@ -1,3 +1,4 @@
+import type { ComparisonMemory } from "./comparisonMemory";
 import SortTrigger from "./rosterUi/SortTrigger";
 import {
   useEffect,
@@ -35,6 +36,7 @@ import {
 import "./CompareClans.css";
 
 type Props = {
+  memory: ComparisonMemory;
   pool: Pool;
   seasonId: string;
   roster: RosterSnapshot;
@@ -50,6 +52,7 @@ const playerSortOptions: { value: RosterSort; label: string }[] = [
   { value: "name", label: "Name A–Z" },
 ];
 export default function CompareClans({
+  memory,
   pool,
   seasonId,
   roster,
@@ -99,6 +102,7 @@ export default function CompareClans({
     published,
     refresh,
   } = useComparisonLocations(
+    memory,
     seasonId,
     pool,
     clans.length > 0,

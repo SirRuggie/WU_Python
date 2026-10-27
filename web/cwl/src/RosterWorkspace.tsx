@@ -1,3 +1,4 @@
+import { createComparisonMemory } from "./comparisonMemory";
 import SortTrigger from "./rosterUi/SortTrigger";
 import { rosterSortOptions } from "./rosterSortOptions";
 import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
@@ -41,6 +42,7 @@ import CompareClans from "./CompareClans";
 import {
   Fragment,
   useCallback,
+  useMemo,
   useEffect,
   useRef,
   useState,
@@ -85,6 +87,7 @@ export default function RosterWorkspace({
   const canRoster = useDashboardPermission("cwl_roster");
   const canSignups = useDashboardPermission("cwl_signups");
   const canPublish = useDashboardPermission("cwl_publish");
+  const comparisonMemory = useMemo(createComparisonMemory, [seasonId]);
   const season = seasons.find((item) => String(item.id) === seasonId);
   const archived = season?.status === "archived";
   const [editingTag, setEditingTag] = useState<string | null>(null);
@@ -1095,6 +1098,7 @@ export default function RosterWorkspace({
           )}
           {canRoster && mode === "compare" && (
             <CompareClans
+              memory={comparisonMemory}
               refreshKey={refreshEpoch}
               key={seasonId}
               pool={poolFilter}

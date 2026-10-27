@@ -1,9 +1,12 @@
+import {
+  comparisonPoolMemory,
+  type ComparisonMemory,
+} from "./comparisonMemory";
 import { useEffect, useRef, useState } from "react";
 import { createComparisonChecks } from "./comparisonChecks";
 import {
   mergeComparisonLocations,
   type ComparisonLocation,
-  type LocationRecords,
 } from "./comparisonLocation";
 
 export type PublishedComparisonAccount = {
@@ -37,47 +40,54 @@ async function readArrival(
 }
 
 export function useComparisonLocations(
+  memory: ComparisonMemory,
   season: string,
   pool: string,
   hasClans: boolean,
   revision: number,
   refreshKey: number,
 ) {
-  const [records, setRecords] = useState<LocationRecords>({});
+  const cache = comparisonPoolMemory(memory, pool);
+  const [, redraw] = useState(0);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now());
-  const [checkedAt, setCheckedAt] = useState<number>();
-  const [published, setPublished] = useState<
-    PublishedComparisonAccount[] | null
-  >(null);
   const checks = useRef<ReturnType<typeof createComparisonChecks> | null>(null);
   const enabled = useRef(hasClans);
   enabled.current = hasClans;
 
   useEffect(() => {
-    setRecords({});
+    let started = cache.lastCheck;
     setError("");
-    setCheckedAt(undefined);
-  }, [season]);
-  useEffect(() => {
-    const runner = createComparisonChecks(async (force, signal) => {
-      try {
-        const result = await readArrival(season, false, force, signal);
-        if (signal.aborted) return false;
-        setRecords((previous) =>
-          mergeComparisonLocations(previous, result.accounts),
-        );
-        setError("");
-        setNow(Date.now());
-        setCheckedAt(Date.now());
-        return result.updating;
-      } catch (cause) {
-        if (!signal.aborted)
-          setError("Couldn't update locations · showing last results");
-        throw cause;
-      }
-    }, setChecking);
+    const runner = createComparisonChecks(
+      async (force, signal) => {
+        try {
+          const result = await readArrival(season, false, force, signal);
+          if (signal.aborted) return false;
+          memory.records = mergeComparisonLocations(
+            memory.records,
+            result.accounts,
+          );
+          redraw((value) => value + 1);
+          setError("");
+          setNow(Date.now());
+          cache.checkedAt = Date.now();
+          cache.lastCheck = started;
+          return result.updating;
+        } catch (cause) {
+          if (!signal.aborted) {
+            cache.lastCheck = started;
+            setError("Couldn't update locations · showing last results");
+          }
+          throw cause;
+        }
+      },
+      setChecking,
+      cache.lastCheck,
+      (time) => {
+        started = time;
+      },
+    );
     checks.current = runner;
     const visibility = () =>
       runner.setActive(
@@ -94,31 +104,44 @@ export function useComparisonLocations(
       document.removeEventListener("visibilitychange", visibility);
       clearInterval(clock);
     };
-  }, [season, pool]);
+  }, [season, pool, memory]);
   useEffect(() => {
     checks.current?.setActive(
       hasClans && document.visibilityState === "visible",
     );
   }, [hasClans]);
   useEffect(() => {
+    if (
+      !hasClans ||
+      (cache.publicationRevision === revision &&
+        cache.publicationRefresh === refreshKey &&
+        Date.now() - cache.publicationAt < 300_000)
+    )
+      return;
     const controller = new AbortController();
     void readArrival(season, true, false, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted)
-          setPublished(result.source === "published" ? result.accounts : null);
+        if (!controller.signal.aborted) {
+          cache.published =
+            result.source === "published" ? result.accounts : null;
+          cache.publicationAt = Date.now();
+          cache.publicationRevision = revision;
+          cache.publicationRefresh = refreshKey;
+          redraw((value) => value + 1);
+        }
       })
       .catch(() => {
         /* Retain last published context during an ordinary read failure. */
       });
     return () => controller.abort();
-  }, [season, revision, refreshKey]);
+  }, [season, pool, memory, revision, refreshKey, hasClans]);
   return {
-    records,
+    records: memory.records,
     checking,
     error,
     now,
-    checkedAt,
-    published,
+    checkedAt: cache.checkedAt,
+    published: cache.published,
     refresh: () => checks.current?.refresh(),
   };
 }

@@ -67,3 +67,29 @@ describe("Compare check scheduler", () => {
     run.dispose();
   });
 });
+
+it("remount preserves the check deadline and performs one overdue non-forced read", async () => {
+  vi.useFakeTimers();
+  const check = vi.fn().mockResolvedValue(false);
+  let last = -Infinity;
+  const mount = () =>
+    createComparisonChecks(check, vi.fn(), last, (time) => {
+      last = time;
+    });
+  let run = mount();
+  run.setActive(true);
+  await vi.advanceTimersByTimeAsync(20_000);
+  run.dispose();
+  run = mount();
+  run.setActive(true);
+  expect(check).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(280_000);
+  expect(check).toHaveBeenCalledTimes(2);
+  run.dispose();
+  await vi.advanceTimersByTimeAsync(300_001);
+  run = mount();
+  run.setActive(true);
+  expect(check).toHaveBeenCalledTimes(3);
+  expect(check.mock.calls.every((call) => call[0] === false)).toBe(true);
+  run.dispose();
+});
