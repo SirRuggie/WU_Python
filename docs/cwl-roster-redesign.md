@@ -3,13 +3,15 @@
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
 ## Status (2026-10-27)
+
 - **Release 1: LIVE** as `fea7e66` (roster `a72939f` + preserved moderation fixes). Branch `codex/roster-release-1` and tag `release-1` are pushed to `origin` (`https://github.com/SirRuggie/WU_Python.git`), verified on 2026-10-27. The release tag remains on `fea7e66`; later docs-only commits advance the branch only.
 - Release 1 commit trail: `856b9f0` (panels + visual refresh) → `76fe46c` (header, chips, cards, filters) → `b0fd451` (Load more, select-all-matching, max-50, preferences, mobile polish) → `a68b386` (final polish) → `356d563` (wider clan cards, total weight) → `9dceb81` (chip/card states) → `a72939f` (state rules unified in primitives.css).
 - Dirty-editor guard (Clan settings / Weights → leave → Cancel keeps the edit, Leave discards it): manually verified by Ruggie.
 - Deploy pipeline rebuilt: `current` symlink → `releases/<sha>`; workspace builds isolated from production (tested); rollback tested.
-- **Compare clans batch:** decisions 1–15 confirmed 2026-10-27 (see "Decisions — Compare clans"). Implementation on branch `codex/compare-clans`; not deployed.
+- **Compare clans batch:** decisions 1–16 confirmed 2026-10-27 (see "Decisions — Compare clans"). Implementation on branch `codex/compare-clans`; not deployed.
 
 ## Terminology
+
 - **Pool** = Main CWL / Lazy CWL. Never call these "league".
 - **League** = CWL league tier (Master II, Crystal, …). The League filter was removed from the roster.
 - **Assign** (not "Move"): covers first placement, reassignment and Unassign.
@@ -17,6 +19,7 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 - **Not in assigned clan** (Release 4): replaces "Not moved".
 
 ## Behavior contracts (apply to all releases)
+
 - **Balance algorithm:** KEEP the current `cwl_balance.py` behavior (spreads identical weights across clans, then evens out lower total weight). Release 3 only adds an opt-in overflow step. Auto-place keeps `_auto_plan` (unassigned only, heaviest first, eligible non-full clan with the lowest assigned count, then lowest total weight, then tag).
 - **Overfill (Release 3):**
   - Manual Assign may overfill, with a red warning (`15/15 → 17/15 (+2 over)`).
@@ -36,6 +39,7 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 - **Publish awareness:** while unpublished changes exist, every roster tab shows "Members still see roster version N (published …). Placement changes made since then are draft only." Placement-edit toasts say "Draft only, not published". Finalize lists the placement changes publishing will make. Signup changes are live and never labelled draft. Publishing always requires explicit confirmation.
 
 ## Decisions as implemented (Release 1)
+
 1. **Sticky selection bar** at the bottom: `N selected · Assign · Balance · Signup · ✕`. Two rows below 400px; floating at bottom-center on desktop. Back closes panels but never clears the selection; ✕ clears it. The inline bulk panel was removed.
 2. **Action panels** (shared `ActionPanel`): bottom sheet on mobile, centered dialog on desktop. Initial focus on Close. Sticky footer above the safe area.
    - Assign: clan search, clan rows as tap targets with a chevron, `before → after / cap`, and Unassign as the last row.
@@ -86,10 +90,12 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 14. Card body opens the existing Details modal; extract the roster menu without behavior changes. Compare offers only DM ↗ and Details; Escape restores focus and targets remain at least 44px.
 
 15. Replace all roster and Compare ⋯ action menus with a shared React Aria popover: only one open, closing on outside tap, Escape, action selection, focus out, tab/pool/season changes and detached phone scrolling. Preserve items, permissions and Discord link behavior.
+16. Accounts & signups and Compare Sort triggers show the ArrowDownWideNarrow icon and active option label, retaining “ · Grouped” where applicable. Accessible labels name the active sort and grouping. Labels stay single-line with ellipsis; toolbars fit 320, 360 and 1440 px. Options, persistence and sort panels stay unchanged.
 
 Compare stays read-only; Details and DM only.
 
 ## Backend facts (from code discovery)
+
 - Endpoints (prefix `/api/cwl`):
   - `PATCH /seasons/{id}/roster/{tag}` and `PATCH /seasons/{id}/roster/assignments` (both reject over-capacity)
   - `POST /seasons/{id}/staff-signup-changes`
@@ -111,6 +117,7 @@ Compare stays read-only; Details and DM only.
 - Compare clans loads locations from the cache (no forced lookup), re-checks every 5 min while visible with ≥1 clan chosen, and forces only via Refresh. Stale server entries still carry current_clan_checked_at; outside_family is only sent while current.
 
 ## Release plan
+
 - **Release 2 — Details as its own page:** route `/cwl/roster/account/{encodedTag}?season={id}` (the tag contains `#`). Back restores scroll, filters, tab and selection. Assigned clan via the Assign panel (instant + Undo). Weight keeps Save. Remove signup red + confirm. Weight shown once (source in a collapsible).
 - **Release 3 — backend:**
   - Atomic larger selections: raise the 50 limit in one transaction; never sequential batches.
@@ -122,6 +129,7 @@ Compare stays read-only; Details and DM only.
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
 - FilterPicker (ClanFilters.tsx, still used by App.tsx) is also a native <details> dropdown and likely shares the stays-open bug; review it outside the roster scope.
 - Optional clan filter on arrival-check (visible clans only) — trigger: signups grow a lot or the API rate-limits.
 - Tappable Compare tally counts to filter a column (pairs with the Release 4 filter).
@@ -132,7 +140,9 @@ Compare stays read-only; Details and DM only.
 - Desktop board view (a column per clan, drag to assign, with a keyboard/tap alternative, same APIs).
 
 ## Next stages
+
 - **Compare clans:** decisions confirmed (see above); implementation and review in progress. Board view still deferred.
 
 ## Open question
+
 - The Assign panel and Balance preview still show **average** weight; the clan cards now show **total**. Recommendation: Balance preview shows total + average; the Assign panel shows total. Not yet decided by Ruggie.
