@@ -54,11 +54,3 @@
 .compare-toolbar > button:last-child {
   flex: 0 0 auto;
 }
-.roster-ui .roster-filters-toolbar {
-  flex-wrap: nowrap;
-}
-@media (max-width: 720px) {
-  .roster-ui .roster-filters-toolbar > .roster-ui-input {
-    flex: 1 1 0;
-  }
-}
