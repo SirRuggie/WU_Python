@@ -1,3 +1,4 @@
+import { discordContact } from "./DiscordContact";
 import { ArrowRightLeft, Info, UserRoundPen } from "lucide-react";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import type { RosterAccount } from "./roster";
@@ -36,15 +37,16 @@ export function rosterAccountMenuItems({
       icon: UserRoundPen,
       onAction: onSignup,
     });
-  const linked = !!account.user_id && /^[0-9]{15,22}$/.test(account.user_id);
+  const contact = discordContact(account.user_id, true);
   items.push(
-    linked
+    contact.href
       ? {
           id: "dm",
-          label: "DM ↗",
-          href: `https://discord.com/users/${account.user_id}`,
+          label: contact.label,
+          href: contact.href,
+          title: contact.title,
         }
-      : { id: "dm", label: "No Discord linked", disabled: true },
+      : { id: "dm", label: contact.unavailable, disabled: true },
   );
   items.push({
     id: "details",

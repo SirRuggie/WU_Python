@@ -57,7 +57,7 @@ export function comparisonLocation(
     !location ||
     !Number.isFinite(Date.parse(location.current_clan_checked_at || ""))
   )
-    return { state: "checking", label: "Checking…", detail: "Checking…" };
+    return { state: "checking", label: "Checking…", detail: "" };
   const arrived = location.current_clan_tag === clanTag;
   const clan = location.current_clan_name || location.current_clan_tag;
   return {

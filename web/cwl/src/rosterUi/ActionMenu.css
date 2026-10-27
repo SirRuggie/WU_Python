@@ -65,3 +65,16 @@
     border-radius: 20px;
   }
 }
+
+.roster-action-heading {
+  display: none;
+}
+@media (max-width: 720px) {
+  .roster-action-heading {
+    display: block;
+    padding: 6px 12px;
+    margin: 0;
+    font-size: 15px;
+    overflow-wrap: anywhere;
+  }
+}

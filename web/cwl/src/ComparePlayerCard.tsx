@@ -3,6 +3,7 @@ import type { RosterAccount, RosterClan } from "./roster";
 import RosterAccountMenu from "./RosterAccountMenu";
 import {
   comparisonLocation,
+  comparisonAge,
   type ComparisonLocation,
 } from "./comparisonLocation";
 import {
@@ -58,7 +59,20 @@ export default function ComparePlayerCard({
               <LockKeyhole size={15} aria-label="Locked placement" />
             )}
           </span>
-          <span className="compare-location-line">{location.detail}</span>
+          <span className="compare-location-line" title={location.detail}>
+            {location.state !== "checking" && (
+              <>
+                <span className="compare-location-name">
+                  {record?.current_clan_name || record?.current_clan_tag
+                    ? `Now in: ${record.current_clan_name || record.current_clan_tag}`
+                    : "No clan"}
+                </span>
+                <span className="compare-location-age">
+                  · {comparisonAge(record?.current_clan_checked_at, now)}
+                </span>
+              </>
+            )}
+          </span>
         </span>
         <span className="compare-player-tags">
           <span className={`compare-tag is-${location.state}`}>
@@ -71,7 +85,11 @@ export default function ComparePlayerCard({
             <span className="compare-tag is-warning">Outside family</span>
           )}
         </span>
-        {note && <span className="compare-publish-note">{note}</span>}
+        {note && (
+          <span className="compare-publish-note" title={note}>
+            {note}
+          </span>
+        )}
       </button>
       <RosterAccountMenu
         account={account}

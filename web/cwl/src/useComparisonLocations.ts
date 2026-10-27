@@ -1,3 +1,5 @@
+import { fetchReadWithRetry } from "./readRetry";
+import { clearSnapshots } from "./snapshotCache";
 import {
   comparisonPoolMemory,
   type ComparisonMemory,
@@ -27,13 +29,15 @@ async function readArrival(
   force: boolean,
   signal: AbortSignal,
 ): Promise<ArrivalResponse> {
-  const response = await fetch(
+  const response = await fetchReadWithRetry(
     `/api/cwl/seasons/${encodeURIComponent(season)}/arrival-check?source=${published ? "published" : "draft"}&background=1${force ? "&refresh=1" : ""}`,
     { credentials: "same-origin", signal },
   );
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403)
+    if (response.status === 401 || response.status === 403) {
+      clearSnapshots();
       window.dispatchEvent(new Event("dashboard-access-changed"));
+    }
     throw new Error("Location check failed");
   }
   return response.json();

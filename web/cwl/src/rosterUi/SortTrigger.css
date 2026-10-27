@@ -23,8 +23,8 @@
   min-width: 0;
 }
 .roster-filters-toolbar > .roster-sort-trigger {
-  flex: 0 1 auto;
-  max-width: 45%;
+  flex: 1 1 auto;
+  max-width: 100%;
 }
 .compare-toolbar > .roster-sort-trigger {
   flex: 1 1 auto;
@@ -38,7 +38,7 @@
     font-size: 12px;
   }
   .roster-filters-toolbar > .roster-sort-trigger {
-    max-width: 42%;
+    max-width: 100%;
   }
   .roster-filters-toolbar > .roster-ui-input input {
     width: 100%;
@@ -48,7 +48,7 @@
 
 /* Keep the neighboring controls readable while the active sort truncates. */
 .compare-toolbar > .roster-sort-trigger {
-  flex: 1 1 0;
+  flex: 1 1 auto;
 }
 .compare-toolbar > button:first-child,
 .compare-toolbar > button:last-child {

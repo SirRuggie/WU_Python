@@ -21,6 +21,7 @@ export type ActionMenuItem = {
   onAction?: (trigger: HTMLElement) => void;
   href?: string;
   disabled?: boolean;
+  title?: string;
 };
 export default function ActionMenu({
   name,
@@ -92,6 +93,7 @@ export default function ActionMenu({
           placement="bottom end"
           isNonModal
         >
+          <h3 className="roster-action-heading">{name}</h3>
           <Menu
             ref={menu}
             aria-label={`Actions for ${name}`}
@@ -113,7 +115,7 @@ export default function ActionMenu({
                 }}
               >
                 {item.icon && <item.icon size={18} aria-hidden="true" />}
-                <span>{item.label}</span>
+                <span title={item.title}>{item.label}</span>
               </RosterMenuItem>
             ))}
           </Menu>

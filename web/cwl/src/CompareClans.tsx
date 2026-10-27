@@ -319,6 +319,18 @@ export default function CompareClans({
           chosen={clans}
           trigger={trigger}
           replace={replacing}
+          onReplace={(tag) => {
+            setFocusedClan(tag);
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => {
+                const index = visibleClans.indexOf(replacing || "");
+                const column = scroller.current?.children[index];
+                column
+                  ?.querySelector<HTMLButtonElement>(".roster-action-trigger")
+                  ?.focus({ preventScroll: true });
+              }),
+            );
+          }}
           onClose={() => setPanel(null)}
           onChange={updateClans}
         />

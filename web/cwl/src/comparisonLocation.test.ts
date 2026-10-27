@@ -38,7 +38,7 @@ describe("last-known comparison locations", () => {
     expect(comparisonLocation(undefined, "#A", now)).toEqual({
       state: "checking",
       label: "Checking…",
-      detail: "Checking…",
+      detail: "",
     });
     expect(
       comparisonLocation(

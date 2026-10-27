@@ -253,7 +253,7 @@
 .compare-player-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 2px;
 }
 .compare-tag {
   display: inline-flex;
@@ -282,9 +282,6 @@
   grid-column: 2;
   grid-row: 1;
   align-self: start;
-}
-.compare-account .roster-player-actions {
-  z-index: 10;
 }
 
 @media (max-width: 720px) {
@@ -369,7 +366,7 @@
     display: flex;
     gap: 8px;
     align-items: center;
-    margin: 4px 0;
+    margin: 2px 0;
     padding-right: 50px;
   }
   .compare-mobile-navigation span {
@@ -454,7 +451,7 @@
    consuming a second header row or a whole column of player text. */
 .compare-workspace .compare-clan-summary {
   padding: 8px 10px;
-  gap: 4px;
+  gap: 2px;
 }
 .compare-workspace .compare-clan-top {
   flex-wrap: nowrap;
@@ -474,13 +471,13 @@
   content: "· ";
 }
 .compare-workspace .compare-player-body {
-  padding: 5px 7px;
+  padding: 3px 7px;
   gap: 2px;
   line-height: 16px;
   grid-column: 1 / -1;
 }
 .compare-workspace .compare-account {
-  margin: 4px 0;
+  margin: 2px 0;
   display: block;
 }
 .compare-player-top {
@@ -510,7 +507,7 @@
 .compare-tag {
   padding: 0 5px;
   font-size: 10px;
-  line-height: 15px;
+  line-height: 13px;
 }
 .compare-account > .roster-player-menu {
   position: absolute;
@@ -528,7 +525,7 @@
 }
 @media (min-width: 721px) {
   .compare-workspace .compare-account {
-    margin: 4px 6px;
+    margin: 2px 6px;
   }
 }
 
@@ -571,4 +568,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.compare-workspace .compare-clan-name {
+  font-size: 14px;
+  line-height: 16px;
+}
+
+.compare-location-line {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+.compare-location-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compare-location-age {
+  flex-shrink: 0;
 }

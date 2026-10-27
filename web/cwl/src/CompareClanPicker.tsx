@@ -14,6 +14,7 @@ export default function CompareClanPicker({
   onClose,
   onChange,
   replace,
+  onReplace,
 }: {
   clans: RosterClan[];
   availableTags: string[];
@@ -22,6 +23,7 @@ export default function CompareClanPicker({
   onClose: () => void;
   onChange: (tags: string[]) => void;
   replace?: string;
+  onReplace: (tag: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const matching = clans
@@ -120,6 +122,7 @@ export default function CompareClanPicker({
                         : tag,
                   ),
                 );
+                onReplace(clan.tag);
                 onClose();
               }}
             >
