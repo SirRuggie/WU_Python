@@ -8,6 +8,7 @@ import { moveComparisonClan } from "./compare";
 import type { RosterClan } from "./roster";
 export default function CompareClanPicker({
   clans,
+  availableTags,
   chosen,
   trigger,
   onClose,
@@ -15,6 +16,7 @@ export default function CompareClanPicker({
   replace,
 }: {
   clans: RosterClan[];
+  availableTags: string[];
   chosen: string[];
   trigger: HTMLElement | null;
   onClose: () => void;
@@ -22,11 +24,13 @@ export default function CompareClanPicker({
   replace?: string;
 }) {
   const [search, setSearch] = useState("");
-  const matching = clans.filter((clan) =>
-    `${clan.name} ${clan.tag}`
-      .toLowerCase()
-      .includes(search.trim().toLowerCase()),
-  );
+  const matching = clans
+    .filter((clan) => availableTags.includes(clan.tag))
+    .filter((clan) =>
+      `${clan.name} ${clan.tag}`
+        .toLowerCase()
+        .includes(search.trim().toLowerCase()),
+    );
   return (
     <ActionPanel
       title={replace ? "Change clan in this column" : "Choose clans"}
@@ -54,10 +58,7 @@ export default function CompareClanPicker({
             }))}
             onValueChange={(value) =>
               onChange(
-                sortClans(
-                  clans.filter((clan) => chosen.includes(clan.tag)),
-                  value as ClanSort,
-                ).map((clan) => clan.tag),
+                sortChosenComparisonClans(clans, chosen, value as ClanSort),
               )
             }
           />
@@ -156,4 +157,15 @@ export default function CompareClanPicker({
       )}
     </ActionPanel>
   );
+}
+
+export function sortChosenComparisonClans(
+  clans: RosterClan[],
+  chosen: string[],
+  sort: ClanSort,
+) {
+  return sortClans(
+    clans.filter((clan) => chosen.includes(clan.tag)),
+    sort,
+  ).map((clan) => clan.tag);
 }

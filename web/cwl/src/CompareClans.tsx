@@ -314,7 +314,8 @@ export default function CompareClans({
       )}
       {panel === "clans" && (
         <CompareClanPicker
-          clans={available}
+          clans={allClans}
+          availableTags={available.map((clan) => clan.tag)}
           chosen={clans}
           trigger={trigger}
           replace={replacing}
