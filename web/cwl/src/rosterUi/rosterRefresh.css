@@ -1,0 +1,197 @@
+/* Roster-only adoption layer. Other dashboard pages retain their existing UI. */
+.roster-workspace.roster-ui .card,
+.roster-workspace.roster-ui .roster-account-tools,
+.roster-workspace.roster-ui .roster-more-filters {
+  border-radius: var(--roster-radius-panel);
+  border-color: var(--roster-border-subtle);
+}
+.roster-workspace.roster-ui
+  button:not(.roster-menu-trigger):not([role="tab"]):not(
+    .roster-assign-clan
+  ):not(.roster-player-body):not(.roster-clan-chip):not(
+    .cwl-pool-tabs > button
+  ):not(.roster-list-pool-tabs > button) {
+  min-height: var(--roster-height-control);
+  border-radius: var(--roster-radius-pill);
+}
+.roster-ui :focus-visible {
+  outline: 3px solid var(--roster-focus);
+  outline-offset: 3px;
+}
+.roster-ui.action-panel {
+  border-radius: var(--roster-radius-panel);
+  border-color: var(--roster-border);
+}
+.roster-ui .action-panel-close {
+  border-radius: var(--roster-radius-pill);
+  min-width: 72px;
+}
+.roster-ui .action-panel-content {
+  scrollbar-gutter: stable;
+}
+.roster-ui .roster-assign-clan {
+  text-align: left;
+  border-radius: var(--roster-radius-card);
+  padding: 0.85rem;
+}
+.roster-ui .roster-assign-clan:hover:not(:disabled) {
+  border-color: var(--roster-gold);
+  background: var(--roster-surface-soft);
+}
+.roster-ui .roster-assign-clan-head {
+  align-items: start;
+}
+.roster-ui .roster-assign-clan-name small {
+  display: none;
+}
+.roster-ui .roster-assign-clan-count {
+  white-space: nowrap;
+  color: var(--roster-text);
+}
+.roster-ui .roster-assign-clan .roster-ui-progress-track {
+  height: 4px;
+}
+.roster-ui .roster-assign-clan .roster-ui-progress-track > span {
+  background: var(--roster-success);
+}
+.roster-ui .roster-assign-clan:disabled .roster-ui-progress-track > span {
+  background: var(--roster-warning);
+}
+.roster-ui .roster-assign-review {
+  margin-top: 0.75rem;
+}
+.roster-ui .roster-assign-intro {
+  font-size: 0.9rem;
+  color: var(--roster-text-muted);
+}
+.roster-ui .roster-assign-destinations-heading h3 {
+  font-size: 0.95rem;
+}
+.roster-ui .roster-balance-clan-list label {
+  border-radius: var(--roster-radius-card);
+}
+.roster-workspace.roster-ui .roster-menu {
+  min-width: 0;
+}
+.roster-workspace.roster-ui .roster-quick-search {
+  align-items: end;
+}
+.roster-ui .action-panel-footer .roster-ui-button {
+  padding: 0.65rem 0.6rem;
+  font-size: 0.9rem;
+}
+.roster-ui .action-panel-footer .roster-ui-button span {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 680px) {
+  .roster-ui.action-panel {
+    border-radius: var(--roster-radius-panel) var(--roster-radius-panel) 0 0;
+  }
+  .roster-ui.action-panel.is-search-focused {
+    border-radius: 0;
+  }
+  .roster-ui .action-panel-heading {
+    gap: 0.6rem;
+  }
+  .roster-ui .action-panel-heading h2 {
+    font-size: 1.05rem;
+  }
+  .roster-ui .action-panel-content {
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+  .roster-ui .action-panel-footer {
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+}
+.roster-ui.action-panel {
+  color-scheme: dark;
+}
+.roster-ui .roster-assign-clan {
+  position: relative;
+  padding-right: 2.3rem;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  justify-items: stretch;
+  background: var(--roster-surface-raised);
+  border-color: var(--roster-border-subtle);
+}
+.roster-ui .roster-assign-clan-head,
+.roster-ui .roster-assign-clan-meta {
+  width: 100%;
+}
+.roster-ui .roster-ui-input-control input,
+.roster-player-dialog.roster-ui
+  input:not([type="checkbox"]):not([type="radio"]) {
+  min-height: var(--roster-height-control-comfortable);
+  border-radius: var(--roster-radius-card);
+}
+
+.roster-ui .roster-assign-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Section navigation uses a pill; pool navigation uses only an underline. */
+.shell .roster-workspace .roster-workflow-nav > button {
+  border: 1px solid transparent;
+  border-radius: var(--roster-radius-pill);
+}
+.shell
+  .roster-workspace
+  .roster-workflow-nav
+  > button:is(.active, [aria-pressed="true"]) {
+  background: rgb(237 198 77 / 14%);
+  border-color: transparent;
+  box-shadow: none;
+}
+.shell .roster-workspace .roster-list-pool-tabs > button {
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+}
+.shell
+  .roster-workspace
+  .roster-list-pool-tabs
+  > button:is(.active, [aria-pressed="true"]) {
+  background: transparent;
+  border-bottom-color: var(--roster-gold);
+  box-shadow: none;
+}
+@media (max-width: 680px) {
+  .shell .roster-workspace :is(.roster-workflow-nav, .roster-list-pool-tabs) {
+    scrollbar-width: none;
+    mask-image: linear-gradient(
+      to right,
+      #000 0,
+      #000 calc(100% - 12px),
+      transparent
+    );
+    padding-right: 12px;
+  }
+  .shell
+    .roster-workspace
+    :is(.roster-workflow-nav, .roster-list-pool-tabs)::-webkit-scrollbar {
+    display: none;
+  }
+}
+.roster-ui .roster-assign-unassign:hover:not(:disabled) {
+  border-color: var(--roster-text-muted);
+}
+.roster-workspace .staff-signup-bar .roster-ui-status,
+.roster-workspace .staff-signup-bar-actions .roster-ui-button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+@media (max-width: 400px) {
+  .roster-workspace .staff-signup-bar .roster-ui-status {
+    font-size: 11px;
+  }
+  .roster-workspace .staff-signup-bar-actions .roster-ui-button {
+    padding-inline: 8px;
+  }
+}

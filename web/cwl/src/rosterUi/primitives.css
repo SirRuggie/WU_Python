@@ -1,0 +1,355 @@
+.roster-ui-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: var(--roster-height-control);
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--roster-border);
+  border-radius: var(--roster-radius-pill);
+  background: var(--roster-surface-raised);
+  color: var(--roster-text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.roster-ui-button:hover:not(:disabled) {
+  border-color: var(--roster-gold);
+}
+.roster-ui-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.roster-ui-button.is-primary {
+  border-color: var(--roster-gold);
+  background: var(--roster-gold);
+  color: #201b10;
+}
+.roster-ui-button.is-primary:hover:not(:disabled) {
+  background: var(--roster-gold-strong);
+}
+.roster-ui-button.is-danger {
+  border-color: #8e4545;
+  background: #3a2022;
+  color: #ffdcdc;
+}
+.roster-ui-button.is-icon {
+  border-radius: 50%;
+  width: var(--roster-height-control);
+  padding: 0;
+}
+.roster-ui-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+}
+.roster-ui-status,
+.roster-ui-chip {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 28px;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--roster-border-subtle);
+  border-radius: var(--roster-radius-pill);
+  background: var(--roster-surface-raised);
+  color: var(--roster-text-muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.roster-ui-status.is-success,
+.roster-ui-chip.is-success {
+  border-color: #37644c;
+  background: #1b3025;
+  color: var(--roster-success);
+}
+.roster-ui-status.is-warning,
+.roster-ui-chip.is-warning {
+  border-color: #76602e;
+  background: #302817;
+  color: var(--roster-warning);
+}
+.roster-ui-status.is-danger,
+.roster-ui-chip.is-danger {
+  border-color: #754040;
+  background: #321d1e;
+  color: var(--roster-danger);
+}
+.roster-ui-status.is-info,
+.roster-ui-chip.is-info {
+  border-color: #3e5a75;
+  background: #1c2936;
+  color: #a9cff3;
+}
+.roster-ui-chip {
+  min-height: 34px;
+  padding: 0.2rem 0.35rem 0.2rem 0.65rem;
+}
+.roster-ui-chip button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.roster-ui-progress {
+  width: 100%;
+}
+.roster-ui-progress-track {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--roster-radius-pill);
+  background: var(--roster-surface-soft);
+}
+.roster-ui-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--roster-gold);
+  transition: width 120ms ease;
+}
+.roster-ui-input {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.roster-ui-input label {
+  color: var(--roster-text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.roster-ui-input-control {
+  position: relative;
+  min-width: 0;
+}
+.roster-ui-input-control input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--roster-height-control-comfortable);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--roster-border);
+  border-radius: var(--roster-radius-card);
+  background: var(--roster-surface);
+  color: var(--roster-text);
+  font: inherit;
+}
+.roster-ui-input-control input[aria-invalid="true"] {
+  border-color: var(--roster-danger);
+}
+.roster-ui-input-icon {
+  position: absolute;
+  top: 50%;
+  left: 0.7rem;
+  width: 1rem;
+  height: 1rem;
+  color: var(--roster-text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.roster-ui-input-control.has-icon input {
+  padding-left: 2.2rem;
+}
+.roster-ui-input small {
+  color: var(--roster-text-muted);
+}
+.roster-ui-input-error {
+  color: var(--roster-danger) !important;
+}
+.roster-menu {
+  display: grid;
+  gap: 0.45rem;
+}
+.roster-menu-trigger {
+  width: 100%;
+  min-height: var(--roster-height-control-comfortable);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--roster-border);
+  border-radius: var(--roster-radius-control);
+  background: var(--roster-surface-raised);
+  color: var(--roster-text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.roster-menu-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.roster-menu-trigger-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+.roster-menu-label {
+  color: var(--roster-text-muted);
+  font-size: 0.75rem;
+}
+.roster-menu-current {
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+.roster-menu-chevron {
+  color: var(--roster-gold);
+}
+.roster-menu-panel {
+  max-height: 100%;
+  overflow: auto;
+}
+.roster-menu-list {
+  display: grid;
+  gap: 0.35rem;
+  outline: none;
+}
+.roster-menu-item {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: var(--roster-radius-control);
+  background: transparent;
+  color: var(--roster-text);
+  cursor: pointer;
+}
+.roster-menu-item[data-focused] {
+  border-color: var(--roster-gold);
+  background: var(--roster-surface-soft);
+}
+.roster-menu-item[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.roster-menu-item-label {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.roster-menu-item-check {
+  color: var(--roster-gold);
+}
+@media (prefers-reduced-motion: reduce) {
+  .roster-ui-progress-track > span {
+    transition: none;
+  }
+}
+
+.roster-menu-item:has(.roster-menu-item-check) {
+  background: rgb(237 198 77 / 12%);
+}
+
+/* Roster chip/card interaction contract — single source of state styling.
+   Hover: subtly lighten the existing border only, with no size change.
+   Active filter: gold border, gold tint and gold text; hover preserves it.
+   Keyboard focus: white :focus-visible ring, transparent base border.
+   Focus never implies an active filter. Stat chips paint these same states on
+   their 36px pseudo-element inside the larger 44px hit target. */
+.roster-ui
+  :is(
+    .roster-ui-button,
+    .roster-menu-trigger,
+    .roster-menu-item,
+    .roster-ui-chip button,
+    .roster-header-more summary
+  ):not(:focus-visible) {
+  outline: none;
+  outline-offset: 0;
+}
+.roster-ui
+  :is(
+    .roster-ui-button,
+    .roster-menu-trigger,
+    .roster-menu-item,
+    .roster-ui-chip button,
+    .roster-header-more summary
+  ):hover:where(:not(:disabled):not([aria-disabled="true"])) {
+  --roster-control-state-border: #797983;
+  border-color: var(--roster-control-state-border);
+}
+.roster-ui .roster-ui-button.roster-ui[aria-pressed="true"],
+.roster-ui .roster-menu-item:has(.roster-menu-item-check),
+.roster-ui .roster-ui-chip:has(button) {
+  --roster-control-state-border: var(--roster-gold);
+  --roster-control-state-background: #373127;
+  border-color: var(--roster-gold);
+  background: var(--roster-control-state-background);
+  color: #ffe098;
+  -webkit-text-fill-color: #ffe098;
+  box-shadow: none;
+}
+.roster-ui
+  :is(
+    .roster-ui-button,
+    .roster-menu-trigger,
+    .roster-menu-item,
+    .roster-ui-chip button,
+    .roster-header-more summary
+  ):focus-visible {
+  --roster-control-state-border: transparent;
+  border-color: transparent;
+  outline: 2px solid var(--roster-text);
+  outline-offset: 0;
+}
+.roster-ui .roster-ui-button.roster-ui[aria-pressed="true"]:focus-visible {
+  border-color: transparent;
+}
+.roster-ui .roster-ui-chip:has(button:focus-visible) {
+  border-color: transparent;
+}
+.roster-ui .roster-ui-button.is-danger:hover:not(:focus-visible) {
+  border-color: var(--roster-danger);
+}
+.roster-ui .roster-ui-input input:focus-visible {
+  outline: 2px solid var(--roster-text);
+  outline-offset: 0;
+  border-color: transparent;
+}
+/* Pseudo-element controls use the same states without a second outer edge. */
+.roster-ui
+  .roster-header-working
+  .roster-ui-button:is(:hover, :focus-visible, [aria-pressed="true"]),
+.roster-workspace.roster-ui .roster-header-finalize:is(:hover, :focus-visible) {
+  border-color: transparent;
+  background: transparent;
+  outline: none;
+}
+.roster-ui .roster-header-working .roster-ui-button::before,
+.roster-ui .roster-header-finalize::before {
+  border-color: var(--roster-control-state-border, var(--roster-border));
+  background: var(
+    --roster-control-state-background,
+    var(--roster-surface-raised)
+  );
+}
+.roster-ui .roster-header-working .roster-ui-button:focus-visible::before,
+.roster-ui .roster-header-finalize:focus-visible::before {
+  border-color: transparent;
+  outline: 2px solid var(--roster-text);
+  outline-offset: 0;
+}
+@media (max-width: 650px) {
+  .roster-header-publication .roster-menu-trigger::before {
+    border-color: var(--roster-control-state-border, var(--roster-border));
+  }
+  .roster-ui .roster-header-publication .roster-menu-trigger:focus-visible {
+    outline: none;
+  }
+  .roster-header-publication .roster-menu-trigger:focus-visible::before {
+    border-color: transparent;
+    outline: 2px solid var(--roster-text);
+    outline-offset: 0;
+  }
+}
