@@ -1,0 +1,21 @@
+.roster-ui {
+  --roster-radius-control: 10px;
+  --roster-radius-card: 14px;
+  --roster-radius-panel: 20px;
+  --roster-radius-pill: 999px;
+  --roster-height-control: 44px;
+  --roster-height-control-comfortable: 48px;
+  --roster-gold: #edc64d;
+  --roster-gold-strong: #f5d66e;
+  --roster-surface: #19191d;
+  --roster-surface-raised: #242429;
+  --roster-surface-soft: #2d2d33;
+  --roster-border: #494950;
+  --roster-border-subtle: #38383e;
+  --roster-text: #f5f4f0;
+  --roster-text-muted: #b9bbc4;
+  --roster-danger: #e98585;
+  --roster-success: #79c89b;
+  --roster-warning: #efc867;
+  --roster-focus: #f5d66e;
+}

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Button, Input } from "./rosterUi/primitives";
+import { ArrowLeft, Check, Eye, X, LockKeyhole } from "lucide-react";
 import ActionPanel from "./ActionPanel";
 import { api, ApiError, type Pool } from "./api";
 import type { AutoPreview, RosterSnapshot } from "./roster";
@@ -8,6 +10,7 @@ import {
   rosterWeightSummary,
 } from "./rosterPlanPresentation";
 import "./RosterBalance.css";
+import { compactRosterWeight } from "./rosterCompactWeight";
 
 type Props = {
   roster: RosterSnapshot;
@@ -31,7 +34,7 @@ const reasons: Record<string, string> = {
   no_eligible_rule: "No clan matches the pool and weight rules",
 };
 const averageText = (value: number | null) =>
-  value === null ? "Unknown" : value.toLocaleString("en-US");
+  value === null ? "Unknown" : compactRosterWeight(value);
 export default function RosterBalance({
   roster,
   seasonId,
@@ -134,7 +137,12 @@ export default function RosterBalance({
     : null;
   const clanName = (tag: string | null) =>
     roster.clans.find((c) => c.tag === tag)?.name || tag || "Unassigned";
-  async function run(apply: boolean) {
+  const skippedLocked =
+    preview?.unassigned.filter(
+      (item) => item.reason === "locked" || item.reason === "kept",
+    ) || [];
+  const [planNotice, setPlanNotice] = useState("");
+  async function run(apply: boolean, lockedOverride?: boolean) {
     if (pending.current || !allowed) return;
     pending.current = true;
     setBusy(true);
@@ -147,7 +155,7 @@ export default function RosterBalance({
           revision: preview?.revision ?? roster.revision,
           tags,
           clan_tags: hosts,
-          include_locked: includeLocked,
+          include_locked: lockedOverride ?? includeLocked,
         };
     try {
       if (apply && preview) {
@@ -166,7 +174,18 @@ export default function RosterBalance({
           "POST",
           body,
         );
-        if (alive.current) setPreview(value);
+        if (alive.current) {
+          setPreview(value);
+          if (lockedOverride === undefined) setPlanNotice("");
+          if (lockedOverride !== undefined) {
+            setIncludeLocked(lockedOverride);
+            setPlanNotice(
+              lockedOverride
+                ? "Plan updated: locked accounts included. Review the revised moves."
+                : "Plan updated: locked accounts excluded.",
+            );
+          }
+        }
       }
     } catch (cause) {
       if (alive.current) {
@@ -188,10 +207,55 @@ export default function RosterBalance({
   }
   return (
     <ActionPanel
+      className="roster-ui"
       title={automatic ? "Auto-place unassigned" : "Balance across clans"}
       trigger={trigger}
       busy={busy}
       onClose={onClose}
+      footer={
+        preview ? (
+          <>
+            <Button
+              icon={ArrowLeft}
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setPreview(null);
+                setPlanNotice("");
+              }}
+            >
+              Back to clans
+            </Button>
+            <Button
+              type="button"
+              icon={Check}
+              variant="primary"
+              disabled={
+                busy ||
+                !preview.placements.length ||
+                preview.revision !== roster.revision
+              }
+              onClick={() => void run(true)}
+            >
+              {busy ? "Applying…" : "Apply placements"}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button icon={X} disabled={busy} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              icon={Eye}
+              variant="primary"
+              disabled={busy || !allowed}
+              onClick={() => void run(false)}
+            >
+              {busy ? "Preparing…" : "Preview placements"}
+            </Button>
+          </>
+        )
+      }
       expandOnSearchFocus
     >
       <div className="roster-balance-panel">
@@ -228,14 +292,14 @@ export default function RosterBalance({
                 <legend>Choose a pool</legend>
                 <div className="roster-plan-pools">
                   {(["main", "lazy"] as const).map((p) => (
-                    <button
+                    <Button
                       type="button"
                       aria-pressed={chosenPool === p}
                       key={p}
                       onClick={() => setChosenPool(p)}
                     >
                       {p === "main" ? "Main CWL" : "Lazy CWL"}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </fieldset>
@@ -243,7 +307,7 @@ export default function RosterBalance({
             {!automatic && (
               <label>
                 Find hosting clans
-                <input
+                <Input
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -323,16 +387,22 @@ export default function RosterBalance({
               Missing or unavailable weights are skipped. Signups stay
               unchanged.
             </small>
-            <button
-              className="primary"
-              disabled={busy || !allowed}
-              onClick={() => void run(false)}
-            >
-              {busy ? "Preparing…" : "Preview placements"}
-            </button>
           </>
         ) : (
           <>
+            {planNotice && <p role="status">{planNotice}</p>}
+            {!automatic && (includeLocked || skippedLocked.length > 0) && (
+              <Button
+                icon={LockKeyhole}
+                type="button"
+                disabled={busy || preview.revision !== roster.revision}
+                onClick={() => void run(false, !includeLocked)}
+              >
+                {includeLocked
+                  ? "Exclude locked"
+                  : `Include ${skippedLocked.length} locked account${skippedLocked.length === 1 ? "" : "s"}`}
+              </Button>
+            )}
             <p role="status">
               {preview.placements.length} move
               {preview.placements.length === 1 ? "" : "s"} ·{" "}
@@ -419,22 +489,6 @@ export default function RosterBalance({
                 ))}
               </ul>
             </details>
-            <div className="roster-plan-footer">
-              <button disabled={busy} onClick={() => setPreview(null)}>
-                Back to clans
-              </button>
-              <button
-                className="primary"
-                disabled={
-                  busy ||
-                  !preview.placements.length ||
-                  preview.revision !== roster.revision
-                }
-                onClick={() => void run(true)}
-              >
-                {busy ? "Applying…" : "Apply placements"}
-              </button>
-            </div>
           </>
         )}
       </div>

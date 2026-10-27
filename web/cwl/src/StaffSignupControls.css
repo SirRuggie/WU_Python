@@ -15,10 +15,8 @@
 .staff-signup-bar > span {
   min-width: 0;
 }
-.staff-signup-bar strong {
-  display: block;
-  color: #e8ebef;
-  font-size: 13px;
+.staff-signup-bar .roster-ui-status {
+  font-size: 12px;
 }
 .staff-signup-bar small {
   display: block;
@@ -43,11 +41,11 @@
   font-size: 12px;
 }
 .staff-signup-window summary::before {
-  content: '▸';
+  content: "▸";
   margin-right: 7px;
 }
 .staff-signup-window[open] summary::before {
-  content: '▾';
+  content: "▾";
 }
 .staff-signup-window p {
   margin: 0 0 9px;
@@ -76,6 +74,13 @@
 }
 .staff-signup-form .member-picker {
   margin-bottom: 14px;
+}
+.staff-signup-form .roster-menu {
+  margin: 8px 0 12px;
+  max-width: 340px;
+}
+.staff-signup-form .roster-ui-input {
+  margin: 8px 0;
 }
 .staff-signup-form > p {
   color: #cbd3df;
@@ -150,44 +155,6 @@
 .staff-signup-controls .notice {
   margin: 10px 0 0;
 }
-.staff-tag-lookup {
-  display: flex;
-  align-items: end;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.staff-tag-lookup label {
-  flex: 1;
-  min-width: 0;
-}
-.staff-tag-result {
-  padding: 12px;
-  border: 1px solid #42464d;
-  border-radius: 8px;
-}
-.staff-tag-player {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.staff-tag-player div {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.staff-tag-player small {
-  display: block;
-}
-.staff-tag-result fieldset > label {
-  display: block;
-  margin: 10px 0;
-}
-.staff-tag-result fieldset > label.check-label {
-  display: flex;
-}
-.staff-tag-result fieldset > button.primary {
-  margin-top: 12px;
-}
 @media (max-width: 650px) {
   .staff-signup-accounts {
     grid-template-columns: 1fr;
@@ -203,12 +170,5 @@
   .staff-signup-bar button {
     font-size: 12px;
     padding-inline: 10px;
-  }
-  .staff-tag-lookup {
-    flex-wrap: wrap;
-  }
-  .staff-tag-lookup label,
-  .staff-tag-lookup button {
-    flex-basis: 100%;
   }
 }

@@ -78,7 +78,6 @@
   align-items: center;
   cursor: pointer;
 }
-.roster-plan-footer,
 .roster-plan-pools {
   display: flex;
   flex-wrap: wrap;

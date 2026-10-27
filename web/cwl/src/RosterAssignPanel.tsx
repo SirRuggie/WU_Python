@@ -1,6 +1,9 @@
 import { useMemo, useRef, useState } from "react";
+import { Button, Input, ProgressBar } from "./rosterUi/primitives";
+import { Search, Unlink, X } from "lucide-react";
 import ActionPanel from "./ActionPanel";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
+import { compactRosterWeight } from "./rosterCompactWeight";
 import "./RosterAssignPanel.css";
 
 type Props = {
@@ -49,10 +52,6 @@ function destinationProjection(
   };
 }
 
-function displayWeight(value: number | null) {
-  return value === null ? "Unavailable" : Math.round(value).toLocaleString();
-}
-
 export default function RosterAssignPanel({
   roster,
   selectedAccounts,
@@ -67,6 +66,10 @@ export default function RosterAssignPanel({
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState("");
   const hidden = new Set(hiddenTags);
+  const reviewAccounts = [...selectedAccounts].sort(
+    (left, right) =>
+      Number(hidden.has(right.tag)) - Number(hidden.has(left.tag)),
+  );
   const pools = new Set(selectedAccounts.map((account) => account.pool));
   const pool = pools.size === 1 ? selectedAccounts[0]?.pool : null;
   const destinations = useMemo(
@@ -109,13 +112,13 @@ export default function RosterAssignPanel({
       if (await onAssign(destination)) onClose();
       else
         setError(
-          "The assignment was not saved. Review the roster status and try again.",
+          "Could not confirm the assignment. Review the roster status before trying again.",
         );
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
-          : "The assignment was not saved. Try again.",
+          : "Could not confirm the assignment. Refresh the roster before trying again.",
       );
     } finally {
       pending.current = false;
@@ -125,27 +128,46 @@ export default function RosterAssignPanel({
 
   return (
     <ActionPanel
+      className="roster-ui"
       title="Assign selected accounts"
       trigger={trigger}
       busy={busy || submitting}
       expandOnSearchFocus
+      footer={
+        <>
+          <Button
+            icon={X}
+            disabled={busy || submitting}
+            onClick={() => {
+              if (!pending.current) onClose();
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            icon={Unlink}
+            disabled={unavailable || !canUnassign}
+            onClick={() => void assign(null)}
+          >
+            Unassign
+          </Button>
+        </>
+      }
       onClose={() => {
         if (!pending.current) onClose();
       }}
     >
       <div className="roster-assign-panel">
         <p className="roster-assign-intro">
-          {selectedAccounts.length} account
-          {selectedAccounts.length === 1 ? "" : "s"} selected. Choose a clan to
-          update the working roster; publish separately for members.
-        </p>
-        <p className="roster-assign-lock-note">
-          Manual assignment locks placement. Unassign clears the lock.
+          Assign {selectedAccounts.length} account
+          {selectedAccounts.length === 1 ? "" : "s"}
+          {" · "}manual assignment locks placement
         </p>
         {pool !== null && (
           <label className="roster-assign-search">
             Search hosting clans
-            <input
+            <Input
+              icon={Search}
               type="search"
               value={search}
               disabled={busy || submitting}
@@ -158,38 +180,8 @@ export default function RosterAssignPanel({
           <p className="roster-assign-warning">
             {hiddenTags.length} selected account
             {hiddenTags.length === 1 ? " is" : "s are"} hidden by current
-            filters and will be included.
+            filters and will be included below.
           </p>
-        )}
-        <details className="roster-assign-accounts">
-          <summary>
-            Review all {selectedAccounts.length} selected accounts
-          </summary>
-          <ul>
-            {selectedAccounts.map((account) => (
-              <li key={account.tag}>
-                <span>
-                  {account.player_name} <small>{account.tag}</small>
-                </span>
-                {hidden.has(account.tag) && <small>Hidden by filters</small>}
-              </li>
-            ))}
-          </ul>
-        </details>
-        {locked.length > 0 && (
-          <details className="roster-assign-accounts">
-            <summary>
-              {locked.length} locked placement{locked.length === 1 ? "" : "s"}{" "}
-              affected
-            </summary>
-            <ul>
-              {locked.map((account) => (
-                <li key={account.tag}>
-                  {account.player_name} <small>{account.tag}</small>
-                </li>
-              ))}
-            </ul>
-          </details>
         )}
         {pool === null && selectedAccounts.length > 0 && (
           <p className="roster-assign-warning">
@@ -202,10 +194,12 @@ export default function RosterAssignPanel({
             className="roster-assign-destinations"
             aria-label="Hosting clan destinations"
           >
-            <h3>{pool === "main" ? "Main" : "Lazy"} CWL hosting clans</h3>
-            <p className="roster-assign-result-count">
-              {shownDestinations.length} of {destinations.length} clans
-            </p>
+            <div className="roster-assign-destinations-heading">
+              <h3>{pool === "main" ? "Main" : "Lazy"} CWL hosting clans</h3>
+              <small>
+                {shownDestinations.length} of {destinations.length}
+              </small>
+            </div>
             {destinations.length === 0 && (
               <p>No active hosting clans are available for this pool.</p>
             )}
@@ -228,40 +222,61 @@ export default function RosterAssignPanel({
                   const unavailableDestination =
                     currentlyFull || projectedOverCapacity;
                   const unchanged = incomingCount === 0;
-                  const capacityLabel = `${clan.effective_capacity}${clan.capacity === null ? " default" : ""}`;
+                  const disabled =
+                    unavailable || unavailableDestination || unchanged;
+                  const reason = currentlyFull
+                    ? "Full"
+                    : projectedOverCapacity
+                      ? "Over capacity"
+                      : unchanged
+                        ? "Already assigned"
+                        : null;
                   return (
                     <li key={clan.tag}>
-                      <div className="roster-assign-clan-details">
-                        <strong>{clan.name}</strong> <small>{clan.tag}</small>
-                        <span>
-                          Current: {currentCount} / {capacityLabel} · Avg known
-                          weight: {displayWeight(currentAverageWeight)}
-                          {currentKnownWeights < currentCount &&
-                            ` (${currentKnownWeights} of ${currentCount} weighed)`}
-                        </span>
-                        <span>
-                          After selection: {currentCount} → {projectedCount} /{" "}
-                          {clan.effective_capacity}
-                          {incomingCount > 0 && ` (+${incomingCount})`}
-                        </span>
-                        {unavailableDestination && (
-                          <small className="roster-assign-warning">
-                            {currentlyFull
-                              ? "Clan is full"
-                              : "Selection exceeds capacity"}
-                          </small>
-                        )}
-                      </div>
                       <button
                         type="button"
-                        disabled={
-                          unavailable || unavailableDestination || unchanged
-                        }
+                        className="roster-assign-clan"
+                        disabled={disabled}
                         onClick={() => void assign(clan.tag)}
                       >
-                        {unchanged
-                          ? "Already assigned"
-                          : `Assign to ${clan.name}`}
+                        <span className="roster-assign-clan-head">
+                          <span className="roster-assign-clan-name">
+                            <span className="roster-assign-visually-hidden">
+                              Assign selected accounts to{" "}
+                            </span>
+                            <strong>{clan.name}</strong>{" "}
+                            <small>{clan.tag}</small>
+                          </span>
+                          <span className="roster-assign-clan-count">
+                            {currentCount} → {projectedCount} /{" "}
+                            {clan.effective_capacity}
+                          </span>
+                        </span>
+                        <span className="roster-assign-clan-meta">
+                          <span>
+                            Current avg{" "}
+                            {compactRosterWeight(currentAverageWeight)}
+                          </span>
+                          {currentKnownWeights < currentCount && (
+                            <span>
+                              {currentKnownWeights}/{currentCount} weighed
+                            </span>
+                          )}
+                          {clan.capacity === null && (
+                            <span>Default capacity</span>
+                          )}
+                          {reason && (
+                            <span className="roster-assign-warning">
+                              {reason}
+                            </span>
+                          )}
+                        </span>
+                        <ProgressBar
+                          value={projectedCount}
+                          max={clan.effective_capacity}
+                          label={`${clan.name} projected capacity`}
+                          valueText={`${projectedCount} of ${clan.effective_capacity}`}
+                        />
                       </button>
                     </li>
                   );
@@ -270,15 +285,46 @@ export default function RosterAssignPanel({
             </ul>
           </section>
         )}
-        <div className="roster-assign-footer">
-          <button
-            type="button"
-            disabled={unavailable || !canUnassign}
-            onClick={() => void assign(null)}
+        <div className="roster-assign-review">
+          <details
+            className="roster-assign-accounts"
+            open={hiddenTags.length > 0 ? true : undefined}
           >
-            Unassign selected
-          </button>
+            <summary>
+              Review all {selectedAccounts.length} selected accounts
+            </summary>
+            <ul>
+              {reviewAccounts.map((account) => (
+                <li key={account.tag}>
+                  <span>
+                    {account.player_name} <small>{account.tag}</small>
+                  </span>
+                  {hidden.has(account.tag) && (
+                    <small className="roster-assign-hidden">
+                      Hidden by filters
+                    </small>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+          {locked.length > 0 && (
+            <details className="roster-assign-accounts">
+              <summary>
+                {locked.length} locked placement{locked.length === 1 ? "" : "s"}{" "}
+                affected
+              </summary>
+              <ul>
+                {locked.map((account) => (
+                  <li key={account.tag}>
+                    {account.player_name} <small>{account.tag}</small>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
+        <small>Unassign keeps signups and clears placement locks.</small>
         {error && (
           <p role="alert" className="roster-assign-error">
             {error}

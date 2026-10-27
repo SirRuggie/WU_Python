@@ -4,56 +4,16 @@
 .roster-assign-panel button {
   min-height: 44px;
 }
-.roster-assign-panel > p {
-  line-height: 1.45;
-}
 .roster-assign-intro {
-  margin: 0 0 6px;
-}
-.roster-assign-lock-note {
   margin: 0 0 12px;
-  color: #d4dbe7;
-  font-size: 13px;
+  line-height: 1.4;
+  font-size: 14px;
 }
 .roster-assign-warning {
   color: #f5cb83;
 }
 .roster-assign-error {
   color: #ffb5b5;
-}
-.roster-assign-accounts {
-  margin: 8px 0;
-  padding: 8px 10px;
-  border: 1px solid #4a5060;
-  border-radius: 8px;
-}
-.roster-assign-accounts summary {
-  cursor: pointer;
-  min-height: 28px;
-  font-weight: 650;
-}
-.roster-assign-accounts ul,
-.roster-assign-destinations ul {
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.roster-assign-accounts li {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 0;
-}
-.roster-assign-accounts small,
-.roster-assign-destinations small {
-  color: #bdc9db;
-}
-.roster-assign-destinations {
-  margin-top: 16px;
-}
-.roster-assign-destinations h3 {
-  margin: 0 0 10px;
-  font-size: 16px;
 }
 .roster-assign-search {
   display: grid;
@@ -65,46 +25,136 @@
   width: 100%;
   min-height: 44px;
 }
-.roster-assign-result-count {
-  margin: 7px 0 0;
+.roster-assign-destinations {
+  margin-top: 14px;
+}
+.roster-assign-destinations-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.roster-assign-destinations-heading h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.roster-assign-destinations-heading small {
+  color: #bdc9db;
+  white-space: nowrap;
+}
+.roster-assign-destinations ul,
+.roster-assign-accounts ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.roster-assign-destinations li {
+  margin: 0 0 6px;
+}
+.roster-assign-clan {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #526075;
+  border-radius: 9px;
+  background: #202936;
+  color: #f5f4f0;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+.roster-assign-clan:hover:not(:disabled) {
+  border-color: #9db9dc;
+  background: #283446;
+}
+.roster-assign-clan:focus-visible {
+  outline: 3px solid #a6c8ff;
+  outline-offset: 2px;
+}
+.roster-assign-clan:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  background: #20252d;
+  border-color: #4a5260;
+}
+.roster-assign-clan-head,
+.roster-assign-clan-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.roster-assign-clan-head {
+  justify-content: space-between;
+}
+.roster-assign-clan-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.roster-assign-clan-name strong {
+  font-size: 15px;
+}
+.roster-assign-clan-name small {
+  margin-left: 5px;
   color: #bdc9db;
   font-size: 12px;
 }
-.roster-assign-destinations li {
+.roster-assign-clan-count {
+  color: #f5f4f0;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.roster-assign-clan-meta {
+  color: #cbd4e1;
+  font-size: 12px;
+}
+.roster-assign-clan-meta .roster-assign-warning {
+  color: #f5cb83;
+  font-weight: 650;
+}
+.roster-assign-review {
+  margin-top: 12px;
+}
+.roster-assign-accounts {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid #4a5060;
+  border-radius: 8px;
+}
+.roster-assign-accounts summary {
+  cursor: pointer;
+  min-height: 28px;
+  font-weight: 650;
+}
+.roster-assign-accounts li {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid #3d4552;
+  gap: 10px;
+  padding: 6px 0;
 }
-.roster-assign-clan-details {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 13px;
+.roster-assign-accounts small {
+  color: #bdc9db;
 }
-.roster-assign-clan-details strong {
-  font-size: 15px;
-}
-.roster-assign-destinations li > button {
-  flex: 0 0 auto;
-}
-.roster-assign-destinations .roster-assign-warning {
+.roster-assign-accounts .roster-assign-hidden {
   color: #f5cb83;
 }
-.roster-assign-footer {
-  margin-top: 14px;
+.roster-assign-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 @media (max-width: 480px) {
-  .roster-assign-destinations li {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .roster-assign-destinations li > button,
-  .roster-assign-footer button {
-    width: 100%;
+  .roster-assign-clan-head {
+    display: grid;
+    gap: 3px;
   }
 }

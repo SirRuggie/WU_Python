@@ -42,6 +42,16 @@ describe("reviewing signup changes", () => {
     expect(html).toContain("Assigned to W. U. Lazy.125");
   });
 
+  it("keeps review controls available after a maximum-size account list", () => {
+    const accounts = Array.from({ length: 50 }, (_, index) =>
+      account(`#PLAYER${index}`, "main", null, `Player ${index}`),
+    );
+    const html = render("lazy", accounts);
+    expect((html.match(/<li>/g) || []).length).toBe(50);
+    expect(html).toContain("Cancel</span>");
+    expect(html).toContain("Confirm switch to lazy cwl</span>");
+  });
+
   it("shows that removal affects every account and escapes external player names", () => {
     const html = render("remove", [
       account("#ONE", "main", null, "<script>alert(1)</script>"),

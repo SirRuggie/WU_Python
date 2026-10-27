@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { ClipboardCheck, Scale, UserRoundPlus, X } from "lucide-react";
+import { Button, StatusPill } from "./rosterUi/primitives";
 import "./RosterSelectionBar.css";
 
 type Props = {
@@ -50,7 +52,7 @@ export default function RosterSelectionBar({
   if (selectedCount === 0) return null;
   return (
     <section
-      className="roster-selection-dock"
+      className="roster-ui roster-selection-dock"
       ref={bar}
       aria-hidden={hidden || undefined}
       inert={hidden}
@@ -58,51 +60,55 @@ export default function RosterSelectionBar({
     >
       <div className="roster-selection-dock-summary">
         <div>
-          <strong>{selectedCount} selected</strong>
-          {hiddenCount > 0 && <span>{hiddenCount} hidden by filters</span>}
+          <StatusPill>{selectedCount} selected</StatusPill>
+          {hiddenCount > 0 && (
+            <StatusPill tone="info">{hiddenCount} hidden by filters</StatusPill>
+          )}
           {overLimit && (
             <span role="alert">
-              Select at most 50 accounts to use an action.
+              <StatusPill tone="danger">
+                Select at most 50 accounts to use an action.
+              </StatusPill>
             </span>
           )}
         </div>
-        <button
-          type="button"
+        <Button
+          variant="icon"
+          icon={X}
           className="roster-selection-dock-clear"
           onClick={onClear}
           disabled={busy}
-          aria-label="Clear selected accounts"
-        >
-          ×
-        </button>
+          label="Clear selected accounts"
+        />
       </div>
       <div className="roster-selection-dock-actions">
         {canRoster && (
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            icon={UserRoundPlus}
             onClick={(event) => onAssign(event.currentTarget)}
             disabled={unavailable}
           >
             Assign
-          </button>
+          </Button>
         )}
         {canRoster && (
-          <button
-            type="button"
+          <Button
+            icon={Scale}
             onClick={(event) => onBalance(event.currentTarget)}
             disabled={unavailable}
           >
             Balance
-          </button>
+          </Button>
         )}
         {canSignups && (
-          <button
-            type="button"
+          <Button
+            icon={ClipboardCheck}
             onClick={(event) => onSignup(event.currentTarget)}
             disabled={unavailable}
           >
             Signup
-          </button>
+          </Button>
         )}
       </div>
     </section>

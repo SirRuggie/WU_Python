@@ -7,7 +7,11 @@ import DashboardIcon from "./DashboardIcon";
 import SignupActivity from "./SignupActivity";
 import useWorkspacePreference from "./useWorkspacePreference";
 import useUnsavedWork from "./useUnsavedWork";
-import ClanDestinationOptions from "./ClanDestinationOptions";
+import { rosterDestinationMenuOptions } from "./ClanDestinationOptions";
+import RosterMenu from "./rosterUi/Menu";
+import { Button, Input } from "./rosterUi/primitives";
+import { Check, RefreshCw } from "lucide-react";
+import "./rosterUi/rosterRefresh.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import RosterPlayerDialog from "./RosterPlayerDialog";
 import RosterSignupPanel from "./RosterSignupPanel";
@@ -23,6 +27,7 @@ import StaffSignupControls from "./StaffSignupControls";
 import { useDashboardPermission } from "./DashboardPermissions";
 import TownHallIcon from "./TownHallIcon";
 import "./RosterWorkspace.css";
+import { compactRosterWeight } from "./rosterCompactWeight";
 import {
   FilterPicker,
   leagueValue,
@@ -48,7 +53,6 @@ import {
   sortRosterAccounts,
   parseWeightK,
   weightInputText,
-  weightText,
   type RosterClan,
   type RosterSnapshot,
   type RosterSort,
@@ -860,7 +864,7 @@ export default function RosterWorkspace({
 
   return (
     <div
-      className={`roster-workspace${mode === "assign" ? " roster-workspace-assign" : ""}`}
+      className={`roster-workspace roster-ui${mode === "assign" ? " roster-workspace-assign" : ""}`}
       style={{
         paddingBottom: selectedTags.length ? barHeight + 24 : undefined,
       }}
@@ -946,23 +950,21 @@ export default function RosterWorkspace({
           <h1>CWL roster &amp; signups</h1>
           <p>Working placements stay private until published.</p>
         </div>
-        <label className="season-choice">
-          Season
-          <select
-            value={seasonId}
-            disabled={uiLocked}
-            onChange={(event) => {
-              if (mayLeaveEditor()) onSeasonChange(event.target.value);
-            }}
-          >
-            <option value="">Select a season</option>
-            {seasons.map((season) => (
-              <option key={season.id} value={String(season.id)}>
-                {season.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <RosterMenu
+          label="Season"
+          value={seasonId}
+          disabled={uiLocked}
+          onValueChange={(value) => {
+            if (mayLeaveEditor()) onSeasonChange(value);
+          }}
+          options={[
+            { value: "", label: "Select a season" },
+            ...seasons.map((season) => ({
+              value: String(season.id),
+              label: season.label,
+            })),
+          ]}
+        />
       </div>
       {seasonId && canSignups && (
         <SignupActivity key={seasonId} seasonId={seasonId} />
@@ -979,7 +981,7 @@ export default function RosterWorkspace({
         >
           {feedback.text}
           {feedback.kind === "error" && !roster && (
-            <button
+            <Button
               disabled={loading}
               onClick={() => {
                 setLoading(true);
@@ -992,14 +994,14 @@ export default function RosterWorkspace({
               }}
             >
               Retry loading roster
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             aria-label="Dismiss message"
             onClick={() => setFeedback(null)}
           >
             ×
-          </button>
+          </Button>
         </div>
       )}
       {loading && <p role="status">Loading roster…</p>}
@@ -1028,7 +1030,7 @@ export default function RosterWorkspace({
                   },
                 ] as const
               ).map((item) => (
-                <button
+                <Button
                   key={item.id}
                   disabled={uiLocked}
                   aria-pressed={mode === item.id}
@@ -1041,7 +1043,7 @@ export default function RosterWorkspace({
                   }}
                 >
                   {item.label}
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -1052,7 +1054,7 @@ export default function RosterWorkspace({
               aria-label="Show CWL accounts"
             >
               {(["all", "main", "lazy"] as const).map((pool) => (
-                <button
+                <Button
                   type="button"
                   key={pool}
                   aria-pressed={listPool === pool}
@@ -1075,7 +1077,7 @@ export default function RosterWorkspace({
                     : pool === "main"
                       ? "Main CWL"
                       : "Lazy CWL"}
-                </button>
+                </Button>
               ))}
             </div>
           ) : (
@@ -1133,7 +1135,8 @@ export default function RosterWorkspace({
             </div>
           )}
           <div className="roster-toolbar">
-            <button
+            <Button
+              icon={RefreshCw}
               disabled={uiLocked}
               onClick={() => {
                 if (mayLeaveEditor())
@@ -1143,23 +1146,27 @@ export default function RosterWorkspace({
               }}
             >
               Refresh roster
-            </button>
+            </Button>
             {canRoster && mode === "assign" && (
-              <button
-                disabled={uiLocked || archived || !roster.clans.some(clan => !clan.archived)}
+              <Button
+                disabled={
+                  uiLocked ||
+                  archived ||
+                  !roster.clans.some((clan) => !clan.archived)
+                }
                 onClick={(event) => openPanel("auto", event.currentTarget)}
               >
                 Auto-place unassigned…
-              </button>
+              </Button>
             )}
             {canRoster && onReviewPublication && mode !== "assign" && (
-              <button
-                className="primary"
+              <Button
+                variant="primary"
                 disabled={busy}
                 onClick={onReviewPublication}
               >
                 Finalize both groups →
-              </button>
+              </Button>
             )}
           </div>
           {canRoster && mode === "weights" && (
@@ -1196,23 +1203,18 @@ export default function RosterWorkspace({
               </p>
               {ruleClan ? (
                 <>
-                  <label>
-                    Hosting clan
-                    <select
-                      value={ruleClan.tag}
-                      onChange={(event) => {
-                        if (mayLeaveEditor()) setRuleTag(event.target.value);
-                      }}
-                      disabled={busy}
-                    >
-                      {activeClans.map((clan) => (
-                        <option key={clan.tag} value={clan.tag}>
-                          {clan.name} ·{" "}
-                          {clan.cwl_league || "League unavailable"} · {clan.tag}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <RosterMenu
+                    label="Hosting clan"
+                    value={ruleClan.tag}
+                    disabled={busy}
+                    onValueChange={(value) => {
+                      if (mayLeaveEditor()) setRuleTag(value);
+                    }}
+                    options={activeClans.map((clan) => ({
+                      value: clan.tag,
+                      label: `${clan.name} · ${clan.cwl_league || "League unavailable"} · ${clan.tag}`,
+                    }))}
+                  />
                   <RuleForm
                     onDirty={setRulesDirty}
                     key={`${seasonId}-${ruleClan.tag}`}
@@ -1228,6 +1230,7 @@ export default function RosterWorkspace({
           )}
           {editingTag && roster.accounts.some((a) => a.tag === editingTag) && (
             <RosterPlayerDialog
+              rosterUi
               onDirty={setPlayerDirty}
               key={`${seasonId}:${editingTag}`}
               account={roster.accounts.find((a) => a.tag === editingTag)!}
@@ -1262,46 +1265,41 @@ export default function RosterWorkspace({
                 <div className="roster-quick-search">
                   <label>
                     Find accounts
-                    <input
+                    <Input
                       value={search}
                       disabled={uiLocked}
                       onChange={(event) => setSearch(event.target.value)}
                       placeholder="Name, tag or Discord ID"
                     />
                   </label>
-                  <label>
-                    Show
-                    <select
-                      value={assignmentFilter}
-                      disabled={uiLocked}
-                      onChange={(event) =>
-                        setAssignmentFilter(
-                          event.target.value as
-                            "all" | "assigned" | "unassigned",
-                        )
-                      }
-                    >
-                      <option value="all">All accounts</option>
-                      <option value="unassigned">Unassigned</option>
-                      <option value="assigned">Assigned</option>
-                    </select>
-                  </label>
-                  <label>
-                    Sort
-                    <select
-                      value={sort}
-                      disabled={uiLocked}
-                      onChange={(event) =>
-                        setSort(event.target.value as RosterSort)
-                      }
-                    >
-                      <option value="name">Name A–Z</option>
-                      <option value="town_hall_desc">TH: highest first</option>
-                      <option value="town_hall_asc">TH: lowest first</option>
-                      <option value="weight_desc">Weight: highest first</option>
-                      <option value="weight_asc">Weight: lowest first</option>
-                    </select>
-                  </label>
+                  <RosterMenu
+                    label="Show"
+                    value={assignmentFilter}
+                    disabled={uiLocked}
+                    onValueChange={(value) =>
+                      setAssignmentFilter(
+                        value as "all" | "assigned" | "unassigned",
+                      )
+                    }
+                    options={[
+                      { value: "all", label: "All accounts" },
+                      { value: "unassigned", label: "Unassigned" },
+                      { value: "assigned", label: "Assigned" },
+                    ]}
+                  />
+                  <RosterMenu
+                    label="Sort"
+                    value={sort}
+                    disabled={uiLocked}
+                    onValueChange={(value) => setSort(value as RosterSort)}
+                    options={[
+                      { value: "name", label: "Name A–Z" },
+                      { value: "town_hall_desc", label: "TH: highest first" },
+                      { value: "town_hall_asc", label: "TH: lowest first" },
+                      { value: "weight_desc", label: "Weight: highest first" },
+                      { value: "weight_asc", label: "Weight: lowest first" },
+                    ]}
+                  />
                 </div>
                 <details className="roster-more-filters">
                   <summary>
@@ -1319,7 +1317,7 @@ export default function RosterWorkspace({
                   <div className="roster-weight-range">
                     <label>
                       Minimum weight (k)
-                      <input
+                      <Input
                         type="number"
                         min="0"
                         step="any"
@@ -1334,7 +1332,7 @@ export default function RosterWorkspace({
                     </label>
                     <label>
                       Maximum weight (k)
-                      <input
+                      <Input
                         type="number"
                         min="0"
                         step="any"
@@ -1355,24 +1353,22 @@ export default function RosterWorkspace({
                         Maximum weight must be at least the minimum.
                       </p>
                     )}
-                  <label>
-                    Show accounts currently in
-                    <select
-                      value={hostFilter}
-                      disabled={uiLocked}
-                      onChange={(e) => {
-                        setHostFilter(e.target.value);
-                        setPage(0);
-                      }}
-                    >
-                      <option value="">All hosting clans</option>
-                      {roster.clans.map((c) => (
-                        <option key={c.tag} value={c.tag}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <RosterMenu
+                    label="Assigned clan"
+                    value={hostFilter}
+                    disabled={uiLocked}
+                    onValueChange={(value) => {
+                      setHostFilter(value);
+                      setPage(0);
+                    }}
+                    options={[
+                      { value: "", label: "All hosting clans" },
+                      ...roster.clans.map((clan) => ({
+                        value: clan.tag,
+                        label: clan.name,
+                      })),
+                    ]}
+                  />
                   {hostFilter && canRoster && (
                     <details>
                       <summary>Clan actions</summary>
@@ -1387,12 +1383,12 @@ export default function RosterWorkspace({
                         />
                         Include locked placements
                       </label>
-                      <button
+                      <Button
                         disabled={uiLocked || archived}
                         onClick={() => void bulkAssign(true)}
                       >
                         Clear clan assignments
-                      </button>
+                      </Button>
                       <small>
                         Clears this clan’s assignments across all filters. Keeps
                         signups.
@@ -1412,25 +1408,23 @@ export default function RosterWorkspace({
                     Group by Discord user
                   </label>
                   <div className="card readiness-filter">
-                    <label>
-                      Readiness check
-                      <select
-                        value={readinessFilter}
-                        disabled={uiLocked}
-                        onChange={(event) => {
-                          setReadinessFilter(
-                            event.target.value as ReadinessFilter,
-                          );
-                        }}
-                      >
-                        <option value="all">All accounts</option>
-                        <option value="unassigned">Unassigned accounts</option>
-                        <option value="missing_weight">Missing weights</option>
-                        <option value="over_capacity">
-                          Clans over capacity
-                        </option>
-                      </select>
-                    </label>
+                    <RosterMenu
+                      label="Readiness check"
+                      value={readinessFilter}
+                      disabled={uiLocked}
+                      onValueChange={(value) =>
+                        setReadinessFilter(value as ReadinessFilter)
+                      }
+                      options={[
+                        { value: "all", label: "All accounts" },
+                        { value: "unassigned", label: "Unassigned accounts" },
+                        { value: "missing_weight", label: "Missing weights" },
+                        {
+                          value: "over_capacity",
+                          label: "Clans over capacity",
+                        },
+                      ]}
+                    />
                   </div>
                   <div className="clan-filter-bar">
                     <FilterPicker
@@ -1465,7 +1459,7 @@ export default function RosterWorkspace({
                         setTownHalls(values);
                       }}
                     />
-                    <button
+                    <Button
                       disabled={uiLocked}
                       onClick={() => {
                         setMinWeight("");
@@ -1480,7 +1474,7 @@ export default function RosterWorkspace({
                       }}
                     >
                       Clear filters
-                    </button>
+                    </Button>
                     <small>
                       {filtered.length} of {poolAccounts.length} accounts shown.
                       League filters use the assigned clan; unassigned accounts
@@ -1528,25 +1522,25 @@ export default function RosterWorkspace({
               </div>
               {filtered.length > visibleTags.length &&
                 filtered.length <= 50 && (
-                  <button
+                  <Button
                     disabled={
                       uiLocked || archived || (!canRoster && !canSignups)
                     }
                     onClick={() => setSelectedTags(filtered.map((a) => a.tag))}
                   >
                     Select all {filtered.length} matching accounts
-                  </button>
+                  </Button>
                 )}
               {groupByDiscord && groupNamesError && (
                 <p role="status">
                   Discord profiles could not be loaded. Accounts remain grouped
                   by Discord ID.
-                  <button
+                  <Button
                     type="button"
                     onClick={() => setGroupNamesRetry((value) => value + 1)}
                   >
                     Retry profiles
-                  </button>
+                  </Button>
                 </p>
               )}
               {filtered.length ? (
@@ -1611,11 +1605,13 @@ export default function RosterWorkspace({
                         <div className="roster-row-summary">
                           <span
                             className="roster-row-weight"
-                            aria-label={`Weight: ${weightText(account.effective_weight)}`}
+                            aria-label={`Weight: ${account.effective_weight == null ? "Missing weight" : compactRosterWeight(account.effective_weight)}`}
                           >
                             <small>Weight</small>
                             <strong>
-                              {weightText(account.effective_weight)}
+                              {account.effective_weight == null
+                                ? "Missing weight"
+                                : compactRosterWeight(account.effective_weight)}
                             </strong>
                           </span>
                           <div className="roster-row-clans">
@@ -1670,7 +1666,7 @@ export default function RosterWorkspace({
                         </div>
                         <div className="roster-placement-help">
                           {canRoster && (
-                            <button
+                            <Button
                               disabled={uiLocked || archived}
                               onClick={() => {
                                 setManualTag(account.tag);
@@ -1681,9 +1677,9 @@ export default function RosterWorkspace({
                               {account.assigned_clan_tag
                                 ? "Assign →"
                                 : "Assign →"}
-                            </button>
+                            </Button>
                           )}
-                          <button
+                          <Button
                             type="button"
                             disabled={uiLocked}
                             aria-label={`Details for ${account.player_name}`}
@@ -1693,7 +1689,7 @@ export default function RosterWorkspace({
                             }}
                           >
                             Details
-                          </button>
+                          </Button>
                         </div>
                         {canRoster && manualTag === account.tag && (
                           <form
@@ -1710,24 +1706,21 @@ export default function RosterWorkspace({
                               });
                             }}
                           >
-                            <label>
-                              Place {account.player_name} in
-                              <select
-                                autoFocus
-                                value={manualClan}
-                                disabled={busy}
-                                onChange={(event) =>
-                                  setManualClan(event.target.value)
-                                }
-                              >
-                                <option value="">Choose a hosting clan</option>
-                                <ClanDestinationOptions
-                                  clans={roster.clans}
-                                  pool={account.pool}
-                                  current={account.assigned_clan_tag}
-                                />
-                              </select>
-                            </label>
+                            <RosterMenu
+                              autoFocus
+                              label={`Assign ${account.player_name}`}
+                              value={manualClan}
+                              disabled={busy}
+                              onValueChange={setManualClan}
+                              options={[
+                                { value: "", label: "Choose a hosting clan" },
+                                ...rosterDestinationMenuOptions(
+                                  roster.clans,
+                                  account.pool,
+                                  account.assigned_clan_tag,
+                                ),
+                              ]}
+                            />
                             <p>
                               {account.pool === "lazy"
                                 ? "Choose a Lazy host with space."
@@ -1736,20 +1729,20 @@ export default function RosterWorkspace({
                             {feedback?.kind === "error" && (
                               <p role="alert">{feedback.text}</p>
                             )}
-                            <button
+                            <Button
                               type="submit"
-                              className="primary"
+                              variant="primary"
                               disabled={busy || !manualClan}
                             >
                               {busy ? "Saving…" : "Save placement"}
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
                               disabled={busy}
                               onClick={() => setManualTag(null)}
                             >
                               Cancel
-                            </button>
+                            </Button>
                           </form>
                         )}
                       </article>
@@ -1763,7 +1756,7 @@ export default function RosterWorkspace({
               )}
               {accountPages.length > 1 && (
                 <nav className="roster-pagination" aria-label="Account pages">
-                  <button
+                  <Button
                     disabled={uiLocked || currentPage === 0}
                     onClick={() => {
                       setPage(currentPage - 1);
@@ -1771,11 +1764,11 @@ export default function RosterWorkspace({
                     }}
                   >
                     ← Previous
-                  </button>
+                  </Button>
                   <span>
                     Page {currentPage + 1} of {lastPage + 1}
                   </span>
-                  <button
+                  <Button
                     disabled={uiLocked || currentPage === lastPage}
                     onClick={() => {
                       setPage(currentPage + 1);
@@ -1783,7 +1776,7 @@ export default function RosterWorkspace({
                     }}
                   >
                     Next →
-                  </button>
+                  </Button>
                 </nav>
               )}
             </>
@@ -1882,31 +1875,31 @@ function RuleForm({
         </div>
         <small>{clan.tag}</small>
         <div className="rule-fields">
-          <label>
-            Signup pool
-            <select
-              value={pool}
-              onChange={(event) => setPool(event.target.value as Pool)}
-            >
-              <option value="">Not set</option>
-              <option value="main">Main Clan CWL</option>
-              <option value="lazy">Lazy CWL</option>
-            </select>
-          </label>
-          <label>
-            Capacity
-            <select
-              value={capacity}
-              onChange={(event) => setCapacity(event.target.value)}
-            >
-              <option value="">Not set</option>
-              <option value="15">15</option>
-              <option value="30">30</option>
-            </select>
-          </label>
+          <RosterMenu
+            label="Signup pool"
+            value={pool}
+            disabled={busy}
+            onValueChange={(value) => setPool(value as Pool)}
+            options={[
+              { value: "", label: "Not set" },
+              { value: "main", label: "Main CWL" },
+              { value: "lazy", label: "Lazy CWL" },
+            ]}
+          />
+          <RosterMenu
+            label="Capacity"
+            value={capacity}
+            disabled={busy}
+            onValueChange={setCapacity}
+            options={[
+              { value: "", label: "Not set" },
+              { value: "15", label: "15" },
+              { value: "30", label: "30" },
+            ]}
+          />
           <label>
             Minimum weight (k, included)
-            <input
+            <Input
               type="number"
               min="0"
               step="0.001"
@@ -1917,7 +1910,7 @@ function RuleForm({
           </label>
           <label>
             Maximum weight (k, excluded)
-            <input
+            <Input
               type="number"
               min="0"
               step="0.001"
@@ -1937,15 +1930,20 @@ function RuleForm({
             {error}
           </p>
         )}
-        <button className="primary" disabled={busy || stale || !changed}>
+        <Button
+          type="submit"
+          variant="primary"
+          icon={Check}
+          disabled={busy || stale || !changed}
+        >
           Save clan range & rules
-        </button>
+        </Button>
         {stale && changed && (
           <p role="alert">
             Clan settings changed elsewhere. Your edits are preserved.
-            <button type="button" disabled={busy} onClick={useLatest}>
+            <Button type="button" disabled={busy} onClick={useLatest}>
               Discard edits and use latest settings
-            </button>
+            </Button>
           </p>
         )}
       </fieldset>

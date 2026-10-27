@@ -12,10 +12,10 @@
   gap: 10px 16px;
   box-sizing: border-box;
   padding: 12px 16px;
-  border: 1px solid #b3914c;
-  border-radius: 12px;
-  background: #28251c;
-  color: #f8edcd;
+  border: 1px solid var(--roster-gold);
+  border-radius: var(--roster-radius-card);
+  background: var(--roster-surface-raised);
+  color: var(--roster-text);
   box-shadow: 0 12px 30px #0008;
 }
 .roster-selection-dock[aria-hidden="true"] {
@@ -34,11 +34,9 @@
   font-size: 12px;
 }
 .roster-selection-dock-clear {
-  min-width: 44px;
-  min-height: 44px;
-  font-size: 22px;
+  flex: none;
 }
-.roster-selection-dock-actions button {
+.roster-selection-dock-actions .roster-ui-button {
   min-height: 44px;
 }
 @media (max-width: 480px) {
@@ -56,7 +54,7 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
   }
-  .roster-selection-dock-actions button {
+  .roster-selection-dock-actions .roster-ui-button {
     min-width: 0;
   }
 }

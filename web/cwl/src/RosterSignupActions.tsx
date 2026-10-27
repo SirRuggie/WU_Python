@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { ArrowRightLeft, Trash2 } from "lucide-react";
+import { Button, Chip, StatusPill } from "./rosterUi/primitives";
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan } from "./roster";
 import "./RosterSignupActions.css";
@@ -13,6 +16,7 @@ type Props = {
   onApply: (action: SignupAction, tags: string[]) => Promise<boolean>;
   onReviewChange: (reviewing: boolean) => void;
   hiddenTags?: string[];
+  footerTarget?: HTMLElement | null;
 };
 
 type ReviewProps = {
@@ -25,6 +29,7 @@ type ReviewProps = {
   headingRef?: RefObject<HTMLHeadingElement | null>;
   onCancel: () => void;
   onConfirm: () => void;
+  footerTarget?: HTMLElement | null;
 };
 
 const actionLabel: Record<SignupAction, string> = {
@@ -43,6 +48,7 @@ export function RosterSignupReview({
   onCancel,
   onConfirm,
   hiddenTags = [],
+  footerTarget,
 }: ReviewProps) {
   const changed = accounts.filter(
     (account) => action === "remove" || account.pool !== action,
@@ -52,6 +58,20 @@ export function RosterSignupReview({
   ).length;
   const hostName = (tag: string | null) =>
     clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
+  const reviewActions = (
+    <div className="roster-signup-review-actions">
+      <Button disabled={busy} onClick={onCancel}>
+        Cancel
+      </Button>
+      <Button
+        variant={action === "remove" ? "danger" : "primary"}
+        disabled={busy}
+        onClick={onConfirm}
+      >
+        {busy ? "Saving…" : `Confirm ${actionLabel[action].toLowerCase()}`}
+      </Button>
+    </div>
+  );
 
   return (
     <div
@@ -95,20 +115,12 @@ export function RosterSignupReview({
           </li>
         ))}
       </ul>
-      {error && <p role="alert">{error}</p>}
-      <div className="roster-signup-review-actions">
-        <button type="button" disabled={busy} onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className={action === "remove" ? "danger" : "primary"}
-          disabled={busy}
-          onClick={onConfirm}
-        >
-          {busy ? "Saving…" : `Confirm ${actionLabel[action].toLowerCase()}`}
-        </button>
-      </div>
+      {error && (
+        <p role="alert" className="roster-signup-error">
+          <StatusPill tone="danger">{error}</StatusPill>
+        </p>
+      )}
+      {footerTarget ? createPortal(reviewActions, footerTarget) : reviewActions}
     </div>
   );
 }
@@ -121,6 +133,7 @@ export default function RosterSignupActions({
   onApply,
   onReviewChange,
   hiddenTags = [],
+  footerTarget,
 }: Props) {
   const [action, setAction] = useState<SignupAction | "">("");
   const [reviewing, setReviewing] = useState(false);
@@ -160,7 +173,7 @@ export default function RosterSignupActions({
 
   return (
     <section
-      className="roster-signup-actions"
+      className="roster-ui roster-signup-actions"
       aria-label="Selected signup actions"
     >
       {!reviewing ? (
@@ -171,9 +184,9 @@ export default function RosterSignupActions({
             ).length;
             return (
               <div className="roster-signup-option" key={choice}>
-                <button
-                  type="button"
-                  className={choice === "remove" ? "danger" : ""}
+                <Button
+                  variant={choice === "remove" ? "danger" : "secondary"}
+                  icon={choice === "remove" ? Trash2 : ArrowRightLeft}
                   disabled={busy || !affected || accounts.length > 50}
                   onClick={(event) => {
                     reviewButton.current = event.currentTarget;
@@ -182,7 +195,7 @@ export default function RosterSignupActions({
                   }}
                 >
                   {actionLabel[choice]} · {affected}
-                </button>
+                </Button>
                 {!affected && (
                   <small>
                     All selected accounts are already in{" "}
@@ -195,7 +208,9 @@ export default function RosterSignupActions({
           {!!hiddenTags.length && (
             <details>
               <summary>
-                {hiddenTags.length} selected accounts hidden by filters
+                <Chip tone="info">
+                  {hiddenTags.length} selected accounts hidden by filters
+                </Chip>
               </summary>
               <ul>
                 {accounts
@@ -218,6 +233,7 @@ export default function RosterSignupActions({
           busy={busy}
           error={error}
           headingRef={reviewHeading}
+          footerTarget={footerTarget}
           onCancel={cancelReview}
           onConfirm={() => void apply()}
         />
