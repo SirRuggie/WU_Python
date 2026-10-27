@@ -1,6 +1,7 @@
 export const COMPARISON_INTERVAL = 300_000;
 export const COMPARISON_FOLLOWUP = 2_000;
 export const COMPARISON_CYCLE_LIMIT = 90_000;
+export const COMPARISON_READ_TIMEOUT = 20_000;
 
 /** Only completed reads advance freshness. Cancellation never consumes a check. */
 export function createComparisonChecks(
@@ -15,6 +16,7 @@ export function createComparisonChecks(
   let started = 0;
   let generation = 0;
   let pending = false;
+  let queuedRefresh = false;
   let controller: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const cancel = () => {
@@ -30,6 +32,7 @@ export function createComparisonChecks(
   };
   async function run(force: boolean, followup = false) {
     if (!active || disposed || pending) return;
+    clearTimeout(timer);
     if (!followup) started = Date.now();
     const id = generation;
     const request = new AbortController();
@@ -38,17 +41,39 @@ export function createComparisonChecks(
     busy(true);
     let updating = false;
     let completed = false;
+    const timeout = setTimeout(() => {
+      request.abort(
+        new DOMException("Location read timed out", "TimeoutError"),
+      );
+    }, COMPARISON_READ_TIMEOUT);
+    let rejectAbort!: () => void;
+    const aborted = new Promise<never>((_, reject) => {
+      rejectAbort = () => reject(request.signal.reason);
+      request.signal.addEventListener("abort", rejectAbort, { once: true });
+    });
     try {
-      updating = await check(force, request.signal);
+      updating = await Promise.race([check(force, request.signal), aborted]);
       completed = !request.signal.aborted;
     } catch {
       // Visible errors belong to the caller; an empty first load gets bounded retries.
+    } finally {
+      clearTimeout(timeout);
+      request.signal.removeEventListener("abort", rejectAbort);
     }
-    if (disposed || !active || id !== generation) return;
+    if (disposed || id !== generation) return;
     pending = false;
     if (completed) {
       last = Date.now();
       onCompleted(last);
+    }
+    if (!active) {
+      busy(false);
+      return;
+    }
+    if (queuedRefresh) {
+      queuedRefresh = false;
+      void run(true);
+      return;
     }
     const needsFollowup = updating || (!completed && !Number.isFinite(last));
     if (
@@ -66,12 +91,20 @@ export function createComparisonChecks(
     setActive(value: boolean) {
       if (active === value || disposed) return;
       active = value;
-      if (!value) cancel();
-      else if (Date.now() - last >= COMPARISON_INTERVAL) void run(false);
+      if (!value) {
+        clearTimeout(timer);
+        if (!pending) busy(false);
+      } else if (pending) return;
+      else if (queuedRefresh) {
+        queuedRefresh = false;
+        void run(true);
+      } else if (Date.now() - last >= COMPARISON_INTERVAL) void run(false);
       else schedule(last + COMPARISON_INTERVAL - Date.now());
     },
     refresh() {
-      if (active && !pending) void run(true);
+      if (!active || disposed) return;
+      if (pending) queuedRefresh = true;
+      else void run(true);
     },
     dispose() {
       disposed = true;

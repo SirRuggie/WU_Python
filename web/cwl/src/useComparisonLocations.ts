@@ -75,7 +75,7 @@ export function useComparisonLocations(
           cache.checkedAt = Date.now();
           return result.updating;
         } catch (cause) {
-          if (!signal.aborted) {
+          if (!signal.aborted || signal.reason?.name === "TimeoutError") {
             setError("Couldn't update locations · showing last results");
           }
           throw cause;

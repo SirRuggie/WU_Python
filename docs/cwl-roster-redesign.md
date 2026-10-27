@@ -100,6 +100,8 @@ A2 (F1–F10): viewport-stable desktop columns and three-line compact player car
 
 A3 readability + fixes: three text levels with a 12px minimum, softened location fills and 4px edges, primary clan headings/Total, and colored tally numbers. Completed reads alone advance Compare freshness; cancellation/reactivation immediately reissues an unfinished first read, with bounded follow-ups on initial failure. Published context is shared across pools. Action-menu outside interaction uses the whole sheet boundary. The league-filter regression now renders Compare and sorts while a chosen clan is hidden. Unknown Avg TH is omitted; safe-read authorization handling is shared. C4/item 13 remains on hold pending A3 approval.
 
+A4 fixes: reset selected Compare rail text-fill to currentColor; queue one forced Refresh during an in-flight read; time out location reads after 20 seconds without advancing freshness. Hidden pages pause scheduling but allow pending reads to complete; dispose/season/pool changes still abort. Re-check 5 minutes after the last completed read (about 6.5 minutes between starts after a full follow-up cycle). Tally labels include accessible separators and red fills use a softer tint. C4 remains on hold.
+
 ## Backend facts (from code discovery)
 
 - Endpoints (prefix `/api/cwl`):

@@ -275,7 +275,8 @@ export default function CompareClans({
         <Button
           icon={RotateCw}
           label="Refresh locations"
-          disabled={busy || checking}
+          disabled={busy}
+          aria-busy={checking}
           onClick={refresh}
         >
           {checking

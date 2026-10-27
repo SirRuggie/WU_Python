@@ -47,7 +47,7 @@ describe("Compare check scheduler", () => {
     expect(check).toHaveBeenCalledTimes(calls + 1);
     run.dispose();
   });
-  it("aborts an in-flight read on deactivate and ignores its result", async () => {
+  it("aborts an in-flight read on dispose and ignores its result", async () => {
     vi.useFakeTimers();
     let resolve!: (value: boolean) => void;
     const check = vi.fn(
@@ -59,7 +59,7 @@ describe("Compare check scheduler", () => {
     const busy = vi.fn();
     const run = createComparisonChecks(check, busy);
     run.setActive(true);
-    run.setActive(false);
+    run.dispose();
     resolve(true);
     await vi.advanceTimersByTimeAsync(90000);
     expect(check).toHaveBeenCalledTimes(1);
@@ -94,27 +94,72 @@ it("remount preserves the check deadline and performs one overdue non-forced rea
   run.dispose();
 });
 
-it("reactivates immediately after abort without advancing completion or cache", async () => {
+it("hidden pauses scheduling while an in-flight read completes and advances freshness", async () => {
   vi.useFakeTimers();
   let finish!: (value: boolean) => void;
-  const check = vi.fn(
-    () =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
-      }),
-  );
+  let signal!: AbortSignal;
+  const check = vi.fn((_force, current: AbortSignal) => {
+    signal = current;
+    return new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+  });
   const complete = vi.fn();
   const run = createComparisonChecks(check, vi.fn(), -Infinity, complete);
   run.setActive(true);
   run.setActive(false);
-  finish(false);
-  await vi.advanceTimersByTimeAsync(0);
-  expect(complete).not.toHaveBeenCalled();
-  run.setActive(true);
-  expect(check).toHaveBeenCalledTimes(2);
-  finish(false);
+  expect(signal.aborted).toBe(false);
+  finish(true);
   await vi.advanceTimersByTimeAsync(0);
   expect(complete).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(300001);
+  expect(check).toHaveBeenCalledTimes(1);
+  run.setActive(true);
+  expect(check).toHaveBeenCalledTimes(2);
+  run.dispose();
+});
+it("queues exactly one forced refresh after a pending read settles", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: boolean) => void;
+  const check = vi.fn(
+    (_force: boolean, _signal: AbortSignal) =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const run = createComparisonChecks(check, vi.fn());
+  run.setActive(true);
+  run.refresh();
+  run.refresh();
+  run.refresh();
+  expect(check).toHaveBeenCalledTimes(1);
+  finish(true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(check).toHaveBeenCalledTimes(2);
+  expect(check.mock.calls[1][0]).toBe(true);
+  finish(false);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(check).toHaveBeenCalledTimes(2);
+  run.dispose();
+});
+it("times out a hung read after twenty seconds without consuming freshness", async () => {
+  vi.useFakeTimers();
+  let signal!: AbortSignal;
+  const check = vi.fn((_force, current: AbortSignal) => {
+    signal = current;
+    return new Promise<boolean>(() => {});
+  });
+  const complete = vi.fn();
+  const run = createComparisonChecks(check, vi.fn(), -Infinity, complete);
+  run.setActive(true);
+  await vi.advanceTimersByTimeAsync(19999);
+  expect(signal.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(signal.aborted).toBe(true);
+  expect(signal.reason.name).toBe("TimeoutError");
+  expect(complete).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(check).toHaveBeenCalledTimes(2);
   run.dispose();
 });
 it("retries failed empty first loads every two seconds for a bounded cycle", async () => {

@@ -257,7 +257,7 @@
 .compare-workspace .compare-account-missing {
   border-left-color: var(--roster-danger);
   background:
-    linear-gradient(rgb(233 133 133 / 10%), rgb(233 133 133 / 10%)),
+    linear-gradient(rgb(233 133 133 / 6%), rgb(233 133 133 / 6%)),
     var(--roster-surface-raised);
 }
 .compare-workspace .compare-player-body {
@@ -547,4 +547,19 @@
     max-height: none;
     touch-action: pan-y;
   }
+}
+
+/* Override inherited shell pressed-button text fill only within this rail. */
+.compare-workspace button.compare-mobile-card[aria-pressed],
+.compare-workspace button.compare-mobile-card[aria-pressed] * {
+  -webkit-text-fill-color: currentColor;
+}
+
+.compare-tally-separator {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

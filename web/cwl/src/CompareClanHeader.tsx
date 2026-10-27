@@ -67,17 +67,22 @@ export default function CompareClanHeader({
           <span className="compare-count-arrived">{tally.arrived}</span> in clan
         </span>
         <span>
+          <span className="compare-tally-separator">, </span>
           <span className="compare-count-missing">{tally.elsewhere}</span>{" "}
           elsewhere
         </span>
         {tally.checking > 0 && (
           <span>
-            <span className="compare-count-checking">{tally.checking}</span>{" "}
+            <span className="compare-tally-separator">, </span>
+            <span className="compare-count-checking">
+              {tally.checking}
+            </span>{" "}
             checking
           </span>
         )}
         {tally.outside > 0 && (
           <span>
+            <span className="compare-tally-separator">, </span>
             <span className="compare-count-outside">{tally.outside}</span>{" "}
             outside family
           </span>
