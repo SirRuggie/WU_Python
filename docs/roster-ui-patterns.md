@@ -95,6 +95,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Card colors: green = in this clan, red = not in this clan (an exception to "green = assigned", at staff request).
 - Tags are outlined with a dark fill and never color-only.
 - Card body opens Details; the shared `⋯` menu holds DM + Details.
+- All `⋯` action menus (roster and Compare): a React Aria popover, at most one open at a time, closing on an outside tap, Escape, choosing an item, focus leaving it, or a tab/pool/season change.
 - Desktop columns keep a **visible horizontal scrollbar** (exception to "hidden scrollbar", for mouse users). Navigation shows only on overflow.
 - Phones use a swipeable clan-card row.
 - The unpublished-changes banner is amber, compact and not dismissible while pending; it names the published version/time, says placement changes are draft only, and offers permission-gated Finalize navigation. Signup changes are never labelled draft.

@@ -7,7 +7,7 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 - Release 1 commit trail: `856b9f0` (panels + visual refresh) → `76fe46c` (header, chips, cards, filters) → `b0fd451` (Load more, select-all-matching, max-50, preferences, mobile polish) → `a68b386` (final polish) → `356d563` (wider clan cards, total weight) → `9dceb81` (chip/card states) → `a72939f` (state rules unified in primitives.css).
 - Dirty-editor guard (Clan settings / Weights → leave → Cancel keeps the edit, Leave discards it): manually verified by Ruggie.
 - Deploy pipeline rebuilt: `current` symlink → `releases/<sha>`; workspace builds isolated from production (tested); rollback tested.
-- **Compare clans batch:** decisions 1–14 confirmed 2026-10-27 (see "Decisions — Compare clans"). Implementation on branch `codex/compare-clans`; not deployed.
+- **Compare clans batch:** decisions 1–15 confirmed 2026-10-27 (see "Decisions — Compare clans"). Implementation on branch `codex/compare-clans`; not deployed.
 
 ## Terminology
 - **Pool** = Main CWL / Lazy CWL. Never call these "league".
@@ -85,6 +85,8 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 13. Publish awareness adds permission-aware pending-placement banners, draft-only placement toasts (never signup toasts), Finalize's placement change list, first-publish wording and retained explicit confirmation; no automatic publication.
 14. Card body opens the existing Details modal; extract the roster menu without behavior changes. Compare offers only DM ↗ and Details; Escape restores focus and targets remain at least 44px.
 
+15. Replace all roster and Compare ⋯ action menus with a shared React Aria popover: only one open, closing on outside tap, Escape, action selection, focus out, tab/pool/season changes and detached phone scrolling. Preserve items, permissions and Discord link behavior.
+
 Compare stays read-only; Details and DM only.
 
 ## Backend facts (from code discovery)
@@ -120,6 +122,7 @@ Compare stays read-only; Details and DM only.
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+- FilterPicker (ClanFilters.tsx, still used by App.tsx) is also a native <details> dropdown and likely shares the stays-open bug; review it outside the roster scope.
 - Optional clan filter on arrival-check (visible clans only) — trigger: signups grow a lot or the API rate-limits.
 - Tappable Compare tally counts to filter a column (pairs with the Release 4 filter).
 - "N outside range" count in Compare clan headers.
