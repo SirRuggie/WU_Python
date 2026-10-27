@@ -72,3 +72,15 @@ it('validates post permissions and only requires forum tags when configured', ()
   expect(hasInvalidDestination(forumDraft, [{ ...forum, can_post: false }])).toBe(true)
   expect(hasInvalidDestination(forumDraft, [forum], false)).toBe(true)
 })
+
+
+it('accepts a verified existing forum post without requiring a parent forum tag', () => {
+  const post = {
+    id: 'post-1', name: 'Member history', type: 'forum_post' as const,
+    can_post: true, requires_tag: false, can_manage_threads: false, available_tags: [],
+  }
+  const draft = { ...events, join: { enabled: true, channel_id: post.id, forum_tag_id: null } }
+  expect(hasInvalidDestination(draft, [post])).toBe(false)
+  expect(hasInvalidDestination(draft, [])).toBe(true)
+  expect(hasInvalidDestination(draft, [{ ...post, can_post: false }])).toBe(true)
+})
