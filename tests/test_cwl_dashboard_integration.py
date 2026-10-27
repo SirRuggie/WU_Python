@@ -511,7 +511,7 @@ def test_restart_restores_campaign_job_instead_of_deleting_as_legacy(monkeypatch
         mongo = MemoryMongo()
         loaded = await applied_campaign(mongo, monkeypatch)
         scheduler, _rest = install_runtime(monkeypatch, mongo)
-        run_at = pendulum.datetime(2026, 10, 20, 17, 0, tz="America/New_York")
+        run_at = pendulum.now("America/New_York").add(days=7)
         job_id = cwl_reminder._campaign_job_id(22, "2026-10", "signup", "main")
         await cwl_reminder._persist_campaign_job(
             job_id, run_at, 22, "2026-10", "signup", ["main"],
