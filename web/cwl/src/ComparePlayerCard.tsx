@@ -45,39 +45,40 @@ export default function ComparePlayerCard({
         <span className="compare-player-top">
           <strong title={account.player_name}>{account.player_name}</strong>
           <strong>
-            {account.effective_weight === null ? (
-              <span className="compare-tag is-danger">No weight</span>
-            ) : (
-              compactRosterWeight(account.effective_weight)
-            )}
+            {account.effective_weight === null
+              ? "—"
+              : compactRosterWeight(account.effective_weight)}
           </strong>
         </span>
-        <span className="compare-player-context">
-          <span className="compare-player-meta">
-            {account.tag} · TH {account.town_hall ?? "—"}{" "}
-            {account.kept && (
-              <LockKeyhole size={15} aria-label="Locked placement" />
-            )}
-          </span>
-          <span className="compare-location-line" title={location.detail}>
-            {location.state !== "checking" && (
-              <>
-                <span className="compare-location-name">
-                  {record?.current_clan_name || record?.current_clan_tag
-                    ? `Now in: ${record.current_clan_name || record.current_clan_tag}`
-                    : "No clan"}
-                </span>
-                <span className="compare-location-age">
-                  · {comparisonAge(record?.current_clan_checked_at, now)}
-                </span>
-              </>
-            )}
-          </span>
-        </span>
-        <span className="compare-player-tags">
-          <span className={`compare-tag is-${location.state}`}>
+        <span className="compare-player-location">
+          <span
+            className={`compare-tag compare-location-pill is-${location.state}`}
+          >
             {location.label}
           </span>
+          {location.state !== "checking" && (
+            <span className="compare-location-line" title={location.detail}>
+              <span className="compare-location-name">
+                {record?.current_clan_name || record?.current_clan_tag
+                  ? `Now in: ${record.current_clan_name || record.current_clan_tag}`
+                  : "No clan"}
+              </span>
+              <span className="compare-location-age">
+                · {comparisonAge(record?.current_clan_checked_at, now)}
+              </span>
+            </span>
+          )}
+        </span>
+        <span className="compare-player-tags">
+          <span className="compare-player-meta">
+            TH {account.town_hall ?? "—"} · {account.tag}{" "}
+            {account.kept && (
+              <LockKeyhole size={13} aria-label="Locked placement" />
+            )}
+          </span>
+          {account.effective_weight === null && (
+            <span className="compare-tag is-danger">No weight</span>
+          )}
           {outsideComparisonRange(account.effective_weight, clan) && (
             <span className="compare-tag is-warning">Outside weight range</span>
           )}

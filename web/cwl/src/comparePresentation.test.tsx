@@ -119,3 +119,14 @@ it("marks room, full and over capacity distinctly in shared headers", () => {
     expect(html).toContain(`roster-ui-progress ${expected}`);
   }
 });
+
+it("omits Avg TH entirely when no town hall is known", () => {
+  const html = renderToStaticMarkup(
+    <CompareClanHeader
+      clan={clan}
+      accounts={[{ ...account, town_hall: null }]}
+      locations={{}}
+    />,
+  );
+  expect(html).not.toContain("Avg TH");
+});

@@ -139,24 +139,37 @@
   display: flex;
   flex-shrink: 0;
 }
+
+/* Compare-only hierarchy. Existing roster tokens own surfaces and status colors. */
+.compare-workspace {
+  --compare-text-secondary: #d1d3d9;
+  color: var(--roster-text);
+}
 .compare-workspace .compare-clan-summary {
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
   align-items: stretch;
+  flex-shrink: 0;
   margin: 0;
-  gap: 6px;
-  padding: 12px;
+  gap: 2px;
+  padding: 6px 8px;
   border-radius: 14px;
-  background: #202126;
-}
-.compare-workspace .compare-clan-summary strong {
-  flex-basis: auto;
+  background: var(--roster-surface-raised);
+  color: var(--roster-text);
 }
 .compare-clan-top {
   display: flex;
-  align-items: start;
-  gap: 10px;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.compare-workspace .compare-clan-top strong {
+  font-size: 15px;
+  line-height: 17px;
+  font-weight: 700;
+  flex-basis: auto;
+  color: var(--roster-text);
 }
 .compare-clan-name {
   flex: 1;
@@ -165,57 +178,103 @@
 }
 .compare-clan-top > strong:last-of-type {
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
-.compare-total,
-.compare-clan-top > strong {
-  font-size: 16px;
-  font-weight: 700;
+.compare-clan-top > .roster-player-menu {
+  flex: 0 0 44px;
+  height: 44px;
+}
+.compare-clan-metrics {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 5px;
 }
 .compare-workspace .compare-clan-summary small {
   padding: 0;
   background: transparent;
   border-radius: 0;
-  font-weight: 400;
-  color: #c2c5cd;
   font-size: 12px;
+  line-height: 14px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
 }
-.compare-warning {
-  color: #efc16b;
+.compare-workspace .compare-total {
+  flex-basis: auto;
+  font-size: 14px;
+  line-height: 16px;
+  font-weight: 700;
+  color: var(--roster-text);
+  font-variant-numeric: tabular-nums;
+}
+.compare-clan-metrics small + small::before {
+  content: "· ";
+}
+.compare-workspace .compare-tally {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 6px;
+}
+.compare-tally .compare-count-arrived {
+  color: var(--roster-success);
+}
+.compare-tally .compare-count-missing {
+  color: var(--roster-danger);
+}
+.compare-tally .compare-count-checking {
+  color: var(--roster-text-muted);
+}
+.compare-tally .compare-count-outside {
+  color: var(--roster-warning);
 }
 .compare-clan-summary .roster-ui-progress {
   margin-top: auto;
 }
+.compare-workspace .compare-player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: none;
+  padding: 4px;
+}
 .compare-workspace .compare-account {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px;
-  align-items: start;
+  display: block;
   min-width: 0;
-  margin: 8px;
-  border: 1px solid #44464b;
+  flex-shrink: 0;
+  margin: 0;
+  border: 1px solid var(--roster-border);
+  border-left: 4px solid var(--roster-text-muted);
   border-radius: 14px;
-  background: #24252b;
+  background: var(--roster-surface-raised);
 }
 .compare-workspace .compare-account-arrived {
-  background: #2b4b38;
-  border-left: 3px solid #90ee90;
+  border-left-color: var(--roster-success);
+  background:
+    linear-gradient(rgb(121 200 155 / 10%), rgb(121 200 155 / 10%)),
+    var(--roster-surface-raised);
 }
 .compare-workspace .compare-account-missing {
-  background: #3c2425;
-  border-left: 3px solid #d58d90;
+  border-left-color: var(--roster-danger);
+  background:
+    linear-gradient(rgb(233 133 133 / 10%), rgb(233 133 133 / 10%)),
+    var(--roster-surface-raised);
 }
 .compare-workspace .compare-player-body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
+  gap: 1px;
   min-width: 0;
   width: 100%;
-  padding: 10px;
+  min-height: 44px;
+  padding: 2px 6px;
   border: 0;
   border-radius: 14px;
   background: transparent;
-  color: #f0f1f3;
+  color: var(--roster-text-muted);
+  font-size: 12px;
+  font-weight: 400;
   text-align: left;
 }
 .compare-player-body:focus-visible {
@@ -225,7 +284,14 @@
 .compare-player-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  padding-right: 36px;
+}
+.compare-player-top strong {
+  font-size: 15px;
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--roster-text);
 }
 .compare-player-top > strong:first-child {
   flex: 1;
@@ -236,57 +302,125 @@
 }
 .compare-player-top > strong:last-child {
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
-.compare-player-meta {
+.compare-player-location {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #d0d3d8;
+  min-width: 0;
+  gap: 4px;
+  padding-right: 36px;
 }
-.compare-location-line,
-.compare-publish-note {
-  color: #c8cbd2;
+.compare-location-line {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+}
+.compare-location-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--compare-text-secondary);
+}
+.compare-location-age {
+  flex-shrink: 0;
   font-size: 12px;
-  overflow-wrap: anywhere;
+  line-height: 14px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
 }
 .compare-player-tags {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 2px;
+  gap: 1px 4px;
+}
+.compare-player-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
 }
 .compare-tag {
   display: inline-flex;
-  padding: 3px 7px;
-  border: 1px solid #a3a8b1;
+  padding: 0 4px;
+  border: 1px solid var(--roster-border);
   border-radius: 999px;
-  background: #191b20;
-  color: #e1e4ea;
-  font-size: 11px;
-  line-height: 1.4;
+  background: var(--roster-surface);
+  color: var(--roster-text-muted);
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 400;
+}
+.compare-location-pill {
+  flex-shrink: 0;
+  font-weight: 600;
 }
 .compare-tag.is-arrived {
-  color: #b8f1c2;
-  border-color: #8ecb98;
+  color: var(--roster-success);
+  border-color: var(--roster-success);
 }
 .compare-tag.is-missing,
 .compare-tag.is-danger {
-  color: #ffc4c4;
-  border-color: #de9fa2;
+  color: var(--roster-danger);
+  border-color: var(--roster-danger);
 }
 .compare-tag.is-warning {
-  color: #f4d18c;
-  border-color: #c2a36c;
+  color: var(--roster-warning);
+  border-color: var(--roster-warning);
 }
-.compare-account .roster-player-menu {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: start;
+.compare-publish-note {
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
+.compare-account > .roster-player-menu {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.compare-workspace .roster-player-menu {
+  padding: 0;
+}
+.compare-workspace .roster-action-trigger {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+}
+.compare-workspace
+  .roster-ui-progress.has-room
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-success);
+}
+.compare-workspace
+  .roster-ui-progress.is-full
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-warning);
+}
+.compare-workspace
+  .roster-ui-progress.is-over
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-danger);
+}
 @media (max-width: 720px) {
   .compare-workspace.card {
-    padding: 10px;
+    padding: 8px;
   }
   .compare-header h2 {
     font-size: 17px;
@@ -327,22 +461,22 @@
     flex: 0 0 87%;
     min-width: 0;
     padding: 0;
-    border: 1px solid #54555b;
+    border: 1px solid var(--roster-border);
     border-radius: 14px;
-    background: #202126;
-    color: inherit;
+    background: var(--roster-surface-raised);
+    color: var(--roster-text);
     scroll-snap-align: start;
     text-align: left;
   }
-  .compare-mobile-card:hover {
+  .compare-workspace button.compare-mobile-card:hover {
     border-color: #85868c;
   }
   .compare-workspace button.compare-mobile-card.is-active {
     box-shadow: none;
     outline: none;
-    border-color: #e4ba40;
-    background: #d8ac3020;
-    color: #f6d772;
+    border-color: var(--roster-gold);
+    background: var(--roster-surface-raised);
+    color: var(--roster-text);
   }
   .compare-workspace button.compare-mobile-card:focus-visible {
     border-color: transparent;
@@ -352,31 +486,22 @@
   .compare-mobile-card .compare-clan-summary {
     height: 100%;
     background: transparent;
-    padding: 9px;
-    gap: 4px;
-  }
-  .compare-mobile-card .compare-clan-top > strong,
-  .compare-mobile-card .compare-total {
-    font-size: 14px;
-  }
-  .compare-mobile-card .compare-tally {
-    font-size: 11px;
+    padding: 6px;
+    gap: 2px;
   }
   .compare-mobile-navigation {
     display: flex;
     gap: 8px;
     align-items: center;
     margin: 2px 0;
-    padding-right: 50px;
+    padding-right: 46px;
   }
   .compare-mobile-navigation span {
     flex: 1;
     text-align: center;
     font-size: 12px;
   }
-  .compare-navigation {
-    display: none;
-  }
+  .compare-navigation,
   .compare-pan-frame::before,
   .compare-pan-frame::after {
     display: none;
@@ -406,13 +531,13 @@
   }
   .compare-side > .compare-clan-summary > small:first-of-type {
     display: block;
-    padding: 2px 4px 6px;
+    padding: 0 4px 4px;
   }
   .compare-side > .compare-clan-summary > .compare-clan-top {
     display: block;
     position: absolute;
     right: 0;
-    top: -52px;
+    top: -48px;
   }
   .compare-side > .compare-clan-summary > .compare-clan-top > strong {
     display: none;
@@ -422,168 +547,4 @@
     max-height: none;
     touch-action: pan-y;
   }
-  .compare-workspace .compare-account {
-    margin: 8px 0;
-  }
-}
-
-/* Capacity colors reflect assigned count, including deliberately overfull drafts. */
-.compare-workspace
-  .roster-ui-progress.has-room
-  .roster-ui-progress-track
-  > span {
-  background: var(--roster-success);
-}
-.compare-workspace
-  .roster-ui-progress.is-full
-  .roster-ui-progress-track
-  > span {
-  background: var(--roster-warning);
-}
-.compare-workspace
-  .roster-ui-progress.is-over
-  .roster-ui-progress-track
-  > span {
-  background: var(--roster-danger);
-}
-
-/* Compact on both devices. The separate menu remains a 44px target without
-   consuming a second header row or a whole column of player text. */
-.compare-workspace .compare-clan-summary {
-  padding: 8px 10px;
-  gap: 2px;
-}
-.compare-workspace .compare-clan-top {
-  flex-wrap: nowrap;
-  align-items: center;
-}
-.compare-clan-top > .roster-player-menu {
-  flex: 0 0 44px;
-  margin-left: auto;
-}
-.compare-clan-metrics {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 3px 7px;
-}
-.compare-clan-metrics > :not(:first-child)::before {
-  content: "· ";
-}
-.compare-workspace .compare-player-body {
-  padding: 3px 7px;
-  gap: 2px;
-  line-height: 16px;
-  grid-column: 1 / -1;
-}
-.compare-workspace .compare-account {
-  margin: 2px 0;
-  display: block;
-}
-.compare-player-top {
-  padding-right: 38px;
-  font-size: 13px;
-}
-.compare-player-context {
-  display: flex;
-  flex-direction: row;
-  gap: 5px;
-  align-items: center;
-  min-width: 0;
-  padding-right: 36px;
-}
-.compare-player-meta {
-  flex-shrink: 0;
-  font-size: 10px;
-  gap: 3px;
-}
-.compare-location-line {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-}
-.compare-tag {
-  padding: 0 5px;
-  font-size: 10px;
-  line-height: 13px;
-}
-.compare-account > .roster-player-menu {
-  position: absolute;
-  top: 0;
-  right: 0;
-}
-.compare-workspace .roster-action-trigger {
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
-}
-.compare-publish-note {
-  line-height: 14px;
-  font-size: 10px;
-}
-@media (min-width: 721px) {
-  .compare-workspace .compare-account {
-    margin: 2px 6px;
-  }
-}
-
-.compare-workspace .compare-player-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  max-height: none;
-}
-.compare-workspace .compare-account {
-  flex-shrink: 0;
-}
-.compare-workspace .compare-clan-summary {
-  flex-shrink: 0;
-}
-.compare-workspace .compare-clan-top {
-  min-height: 44px;
-}
-.compare-workspace .compare-clan-metrics {
-  line-height: 16px;
-}
-.compare-workspace .roster-player-menu {
-  padding: 0;
-}
-.compare-workspace .compare-clan-top > .roster-player-menu {
-  height: 44px;
-}
-.compare-workspace .compare-clan-metrics .compare-total {
-  font-size: 14px;
-  line-height: 16px;
-}
-.compare-workspace .compare-clan-metrics small {
-  font-size: 10px;
-  line-height: 14px;
-}
-.compare-workspace .compare-clan-summary > small {
-  line-height: 14px;
-}
-.compare-publish-note {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.compare-workspace .compare-clan-name {
-  font-size: 14px;
-  line-height: 16px;
-}
-
-.compare-location-line {
-  display: flex;
-  gap: 3px;
-  flex: 1;
-}
-.compare-location-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.compare-location-age {
-  flex-shrink: 0;
 }

@@ -43,7 +43,7 @@ describe("Compare check scheduler", () => {
     expect(calls).toBe(45);
     await vi.advanceTimersByTimeAsync(200000);
     expect(check).toHaveBeenCalledTimes(calls);
-    await vi.advanceTimersByTimeAsync(10001);
+    await vi.advanceTimersByTimeAsync(98001);
     expect(check).toHaveBeenCalledTimes(calls + 1);
     run.dispose();
   });
@@ -91,5 +91,44 @@ it("remount preserves the check deadline and performs one overdue non-forced rea
   run.setActive(true);
   expect(check).toHaveBeenCalledTimes(3);
   expect(check.mock.calls.every((call) => call[0] === false)).toBe(true);
+  run.dispose();
+});
+
+it("reactivates immediately after abort without advancing completion or cache", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: boolean) => void;
+  const check = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const complete = vi.fn();
+  const run = createComparisonChecks(check, vi.fn(), -Infinity, complete);
+  run.setActive(true);
+  run.setActive(false);
+  finish(false);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(complete).not.toHaveBeenCalled();
+  run.setActive(true);
+  expect(check).toHaveBeenCalledTimes(2);
+  finish(false);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(complete).toHaveBeenCalledTimes(1);
+  run.dispose();
+});
+it("retries failed empty first loads every two seconds for a bounded cycle", async () => {
+  vi.useFakeTimers();
+  const check = vi.fn().mockRejectedValue(new Error("offline"));
+  const complete = vi.fn();
+  const run = createComparisonChecks(check, vi.fn(), -Infinity, complete);
+  run.setActive(true);
+  await vi.advanceTimersByTimeAsync(89999);
+  expect(check).toHaveBeenCalledTimes(45);
+  expect(complete).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(298000);
+  expect(check).toHaveBeenCalledTimes(45);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(check).toHaveBeenCalledTimes(46);
   run.dispose();
 });

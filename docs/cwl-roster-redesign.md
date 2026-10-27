@@ -98,6 +98,8 @@ Compare stays read-only; Details and DM only.
 
 A2 (F1–F10): viewport-stable desktop columns and three-line compact player cards on both devices; location records and per-pool check deadlines owned by the season's roster workspace; no-clan accounts excluded from Outside family, with flags cleared on clan changes; chosen-clan sorting preserves hidden choices. React Aria handles outside interaction for the shared non-modal action menus, covered by per-file happy-dom interaction tests. Phone headers include Avg TH and player menus name the player; Sort uses available width. Shared Discord contact metadata, one Checking pill, destination focus after column replacement, and safe-read transport complete the cleanup. C4/item 13 remains on hold pending A2 approval.
 
+A3 readability + fixes: three text levels with a 12px minimum, softened location fills and 4px edges, primary clan headings/Total, and colored tally numbers. Completed reads alone advance Compare freshness; cancellation/reactivation immediately reissues an unfinished first read, with bounded follow-ups on initial failure. Published context is shared across pools. Action-menu outside interaction uses the whole sheet boundary. The league-filter regression now renders Compare and sorts while a chosen clan is hidden. Unknown Avg TH is omitted; safe-read authorization handling is shared. C4/item 13 remains on hold pending A3 approval.
+
 ## Backend facts (from code discovery)
 
 - Endpoints (prefix `/api/cwl`):

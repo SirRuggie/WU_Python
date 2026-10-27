@@ -60,7 +60,10 @@ export default function CompareClanPicker({
             }))}
             onValueChange={(value) =>
               onChange(
-                sortChosenComparisonClans(clans, chosen, value as ClanSort),
+                sortClans(
+                  clans.filter((clan) => chosen.includes(clan.tag)),
+                  value as ClanSort,
+                ).map((clan) => clan.tag),
               )
             }
           />
@@ -160,15 +163,4 @@ export default function CompareClanPicker({
       )}
     </ActionPanel>
   );
-}
-
-export function sortChosenComparisonClans(
-  clans: RosterClan[],
-  chosen: string[],
-  sort: ClanSort,
-) {
-  return sortClans(
-    clans.filter((clan) => chosen.includes(clan.tag)),
-    sort,
-  ).map((clan) => clan.tag);
 }

@@ -2,12 +2,12 @@ export const COMPARISON_INTERVAL = 300_000;
 export const COMPARISON_FOLLOWUP = 2_000;
 export const COMPARISON_CYCLE_LIMIT = 90_000;
 
-/** One active cycle, bounded follow-ups, no automatic forced reads. */
+/** Only completed reads advance freshness. Cancellation never consumes a check. */
 export function createComparisonChecks(
   check: (force: boolean, signal: AbortSignal) => Promise<boolean>,
   busy: (value: boolean) => void,
   initialLast = -Infinity,
-  onStart: (time: number) => void = () => {},
+  onCompleted: (time: number) => void = () => {},
 ) {
   let active = false;
   let disposed = false;
@@ -30,35 +30,36 @@ export function createComparisonChecks(
   };
   async function run(force: boolean, followup = false) {
     if (!active || disposed || pending) return;
-    if (followup && Date.now() - started >= COMPARISON_CYCLE_LIMIT) {
-      busy(false);
-      schedule(last + COMPARISON_INTERVAL - Date.now());
-      return;
-    }
-    if (!followup) {
-      last = started = Date.now();
-      onStart(last);
-    }
+    if (!followup) started = Date.now();
     const id = generation;
-    controller = new AbortController();
+    const request = new AbortController();
+    controller = request;
     pending = true;
     busy(true);
     let updating = false;
+    let completed = false;
     try {
-      updating = await check(force, controller.signal);
+      updating = await check(force, request.signal);
+      completed = !request.signal.aborted;
     } catch {
-      /* The caller owns visible error feedback. */
+      // Visible errors belong to the caller; an empty first load gets bounded retries.
     }
     if (disposed || !active || id !== generation) return;
     pending = false;
+    if (completed) {
+      last = Date.now();
+      onCompleted(last);
+    }
+    const needsFollowup = updating || (!completed && !Number.isFinite(last));
     if (
-      updating &&
+      needsFollowup &&
       Date.now() - started + COMPARISON_FOLLOWUP < COMPARISON_CYCLE_LIMIT
     ) {
       schedule(COMPARISON_FOLLOWUP, true);
     } else {
       busy(false);
-      schedule(last + COMPARISON_INTERVAL - Date.now());
+      // A failed first cycle must not spin at a negative/infinite deadline.
+      schedule(COMPARISON_INTERVAL);
     }
   }
   return {

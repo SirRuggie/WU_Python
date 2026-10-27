@@ -34,7 +34,7 @@ export default function ActionMenu({
 }) {
   const id = useId(),
     trigger = useRef<HTMLButtonElement>(null),
-    menu = useRef<HTMLDivElement>(null);
+    sheet = useRef<HTMLDivElement>(null);
   const active = useSyncExternalStore(
     subscribeRosterActionMenus,
     activeRosterActionMenu,
@@ -47,7 +47,7 @@ export default function ActionMenu({
   // Non-modal menus permit switching directly to another card trigger.
   // React Aria owns outside interactions even when the target cannot take focus.
   useInteractOutside({
-    ref: menu,
+    ref: sheet,
     isDisabled: !open,
     onInteractOutside: (event) => {
       if (!trigger.current?.contains(event.target as Node)) close();
@@ -67,7 +67,7 @@ export default function ActionMenu({
     const scroll = (event: Event) => {
       if (
         window.matchMedia("(max-width: 720px)").matches &&
-        !menu.current?.contains(event.target as Node)
+        !sheet.current?.contains(event.target as Node)
       )
         close();
     };
@@ -89,13 +89,13 @@ export default function ActionMenu({
           <MoreHorizontal size={22} aria-hidden="true" />
         </AriaButton>
         <Popover
+          ref={sheet}
           className="roster-action-popover roster-ui"
           placement="bottom end"
           isNonModal
         >
           <h3 className="roster-action-heading">{name}</h3>
           <Menu
-            ref={menu}
             aria-label={`Actions for ${name}`}
             className="roster-action-list"
           >

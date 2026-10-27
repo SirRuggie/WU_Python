@@ -3,7 +3,9 @@
 The roster page's UI system. Source of truth for tokens and states: `web/cwl/src/rosterUi/primitives.css`. Scope: roster page only (other dashboard pages adopt these later, by decision, not by drift).
 
 ## Visual direction
+
 Ruggie's reference screenshots (2026-10-27):
+
 - Pill buttons with a Lucide icon + label (`+ Add players`, `✏ Edit`, round `⋯`)
 - A `● Open` status pill
 - A thin rounded progress bar (`0/50 signed up`)
@@ -15,6 +17,7 @@ Ruggie's reference screenshots (2026-10-27):
 The goal was to replace the old square buttons and native OS pickers ("early 2000s"). Accent color is **gold** (no orange).
 
 ## Tokens
+
 - Radius: sm 10 · md 14 · lg 20 · pill 999
 - Control height: 44 / 48 (visual chips can be ~36 with a ≥44 hit area)
 - Borders: 1px, subtle. Surfaces: layered dark levels.
@@ -26,22 +29,26 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
   - green pill = "Signups open"
 
 ## Shape rule
+
 - **Pill (999)** ONLY for single-line, short elements: buttons, status pills, stat chips, filter/tag chips.
 - **Rounded rectangle (md ~14px)** for anything with 2+ lines or a progress bar: clan capacity cards, account cards, panels. A pill shape on multi-line content squeezes the text and bar into the curved ends.
 
 ## Interactive states (chips, cards, buttons — one set of rules everywhere)
-| State | Treatment |
-|---|---|
-| Default | neutral 1px border |
-| Hover | subtle border lightening only; no outline, no size change |
-| Active filter / selected | gold border + gold tint background + gold text |
-| Keyboard focus | `:focus-visible` only (never plain `:focus`), a single white ring; base border transparent while focused |
-| Disabled | dimmed + reason text nearby |
+
+| State                    | Treatment                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Default                  | neutral 1px border                                                                                       |
+| Hover                    | subtle border lightening only; no outline, no size change                                                |
+| Active filter / selected | gold border + gold tint background + gold text                                                           |
+| Keyboard focus           | `:focus-visible` only (never plain `:focus`), a single white ring; base border transparent while focused |
+| Disabled                 | dimmed + reason text nearby                                                                              |
+
 - Never stack two rings (border + offset outline). That was the "doubled highlight" bug.
 - Focus must never look the same as active.
 - Destructive buttons: red border/fill, never gold.
 
 ## Components
+
 - **Button:** variants are primary (gold fill), secondary (dark fill, subtle border), danger (red), icon-only circle (`⋯`). Lucide icon + label.
 - **Menu/Select:** React Aria. Large rows, optional icon, selected = tint + check. Opens as a bottom sheet on mobile. No native `<select>` on the roster page.
 - **ActionPanel:**
@@ -74,6 +81,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - **Undo toast:** `Assigned 5 to W. U. Lazy.127 · Undo`; shows "Undo no longer available" when a later edit invalidates it. aria-live.
 
 ## Layout and format rules
+
 - Touch targets ≥44×44 (WCAG 2.5.8 AA minimum is 24px; Apple 44pt, Material 48dp).
 - No horizontal page overflow at 320, 360 and 1440px.
 - Horizontal rows: hidden scrollbar + edge fade + scroll-snap.
@@ -83,6 +91,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Labels: Assign / Unassign, Assigned clan, Pool (Main/Lazy), "Not in assigned clan".
 
 ## Research sources and what they informed
+
 - [Eleken – Bulk actions UX](https://www.eleken.co/blog-posts/bulk-actions-ux): sticky bottom bulk-action bar on mobile, explicit selection scope ("Select all N matching"), confirm only irreversible actions and use Undo for reversible ones, ~44px targets.
 - [AllAccessible – WCAG 2.5.8 target size](https://allaccessible.org/blog/wcag-258-target-size-minimum-implementation-guide): 24px AA minimum, 44px AAA; Apple 44pt, Material 48dp → our 44/48 control heights.
 - [Baymard – Filter UI best practices](https://baymard.com/blog/ecommerce-filter-ui): filters in a sheet on mobile, always-visible removable active-filter chips, per-option counts, a "Show N results" apply button, Clear all + per-section reset, sticky filter trigger.
@@ -99,3 +108,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Desktop columns keep a **visible horizontal scrollbar** (exception to "hidden scrollbar", for mouse users). Navigation shows only on overflow.
 - Phones use a swipeable clan-card row.
 - The unpublished-changes banner is amber, compact and not dismissible while pending; it names the published version/time, says placement changes are draft only, and offers permission-gated Finalize navigation. Signup changes are never labelled draft.
+
+- Compare readability: row 1 name and weight use 15px/700 primary text; row 2 uses a 12px/600 location pill, 13px/400 secondary location name and 12px/400 muted age; row 3 metadata, tags and optional publication note use 12px/400. No Compare text is smaller than 12px.
+- Compare card fills use a softened location tint over the raised surface and a 4px colored left edge. Only the location pill retains semibold emphasis below row 1. Card gaps are consistently 6px.
+- Clan headings/counts use 15px/700 primary text, Total uses 14px/700, and supporting details use 12px/400 muted text. Tally numbers use green/red/neutral/amber with muted labels. Gold identifies only the selected rail border, never header text.

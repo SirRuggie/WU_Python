@@ -115,3 +115,11 @@ it("preserves secure Discord link attributes", async () => {
   expect(link.getAttribute("target")).toBe("_blank");
   expect(link.getAttribute("rel")).toBe("noopener noreferrer");
 });
+
+it("tapping the sheet heading keeps it open, but outside the sheet closes", async () => {
+  await click(trigger("One"));
+  await click(document.querySelector(".roster-action-heading")!);
+  expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  await click(document.getElementById("outside")!);
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});

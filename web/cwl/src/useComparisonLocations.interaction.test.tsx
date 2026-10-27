@@ -97,3 +97,44 @@ it("an aborted initial read does not suppress the next mount's first result", as
     ),
   ).toHaveLength(2);
 });
+
+it("visibility cancellation reissues immediately and leaves cache freshness unchanged", async () => {
+  fetcher.mockImplementation(() => new Promise(() => {}));
+  await mount();
+  const previous = memory.pools.get("main")!.lastCheck;
+  await act(async () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(memory.pools.get("main")!.lastCheck).toBe(previous);
+  await act(async () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(
+    fetcher.mock.calls.filter((call) =>
+      String(call[0]).includes("source=draft"),
+    ),
+  ).toHaveLength(2);
+  expect(memory.pools.get("main")!.lastCheck).toBe(previous);
+});
+it("published context remains immediately available when first switching pools", async () => {
+  await mount();
+  const published = memory.publication.published;
+  const count = fetcher.mock.calls.filter((call) =>
+    String(call[0]).includes("source=published"),
+  ).length;
+  await mount("lazy");
+  expect(memory.publication.published).toBe(published);
+  expect(
+    fetcher.mock.calls.filter((call) =>
+      String(call[0]).includes("source=published"),
+    ),
+  ).toHaveLength(count);
+});

@@ -1,5 +1,5 @@
 import { fetchReadWithRetry } from "./readRetry";
-import { clearSnapshots } from "./snapshotCache";
+import { handleAuthorizationFailure } from "./api";
 import {
   comparisonPoolMemory,
   type ComparisonMemory,
@@ -34,10 +34,7 @@ async function readArrival(
     { credentials: "same-origin", signal },
   );
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearSnapshots();
-      window.dispatchEvent(new Event("dashboard-access-changed"));
-    }
+    handleAuthorizationFailure(response.status);
     throw new Error("Location check failed");
   }
   return response.json();
@@ -52,6 +49,7 @@ export function useComparisonLocations(
   refreshKey: number,
 ) {
   const cache = comparisonPoolMemory(memory, pool);
+  const publication = memory.publication;
   const [, redraw] = useState(0);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
@@ -61,7 +59,6 @@ export function useComparisonLocations(
   enabled.current = hasClans;
 
   useEffect(() => {
-    let started = cache.lastCheck;
     setError("");
     const runner = createComparisonChecks(
       async (force, signal) => {
@@ -76,11 +73,9 @@ export function useComparisonLocations(
           setError("");
           setNow(Date.now());
           cache.checkedAt = Date.now();
-          cache.lastCheck = started;
           return result.updating;
         } catch (cause) {
           if (!signal.aborted) {
-            cache.lastCheck = started;
             setError("Couldn't update locations · showing last results");
           }
           throw cause;
@@ -89,7 +84,7 @@ export function useComparisonLocations(
       setChecking,
       cache.lastCheck,
       (time) => {
-        started = time;
+        cache.lastCheck = time;
       },
     );
     checks.current = runner;
@@ -117,20 +112,20 @@ export function useComparisonLocations(
   useEffect(() => {
     if (
       !hasClans ||
-      (cache.publicationRevision === revision &&
-        cache.publicationRefresh === refreshKey &&
-        Date.now() - cache.publicationAt < 300_000)
+      (publication.publicationRevision === revision &&
+        publication.publicationRefresh === refreshKey &&
+        Date.now() - publication.publicationAt < 300_000)
     )
       return;
     const controller = new AbortController();
     void readArrival(season, true, false, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) {
-          cache.published =
+          publication.published =
             result.source === "published" ? result.accounts : null;
-          cache.publicationAt = Date.now();
-          cache.publicationRevision = revision;
-          cache.publicationRefresh = refreshKey;
+          publication.publicationAt = Date.now();
+          publication.publicationRevision = revision;
+          publication.publicationRefresh = refreshKey;
           redraw((value) => value + 1);
         }
       })
@@ -145,7 +140,7 @@ export function useComparisonLocations(
     error,
     now,
     checkedAt: cache.checkedAt,
-    published: cache.published,
+    published: publication.published,
     refresh: () => checks.current?.refresh(),
   };
 }

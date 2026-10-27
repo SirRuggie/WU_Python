@@ -45,16 +45,16 @@ export default function CompareClanHeader({
             {summary.knownWeights} of {summary.count} weighed
           </small>
         )}
-        <small>
-          Avg TH{" "}
-          {summary.averageTownHall === null
-            ? "—"
-            : summary.averageTownHall.toLocaleString(undefined, {
-                maximumFractionDigits: 1,
-              })}
-          {summary.knownTownHalls < summary.count &&
-            ` · ${summary.knownTownHalls} of ${summary.count} known`}
-        </small>
+        {summary.averageTownHall !== null && (
+          <small>
+            Avg TH{" "}
+            {summary.averageTownHall.toLocaleString(undefined, {
+              maximumFractionDigits: 1,
+            })}
+            {summary.knownTownHalls < summary.count &&
+              ` · ${summary.knownTownHalls} of ${summary.count} known`}
+          </small>
+        )}
       </div>
       {!compact && (
         <small>
@@ -63,12 +63,23 @@ export default function CompareClanHeader({
         </small>
       )}
       <small className="compare-tally">
-        {tally.arrived} in clan · {tally.elsewhere} elsewhere
-        {tally.checking > 0 && ` · ${tally.checking} checking`}
+        <span>
+          <span className="compare-count-arrived">{tally.arrived}</span> in clan
+        </span>
+        <span>
+          <span className="compare-count-missing">{tally.elsewhere}</span>{" "}
+          elsewhere
+        </span>
+        {tally.checking > 0 && (
+          <span>
+            <span className="compare-count-checking">{tally.checking}</span>{" "}
+            checking
+          </span>
+        )}
         {tally.outside > 0 && (
-          <span className="compare-warning">
-            {" "}
-            · {tally.outside} outside family
+          <span>
+            <span className="compare-count-outside">{tally.outside}</span>{" "}
+            outside family
           </span>
         )}
       </small>
