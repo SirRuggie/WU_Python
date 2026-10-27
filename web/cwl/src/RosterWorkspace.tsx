@@ -821,6 +821,7 @@ export default function RosterWorkspace({
         uiLocked={uiLocked}
         archived={!!archived}
         refreshKey={refreshEpoch}
+        activeStatuses={mode === "assign" ? releasePreferences.statuses : []}
         onSeasonChange={(value) => {
           if (mayLeaveEditor()) onSeasonChange(value);
         }}

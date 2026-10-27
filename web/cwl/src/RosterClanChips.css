@@ -1,5 +1,6 @@
 .roster-clan-chips {
   display: flex;
+  align-items: stretch;
   gap: 16px;
   min-width: 0;
   overflow-x: auto;
@@ -22,6 +23,8 @@
 }
 
 .roster-clan-chips-group {
+  display: flex;
+  flex-direction: column;
   flex: 0 0 auto;
   min-width: 0;
 }
@@ -37,7 +40,9 @@
 
 .roster-clan-chips-list {
   display: flex;
+  flex: 1;
   flex-wrap: nowrap;
+  align-items: stretch;
   gap: 8px;
 }
 
@@ -63,7 +68,17 @@
 .roster-clan-chip.is-selected.roster-ui-button {
   border-color: var(--roster-gold);
   background: #373127;
-  box-shadow: inset 0 0 0 1px var(--roster-gold);
+  box-shadow: none;
+}
+
+.roster-clan-chip.is-selected.roster-ui-button:hover:not(:disabled) {
+  background: #373127;
+}
+
+.roster-ui.roster-clan-chip.roster-ui-button:focus-visible {
+  border-color: transparent;
+  outline: 2px solid var(--roster-text);
+  outline-offset: 0;
 }
 
 .roster-clan-chip.roster-ui-button > span {
@@ -106,6 +121,7 @@
 .roster-clan-chip-count {
   flex: 0 0 auto;
   margin-left: auto;
+  font-size: 16px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -117,7 +133,14 @@
   font-size: 11px;
 }
 
+.roster-clan-chip-meta > span {
+  color: var(--roster-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
 .roster-clan-chip-meta small {
+  -webkit-text-fill-color: var(--roster-text-muted);
   display: block;
   flex-basis: 100%;
   color: var(--roster-text-muted);

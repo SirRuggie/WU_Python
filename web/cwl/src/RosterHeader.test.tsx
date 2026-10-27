@@ -41,6 +41,7 @@ function render(
   pool: "main" | "lazy" | "all",
   seasonId = "1",
   seasonLabel = "June",
+  activeStatuses: string[] = [],
 ) {
   return renderToStaticMarkup(
     <RosterHeader
@@ -49,6 +50,7 @@ function render(
         { id: 1, label: seasonLabel, status: "active", signup_open: true },
       ]}
       roster={roster}
+      activeStatuses={activeStatuses}
       pool={pool}
       canRoster
       canSignups
@@ -65,6 +67,13 @@ function render(
 }
 
 describe("roster header counts", () => {
+  it("reflects active status filters in the stat chip pressed state", () => {
+    const active = render("all", "1", "June", ["unassigned"]);
+    expect(active).toMatch(
+      /aria-pressed="true"[^>]*><span><strong>2<\/strong> unplaced/,
+    );
+    expect(render("all")).not.toContain('aria-pressed="true"');
+  });
   it("keeps the season selector available before a season is selected", () => {
     expect(render("all", "")).toContain("Select a season");
   });

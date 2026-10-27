@@ -21,14 +21,6 @@
   cursor: not-allowed;
   opacity: 0.55;
 }
-.roster-ui-button:focus-visible,
-.roster-ui-input input:focus-visible,
-.roster-ui-chip button:focus-visible,
-.roster-menu-trigger:focus-visible,
-.roster-menu-item:focus-visible {
-  outline: 3px solid var(--roster-focus);
-  outline-offset: 2px;
-}
 .roster-ui-button.is-primary {
   border-color: var(--roster-gold);
   background: var(--roster-gold);
@@ -263,6 +255,74 @@
 .roster-ui .roster-ui-button.is-danger:hover:not(:disabled) {
   border-color: var(--roster-danger);
 }
-.roster-ui .roster-ui-button.is-danger:focus-visible {
-  outline-color: var(--roster-danger);
+
+/* One existing border per control: hover never draws a second outline.
+   Keyboard focus uses the brighter focus border without changing dimensions. */
+.roster-ui
+  :is(
+    .roster-ui-button,
+    .roster-menu-trigger,
+    .roster-menu-item,
+    .roster-ui-chip button
+  ):not(:focus-visible),
+.roster-ui
+  :is(
+    .roster-ui-button,
+    .roster-menu-trigger,
+    .roster-menu-item,
+    .roster-ui-chip button
+  ):focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+.roster-ui
+  :is(
+    .roster-ui-button,
+    .roster-menu-trigger,
+    .roster-menu-item,
+    .roster-ui-chip button
+  ):hover:where(:not(:disabled):not([aria-disabled="true"])),
+.roster-ui
+  :is(
+    .roster-ui-button,
+    .roster-menu-trigger,
+    .roster-menu-item
+  )[aria-pressed="true"],
+.roster-ui .roster-menu-item:has(.roster-menu-item-check) {
+  --roster-control-state-border: var(--roster-gold);
+  border-color: var(--roster-control-state-border);
+}
+.roster-ui
+  :is(
+    .roster-ui-button,
+    .roster-menu-trigger,
+    .roster-menu-item,
+    .roster-ui-chip button
+  ):focus-visible {
+  --roster-control-state-border: var(--roster-focus);
+  border-color: var(--roster-control-state-border);
+}
+.roster-ui .roster-ui-button.is-danger:is(:hover, :focus-visible) {
+  --roster-control-state-border: var(--roster-danger);
+  border-color: var(--roster-control-state-border);
+}
+/* A removable chip has one outer border; its small close button gets a
+   keyboard ring only while the enclosing chip border is transparent. */
+.roster-ui .roster-ui-chip:has(button:focus-visible) {
+  border-color: transparent;
+}
+.roster-ui .roster-ui-chip button:focus-visible {
+  outline: 2px solid var(--roster-focus);
+  outline-offset: 0;
+}
+.roster-ui .roster-ui-input input:focus-visible {
+  outline: none;
+  border-color: var(--roster-focus);
+}
+
+/* Suppress legacy inset active indicators; the solid border is the state. */
+.roster-ui
+  .roster-ui-button.roster-ui:is([aria-pressed="true"], .active, .is-selected),
+.roster-ui .roster-menu-item:has(.roster-menu-item-check) {
+  box-shadow: none;
 }

@@ -44,6 +44,7 @@ type Props = {
   uiLocked: boolean;
   archived: boolean;
   refreshKey?: number;
+  activeStatuses?: readonly string[];
   onSeasonChange: (id: string) => void;
   onRefresh: () => void;
   onAutoPlace: (trigger: HTMLElement) => void;
@@ -63,6 +64,7 @@ export default function RosterHeader({
   uiLocked,
   archived,
   refreshKey = 0,
+  activeStatuses = [],
   onSeasonChange,
   onRefresh,
   onAutoPlace,
@@ -296,6 +298,7 @@ export default function RosterHeader({
           </Button>
           <div className="roster-header-unplaced">
             <Button
+              aria-pressed={activeStatuses.includes("unassigned")}
               onClick={() => onStatusFilter("unassigned")}
               disabled={uiLocked}
             >
@@ -312,6 +315,7 @@ export default function RosterHeader({
             )}
           </div>
           <Button
+            aria-pressed={activeStatuses.includes("missing_weight")}
             onClick={() => onStatusFilter("missing_weight")}
             disabled={uiLocked}
           >
