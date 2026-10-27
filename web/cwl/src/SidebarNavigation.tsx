@@ -1,7 +1,7 @@
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
 import { useEffect, useState } from 'react'
 
-export const dashboardViews = ['weight-trial', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'member-activity', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access', 'issues'] as const
+export const dashboardViews = ['weight-trial', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'member-activity', 'moderation', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access', 'issues'] as const
 export type DashboardView = typeof dashboardViews[number]
 type Item = { view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: DashboardIconName; items: Item[]; access?: 'staff' | 'owner' }
@@ -45,7 +45,7 @@ const sections: Section[] = [
   ] },
   { id: 'server-tools', label: 'Server tools', icon: 'tools', items: [
     { view: 'members-settings', label: 'Members & roles', icon: 'users', permissions: ['member_roles'] },
-    { view: 'member-activity', label: 'Member activity', icon: 'users', permissions: ['member_roles'] },
+    { view: 'moderation', label: 'Moderation', icon: 'flag', permissions: ['member_roles'] },
     { view: 'applications-settings', label: 'Applications & tickets', icon: 'mail', permissions: ['recruitment','tickets'] },
     { view: 'fwa-settings', label: 'FWA tools', icon: 'war', permissions: ['fwa'] },
     { view: 'text-commands', label: 'Command triggers', icon: 'command', permissions: ['text_commands'] },
@@ -65,10 +65,12 @@ export function visibleNavigationSections(canEdit: boolean, isOwner: boolean, pe
     .filter(section => section.items.length > 0)
 }
 export function navigationLabel(view: DashboardView): string {
+  if (view === 'member-activity') return 'Moderation'
   return sections.flatMap(section => section.items).find(item => item.view === view)?.label
     || (view === 'manage' ? 'Server management' : 'Dashboard')
 }
 export function navigationSection(view: DashboardView) {
+  if (view === 'member-activity') return navigationSection('moderation')
   return sections.find(section => section.items.some(item => item.view === view))?.label
 }
 export default function SidebarNavigation({ userId, view, canEdit, isOwner, permissions = [], onNavigate }: {

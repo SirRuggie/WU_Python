@@ -12,7 +12,7 @@
   margin-bottom: 20px;
 }
 
-.member-activity-heading h1 {
+.member-activity-heading h2 {
   margin: 4px 0 8px;
 }
 
@@ -203,8 +203,13 @@
   color: #85dda0;
 }
 
-.member-activity-kind.leave {
+.member-activity-kind.leave,
+.member-activity-kind.kick {
   color: #ff9299;
+}
+
+.member-activity-kind.ban {
+  color: #ff9f6e;
 }
 
 .member-activity-meta {

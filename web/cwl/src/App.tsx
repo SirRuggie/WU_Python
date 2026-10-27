@@ -57,7 +57,7 @@ const BonusWorkspace = lazy(() => import('./BonusWorkspace'))
 const MemberAssignments = lazy(() => import('./MemberAssignments'))
 const ImageGallery = lazy(() => import('./CommandImageLibrary').then(module => ({default:module.ImageGallery})))
 const TicketBrowser = lazy(() => import('./TicketBrowser'))
-const MemberActivityHistory = lazy(() => import('./MemberActivityHistory'))
+const ModerationWorkspace = lazy(() => import('./ModerationWorkspace'))
 type View = DashboardView
 type Notice = { kind: 'success' | 'error'; text: string }
 type Completion = { seasonId: string; seasonLabel: string; pool: Pool; accounts: ReturnType<typeof submittedSummary>; refreshWarning: boolean }
@@ -342,14 +342,15 @@ function App() {
     if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
     if (view === 'publication' && publicationBusy) return false
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
-    if ((isManagementArea(view) || ['manage','text-commands','clan-management','weight-trial'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
+    if ((isManagementArea(view) || ['manage','text-commands','clan-management','weight-trial','moderation','member-activity'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
     if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
     return true
   }
   const allowedView = (next: View): View => {
     if (!session) return 'home'
     return visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === next))
-      || (next === 'manage' && session.is_owner) ? next : 'home'
+      || (next === 'manage' && session.is_owner)
+      || (next === 'member-activity' && visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === 'moderation'))) ? next : 'home'
   }
   const acceptRoute = (next: View) => { if (next !== 'signup') { setDrafts({ main: {}, lazy: {} }) }; setView(next); setMenuOpen(false); setNotice(null) }
   const [searchQuery, setSearchQuery] = useState('')
@@ -570,7 +571,7 @@ function App() {
     {menuOpen && <button className="scrim" tabIndex={-1} aria-hidden="true" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     <div className="workspace" inert={mobile && menuOpen}>
-      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : view === 'member-activity' ? 'Member activity' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
+      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view)}>
         <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
         {seasonError && view !== 'signup' && view !== 'home' && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
@@ -604,7 +605,7 @@ function App() {
         {view === 'staff-overview' && <StaffOverview onNavigate={(next,season)=>{if(season)setSeasonId(season);changeView(next)}} />}
         {view === 'image-gallery' && <ImageGallery onDirty={setManageDirty} />}
         {view === 'tickets' && <TicketBrowser />}
-        {view === 'member-activity' && <MemberActivityHistory />}
+        {(view === 'member-activity' || view === 'moderation') && <ModerationWorkspace onDirty={setManageDirty} />}
         {view === 'clan-management' && <ClanManagement onDirty={setManageDirty} />}
         {view === 'weight-trial' && <WeightTrial onDirty={setManageDirty} />}
         {view === 'strikes' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <StrikesWorkspace onDirty={setManageDirty} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} userId={session.user.id} />}

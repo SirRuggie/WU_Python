@@ -80,7 +80,7 @@ afterEach(() => {
 
 it('keeps the compact history search and UTC filters visible while loading', () => {
   const html = render()
-  expect(html).toContain('<h1 id="member-activity-title">Member activity history</h1>')
+  expect(html).toContain('<h2 id="member-activity-title">Activity history</h2>')
   expect(html).toContain('Search name or Discord ID')
   expect(html).toContain('Activity')
   expect(html).toContain('<summary>Date range</summary>')

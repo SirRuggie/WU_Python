@@ -237,6 +237,7 @@ MANAGEMENT_PAGE_PATHS = {
     "replacements": "/clans/replacements",
     "members-settings": "/server/members",
     "member-activity": "/server/member-activity",
+    "moderation": "/server/moderation",
     "applications-settings": "/server/applications",
     "fwa-settings": "/server/fwa",
     "connections-settings": "/settings/integrations",

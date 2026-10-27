@@ -21,7 +21,8 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
                     "user_id": "123456789012345678", "event_type": "join",
                     "display_name": "Alice", "username": "alice",
                     "occurred_at": self.now, "avatar": None, "avatar_type": None,
-                    "delivery_status": "queued"}
+                    "delivery_status": "queued", "channel_id": transport.CHANNEL_ID,
+                    "forum_tag_id": None}
 
     def test_join_and_leave_episodes_deduplicate_without_losing_rapid_rejoin(self):
         joined_one = self.now
@@ -81,7 +82,8 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
         event = NS(member=member)
         row = dict(self.row)
         store = NS(ensure_indexes=AsyncMock(), capture=AsyncMock(return_value=row),
-                   save_avatar=AsyncMock(), ready=AsyncMock(return_value=row))
+                   save_avatar=AsyncMock(), ready=AsyncMock(return_value=row),
+                   settings=AsyncMock(return_value=MemberEventStore.default_settings()))
         order = []
         async def capture(**kwargs):
             order.append("capture")
@@ -169,7 +171,10 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
             captured.update(kwargs)
             return self.row
         store = NS(capture=AsyncMock(side_effect=capture), latest_joined_at=AsyncMock(return_value=self.now),
-                   save_avatar=AsyncMock(), ready=AsyncMock(return_value=self.row))
+                   latest_identity=AsyncMock(return_value=None),
+                   settings=AsyncMock(return_value=MemberEventStore.default_settings()),
+                   save_avatar=AsyncMock(), ready=AsyncMock(return_value=self.row),
+                   enrich_recent_kick=AsyncMock())
         with patch.object(transport, "MemberEventStore", return_value=store), \
              patch.object(transport, "ensure_indexes", new=AsyncMock()), \
              patch.object(transport, "download_avatar", new=AsyncMock(return_value=(None, None))), \
@@ -237,7 +242,9 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(q["guild_id"] in (GUILD_ID, GUILD_ID + 1) for q in collection.queries))
 
     async def test_channel_mismatch_never_claims_or_posts(self):
-        store = NS(claim=AsyncMock(), finish=AsyncMock())
+        store = NS(claim=AsyncMock(), finish=AsyncMock(),
+                   settings=AsyncMock(return_value=MemberEventStore.default_settings()),
+                   skip_queued=AsyncMock())
         with patch.object(transport, "channel_ready", new=AsyncMock(return_value=False)), \
              patch.object(transport, "post_card", new=AsyncMock()) as post:
             await transport.deliver(store, NS(), self.row)
@@ -245,8 +252,10 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
         post.assert_not_awaited()
 
     async def test_ambiguous_post_is_marked_uncertain_and_not_retried(self):
-        store = NS(claim=AsyncMock(return_value=self.row), finish=AsyncMock())
-        with patch.object(transport, "channel_ready", new=AsyncMock(return_value=True)), \
+        store = NS(claim=AsyncMock(return_value=self.row), finish=AsyncMock(),
+                   settings=AsyncMock(return_value=MemberEventStore.default_settings()),
+                   skip_queued=AsyncMock())
+        with patch.object(transport, "channel_ready", new=AsyncMock(return_value=NS(type=0))), \
              patch.object(transport, "post_card", new=AsyncMock(side_effect=TimeoutError)) as post:
             with self.assertRaises(TimeoutError):
                 await transport.deliver(store, NS(), self.row)
@@ -266,7 +275,7 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_api_rejects_malformed_dates_cursor_filters_and_limit(self):
         for suffix in ("?from=2026-02-30", "?to=9999-12-31", "?before=bad",
-                       "?type=ban", "?limit=101", "?q=" + "x" * 81,
+                       "?type=unknown", "?limit=101", "?q=" + "x" * 81,
                        "?from=2026-10-27&to=2026-10-26"):
             with self.subTest(suffix=suffix), patch.object(api, "require_manage", new=AsyncMock()):
                 with self.assertRaises(web.HTTPBadRequest):

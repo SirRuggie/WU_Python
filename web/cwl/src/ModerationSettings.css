@@ -1,0 +1,163 @@
+.moderation-settings {
+  max-width: 1100px;
+  margin: 0 auto;
+  min-width: 0;
+}
+
+.moderation-settings-heading,
+.moderation-event-setting-title,
+.moderation-settings-save {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.moderation-settings-heading {
+  margin-bottom: 18px;
+}
+
+.moderation-settings-heading h2,
+.moderation-event-setting h3 {
+  margin: 0 0 6px;
+}
+
+.moderation-settings-heading p,
+.moderation-event-setting-title p {
+  margin: 0;
+  color: #bdc7d4;
+  line-height: 1.5;
+}
+
+.moderation-settings button,
+.moderation-settings select,
+.moderation-settings input {
+  min-height: 44px;
+}
+
+.moderation-event-settings {
+  display: grid;
+  gap: 12px;
+}
+
+.moderation-event-setting {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #495563;
+  border-radius: 12px;
+  background: #1c2028;
+}
+
+.moderation-event-setting-title {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.moderation-event-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  min-height: 44px;
+  font-weight: 650;
+}
+
+.moderation-event-toggle input {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+}
+
+.moderation-settings .channel-combobox {
+  max-width: 620px;
+}
+
+.moderation-forum-tag {
+  display: grid;
+  gap: 6px;
+  max-width: 620px;
+  margin-top: 12px;
+  font-weight: 650;
+}
+
+.moderation-forum-tag select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.moderation-forum-tag small {
+  color: #f0cc7b;
+  line-height: 1.5;
+}
+
+.moderation-destination-warning,
+.moderation-settings-empty,
+.moderation-settings-notice,
+.moderation-settings-error {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #9b7131;
+  border-radius: 9px;
+  background: #302819;
+  color: #f5d995;
+  line-height: 1.5;
+}
+
+.moderation-settings-error {
+  border-color: #9b5965;
+  background: #381f25;
+  color: #ffe4e9;
+}
+
+.moderation-settings-error p {
+  margin: 0 0 8px;
+}
+
+.moderation-settings-error button {
+  margin-right: 8px;
+}
+
+.moderation-settings-notice {
+  border-color: #547c60;
+  background: #1d3025;
+  color: #c9f1d1;
+}
+
+.moderation-settings-save {
+  align-items: center;
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid #536173;
+  border-radius: 10px;
+  background: #192331;
+}
+
+.moderation-settings-save p {
+  margin: 0;
+  color: #c2cbd7;
+}
+
+.moderation-settings-save .primary {
+  color: #fff;
+  background: #194d9f;
+  border: 1px solid #91bcff;
+}
+
+.moderation-settings :focus-visible {
+  outline: 3px solid #a6c8ff;
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .moderation-settings-heading,
+  .moderation-event-setting-title,
+  .moderation-settings-save {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .moderation-settings-heading button,
+  .moderation-settings-save button {
+    width: 100%;
+  }
+}

@@ -5,21 +5,25 @@ import './MemberActivityHistory.css'
 type MemberEvent = {
   id: string
   user_id: string
-  event_type: 'join' | 'leave'
+  event_type: 'join' | 'leave' | 'kick' | 'ban'
   display_name?: string | null
   username?: string | null
   avatar_url?: string | null
   occurred_at: string
+  joined_at?: string | null
+  reason?: string | null
+  moderator_id?: string | null
   delivery_status?: string | null
 }
 type Response = { events: MemberEvent[]; next_cursor: string | null }
-type EventType = 'all' | 'join' | 'leave'
+type EventType = 'all' | 'join' | 'leave' | 'kick' | 'ban'
 type Filters = { query: string; type: EventType; from: string; to: string }
 
 const deliveryLabels: Record<string, string> = {
   queued: 'Delivery queued',
   sending: 'Delivery in progress',
   uncertain: 'Delivery uncertain',
+  skipped: 'Delivery skipped while disabled',
 }
 
 function MemberAvatar({ name, url }: { name: string; url?: string | null }) {
@@ -51,7 +55,7 @@ function formatDate(value: string) {
     : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-export default function MemberActivityHistory() {
+export default function MemberActivityHistory({ active = true }: { active?: boolean }) {
   const [rows, setRows] = useState<MemberEvent[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -104,11 +108,16 @@ export default function MemberActivityHistory() {
   )
 
   useEffect(() => {
+    if (!active) {
+      request.current += 1
+      setLoading(false)
+      return
+    }
     void load(null)
     return () => {
       request.current += 1
     }
-  }, [load])
+  }, [active, load])
 
   const applyFilters = (event: FormEvent) => {
     event.preventDefault()
@@ -136,9 +145,8 @@ export default function MemberActivityHistory() {
     <section className="member-activity" aria-labelledby="member-activity-title">
       <header className="member-activity-heading">
         <div>
-          <p className="eyebrow">Server tools</p>
-          <h1 id="member-activity-title">Member activity history</h1>
-          <p>Recent member joins and leaves recorded by the server.</p>
+          <h2 id="member-activity-title">Activity history</h2>
+          <p>Recent joins, leaves, kicks and bans. A kick or ban can also create a separate leave event.</p>
         </div>
         <button type="button" onClick={() => void load(null)} disabled={loading}>
           Refresh
@@ -160,6 +168,8 @@ export default function MemberActivityHistory() {
             <option value="all">All activity</option>
             <option value="join">Joins</option>
             <option value="leave">Leaves</option>
+            <option value="kick">Kicks</option>
+            <option value="ban">Bans</option>
           </select>
         </label>
         <details className="member-activity-date-range">
@@ -224,7 +234,7 @@ export default function MemberActivityHistory() {
             {rows.map(item => {
               const name = item.display_name?.trim() || item.username?.trim() || 'Unknown member'
               const username = item.username?.trim()
-              const isJoin = item.event_type === 'join'
+              const eventLabel = { join: 'Joined', leave: 'Left', kick: 'Kicked', ban: 'Banned' }[item.event_type]
               const deliveryText = item.delivery_status
                 ? deliveryLabels[item.delivery_status] || ''
                 : ''
@@ -232,7 +242,7 @@ export default function MemberActivityHistory() {
               return (
                 <li
                   key={item.id}
-                  className={`member-activity-row ${isJoin ? 'is-join' : 'is-leave'}`}
+                  className={`member-activity-row is-${item.event_type}`}
                 >
                   <div className="member-activity-identity">
                     <MemberAvatar name={name} url={item.avatar_url} />
@@ -241,9 +251,9 @@ export default function MemberActivityHistory() {
                       {username && <small>@{username}</small>}
                     </div>
                   </div>
-                  <span className={`member-activity-kind ${isJoin ? 'join' : 'leave'}`}>
+                  <span className={`member-activity-kind ${item.event_type}`}>
                     <span aria-hidden="true">●</span>
-                    {isJoin ? 'Joined' : 'Left'}
+                    {eventLabel}
                   </span>
                   <div className="member-activity-meta">
                     <time className="member-activity-date" dateTime={item.occurred_at}>
@@ -260,7 +270,11 @@ export default function MemberActivityHistory() {
                   <details className="member-activity-details">
                     <summary>Details</summary>
                     <p>Discord ID {item.user_id}</p>
+                    {item.joined_at && <p>Member joined {formatDate(item.joined_at)}</p>}
+                    {item.reason && <p>Reason: {item.reason}</p>}
+                    {item.moderator_id && <p>Moderator ID {item.moderator_id}</p>}
                     {deliveryText && <p>{deliveryText}</p>}
+                    {!item.joined_at && !item.reason && !item.moderator_id && !deliveryText && <p>No additional details recorded.</p>}
                   </details>
                 </li>
               )

@@ -31,3 +31,10 @@ it('does not accept external or lookalike management destinations', () => {
   expect(managementTarget('?view=access', '/tasks')).toBeUndefined()
   expect(managementTarget('?view=__proto__', '/')).toBeUndefined()
 })
+
+it('keeps the old member activity URL while adding the canonical Moderation route', () => {
+  expect(dashboardTarget('', '/server/member-activity').view).toBe('member-activity')
+  expect(dashboardTarget('', '/server/moderation').view).toBe('moderation')
+  expect(dashboardPath({ view: 'member-activity', season: '' })).toBe('/server/member-activity')
+  expect(dashboardPath({ view: 'moderation', season: '' })).toBe('/server/moderation')
+})
