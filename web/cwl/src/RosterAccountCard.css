@@ -96,47 +96,6 @@
   position: relative;
   padding-top: 8px;
 }
-.roster-player-menu > summary {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  cursor: pointer;
-  list-style: none;
-  border-radius: 999px;
-}
-.roster-player-menu > summary::-webkit-details-marker {
-  display: none;
-}
-.roster-player-menu > summary:hover {
-  background: #ffffff12;
-}
-.roster-player-menu > summary[aria-disabled="true"] {
-  opacity: 0.5;
-}
-.roster-player-menu > summary:focus-visible {
-  outline: 2px solid #edc64d;
-  outline-offset: -3px;
-}
-.roster-player-actions {
-  position: absolute;
-  right: 8px;
-  top: 58px;
-  z-index: 4;
-  display: grid;
-  gap: 8px;
-  min-width: 200px;
-  padding: 10px;
-  background: #202126;
-  border: 1px solid #4a4b50;
-  border-radius: 14px;
-  box-shadow: 0 8px 24px #0008;
-}
-.roster-player-actions > .button,
-.roster-player-actions > button {
-  min-height: 44px;
-  justify-content: flex-start;
-}
 .roster-player-sr-only {
   position: absolute;
   width: 1px;

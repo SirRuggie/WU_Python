@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useState, type ComponentProps, type MouseEvent } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { Menu as AriaMenu, MenuItem } from "react-aria-components";
 import type { LucideIcon } from "lucide-react";
@@ -33,6 +33,11 @@ export function commitRosterMenuAction(
   if (!option || option.disabled) return false;
   onValueChange(option.value);
   return true;
+}
+
+// Shared accessible item for selection menus and the action-popover variant.
+export function RosterMenuItem(props: ComponentProps<typeof MenuItem>) {
+  return <MenuItem {...props} />;
 }
 
 export default function RosterMenu({
@@ -95,7 +100,7 @@ export default function RosterMenu({
               {options.map((option) => {
                 const Icon = option.icon;
                 return (
-                  <MenuItem
+                  <RosterMenuItem
                     key={option.value}
                     id={option.value}
                     textValue={option.label}
@@ -120,7 +125,7 @@ export default function RosterMenu({
                         aria-hidden="true"
                       />
                     )}
-                  </MenuItem>
+                  </RosterMenuItem>
                 );
               })}
             </AriaMenu>

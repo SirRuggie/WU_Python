@@ -1,3 +1,4 @@
+import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
 import RosterBalance from "./RosterBalance";
 import ActionPanel from "./ActionPanel";
 import type { MemberOption } from "./MemberPicker";
@@ -738,6 +739,8 @@ export default function RosterWorkspace({
     activeClans.find((clan) => clan.tag === ruleTag) || activeClans[0];
   const clanName = (tag: string | null) =>
     roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
+
+  useEffect(() => closeRosterActionMenus(), [seasonId, poolFilter, mode]);
 
   return (
     <div

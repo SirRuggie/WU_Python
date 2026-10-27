@@ -7,7 +7,7 @@ import {
 } from "./comparePresentation";
 import { totalRosterWeight } from "./rosterTotalWeight";
 import ComparePlayerCard from "./ComparePlayerCard";
-import RosterAccountMenu from "./RosterAccountMenu";
+import { rosterAccountMenuItems } from "./RosterAccountMenu";
 import type { RosterAccount, RosterClan } from "./roster";
 const account = {
   tag: "#P",
@@ -57,30 +57,30 @@ describe("Compare presentation contracts", () => {
     ).toBe("");
   });
   it("Compare menu has only contact and Details, roster retains its actions", () => {
-    const html = renderToStaticMarkup(
-      <RosterAccountMenu
-        account={account}
-        disabled={false}
-        onDetails={() => {}}
-      />,
-    );
-    expect(html).toContain("DM ↗");
-    expect(html).toContain("Details");
-    expect(html).not.toContain("Change signup");
-    expect(html).not.toContain(">Assign<");
-    const roster = renderToStaticMarkup(
-      <RosterAccountMenu
-        account={account}
-        disabled={false}
-        canRoster
-        canSignups
-        onDetails={() => {}}
-        onAssign={() => {}}
-        onSignup={() => {}}
-      />,
-    );
-    expect(roster).toContain("Change signup");
-    expect(roster).toContain("Assign");
+    const items = rosterAccountMenuItems({ account, onDetails: () => {} });
+    expect(items.map((item) => item.label)).toEqual(["DM ↗", "Details"]);
+    expect(items[0].href).toBe("https://discord.com/users/123456789012345678");
+    const roster = rosterAccountMenuItems({
+      account,
+      canRoster: true,
+      canSignups: true,
+      onDetails: () => {},
+    });
+    expect(roster.map((item) => item.label)).toEqual([
+      "Assign",
+      "Change signup",
+      "DM ↗",
+      "Details",
+    ]);
+    expect(
+      rosterAccountMenuItems({
+        account,
+        canRoster: true,
+        canSignups: true,
+        archived: true,
+        onDetails: () => {},
+      }).map((item) => item.label),
+    ).toEqual(["DM ↗", "Details"]);
   });
   it("card body is an explicitly labelled Details button without selection", () => {
     const html = renderToStaticMarkup(
