@@ -1,3 +1,4 @@
+import ConfirmDialog from './ConfirmDialog'
 import ManualWeightFields from './ManualWeightFields'
 import { manualWeightDraft, parseManualWeight } from './manualWeight'
 import { useDashboardPermission } from './DashboardPermissions'
@@ -37,17 +38,20 @@ export default function RosterPlayerDialog({
   const canSignups = useDashboardPermission('cwl_signups')
   const ref = useRef<HTMLDialogElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
+  const unassignButton = useRef<HTMLButtonElement>(null)
+  const removeButton = useRef<HTMLButtonElement>(null)
   const switchButton = useRef<HTMLButtonElement>(null)
   const pendingAction = useRef(false)
   const [weight, setWeight] = useState(manualWeightDraft(account.manual_weight))
   const [clan, setClan] = useState(account.assigned_clan_tag || '')
   const [kept, setKept] = useState(account.kept)
   const [localError, setLocalError] = useState('')
+  const [actionReview, setActionReview] = useState<'unassign' | 'remove' | null>(null)
   const [poolReview, setPoolReview] = useState<Pool | null>(null)
   const currentHost = clans.find(item => item.tag === account.assigned_clan_tag)
   const dirty = JSON.stringify(weight) !== JSON.stringify(manualWeightDraft(account.manual_weight))
     || clan !== (account.assigned_clan_tag || '') || kept !== account.kept
-  useUnsavedWork(dirty || busy || !!poolReview, onDirty)
+  useUnsavedWork(dirty || busy || !!poolReview || !!actionReview, onDirty)
 
   const close = () => {
     if (!busy && !pendingAction.current && (!(dirty || poolReview) || window.confirm('Discard unsaved account changes?'))) onClose()
@@ -107,16 +111,27 @@ export default function RosterPlayerDialog({
     }
   }
 
-  async function remove() {
-    if (!canSignups || archived || busy || pendingAction.current) return
-    if (!window.confirm(`Remove ${account.player_name} from this season's signups and working roster? Published rosters stay unchanged until you publish again.`)) return
+  async function confirmAction() {
+    const action = actionReview
+    if (!action || archived || busy || pendingAction.current || dirty || poolReview) return
+    if (action === 'unassign' ? !canRoster || !account.assigned_clan_tag : !canSignups) return
     pendingAction.current = true
+    let completed = false
+    setActionReview(null)
+    setLocalError('')
     try {
-      if (await onRemove()) onClose()
+      const success = action === 'unassign'
+        ? await onSave({ assigned_clan_tag: null, kept: false })
+        : await onRemove()
+      completed = success
+      if (success) onClose()
     } catch (cause) {
-      setLocalError(cause instanceof Error ? cause.message : 'Could not remove signup.')
+      setLocalError(cause instanceof Error ? cause.message : `Could not ${action === 'unassign' ? 'unassign account' : 'remove signup'}.`)
     } finally {
       pendingAction.current = false
+      if (!completed) requestAnimationFrame(() => {
+        (action === 'unassign' ? unassignButton : removeButton).current?.focus({ preventScroll: true })
+      })
     }
   }
 
@@ -170,7 +185,7 @@ export default function RosterPlayerDialog({
         </dl>
       </details>
       {canRoster && <form onSubmit={event => { event.preventDefault(); void save() }}>
-        <fieldset disabled={busy || archived || !!poolReview}>
+        <fieldset disabled={busy || archived || !!poolReview || !!actionReview}>
           {account.clan_weight_managed ? (
             <p>Weight from Clan weights: <strong>{fullWeight(account.effective_weight)}</strong>. Update it under Clan management → Clan weights.</p>
           ) : (
@@ -213,12 +228,33 @@ export default function RosterPlayerDialog({
               </div>
             </div>
           ))}
-          <div className="roster-player-remove">
-            <button className="danger" disabled={busy || !!poolReview || dirty} onClick={() => void remove()}>Remove signup</button>
-            <small>Removes this season’s signup and placement. Saved weights stay.</small>
-          </div>
         </section>
       )}
+      {(canRoster || canSignups) && !archived && (
+        <section className="roster-player-remove" aria-label="Placement and signup actions">
+          {canRoster && <div>
+            <button ref={unassignButton} type="button" disabled={busy || !!poolReview || dirty || !account.assigned_clan_tag}
+              onClick={() => setActionReview('unassign')}>Unassign from clan</button>
+            <small>{account.assigned_clan_tag ? 'Keeps the signup. Clears the clan and placement lock.' : 'This account is already unassigned.'}</small>
+          </div>}
+          {canSignups && <div>
+            <button ref={removeButton} type="button" className="danger" disabled={busy || !!poolReview || dirty}
+              onClick={() => setActionReview('remove')}>Remove signup</button>
+            <small>Removes this season’s signup and placement. Saved weights stay.</small>
+          </div>}
+          {dirty && <small>Save your changes before using these actions.</small>}
+        </section>
+      )}
+      {actionReview && <ConfirmDialog
+        heading={actionReview === 'unassign' ? 'Unassign from clan?' : 'Remove signup?'}
+        text={actionReview === 'unassign'
+          ? `${account.player_name} will be unassigned from ${currentHost?.name || account.assigned_clan_tag}. Their signup and saved weight stay. The placement lock is cleared. Publish again to update the published roster.`
+          : `Remove ${account.player_name} from this season’s signup and working roster? Saved weights stay. Publish again to update the published roster.`}
+        confirmLabel={actionReview === 'unassign' ? 'Unassign from clan' : 'Remove signup'}
+        disabled={busy}
+        onCancel={() => setActionReview(null)}
+        onConfirm={() => void confirmAction()}
+      />}
     </dialog>,
     document.body,
   )

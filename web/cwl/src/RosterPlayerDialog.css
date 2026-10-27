@@ -110,3 +110,5 @@
     width: 100%;
   }
 }
+
+.roster-player-remove > div + div { margin-top: 14px; }
