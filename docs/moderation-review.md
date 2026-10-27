@@ -67,3 +67,17 @@ label older saved dates as last known. No actual moderation actions or test post
 were performed in production, and forum delivery still needs observation after
 staff configures a forum and a real event occurs. Existing history is retained;
 no signup/roster schema or data migration is involved.
+
+## Release verification
+
+Deployed implementation `92f12117b21c6099cfd1513910f165e55952de65` to both
+checkouts. Bot runtime imports passed and member-events extension loaded in the
+new process with no current-process error markers. Bot and web services active.
+Public `/server/moderation` HTML and entry/moderation assets match the reviewed
+isolated build; signed-out history and settings requests return 401. Older hashed
+assets were retained during atomic index installation.
+
+Private pre-release SQLite backup retained locally. Post-release digests match
+for 93 signups, 93 roster entries, one publication and one season. Live log settings
+retain the existing join/leave channel; kick/ban posting remains disabled. Archive
+indexes have no expiry. No data migration or live notification test occurred.
