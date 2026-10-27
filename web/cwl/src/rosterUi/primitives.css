@@ -251,27 +251,20 @@
   background: rgb(237 198 77 / 12%);
 }
 
-/* Destructive actions retain red feedback, including keyboard focus. */
-.roster-ui .roster-ui-button.is-danger:hover:not(:disabled) {
-  border-color: var(--roster-danger);
-}
-
-/* One existing border per control: hover never draws a second outline.
-   Keyboard focus uses the brighter focus border without changing dimensions. */
+/* Roster chip/card interaction contract — single source of state styling.
+   Hover: subtly lighten the existing border only, with no size change.
+   Active filter: gold border, gold tint and gold text; hover preserves it.
+   Keyboard focus: white :focus-visible ring, transparent base border.
+   Focus never implies an active filter. Stat chips paint these same states on
+   their 36px pseudo-element inside the larger 44px hit target. */
 .roster-ui
   :is(
     .roster-ui-button,
     .roster-menu-trigger,
     .roster-menu-item,
-    .roster-ui-chip button
-  ):not(:focus-visible),
-.roster-ui
-  :is(
-    .roster-ui-button,
-    .roster-menu-trigger,
-    .roster-menu-item,
-    .roster-ui-chip button
-  ):focus-visible {
+    .roster-ui-chip button,
+    .roster-header-more summary
+  ):not(:focus-visible) {
   outline: none;
   outline-offset: 0;
 }
@@ -280,49 +273,83 @@
     .roster-ui-button,
     .roster-menu-trigger,
     .roster-menu-item,
-    .roster-ui-chip button
-  ):hover:where(:not(:disabled):not([aria-disabled="true"])),
-.roster-ui
-  :is(
-    .roster-ui-button,
-    .roster-menu-trigger,
-    .roster-menu-item
-  )[aria-pressed="true"],
-.roster-ui .roster-menu-item:has(.roster-menu-item-check) {
-  --roster-control-state-border: var(--roster-gold);
+    .roster-ui-chip button,
+    .roster-header-more summary
+  ):hover:where(:not(:disabled):not([aria-disabled="true"])) {
+  --roster-control-state-border: #797983;
   border-color: var(--roster-control-state-border);
+}
+.roster-ui .roster-ui-button.roster-ui[aria-pressed="true"],
+.roster-ui .roster-menu-item:has(.roster-menu-item-check),
+.roster-ui .roster-ui-chip:has(button) {
+  --roster-control-state-border: var(--roster-gold);
+  --roster-control-state-background: #373127;
+  border-color: var(--roster-gold);
+  background: var(--roster-control-state-background);
+  color: #ffe098;
+  -webkit-text-fill-color: #ffe098;
+  box-shadow: none;
 }
 .roster-ui
   :is(
     .roster-ui-button,
     .roster-menu-trigger,
     .roster-menu-item,
-    .roster-ui-chip button
+    .roster-ui-chip button,
+    .roster-header-more summary
   ):focus-visible {
-  --roster-control-state-border: var(--roster-focus);
-  border-color: var(--roster-control-state-border);
+  --roster-control-state-border: transparent;
+  border-color: transparent;
+  outline: 2px solid var(--roster-text);
+  outline-offset: 0;
 }
-.roster-ui .roster-ui-button.is-danger:is(:hover, :focus-visible) {
-  --roster-control-state-border: var(--roster-danger);
-  border-color: var(--roster-control-state-border);
+.roster-ui .roster-ui-button.roster-ui[aria-pressed="true"]:focus-visible {
+  border-color: transparent;
 }
-/* A removable chip has one outer border; its small close button gets a
-   keyboard ring only while the enclosing chip border is transparent. */
 .roster-ui .roster-ui-chip:has(button:focus-visible) {
   border-color: transparent;
 }
-.roster-ui .roster-ui-chip button:focus-visible {
-  outline: 2px solid var(--roster-focus);
-  outline-offset: 0;
+.roster-ui .roster-ui-button.is-danger:hover:not(:focus-visible) {
+  border-color: var(--roster-danger);
 }
 .roster-ui .roster-ui-input input:focus-visible {
-  outline: none;
-  border-color: var(--roster-focus);
+  outline: 2px solid var(--roster-text);
+  outline-offset: 0;
+  border-color: transparent;
 }
-
-/* Suppress legacy inset active indicators; the solid border is the state. */
+/* Pseudo-element controls use the same states without a second outer edge. */
 .roster-ui
-  .roster-ui-button.roster-ui:is([aria-pressed="true"], .active, .is-selected),
-.roster-ui .roster-menu-item:has(.roster-menu-item-check) {
-  box-shadow: none;
+  .roster-header-working
+  .roster-ui-button:is(:hover, :focus-visible, [aria-pressed="true"]),
+.roster-workspace.roster-ui .roster-header-finalize:is(:hover, :focus-visible) {
+  border-color: transparent;
+  background: transparent;
+  outline: none;
+}
+.roster-ui .roster-header-working .roster-ui-button::before,
+.roster-ui .roster-header-finalize::before {
+  border-color: var(--roster-control-state-border, var(--roster-border));
+  background: var(
+    --roster-control-state-background,
+    var(--roster-surface-raised)
+  );
+}
+.roster-ui .roster-header-working .roster-ui-button:focus-visible::before,
+.roster-ui .roster-header-finalize:focus-visible::before {
+  border-color: transparent;
+  outline: 2px solid var(--roster-text);
+  outline-offset: 0;
+}
+@media (max-width: 650px) {
+  .roster-header-publication .roster-menu-trigger::before {
+    border-color: var(--roster-control-state-border, var(--roster-border));
+  }
+  .roster-ui .roster-header-publication .roster-menu-trigger:focus-visible {
+    outline: none;
+  }
+  .roster-header-publication .roster-menu-trigger:focus-visible::before {
+    border-color: transparent;
+    outline: 2px solid var(--roster-text);
+    outline-offset: 0;
+  }
 }

@@ -61,26 +61,6 @@
   scroll-snap-align: start;
 }
 
-.roster-clan-chip.roster-ui-button:hover:not(:disabled) {
-  border-color: var(--roster-gold);
-}
-
-.roster-clan-chip.is-selected.roster-ui-button {
-  border-color: var(--roster-gold);
-  background: #373127;
-  box-shadow: none;
-}
-
-.roster-clan-chip.is-selected.roster-ui-button:hover:not(:disabled) {
-  background: #373127;
-}
-
-.roster-ui.roster-clan-chip.roster-ui-button:focus-visible {
-  border-color: transparent;
-  outline: 2px solid var(--roster-text);
-  outline-offset: 0;
-}
-
 .roster-clan-chip.roster-ui-button > span {
   display: flex;
   align-self: stretch;

@@ -73,10 +73,6 @@
   background: var(--roster-surface-raised);
   content: "";
 }
-.roster-header-working > .roster-ui-button:hover:not(:disabled)::before,
-.roster-header-unplaced > .roster-ui-button:hover:not(:disabled)::before {
-  border-color: var(--roster-gold);
-}
 .roster-header-working strong {
   font-size: 1rem;
 }
@@ -104,13 +100,6 @@
 .roster-header-more summary[aria-disabled="true"] {
   opacity: 0.55;
   pointer-events: none;
-}
-.roster-header-more summary:hover {
-  border-color: var(--roster-gold);
-}
-.roster-header-more summary:focus-visible {
-  outline: none;
-  border-color: var(--roster-focus);
 }
 .roster-header-actions {
   position: absolute;
@@ -341,27 +330,5 @@
   .roster-header-publication > .roster-ui-button,
   .roster-header-working {
     grid-column: 1 / -1;
-  }
-}
-
-/* These 44px targets paint a 36px border on ::before. Keep the real
-   target border transparent in every state so there is only one edge. */
-.roster-ui
-  .roster-header-working
-  .roster-ui-button:is(:hover, :focus-visible, [aria-pressed="true"]),
-.roster-workspace.roster-ui .roster-header-finalize:is(:hover, :focus-visible) {
-  border-color: transparent;
-  background: transparent;
-}
-.roster-header-working .roster-ui-button::before,
-.roster-header-finalize::before {
-  border-color: var(--roster-control-state-border, var(--roster-border));
-}
-.roster-header-working .roster-ui-button:focus-visible::before {
-  border-color: var(--roster-focus);
-}
-@media (max-width: 650px) {
-  .roster-header-publication .roster-menu-trigger::before {
-    border-color: var(--roster-control-state-border, var(--roster-border));
   }
 }
