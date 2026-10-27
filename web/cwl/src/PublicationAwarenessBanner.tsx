@@ -30,7 +30,14 @@ export default function PublicationAwarenessBanner({
         {published && (
           <p>
             <span className="publication-awareness-date">
-              Published {new Date(published.published_at).toLocaleString()}.
+              Published{" "}
+              {new Date(published.published_at).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+              .
             </span>{" "}
             Placement changes made since then are draft only.
           </p>

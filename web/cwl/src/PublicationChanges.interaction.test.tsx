@@ -45,3 +45,51 @@ it("loads comparison only when mounted, rejects stale versions and ignores close
   host.remove();
   api.mockReset();
 });
+
+it("discloses omitted signup details when Ann moves and Bob changes Crystal preference", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const ann = {
+    tag: "Ann",
+    player_name: "Ann",
+    assigned_clan_tag: "A",
+    pool: "main",
+  };
+  const bob = {
+    tag: "Bob",
+    player_name: "Bob",
+    assigned_clan_tag: "A",
+    pool: "main",
+  };
+  api.mockResolvedValue({
+    rows: [ann, bob],
+    summary: { published_version: 1 },
+  });
+  const draft = {
+    published: { version: 1 },
+    draft_changed: true,
+    preview: {
+      accounts: [
+        { ...ann, assigned_clan_tag: "B" },
+        { ...bob, prefer_crystal_1_or_lower: true },
+      ],
+      clans: [
+        { tag: "A", name: "Clan A" },
+        { tag: "B", name: "Clan B" },
+      ],
+    },
+  } as unknown as PublicationDraft;
+  await act(async () =>
+    root.render(
+      <PublicationChanges seasonId="1" draft={draft} onReady={() => {}} />,
+    ),
+  );
+  expect(host.textContent).toContain("Clan A → Clan B");
+  expect(host.textContent).toContain(
+    "Also included: any weight or signup-detail changes not listed above.",
+  );
+  expect(host.textContent).not.toContain("Other changes:");
+  act(() => root.unmount());
+  api.mockReset();
+});

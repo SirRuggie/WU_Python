@@ -99,7 +99,7 @@ export default function RosterHeader({
     }
     const turn = ++request.current;
     let active = true;
-    setPublication(null);
+    // Retain this season’s last status until the replacement read completes.
     void api<PublicationDraft>(
       `/seasons/${encodeURIComponent(seasonId)}/publication`,
     )

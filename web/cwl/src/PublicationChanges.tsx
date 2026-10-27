@@ -87,7 +87,12 @@ export default function PublicationChanges({
               </li>
             ))}
           </ul>
-          {result.other && <p>Other changes: weights or signup details</p>}
+          {draft.draft_changed && (
+            <p className="publication-change-caveat">
+              Also included: any weight or signup-detail changes not listed
+              above.
+            </p>
+          )}
           {!result.lines.length && !result.other && (
             <p>No placement changes.</p>
           )}

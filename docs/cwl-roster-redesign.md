@@ -74,6 +74,8 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Decisions — Compare clans (2026-10-27)
 
+- **B2 fixes:** full-width publication banner with retained status during refresh and short local dates; Finalize comparison loads only on Review. Changed publications always disclose “Also included: any weight or signup-detail changes not listed above.” because the published export omits some server comparison fields. Confirmation readiness, revision and toast/tab behavior have regression coverage.
+
 1. Re-check cached locations every 5 minutes only while Compare and the document are visible with at least one clan chosen; poll updating results every 2 seconds, capped at 90 seconds. Keep last-known per-tag results and age.
 2. Show `Now in: <clan> · <age>` or `No clan · <age>`; `Checking…` only before the first result. Show an amber Outside family tag from the last verified result.
 3. Clan tallies count all assigned accounts, ignoring TH filters: in clan, elsewhere, checking when nonzero, and amber outside family when nonzero.

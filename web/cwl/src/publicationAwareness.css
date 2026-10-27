@@ -1,4 +1,6 @@
 .publication-awareness {
+  grid-column: 1 / -1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -6,7 +8,7 @@
   margin: 12px 0;
   padding: 12px 14px;
   border: 1px solid #79633d;
-  border-left: 4px solid #efc867;
+  border-left: 4px solid var(--roster-warning);
   border-radius: 14px;
   background: #28241c;
   color: #d1d3d9;
@@ -60,4 +62,9 @@
     flex-direction: column;
     gap: 6px;
   }
+}
+
+.publication-change-caveat {
+  color: #b9bbc4;
+  font-size: 12px;
 }

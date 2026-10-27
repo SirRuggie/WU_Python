@@ -404,8 +404,13 @@ export default function PublicationWorkspace({
                   <span>I understand {draft.preview.unassigned_count} account{draft.preview.unassigned_count === 1 ? ' is' : 's are'} still awaiting placement and will appear that way to members.</span>
                 </label>
               )}
-              <PublicationChanges seasonId={seasonId} draft={draft} onReady={setChangesReady} />
-              <p className="publication-publish-note">Publishes Main and Lazy assignments to members. Discord announcements are separate.</p>
+              {step === "review" && (
+                <PublicationChanges
+                  seasonId={seasonId}
+                  draft={draft}
+                  onReady={setChangesReady}
+                />
+              )}
               {archived && <p className="inline-reason">This season is archived. Its roster cannot be published or republished.</p>}
               {!draft.preview.accounts.length && <p className="inline-reason">No signed-up accounts are in this roster yet.</p>}
               <button className="primary" disabled={!canPublish} onClick={() => setConfirmRevision(draft.draft_revision)}>

@@ -14,7 +14,7 @@ vi.mock("./api", () => ({
 vi.mock("./ClanRosterImages", () => ({ default: () => null }));
 vi.mock("./ManageBridgeWorkspace", () => ({ default: () => null }));
 vi.mock("./StaffPlayerButton", () => ({ default: () => null }));
-it("publish requires explicit confirmation; Cancel sends no write", async () => {
+it("Announcements skips comparison; readiness gates publishing; Cancel and stale revision send no write", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
@@ -45,18 +45,18 @@ it("publish requires explicit confirmation; Cancel sends no write", async () => 
       unassigned_count: 0,
     },
   };
+  let finishComparison!: (value: unknown) => void;
   api.mockImplementation(async (path: string) =>
     path.includes("export-preview")
-      ? {
-          rows: [{ ...account, assigned_clan_tag: "#B" }],
-          summary: { published_version: 1 },
-        }
+      ? new Promise((resolve) => {
+          finishComparison = resolve;
+        })
       : draft,
   );
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  await act(async () =>
+  const render = (step: "review" | "announce") =>
     root.render(
       <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
         <PublicationWorkspace
@@ -66,15 +66,26 @@ it("publish requires explicit confirmation; Cancel sends no write", async () => 
           }
           onSeasonChange={() => {}}
           onFix={() => {}}
-          step="review"
+          step={step}
           onStepChange={() => {}}
         />
       </DashboardPermissions.Provider>,
-    ),
+    );
+  await act(async () => render("announce"));
+  expect(api.mock.calls.some(([path]) => path.includes("export-preview"))).toBe(
+    false,
   );
+  await act(async () => render("review"));
   const button = [...host.querySelectorAll("button")].find(
     (e) => e.textContent === "Publish updated roster",
   )!;
+  expect(button.disabled).toBe(true);
+  await act(async () =>
+    finishComparison({
+      rows: [{ ...account, assigned_clan_tag: "#B" }],
+      summary: { published_version: 1 },
+    }),
+  );
   expect(button.disabled).toBe(false);
   expect(document.querySelector("dialog")).toBeNull();
   await act(async () => button.click());
@@ -90,6 +101,28 @@ it("publish requires explicit confirmation; Cancel sends no write", async () => 
       .dispatchEvent(new MouseEvent("click", { bubbles: true })),
   );
   expect(document.querySelector("dialog")).toBeNull();
+  expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
+    true,
+  );
+  // A read completes with a new revision while the confirmation is open.
+  await act(async () => button.click());
+  draft.draft_revision = 8;
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((e) => e.textContent === "Refresh draft")!
+      .click(),
+  );
+  await act(async () =>
+    finishComparison({ rows: [account], summary: { published_version: 1 } }),
+  );
+  await act(async () =>
+    [...document.querySelectorAll("dialog button")]
+      .find((e) => e.textContent === "Publish roster")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true })),
+  );
+  expect(host.textContent).toContain(
+    "The draft changed. Review it again before publishing.",
+  );
   expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
     true,
   );
