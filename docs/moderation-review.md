@@ -81,3 +81,29 @@ Private pre-release SQLite backup retained locally. Post-release digests match
 for 93 signups, 93 roster entries, one publication and one season. Live log settings
 retain the existing join/leave channel; kick/ban posting remains disabled. Archive
 indexes have no expiry. No data migration or live notification test occurred.
+
+
+## Forum post destinations — October 27, 2026
+
+Moderation settings now include accessible active forum posts in channel search.
+Pasting an unlisted numeric ID offers an explicit Look up action; the staff-only
+read endpoint checks the post and its parent forum before selecting it. Saved
+archived posts are resolved during reload. Save and delivery recheck server
+ownership and inherited permissions, including Send Messages in Threads.
+Locked posts and private/non-forum threads are excluded. Unlocked archived posts
+can receive replies; Discord automatically unarchives them on send (see
+[Discord thread documentation](https://github.com/discord/discord-api-docs/blob/main/developers/topics/threads.mdx)).
+Selecting a forum channel still creates new posts; selecting a post sends replies.
+No storage migration, automatic retry, mention policy, or receipt changes.
+
+Validation: 34 backend tests plus 7 subtests across member events, moderation
+settings and transport; 6 focused frontend tests; TypeScript and isolated Vite
+build passed. Backend regressions cover parent ownership, staff visibility,
+missing thread-send permissions, locked posts, private threads, malformed IDs,
+lookup authorization, save revalidation, and reply transport. Existing tests
+cover stale settings revisions, cancellation, duplicate events, and uncertain
+send receipts. Isolated browser fixtures verified name search, keyboard Enter
+selection, ID lookup, and explicit Save. Desktop and 320/390px mobile inspections
+checked readable controls, visible focus, results, and no horizontal overflow.
+These checks do not establish live Discord delivery or full screen-reader support.
+No production settings, live messages, or served dashboard assets were changed.

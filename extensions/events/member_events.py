@@ -174,8 +174,15 @@ async def channel_ready(bot, row):
         return None
     kind = getattr(channel, "type", None)
     if kind not in (hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS,
-                    hikari.ChannelType.GUILD_FORUM):
+                    hikari.ChannelType.GUILD_FORUM, hikari.ChannelType.GUILD_PUBLIC_THREAD):
         return None
+    permission_channel = channel
+    if kind == hikari.ChannelType.GUILD_PUBLIC_THREAD:
+        permission_channel = await bot.rest.fetch_channel(int(channel.parent_id))
+        if (int(getattr(permission_channel, "guild_id", 0)) != GUILD_ID
+                or permission_channel.type != hikari.ChannelType.GUILD_FORUM
+                or getattr(channel, "is_locked", False)):
+            return None
     tag_id = row.get("forum_tag_id")
     if kind == hikari.ChannelType.GUILD_FORUM:
         tags = {int(tag.id): tag for tag in getattr(channel, "available_tags", ())}
@@ -194,9 +201,11 @@ async def channel_ready(bot, row):
         if int(role.id) in role_ids | {GUILD_ID}:
             base |= int(role.permissions)
     rights = effective_permissions(base, role_ids, int(me.id),
-                                   getattr(channel, "permission_overwrites", {}), GUILD_ID)
+                                   getattr(permission_channel, "permission_overwrites", {}), GUILD_ID)
     needed = (hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES |
               hikari.Permissions.ATTACH_FILES)
+    if kind == hikari.ChannelType.GUILD_PUBLIC_THREAD:
+        needed = hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES_IN_THREADS | hikari.Permissions.ATTACH_FILES
     if kind == hikari.ChannelType.GUILD_FORUM:
         needed |= hikari.Permissions.EMBED_LINKS
         if tag_id and tags[int(tag_id)].moderated and not rights & (
