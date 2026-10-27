@@ -1,3 +1,4 @@
+import { useInteractOutside } from "react-aria";
 import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import {
   Button as AriaButton,
@@ -42,6 +43,15 @@ export default function ActionMenu({
   const close = () => {
     if (activeRosterActionMenu() === id) setRosterActionMenu(null);
   };
+  // Non-modal menus permit switching directly to another card trigger.
+  // React Aria owns outside interactions even when the target cannot take focus.
+  useInteractOutside({
+    ref: menu,
+    isDisabled: !open,
+    onInteractOutside: (event) => {
+      if (!trigger.current?.contains(event.target as Node)) close();
+    },
+  });
   useEffect(
     () => () => {
       if (activeRosterActionMenu() === id) setRosterActionMenu(null);
