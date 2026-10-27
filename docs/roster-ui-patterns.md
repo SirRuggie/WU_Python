@@ -88,3 +88,13 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - [Baymard – Filter UI best practices](https://baymard.com/blog/ecommerce-filter-ui): filters in a sheet on mobile, always-visible removable active-filter chips, per-option counts, a "Show N results" apply button, Clear all + per-section reset, sticky filter trigger.
 - [SaaS UI – Bulk action patterns](https://www.saasui.design/blog/saas-bulk-actions-ux-patterns) and [UX Movement – Better bulk actions](https://uxmovement.substack.com/p/a-better-ux-approach-to-bulk-actions): bulk-action bar placement and selection feedback.
 - Patterns referenced from well-known apps: Gmail/Google Photos (tap toggles selection in selection mode; "select all matching"), Linear (floating bottom-center bulk bar on desktop), Trello-style board (deferred board view).
+
+## Compare clans
+
+- Clan header uses the clan capacity card style (no stat chips).
+- Card colors: green = in this clan, red = not in this clan (an exception to "green = assigned", at staff request).
+- Tags are outlined with a dark fill and never color-only.
+- Card body opens Details; the shared `⋯` menu holds DM + Details.
+- Desktop columns keep a **visible horizontal scrollbar** (exception to "hidden scrollbar", for mouse users). Navigation shows only on overflow.
+- Phones use a swipeable clan-card row.
+- The unpublished-changes banner is amber, compact and not dismissible while pending; it names the published version/time, says placement changes are draft only, and offers permission-gated Finalize navigation. Signup changes are never labelled draft.
