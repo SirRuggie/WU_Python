@@ -7,13 +7,11 @@ import { closeRosterActionMenus } from "./actionMenuState";
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  window.matchMedia = vi
-    .fn()
-    .mockReturnValue({
-      matches: false,
-      addEventListener() {},
-      removeEventListener() {},
-    });
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
