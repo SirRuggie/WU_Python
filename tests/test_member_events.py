@@ -47,6 +47,34 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attachments, [])
         json.dumps(built)
 
+    def test_card_uses_utc_for_naive_saved_times_and_shows_join_date(self):
+        import os
+        import time
+        previous = os.environ.get("TZ")
+        try:
+            os.environ["TZ"] = "America/New_York"
+            time.tzset()
+            occurred = datetime(2026, 10, 27, 2, 59, 36)
+            joined = datetime(2025, 7, 30, 13, 45, 12)
+            row = {**self.row, "event_type": "leave", "occurred_at": occurred, "joined_at": joined}
+            card, _ = transport.components(row)
+            text = json.dumps(card[0].build()[0])
+            stamp = int(occurred.replace(tzinfo=timezone.utc).timestamp())
+            joined_stamp = int(joined.replace(tzinfo=timezone.utc).timestamp())
+            self.assertIn(f"<t:{stamp}:R>", text)
+            self.assertIn(f"Joined server: <t:{joined_stamp}:D>", text)
+            self.assertIn(f"<t:{joined_stamp}:R>", text)
+            aware, _ = transport.components({**row, "occurred_at": occurred.replace(tzinfo=timezone.utc), "joined_at": joined.replace(tzinfo=timezone.utc)})
+            self.assertEqual(card[0].build()[0], aware[0].build()[0])
+            unknown, _ = transport.components({**row, "joined_at": None})
+            self.assertIn("date unavailable", json.dumps(unknown[0].build()[0]))
+        finally:
+            if previous is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = previous
+            time.tzset()
+
     async def test_capture_precedes_avatar_fetch_and_failure_still_delivers_identity(self):
         member = NS(guild_id=GUILD_ID, user=NS(id=123456789012345678, username="alice", avatar_hash="a" * 32),
                     display_name="Alice", guild_avatar_hash=None, joined_at=self.now)

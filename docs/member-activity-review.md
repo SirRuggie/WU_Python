@@ -96,3 +96,15 @@ signup; it was preserved. No old records were overwritten or restored.
 No live test messages or fake production activity records were generated. Channel
 ownership and bot send/attachment permissions were checked read-only. Actual
 message delivery and Discord client rendering await a real join/leave event.
+
+## Relative time and join date follow-up
+
+The Discord card now uses a relative event timestamp and a separate joined-server
+line with the saved absolute date and relative age. Missing join dates are labeled
+unavailable. Naive PyMongo UTC dates are explicitly assigned UTC before converting
+to Unix time; this corrects the four-hour offset observed on the first live card.
+Discord's native `R`/`D` styles render in each viewer's locale and timezone:
+https://github.com/discord/discord-api-docs/blob/main/developers/reference.mdx
+
+All 14 member-event tests (plus seven subtests) passed, including naive/aware date
+equivalence under America/New_York. Independent Sol review found no blocker.

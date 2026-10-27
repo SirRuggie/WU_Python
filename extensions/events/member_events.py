@@ -65,8 +65,18 @@ def components(row):
     name = safe_text(row["display_name"]) or "Unknown member"
     username = safe_text(row["username"]) or "unknown"
     uid = int(row["user_id"])
-    stamp = int(row["occurred_at"].timestamp())
-    body = Text(content=f"**{heading}** · <t:{stamp}:f>\n**{name}** · @{username}\nID: `{uid}` · [Profile](https://discord.com/users/{uid})")
+    # PyMongo returns naive UTC datetimes by default, not server-local time.
+    occurred = row["occurred_at"]
+    stamp = int(occurred.replace(tzinfo=occurred.tzinfo or timezone.utc).timestamp())
+    lines = [f"**{heading}** · <t:{stamp}:R>", f"**{name}** · @{username}"]
+    joined_at = row.get("joined_at")
+    if isinstance(joined_at, datetime):
+        joined_stamp = int(joined_at.replace(tzinfo=joined_at.tzinfo or timezone.utc).timestamp())
+        lines.append(f"Joined server: <t:{joined_stamp}:D> · <t:{joined_stamp}:R>")
+    else:
+        lines.append("Joined server: date unavailable")
+    lines.append(f"ID: `{uid}` · [Profile](https://discord.com/users/{uid})")
+    body = Text(content="\n".join(lines))
     if row.get("avatar"):
         extension = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp"}[row["avatar_type"]]
         filename = f"member-avatar.{extension}"
