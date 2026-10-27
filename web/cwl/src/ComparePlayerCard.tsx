@@ -67,7 +67,7 @@ export default function ComparePlayerCard({
           {outsideComparisonRange(account.effective_weight, clan) && (
             <span className="compare-tag is-warning">Outside weight range</span>
           )}
-          {record?.outside_family && (
+          {record?.current_clan_tag && record.outside_family && (
             <span className="compare-tag is-warning">Outside family</span>
           )}
         </span>

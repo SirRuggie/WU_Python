@@ -26,9 +26,11 @@ export function mergeComparisonLocations(
       current_clan_name: account.current_clan_name,
       current_clan_checked_at: account.current_clan_checked_at,
       outside_family:
-        account.current_clan_status === "current"
+        !!account.current_clan_tag &&
+        (account.current_clan_status === "current"
           ? !!account.outside_family
-          : !!old?.outside_family,
+          : account.current_clan_tag === old?.current_clan_tag &&
+            !!old?.outside_family),
     };
   }
   return next;
@@ -76,7 +78,7 @@ export function comparisonTally(
       else {
         if (record.current_clan_tag === clanTag) count.arrived++;
         else count.elsewhere++;
-        if (record.outside_family) count.outside++;
+        if (record.current_clan_tag && record.outside_family) count.outside++;
       }
       return count;
     },

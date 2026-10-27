@@ -91,3 +91,22 @@ describe("last-known comparison locations", () => {
     ).toEqual({ arrived: 1, elsewhere: 2, checking: 1, outside: 2 });
   });
 });
+
+it("never counts no-clan as outside family or carries the flag to another clan", () => {
+  const old = { p: location };
+  const changed = {
+    ...location,
+    tag: "p",
+    current_clan_status: "stale",
+    current_clan_tag: "#NEW",
+    current_clan_checked_at: new Date(now + 1000).toISOString(),
+  };
+  expect(mergeComparisonLocations(old, [changed]).p.outside_family).toBe(false);
+  const noClan = {
+    ...changed,
+    current_clan_status: "current",
+    current_clan_tag: null,
+  };
+  expect(mergeComparisonLocations(old, [noClan]).p.outside_family).toBe(false);
+  expect(comparisonTally(["p"], { p: noClan }, "#A").outside).toBe(0);
+});
