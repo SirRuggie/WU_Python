@@ -84,3 +84,17 @@ it("placement wording is explicit before and after first publish", () => {
   );
   expect(placementMessage("Assigned.", false)).toBe("Assigned. · Draft only");
 });
+
+it("numeric export locks and boolean draft locks do not invent other changes", () => {
+  const simple = {
+    ...draft,
+    preview: {
+      ...draft.preview,
+      accounts: [{ ...account("Ann", "B"), kept: false }],
+    },
+  } as PublicationDraft;
+  expect(
+    publicationChanges(simple, [{ ...account("Ann", "A"), kept: 0 }] as never)
+      .other,
+  ).toBe(false);
+});

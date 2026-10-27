@@ -60,11 +60,15 @@ export function publicationChanges(
           `${old.pool === "lazy" ? "Lazy" : "Main"} → ${account.pool === "lazy" ? "Lazy" : "Main"}`,
         );
       if (
-        detailFields.some(
-          (field) =>
-            ((old as unknown as Record<string, unknown>)[field] ?? null) !==
-            ((account as unknown as Record<string, unknown>)[field] ?? null),
-        )
+        detailFields.some((field) => {
+          const previous = (old as unknown as Record<string, unknown>)[field];
+          const current = (account as unknown as Record<string, unknown>)[
+            field
+          ];
+          return field === "kept"
+            ? Boolean(previous) !== Boolean(current)
+            : (previous ?? null) !== (current ?? null);
+        })
       )
         other = true;
     }
