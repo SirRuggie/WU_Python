@@ -32,7 +32,7 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
     effective_weight: 170000,
     kept: false,
   };
-  const draft = {
+  let draft = {
     draft_revision: 7,
     draft_changed: true,
     published: { version: 1, published_at: "2026-10-27T00:00:00Z" },
@@ -106,7 +106,7 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
   );
   // A read completes with a new revision while the confirmation is open.
   await act(async () => button.click());
-  draft.draft_revision = 8;
+  draft = { ...draft, draft_revision: 8 };
   await act(async () =>
     [...host.querySelectorAll("button")]
       .find((e) => e.textContent === "Refresh draft")!

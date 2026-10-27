@@ -93,3 +93,24 @@ it("discloses omitted signup details when Ann moves and Bob changes Crystal pref
   act(() => root.unmount());
   api.mockReset();
 });
+
+it("hides the fallback when unchanged and retains No placement changes", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  api.mockResolvedValue({ rows: [], summary: { published_version: 1 } });
+  const draft = {
+    published: { version: 1 },
+    draft_changed: false,
+    preview: { accounts: [], clans: [] },
+  } as unknown as PublicationDraft;
+  await act(async () =>
+    root.render(
+      <PublicationChanges seasonId="1" draft={draft} onReady={() => {}} />,
+    ),
+  );
+  expect(host.textContent).not.toContain("Also included:");
+  expect(host.textContent).toContain("No placement changes.");
+  act(() => root.unmount());
+  api.mockReset();
+});

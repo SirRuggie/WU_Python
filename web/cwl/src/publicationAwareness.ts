@@ -29,23 +29,8 @@ export function publicationChanges(
     draft.preview.clans.map((clan) => [clan.tag, clan.name]),
   );
   const lines: { tag: string; name: string; text: string }[] = [];
-  let other = false;
   const name = (tag: string | null | undefined, saved?: string | null) =>
     saved || (tag ? clans.get(tag) || tag : "Unassigned");
-  const detailFields = [
-    "user_id",
-    "player_name",
-    "town_hall",
-    "signup_clan_tag",
-    "signup_clan_name",
-    "source_weight",
-    "manual_weight",
-    "effective_weight",
-    "source_status",
-    "source_checked_at",
-    "source_modified_at",
-    "kept",
-  ] as const;
   for (const account of current.values()) {
     const old = before.get(account.tag);
     const changes: string[] = [];
@@ -59,18 +44,6 @@ export function publicationChanges(
         changes.push(
           `${old.pool === "lazy" ? "Lazy" : "Main"} → ${account.pool === "lazy" ? "Lazy" : "Main"}`,
         );
-      if (
-        detailFields.some((field) => {
-          const previous = (old as unknown as Record<string, unknown>)[field];
-          const current = (account as unknown as Record<string, unknown>)[
-            field
-          ];
-          return field === "kept"
-            ? Boolean(previous) !== Boolean(current)
-            : (previous ?? null) !== (current ?? null);
-        })
-      )
-        other = true;
     }
     if (changes.length)
       lines.push({
@@ -86,5 +59,5 @@ export function publicationChanges(
         name: old.player_name || old.tag,
         text: "removed",
       });
-  return { lines, other: draft.draft_changed && (other || lines.length === 0) };
+  return { lines };
 }

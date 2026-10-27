@@ -43,22 +43,6 @@ it("lists moved, added, removed, pool and mixed weight changes", () => {
     "Main → Lazy",
     "removed",
   ]);
-  expect(result.other).toBe(true);
-});
-it("flags otherwise unexplained changes but not a pure placement move", () => {
-  const simple = {
-    ...draft,
-    preview: { ...draft.preview, accounts: [account("Ann", "B")] },
-  } as PublicationDraft;
-  expect(publicationChanges(simple, [account("Ann", "A")] as never).other).toBe(
-    false,
-  );
-  expect(
-    publicationChanges(
-      { ...simple, preview: { ...simple.preview, accounts: [] } },
-      [],
-    ).other,
-  ).toBe(true);
 });
 it("shows exact first-publish wording and permission based review actions", () => {
   for (const [publish, review, label] of [
@@ -83,18 +67,4 @@ it("placement wording is explicit before and after first publish", () => {
     "Assigned. · Draft only, not published",
   );
   expect(placementMessage("Assigned.", false)).toBe("Assigned. · Draft only");
-});
-
-it("numeric export locks and boolean draft locks do not invent other changes", () => {
-  const simple = {
-    ...draft,
-    preview: {
-      ...draft.preview,
-      accounts: [{ ...account("Ann", "B"), kept: false }],
-    },
-  } as PublicationDraft;
-  expect(
-    publicationChanges(simple, [{ ...account("Ann", "A"), kept: 0 }] as never)
-      .other,
-  ).toBe(false);
 });

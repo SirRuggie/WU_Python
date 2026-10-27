@@ -65,8 +65,7 @@ export default function PublicationChanges({
       <h3>Publishing creates version {(draft.published?.version ?? 0) + 1}</h3>
       <p>
         From the current draft, for Main and Lazy. Members will see these
-        placement changes. Everything else stays the same. No Discord message is
-        sent.
+        placement changes. No Discord message is sent.
       </p>
       {error ? (
         <p role="alert">
@@ -93,7 +92,7 @@ export default function PublicationChanges({
               above.
             </p>
           )}
-          {!result.lines.length && !result.other && (
+          {!result.lines.length && !draft.draft_changed && (
             <p>No placement changes.</p>
           )}
         </>
