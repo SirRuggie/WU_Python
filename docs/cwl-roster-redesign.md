@@ -94,6 +94,10 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 Compare stays read-only; Details and DM only.
 
+### Checkpoint A review fixes
+
+A2 (F1–F10): viewport-stable desktop columns and three-line compact player cards on both devices; location records and per-pool check deadlines owned by the season's roster workspace; no-clan accounts excluded from Outside family, with flags cleared on clan changes; chosen-clan sorting preserves hidden choices. React Aria handles outside interaction for the shared non-modal action menus, covered by per-file happy-dom interaction tests. Phone headers include Avg TH and player menus name the player; Sort uses available width. Shared Discord contact metadata, one Checking pill, destination focus after column replacement, and safe-read transport complete the cleanup. C4/item 13 remains on hold pending A2 approval.
+
 ## Backend facts (from code discovery)
 
 - Endpoints (prefix `/api/cwl`):
