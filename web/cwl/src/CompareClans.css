@@ -429,3 +429,23 @@
     margin: 8px 0;
   }
 }
+
+/* Capacity colors reflect assigned count, including deliberately overfull drafts. */
+.compare-workspace
+  .roster-ui-progress.has-room
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-success);
+}
+.compare-workspace
+  .roster-ui-progress.is-full
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-warning);
+}
+.compare-workspace
+  .roster-ui-progress.is-over
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-danger);
+}

@@ -6,6 +6,7 @@ import {
   outsideComparisonRange,
 } from "./comparePresentation";
 import { totalRosterWeight } from "./rosterTotalWeight";
+import CompareClanHeader from "./CompareClanHeader";
 import ComparePlayerCard from "./ComparePlayerCard";
 import { rosterAccountMenuItems } from "./RosterAccountMenu";
 import type { RosterAccount, RosterClan } from "./roster";
@@ -100,4 +101,21 @@ describe("Compare presentation contracts", () => {
     expect(html).not.toContain('type="checkbox"');
     expect(html).not.toContain("Location unknown");
   });
+});
+
+it("marks room, full and over capacity distinctly in shared headers", () => {
+  for (const [capacity, expected] of [
+    [2, "has-room"],
+    [1, "is-full"],
+    [0.5, "is-over"],
+  ] as const) {
+    const html = renderToStaticMarkup(
+      <CompareClanHeader
+        clan={{ ...clan, effective_capacity: capacity }}
+        accounts={[account]}
+        locations={{}}
+      />,
+    );
+    expect(html).toContain(`roster-ui-progress ${expected}`);
+  }
 });

@@ -73,6 +73,13 @@ export default function CompareClanHeader({
         </small>
       )}
       <ProgressBar
+        className={
+          summary.count > clan.effective_capacity
+            ? "is-over"
+            : summary.count === clan.effective_capacity
+              ? "is-full"
+              : "has-room"
+        }
         value={summary.count}
         max={clan.effective_capacity}
         label={`${clan.name} capacity`}
