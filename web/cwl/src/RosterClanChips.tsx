@@ -1,6 +1,5 @@
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
-import { compactRosterWeight } from "./rosterCompactWeight";
 import { Button, ProgressBar } from "./rosterUi/primitives";
 import "./RosterClanChips.css";
 
@@ -17,9 +16,13 @@ export type RosterClanChipSummary = {
   assignedCount: number;
   knownWeightCount: number;
   missingWeightCount: number;
-  averageWeight: number | null;
+  totalWeight: number | null;
   capacity: number | null;
 };
+
+const totalWeightFormat = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 1,
+});
 
 const GROUPS: { pool: Pool | null; label: string }[] = [
   { pool: "main", label: "Main" },
@@ -45,7 +48,10 @@ export function buildRosterClanChipSummaries(
       weight: 0,
     };
     summary.count += 1;
-    if (account.effective_weight !== null) {
+    if (
+      account.effective_weight != null &&
+      Number.isFinite(account.effective_weight)
+    ) {
       summary.known += 1;
       summary.weight += account.effective_weight;
     }
@@ -70,9 +76,7 @@ export function buildRosterClanChipSummaries(
         assignedCount: accountSummary.count,
         knownWeightCount: accountSummary.known,
         missingWeightCount: accountSummary.count - accountSummary.known,
-        averageWeight: accountSummary.known
-          ? accountSummary.weight / accountSummary.known
-          : null,
+        totalWeight: accountSummary.known ? accountSummary.weight : null,
         capacity:
           clan.capacity === 15 || clan.capacity === 30 ? clan.capacity : null,
       };
@@ -135,6 +139,10 @@ export default function RosterClanChips({
                   summary.capacity === null
                     ? `${summary.assignedCount} assigned`
                     : `${summary.assignedCount} of ${summary.capacity} assigned`;
+                const totalLabel =
+                  summary.totalWeight === null
+                    ? "Total —"
+                    : `Total ${totalWeightFormat.format(summary.totalWeight / 1000)}k`;
                 const weighedLabel = summary.missingWeightCount
                   ? `, ${summary.knownWeightCount} of ${summary.assignedCount} weighed`
                   : "";
@@ -148,7 +156,7 @@ export default function RosterClanChips({
                     key={summary.clan.tag}
                     className={`roster-clan-chip${active ? " is-selected" : ""}${over ? " is-over" : full ? " is-full" : " is-room"}`}
                     aria-pressed={active}
-                    aria-label={`${summary.clan.name}, ${countLabel}${weighedLabel}${statusLabel}`}
+                    aria-label={`${summary.clan.name}, ${countLabel}, ${totalLabel}${weighedLabel}${statusLabel}`}
                     disabled={disabled}
                     onClick={() => onSelect(summary.clan.tag)}
                   >
@@ -161,22 +169,18 @@ export default function RosterClanChips({
                           {summary.assignedCount}
                           {summary.capacity === null
                             ? ""
-                            : `/${summary.capacity}`}
+                            : ` / ${summary.capacity}`}
                         </span>
                       </span>
-                      {summary.capacity !== null && (
-                        <span className="roster-clan-chip-meta">
-                          <span>
-                            Avg {compactRosterWeight(summary.averageWeight)}
-                          </span>
-                          {summary.missingWeightCount > 0 && (
-                            <small>
-                              {summary.knownWeightCount} of{" "}
-                              {summary.assignedCount} weighed
-                            </small>
-                          )}
-                        </span>
-                      )}
+                      <span className="roster-clan-chip-meta">
+                        <span>{totalLabel}</span>
+                        {summary.missingWeightCount > 0 && (
+                          <small>
+                            {summary.knownWeightCount} of{" "}
+                            {summary.assignedCount} weighed
+                          </small>
+                        )}
+                      </span>
                       {summary.capacity !== null && (
                         <ProgressBar
                           value={summary.assignedCount}

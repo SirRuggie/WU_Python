@@ -70,12 +70,12 @@ describe("clan filter summaries", () => {
       assignedCount: 2,
       knownWeightCount: 1,
       missingWeightCount: 1,
-      averageWeight: 170000,
+      totalWeight: 170000,
       capacity: 15,
     });
     expect(summaries[2]).toMatchObject({
       assignedCount: 1,
-      averageWeight: 190000,
+      totalWeight: 190000,
       capacity: null,
     });
   });
@@ -93,7 +93,7 @@ describe("clan filter summaries", () => {
     ).toEqual(["#LAZY"]);
   });
 
-  it("renders configured capacity details but count only for unconfigured clans", () => {
+  it("renders totals for every clan and bars only for configured capacities", () => {
     const html = renderToStaticMarkup(
       createElement(RosterClanChips, {
         roster: { revision: 1, accounts, clans, undo: null },
@@ -104,13 +104,76 @@ describe("clan filter summaries", () => {
       }),
     );
     expect(html).toContain("roster-clan-chip is-room");
-    expect(html).toContain("Avg 170k");
+    expect(html).toContain("Total 170k");
     expect(html).toContain("1 of 2 weighed");
     expect(html).not.toContain("1 of 1 weighed");
     const unconfigured = html.slice(html.indexOf("#ALL"));
     expect(unconfigured).toContain(">1</span>");
-    expect(unconfigured).not.toContain("Avg 190k");
+    expect(unconfigured).toContain("Total 190k");
     expect(unconfigured).not.toContain("capacity");
+  });
+
+  it("sums only finite known weights of assigned accounts, not missing or unassigned weights", () => {
+    const result = buildRosterClanChipSummaries(
+      [
+        account("#A", "#MAIN", 170000),
+        account("#B", "#MAIN", 180000),
+        account("#C", "#MAIN", null),
+        account("#D", null, 900000),
+        account("#E", "#MAIN", Number.NaN),
+      ],
+      [clan("#MAIN", "main", 15)],
+      "all",
+    )[0];
+    expect(result).toMatchObject({
+      assignedCount: 4,
+      knownWeightCount: 2,
+      missingWeightCount: 2,
+      totalWeight: 350000,
+    });
+  });
+
+  it("distinguishes empty, all-missing and a known zero total", () => {
+    const result = buildRosterClanChipSummaries(
+      [account("#A", "#MISSING", null), account("#B", "#ZERO", 0)],
+      [
+        clan("#EMPTY", "main", 15),
+        clan("#MISSING", "main", 15),
+        clan("#ZERO", "main", 15),
+      ],
+      "all",
+    );
+    expect(result.map(({ totalWeight }) => totalWeight)).toEqual([
+      null,
+      null,
+      0,
+    ]);
+  });
+
+  it("formats grouped thousands, empty totals and missing-weight notes without changing selection", () => {
+    const html = renderToStaticMarkup(
+      createElement(RosterClanChips, {
+        roster: {
+          revision: 1,
+          accounts: [
+            account("#A", "#MAIN", 2579000),
+            account("#B", "#MAIN", null),
+          ],
+          clans: [clan("#MAIN", "main", 30), clan("#EMPTY", "main", 15)],
+          undo: null,
+        },
+        pool: "all",
+        selectedTags: ["#MAIN"],
+        onSelect: () => {},
+        disabled: false,
+      }),
+    );
+    expect(html).toContain("Total 2,579k");
+    expect(html).toContain("Total —");
+    expect(html).toContain("1 of 2 weighed");
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("is-selected");
+    expect(html).not.toContain("Avg");
   });
 
   it("does not treat an unsupported capacity as configured", () => {
