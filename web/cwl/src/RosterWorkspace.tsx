@@ -1,3 +1,5 @@
+import SortTrigger from "./rosterUi/SortTrigger";
+import { rosterSortOptions } from "./rosterSortOptions";
 import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
 import RosterBalance from "./RosterBalance";
 import ActionPanel from "./ActionPanel";
@@ -1116,16 +1118,18 @@ export default function RosterWorkspace({
                   setReleasePreferences((current) => ({ ...current, ...next }))
                 }
               >
-                <button
+                <SortTrigger
                   ref={sortTrigger}
                   disabled={uiLocked || !!editingTag}
-                  type="button"
-                  className="roster-ui-button roster-sort-trigger"
+                  label={
+                    rosterSortOptions.find(
+                      ([value]) => value === releasePreferences.sort,
+                    )?.[1] || "Unassigned first"
+                  }
+                  grouped={groupByDiscord}
                   aria-expanded={sortOpen}
                   onClick={() => setSortOpen(true)}
-                >
-                  Sort{groupByDiscord ? " · Grouped" : ""}
-                </button>
+                />
                 {sortOpen && (
                   <ActionPanel
                     title="Sort accounts"
@@ -1134,17 +1138,7 @@ export default function RosterWorkspace({
                     onClose={() => setSortOpen(false)}
                   >
                     <div className="roster-sort-options">
-                      {[
-                        ["unassigned_first", "Unassigned first"],
-                        ["weight_desc", "Weight: highest first"],
-                        ["weight_asc", "Weight: lowest first"],
-                        ["name", "Name A–Z"],
-                        ["town_hall_desc", "TH: highest first"],
-                        ["town_hall_asc", "TH: lowest first"],
-                        ["assigned_clan", "Assigned clan"],
-                        ["signed_up_desc", "Signup: newest first"],
-                        ["signed_up_asc", "Signup: oldest first"],
-                      ].map(([value, label]) => (
+                      {rosterSortOptions.map(([value, label]) => (
                         <Button
                           key={value}
                           aria-pressed={releasePreferences.sort === value}

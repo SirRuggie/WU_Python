@@ -1,3 +1,4 @@
+import SortTrigger from "./rosterUi/SortTrigger";
 import {
   useEffect,
   useLayoutEffect,
@@ -261,12 +262,13 @@ export default function CompareClans({
         >
           Filters{filterCount ? ` (${filterCount})` : ""}
         </Button>
-        <Button
+        <SortTrigger
           disabled={busy}
+          label={
+            playerSortOptions.find((option) => option.value === sort)!.label
+          }
           onClick={(event) => openPanel("sort", event.currentTarget)}
-        >
-          Sort
-        </Button>
+        />
         <Button
           icon={RotateCw}
           label="Refresh locations"

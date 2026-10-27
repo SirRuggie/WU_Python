@@ -1,0 +1,47 @@
+.roster-ui .roster-sort-trigger {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.roster-sort-trigger > svg {
+  flex: none;
+}
+.roster-sort-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roster-filters-toolbar {
+  flex-wrap: nowrap;
+}
+.roster-filters-toolbar > .roster-ui-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.roster-filters-toolbar > .roster-sort-trigger {
+  flex: 0 1 auto;
+  max-width: 45%;
+}
+.compare-toolbar > .roster-sort-trigger {
+  flex: 1 1 auto;
+}
+@media (max-width: 720px) {
+  .roster-filters-toolbar {
+    gap: 5px;
+  }
+  .roster-filters-toolbar > .roster-ui-button {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .roster-filters-toolbar > .roster-sort-trigger {
+    max-width: 42%;
+  }
+  .roster-filters-toolbar > .roster-ui-input input {
+    width: 100%;
+    min-width: 0;
+  }
+}
