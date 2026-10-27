@@ -71,6 +71,8 @@ export class DashboardHistory {
       return false;
     }
     if (!Number.isInteger(target)) return false;
+    // Same-index entries are local overlays (for example an action panel), not a dashboard route visit.
+    if (target === this.index) return false;
     if (!allow()) {
       if (this.index !== target) {
         this.restoring = true;

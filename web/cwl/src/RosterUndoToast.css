@@ -1,0 +1,29 @@
+.roster-undo-toast {
+  position: fixed;
+  z-index: 1000;
+  inset: auto 1rem calc(1rem + env(safe-area-inset-bottom) + var(--roster-undo-offset, 0px)) auto;
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  max-width: min(36rem, calc(100vw - 2rem));
+  padding: .7rem .85rem;
+  border: 1px solid #75602d;
+  border-radius: 12px;
+  background: #242016;
+  color: #f5f4f0;
+  box-shadow: 0 8px 28px #0008;
+}
+
+.roster-undo-toast span { min-width: 0; overflow-wrap: anywhere; }
+.roster-undo-toast button { min-height: 44px; flex: none; }
+.roster-undo-toast .roster-undo-dismiss { width: 44px; padding: 0; font-size: 1.4rem; }
+.roster-undo-toast.is-error { border-color: #a74c4c; background: #2d1919; }
+.roster-undo-toast.is-unavailable { border-color: #55555d; background: #202024; }
+
+@media (max-width: 520px) {
+  .roster-undo-toast { inset-inline: .75rem; bottom: calc(.75rem + env(safe-area-inset-bottom) + var(--roster-undo-offset, 0px)); max-width: none; justify-content: space-between; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roster-undo-toast { scroll-behavior: auto; }
+}
