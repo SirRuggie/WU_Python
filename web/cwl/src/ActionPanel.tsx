@@ -2,6 +2,7 @@ import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import './ActionPanel.css'
 import { actionPanelAnchor, backOutOfPanelEntry, installPanelBackHandler, panelHistoryState } from './actionPanelHistory'
+import { cycleDialogTab } from './actionPanelFocus'
 
 type Props = {
   title: string
@@ -98,6 +99,9 @@ export default function ActionPanel({
       className={`action-panel action-panel-${variant}${searchFocused ? ' is-search-focused' : ''}`}
       style={variant === 'default' ? anchorStyle : undefined}
       aria-labelledby={`${panelId}-title`}
+      onKeyDown={event => {
+        if (dialog.current) cycleDialogTab(dialog.current, event, document.activeElement)
+      }}
       onCancel={event => {
         event.preventDefault()
         close()

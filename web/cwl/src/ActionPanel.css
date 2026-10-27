@@ -44,7 +44,7 @@
     bottom: 0;
     right: auto;
     width: 100%;
-    height: min(78dvh, 48rem);
+    height: auto;
     max-height: 78dvh;
     border-radius: 18px 18px 0 0;
     border-bottom: 0;
@@ -53,7 +53,7 @@
   }
   .action-panel.is-search-focused { height: 100dvh; max-height: 100dvh; border-radius: 0; }
   .action-panel-heading { padding: .75rem 1rem; }
-  .action-panel-content { padding: .75rem 1rem; }
+  .action-panel-content { padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

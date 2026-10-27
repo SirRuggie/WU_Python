@@ -196,25 +196,6 @@
 .roster-manual-place select { width: 100%; min-height: 44px; }
 .roster-manual-place p { font-size: 13px; color: #d1def0; }
 .roster-manual-place button { min-height: 44px; margin-right: 8px; }
-
-.roster-workspace .roster-selection-bar {
-  display: flex;
-  align-items: end;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid #9a7a2e;
-  border-top: 0;
-  border-radius: 0;
-  background: #2b2518;
-  box-shadow: none;
-}
-.roster-selection-bar > strong { align-self: center; color: #f5d785; font-size: 13px; }
-.roster-selection-bar label { flex: 1; min-width: 180px; margin: 0; }
-.roster-selection-bar select { width: 100%; min-height: 44px; }
-.roster-selection-bar button { min-height: 44px; }
-.roster-selection-bar small { flex-basis: 100%; }
 .roster-pagination { display: flex; justify-content: center; align-items: center; gap: 16px; margin: 18px 0; }
 
 @media (max-width: 1150px) {
@@ -274,10 +255,6 @@
   .roster-account-tools { padding: 10px 10px 0; }
   .roster-list-heading { flex-wrap: wrap; padding-inline: 10px; gap: 0 12px; }
   .roster-list-heading > span { width: 100%; padding: 0 0 8px 28px; text-align: left; }
-  .roster-workspace .roster-selection-bar { padding: 10px; }
-  .roster-workspace .roster-selection-bar > strong,
-  .roster-workspace .roster-selection-bar > label { flex-basis: 100%; }
-  .roster-workspace .roster-selection-bar > button { flex: 1; min-width: 110px; }
 }
 @media (max-width: 370px) {
   .roster-workspace .roster-row-clans,
@@ -361,31 +338,8 @@
     width: 100%;
   }
 }
-
-.roster-balance { display: grid; gap: 16px; min-width: 0; }
-.roster-balance .row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
-.roster-balance fieldset { min-width: 0; border: 0; padding: 0; }
-.roster-balance-choice { display: flex; gap: 12px; align-items: center; min-height: 44px; padding: 6px 0; }
-.roster-balance-choice small, .roster-balance-totals span { display: block; }
-.roster-balance-totals > div { padding: 12px 0; border-bottom: 1px solid var(--border, #39393f); }
-.roster-balance p, .roster-balance strong { overflow-wrap: anywhere; }
 .roster-weight-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .roster-weight-range input { width: 100%; min-width: 0; }
-.roster-balance p { margin: 0; }
-.roster-balance button, .roster-balance summary { min-height: 44px; }
-.roster-balance summary { display: list-item; align-content: center; }
 
 /* Selection presents a task, not a destination dropdown shared by unrelated tasks. */
-.roster-selection-actions,
-.roster-signup-bulk-disclosure { width: 100%; min-width: 0; }
-.roster-selection-actions { display: grid; gap: 8px; justify-items: start; }
-.roster-selection-actions > details { width: 100%; }
-.roster-selection-actions summary,
-.roster-signup-bulk-disclosure > summary { min-height: 44px; align-content: center; cursor: pointer; }
 .roster-selection-hint { margin: 10px 0; color: #c6c8cf; font-size: 13px; }
-.roster-balance fieldset > .roster-balance-choice {
-  padding: 10px; border: 1px solid #45454d; border-radius: 8px;
-}
-.roster-balance fieldset > .roster-balance-choice.is-selected {
-  border-color: #e1b632; background: rgb(225 182 50 / 10%);
-}

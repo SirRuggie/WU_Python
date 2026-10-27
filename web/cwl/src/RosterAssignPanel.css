@@ -1,0 +1,110 @@
+.roster-assign-panel {
+  color: #f5f4f0;
+}
+.roster-assign-panel button {
+  min-height: 44px;
+}
+.roster-assign-panel > p {
+  line-height: 1.45;
+}
+.roster-assign-intro {
+  margin: 0 0 6px;
+}
+.roster-assign-lock-note {
+  margin: 0 0 12px;
+  color: #d4dbe7;
+  font-size: 13px;
+}
+.roster-assign-warning {
+  color: #f5cb83;
+}
+.roster-assign-error {
+  color: #ffb5b5;
+}
+.roster-assign-accounts {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid #4a5060;
+  border-radius: 8px;
+}
+.roster-assign-accounts summary {
+  cursor: pointer;
+  min-height: 28px;
+  font-weight: 650;
+}
+.roster-assign-accounts ul,
+.roster-assign-destinations ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.roster-assign-accounts li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+}
+.roster-assign-accounts small,
+.roster-assign-destinations small {
+  color: #bdc9db;
+}
+.roster-assign-destinations {
+  margin-top: 16px;
+}
+.roster-assign-destinations h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+.roster-assign-search {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.roster-assign-search input {
+  width: 100%;
+  min-height: 44px;
+}
+.roster-assign-result-count {
+  margin: 7px 0 0;
+  color: #bdc9db;
+  font-size: 12px;
+}
+.roster-assign-destinations li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #3d4552;
+}
+.roster-assign-clan-details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.roster-assign-clan-details strong {
+  font-size: 15px;
+}
+.roster-assign-destinations li > button {
+  flex: 0 0 auto;
+}
+.roster-assign-destinations .roster-assign-warning {
+  color: #f5cb83;
+}
+.roster-assign-footer {
+  margin-top: 14px;
+}
+@media (max-width: 480px) {
+  .roster-assign-destinations li {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .roster-assign-destinations li > button,
+  .roster-assign-footer button {
+    width: 100%;
+  }
+}

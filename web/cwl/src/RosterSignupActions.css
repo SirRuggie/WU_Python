@@ -70,3 +70,20 @@
     display: block;
   }
 }
+
+.roster-signup-option {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+}
+.roster-signup-option button {
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+.roster-signup-option .danger,
+.roster-signup-review-actions .danger {
+  color: #ffb5b5;
+  border-color: #b84d52;
+  background: #4a2026;
+}
