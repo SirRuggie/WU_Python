@@ -73,3 +73,32 @@ class SeasonFlowTests(unittest.IsolatedAsyncioTestCase):
         response = await self.create('Must roll back')
         self.assertEqual(response.status, 409)
         self.assertEqual(before, {table: store.rows(f'SELECT * FROM {table}') for table in before})
+
+    async def test_signup_guard_mismatch_is_409_without_any_write(self):
+        sid = (await (await self.create()).json())['id']
+        store = self.app['store']
+        before = {table: store.rows(f'SELECT * FROM {table}') for table in ['seasons', 'roster_meta', 'roster_audit']}
+        response = await self.call('PATCH', f'/seasons/{sid}', {'signup_open': True, 'expected_signup_open': True, 'label': 'Must not change'})
+        self.assertEqual(response.status, 409)
+        self.assertIn('Signups were changed by someone else. Refresh and try again.', await response.text())
+        self.assertEqual(before, {table: store.rows(f'SELECT * FROM {table}') for table in before})
+
+    async def test_signup_guard_matches_and_legacy_calls_still_work(self):
+        sid = (await (await self.create()).json())['id']
+        for body in [{'signup_open': True, 'expected_signup_open': False}, {'signup_open': False, 'expected_signup_open': True}, {'signup_open': True}]:
+            response = await self.call('PATCH', f'/seasons/{sid}', body)
+            self.assertEqual(response.status, 200)
+            self.assertEqual((await response.json())['signup_open'], body['signup_open'])
+
+    async def test_signup_guard_rejects_non_bool(self):
+        sid = (await (await self.create()).json())['id']
+        for value in [0, 1, None, 'false', [], {}]:
+            response = await self.call('PATCH', f'/seasons/{sid}', {'signup_open': True, 'expected_signup_open': value})
+            self.assertEqual(response.status, 400)
+
+    async def test_label_status_only_unchanged(self):
+        sid = (await (await self.create()).json())['id']
+        response = await self.call('PATCH', f'/seasons/{sid}', {'label': 'Renamed season', 'status': 'archived'})
+        self.assertEqual(response.status, 200)
+        row = await response.json()
+        self.assertEqual((row['label'], row['status'], row['signup_open']), ('Renamed season', 'archived', False))

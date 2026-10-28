@@ -482,10 +482,14 @@ async def create_season(request):
 async def update_season(request):
     session = _require(request, "editor")
     body = await _json(request)
-    if not set(body) <= {"label", "signup_open", "status"} or not body:
+    if not set(body) <= {"label", "signup_open", "status", "expected_signup_open"} or not body:
         _fail(400, "Invalid season update")
+    if "expected_signup_open" in body and type(body["expected_signup_open"]) is not bool:
+        _fail(400, "expected_signup_open must be a boolean")
     with _store(request).tx() as db:
         row = _season(db, _sid(request))
+        if "expected_signup_open" in body and bool(row["signup_open"]) != body["expected_signup_open"]:
+            _fail(409, "Signups were changed by someone else. Refresh and try again.")
         label = str(body.get("label", row["label"])).strip()
         if not 3 <= len(label) <= 80:
             _fail(400, "Invalid season label")
