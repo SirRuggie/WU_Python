@@ -878,6 +878,29 @@ export default function RosterWorkspace({
             assignedClanTags: [],
           }));
         }}
+        signupControls={
+          season &&
+          (canSignups || canSettings) && (
+            <StaffSignupControls
+              key={seasonId}
+              disabled={
+                busy ||
+                selectedTags.length > 0 ||
+                !!editingTag ||
+                rulesDirty ||
+                weightsDirty
+              }
+              onOpenChange={setSignupOpen}
+              season={season}
+              onChanged={async () => {
+                await refresh();
+                await onSeasonRefresh?.();
+              }}
+              onDirty={setSignupDirty}
+              onBusy={setSignupBusy}
+            />
+          )
+        }
         onAccessError={(error) => void fail(error)}
       />
       {seasonId && canSignups && (
@@ -1011,26 +1034,7 @@ export default function RosterWorkspace({
               }
             />
           )}
-          {season && (canSignups || canSettings) && mode === "assign" && (
-            <StaffSignupControls
-              key={seasonId}
-              disabled={
-                busy ||
-                selectedTags.length > 0 ||
-                !!editingTag ||
-                rulesDirty ||
-                weightsDirty
-              }
-              onOpenChange={setSignupOpen}
-              season={season}
-              onChanged={async () => {
-                await refresh();
-                await onSeasonRefresh?.();
-              }}
-              onDirty={setSignupDirty}
-              onBusy={setSignupBusy}
-            />
-          )}
+
           {canRoster && mode === "weights" && (
             <WeightQueue
               onClanWeights={onClanWeights}
@@ -1292,13 +1296,15 @@ export default function RosterWorkspace({
           )}
         </>
       )}
-      <button
-        className="cwl-next-cue"
-        disabled={!canPublish || uiLocked || !onReviewPublication}
-        onClick={onReviewPublication}
-      >
-        Next: Finalize roster ›
-      </button>
+      {canPublish && (
+        <button
+          className="cwl-next-cue"
+          disabled={uiLocked || !onReviewPublication}
+          onClick={onReviewPublication}
+        >
+          Next: Finalize roster ›
+        </button>
+      )}
       <div
         className="roster-selection-spacer"
         style={{

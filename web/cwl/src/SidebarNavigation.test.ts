@@ -123,7 +123,7 @@ it('renders publish-only access and results exports in their CWL sidebar groups'
 
  const results = render(['cwl_results'])
  expect(results).toContain('Exports &amp; history')
- expect(results).toContain("Results");
+ expect(results).toMatch(/aria-controls="cwl-results"[^>]*>[\s\S]*?<span>Results<\/span>/);
  expect(results).not.toContain("Finalize roster");
 })
 

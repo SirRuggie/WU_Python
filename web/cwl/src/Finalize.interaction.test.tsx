@@ -465,3 +465,34 @@ it("remeasures instructions when Review becomes visible and preserves a manual h
   await type("New text");
   expect(textarea.style.height).toBe("320px");
 });
+it("post-publish Next cue names Announcements and selects its step", async () => {
+  const change = vi.fn();
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+        <PublicationWorkspace
+          seasonId="1"
+          seasons={[
+            { id: 1, label: "November", status: "draft", signup_open: false },
+          ]}
+          onSeasonChange={() => {}}
+          onFix={() => {}}
+          step="review"
+          onStepChange={change}
+        />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  await act(async () => button("Publish roster").click());
+  const published = { version: 4, revision: 9, joining_instructions: "" };
+  api.mockImplementation(async (_path: string, method?: string) =>
+    method === "POST" ? { published } : { ...base(), published },
+  );
+  await act(async () =>
+    button("Publish roster", document.querySelector("dialog")!).click(),
+  );
+  expect(change).toHaveBeenCalledWith("announce");
+  change.mockClear();
+  await act(async () => button("Next: Announcements ›").click());
+  expect(change).toHaveBeenCalledWith("announce");
+});

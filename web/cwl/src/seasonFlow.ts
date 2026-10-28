@@ -1,4 +1,4 @@
-import { api, type Season } from "./api";
+import { api, ApiError, type Season } from "./api";
 export type SeasonState = {
   seasons: Season[];
   member_season: { season_id: number | null; revision: number };
@@ -53,6 +53,12 @@ export async function applySignupPlan(
         expected_signup_open: !plan.opened,
       });
     } catch (error) {
+      if (!(error instanceof ApiError) || error.status <= 0)
+        throw new Error(
+          plan.opened
+            ? "Signups may not have opened. Refreshing to check…"
+            : "Signups may not have closed. Refreshing to check…",
+        );
       if (shown)
         throw new Error(
           `Shown to members; signups not opened: ${error instanceof Error ? error.message : "Request failed."}`,
@@ -63,7 +69,7 @@ export async function applySignupPlan(
 }
 export function createSeasonConfirmation(label: string, first: boolean) {
   return first
-    ? `${label} will start with no hosting clans.`
+    ? `${label} will start with no hosting clans. Signups start empty.`
     : `${label} will start with the hosting clans and their settings from the previous season. Signups start empty.`;
 }
 export function createdSeasonMessage(label: string, count: number) {

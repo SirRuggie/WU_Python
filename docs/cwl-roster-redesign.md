@@ -249,9 +249,9 @@ part of this implementation.
 Implementation in progress on `codex/cwl-flow`; not a release approval.
 
 - S1 carries active hosting lineup rows and their pool/capacity/weight rules from the latest season with lineup rows, atomically. No signups, placements, locks or publications are copied.
-- Create-season confirmation (Ruggie correction, 2026-10-28): before saving, “<Label> will start with the hosting clans and their settings from the previous season. Signups start empty.” For the first season: “<Label> will start with no hosting clans.” After creation, use S1's actual response count: “<Label> created with N hosting clans and their settings. Signups start empty.” Do not add an inheritance-preview endpoint (S4 was declined).
+- Create-season confirmation (Ruggie correction, 2026-10-28): before saving, “<Label> will start with the hosting clans and their settings from the previous season. Signups start empty.” For the first season: “<Label> will start with no hosting clans. Signups start empty.” After creation, use S1's actual response count: “<Label> created with N hosting clans and their settings. Signups start empty.” Do not add an inheritance-preview endpoint (S4 was declined).
 - S2 (approved 2026-10-28): optional strict-boolean `expected_signup_open` compare-and-set; a mismatch returns 409 without writes. Show and open sets member visibility first, then opens signups. A second-call failure reports partial success without retry or rollback. Fix for an already-open hidden season only changes member visibility; no signup PATCH.
-- S3 (approved 2026-10-28): editor-authorized read-only clan lookup validates with `tag()`, returns `{tag, name}`, 400 for invalid tags and 404 for missing clans. No database writes. Confirm still uses the existing add POST. S1/S2/S3 require one isolated backend release when approved for deployment.
+- S3 (approved 2026-10-28): `cwl_settings`-authorized read-only clan lookup validates with `tag()`, returns `{tag, name}`, 400 for invalid tags and 404 for missing clans. No database writes. Confirm still uses the existing add POST. S1/S2/S3 require one isolated backend release when approved for deployment.
 - CWL sidebar order: Seasons, Signup reminders, Build roster, Finalize roster, Announcements, Declaration readiness check, Return reminders, Results. Other sidebar sections stay unchanged.
 - Build / Finalize / Announce use a numbered step strip, existing routes and permission-gated destinations. Missing weights replaces Weights. Declaration remains a post-publish, read-only check against the published roster; rebuilding it is a later batch.
 
@@ -263,3 +263,10 @@ Implementation in progress on `codex/cwl-flow`; not a release approval.
 ### Later — CWL flow
 
 - Regroup the rest of the staff sidebar (Ruggie dislikes everything under “Staff tools”).
+
+### CWL flow review polish (2026-10-28)
+
+- Build’s shared header keeps signup status and Fix available on every tab. Add signup still requires `cwl_signups`, matching the backend; hosting settings retain the separately approved gates.
+- The Finalize step marks unpublished changes or a never-published draft with placements. A current publication has a checkmark. Desktop steps are compact; mobile layout is retained.
+- A stale Fix re-reads visibility and writes nothing when already visible. Failed reads expose Retry; a lost signup PATCH response is uncertain and followed by read-only refresh, never a write retry.
+- S3 lookup enforces `cwl_settings` on its GET, matching the add POST. S1 duplicate labels return 409; transactional carry-forward failures return a clear 500 after rollback.

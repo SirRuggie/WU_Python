@@ -196,7 +196,13 @@ export default function StaffSignupControls({
       <div className="staff-signup-bar">
         <StatusPill
           tone={
-            archived ? "neutral" : signup.hiddenOpen ? "warning" : season.signup_open ? "success" : "warning"
+            archived
+              ? "neutral"
+              : signup.hiddenOpen
+                ? "warning"
+                : season.signup_open
+                  ? "success"
+                  : "warning"
           }
         >
           {archived
@@ -206,7 +212,14 @@ export default function StaffSignupControls({
               : "Signups closed"}
           {signup.hiddenOpen && " · not visible to members"}
         </StatusPill>
-        {signup.hiddenOpen && canSettings && !archived && <Button disabled={working || disabled} onClick={() => void signup.begin("fix")}>Fix ›</Button>}
+        {signup.hiddenOpen && canSettings && !archived && (
+          <Button
+            disabled={working || disabled}
+            onClick={() => void signup.begin("fix")}
+          >
+            Fix ›
+          </Button>
+        )}
         <span className="staff-signup-bar-actions">
           {canSignups && !archived && (
             <button
@@ -256,7 +269,9 @@ export default function StaffSignupControls({
             </p>
             <Button
               disabled={working || disabled}
-              onClick={() => void signup.begin(season.signup_open ? "close" : "open")}
+              onClick={() =>
+                void signup.begin(season.signup_open ? "close" : "open")
+              }
             >
               {season.signup_open ? "Close signups" : "Open signups"}
             </Button>
@@ -268,9 +283,18 @@ export default function StaffSignupControls({
           </div>
         </ActionPanel>
       )}
+      {signup.visibilityCheck}
       {signup.dialog}
-      {signup.error && <p className="notice error" role="alert">{signup.error}</p>}
-      {signup.notice && <p className="notice success" role="status">{signup.notice}</p>}
+      {signup.error && (
+        <p className="notice error" role="alert">
+          {signup.error}
+        </p>
+      )}
+      {signup.notice && (
+        <p className="notice success" role="status">
+          {signup.notice}
+        </p>
+      )}
       {notice && (
         <p className="notice success" role="status">
           {notice}

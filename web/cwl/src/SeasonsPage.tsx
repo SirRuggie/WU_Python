@@ -255,6 +255,7 @@ export default function SeasonsPage({
           disabled={working || !allowed}
         />
       )}
+      {signup.visibilityCheck}
       {signup.dialog}
     </section>
   );

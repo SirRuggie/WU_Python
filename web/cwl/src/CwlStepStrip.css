@@ -28,3 +28,13 @@
   color: var(--roster-text-muted, #b9bbc4);
   font-size: 13px;
 }
+
+@media (min-width: 768px) {
+  .shell .cwl-step-strip {
+    width: fit-content;
+  }
+  .shell .cwl-step-strip > button {
+    flex: 0 0 auto;
+    padding-inline: 12px;
+  }
+}

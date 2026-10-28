@@ -166,3 +166,66 @@ for (const permissions of [
     }
   });
 }
+it("by-tag lookup displays the name before Confirm and requires a resolved choice", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  let resolveLookup!: (v: unknown) => void;
+  api.mockReset().mockImplementation(async (path, method) =>
+    method
+      ? {}
+      : path.startsWith("/clans/lookup")
+        ? new Promise((r) => {
+            resolveLookup = r;
+          })
+        : { clans: [] },
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const button = (name: string) =>
+    [...host.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === name,
+    )!;
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <HostingClanControls
+            clans={[]}
+            disabled={false}
+            onChanged={async () => {}}
+            onBusy={() => {}}
+          />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+    await act(async () => button("Add hosting clan").click());
+    await act(async () => button("By clan tag").click());
+    expect(button("Confirm add hosting clan").disabled).toBe(true);
+    const input = host.querySelector("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "#P2Y");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button("Look up clan").click());
+    expect(button("Confirm add hosting clan").disabled).toBe(true);
+    await act(async () =>
+      resolveLookup({ tag: "#P2Y", name: "Resolved host" }),
+    );
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Resolved host",
+    );
+    expect(button("Confirm add hosting clan").disabled).toBe(false);
+    expect(api.mock.calls.every((c) => !c[1])).toBe(true);
+    await act(async () => button("Confirm add hosting clan").click());
+    expect(api).toHaveBeenCalledWith("/clans", "POST", {
+      tag: "#P2Y",
+      pool: null,
+    });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

@@ -30,6 +30,22 @@ describe("CWL step strip", () => {
         published: { version: 1 } as PublicationDraft["published"],
       }),
     ).toContain('aria-label="Published and current"');
+    expect(
+      markup(["cwl"], {
+        published: null,
+        last_publication: null,
+        draft_changed: false,
+        preview: { assigned_count: 125 } as PublicationDraft["preview"],
+      }),
+    ).toContain('aria-label="Unpublished changes"');
+    expect(
+      markup(["cwl"], {
+        published: null,
+        last_publication: null,
+        draft_changed: false,
+        preview: { assigned_count: 0 } as PublicationDraft["preview"],
+      }),
+    ).not.toContain('aria-label="Unpublished changes"');
     expect(markup(["cwl"], null)).not.toContain(
       'aria-label="Published and current"',
     );

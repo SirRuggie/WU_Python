@@ -23,11 +23,14 @@ export default function useSignupAction(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [checkFailed, setCheckFailed] = useState(false);
+  const [checkAttempt, setCheckAttempt] = useState(0);
   const submitting = useRef(false);
   const generation = useRef(0);
   useEffect(() => {
     const id = ++generation.current;
     setState(null);
+    setCheckFailed(false);
     setReview(null);
     setError("");
     setNotice("");
@@ -36,12 +39,12 @@ export default function useSignupAction(
         if (id === generation.current) setState(value);
       })
       .catch(() => {
-        /* Opening an action always performs a fresh read. */
+        if (id === generation.current) setCheckFailed(true);
       });
     return () => {
       generation.current++;
     };
-  }, [season?.id, season?.signup_open]);
+  }, [season?.id, season?.signup_open, checkAttempt]);
   async function begin(action: SignupAction) {
     if (
       !season ||
@@ -60,9 +63,16 @@ export default function useSignupAction(
       const fresh = await api<SeasonState>("/seasons");
       if (id !== generation.current) return;
       setState(fresh);
+      setCheckFailed(false);
       const selected = fresh.seasons.find((item) => item.id === season.id);
       if (!selected || selected.status === "archived")
         throw new Error("Season is unavailable or archived. Refresh the page.");
+      if (action === "fix" && fresh.member_season.season_id === selected.id) {
+        setReview(null);
+        await onChanged();
+        setNotice("Already visible to members.");
+        return;
+      }
       setReview({ season: selected, state: fresh, action });
     } catch (cause) {
       if (id === generation.current)
@@ -116,6 +126,17 @@ export default function useSignupAction(
     error,
     notice,
     hiddenOpen,
+    visibilityCheck: checkFailed ? (
+      <p className="muted" role="status">
+        Couldn't check signup visibility ·{" "}
+        <button
+          disabled={busy}
+          onClick={() => setCheckAttempt((value) => value + 1)}
+        >
+          Retry
+        </button>
+      </p>
+    ) : null,
     begin,
     dialog: review ? (
       <ConfirmDialog

@@ -332,3 +332,8 @@
     grid-column: 1 / -1;
   }
 }
+
+.roster-header .roster-header-signups {
+  grid-column: 1 / -1;
+  min-width: 0;
+}

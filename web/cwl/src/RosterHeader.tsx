@@ -35,6 +35,7 @@ function compactSeasonLabel(label: string): string {
 }
 
 type Props = {
+  signupControls?: import("react").ReactNode;
   seasonId: string;
   seasons: Season[];
   roster: RosterSnapshot | null;
@@ -74,6 +75,7 @@ export default function RosterHeader({
   onFinalize,
   onStatusFilter,
   onAccessError,
+  signupControls,
   showAwareness = true,
   onPublication,
 }: Props) {
@@ -289,6 +291,9 @@ export default function RosterHeader({
           </Button>
         )}
       </div>
+      {signupControls && (
+        <div className="roster-header-signups">{signupControls}</div>
+      )}
       {showAwareness &&
         publication?.seasonId === seasonId &&
         publication.draft && (

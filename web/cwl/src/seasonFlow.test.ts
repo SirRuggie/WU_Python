@@ -6,9 +6,9 @@ import {
   signupPlan,
   type SeasonState,
 } from "./seasonFlow";
-import type { Season } from "./api";
+import { ApiError, type Season } from "./api";
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
-vi.mock("./api", () => ({ api }));
+vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
 const season = {
   id: 2,
   label: "November 2026",
@@ -25,7 +25,7 @@ it("confirms inheritance without guessing a count; first season starts empty", (
     "November 2026 will start with the hosting clans and their settings from the previous season. Signups start empty.",
   );
   expect(createSeasonConfirmation(season.label, true)).toBe(
-    "November 2026 will start with no hosting clans.",
+    "November 2026 will start with no hosting clans. Signups start empty.",
   );
   expect(createdSeasonMessage(season.label, 3)).toBe(
     "November 2026 created with 3 hosting clans and their settings. Signups start empty.",
@@ -42,7 +42,7 @@ it("asks to show and open a hidden season, in that order with both guards", asyn
 it("reports a partial failure and never retries either write", async () => {
   api
     .mockResolvedValueOnce({})
-    .mockRejectedValueOnce(new Error("409: changed"));
+    .mockRejectedValueOnce(new ApiError("409: changed", 409));
   await expect(applySignupPlan(season, state, "open")).rejects.toThrow(
     "Shown to members; signups not opened: 409: changed",
   );
@@ -80,3 +80,20 @@ it("already visible opening does not write the member season", async () => {
     ["/seasons/2", "PATCH", { signup_open: true, expected_signup_open: false }],
   ]);
 });
+it.each([1, 2])(
+  "lost PATCH response after visibility state %s reports uncertainty without retry",
+  async (visible) => {
+    api.mockImplementation(async (_p, m) => {
+      if (m === "PATCH") throw new TypeError("Failed to fetch");
+      return {};
+    });
+    await expect(
+      applySignupPlan(
+        season,
+        { ...state, member_season: { season_id: visible, revision: 7 } },
+        "open",
+      ),
+    ).rejects.toThrow("Signups may not have opened. Refreshing to check…");
+    expect(api.mock.calls.filter((c) => c[1] === "PATCH")).toHaveLength(1);
+  },
+);
