@@ -643,8 +643,83 @@ function App() {
         </>}
         {view === 'assignments' && <MemberAssignments onSignup={() => { setSignupPanel('register'); changeView('signup') }} seasonId={seasonId} seasons={seasons} />}
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} disabled={declarationBusy} onChange={e=>{if (canLeave()) setSeasonId(e.target.value)}}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId} onDirty={setDeclarationDirty} onBusy={setDeclarationBusy}/>}</>}
-        {view === 'publication' && session.can_edit && <PublicationWorkspace onDeclaration={() => changeView("declaration")} onPublication={draft => setFlowPublication({season: seasonId, draft})} onBusy={setPublicationBusy} onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationBusy && (!publicationDirty || window.confirm('Discard unsaved publication or announcement changes?'))) setSeasonId(id) }} />}
+        {
+          view === "declaration" && session.can_edit && (
+            <>
+              <div className="page-head">
+                <div>
+                  <p className="eyebrow">CWL</p>
+                  <h1>Declaration readiness check</h1>
+                </div>
+                <label>
+                  Season
+                  <select
+                    value={seasonId}
+                    disabled={declarationBusy}
+                    onChange={(e) => {
+                      if (canLeave()) {
+                        if (e.target.value !== seasonId)
+                          navigation.current?.write(
+                            { view: "declaration", season: e.target.value },
+                            false,
+                          );
+                        setSeasonId(e.target.value);
+                      }
+                    }}
+                  >
+                    {seasons.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {seasonId && (
+                <ArrivalCheck
+                  key={seasonId}
+                  seasonId={seasonId}
+                  onDirty={setDeclarationDirty}
+                  onBusy={setDeclarationBusy}
+                />
+              )}
+            </>
+          )
+        }
+        {
+          view === "publication" && session.can_edit && (
+            <PublicationWorkspace
+              onDeclaration={() => changeView("declaration")}
+              onPublication={(draft) => setFlowPublication({ season: seasonId, draft })}
+              onBusy={setPublicationBusy}
+              onDirty={setPublicationDirty}
+              step={publicationStep}
+              onStepChange={setPublicationStep}
+              onFix={(filter) => {
+                setRosterReadiness(filter);
+                changeView("roster");
+              }}
+              seasonId={seasonId}
+              seasons={seasons}
+              onSeasonChange={(id) => {
+                if (
+                  !publicationBusy &&
+                  (!publicationDirty ||
+                    window.confirm(
+                      "Discard unsaved publication or announcement changes?",
+                    ))
+                ) {
+                  if (id !== seasonId)
+                    navigation.current?.write(
+                      { view: "publication", season: id, step: publicationStep },
+                      false,
+                    );
+                  setSeasonId(id);
+                }
+              }}
+            />
+          )
+        }
         {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === "roster" && session.can_edit && (

@@ -190,6 +190,13 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 
 ## Later
 
+- Pre-existing roster season-menu history issue: without Details, Back can show
+  `season=1` in the URL while the page still displays the newer season.
+- `mayLeaveEditor` still uses `window.confirm` for season and mode changes.
+- Details: a successful save followed by a failed reload drops the Undo toast.
+- `RosterWorkspace.tsx` restates the weight dirty rule separately from `dirty`;
+  consolidate these rules in a later cleanup.
+
 - Announcements review preview shows raw role IDs (`@role 3333…`) instead of role names.
 - Announcements: opening Edit on an empty link marks the pool unsaved at once on HTTPS (by design); revisit if staff find it confusing.
 

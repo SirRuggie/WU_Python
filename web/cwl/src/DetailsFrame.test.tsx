@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import DetailsFrame from "./DetailsFrame";
+import { DashboardHistory } from "./dashboardHistory";
 import {
   detailsAccount,
   detailsUrl,
@@ -227,3 +228,33 @@ it("contains phone Tab events but does not consume events from a nested portal d
   expect(document.activeElement).toBe(outside);
   expect(close).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["roster", "roster"],
+  ["publish", "publication"],
+  ["readiness", "declaration"],
+] as const)(
+  "%s season replacement closes Details without a cleanup Back",
+  async (path, view) => {
+    history.replaceState({}, "", `/cwl/${path}?season=1`);
+    const controller = new DashboardHistory(history);
+    await render();
+    expect(history.state.wuActionPanel).toBeTruthy();
+    // App writes the new season synchronously, before the season-keyed host unmounts.
+    controller.write({ view, season: "2" }, false);
+    await act(async () => root.render(null));
+    expect(location.pathname).toBe(`/cwl/${path}`);
+    expect(location.search).toBe("?season=2");
+    expect(history.state.wuActionPanel).toBeUndefined();
+    expect(history.back).not.toHaveBeenCalled();
+    const pop = new PopStateEvent("popstate", {
+      state: { wuDashboardIndex: -1 },
+    });
+    const observe = vi.fn();
+    window.addEventListener("popstate", observe);
+    window.dispatchEvent(pop);
+    window.removeEventListener("popstate", observe);
+    expect(observe).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+  },
+);

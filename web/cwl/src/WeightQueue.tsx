@@ -49,7 +49,7 @@ export default function WeightQueue({
     `${account.player_name} ${account.tag}`.toLocaleLowerCase().includes(query),
   );
   const shown = matching.slice(0, limit);
-  const orderKey = matching.map(account => account.tag).join("|");
+  const orderKey = matching.map((account) => account.tag).join("|");
   useEffect(() => {
     onOrderChange?.(orderKey ? orderKey.split("|") : []);
   }, [orderKey, onOrderChange]);

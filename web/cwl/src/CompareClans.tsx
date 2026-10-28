@@ -140,7 +140,13 @@ export default function CompareClans({
     setPanel(null);
   }, [pool]);
 
-  const detailsOrderKey = visibleClans.flatMap(tag => compareClanAccounts(roster.accounts, tag, sort).filter(account => matchesTownHall(account.town_hall, townHalls)).map(account => account.tag)).join("|");
+  const detailsOrderKey = visibleClans
+    .flatMap((tag) =>
+      compareClanAccounts(roster.accounts, tag, sort)
+        .filter((account) => matchesTownHall(account.town_hall, townHalls))
+        .map((account) => account.tag),
+    )
+    .join("|");
   useEffect(() => {
     onOrderChange?.(detailsOrderKey ? detailsOrderKey.split("|") : []);
   }, [detailsOrderKey, onOrderChange]);
