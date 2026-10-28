@@ -514,6 +514,21 @@ async def clans(request):
     return web.json_response({"clans": await enrich_clan_metadata(request, [{**r, "archived": bool(r["archived"])} for r in rows])})
 
 
+async def lookup_clan(request):
+    _require(request, "editor")
+    try:
+        value = tag(request.query.get("tag"))
+    except ValueError:
+        _fail(400, "Invalid clan tag")
+    try:
+        clan = await request.app["providers"].clan(value)
+    except ProviderUnavailable as exc:
+        if getattr(exc, "status_code", None) == 404:
+            _fail(404, "Clan not found")
+        raise
+    return web.json_response({"tag": clan["tag"], "name": clan["name"]})
+
+
 async def create_clan(request):
     session = _require(request, "editor")
     body = await _json(request)
@@ -1836,7 +1851,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes = [*discord_member_routes, *staff_signup_change_routes, *weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.put(API + "/member-season", set_member_season), web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
-        web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
+        web.get(API + "/clans", clans), web.get(API + "/clans/lookup", lookup_clan), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
         web.get(API + "/seasons/{season_id}/lineup", lineup), web.post(API + "/seasons/{season_id}/lineup", add_lineup), web.delete(API + "/seasons/{season_id}/lineup/{tag}", remove_lineup),
         web.patch(API + "/seasons/{season_id}/lineup/{tag}/rules", update_lineup_rules),
         web.get(API + "/seasons/{season_id}/roster", roster),

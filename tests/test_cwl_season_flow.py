@@ -102,3 +102,33 @@ class SeasonFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         row = await response.json()
         self.assertEqual((row['label'], row['status'], row['signup_open']), ('Renamed season', 'archived', False))
+
+    async def test_clan_lookup_has_no_database_writes(self):
+        from unittest.mock import AsyncMock
+        provider = self.app['providers']
+        provider.clan = AsyncMock(return_value={'tag': '#P2Y', 'name': 'Preview clan', 'extra': 'not returned'})
+        with self.app['store'].tx() as db:
+            before = list(db.iterdump())
+        response = await self.call('GET', '/clans/lookup?tag=%23P2Y', None)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(await response.json(), {'tag': '#P2Y', 'name': 'Preview clan'})
+        provider.clan.assert_awaited_once_with('#P2Y')
+        with self.app['store'].tx() as db:
+            self.assertEqual(before, list(db.iterdump()))
+
+    async def test_clan_lookup_invalid_not_found_unavailable_and_unauthorized(self):
+        from unittest.mock import AsyncMock
+        from cwl_web.providers import ProviderUnavailable
+        response = await self.call('GET', '/clans/lookup?tag=invalid', None)
+        self.assertEqual(response.status, 400)
+        error = ProviderUnavailable('Missing')
+        error.status_code = 404
+        self.app['providers'].clan = AsyncMock(side_effect=error)
+        response = await self.call('GET', '/clans/lookup?tag=%23P2Y', None)
+        self.assertEqual(response.status, 404)
+        self.app['providers'].clan = AsyncMock(side_effect=ProviderUnavailable('Outage'))
+        response = await self.call('GET', '/clans/lookup?tag=%23P2Y', None)
+        self.assertEqual(response.status, 503)
+        self.client.session.cookie_jar.clear()
+        response = await self.client.get('/api/cwl/clans/lookup?tag=%23P2Y')
+        self.assertEqual(response.status, 401)
