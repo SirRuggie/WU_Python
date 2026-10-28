@@ -114,3 +114,32 @@ it("hides the fallback when unchanged and retains No placement changes", async (
   act(() => root.unmount());
   api.mockReset();
 });
+
+it("shows only four changes until explicitly expanded, using the server next version", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const draft = {
+    published: null,
+    next_version: 7,
+    draft_changed: false,
+    preview: {
+      accounts: Array.from({ length: 6 }, (_, i) => ({
+        tag: `#${i}`,
+        player_name: `Player ${i}`,
+        pool: "main",
+      })),
+      clans: [],
+    },
+  } as unknown as PublicationDraft;
+  await act(async () =>
+    root.render(
+      <PublicationChanges seasonId="1" draft={draft} onReady={() => {}} />,
+    ),
+  );
+  expect(host.textContent).toContain("Publishing creates version 7");
+  expect(host.querySelectorAll("li")).toHaveLength(4);
+  await act(async () => host.querySelector("button")!.click());
+  expect(host.querySelectorAll("li")).toHaveLength(6);
+  act(() => root.unmount());
+});

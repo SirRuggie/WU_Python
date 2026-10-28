@@ -5,7 +5,7 @@ export type PublicationMeta = {
   joining_instructions: string; assigned_count: number; unassigned_count: number
 }
 export type PublicationPreview = { accounts: RosterAccount[]; clans: RosterClan[]; assigned_count: number; unassigned_count: number }
-export type PublicationDraft = { draft_revision: number; draft_changed: boolean; preview: PublicationPreview; published: PublicationMeta | null }
+export type PublicationDraft = { draft_revision: number; draft_changed: boolean; preview: PublicationPreview; published: PublicationMeta | null; last_publication: { version: number; published_at: string; withdrawn_at: string | null; joining_instructions: string } | null; next_version: number }
 export type MemberAssignment = { tag: string; player_name: string; town_hall: number | null; pool: Pool; assigned_clan_tag: string | null; assigned_clan_name: string | null }
 export type MemberPublicationMeta = Pick<PublicationMeta, 'version' | 'published_at' | 'joining_instructions'>
 export type MyAssignments = { published: MemberPublicationMeta | null; accounts: MemberAssignment[]; visibility: 'current'; draft_changed: boolean }

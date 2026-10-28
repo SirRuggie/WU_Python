@@ -1,3 +1,4 @@
+import { Button } from "./rosterUi/primitives";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import type { PublicationDraft } from "./publication";
@@ -10,19 +11,22 @@ export default function PublicationChanges({
   seasonId,
   draft,
   onReady,
+  archived = false,
 }: {
   seasonId: string;
   draft: PublicationDraft;
   onReady: (ready: boolean) => void;
+  archived?: boolean;
 }) {
   const [result, setResult] = useState<ReturnType<
     typeof publicationChanges
   > | null>(null);
   const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     let active = true;
     setResult(null);
+    setExpanded(false);
     setError("");
     onReady(false);
     if (!draft.published) {
@@ -56,36 +60,45 @@ export default function PublicationChanges({
     return () => {
       active = false;
     };
-  }, [seasonId, draft, attempt, onReady]);
+  }, [seasonId, draft, onReady]);
   return (
     <section
       className="publication-change-list"
       aria-label="Changes to publish"
     >
-      <h3>Publishing creates version {(draft.published?.version ?? 0) + 1}</h3>
-      <p>
-        From the current draft, for Main and Lazy. Members will see these
-        placement changes. No Discord message is sent.
-      </p>
-      {error ? (
-        <p role="alert">
-          {error}{" "}
-          <button onClick={() => setAttempt((value) => value + 1)}>
-            Retry changes
-          </button>
+      {archived ? (
+        <p className="inline-reason">
+          This season is archived. Its roster cannot be published or
+          republished.
         </p>
+      ) : (
+        <h3>
+          {draft.next_version == null
+            ? "Publishing creates a new version"
+            : `Publishing creates version ${draft.next_version}`}
+        </h3>
+      )}
+      <p>For Main and Lazy · no Discord message is sent</p>
+      {error ? (
+        <p role="alert">{error} Use Refresh draft to try again.</p>
       ) : !result ? (
         <p role="status">Loading changes…</p>
       ) : (
         <>
           <ul>
-            {result.lines.map((line) => (
-              <li key={line.tag}>
-                <strong>{line.name}</strong>
-                <span>{line.text}</span>
-              </li>
-            ))}
+            {(expanded ? result.lines : result.lines.slice(0, 4)).map(
+              (line) => (
+                <li key={line.tag}>
+                  <strong>{line.name}</strong> <span>{line.text}</span>
+                </li>
+              ),
+            )}
           </ul>
+          {!expanded && result.lines.length > 4 && (
+            <Button onClick={() => setExpanded(true)}>
+              Show all {result.lines.length} changes ›
+            </Button>
+          )}
           {draft.draft_changed && (
             <p className="publication-change-caveat">
               Also included: any weight or signup-detail changes not listed

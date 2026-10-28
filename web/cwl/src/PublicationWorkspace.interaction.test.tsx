@@ -33,6 +33,8 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
     kept: false,
   };
   let draft = {
+    last_publication: null,
+    next_version: 2,
     draft_revision: 7,
     draft_changed: true,
     published: { version: 1, published_at: "2026-10-27T00:00:00Z" },
@@ -87,6 +89,27 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
     }),
   );
   expect(button.disabled).toBe(false);
+  const text = host.textContent!;
+  expect(text.indexOf("Members still see")).toBeLessThan(
+    text.indexOf("Publishing creates version"),
+  );
+  expect(text.indexOf("Publishing creates version")).toBeLessThan(
+    text.indexOf("Before you publish"),
+  );
+  expect(text.indexOf("Before you publish")).toBeLessThan(
+    text.indexOf("Joining instructions"),
+  );
+  expect(text.indexOf("Joining instructions")).toBeLessThan(
+    text.indexOf("Full roster preview"),
+  );
+  expect(
+    host.querySelector<HTMLDetailsElement>(".publication-preview")!.open,
+  ).toBe(false);
+  expect(
+    [...host.querySelectorAll("button")].filter(
+      (e) => e.textContent === "Refresh draft",
+    ),
+  ).toHaveLength(1);
   expect(document.querySelector("dialog")).toBeNull();
   await act(async () => button.click());
   expect(document.querySelector("dialog")?.textContent).toContain(

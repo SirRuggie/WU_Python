@@ -40,3 +40,12 @@ readlink /proc/$(systemctl --user show -p MainPID --value wu-cwl-demo-web.servic
 ```
 
 Re-check service health, cwd, public hashes, protected counts and rules after rollback. A full rollback switches both code layers, not just the frontend. Existing tabs need a reload.
+
+## Finalize read metadata (Ruggie-approved backend extension)
+
+Finalize requires a backend release from an isolated release directory and a service
+restart, following the backend release procedure. The draft response adds
+`last_publication` (latest version including withdrawn, publication/withdrawal dates
+and joining instructions) and `next_version` (the publish path's season-scoped
+MAX + 1). `published` retains its active-only meaning. This is read-only: no schema
+or publication/withdrawal write-path change. No deployment is part of this batch.

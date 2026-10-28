@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { clanDeepLink, draftPublicationStatus, memberPlacementStatus, type MyAssignments, type PublicationDraft } from './publication'
-const draft: PublicationDraft = { draft_revision: 8, draft_changed: false, preview: { accounts: [], clans: [], assigned_count: 0, unassigned_count: 0 }, published: null }
+const draft: PublicationDraft = { last_publication: null, next_version: 1, draft_revision: 8, draft_changed: false, preview: { accounts: [], clans: [], assigned_count: 0, unassigned_count: 0 }, published: null }
 describe('roster publication', () => {
   it('encodes Clash clan tags in a deep link', () => { expect(clanDeepLink('#Q2 R')).toBe('https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23Q2%20R') })
   it('labels current placements provisional until an unchanged version is published', () => {
