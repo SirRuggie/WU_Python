@@ -344,9 +344,6 @@
 .compare-player-meta .town-hall-fallback {
   font-size: 12px;
 }
-.compare-player-meta {
-  min-height: 16px;
-}
 .compare-player-tags {
   display: flex;
   align-items: center;
@@ -354,6 +351,8 @@
   gap: 1px 4px;
 }
 .compare-player-meta {
+  min-height: 16px;
+  padding-right: 36px;
   display: inline-flex;
   align-items: center;
   gap: 3px;

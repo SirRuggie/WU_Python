@@ -56,9 +56,11 @@ it("has four rows in order with the TH icon beside TH, a separate Now in row and
     body.children[1].querySelector(".town-hall-icon")?.getAttribute("alt"),
   ).toBe("Town Hall 18");
   expect(body.children[1].textContent).toContain("TH 18 · #P2Y");
-  expect(body.children[2].textContent).toContain("Now inOther clan· 2m ago");
+  expect(body.children[2].textContent).toContain("Now in Other clan, 2m ago");
   expect(body.children[2].querySelector(".compare-location-pill")).toBeNull();
-  expect(body.children[3].textContent).toContain("Not in this clan");
+  expect(body.children[3].textContent).toBe(
+    "Not in this clan, Outside weight range, Outside family",
+  );
   const ids = body.getAttribute("aria-describedby")!.split(" ");
   expect(
     ids
@@ -93,7 +95,7 @@ it("checking has its own row with no age; No clan retains age", () => {
   expect(
     card({ ...record, current_clan_tag: null, current_clan_name: null })
       .children[2].textContent,
-  ).toBe("No clan· 2m ago");
+  ).toBe("No clan, 2m ago");
   expect(host.querySelector(".compare-player-body")?.children).toHaveLength(4);
 });
 it("a publication note adds exactly one fifth row and missing weight replaces the headline number", () => {

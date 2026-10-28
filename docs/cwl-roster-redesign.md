@@ -108,7 +108,7 @@ A4 fixes: reset selected Compare rail text-fill to currentColor; queue one force
 
 C4 publish awareness: reuse the header publication response for a persistent placement-only banner with permission-based review actions. Placement-edit messages identify draft-only changes; signup messages remain unchanged. Finalize fetches the existing published account export only while its review is open, compares assignments/pools and available saved account fields, and includes Other changes for weight/details differences or otherwise unexplained changed status. A version mismatch requires refresh; publishing remains revision-checked and always requires an explicit confirmation.
 
-- X3 (2026-10-27) supersedes the A3 R1 Compare player row layout: name/weight/menu; TownHallIcon + TH/tag/lock; location + age; location pill + other tags; optional publication note. Keep cards ≤86px without a note and use a 16px TH icon. Ruggie deferred density targets pending the CS2 measured report; do not change headers or remove rows to chase the earlier ≥8 / ≥5 / ≥8 targets.
+- X3 (2026-10-27) supersedes the A3 R1 Compare player row layout: name/weight/menu; TownHallIcon + TH/tag/lock; location + age; location pill + other tags; optional publication note. Keep cards ≤86px without a note and use a 16px TH icon. Accepted density (CS3): phone ≥7 full cards with the list at the top / ≥4 with Compare at the top; desktop ≥8 per column with the list in view. Keep the existing headers and all rows.
 
 ## Decisions — Clan settings (2026-10-27)
 

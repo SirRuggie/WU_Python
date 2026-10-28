@@ -444,3 +444,40 @@ it("puts the archived notice first in the list at muted 12px", async () => {
     /\.clan-settings-panel \.clan-settings-archived\s*\{\s*font-size: 12px;\s*color: var\(--roster-text-muted\)/,
   );
 });
+
+it("hides the weight-unit description using always-imported roster CSS, without the Bonus chunk", async () => {
+  await act(async () =>
+    root.render(
+      <ClanSettingsEditor
+        clan={clan}
+        archived={false}
+        busy={false}
+        trigger={null}
+        onClose={() => true}
+        onDirty={() => {}}
+        onSave={vi.fn()}
+      />,
+    ),
+  );
+  const unit = document.querySelector(".clan-settings-panel .sr-only")!;
+  expect(unit.textContent).toBe("Weights in thousands (k)");
+  const css = readFileSync("src/rosterUi/primitives.css", "utf8");
+  const rule = css.match(/\.roster-ui \.sr-only\s*\{([^}]+)\}/)?.[1];
+  expect(rule).toBeDefined();
+  for (const declaration of [
+    "position: absolute",
+    "width: 1px",
+    "height: 1px",
+    "margin: -1px",
+    "overflow: hidden",
+    "clip-path: inset(50%)",
+    "white-space: nowrap",
+  ])
+    expect(rule).toContain(declaration);
+  expect(readFileSync("src/rosterUi/primitives.tsx", "utf8")).toContain(
+    'import "./primitives.css"',
+  );
+  expect(readFileSync("src/ClanSettings.tsx", "utf8")).toContain(
+    'from "./rosterUi/primitives"',
+  );
+});

@@ -74,7 +74,7 @@ export default function ComparePlayerCard({
             <span className="compare-location-line" title={location.detail}>
               {record?.current_clan_name || record?.current_clan_tag ? (
                 <>
-                  <span className="compare-location-label">Now in</span>
+                  <span className="compare-location-label">Now in </span>
                   <span className="compare-location-name">
                     {record.current_clan_name || record.current_clan_tag}
                   </span>
@@ -83,7 +83,7 @@ export default function ComparePlayerCard({
                 <span className="compare-location-label">No clan</span>
               )}
               <span className="compare-location-age">
-                · {comparisonAge(record?.current_clan_checked_at, now)}
+                , {comparisonAge(record?.current_clan_checked_at, now)}
               </span>
             </span>
           )}
@@ -95,10 +95,18 @@ export default function ComparePlayerCard({
             {location.label}
           </span>
           {outsideComparisonRange(account.effective_weight, clan) && (
-            <span className="compare-tag is-warning">Outside weight range</span>
+            <>
+              <span className="sr-only">, </span>
+              <span className="compare-tag is-warning">
+                Outside weight range
+              </span>
+            </>
           )}
           {record?.current_clan_tag && record.outside_family && (
-            <span className="compare-tag is-warning">Outside family</span>
+            <>
+              <span className="sr-only">, </span>
+              <span className="compare-tag is-warning">Outside family</span>
+            </>
           )}
         </span>
         {note && (
