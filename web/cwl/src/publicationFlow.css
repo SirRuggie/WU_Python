@@ -141,7 +141,7 @@
 }
 .finalize-review .publication-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   min-height: 56px;
@@ -150,6 +150,16 @@
 .finalize-review .publication-row .town-hall-icon {
   width: 24px;
   height: 24px;
+  justify-self: center;
+}
+.finalize-review .publication-row .town-hall-fallback {
+  box-sizing: border-box;
+  width: 40px;
+  max-width: 100%;
+  padding: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
 }
 .finalize-review .publication-row strong,
 .finalize-review .publication-row small {
