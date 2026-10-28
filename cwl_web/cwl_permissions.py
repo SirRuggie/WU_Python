@@ -1,6 +1,6 @@
 """Mutation permission map. Unknown CWL writes fail closed."""
 APP_ACTIONS = {
-    **dict.fromkeys(('set_member_season', 'create_season', 'update_season', 'create_clan', 'archive_clan', 'add_lineup', 'remove_lineup'), 'cwl_settings'),
+    **dict.fromkeys(('set_member_season', 'create_season', 'update_season', 'create_clan', 'lookup_clan', 'archive_clan', 'add_lineup', 'remove_lineup'), 'cwl_settings'),
     **dict.fromkeys(('staff_add_signup', 'staff_remove_signup'), 'cwl_signups'),
     **dict.fromkeys(('update_lineup_rules', 'bulk_assign_roster', 'update_roster_account', 'swap_roster', 'undo_roster', 'auto_preview', 'auto_apply', 'refresh_weights', 'arrival_check'), 'cwl_roster'),
     'publish_roster': 'cwl_publish',

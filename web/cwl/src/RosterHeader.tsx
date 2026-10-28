@@ -35,6 +35,7 @@ function compactSeasonLabel(label: string): string {
 }
 
 type Props = {
+  signupControls?: import("react").ReactNode;
   seasonId: string;
   seasons: Season[];
   roster: RosterSnapshot | null;
@@ -74,6 +75,7 @@ export default function RosterHeader({
   onFinalize,
   onStatusFilter,
   onAccessError,
+  signupControls,
   showAwareness = true,
   onPublication,
 }: Props) {
@@ -193,7 +195,7 @@ export default function RosterHeader({
       <div className="roster-header-title-row">
         <div className="roster-header-title">
           <p className="eyebrow">Staff roster</p>
-          <h1>CWL roster &amp; signups</h1>
+          <h1>Build roster</h1>
         </div>
         <div className="roster-header-title-actions">
           {seasonId && (
@@ -208,15 +210,6 @@ export default function RosterHeader({
                 {mobilePublicationLabel}
               </span>
             </StatusPill>
-          )}
-          {canPublish && onFinalize && publicationStatus !== "current" && (
-            <Button
-              className="roster-header-finalize"
-              disabled={uiLocked || !roster || archived}
-              onClick={onFinalize}
-            >
-              Finalize →
-            </Button>
           )}
           {roster && (
             <details
@@ -298,6 +291,9 @@ export default function RosterHeader({
           </Button>
         )}
       </div>
+      {signupControls && (
+        <div className="roster-header-signups">{signupControls}</div>
+      )}
       {showAwareness &&
         publication?.seasonId === seasonId &&
         publication.draft && (

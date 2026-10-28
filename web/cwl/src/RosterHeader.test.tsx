@@ -54,7 +54,8 @@ function render(
       pool={pool}
       canRoster
       canSignups
-      canPublish={false}
+      canPublish
+      onFinalize={() => {}}
       uiLocked={false}
       archived={false}
       onSeasonChange={() => {}}
@@ -67,6 +68,9 @@ function render(
 }
 
 describe("roster header counts", () => {
+  it("does not duplicate the workflow Finalize action", () => {
+    expect(render("all")).not.toContain("Finalize →");
+  });
   it("reflects active status filters in the stat chip pressed state", () => {
     const active = render("all", "1", "June", ["unassigned"]);
     expect(active).toMatch(

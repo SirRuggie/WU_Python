@@ -119,7 +119,7 @@ it("retains banner on refetch, scopes it to roster tabs and labels only placemen
     await click(tab);
     expect(banner()).not.toBeNull();
   }
-  await click("Weights · 0 missing");
+  await click("Missing weights · 0");
   expect(banner()).toBeNull();
   await click("Accounts & signups");
   await click("Test assign");

@@ -12,7 +12,7 @@ import { poolLabel, type AnnouncementChannel } from './announcements'
 import ChannelCombobox from './ChannelCombobox'
 import { canQueueAnnouncement, dashboardRosterUrl, normalizeManageBridge, shouldPollBridge, type ManageBridge, type ManageDelivery } from './manageBridge'
 
-type Props = { seasonId: string; publicationVersion: number | null; onDirty?: (dirty: boolean) => void; onBusy?: (busy: boolean) => void }
+type Props = { onDeclaration?: () => void; seasonId: string; publicationVersion: number | null; onDirty?: (dirty: boolean) => void; onBusy?: (busy: boolean) => void }
 type PoolDraft = AnnouncementDraft
 type Notice = { kind: 'success' | 'error'; text: string } | null
 const pools: Pool[] = ['main', 'lazy']
@@ -24,8 +24,9 @@ const draftFrom = (bridge: ManageBridge): Record<Pool, PoolDraft> => ({
 })
 const safeMessageUrl = (url: string | null | undefined) => !!url && /^https:\/\/(discord\.com|ptb\.discord\.com)\/channels\//.test(url)
 
-export default function ManageBridgeWorkspace({ seasonId, publicationVersion, onDirty, onBusy }: Props) {
+export default function ManageBridgeWorkspace({ seasonId, publicationVersion, onDirty, onBusy, onDeclaration }: Props) {
   const canManage = useDashboardPermission('cwl_send')
+  const canDeclare = useDashboardPermission('cwl_roster')
   const [sendReview, setSendReview] = useState<Pool[] | null>(null)
   const roles = useReminderLookup<{ id: string; name: string }>('/announcement-roles', 'roles')
   const sending = useRef(false)
@@ -291,6 +292,7 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
         </details>
       </>}
     </>}
+    {canDeclare && onDeclaration && bridge?.published_version === publicationVersion && pools.some(pool => bridge?.pools[pool].delivery?.status === "sent") && <button className="cwl-next-cue" disabled={busy} onClick={onDeclaration}>Next: Declaration readiness check ›</button>}
     {sendReview && bridge && <AnnouncementSendReview
       cycle={bridge.cycle || ''} version={bridge.published_version}
       pools={sendReview.map(pool => ({

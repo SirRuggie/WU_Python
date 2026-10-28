@@ -126,7 +126,10 @@ def _require(request, level="member"):
         _fail(403, "Owner access required")
     if level == "editor" and not _editor(request, session):
         _fail(403, "Dashboard access required")
-    if level == "editor" and not _owner(session) and request.method not in ("GET", "HEAD", "OPTIONS"):
+    if level == "editor" and not _owner(session) and (
+        request.method not in ("GET", "HEAD", "OPTIONS")
+        or request.match_info.handler.__name__ == "lookup_clan"
+    ):
         from .cwl_permissions import mutation_permission
         required = mutation_permission(request)
         if required is None or required not in request_scopes(request, session['user_id']):
@@ -456,22 +459,46 @@ async def create_season(request):
     opened = _body_bool(body, "signup_open")
     try:
         with _store(request).tx() as db:
-            cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
+            source = db.execute("SELECT MAX(season_id) FROM lineup").fetchone()[0]
+            try:
+                cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
+            except sqlite3.IntegrityError:
+                _fail(409, "Season already exists")
             row = _season(db, cursor.lastrowid)
+            copied = 0
+            if source is not None:
+                copied = db.execute(
+                    "INSERT INTO lineup(season_id,tag) SELECT ?,l.tag FROM lineup l "
+                    "JOIN clans c ON c.tag=l.tag WHERE l.season_id=? AND c.archived=0",
+                    (row['id'], source),
+                ).rowcount
+                db.execute(
+                    "INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight) "
+                    "SELECT ?,r.tag,r.pool,r.capacity,r.min_weight,r.max_weight FROM lineup_rules r "
+                    "JOIN lineup l ON l.tag=r.tag AND l.season_id=? WHERE r.season_id=?",
+                    (row['id'], row['id'], source),
+                )
             if db.execute('SELECT COUNT(*) FROM seasons').fetchone()[0] == 1:
                 db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1 AND season_id IS NULL', (row['id'],))
-    except sqlite3.IntegrityError:
-        _fail(409, "Season already exists")
-    return web.json_response(_season_dict(row), status=201)
+    except sqlite3.Error as error:
+        logging.getLogger("cwl.seasons").error(
+            "Hosting clan copy failed (%s): %s", type(error).__name__, str(error)
+        )
+        return web.json_response({"error": "Couldn't copy hosting clans; nothing was created."}, status=500)
+    return web.json_response({**_season_dict(row), "copied_clan_count": copied}, status=201)
 
 
 async def update_season(request):
     session = _require(request, "editor")
     body = await _json(request)
-    if not set(body) <= {"label", "signup_open", "status"} or not body:
+    if not set(body) <= {"label", "signup_open", "status", "expected_signup_open"} or not body:
         _fail(400, "Invalid season update")
+    if "expected_signup_open" in body and type(body["expected_signup_open"]) is not bool:
+        _fail(400, "expected_signup_open must be a boolean")
     with _store(request).tx() as db:
         row = _season(db, _sid(request))
+        if "expected_signup_open" in body and bool(row["signup_open"]) != body["expected_signup_open"]:
+            _fail(409, "Signups were changed by someone else. Refresh and try again.")
         label = str(body.get("label", row["label"])).strip()
         if not 3 <= len(label) <= 80:
             _fail(400, "Invalid season label")
@@ -494,6 +521,21 @@ async def clans(request):
     _require(request, "editor")
     rows = _store(request).rows("SELECT * FROM clans ORDER BY name")
     return web.json_response({"clans": await enrich_clan_metadata(request, [{**r, "archived": bool(r["archived"])} for r in rows])})
+
+
+async def lookup_clan(request):
+    _require(request, "editor")
+    try:
+        value = tag(request.query.get("tag"))
+    except ValueError:
+        _fail(400, "Invalid clan tag")
+    try:
+        clan = await request.app["providers"].clan(value)
+    except ProviderUnavailable as exc:
+        if getattr(exc, "status_code", None) == 404:
+            _fail(404, "Clan not found")
+        raise
+    return web.json_response({"tag": clan["tag"], "name": clan["name"]})
 
 
 async def create_clan(request):
@@ -1818,7 +1860,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes = [*discord_member_routes, *staff_signup_change_routes, *weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.put(API + "/member-season", set_member_season), web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
-        web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
+        web.get(API + "/clans", clans), web.get(API + "/clans/lookup", lookup_clan), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
         web.get(API + "/seasons/{season_id}/lineup", lineup), web.post(API + "/seasons/{season_id}/lineup", add_lineup), web.delete(API + "/seasons/{season_id}/lineup/{tag}", remove_lineup),
         web.patch(API + "/seasons/{season_id}/lineup/{tag}/rules", update_lineup_rules),
         web.get(API + "/seasons/{season_id}/roster", roster),

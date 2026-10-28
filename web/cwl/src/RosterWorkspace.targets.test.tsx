@@ -15,7 +15,7 @@ vi.mock("./CompareClans", () => ({
   default: () => <div>Compare target content</div>,
 }));
 it.each([
-  ["missing_weight", "Weights", "Weights target content"],
+  ["missing_weight", "Missing weights", "Weights target content"],
   ["over_capacity", "Compare clans", "Compare target content"],
 ] as const)(
   "opens the real workspace mode for %s",
@@ -63,3 +63,44 @@ it.each([
     }
   },
 );
+
+it("Build Next cue calls Finalize and is hidden without publish permission", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  sessionStorage.clear();
+  localStorage.clear();
+  api.mockResolvedValue({
+    revision: 1,
+    accounts: [],
+    clans: [],
+    metadata_updating: false,
+  });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const next = vi.fn();
+  const render = (permissions: string[]) =>
+    root.render(
+      <DashboardPermissions.Provider value={{ owner: false, permissions }}>
+        <RosterWorkspace
+          seasonId="1"
+          seasons={[]}
+          onSeasonChange={() => {}}
+          onReviewPublication={next}
+        />
+      </DashboardPermissions.Provider>,
+    );
+  try {
+    await act(async () => render(["cwl_roster", "cwl_publish"]));
+    const button = [...host.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Next: Finalize roster ›",
+    )!;
+    expect(button).toBeDefined();
+    await act(async () => button.click());
+    expect(next).toHaveBeenCalledOnce();
+    await act(async () => render(["cwl_roster"]));
+    expect(host.textContent).not.toContain("Next: Finalize roster ›");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

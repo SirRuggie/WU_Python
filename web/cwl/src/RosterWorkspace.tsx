@@ -57,6 +57,8 @@ import {
 } from "./roster";
 
 type Props = {
+  onFamilyClans?: () => void;
+  onPublication?: (draft: import("./publication").PublicationDraft) => void;
   onClanWeights?: () => void;
   seasonId: string;
   seasons: Season[];
@@ -77,6 +79,8 @@ const encoded = (value: string) => encodeURIComponent(value);
 export default function RosterWorkspace({
   seasonId,
   onClanWeights,
+  onFamilyClans,
+  onPublication,
   seasons,
   onSeasonChange,
   initialReadiness = "all",
@@ -87,6 +91,7 @@ export default function RosterWorkspace({
 }: Props) {
   const canRoster = useDashboardPermission("cwl_roster");
   const canSignups = useDashboardPermission("cwl_signups");
+  const canSettings = useDashboardPermission("cwl_settings");
   const canPublish = useDashboardPermission("cwl_publish");
   const comparisonMemory = useMemo(createComparisonMemory, [seasonId]);
   const season = seasons.find((item) => String(item.id) === seasonId);
@@ -96,6 +101,7 @@ export default function RosterWorkspace({
   const [now] = useLocationNow();
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hostingBusy, setHostingBusy] = useState(false);
   const [hasPublication, setHasPublication] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [panel, setPanel] = useState<
@@ -206,7 +212,7 @@ export default function RosterWorkspace({
   const [signupBusy, setSignupBusy] = useState(false);
   const [signupReviewOpen, setSignupReviewOpen] = useState(false);
   const [signupOpen, setSignupOpen] = useState(false);
-  const working = busy || signupBusy;
+  const working = busy || signupBusy || hostingBusy;
   const uiLocked = working || signupReviewOpen || signupOpen || !!panel;
   const dirty =
     !!panel ||
@@ -827,7 +833,10 @@ export default function RosterWorkspace({
         seasons={seasons}
         roster={roster}
         showAwareness={mode !== "weights"}
-        onPublication={(draft) => setHasPublication(!!draft.published)}
+        onPublication={(draft) => {
+          setHasPublication(!!draft.published);
+          onPublication?.(draft);
+        }}
         pool={viewPool}
         canRoster={canRoster}
         canSignups={canSignups}
@@ -871,6 +880,29 @@ export default function RosterWorkspace({
             assignedClanTags: [],
           }));
         }}
+        signupControls={
+          season &&
+          (canSignups || canSettings) && (
+            <StaffSignupControls
+              key={seasonId}
+              disabled={
+                busy ||
+                selectedTags.length > 0 ||
+                !!editingTag ||
+                rulesDirty ||
+                weightsDirty
+              }
+              onOpenChange={setSignupOpen}
+              season={season}
+              onChanged={async () => {
+                await refresh();
+                await onSeasonRefresh?.();
+              }}
+              onDirty={setSignupDirty}
+              onBusy={setSignupBusy}
+            />
+          )
+        }
         onAccessError={(error) => void fail(error)}
       />
       {seasonId && canSignups && (
@@ -933,7 +965,7 @@ export default function RosterWorkspace({
                   { id: "rules", label: "Clan settings" },
                   {
                     id: "weights",
-                    label: `Weights · ${globalMissingWeight} missing`,
+                    label: `Missing weights · ${globalMissingWeight}`,
                   },
                 ] as const
               ).map((item) => (
@@ -1004,26 +1036,7 @@ export default function RosterWorkspace({
               }
             />
           )}
-          {season && canSignups && mode === "assign" && (
-            <StaffSignupControls
-              key={seasonId}
-              disabled={
-                busy ||
-                selectedTags.length > 0 ||
-                !!editingTag ||
-                rulesDirty ||
-                weightsDirty
-              }
-              onOpenChange={setSignupOpen}
-              season={season}
-              onChanged={async () => {
-                await refresh();
-                await onSeasonRefresh?.();
-              }}
-              onDirty={setSignupDirty}
-              onBusy={setSignupBusy}
-            />
-          )}
+
           {canRoster && mode === "weights" && (
             <WeightQueue
               onClanWeights={onClanWeights}
@@ -1049,10 +1062,18 @@ export default function RosterWorkspace({
           {canRoster && mode === "rules" && (
             <ClanSettings
               key={seasonId}
+              onHostingChanged={async () => {
+                if (!(await refresh()))
+                  throw new Error(
+                    "Saved, but the roster could not refresh. Reload before making more changes.",
+                  );
+              }}
+              onHostingBusy={setHostingBusy}
+              onFamily={onFamilyClans}
               clans={roster.clans}
               accounts={roster.accounts}
               pool={poolFilter}
-              busy={busy}
+              busy={busy || hostingBusy}
               archived={!!archived}
               onPoolChange={setPoolFilter}
               onDirty={setRulesDirty}
@@ -1277,6 +1298,15 @@ export default function RosterWorkspace({
             </>
           )}
         </>
+      )}
+      {canPublish && (
+        <button
+          className="cwl-next-cue"
+          disabled={uiLocked || !onReviewPublication}
+          onClick={onReviewPublication}
+        >
+          Next: Finalize roster ›
+        </button>
       )}
       <div
         className="roster-selection-spacer"
