@@ -130,3 +130,18 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Render 50 rows and Load more. Search covers all missing accounts; keep unsaved drafts even when rows are filtered out, and retain the app's leave guard.
 - Clan-weight-managed accounts have no manual input. Share the `clan_weights`-permission-gated link in queue and Details, using the app's normal guarded navigation. Otherwise show the staff-access guidance.
 - Header: Needs weight count, primitive Refresh button with Lucide icon, full-width search, and one muted note about preserving placements/manual weights.
+
+## Finalize roster
+
+- Page order: status + one Refresh draft, changes, Before you publish chips,
+  joining instructions/acknowledgement/Publish, collapsed full preview, Hide roster.
+- Chips use 44px targets, informational missing-weight/over-capacity counts;
+  route to weights mode, unassigned accounts or Compare without renaming modes.
+- Joining instructions: labelled textarea, hint, counter at 1,800 and 2,000 limit;
+  dirty edits guarded; only confirmed Publish saves. Preview reuses the member
+  card and preserves whitespace. Refresh preserves unsaved text.
+- Hide roster: bottom danger area only for publishers with an active publication;
+  existing ConfirmDialog, Cancel focus, red confirmation, revision/version guard.
+- Review styles are scoped to Finalize; announcement editors retain their styles.
+  Change list displays four entries then explicit expansion. Archived publishing
+  stays disabled. Short dates share the publication banner formatter.

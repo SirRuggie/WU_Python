@@ -212,3 +212,42 @@ restart, following the backend release procedure. The draft response adds
 and joining instructions) and `next_version` (the publish path's season-scoped
 MAX + 1). `published` retains its active-only meaning. This is read-only: no schema
 or publication/withdrawal write-path change. No deployment is part of this batch.
+
+## Decisions — Finalize roster (2026-10-27)
+
+Status: implemented on `codex/finalize`, pending review; no merge, tag or deployment.
+
+1. Review order: status/Refresh draft, publishing changes (first four, expandable),
+   checks, joining instructions and explicit Publish, collapsed full roster preview,
+   then Hide roster. No sticky Publish.
+2. Joining instructions are local edits, prefilled from the active publication or
+   latest withdrawn publication; saved only with confirmed Publish. Limit 2,000,
+   counter from 1,800, dirty navigation guard, shared member-card preview.
+3. Informational check chips target roster mode `weights`, unassigned accounts,
+   and Compare clans. Over-capacity counts clans and excess players, never blocks.
+   Only unassigned accounts require acknowledgement.
+4. Hide roster is permission-gated at the bottom. Existing ConfirmDialog starts
+   on Cancel, with red Hide roster action; revision/version checked again. Working
+   roster and signups remain; previously sent Discord messages remain.
+5. Shared roster season menu and Button primitives; compact Finalize title.
+   Announcements content and workflow remain out of scope.
+6. Status distinguishes never published, current, changed and withdrawn. Reuses
+   the banner's short local date formatter. Server `next_version` supplies version
+   headings and confirmation, including after withdrawal.
+7. Full preview starts collapsed, contains Main/Lazy tabs and searchable clan
+   groups. Clan count/capacity and excess, TH icon, player identity, roster-styled
+   Details; searching opens matching groups.
+8. Three text levels: 15px bold primary, 13–14px regular values, 12px muted metadata.
+   Gold for primary/active controls, red danger/errors, amber warnings. Inspect
+   actual text-fill as well as color; minimum 12px.
+9. One Refresh draft action; errors point to it. Change comparison is fetched only
+   while Review is shown; `changesReady`, explicit confirmation and revision checks
+   remain. No automatic publication or notification.
+
+Approved backend exception: read-only draft `last_publication` and `next_version`;
+no schema or write-path changes. This batch needs an isolated backend release and
+restart when separately authorized. See `dashboard-backend-releases.md`.
+
+Later: Version history on Finalize (number, time, who, counts, hidden) via a new
+read-only endpoint. The separate flow batch (step strip/sidebar/renames) is not
+part of this implementation.
