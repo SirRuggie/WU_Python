@@ -36,6 +36,12 @@ export default function CompareClanHeader({
         </strong>
         {menu}
       </div>
+      {compact && (
+        <small className="compare-rail-subtitle">
+          {clan.cwl_league || "League unavailable"} · {clan.tag}
+          {range && ` · ${range}`}
+        </small>
+      )}
       <div className="compare-clan-metrics">
         <strong className="compare-total">
           {totalRosterWeight(summary.totalWeight)}

@@ -530,10 +530,6 @@
   .compare-side > .compare-clan-summary > * {
     display: none;
   }
-  .compare-side > .compare-clan-summary > small:first-of-type {
-    display: block;
-    padding: 0 4px 4px;
-  }
   .compare-side > .compare-clan-summary > .compare-clan-top {
     display: block;
     position: absolute;
@@ -565,4 +561,16 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+.compare-rail-subtitle {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
 }
