@@ -2,7 +2,9 @@
 
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
-## Status (2026-10-27)
+## Status (2026-10-28)
+
+- **CWL flow + shared player card released:** `cwl-flow-1`, `61290a4ce2b87611119483d6376b879a675aeb81`, PRs #27/#28. Frontend and isolated backend deployed; scripted hashes/cwd/counts and Claude read-only click smoke passed. Both rollback targets are `1a8b035`; verified backup `.local/cwl-flow-backup-20261028T145938Z/`.
 
 - **Weights frontend released:** PR #25, `e6353fb9ef77244a6b366550f030d7fd8e75daf7`, tag `weights-1`. Public entry/roster hashes verified; backend stays `c19db57`. Rollback frontend with `switch-release.py c19db57523928f6fee9d6bc93d95d83fa5814bb0`. Backup `.local/weights-backup-20261028T022902Z/`; protected counts, publication and weights unchanged.
 
@@ -246,7 +248,7 @@ part of this implementation.
 
 ## Decisions — CWL flow (2026-10-27)
 
-Implementation in progress on `codex/cwl-flow`; not a release approval.
+Released as `cwl-flow-1` on 2026-10-28; S1/S2/S3 and shared player cards included.
 
 - S1 carries active hosting lineup rows and their pool/capacity/weight rules from the latest season with lineup rows, atomically. No signups, placements, locks or publications are copied.
 - Create-season confirmation (Ruggie correction, 2026-10-28): before saving, “<Label> will start with the hosting clans and their settings from the previous season. Signups start empty.” For the first season: “<Label> will start with no hosting clans. Signups start empty.” After creation, use S1's actual response count: “<Label> created with N hosting clans and their settings. Signups start empty.” Do not add an inheritance-preview endpoint (S4 was declined).
@@ -261,6 +263,9 @@ Implementation in progress on `codex/cwl-flow`; not a release approval.
 - F4/F9: “Readiness” names only the Declaration readiness check. The isolated member journey checks Home → CWL signups → My clan assignments before/after a deliberate fixture publication. No real Discord sends or production writes are part of the checkpoint.
 
 ### Later — CWL flow
+
+- Seasons don't load when the dashboard opens in a background tab (document.hidden skip in App.tsx loadSeasons); loads on focus.
+- Player card tests: prove the Accounts card uses the shared now prop; add a test for Compare's 30 s age tick.
 
 - Regroup the rest of the staff sidebar (Ruggie dislikes everything under “Staff tools”).
 

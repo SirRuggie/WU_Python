@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current Finalize frontend: `/home/ruggie/.local/share/wu-dashboard/releases/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`
+  - Current CWL flow frontend: `/home/ruggie/.local/share/wu-dashboard/releases/61290a4ce2b87611119483d6376b879a675aeb81/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,24 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current Finalize frontend + backend:** `1a8b035461ec46fba60f6ed4808111d3c67d87cf`, tag `finalize-1`, PR #26.
+- **Current CWL flow frontend + backend:** `61290a4ce2b87611119483d6376b879a675aeb81`, tag `cwl-flow-1`, PRs #27 (`3631408`) and #28 (`61290a4`).
+  - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/61290a4ce2b87611119483d6376b879a675aeb81/`.
+  - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`.
+  - Previous frontend + backend: `1a8b035461ec46fba60f6ed4808111d3c67d87cf` (`finalize-1`).
+  - Backup: `.local/cwl-flow-backup-20261028T145938Z/dashboard.sqlite3`; integrity OK, all 54 table counts matched, 1,134,592 bytes. The activation recheck found no changes, so this remained the baseline.
+  - Readiness: public config returned 200 twice at 5.15/6.21 seconds; service/cwd, public entry and roster/publication/seasons hashes passed; lookup/publication unauthenticated reads returned 401. Main 19/18/18 and Lazy 87/83/64 (signups/assigned/locks), publications, weights, lineup/rules, season state and member-season remained identical.
+  - Claude's read-only production smoke passed (relayed by Ruggie): sidebar, Build/strip/cards, Clan settings Add panel (Close only), Seasons and Finalize; no errors. No production writes during smoke.
+  - Validation: 607 frontend tests, typecheck/build; 4,701 backend passed, 21 skipped.
+
+```bash
+/home/ruggie/.local/share/wu-dashboard/switch-release.py 1a8b035461ec46fba60f6ed4808111d3c67d87cf
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+systemctl --user daemon-reload
+systemctl --user restart wu-cwl-demo-web.service
+```
+
+
+- **Previous Finalize frontend + backend:** `1a8b035461ec46fba60f6ed4808111d3c67d87cf`, tag `finalize-1`, PR #26.
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`.
   - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`.
   - Backup: `.local/finalize-backup-20261028T040608Z/dashboard.sqlite3`; integrity OK, all 54 table counts matched, 1,122,304 bytes.
@@ -114,7 +131,7 @@ To reactivate this release, use `switch-release.py c19db57523928f6fee9d6bc93d95d
 - **Original roster UI, before Release 1:** `bad19e1bf3b71cddcb87e26f9f926c676e87a31b` (parent of the first Release 1 commit, `ee1023e`).
   - Path: `/home/ruggie/.local/share/wu-dashboard/releases/bad19e1bf3b71cddcb87e26f9f926c676e87a31b/`
   - Clean detached checkout build; locked dependencies; 396 frontend tests passed; TypeScript and Vite build passed. Artifact hashes are recorded in `/home/ruggie/.local/share/wu-dashboard/manifests/bad19e1bf3b71cddcb87e26f9f926c676e87a31b.json`.
-  - Standby only: built and staged, **not activated**. Production now runs the Finalize frontend and backend listed above.
+  - Standby only: built and staged, **not activated**. Production now runs the CWL flow frontend and backend listed above.
   - This restores the entire older frontend, including older moderation screens. It does not revert backend code or data. Live compatibility has not been smoke-tested; use the preserved live snapshot when that is the appropriate rollback.
   - Activation, only when explicitly authorized: `/home/ruggie/.local/share/wu-dashboard/switch-release.py bad19e1bf3b71cddcb87e26f9f926c676e87a31b`
 - **Pre-deploy snapshot (already includes early Release 1 UI):** `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`. This is not the original roster UI.

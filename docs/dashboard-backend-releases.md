@@ -4,8 +4,8 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`, tag `finalize-1`.
-- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/c19db57523928f6fee9d6bc93d95d83fa5814bb0/`.
+- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`, tag `cwl-flow-1`.
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`.
 - Both are clean `git archive` exports. All 168 tracked files under `cwl_web/` and `utils/` were byte-compared with their commits.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
@@ -30,9 +30,9 @@ Triggers include startup/journal failure, wrong cwd or public hashes, failed smo
 
 ```bash
 # Frontend rollback:
-/home/ruggie/.local/share/wu-dashboard/switch-release.py e6353fb9ef77244a6b366550f030d7fd8e75daf7
+/home/ruggie/.local/share/wu-dashboard/switch-release.py 1a8b035461ec46fba60f6ed4808111d3c67d87cf
 # Backend rollback (preserves frontend-routing.conf and storage-guard.conf):
-printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/c19db57523928f6fee9d6bc93d95d83fa5814bb0\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
 systemctl --user daemon-reload
 systemctl --user show -p WorkingDirectory,DropInPaths wu-cwl-demo-web.service
 systemctl --user restart wu-cwl-demo-web.service
@@ -49,8 +49,8 @@ and joining instructions) and `next_version` (the publish path's season-scoped
 MAX + 1). `published` retains its active-only meaning. This is read-only: no schema
 or publication/withdrawal write-path change. Scripted checks passed and protected data matched before/after. Authenticated metadata read and click smoke remain with Claude, as approved by Ruggie; the release remains live. Backup: `.local/finalize-backup-20261028T040608Z/dashboard.sqlite3`.
 
-## Pending CWL flow backend release — S1/S2/S3
+## Deployed CWL flow backend release — S1/S2/S3
 
 Ruggie approved these changes for the CWL flow batch (2026-10-28): S1 atomically carries the most recent nonempty season's active lineup and rules into a new, empty season; S2 adds optional strict-boolean `expected_signup_open` compare-and-set protection; S3 adds editor-authorized `GET /api/cwl/clans/lookup?tag=…` using the existing provider and tag parser, returning only tag/name without database writes. Invalid tags return 400, missing clans 404. Existing add POST remains the save path. No schema change.
 
-These changes need an isolated clean backend release directory and service restart, together, when deployment is separately approved. Never restart from the workspace. S4 was declined: the frontend confirmation omits the copied count before creation and uses S1's response count afterwards. This batch has not been authorized for deployment.
+Deployed together on 2026-10-28 at `61290a4ce2b87611119483d6376b879a675aeb81` (`cwl-flow-1`) from a clean archive, with the approved service restart. Public config readiness passed twice consecutively before A4; public assets, 401 authorization checks, cwd and protected data matched. Claude's read-only click smoke passed. Backup: `.local/cwl-flow-backup-20261028T145938Z/dashboard.sqlite3`. Never restart from the workspace. S4 was declined: the frontend confirmation omits the copied count before creation and uses S1's response count afterwards.
