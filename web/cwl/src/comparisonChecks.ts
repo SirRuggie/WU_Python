@@ -9,6 +9,7 @@ export function createComparisonChecks(
   busy: (value: boolean) => void,
   initialLast = -Infinity,
   onCompleted: (time: number) => void = () => {},
+  followups = true,
 ) {
   let active = false;
   let disposed = false;
@@ -77,6 +78,7 @@ export function createComparisonChecks(
     }
     const needsFollowup = updating || (!completed && !Number.isFinite(last));
     if (
+      followups &&
       needsFollowup &&
       Date.now() - started + COMPARISON_FOLLOWUP < COMPARISON_CYCLE_LIMIT
     ) {
