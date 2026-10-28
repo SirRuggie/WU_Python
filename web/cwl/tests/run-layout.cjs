@@ -11,11 +11,19 @@ if (!existsSync(chrome)) {
     `SKIP test:layout: Chrome not found at ${chrome}. Set CHROME_PATH to an installed Chrome.`,
   );
   rmSync(temp, { recursive: true, force: true });
-  process.exit(0);
+  process.exit(2);
 }
 const port = 8952;
 const python =
   process.env.WU_TEST_PYTHON || path.join(root, ".venv/bin/python");
+if (!existsSync(python)) {
+  console.error(
+    `Cannot run test:layout: Python interpreter not found at ${python}. Set WU_TEST_PYTHON to the backend test environment.`,
+  );
+  rmSync(temp, { recursive: true, force: true });
+  process.exit(1);
+}
+
 const server = spawn(
   python,
   [

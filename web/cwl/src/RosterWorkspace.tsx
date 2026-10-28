@@ -1,3 +1,4 @@
+import { sortClans } from "./clanSort";
 import { comparisonOrder } from "./compare";
 import useLocationNow from "./useLocationNow";
 import ClanSettings from "./ClanSettings";
@@ -51,6 +52,7 @@ import {
 } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import {
+  assignmentOptions,
   mergeRosterMetadata,
   type RosterClan,
   type RosterSnapshot,
@@ -872,16 +874,24 @@ export default function RosterWorkspace({
           try {
             if (item.assigned_clan_tag) {
               const key = `wu-compare-clans:${seasonId}:${pool}`;
+              const available = sortClans(
+                assignmentOptions(roster?.clans ?? []).filter(
+                  (clan) => clan.pool === pool,
+                ),
+                "name",
+              ).map((clan) => clan.tag);
               const saved: unknown = JSON.parse(
-                localStorage.getItem(key) || "[]",
+                localStorage.getItem(key) || "null",
               );
-              const next = [
-                item.assigned_clan_tag,
-                ...(Array.isArray(saved) ? saved : []),
-              ].filter((tag): tag is string => typeof tag === "string");
+              const existing = comparisonOrder(saved, available);
               localStorage.setItem(
                 key,
-                JSON.stringify(comparisonOrder(next, next)),
+                JSON.stringify(
+                  comparisonOrder(
+                    [item.assigned_clan_tag, ...existing],
+                    available,
+                  ),
+                ),
               );
             }
           } catch {}

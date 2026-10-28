@@ -34,7 +34,7 @@ vi.mock("./ClanSettings", () => ({
 vi.mock("./CompareClans", () => ({
   default: () => <div>Compare destination</div>,
 }));
-it.each(["prepend", "null", "full", "dirty", "busy"])(
+it.each(["prepend", "null", "full", "dirty", "busy", "default", "stale"])(
   "Fill spot respects workspace state: %s",
   async (scenario) => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -44,14 +44,36 @@ it.each(["prepend", "null", "full", "dirty", "busy"])(
     const saved =
       scenario === "full"
         ? Array.from({ length: 10 }, (_, i) => `#CLAN${i}`)
-        : ["#Q2Y", "#P2Y", "#G2Y"];
+        : scenario === "stale"
+          ? [
+              "#STALE",
+              "#ARCHIVED",
+              ...Array.from({ length: 8 }, (_, i) => `#CLAN${i}`),
+            ]
+          : ["#Q2Y", "#P2Y", "#G2Y"];
     const key = "wu-compare-clans:1:main";
-    localStorage.setItem(key, JSON.stringify(saved));
+    if (scenario !== "default")
+      localStorage.setItem(key, JSON.stringify(saved));
     localStorage.setItem("wu-compare-clans:1:lazy", '["#LAZY"]');
     state.api.mockResolvedValue({
       revision: 1,
       accounts: [],
-      clans: [],
+      clans: [
+        ...Array.from({ length: 10 }, (_, i) => ({
+          tag: `#CLAN${i}`,
+          name: `Available ${i}`,
+          pool: "main",
+          archived: false,
+        })),
+        ...["#P2Y", "#Q2Y", "#G2Y"].map((tag) => ({
+          tag,
+          name: `Z ${tag}`,
+          pool: "main",
+          archived: false,
+        })),
+        { tag: "#ARCHIVED", name: "A archived", pool: "main", archived: true },
+        { tag: "#LAZY", name: "A other pool", pool: "lazy", archived: false },
+      ],
       metadata_updating: false,
     });
     const confirm = vi.fn(() => false);
@@ -86,9 +108,13 @@ it.each(["prepend", "null", "full", "dirty", "busy"])(
       expect(accepted).toBe(!blocked);
       expect(host.textContent?.includes("Compare destination")).toBe(!blocked);
       expect(JSON.parse(localStorage.getItem(key)!)).toEqual(
-        blocked || scenario === "null"
-          ? saved
-          : ["#P2Y", ...saved.filter((tag) => tag !== "#P2Y")].slice(0, 10),
+        scenario === "default"
+          ? ["#P2Y", "#CLAN0", "#CLAN1", "#CLAN2", "#CLAN3"]
+          : scenario === "stale"
+            ? ["#P2Y", ...saved.slice(2)]
+            : blocked || scenario === "null"
+              ? saved
+              : ["#P2Y", ...saved.filter((tag) => tag !== "#P2Y")].slice(0, 10),
       );
       expect(localStorage.getItem("wu-compare-clans:1:lazy")).toBe('["#LAZY"]');
       if (scenario === "dirty") expect(confirm).toHaveBeenCalledOnce();

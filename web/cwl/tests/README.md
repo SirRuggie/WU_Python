@@ -10,11 +10,13 @@ npm run test:layout
 Playwright is a locked devDependency; no external `NODE_PATH` is needed. The
 runner uses installed Chrome (`/usr/bin/google-chrome` by default, or
 `CHROME_PATH`). If Chrome is absent it prints an explicit `SKIP test:layout`
-message. A skip is not a passed layout check.
+message and exits with code **2**. A skip is not a passed layout check.
 
 The Python backend test environment is also required: use the repository
 `.venv/bin/python`, or set `WU_TEST_PYTHON` to an existing environment with the
-repository backend dependencies. The script installs no Python dependencies.
+repository backend dependencies. A missing Python interpreter prints one clear
+message, removes its temporary directory, and exits **1**. The script installs no
+Python dependencies.
 
 The frontend build and backend imports both use this checkout's **working tree**,
 not a separate HEAD archive. For release evidence run from a clean checkout of
