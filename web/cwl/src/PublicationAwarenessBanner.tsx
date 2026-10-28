@@ -1,3 +1,4 @@
+import { publicationDate } from "./publicationStatus";
 import type { PublicationMeta } from "./publication";
 import { publicationReviewLabel } from "./publicationAwareness";
 import "./publicationAwareness.css";
@@ -31,12 +32,7 @@ export default function PublicationAwarenessBanner({
           <p>
             <span className="publication-awareness-date">
               Published{" "}
-              {new Date(published.published_at).toLocaleString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-              })}
+              {publicationDate(published.published_at)}
               .
             </span>{" "}
             Placement changes made since then are draft only.

@@ -155,12 +155,15 @@ export default function RosterWorkspace({
   useEffect(() => {
     if (appliedInitialReadiness.current) return;
     appliedInitialReadiness.current = true;
-    if (initialReadiness !== "all")
+    if (initialReadiness !== "all") {
+      setMode(initialReadiness === "missing_weight" ? "weights" : initialReadiness === "over_capacity" ? "compare" : "assign");
       setReleasePreferences((current) => ({
         ...current,
-        statuses: [initialReadiness],
+        statuses: initialReadiness === "unassigned" ? ["unassigned"] : [],
+        pool: "all",
       }));
-  }, [initialReadiness, setReleasePreferences]);
+    }
+  }, [initialReadiness, setReleasePreferences, setMode]);
   useEffect(() => {
     let active = true;
     setGroupMembers({});
