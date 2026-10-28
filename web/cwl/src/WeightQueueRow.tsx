@@ -11,6 +11,7 @@ export default function WeightQueueRow({
   value,
   onChange,
   disabled,
+  busy,
   onEdit,
   onSave,
   inputRef,
@@ -21,6 +22,7 @@ export default function WeightQueueRow({
   value: ManualWeightDraft;
   onChange: (value: ManualWeightDraft) => void;
   disabled: boolean;
+  busy: boolean;
   onEdit: (tag: string) => void;
   onSave: () => void;
   inputRef: Ref<HTMLInputElement>;
@@ -39,7 +41,7 @@ export default function WeightQueueRow({
           <TownHallIcon level={account.town_hall} />
           <button
             type="button"
-            disabled={disabled}
+            disabled={busy}
             onClick={() => onEdit(account.tag)}
             title={account.player_name}
           >

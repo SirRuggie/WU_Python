@@ -24,7 +24,7 @@ Frontend-only batch on `codex/weights`; review checkpoint pending. Production re
 - **6. Navigation:** remove Back to roster; existing section tabs and unsaved-input guard remain.
 - **7. Explicit Save:** decimal input mode and matching placeholder; valid full integer weight 1–500,000 only; successful save removes the row and focuses the next editable input. The existing revision-checked endpoint also saves the weight for future seasons.
 - **8. Live feedback:** typed loot previews full weight ×5; Full previews the entered full weight. Inline validation replaces conversion text and disables Save. Details retains ManualWeightFields.
-- **9. Reserved:** no item 9 was defined in the approved Weights prompt; no additional behavior inferred.
+- **9. Missing weights:** the tab stays focused on missing weights; correcting existing weights stays in Details. Later: a Manual / Source weight filter on Accounts & signups.
 - **10. Clan-managed accounts:** no manual weight input or Save. Queue and Details share the permission-gated “Open Clan weights →” link through normal guarded app navigation; users without `clan_weights` see the access guidance.
 - **11. Responsibilities:** WeightQueue owns filtering/drafts/progressive rendering, WeightQueueRow owns identity/source, CompactWeightField owns conversion feedback; formatted CSS and shared parser.
 - **12. Readability:** 15px/700 primary names; 12px/400 secondary metadata, helper and preview; explicit currentColor text-fill reset. Gold indicates the selected unit and enabled primary Save.

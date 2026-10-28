@@ -162,6 +162,7 @@ export default function WeightQueue({
                 setErrors((current) => ({ ...current, [account.tag]: "" }));
               }}
               disabled={disabled}
+              busy={busy || saving}
               onEdit={onEdit}
               onSave={() => void save(account)}
               error={errors[account.tag]}

@@ -74,7 +74,15 @@ it.each(["queue", "details"])(
       'a[href="/clan-weights"]',
     )!;
     expect(link.textContent).toBe("Open Clan weights →");
-    await act(async () => link.click());
+    const click = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    await act(async () => {
+      link.dispatchEvent(click);
+    });
+    expect(click.defaultPrevented).toBe(true);
     expect(navigate).toHaveBeenCalledOnce();
     expect(
       document.querySelector(".compact-weight-controls, .manual-weight-fields"),

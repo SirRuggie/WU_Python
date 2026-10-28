@@ -214,3 +214,45 @@ it.each([
     expect(onSave).toHaveBeenCalledOnce();
   },
 );
+
+it("keeps Save disabled on empty input", async () => {
+  await render();
+  expect(input().value).toBe("");
+  expect(button("Save", rows()[0]).disabled).toBe(true);
+});
+it("opens Details in archived seasons but blocks the name while busy", async () => {
+  const onEdit = vi.fn();
+  await render({ archived: true, onEdit });
+  await click(button("Player 0", rows()[0]));
+  expect(onEdit).toHaveBeenCalledExactlyOnceWith("#P0Y");
+  expect(input().disabled).toBe(true);
+  await render({ archived: true, busy: true, onEdit });
+  expect(button("Player 0", rows()[0]).disabled).toBe(true);
+});
+it("focus after Save skips clan-weight-managed rows", async () => {
+  function Harness() {
+    const [items, setItems] = useState([
+      accounts[0],
+      { ...accounts[1], clan_weight_managed: true },
+      accounts[2],
+    ]);
+    return (
+      <WeightQueue
+        accounts={items}
+        busy={false}
+        onEdit={() => {}}
+        onRefresh={() => {}}
+        onSave={async (tag) => {
+          setItems((current) => current.filter((a) => a.tag !== tag));
+          return true;
+        }}
+      />
+    );
+  }
+  await act(async () => root.render(<Harness />));
+  await type(input(), "25000");
+  await click(button("Save", rows()[0]));
+  expect(document.activeElement?.getAttribute("aria-label")).toBe(
+    "Loot for Player 2",
+  );
+});
