@@ -32,7 +32,7 @@ import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
 // Each destination loads only when opened. Keep shell, auth, and signup form helpers eager.
-const StaffDetailsHost = lazy(() => import("./StaffDetailsHost"))
+import StaffDetailsHost from "./StaffDetailsHost"
 const WeightTrial = lazy(() => import('./weightTrial/WeightTrial'))
 const SeasonsPage = lazy(() => import('./SeasonsPage'))
 const WarsWorkspace = lazy(() => import('./activity/WarsWorkspace'))
