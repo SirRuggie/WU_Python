@@ -456,13 +456,27 @@ async def create_season(request):
     opened = _body_bool(body, "signup_open")
     try:
         with _store(request).tx() as db:
+            source = db.execute("SELECT MAX(season_id) FROM lineup").fetchone()[0]
             cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
             row = _season(db, cursor.lastrowid)
+            copied = 0
+            if source is not None:
+                copied = db.execute(
+                    "INSERT INTO lineup(season_id,tag) SELECT ?,l.tag FROM lineup l "
+                    "JOIN clans c ON c.tag=l.tag WHERE l.season_id=? AND c.archived=0",
+                    (row['id'], source),
+                ).rowcount
+                db.execute(
+                    "INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight) "
+                    "SELECT ?,r.tag,r.pool,r.capacity,r.min_weight,r.max_weight FROM lineup_rules r "
+                    "JOIN lineup l ON l.tag=r.tag AND l.season_id=? WHERE r.season_id=?",
+                    (row['id'], row['id'], source),
+                )
             if db.execute('SELECT COUNT(*) FROM seasons').fetchone()[0] == 1:
                 db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1 AND season_id IS NULL', (row['id'],))
     except sqlite3.IntegrityError:
         _fail(409, "Season already exists")
-    return web.json_response(_season_dict(row), status=201)
+    return web.json_response({**_season_dict(row), "copied_clan_count": copied}, status=201)
 
 
 async def update_season(request):
