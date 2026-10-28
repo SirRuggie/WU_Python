@@ -176,3 +176,49 @@ it("blocks publishing without permission and requires acknowledgement only when 
   );
   expect(button("Publish roster").disabled).toBe(false);
 });
+
+it("uses a danger confirmation for Hide, Cancel sends no write, and a successful hide shows history", async () => {
+  const published = {
+    version: 3,
+    revision: 8,
+    published_at: "2026-10-27T00:00:00Z",
+    joining_instructions: "Join",
+  };
+  let hidden = false;
+  api.mockImplementation(async (path: string, method?: string) => {
+    if (path.includes("export-preview"))
+      return {
+        rows: base().preview.accounts,
+        summary: { published_version: 3 },
+      };
+    if (method === "POST") {
+      hidden = true;
+      return {};
+    }
+    return { ...base(), published: hidden ? null : published };
+  });
+  await render(false);
+  expect(button("Hide roster from members")).toBeUndefined();
+  await render(true);
+  await act(async () => button("Hide roster from members").click());
+  const dialog = document.querySelector("dialog")!;
+  expect(dialog.textContent).toContain(
+    "The working roster and signups are kept.",
+  );
+  expect(button("Hide roster", dialog).className).toBe("confirm-danger");
+  expect(
+    button("Cancel", dialog).hasAttribute("autofocus") ||
+      document.activeElement === button("Cancel", dialog),
+  ).toBe(true);
+  await act(async () => button("Cancel", dialog).click());
+  expect(api.mock.calls.filter((call) => call[1] === "POST")).toHaveLength(0);
+  await act(async () => button("Hide roster from members").click());
+  await act(async () =>
+    button("Hide roster", document.querySelector("dialog")!).click(),
+  );
+  expect(api.mock.calls.filter((call) => call[1] === "POST")).toHaveLength(1);
+  expect(host.textContent).toContain(
+    "Hidden from members · last published version 3",
+  );
+  expect(button("Hide roster from members")).toBeUndefined();
+});

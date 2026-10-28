@@ -8,12 +8,14 @@ export default function ConfirmDialog({
   heading = "Confirm change",
   confirmLabel = "Confirm",
   disabled = false,
+  danger = false,
   children,
 }: {
   text: string;
   heading?: string;
   confirmLabel?: string;
   disabled?: boolean;
+  danger?: boolean;
   children?: ReactNode;
   onCancel: () => void;
   onConfirm: () => void;
@@ -67,7 +69,7 @@ export default function ConfirmDialog({
           Cancel
         </button>
         <button
-          className="primary"
+          className={danger ? "confirm-danger" : "primary"}
           disabled={disabled}
           onClick={() => {
             if (disabled || submitted.current) return;

@@ -1,3 +1,4 @@
+import { Button } from "./rosterUi/primitives";
 import JoiningInstructionsEditor from "./JoiningInstructionsEditor";
 import { capacityWarnings, finalizeStatus } from "./publicationStatus";
 import PublicationChanges from "./PublicationChanges";
@@ -37,6 +38,7 @@ export default function PublicationWorkspace({
   const [imagesOpen, setImagesOpen] = useState(false);
   const [changesReady, setChangesReady] = useState(false);
   const [confirmRevision, setConfirmRevision] = useState<number | null>(null);
+  const [hideTarget, setHideTarget] = useState<{ revision: number; version: number } | null>(null);
   const [draft, setDraft] = useState<PublicationDraft | null>(null);
   const [rosterSearch, setRosterSearch] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
@@ -113,6 +115,7 @@ export default function PublicationWorkspace({
     setInstructionsBaseline('');
     instructionsDirtyRef.current = false;
     setConfirmRevision(null);
+    setHideTarget(null);
     setChangesReady(false);
     setAcknowledged(false);
     setError('');
@@ -184,9 +187,12 @@ export default function PublicationWorkspace({
 
   async function withdraw() {
     if (!draft?.published || !seasonId || locked || loading || error || !canManage || mutationPending.current) return;
-    if (!window.confirm(
-      'Hide published assignments from members? Signups and the working roster will be kept. Existing Discord messages will not be removed.',
-    )) return;
+    if (!hideTarget || hideTarget.revision !== draft.draft_revision || hideTarget.version !== draft.published.version) {
+      setHideTarget(null);
+      setError('The draft changed. Refresh draft and review it before hiding the roster.');
+      return;
+    }
+    setHideTarget(null);
     const sid = seasonId;
     mutationPending.current = true;
     setBusy(true);
@@ -255,6 +261,13 @@ export default function PublicationWorkspace({
           onConfirm={() => void publish()}
           disabled={!canPublish}
         />
+      )}
+
+      {hideTarget && draft?.published && (
+        <ConfirmDialog heading="Hide roster from members?" confirmLabel="Hide roster" danger
+          text="Members will see no assignments until you publish again. The working roster and signups are kept. Discord messages already sent stay as they are. Publishing again creates the next version."
+          onCancel={() => setHideTarget(null)} onConfirm={() => void withdraw()}
+          disabled={locked || loading || !!error || !canManage} />
       )}
 
       <div className="page-head">
@@ -400,7 +413,12 @@ export default function PublicationWorkspace({
               )}
             </details>
             {draft.published && canManage && (
-              <button disabled={locked || loading || !!error} onClick={() => void withdraw()}>Hide published assignments</button>
+              <section className="publication-hide" aria-label="Hide roster">
+                <Button variant="danger" disabled={locked || loading || !!error}
+                  onClick={() => setHideTarget({ revision: draft.draft_revision, version: draft.published!.version })}>
+                  Hide roster from members
+                </Button>
+              </section>
             )}
 
 
