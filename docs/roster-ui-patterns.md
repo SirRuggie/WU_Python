@@ -122,3 +122,11 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Changed ranges show a known-weight-only impact disclosure. Over-full war sizes show a red +N over count, with no reassignment.
 - Archived seasons use text values and no Save. Settings-save feedback is never labelled draft-only.
 - Phone Compare rail commits selection after scroll settles and keeps arrows/taps/player swipes synchronized. League, tag and optional range live on the phone rail card; desktop headers stay unchanged.
+
+## Weights
+
+- Compact missing-weight queue: TH icon and name open Details; TH/tag/pool/source metadata stays readable at 12px. Desktop controls sit beside identity; phone controls sit below it.
+- Loot-first single input with Loot / Full switch, live full-weight conversion and inline validation. Reuse `parseManualWeight`. Never save on typing or unit changes; explicit Save only, then focus the next editable row. Keep `ManualWeightFields` in Details.
+- Render 50 rows and Load more. Search covers all missing accounts; keep unsaved drafts even when rows are filtered out, and retain the app's leave guard.
+- Clan-weight-managed accounts have no manual input. Share the `clan_weights`-permission-gated link in queue and Details, using the app's normal guarded navigation. Otherwise show the staff-access guidance.
+- Header: Needs weight count, primitive Refresh button with Lucide icon, full-width search, and one muted note about preserving placements/manual weights.

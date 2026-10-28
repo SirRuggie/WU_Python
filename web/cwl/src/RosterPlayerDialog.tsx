@@ -1,3 +1,4 @@
+import ClanWeightSource from "./ClanWeightSource";
 import ConfirmDialog from "./ConfirmDialog";
 import ManualWeightFields from "./ManualWeightFields";
 import { manualWeightDraft, parseManualWeight } from "./manualWeight";
@@ -17,6 +18,7 @@ import RosterDiscordIdentity from "./RosterDiscordIdentity";
 import "./RosterPlayerDialog.css";
 
 type Props = {
+  onClanWeights?: () => void;
   onDirty?: (dirty: boolean) => void;
   account: RosterAccount;
   clans: RosterClan[];
@@ -50,6 +52,7 @@ const sourceStatus = (status: RosterAccount["source_status"]) =>
 
 export default function RosterPlayerDialog({
   account,
+  onClanWeights,
   clans,
   busy,
   error,
@@ -390,6 +393,9 @@ export default function RosterPlayerDialog({
           </div>
         </dl>
       </details>
+      {account.clan_weight_managed && (
+        <ClanWeightSource onNavigate={onClanWeights} />
+      )}
       {canRoster && (
         <form
           onSubmit={(event) => {
@@ -400,13 +406,7 @@ export default function RosterPlayerDialog({
           <fieldset
             disabled={busy || archived || !!poolReview || !!actionReview}
           >
-            {account.clan_weight_managed ? (
-              <p>
-                Weight from Clan weights:{" "}
-                <strong>{fullWeight(account.effective_weight)}</strong>. Update
-                it under Clan management → Clan weights.
-              </p>
-            ) : (
+            {!account.clan_weight_managed && (
               <>
                 <ManualWeightFields
                   value={weight}

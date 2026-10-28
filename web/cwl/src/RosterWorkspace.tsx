@@ -56,6 +56,7 @@ import {
 } from "./roster";
 
 type Props = {
+  onClanWeights?: () => void;
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
@@ -74,6 +75,7 @@ const encoded = (value: string) => encodeURIComponent(value);
 
 export default function RosterWorkspace({
   seasonId,
+  onClanWeights,
   seasons,
   onSeasonChange,
   initialReadiness = "all",
@@ -1013,6 +1015,7 @@ export default function RosterWorkspace({
           )}
           {canRoster && mode === "weights" && (
             <WeightQueue
+              onClanWeights={onClanWeights}
               onDirty={setWeightsDirty}
               onEdit={(tag) => {
                 setFeedback(null);
@@ -1022,9 +1025,7 @@ export default function RosterWorkspace({
               accounts={roster.accounts}
               busy={busy}
               onRefresh={() => void refreshWeights()}
-              onClose={() => {
-                if (mayLeaveEditor()) setMode("assign");
-              }}
+              archived={!!archived}
               onSave={(tag, weight) =>
                 edit(
                   tag,
@@ -1050,6 +1051,7 @@ export default function RosterWorkspace({
           )}
           {editingTag && roster.accounts.some((a) => a.tag === editingTag) && (
             <RosterPlayerDialog
+              onClanWeights={onClanWeights}
               rosterUi
               onDirty={setPlayerDirty}
               key={`${seasonId}:${editingTag}`}
