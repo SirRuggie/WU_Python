@@ -8,6 +8,7 @@ import WeightQueueRow from "./WeightQueueRow";
 import "./WeightQueue.css";
 
 type Props = {
+  onClanWeights?: () => void;
   onDirty?: (dirty: boolean) => void;
   accounts: RosterAccount[];
   busy: boolean;
@@ -20,6 +21,7 @@ const emptyDraft: ManualWeightDraft = { unit: "loot", text: "" };
 
 export default function WeightQueue({
   accounts,
+  onClanWeights,
   busy,
   archived = false,
   onEdit,
@@ -117,7 +119,7 @@ export default function WeightQueue({
         </Button>
       </div>
       <label className="weight-queue-search">
-        Find account
+        <span className="sr-only">Find account</span>
         <input
           ref={searchInput}
           type="search"
@@ -153,6 +155,7 @@ export default function WeightQueue({
             <WeightQueueRow
               key={account.tag}
               account={account}
+              onClanWeights={onClanWeights}
               value={drafts[account.tag] || emptyDraft}
               onChange={(value) => {
                 setDrafts((current) => ({ ...current, [account.tag]: value }));

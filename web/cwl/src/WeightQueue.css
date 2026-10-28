@@ -7,7 +7,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .weight-queue .weight-queue-heading h2 {
   margin: 0;
@@ -40,7 +40,7 @@
   line-height: 16px;
 }
 .weight-queue-help {
-  margin: 8px 0;
+  margin: 4px 0;
 }
 .weight-queue-row {
   display: grid;
@@ -63,13 +63,19 @@
   width: 20px;
   height: 20px;
 }
+.weight-queue-name .town-hall-fallback,
+.weight-queue-name .town-hall-icon {
+  flex-shrink: 0;
+}
 .shell .weight-queue-name button {
+  flex: 1;
   border: 0;
   background: transparent;
   padding: 0;
   min-height: 24px;
   min-width: 0;
   overflow: hidden;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 15px;

@@ -1,4 +1,5 @@
 import type { Ref } from "react";
+import ClanWeightSource from "./ClanWeightSource";
 import TownHallIcon from "./TownHallIcon";
 import CompactWeightField from "./CompactWeightField";
 import type { ManualWeightDraft } from "./manualWeight";
@@ -6,6 +7,7 @@ import type { RosterAccount } from "./roster";
 
 export default function WeightQueueRow({
   account,
+  onClanWeights,
   value,
   onChange,
   disabled,
@@ -15,6 +17,7 @@ export default function WeightQueueRow({
   error,
 }: {
   account: RosterAccount;
+  onClanWeights?: () => void;
   value: ManualWeightDraft;
   onChange: (value: ManualWeightDraft) => void;
   disabled: boolean;
@@ -53,7 +56,7 @@ export default function WeightQueueRow({
       </div>
       {account.clan_weight_managed ? (
         <div className="weight-queue-managed">
-          Update this account under Clan management → Clan weights.
+          <ClanWeightSource onNavigate={onClanWeights} />
         </div>
       ) : (
         <CompactWeightField

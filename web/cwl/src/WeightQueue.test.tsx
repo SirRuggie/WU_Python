@@ -191,3 +191,20 @@ it("uses 15px primary names and 12px regular metadata and helper text, with a te
   expect(css).toContain("-webkit-text-fill-color: currentColor");
   expect(css).not.toMatch(/font-size: (?:[0-9]|1[01])px/);
 });
+
+it.each([
+  "Request timed out",
+  "Your login expired",
+  "Roster changed; refresh before saving",
+])(
+  "keeps the draft and never retries automatically after %s",
+  async (message) => {
+    const onSave = vi.fn().mockRejectedValue(new Error(message));
+    await render({ onSave });
+    await type(input(), "25,000");
+    await click(button("Save", rows()[0]));
+    expect(input().value).toBe("25,000");
+    expect(rows()[0].textContent).toContain(message);
+    expect(onSave).toHaveBeenCalledOnce();
+  },
+);

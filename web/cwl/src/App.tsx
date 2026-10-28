@@ -688,7 +688,34 @@ function App() {
         {view === 'publication' && session.can_edit && <PublicationWorkspace onBusy={setPublicationBusy} onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationBusy && (!publicationDirty || window.confirm('Discard unsaved announcement changes?'))) setSeasonId(id) }} />}
         {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'roster' && session.can_edit && <RosterWorkspace onBusy={setRosterBusy} onSeasonRefresh={loadSeasons} onDirty={setCwlDirty} key={seasonId} initialReadiness={rosterReadiness} onReviewPublication={allowedView('publication') === 'publication' ? () => { setPublicationStep('review'); changeView('publication') } : undefined} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { setSeasonId(id); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }} />}
+        {view === "roster" && session.can_edit && (
+          <RosterWorkspace
+            onClanWeights={() => changeView("weight-trial")}
+            onBusy={setRosterBusy}
+            onSeasonRefresh={loadSeasons}
+            onDirty={setCwlDirty}
+            key={seasonId}
+            initialReadiness={rosterReadiness}
+            onReviewPublication={
+              allowedView("publication") === "publication"
+                ? () => {
+                    setPublicationStep("review");
+                    changeView("publication");
+                  }
+                : undefined
+            }
+            seasonId={seasonId}
+            seasons={seasons}
+            onSeasonChange={(id) => {
+              setSeasonId(id);
+              setPool(null);
+              setSignupPanel("register");
+              setDrafts({ main: {}, lazy: {} });
+              setReview(false);
+              setCompletion(null);
+            }}
+          />
+        )}
         {view === 'staff' && session.can_edit && <div className="staff-workspace"><div className="page-head"><div><p className="eyebrow">Staff tools</p><h1>Seasons & clans</h1><p>Choose a section to manage this season or its clans.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!canLeave()) return; setAccounts([]); setSignups([]); setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>{staffError && <div className="notice error" role="alert">{staffError}<button onClick={() => void loadStaff()}>Retry</button></div>}{staffLoading && <p>Loading clan directory…</p>}
           <div className="staff-section-menu" role="group" aria-label="Seasons and clans sections">
             {([['hosting', 'Hosting clans', clans.filter(clan => !clan.archived).length], ['season', 'Season settings', null], ['family', 'Family clans', approved.length]] as const).map(([key, label, count]) => <button key={key} aria-pressed={staffSection === key} onClick={() => { setStaffSection(key); setStaffSearch(''); setStaffPage(0) }}>{label}{count !== null && <span>{count}</span>}</button>)}
