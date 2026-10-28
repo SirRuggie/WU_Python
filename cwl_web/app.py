@@ -1584,8 +1584,17 @@ async def publication_preview(request):
         clans = _rule_rows(db, sid)
         assigned = sum(account["assigned_clan_tag"] is not None for account in accounts)
         latest = _latest_publication(db, sid)
+        last_publication = db.execute(
+            "SELECT version,published_at,withdrawn_at,joining_instructions FROM roster_publications "
+            "WHERE season_id=? ORDER BY version DESC LIMIT 1", (sid,),
+        ).fetchone()
+        next_version = db.execute(
+            "SELECT COALESCE(MAX(version),0)+1 FROM roster_publications WHERE season_id=?", (sid,),
+        ).fetchone()[0]
         revision = _revision(db, sid)
         result = {
+            "last_publication": dict(last_publication) if last_publication is not None else None,
+            "next_version": next_version,
             "draft_revision": revision,
             "draft_changed": _publication_changed(db, sid, latest),
             "preview": {

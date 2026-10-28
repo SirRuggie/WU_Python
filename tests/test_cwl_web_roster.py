@@ -560,6 +560,60 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
                                    json={"revision": old_revision, "placements": preview["placements"]})
         self.assertEqual(response.status, 409)
 
+    async def test_draft_publication_history_includes_withdrawn_and_next_version(self):
+        path = f"/seasons/{self.sid}/publication"
+
+        async def read():
+            before = self.app["store"].rows("SELECT * FROM roster_publications")
+            revision = await self.revision()
+            response = await self.call("GET", path, self.owner)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(before, self.app["store"].rows("SELECT * FROM roster_publications"))
+            self.assertEqual(revision, await self.revision())
+            return await response.json()
+
+        draft = await read()
+        self.assertIsNone(draft["published"])
+        self.assertIsNone(draft["last_publication"])
+        self.assertEqual(draft["next_version"], 1)
+        await self.signup("main", "#P2Y")
+        for version in (1, 2):
+            draft = await read()
+            response = await self.call("POST", path, self.owner, json={
+                "revision": draft["draft_revision"], "acknowledge_unassigned": True,
+                "joining_instructions": f"Instructions {version}",
+            })
+            self.assertEqual(response.status, 201)
+            published = (await response.json())["published"]
+            self.assertEqual(published["version"], draft["next_version"])
+            draft = await read()
+            self.assertEqual(draft["published"], published)
+            self.assertEqual(draft["last_publication"], {
+                "version": version, "published_at": published["published_at"],
+                "withdrawn_at": None, "joining_instructions": f"Instructions {version}",
+            })
+            self.assertEqual(draft["next_version"], version + 1)
+            if version == 1:
+                response = await self.call("POST", path + "/withdraw", self.owner, json={
+                    "revision": draft["draft_revision"], "version": version,
+                })
+                self.assertEqual(response.status, 200)
+                draft = await read()
+                self.assertIsNone(draft["published"])
+                self.assertEqual(draft["last_publication"]["version"], 1)
+                self.assertIsNotNone(draft["last_publication"]["withdrawn_at"])
+                self.assertEqual(draft["last_publication"]["joining_instructions"], "Instructions 1")
+                self.assertEqual(draft["next_version"], 2)
+        # History and numbering are season-scoped, including a different empty season.
+        response = await self.call("POST", "/seasons", self.owner,
+                                   json={"label": "November 2026", "signup_open": False})
+        other = (await response.json())["id"]
+        response = await self.call("GET", f"/seasons/{other}/publication", self.owner)
+        other_draft = await response.json()
+        self.assertIsNone(other_draft["last_publication"])
+        self.assertEqual(other_draft["next_version"], 1)
+        self.assertEqual((await self.call("GET", path, self.member)).status, 403)
+
     async def test_publication_privacy_partial_ack_and_immutable_snapshot(self):
         other = self.auth("200")
         self.providers.links["200"] = {"#G2Y": True}

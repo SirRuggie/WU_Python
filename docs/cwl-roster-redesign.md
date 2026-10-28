@@ -203,3 +203,12 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 ## Open question
 
 - The Assign panel and Balance preview still show **average** weight; the clan cards now show **total**. Recommendation: Balance preview shows total + average; the Assign panel shows total. Not yet decided by Ruggie.
+
+## Finalize read metadata (Ruggie-approved backend extension)
+
+Finalize requires a backend release from an isolated release directory and a service
+restart, following the backend release procedure. The draft response adds
+`last_publication` (latest version including withdrawn, publication/withdrawal dates
+and joining instructions) and `next_version` (the publish path's season-scoped
+MAX + 1). `published` retains its active-only meaning. This is read-only: no schema
+or publication/withdrawal write-path change. No deployment is part of this batch.
