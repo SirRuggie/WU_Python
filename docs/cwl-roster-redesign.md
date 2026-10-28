@@ -325,3 +325,21 @@ a spot (prepend/dedupe, cap at the existing maximum, null tag leaves it alone);
 lead red alerts with the shortage; uniform 44px row actions; unclipped inline TH
 images. Layout tests use locked Playwright and frontend/backend from the same
 checkout, with locally fulfilled images and an explicit skip when Chrome is absent.
+
+## Decisions — Announcements (2026-10-27)
+
+Implementation checkpoint on `codex/announcements`, based on `afc6f22edd88aa637648514a0fa56f33d618c319`. Awaiting review; no merge, tag or deployment. Production remains signup-changes-1 frontend / CWL flow backend.
+
+1. Derive an unlinked CWL month from the season label. Show the named month, Change, and an explicit Load button; never bind automatically. Unparseable labels show the picker. Changing a linked month has one Cancel-first confirmation, including any unsaved-edit warning.
+2. Show Main CWL then Lazy CWL as compact pool cards, with status, destination, roles, roster-link description, Preview and Edit. Edit uses ActionPanel. Preserve template-disabled and delivery-lock rules.
+3. One muted sending explanation, one Refresh status control, shared Cancel-first confirmations, and roster controls/text levels. Clan roster images are restyled only: select → preview → download → test; no production image posting was added.
+4. Use plain queued/sending/sent/failed/stale/uncertain wording. Bot availability is shown only when unavailable. The existing declaration-readiness cue remains after confirmed delivery. The loading message explains that campaign settings can take up to 20 seconds; publication status renders independently.
+5. Show announced versus current publication version, short local dates, and the shared hidden-publication wording. Republishing never resends an announcement.
+6. One Review and send includes all currently ready pools; per-pool results remain separate. A lone eligible pool can show Send or Retry. Only failed/stale deliveries retry. Generation, version, destination, duplicate-submit and once-per-pool/month checks remain; polling is every five seconds only for pending/sending. Publication refreshes retain unsaved drafts.
+7. On opening an editable message with an empty saved link, prefill My clan assignments for that season. It is an unsaved edit until Save. Custom saved links are retained; server HTTPS validation is unchanged.
+
+**B1 (Ruggie approved):** the existing manage-bridge delivery response adds nullable `publication_version` from the existing send record. No schema, write path or endpoint changes. Deployment needs an isolated backend release and restart as well as frontend assets; see `dashboard-backend-releases.md`.
+
+### Next — Roster images (approved design; not implemented here)
+
+Main/Lazy image channels are saved server-side and carried over. Post per pool sends one message per clan, with no pings, idempotent receipts and retry of failed messages only. Republish updates existing messages in place; a new clan gets a new post, and a dropped clan's post is edited to “<Clan> is no longer hosting · Roster vN”, never deleted. Test all sends to a chosen channel with a TEST label and is never recorded as production delivery. Preview and download remain. Ruggie approved the backend and schema work for that separate batch.
