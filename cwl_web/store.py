@@ -58,7 +58,9 @@ CREATE INDEX IF NOT EXISTS signups_owner ON signups(season_id,user_id,pool);
 CREATE TABLE IF NOT EXISTS lineup_rules (
  season_id INTEGER NOT NULL, tag TEXT NOT NULL,
  pool TEXT CHECK(pool IN ('main','lazy')), capacity INTEGER CHECK(capacity IN (15,30)),
- min_weight INTEGER, max_weight INTEGER, lower_league INTEGER CHECK(lower_league IN (0,1)),
+ min_weight INTEGER, max_weight INTEGER,
+ -- unused since 2026-10-27; safe to drop later
+ lower_league INTEGER CHECK(lower_league IN (0,1)),
  PRIMARY KEY(season_id,tag),
  FOREIGN KEY(season_id,tag) REFERENCES lineup(season_id,tag) ON DELETE CASCADE
 );

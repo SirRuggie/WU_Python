@@ -937,7 +937,7 @@ def _roster_rows(db, sid):
 
 def _rule_rows(db, sid):
     rows = db.execute(
-        "SELECT c.tag,c.name,c.archived,COALESCE(r.pool,c.pool) AS pool,r.capacity,r.min_weight,r.max_weight,r.lower_league,"
+        "SELECT c.tag,c.name,c.archived,COALESCE(r.pool,c.pool) AS pool,r.capacity,r.min_weight,r.max_weight,"
         "(SELECT COUNT(*) FROM roster_entries e WHERE e.season_id=? "
         "AND e.assigned_clan_tag=c.tag) AS assigned_count "
         "FROM clans c LEFT JOIN lineup_rules r ON r.season_id=? AND r.tag=c.tag "
@@ -948,7 +948,6 @@ def _rule_rows(db, sid):
     result = []
     for raw in rows:
         row = dict(raw)
-        row["lower_league"] = None if row["lower_league"] is None else bool(row["lower_league"])
         row["archived"] = bool(row["archived"])
         row["effective_capacity"] = row["capacity"] if row["capacity"] is not None else 50
         result.append(row)
@@ -1038,7 +1037,7 @@ async def arrival_check(request):
 async def update_lineup_rules(request):
     session = _require(request, "editor")
     body = await _json(request)
-    allowed = {"revision", "pool", "capacity", "min_weight", "max_weight", "lower_league"}
+    allowed = {"revision", "pool", "capacity", "min_weight", "max_weight"}
     if not set(body) <= allowed or not (set(body) - {"revision"}):
         _fail(400, "Invalid hosting rule update")
     try:
@@ -1055,9 +1054,9 @@ async def update_lineup_rules(request):
         if clan is None or clan["archived"]:
             _fail(404, "Active hosting clan not found")
         db.execute("INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)", (sid, clan_tag))
-        before_row = db.execute("SELECT * FROM lineup_rules WHERE season_id=? AND tag=?", (sid, clan_tag)).fetchone()
-        before = dict(before_row) if before_row else {"pool": None, "capacity": None, "min_weight": None, "max_weight": None, "lower_league": None}
-        rule = {field: body.get(field, before[field]) for field in ("pool", "capacity", "min_weight", "max_weight", "lower_league")}
+        before_row = db.execute("SELECT pool,capacity,min_weight,max_weight FROM lineup_rules WHERE season_id=? AND tag=?", (sid, clan_tag)).fetchone()
+        before = dict(before_row) if before_row else {"pool": None, "capacity": None, "min_weight": None, "max_weight": None}
+        rule = {field: body.get(field, before[field]) for field in ("pool", "capacity", "min_weight", "max_weight")}
         if rule["pool"] not in (None, "main", "lazy"):
             _fail(400, "Invalid pool rule")
         if type(rule["capacity"]) is not int and rule["capacity"] is not None or rule["capacity"] not in (None, 15, 30):
@@ -1068,17 +1067,11 @@ async def update_lineup_rules(request):
                 _fail(400, "Invalid weight range")
         if rule["min_weight"] is not None and rule["max_weight"] is not None and rule["min_weight"] >= rule["max_weight"]:
             _fail(400, "Maximum weight must exceed minimum")
-        if rule["lower_league"] is not None and type(rule["lower_league"]) is not bool:
-            _fail(400, "Lower league rule must be yes, no, or unset")
-        assigned = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?", (sid, clan_tag)).fetchone()["n"]
-        if assigned > (rule["capacity"] if rule["capacity"] is not None else 50):
-            _fail(409, "Capacity is below the current roster size")
-        db.execute("INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight,lower_league) "
-                   "VALUES (?,?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET "
+        db.execute("INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight) "
+                   "VALUES (?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET "
                    "pool=excluded.pool,capacity=excluded.capacity,min_weight=excluded.min_weight,"
-                   "max_weight=excluded.max_weight,lower_league=excluded.lower_league",
-                   (sid, clan_tag, rule["pool"], rule["capacity"], rule["min_weight"], rule["max_weight"],
-                    None if rule["lower_league"] is None else int(rule["lower_league"])))
+                   "max_weight=excluded.max_weight",
+                   (sid, clan_tag, rule["pool"], rule["capacity"], rule["min_weight"], rule["max_weight"]))
         revision = _bump(db, sid)
         _audit(db, sid, clan_tag, session["user_id"], "hosting_rules", before, rule)
     return web.json_response({"revision": revision})
