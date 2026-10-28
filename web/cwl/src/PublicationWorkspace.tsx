@@ -580,10 +580,15 @@ export default function PublicationWorkspace({
       {seasonId && step === "announce" && (
         <div>
           <ManageBridgeWorkspace
+            publication={draft ?? undefined}
+            onFinalize={() => onStepChange("review")}
             onDeclaration={onDeclaration}
             onDirty={setAnnouncementDirty}
             onBusy={setAnnouncementBusy}
             seasonId={seasonId}
+            seasonLabel={
+              seasons.find((season) => String(season.id) === seasonId)?.label
+            }
             publicationVersion={draft?.published?.version ?? null}
           />
           <details

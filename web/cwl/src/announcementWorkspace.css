@@ -1,187 +1,129 @@
-.announcement-workspace .announcement-toolbar {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  margin-bottom:12px;
+/* Announcements share roster controls and text levels; no selected-color text leakage. */
+.announcement-workspace,
+.announcement-edit-panel,
+.clan-roster-images {
+  color: var(--roster-text-primary, #f3f3f5);
+  font-size: 14px;
 }
-.announcement-toolbar h2 {
-  margin:0;
-  font-size:1.1rem;
+.announcement-workspace .announcement-toolbar,
+.announcement-card-actions,
+.clan-roster-images .card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-.announcement-toolbar p {
-  margin:5px 0 0;
-  color:#b8bbc4;
-  font-size:13px;
-}
-.announcement-status {
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px 18px;
-  padding:12px 0;
-  border-block:1px solid #ffffff17;
-  font-size:13px;
-}
-.announcement-status span {
-  color:#b8bbc4;
-}
-.announcement-workspace .manage-cycle {
-  border:0;
-  border-bottom:1px solid #ffffff17;
-  border-radius:0;
-  background:transparent;
-}
-.announcement-workspace .manage-cycle summary {
-  padding-inline:0;
-}
-.announcement-workspace .manage-pool-tabs {
-  border-bottom:1px solid #ffffff24;
-  gap:0;
-  margin:16px 0 0;
-}
-.announcement-workspace .manage-pool-tabs button {
-  flex:1;
-  min-width:0;
-  border:0;
-  border-bottom:3px solid transparent;
-  border-radius:0;
-  background:transparent;
-  color:#bdc0c8;
-  padding:10px 12px;
-}
-.announcement-workspace .manage-pool-tabs button.active {
-  color:#f0ca67;
-  border-bottom-color:#f0ca67;
-  background:#f0ca6709;
-}
-.announcement-workspace .manage-pool {
-  border:0;
-  border-radius:0;
-  padding:16px 0;
-  max-width:none;
-  background:transparent;
-}
-.announcement-message-heading {
-  display:flex;
-  flex-wrap:wrap;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-  margin-bottom:12px;
-}
-.announcement-message-heading h3 {
-  font-size:15px;
-  margin:0;
-  overflow-wrap:anywhere;
-}
-.announcement-message-heading > span {
-  font-size:12px;
-  color:#bbc0c8;
-}
-.announcement-workspace details {
-  border:0;
-  border-bottom:1px solid #ffffff17;
-  border-radius:0;
-  background:transparent;
-}
-.announcement-workspace summary {
-  min-height:44px;
-  padding:10px 0;
-  cursor:pointer;
-  font-size:13px;
-}
-.announcement-workspace .announcement-editor-body {
-  padding:0 0 12px;
-}
-.announcement-workspace .manage-native-preview {
-  margin:0;
-}
-.announcement-workspace .manage-native-preview summary {
-  padding:10px 0;
-}
-.announcement-workspace .manage-native-preview[open] > :not(summary) {
-  margin-left:0;
-  margin-right:0;
-}
-.announcement-primary-action {
-  display:flex;
-  align-items:center;
-  gap:12px;
-  flex-wrap:wrap;
-  margin:14px 0;
-}
-.announcement-primary-action small {
-  flex:1 1 200px;
-  color:#b8bbc4;
-}
-.announcement-workspace .manage-delivery {
-  margin:12px 0;
-  padding:10px 12px;
-  border-left:2px solid #8ab1d8;
-  background:#8ab1d80c;
-}
-.announcement-workspace .delivery-uncertain, .announcement-workspace .delivery-failed {
-  border-left-color:#dc9090;
-  background:#dc90900c;
-}
-.announcement-workspace .announcement-send-both {
-  padding:0;
-  margin-top:12px;
-}
-.announcement-workspace .announcement-send-both p {
-  font-size:13px;
-  color:#b8bbc4;
-}
-.announcement-workspace button, .announcement-workspace input, .announcement-workspace select {
-  min-height:44px;
-}
-@media(max-width:600px) {
-  .announcement-workspace .announcement-toolbar {
-    align-items:flex-start;
-    flex-wrap:wrap;
-  }
-  .announcement-workspace .manage-pool-tabs button {
-    flex-direction:column;
-    align-items:flex-start;
-    gap:4px;
-  }
-  .announcement-workspace .manage-cycle-fields {
-    grid-template-columns:minmax(0,1fr);
-    padding:0 0 12px;
-  }
-  .announcement-workspace .manage-url-field {
-    display:flex;
-    flex-direction:column;
-    align-items:stretch;
-  }
-}
-.announcement-audience {
+.announcement-pool-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  padding: 8px 0 16px;
+  margin-block: 12px;
 }
-.announcement-audience small,
-.announcement-audience strong,
-.announcement-audience span {
-  display: block;
+.announcement-workspace .announcement-pool-card {
+  border: 1px solid var(--roster-border, #444650);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--roster-surface, #191a20);
+  min-width: 0;
+}
+.announcement-pool-card h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+.announcement-pool-card p {
+  margin: 8px 0;
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
-.announcement-audience small {
-  color: #b8bbc4;
-  font-size: 12px;
+.announcement-pool-status {
+  font-size: 13px;
+  display: grid;
+  gap: 4px;
 }
-.announcement-audience strong {
-  font-size: 14px;
-  margin-block: 3px;
+.announcement-card-actions {
+  justify-content: flex-start;
 }
-.announcement-audience span {
-  color: #bdc4ce;
+.announcement-workspace .announcement-muted,
+.announcement-edit-panel .announcement-muted {
+  color: var(--roster-text-muted, #b9bbc4);
   font-size: 12px;
+  -webkit-text-fill-color: currentColor;
 }
-.announcement-role-error {
+.announcement-editor-body {
+  display: grid;
+  gap: 14px;
+}
+.announcement-editor-body label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.announcement-editor-body textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 130px;
+  font: inherit;
+}
+.announcement-link {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  color: var(--roster-text-muted, #b9bbc4);
+}
+.announcement-test summary,
+.clan-roster-images summary {
+  min-height: 44px;
+  padding-block: 12px;
+  box-sizing: border-box;
+  font-size: 13px;
+  cursor: pointer;
+}
+.announcement-workspace .manage-cycle-fields {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-block: 12px;
+}
+.announcement-workspace .manage-cycle-fields > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.clan-roster-images {
+  margin-top: 16px;
+}
+.clan-roster-images h2 {
+  font-size: 15px;
+}
+.clan-roster-images p {
+  font-size: 13px;
+}
+.clan-roster-images .small {
   font-size: 12px;
-  color: #dbbda0;
+  color: var(--roster-text-muted, #b9bbc4);
+}
+.clan-roster-images select {
+  min-height: 44px;
+}
+.clan-roster-pictures {
+  max-width: 480px;
+  margin: 12px auto;
+  display: grid;
+  gap: 16px;
+}
+.clan-roster-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+@media (max-width: 620px) {
+  .announcement-pool-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .announcement-send-review {
   width: min(720px, calc(100% - 24px));
@@ -247,4 +189,36 @@
   .announcement-send-review footer button {
     width: 100%;
   }
+}
+
+.announcement-workspace a,
+.announcement-edit-panel a,
+.clan-roster-images a {
+  color: #bdd5ef;
+  -webkit-text-fill-color: currentColor;
+}
+.announcement-editor-body textarea {
+  color: var(--roster-text-primary, #f3f3f5);
+  -webkit-text-fill-color: currentColor;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.announcement-workspace {
+  margin: 0 0 35px;
+}
+.announcement-editor-body {
+  min-width: 0;
+}
+.announcement-edit-panel .announcement-test {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--roster-border, #444650);
+  border-radius: 0;
+  background: transparent;
+}
+.announcement-edit-panel .announcement-test > summary {
+  color: var(--roster-text-primary, #f3f3f5);
+  -webkit-text-fill-color: currentColor;
+  font-weight: 400;
 }

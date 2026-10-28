@@ -86,6 +86,7 @@ class ManageBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status,202,await response.text())
         pending=(await response.json())['delivery']
         self.assertEqual(pending['status'],'pending')
+        self.assertEqual(pending['publication_version'], 1)
         self.assertTrue(pending['requested_at'])
         self.assertTrue(pending['updated_at'])
         self.assertIsNone(pending['started_at'])
@@ -94,6 +95,7 @@ class ManageBridgeTests(unittest.IsolatedAsyncioTestCase):
         await cwl_campaign.record_delivery(self.mongo,GUILD_ID,'2026-10',{'occurrence_id':oid,'status':'sent','message_url':'https://discord.com/channels/1/2/3','at':'2026-10-22T15:30:00+00:00'})
         shared=(await self.state())['pools']['main']['delivery']
         self.assertEqual(shared['status'],'sent')
+        self.assertEqual(shared['publication_version'], 1)
         self.assertEqual(shared['message_url'],'https://discord.com/channels/1/2/3')
         self.assertEqual(shared['sent_at'],'2026-10-22T15:30:00+00:00')
         self.assertTrue(shared['requested_at'])
@@ -133,3 +135,16 @@ class ManageBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.app['server_management_discord']=discord
         body={'channel_id':'111111111111111111','request_id':'b'*24,'generation':(await self.state())['generation'],'body':'Test','roster_url':'https://example.com/'}
         self.assertEqual((await self.call('POST',self.base+'/main/test',self.owner,json=body)).status,400)
+
+
+class DeliveryVersionTests(unittest.TestCase):
+    def test_announced_version_is_read_only_metadata(self):
+        from cwl_web.manage_bridge import _delivery
+        for state in ('pending', 'sent'):
+            with self.subTest(state=state):
+                record = {'status': state, 'publication_version': 3}
+                before = copy.deepcopy(record)
+                self.assertEqual(_delivery(record)['publication_version'], 3)
+                self.assertEqual(record, before)
+        for value in ({'status': 'sent'}, {'status': 'pending', 'publication_version': None}):
+            self.assertIsNone(_delivery(value)['publication_version'])

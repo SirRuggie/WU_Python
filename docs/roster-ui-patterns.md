@@ -188,3 +188,12 @@ A missing clan tag leaves the preference unchanged. Dirty/busy guards run before
 navigation or storage changes. The red alert leads with the below-war-size clan
 or clan count. Row actions share the 44px secondary-button style. The inline TH
 image may extend beyond the name line box; only the name text clips/ellipsizes.
+
+## Announcements
+
+- Main CWL and Lazy CWL use two compact pool cards. Show destination and named roles; use IDs only when lookups fail, with Retry. Preview opens the Discord preview dialog; Edit opens ActionPanel with Close initially focused.
+- The editor contains channel, message (4,000 characters), roster link/Change link and Save message. Test sending is under “Send test · no pings” and needs a Cancel-first confirmation. Empty links prefill only on editing; saving is explicit. Delivery-locked templates stay locked.
+- One primary Review and send includes ready pools only and lists their destinations/roles before queueing. Keep per-pool results separate. A lone ready pool can show Send/Retry; failed/stale only may retry. Publishing and sending remain separate actions.
+- Status text: Not announced yet; Queued · waiting for the bot; Sending…; Sent <short local date>; Failed · <reason>; Check Discord first: it may have posted. Resending is blocked.; Message settings changed since it was queued · review and retry. Older sent versions explain that the roster link shows the new version and announcements are not resent.
+- Publication status reuses Finalize's version/date and hidden-publication wording. One Refresh status control; no sender-ready badge. Three text levels: 15px bold, 13–14px regular, 12px muted. Check text-fill as well as color; links must stay legible on dark cards.
+- Images keep their existing select/preview/download/test behavior. This batch does not add real image posting.
