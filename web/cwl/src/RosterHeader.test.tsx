@@ -45,6 +45,8 @@ function render(
 ) {
   return renderToStaticMarkup(
     <RosterHeader
+      onFillSignupSpot={() => false}
+      onSignupDetails={() => false}
       seasonId={seasonId}
       seasons={[
         { id: 1, label: seasonLabel, status: "active", signup_open: true },

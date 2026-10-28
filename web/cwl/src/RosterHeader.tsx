@@ -6,6 +6,8 @@ import type { RosterSnapshot } from "./roster";
 import RosterMenu from "./rosterUi/Menu";
 import { Button, StatusPill } from "./rosterUi/primitives";
 import "./RosterHeader.css";
+import SignupActivity from "./SignupActivity";
+import type { SignupChange } from "./signupActivityModel";
 import PublicationAwarenessBanner from "./PublicationAwarenessBanner";
 
 type StatusFilter = "all" | "unassigned" | "missing_weight";
@@ -35,6 +37,8 @@ function compactSeasonLabel(label: string): string {
 }
 
 type Props = {
+  onFillSignupSpot: (item: SignupChange) => boolean;
+  onSignupDetails: (tag: string) => boolean;
   signupControls?: import("react").ReactNode;
   seasonId: string;
   seasons: Season[];
@@ -76,6 +80,8 @@ export default function RosterHeader({
   onStatusFilter,
   onAccessError,
   signupControls,
+  onFillSignupSpot,
+  onSignupDetails,
   showAwareness = true,
   onPublication,
 }: Props) {
@@ -341,6 +347,22 @@ export default function RosterHeader({
             {pool === "all" ? "" : " (all pools)"}
           </Button>
         </div>
+      )}
+      {seasonId && canSignups && (
+        <SignupActivity
+          key={seasonId}
+          seasonId={seasonId}
+          roster={roster}
+          publishedVersion={
+            publication?.seasonId === seasonId
+              ? publication.draft?.published?.version
+              : undefined
+          }
+          disabled={uiLocked}
+          canCompare={canRoster}
+          onFill={onFillSignupSpot}
+          onDetails={onSignupDetails}
+        />
       )}
     </header>
   );

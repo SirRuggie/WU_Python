@@ -15,7 +15,6 @@ import RosterAccountCard from "./RosterAccountCard";
 import RosterFilters from "./RosterFilters";
 import RosterClanChips from "./RosterClanChips";
 import { rosterMemberKey } from "./rosterGrouping";
-import SignupActivity from "./SignupActivity";
 import useWorkspacePreference from "./useWorkspacePreference";
 import useRosterPreferences from "./useRosterPreferences";
 import useUnsavedWork from "./useUnsavedWork";
@@ -102,6 +101,7 @@ export default function RosterWorkspace({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [hostingBusy, setHostingBusy] = useState(false);
+  const [compareJump, setCompareJump] = useState(0);
   const [hasPublication, setHasPublication] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [panel, setPanel] = useState<
@@ -865,6 +865,28 @@ export default function RosterWorkspace({
           }
           openPanel("auto", trigger);
         }}
+        onFillSignupSpot={(item) => {
+          if (!canRoster || uiLocked || !mayLeaveEditor()) return false;
+          const pool = item.from_pool === "lazy" ? "lazy" : "main";
+          try {
+            localStorage.setItem(
+              `wu-compare-clans:${seasonId}:${pool}`,
+              JSON.stringify(
+                item.assigned_clan_tag ? [item.assigned_clan_tag] : [],
+              ),
+            );
+          } catch {}
+          setPoolFilter(pool);
+          setCompareJump((value) => value + 1);
+          setMode("compare");
+          return true;
+        }}
+        onSignupDetails={(tag) => {
+          if (uiLocked || !mayLeaveEditor()) return false;
+          setFeedback(null);
+          setEditingTag(tag);
+          return true;
+        }}
         onFinalize={onReviewPublication}
         onStatusFilter={(status) => {
           if (mode !== "assign" && !mayLeaveEditor()) return;
@@ -905,9 +927,6 @@ export default function RosterWorkspace({
         }
         onAccessError={(error) => void fail(error)}
       />
-      {seasonId && canSignups && (
-        <SignupActivity key={seasonId} seasonId={seasonId} />
-      )}
       {!seasonId && (
         <div className="card empty">
           <p>Select a season to build its CWL roster.</p>
@@ -1104,7 +1123,7 @@ export default function RosterWorkspace({
             <CompareClans
               memory={comparisonMemory}
               refreshKey={refreshEpoch}
-              key={seasonId}
+              key={`${seasonId}:${compareJump}`}
               pool={poolFilter}
               seasonId={seasonId}
               roster={roster}

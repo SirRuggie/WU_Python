@@ -12,9 +12,11 @@ export function discordContact(userId?: string | null, compact = false) {
 export default function DiscordContact({
   userId,
   compact = false,
+  label,
 }: {
   userId?: string | null;
   compact?: boolean;
+  label?: string;
 }) {
   const contact = discordContact(userId, compact);
   if (!contact.href) return <small>{contact.unavailable}</small>;
@@ -26,7 +28,7 @@ export default function DiscordContact({
       rel="noopener noreferrer"
       title={contact.title}
     >
-      {contact.label}
+      {label ?? contact.label}
     </a>
   );
 }

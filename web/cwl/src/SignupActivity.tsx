@@ -1,152 +1,176 @@
-import { useEffect, useState } from "react";
-import { api } from "./api";
+import { useEffect, useRef, useState } from "react";
+import { ChevronRight, TriangleAlert } from "lucide-react";
+import ActionPanel from "./ActionPanel";
+import ConfirmDialog from "./ConfirmDialog";
 import DiscordContact from "./DiscordContact";
+import { Button } from "./rosterUi/primitives";
+import type { RosterSnapshot } from "./roster";
+import { publicationDate } from "./publicationStatus";
+import {
+  signupActivityIntro,
+  signupActivitySummary,
+  signupPoolName,
+  type SignupChange,
+} from "./signupActivityModel";
+import useSignupActivity from "./useSignupActivity";
 import "./SignupActivity.css";
 
-type Change = {
-  id: number;
-  tag: string;
-  player_name: string;
-  user_id: string;
-  action: string;
-  from_pool: string;
-  to_pool: string | null;
-  assigned_clan_tag: string | null;
-  assigned_clan_name: string | null;
-  created_at: string;
+type Props = {
+  seasonId: string;
+  roster: RosterSnapshot | null;
+  publishedVersion?: number;
+  disabled?: boolean;
+  canCompare: boolean;
+  onFill: (item: SignupChange) => boolean;
+  onDetails: (tag: string) => boolean;
 };
-const poolName = (value: string | null) =>
-  value === "lazy" ? "Lazy CWL" : "Main CWL";
-
-export default function SignupActivity({ seasonId }: { seasonId: string }) {
-  const [items, setItems] = useState<Change[]>([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<number | null>(null);
-  const [attempt, setAttempt] = useState(0);
+export default function SignupActivity({
+  seasonId,
+  roster,
+  publishedVersion,
+  disabled,
+  canCompare,
+  onFill,
+  onDetails,
+}: Props) {
+  const activity = useSignupActivity(seasonId);
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState<SignupChange[] | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const summary = signupActivitySummary(activity.items, roster?.clans ?? []);
   useEffect(() => {
-    let active = true;
-    let fetching = false;
-    const load = async () => {
-      if (fetching) return;
-      fetching = true;
-      try {
-        const result = await api<{ items: Change[] }>(
-          `/seasons/${encodeURIComponent(seasonId)}/signup-activity`,
-        );
-        if (active) {
-          setItems(result.items);
-          setError("");
-        }
-      } catch (cause) {
-        if (active) {
-          setItems([]);
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "Could not check signup changes.",
-          );
-        }
-      } finally {
-        fetching = false;
-        if (active) setLoading(false);
-      }
-    };
-    void load();
-    const timer = window.setInterval(() => {
-      if (!document.hidden) void load();
-    }, 30000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [seasonId, attempt]);
-  const review = async (id: number) => {
-    if (busy !== null) return;
-    setBusy(id);
-    try {
-      await api(
-        `/seasons/${encodeURIComponent(seasonId)}/signup-activity/${id}/review`,
-        "POST",
-      );
-      setItems((current) => current.filter((item) => item.id !== id));
-      setAttempt((value) => value + 1);
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not mark reviewed.",
-      );
-    } finally {
-      setBusy(null);
+    if (!activity.items.length && activity.busy === null) {
+      setOpen(false);
+      setConfirm(null);
     }
-  };
-  const row = (item: Change) => (
-    <article className="signup-activity-row" key={item.id}>
-      <div>
-        <strong>
-          {item.player_name} ·{" "}
-          {item.action === "member_withdrawal"
-            ? "Withdrew signup"
-            : "Changed CWL pool"}
-        </strong>
-        <p>
-          {item.tag} · {poolName(item.from_pool)}
-          {item.to_pool ? ` → ${poolName(item.to_pool)}` : ""}
-        </p>
-        {item.assigned_clan_tag && (
-          <p>
-            Previously assigned:{" "}
-            <strong>{item.assigned_clan_name || item.assigned_clan_tag}</strong>
-            {item.assigned_clan_name && (
-              <small> · {item.assigned_clan_tag}</small>
-            )}
-          </p>
-        )}
-        <p>
-          <small>{new Date(item.created_at).toLocaleString()}</small>
-        </p>
-        <DiscordContact userId={item.user_id} />
-      </div>
-      <button disabled={busy !== null} onClick={() => void review(item.id)}>
-        {busy === item.id ? "Saving…" : "Mark reviewed"}
-      </button>
-    </article>
-  );
-  if (!loading && !error && !items.length) return null;
+  }, [activity.items.length, activity.busy]);
+  const busy = activity.busy !== null;
   return (
-    <section
-      className="card signup-activity"
-      aria-label="Assigned players changed their signup"
-    >
-      <h2>
-        <span aria-hidden="true">⚠ </span>Assigned players changed their signup
-        {items.length
-          ? ` · ${items.length}${items.length === 100 ? "+" : ""} to review`
-          : ""}
-      </h2>
-      {loading && <p role="status">Checking changes to assigned players…</p>}
-      {error && (
-        <p role="alert">
-          {error}{" "}
-          <button onClick={() => setAttempt((value) => value + 1)}>
-            Retry alerts
+    <div className="signup-activity" aria-live="polite">
+      {activity.error ? (
+        <div className="signup-activity-load-error">
+          Couldn't check signup changes ·{" "}
+          <Button onClick={activity.retry}>Retry</Button>
+        </div>
+      ) : (
+        activity.items.length > 0 && (
+          <button
+            ref={trigger}
+            className={`signup-activity-line${summary.danger ? " is-danger" : ""}`}
+            disabled={disabled}
+            onClick={() => setOpen(true)}
+          >
+            <TriangleAlert size={16} aria-hidden="true" />
+            <span>{summary.text}</span>
+            <ChevronRight size={16} aria-hidden="true" />
           </button>
-        </p>
+        )
       )}
-      {items.length > 0 && (
-        <>
-          <p>
-            Review these changes before publishing again. Existing published
-            rosters stay unchanged.
+      {open && (
+        <ActionPanel
+          title="Signup changes"
+          variant="side"
+          className="roster-ui signup-activity-panel"
+          trigger={trigger.current}
+          busy={busy || !!confirm}
+          onClose={() => setOpen(false)}
+        >
+          <p className="signup-activity-intro">
+            {signupActivityIntro(publishedVersion)}
           </p>
-          {items.slice(0, 3).map(row)}
-          {items.length > 3 && (
-            <details>
-              <summary>Show {items.length - 3} more changes</summary>
-              {items.slice(3).map(row)}
-            </details>
+          {activity.result && <p role="status">{activity.result}</p>}
+          {activity.items.map((item) => (
+            <article className="signup-activity-row" key={item.id}>
+              <div className="signup-activity-identity">
+                <strong>
+                  {item.action === "member_pool_change" &&
+                  roster?.accounts.some(
+                    (account) => account.tag === item.tag,
+                  ) ? (
+                    <button
+                      className="signup-activity-name"
+                      disabled={busy}
+                      onClick={() => {
+                        if (onDetails(item.tag)) setOpen(false);
+                      }}
+                    >
+                      {item.player_name}
+                    </button>
+                  ) : (
+                    item.player_name
+                  )}
+                  {item.action === "member_withdrawal"
+                    ? " withdrew"
+                    : ` switched to ${signupPoolName(item.to_pool)}`}
+                </strong>
+                <time
+                  dateTime={item.created_at}
+                  title={new Date(item.created_at).toLocaleString()}
+                >
+                  {publicationDate(item.created_at)}
+                </time>
+              </div>
+              <p>
+                {item.tag} · was in {item.assigned_clan_name || "previous clan"}{" "}
+                ({signupPoolName(item.from_pool)})
+              </p>
+              <div className="signup-activity-actions">
+                <Button
+                  disabled={busy || !canCompare}
+                  title={
+                    !canCompare ? "Build roster access required" : undefined
+                  }
+                  onClick={() => {
+                    if (onFill(item)) setOpen(false);
+                  }}
+                >
+                  Fill spot ›
+                </Button>
+                <DiscordContact userId={item.user_id} label="Message ↗" />
+                <Button
+                  className="signup-activity-review"
+                  disabled={busy}
+                  onClick={() => void activity.review([item])}
+                >
+                  {activity.busy === item.id ? "Saving…" : "Mark reviewed"}
+                </Button>
+              </div>
+              {activity.rowErrors[item.id] && (
+                <p className="signup-activity-row-error" role="alert">
+                  {activity.rowErrors[item.id]}
+                </p>
+              )}
+            </article>
+          ))}
+          {activity.items.length >= 2 && (
+            <Button
+              disabled={busy}
+              onClick={() => setConfirm([...activity.items])}
+            >
+              Mark all reviewed
+            </Button>
           )}
-        </>
+          {confirm && (
+            <ConfirmDialog
+              heading="Review signup changes"
+              text={`Mark ${confirm.length} signup changes reviewed? They'll stay in the audit history.`}
+              confirmLabel="Mark all reviewed"
+              onCancel={() => setConfirm(null)}
+              onConfirm={() => {
+                const selected = confirm;
+                setConfirm(null);
+                void activity.review(selected);
+              }}
+            >
+              <ul>
+                {confirm.map((item) => (
+                  <li key={item.id}>{item.player_name}</li>
+                ))}
+              </ul>
+            </ConfirmDialog>
+          )}
+        </ActionPanel>
       )}
-    </section>
+    </div>
   );
 }
