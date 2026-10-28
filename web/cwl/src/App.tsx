@@ -14,8 +14,6 @@ import AccountLinkHelp from './AccountLinkHelp'
 import DashboardIcon from './DashboardIcon'
 import { strikePermissions } from './strikePermissions'
 import {isManagementArea, managementAreas} from './managementAreas'
-import { FilterPicker, leagueValue, matchesLeague } from './ClanFilters'
-import { sortClans, clanSortOptions, type ClanSort } from './clanSort'
 import SidebarNavigation, { navigationSection, navigationLabel, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
 import { loginPath } from './memberLinks'
 import { DashboardHistory, dashboardTarget, seasonViews, activityContext } from './dashboardHistory'
@@ -30,12 +28,12 @@ import { useMobileNavigation } from './useMobileNavigation'
 import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
 import { lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { api, ApiError, setCsrfToken, type Account, type Clan, type Pool, type Season, type Session, type Signup } from './api'
+import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
 // Each destination loads only when opened. Keep shell, auth, and signup form helpers eager.
 const WeightTrial = lazy(() => import('./weightTrial/WeightTrial'))
-const MemberSeasonSettings = lazy(() => import('./MemberSeasonSettings'))
+const SeasonsPage = lazy(() => import('./SeasonsPage'))
 const WarsWorkspace = lazy(() => import('./activity/WarsWorkspace'))
 const EventsWorkspace = lazy(() => import('./activity/EventsWorkspace'))
 const DashboardSearch = lazy(() => import('./DashboardSearch'))
@@ -104,7 +102,6 @@ function App() {
   const [signups, setSignups] = useState<Signup[]>([])
   const dashboardPrefill = useRef(false)
   const signupRequest = useRef(0)
-  const staffRequest = useRef(0)
   const currentSeason = useRef('')
   currentSeason.current = seasonId
   const [signupStep, setSignupStep] = useState<1 | 2>(1)
@@ -128,25 +125,6 @@ function App() {
   const selectionHeadingRef = useRef<HTMLHeadingElement>(null)
   const registeredHeadingRef = useRef<HTMLHeadingElement>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
-  const [clans, setClans] = useState<Clan[]>([])
-  const [approved, setApproved] = useState<Clan[]>([])
-  const [approvedCheckedAt, setApprovedCheckedAt] = useState('')
-  const [approvedSource, setApprovedSource] = useState('')
-  const [approvedError, setApprovedError] = useState('')
-  const [staffError, setStaffError] = useState('')
-  const [staffLoading, setStaffLoading] = useState(false)
-  const [newSeasonLabel, setNewSeasonLabel] = useState('')
-  const [newClanTag, setNewClanTag] = useState('')
-  const [newClanPool, setNewClanPool] = useState<Pool | ''>('')
-  const [staffSection, setStaffSection] = useState<'season' | 'hosting' | 'family'>('hosting')
-  const [staffSearch, setStaffSearch] = useState('')
-  const [clanLeagues,setClanLeagues] = useState<string[]>([])
-  const [clanSort, setClanSort] = useState<ClanSort>('name')
-  const [hostStatus, setHostStatus] = useState('active')
-  const [staffPage, setStaffPage] = useState(0)
-  useEffect(() => { setStaffPage(0) }, [staffSearch, hostStatus, staffSection, seasonId, clanSort, clanLeagues])
-
-
   const loadAuth = useCallback(async () => {
     setAuthState('loading')
     try {
@@ -267,34 +245,6 @@ function App() {
     return () => { signupRequest.current += 1 }
   }, [session?.user.id, seasonId, view, loadSignup])
 
-  const loadStaff = useCallback(async () => {
-    if (!session?.can_edit) return
-    const requestId = ++staffRequest.current
-    setStaffLoading(true)
-    const requests = await Promise.allSettled([
-      api<{ clans: Clan[] }>('/clans'),
-      api<{ source: string; status: string; checked_at: string; clans: Clan[] }>('/approved-clans'),
-    ])
-    if (requestId !== staffRequest.current || currentSeason.current !== seasonId) return
-    if (requests[0].status === 'fulfilled') setClans(requests[0].value.clans)
-    if (requests[1].status === 'fulfilled') {
-      setApproved(requests[1].value.clans)
-      setApprovedSource(requests[1].value.source)
-      setApprovedCheckedAt(requests[1].value.checked_at)
-      setApprovedError('')
-    } else {
-      setApproved([])
-      setApprovedSource('')
-      setApprovedCheckedAt('')
-      setApprovedError(message(requests[1].reason))
-    }
-    const otherFailure = [requests[0]].find(result => result.status === 'rejected') as PromiseRejectedResult | undefined
-    setStaffError(otherFailure ? message(otherFailure.reason) : '')
-    setStaffLoading(false)
-  }, [session?.can_edit, seasonId])
-  useEffect(() => { if (view === 'staff') void loadStaff() }, [view, loadStaff])
-
-
   useEffect(() => {
     if (view !== 'signup' || signupPanel !== 'register' || completion) return
     stepHeadingRef.current?.focus({ preventScroll: true })
@@ -339,7 +289,7 @@ function App() {
   const canLeave = () => {
     if (view === 'declaration' && declarationBusy) return false
     if (view === 'declaration' && declarationDirty) return window.confirm('Discard unsaved account changes?')
-    if (view === 'roster' && rosterBusy) return false
+    if (['roster', 'staff'].includes(view) && rosterBusy) return false
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
@@ -548,16 +498,7 @@ function App() {
       setPending(false)
     }
   }
-  const staffAction = (action: () => Promise<unknown>, success: string) => void run(action, success, async () => { await Promise.all([loadStaff(), loadSeasons()]) })
-
   if (authState === 'loading') return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
-  const staffMatches = (...values: (string | undefined | null)[]) => values.some(value => value?.toLowerCase().includes(staffSearch.trim().toLowerCase()))
-  const visibleHosts = sortClans(clans.filter(clan => (hostStatus === 'all' || clan.archived === (hostStatus === 'archived')) && staffMatches(clan.name, clan.tag) && matchesLeague(clan.cwl_league,clanLeagues)), clanSort)
-  const visibleFamily = sortClans(approved.filter(clan => staffMatches(clan.name, clan.tag) && matchesLeague(clan.cwl_league,clanLeagues)), clanSort)
-  const staffCount = staffSection === 'hosting' ? visibleHosts.length : staffSection === 'family' ? visibleFamily.length : 0
-  const staffLastPage = Math.max(0, Math.ceil(staffCount / 8) - 1)
-  const currentStaffPage = Math.min(staffPage, staffLastPage)
-  const staffPageSlice = <T,>(items: T[]) => items.slice(currentStaffPage * 8, (currentStaffPage + 1) * 8)
   const retrySignupRead = () => {
     if (signupPanel === 'saved' && savedSignupDirty && !window.confirm('Refresh CWL data and discard pending pool changes?')) return
     setSavedSignupsLoaded(false)
@@ -725,19 +666,21 @@ function App() {
             }}
           />
         )}
-        {view === 'staff' && session.can_edit && <div className="staff-workspace"><div className="page-head"><div><p className="eyebrow">Staff tools</p><h1>Seasons</h1><p>Choose a section to manage this season or its clans.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!canLeave()) return; setAccounts([]); setSignups([]); setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>{staffError && <div className="notice error" role="alert">{staffError}<button onClick={() => void loadStaff()}>Retry</button></div>}{staffLoading && <p>Loading clan directory…</p>}
-          <div className="staff-section-menu" role="group" aria-label="Seasons and clans sections">
-            {([['hosting', 'Hosting clans', clans.filter(clan => !clan.archived).length], ['season', 'Season settings', null], ['family', 'Family clans', approved.length]] as const).map(([key, label, count]) => <button key={key} aria-pressed={staffSection === key} onClick={() => { setStaffSection(key); setStaffSearch(''); setStaffPage(0) }}>{label}{count !== null && <span>{count}</span>}</button>)}
-          </div>
-          {staffSection !== 'season' && <div className="staff-section-tools"><label>Search {'clans'}<input value={staffSearch} onChange={event => setStaffSearch(event.target.value)} placeholder={'Clan name or tag'} /></label>{(staffSection === 'hosting' || staffSection === 'family') && <label>Sort clans<select value={clanSort} onChange={event=>setClanSort(event.target.value as ClanSort)}>{clanSortOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>}{staffSection === 'hosting' && <label>Show<select value={hostStatus} onChange={event => setHostStatus(event.target.value)}><option value="active">Active clans</option><option value="archived">Archived clans</option><option value="all">All clans</option></select></label>}</div>}
-          {(staffSection==='hosting'||staffSection==='family')&&<div className="clan-filter-bar"><FilterPicker label="CWL leagues" options={[...new Set(sortClans(staffSection==='hosting'?clans:approved,'league_desc').map(clan=>leagueValue(clan.cwl_league)))]} selected={clanLeagues} onChange={setClanLeagues}/><button onClick={()=>{setClanLeagues([]);setStaffSearch('');setHostStatus('active')}}>Clear filters</button><small>{staffCount} clans match</small></div>}
-          <div className="staff-section-content"><section className="card" hidden={staffSection !== 'season'}><h2>Season settings</h2><MemberSeasonSettings selected={season} active={seasons.find(item => item.id === memberSeason.season_id)} busy={pending} onShow={() => staffAction(() => api('/member-season', 'PUT', {season_id: season?.id, revision: memberSeason.revision}), 'Member season updated.')} onHide={() => staffAction(() => api('/member-season', 'PUT', {season_id: null, revision: memberSeason.revision}), 'CWL season hidden from members.')} />{season && <div className="staff-row"><div><strong>{season.label}</strong><small>{season.signup_open ? 'Members can sign up' : 'Signups closed'}</small></div><button disabled={pending} onClick={() => staffAction(() => api(`/seasons/${encodeURIComponent(season.id)}`, 'PATCH', { signup_open: !season.signup_open }), season.signup_open ? 'Signups closed.' : 'Signups opened.')}>{season.signup_open ? 'Close signups' : 'Open signups'}</button></div>}<details className="staff-create-season"><summary>Create another season</summary><form onSubmit={event => { event.preventDefault(); if (!newSeasonLabel.trim()) return; staffAction(() => api('/seasons', 'POST', { label: newSeasonLabel.trim(), signup_open: false }), 'Season created.'); setNewSeasonLabel('') }}><label>New season label<input value={newSeasonLabel} onChange={event => setNewSeasonLabel(event.target.value)} placeholder="November 2026" required /></label><button className="primary" disabled={pending}>Create season</button></form></details></section>
-          <section className="card" hidden={staffSection !== 'family'}><div className="card-heading"><h2>Family clans</h2><button disabled={staffLoading} onClick={() => void loadStaff()}>Refresh</button></div><p className="small">Accounts outside these family clans are marked for staff review. They can still sign up.</p>{approvedError ? <div className="notice error" role="alert">{approvedError}</div> : <p className="small">{approvedSource === 'bot_mongo' ? 'Synced with Discord' : approvedSource === 'fixture' ? 'Demo data' : 'Loading source…'}{approvedCheckedAt ? ` · Checked ${new Date(approvedCheckedAt).toLocaleString()}` : ''}</p>}{!approvedError && approved.length === 0 && !staffLoading && <p className="small">No family clans found.</p>}{staffPageSlice(visibleFamily).map(clan => <div className="staff-row" key={clan.tag}><div><strong>{clan.name}</strong><small>CWL: {clan.cwl_league || 'League unavailable'}{clan.cwl_league_stale && clan.cwl_league ? ' · last known' : ''}</small><small>{clan.tag}</small></div></div>)}</section>
-          <section className="card" hidden={staffSection !== 'hosting'}><h2>Hosting clan directory</h2><p className="small">Add a clan and choose its default: Main or Lazy. Season settings can differ. Set weight ranges and capacity in Roster builder → Edit clan ranges. Archiving stops new placements and keeps history.</p><form className="inline-form" onSubmit={event => { event.preventDefault(); if (!newClanTag.trim() || !newClanPool) return; staffAction(() => api('/clans', 'POST', { tag: newClanTag.trim(), pool: newClanPool }), 'Hosting clan added.'); setNewClanTag('') }}><label>Clan tag<input value={newClanTag} onChange={event => setNewClanTag(event.target.value)} placeholder="#CLANTAG" required /></label><label>CWL pool<select required value={newClanPool} onChange={event => setNewClanPool(event.target.value as Pool)}><option value="">Choose Main or Lazy</option><option value="main">Main Clan CWL</option><option value="lazy">Lazy CWL</option></select></label><button className="primary" disabled={pending}>Add clan</button></form>{staffPageSlice(visibleHosts).map(clan => <div className="staff-row" key={clan.tag}><div><strong>{clan.name}</strong><small>CWL: {clan.cwl_league || 'League unavailable'}{clan.cwl_league_stale && clan.cwl_league ? ' · last known' : ''}</small><small>{clan.tag} · {clan.archived ? 'Archived' : 'Active'}</small></div><label>Default CWL pool<select aria-label={`Default CWL pool for ${clan.name}`} value={clan.pool || ''} disabled={pending} onChange={event => staffAction(() => api(`/clans/${tagPath(clan.tag)}`, 'PATCH', { pool: event.target.value }), 'Hosting clan pool saved. Existing season overrides are preserved.')}><option value="" disabled>Not set</option><option value="main">Main Clan CWL</option><option value="lazy">Lazy CWL</option></select></label><button disabled={pending} onClick={() => staffAction(() => api(`/clans/${tagPath(clan.tag)}`, 'PATCH', { archived: !clan.archived }), clan.archived ? 'Clan restored.' : 'Clan archived.')}>{clan.archived ? 'Restore' : 'Archive'}</button></div>)}</section>
-
-          </div>
-{staffSection !== 'season' && <div className="staff-page-controls"><p role="status">{staffCount ? `${currentStaffPage * 8 + 1}–${Math.min((currentStaffPage + 1) * 8, staffCount)} of ${staffCount}` : 'No matching results.'}</p>{staffCount > 8 && <div><button disabled={currentStaffPage === 0} onClick={() => setStaffPage(currentStaffPage - 1)}>Previous</button><span>Page {currentStaffPage + 1} of {staffLastPage + 1}</span><button disabled={currentStaffPage >= staffLastPage} onClick={() => setStaffPage(currentStaffPage + 1)}>Next</button></div>}</div>}
-        </div>}
+        {view === 'staff' && session.can_edit && <SeasonsPage
+          key={session.user.id}
+          userId={session.user.id}
+          seasonId={seasonId}
+          seasons={seasons}
+          memberSeason={memberSeason}
+          onRefresh={loadSeasons}
+          onBusy={setRosterBusy}
+          onSeasonChange={id => { if (canLeave()) setSeasonId(id) }}
+          onClans={() => {
+            if (!canLeave() || allowedView('roster') !== 'roster') return
+            try { sessionStorage.setItem(`wu-roster-${staffSeasonId}-mode`, JSON.stringify('rules')) } catch { /* Optional preference. */ }
+            changeView('roster')
+          }}
+        />}
         {session.access_warning && <div className="notice error" role="alert">{session.access_warning}</div>}
         {view === 'issues' && session.is_owner && <DashboardIssues />}
         {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}

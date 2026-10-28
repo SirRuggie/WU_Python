@@ -88,6 +88,7 @@ export default function RosterWorkspace({
 }: Props) {
   const canRoster = useDashboardPermission("cwl_roster");
   const canSignups = useDashboardPermission("cwl_signups");
+  const canSettings = useDashboardPermission("cwl_settings");
   const canPublish = useDashboardPermission("cwl_publish");
   const comparisonMemory = useMemo(createComparisonMemory, [seasonId]);
   const season = seasons.find((item) => String(item.id) === seasonId);
@@ -1004,7 +1005,7 @@ export default function RosterWorkspace({
               }
             />
           )}
-          {season && canSignups && mode === "assign" && (
+          {season && (canSignups || canSettings) && mode === "assign" && (
             <StaffSignupControls
               key={seasonId}
               disabled={

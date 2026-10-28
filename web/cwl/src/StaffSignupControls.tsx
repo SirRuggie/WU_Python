@@ -1,3 +1,4 @@
+import useSignupAction from "./useSignupAction";
 import { useEffect, useRef, useState } from "react";
 import { Plus, RotateCw, Settings2, X } from "lucide-react";
 import ActionPanel from "./ActionPanel";
@@ -30,6 +31,8 @@ export default function StaffSignupControls({
   onOpenChange,
   disabled = false,
 }: Props) {
+  const canSignups = useDashboardPermission("cwl_signups");
+  const signup = useSignupAction(season, () => onChanged(false));
   const canSettings = useDashboardPermission("cwl_settings");
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -49,7 +52,7 @@ export default function StaffSignupControls({
   const [editorDirty, setEditorDirty] = useState(false);
   const [editorBusy, setEditorBusy] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
-  const working = busy || tagBusy || editorBusy;
+  const working = busy || tagBusy || editorBusy || signup.busy;
   const dirty =
     editorDirty ||
     (open && (!!uid || !!pool || selected.length > 0 || tagDirty));
@@ -132,32 +135,6 @@ export default function StaffSignupControls({
     reset();
     restoreAddFocus();
   }
-  async function toggle() {
-    if (working || disabled || archived || open || !canSettings) return;
-    const action = season.signup_open ? "Close" : "Open";
-    if (
-      !window.confirm(
-        `${action} Main and Lazy signups for ${season.label}? Existing signups will stay saved.`,
-      )
-    )
-      return;
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await api(`/seasons/${season.id}`, "PATCH", {
-        signup_open: !season.signup_open,
-      });
-      setNotice(`Signups ${season.signup_open ? "closed" : "opened"}.`);
-      await onChanged(false);
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not change signups.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
   async function add() {
     if (
       working ||
@@ -219,7 +196,7 @@ export default function StaffSignupControls({
       <div className="staff-signup-bar">
         <StatusPill
           tone={
-            archived ? "neutral" : season.signup_open ? "success" : "warning"
+            archived ? "neutral" : signup.hiddenOpen ? "warning" : season.signup_open ? "success" : "warning"
           }
         >
           {archived
@@ -227,9 +204,11 @@ export default function StaffSignupControls({
             : season.signup_open
               ? "Signups open"
               : "Signups closed"}
+          {signup.hiddenOpen && " · not visible to members"}
         </StatusPill>
+        {signup.hiddenOpen && canSettings && !archived && <Button disabled={working || disabled} onClick={() => void signup.begin("fix")}>Fix ›</Button>}
         <span className="staff-signup-bar-actions">
-          {!archived && (
+          {canSignups && !archived && (
             <button
               ref={addButton}
               type="button"
@@ -277,7 +256,7 @@ export default function StaffSignupControls({
             </p>
             <Button
               disabled={working || disabled}
-              onClick={() => void toggle()}
+              onClick={() => void signup.begin(season.signup_open ? "close" : "open")}
             >
               {season.signup_open ? "Close signups" : "Open signups"}
             </Button>
@@ -289,6 +268,9 @@ export default function StaffSignupControls({
           </div>
         </ActionPanel>
       )}
+      {signup.dialog}
+      {signup.error && <p className="notice error" role="alert">{signup.error}</p>}
+      {signup.notice && <p className="notice success" role="status">{signup.notice}</p>}
       {notice && (
         <p className="notice success" role="status">
           {notice}
