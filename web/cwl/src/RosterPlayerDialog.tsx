@@ -42,6 +42,7 @@ type Props = {
   onPoolChange?: (pool: Pool) => Promise<boolean>;
   archived?: boolean;
   viewOnly?: "declaration";
+  publicationNote?: string;
   rosterUi?: boolean;
 };
 const detailsWeightDraft = (weight: number | null): ManualWeightDraft => ({
@@ -78,6 +79,7 @@ export default function RosterPlayerDialog({
   onDirty,
   archived = false,
   viewOnly,
+  publicationNote,
 }: Props) {
   const [now] = useLocationNow();
   const locationCache = useRef<LocationRecords>({});
@@ -223,6 +225,9 @@ export default function RosterPlayerDialog({
               reason
             )}
           </p>
+        )}
+        {publicationNote && (
+          <p className="details-view-only">{publicationNote}</p>
         )}
         <section aria-label="At a glance">
           <h3>At a glance</h3>

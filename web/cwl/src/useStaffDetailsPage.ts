@@ -3,6 +3,7 @@ import type { StaffDetailsRequest } from "./staffDetailsRequest";
 
 export const staffDetailsPageEvent = "wu:staff-details-page";
 export type StaffDetailsPage = Omit<StaffDetailsRequest, "tag"> & {
+  enabled?: boolean;
   openDirect?: (tag: string) => void;
 };
 
@@ -11,8 +12,12 @@ export default function useStaffDetailsPage(page: StaffDetailsPage) {
   const current = useRef(page);
   current.current = page;
   useLayoutEffect(() => {
+    if (page.enabled === false) return;
     const registration: StaffDetailsPage = {
       seasonId: page.seasonId,
+      get publishedSnapshot() {
+        return current.current.publishedSnapshot;
+      },
       get order() {
         return current.current.order;
       },
@@ -33,5 +38,11 @@ export default function useStaffDetailsPage(page: StaffDetailsPage) {
     window.dispatchEvent(
       new CustomEvent(staffDetailsPageEvent, { detail: registration }),
     );
-  }, [page.seasonId, JSON.stringify(page.order), page.archived]);
+  }, [
+    page.seasonId,
+    JSON.stringify(page.order),
+    page.archived,
+    page.publishedSnapshot,
+    page.enabled,
+  ]);
 }
