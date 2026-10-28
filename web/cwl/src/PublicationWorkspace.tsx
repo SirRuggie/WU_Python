@@ -82,6 +82,15 @@ export default function PublicationWorkspace({
     return () => onDirty?.(false);
   }, [editDirty, announcementDirty, instructionsDirty, onDirty]);
   useEffect(() => {
+    if (!instructionsDirty) return;
+    const protect = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', protect);
+    return () => window.removeEventListener('beforeunload', protect);
+  }, [instructionsDirty]);
+  useEffect(() => {
     onBusy?.(busy || editBusy || editOpen || announcementBusy);
     return () => onBusy?.(false);
   }, [busy, editBusy, editOpen, announcementBusy, onBusy]);

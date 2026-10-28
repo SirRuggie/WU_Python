@@ -239,3 +239,63 @@ it("uses the roster season menu, capacity preview and roster-styled Details", as
   );
   expect(host.querySelector('[data-roster-ui="true"]')).not.toBeNull();
 });
+
+it("guards reload only while instructions are dirty and identifies instructions-only edits", async () => {
+  const data = {
+    ...base(),
+    published: {
+      version: 3,
+      revision: 8,
+      published_at: "2026-10-27T00:00:00Z",
+      joining_instructions: "Original",
+    },
+  };
+  api.mockImplementation(async (path: string) =>
+    path.includes("export-preview")
+      ? { rows: data.preview.accounts, summary: { published_version: 3 } }
+      : data,
+  );
+  await render();
+  expect(host.querySelector("textarea")!.value).toBe("Original");
+  expect(host.textContent).not.toContain("Joining instructions changed");
+  const clean = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(clean);
+  expect(clean.defaultPrevented).toBe(false);
+  await type("Only instructions changed");
+  expect(host.textContent).toContain("Joining instructions changed");
+  const dirtyEvent = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(dirtyEvent);
+  expect(dirtyEvent.defaultPrevented).toBe(true);
+  await type("Original");
+  const restored = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(restored);
+  expect(restored.defaultPrevented).toBe(false);
+});
+
+it("rejects Hide after a real draft refetch changes the revision", async () => {
+  let data = {
+    ...base(),
+    published: {
+      version: 3,
+      revision: 8,
+      published_at: "2026-10-27T00:00:00Z",
+      joining_instructions: "Join",
+    },
+  };
+  api.mockImplementation(async (path: string) =>
+    path.includes("export-preview")
+      ? { rows: data.preview.accounts, summary: { published_version: 3 } }
+      : data,
+  );
+  await render();
+  await act(async () => button("Hide roster from members").click());
+  data = { ...data, draft_revision: 10 };
+  await act(async () => button("Refresh draft").click());
+  await act(async () =>
+    button("Hide roster", document.querySelector("dialog")!).click(),
+  );
+  expect(host.textContent).toContain(
+    "The draft changed. Refresh draft and review it before hiding the roster.",
+  );
+  expect(api.mock.calls.some((call) => call[1] === "POST")).toBe(false);
+});
