@@ -1,4 +1,5 @@
 import { useId } from "react";
+import "./PlayerCard.css";
 import TownHallIcon from "./TownHallIcon";
 import { LockKeyhole } from "lucide-react";
 import type { RosterAccount, RosterClan } from "./roster";
@@ -37,31 +38,41 @@ export default function ComparePlayerCard({
   const location = comparisonLocation(record, clan.tag, now);
   const note = comparisonPublishNote(account, published);
   return (
-    <article className={`compare-account compare-account-${location.state}`}>
+    <article
+      className={`player-card compare-account compare-account-${location.state}`}
+    >
       <button
         type="button"
-        className="compare-player-body"
+        className="player-card-body compare-player-body"
         aria-label={`Details for ${account.player_name}`}
         aria-describedby={`${id}-weight ${id}-meta ${id}-location ${id}-tags${note ? ` ${id}-note` : ""}`}
         disabled={busy}
         onClick={onDetails}
       >
-        <span className="compare-player-top">
-          <strong title={account.player_name}>{account.player_name}</strong>
+        <span className="player-card-top compare-player-top">
+          <span aria-hidden="true">
+            <TownHallIcon level={account.town_hall} />
+          </span>
+          <strong className="player-card-name" title={account.player_name}>
+            {account.player_name}
+          </strong>
           {account.effective_weight === null ? (
             <span id={`${id}-weight`} className="compare-tag is-danger">
               No weight
             </span>
           ) : (
-            <strong id={`${id}-weight`} className="compare-player-weight">
+            <strong
+              id={`${id}-weight`}
+              className="player-card-weight compare-player-weight"
+            >
               {compactRosterWeight(account.effective_weight)}
             </strong>
           )}
         </span>
-        <span id={`${id}-meta`} className="compare-player-meta">
-          <span aria-hidden="true">
-            <TownHallIcon level={account.town_hall} />
-          </span>
+        <span
+          id={`${id}-meta`}
+          className="player-card-meta compare-player-meta"
+        >
           TH {account.town_hall ?? "—"} · {account.tag}
           {account.kept && (
             <LockKeyhole size={13} aria-label="Locked placement" />

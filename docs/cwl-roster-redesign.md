@@ -242,3 +242,9 @@ Status: deployed as `finalize-1` (`1a8b035461ec46fba60f6ed4808111d3c67d87cf`), P
 Later: Version history on Finalize (number, time, who, counts, hidden) via a new
 read-only endpoint. The separate flow batch (step strip/sidebar/renames) is not
 part of this implementation.
+
+## Shared player card (2026-10-27)
+
+Accounts & signups / Compare: one shared rounded card shape, 4px colored left edge, small card gap and lighter tokenized fills. Row 1 starts with TownHallIcon, then bold name (ellipsis), bold weight right and the existing menu; row 2 is muted TH/tag and lock (plus Accounts' existing pool). Compare retains its location line, chips and publication note. Accounts row 3 uses bold assigned clan or `Not assigned`, followed by muted `· now in X`; existing warning/note lines remain below. Accounts keeps its checkbox and green-for-assigned meaning; Compare keeps green-in-clan/red-elsewhere/neutral-checking. Gold selection outline remains.
+
+Frontend styling/markup only; behavior and location freshness rules unchanged. Shared source: `web/cwl/src/PlayerCard.css`; fills: `rosterUi/tokens.css`. Text levels retain the 12px minimum and measured 4.5:1 contrast, including text-fill colors. Accounts readability continues in a later audit. Branch checkpoint pending review; no merge, tag or deployment for this batch.

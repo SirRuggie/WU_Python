@@ -1,3 +1,4 @@
+import useLocationNow from "./useLocationNow";
 import ClanSettings from "./ClanSettings";
 import type { ClanRules } from "./clanSettingsModel";
 import { placementMessage } from "./publicationAwareness";
@@ -92,6 +93,7 @@ export default function RosterWorkspace({
   const archived = season?.status === "archived";
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterSnapshot | null>(null);
+  const [now] = useLocationNow();
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [hasPublication, setHasPublication] = useState(false);
@@ -1228,6 +1230,7 @@ export default function RosterWorkspace({
                           </header>
                         )}
                       <RosterAccountCard
+                        now={now}
                         account={account}
                         assignedClanName={clanName(account.assigned_clan_tag)}
                         showPool={viewPool === "all"}
