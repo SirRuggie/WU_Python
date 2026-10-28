@@ -810,7 +810,7 @@ export default function RosterWorkspace({
           }}
         />
       )}
-      {undoToast && !panel && canRoster && (
+      {undoToast && !panel && !editingTag && canRoster && (
         <RosterUndoToast
           state={undoToast}
           bottomOffset={selectedTags.length ? barHeight + 24 : 16}
@@ -1136,6 +1136,8 @@ export default function RosterWorkspace({
               next={navigationTags.indexOf(editingTag) >= 0 && navigationTags.indexOf(editingTag) < navigationTags.length - 1 ? () => setEditingTag(navigationTags[navigationTags.indexOf(editingTag) + 1]) : undefined}
               account={roster.accounts.find((a) => a.tag === editingTag)!}
               clans={roster.clans}
+              roster={roster}
+              undo={undoToast && <RosterUndoToast state={undoToast} onUndo={() => void undoPlacement()} onDismiss={() => setUndoToast(null)} />}
               busy={busy}
               error={feedback?.kind === "error" ? feedback.text : undefined}
               onClose={() => {

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool } from "./api";
 import type { RosterSnapshot } from "./roster";
+import RosterUndoToast from "./RosterUndoToast";
+import type { RosterUndoState } from "./rosterUndoModel";
 import RosterPlayerDialog from "./RosterPlayerDialog";
 import { detailsAccount } from "./detailsNavigation";
 import {
@@ -14,6 +16,8 @@ export default function StaffDetailsHost() {
   const [snapshot, setSnapshot] = useState<RosterSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [undo, setUndo] = useState<RosterUndoState | null>(null);
+  const receipt = useRef<RosterSnapshot["undo"]>(null);
   const generation = useRef(0);
   const pending = useRef(false);
   useEffect(() => {
@@ -97,6 +101,17 @@ export default function StaffDetailsHost() {
       const latest = await api<RosterSnapshot>(`${path}/roster`);
       if (id !== generation.current) return false;
       setSnapshot(latest);
+      if (!pool && !remove && ("assigned_clan_tag" in body || "kept" in body)) {
+        receipt.current = latest.undo;
+        setUndo(
+          latest.undo
+            ? { status: "available", label: latest.undo.label }
+            : { status: "unavailable", message: "Undo no longer available" },
+        );
+      } else {
+        receipt.current = null;
+        setUndo(null);
+      }
       await request.onChanged?.();
       return true;
     } catch (cause) {
@@ -108,6 +123,41 @@ export default function StaffDetailsHost() {
           setSnapshot(null);
       }
       return false;
+    } finally {
+      pending.current = false;
+      if (id === generation.current) setBusy(false);
+    }
+  }
+  async function undoPlacement() {
+    if (!request || !snapshot || !receipt.current || pending.current || busy)
+      return;
+    const id = generation.current,
+      saved = receipt.current;
+    pending.current = true;
+    setBusy(true);
+    setUndo({ status: "pending", label: saved.label });
+    try {
+      const path = `/seasons/${encodeURIComponent(request.seasonId)}/roster`;
+      await api(`${path}/undo`, "POST", {
+        revision: snapshot.revision,
+        undo_id: saved.id,
+      });
+      const latest = await api<RosterSnapshot>(path);
+      if (id === generation.current) {
+        setSnapshot(latest);
+        setUndo(null);
+        receipt.current = null;
+        await request.onChanged?.();
+      }
+    } catch {
+      if (id === generation.current) {
+        receipt.current = null;
+        setUndo({
+          status: "unavailable",
+          message:
+            "Undo no longer available. Refresh before making another change.",
+        });
+      }
     } finally {
       pending.current = false;
       if (id === generation.current) setBusy(false);
@@ -135,6 +185,17 @@ export default function StaffDetailsHost() {
         <RosterPlayerDialog
           account={account}
           clans={snapshot.clans}
+          roster={snapshot}
+          undo={
+            undo && (
+              <RosterUndoToast
+                state={undo}
+                onUndo={() => void undoPlacement()}
+                onDismiss={() => setUndo(null)}
+              />
+            )
+          }
+          onPoolChange={(pool) => write(false, {}, pool)}
           busy={busy}
           error={error}
           onDirty={request.onDirty}
