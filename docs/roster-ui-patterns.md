@@ -197,3 +197,13 @@ image may extend beyond the name line box; only the name text clips/ellipsizes.
 - Status text: Not announced yet; Queued · waiting for the bot; Sending…; Sent <short local date>; Failed · <reason>; Check Discord first: it may have posted. Resending is blocked.; Message settings changed since it was queued · review and retry. Older sent versions explain that the roster link shows the new version and announcements are not resent.
 - Publication status reuses Finalize's version/date and hidden-publication wording. One Refresh status control; no sender-ready badge. Three text levels: 15px bold, 13–14px regular, 12px muted. Check text-fill as well as color; links must stay legible on dark cards.
 - Images keep their existing select/preview/download/test behavior. This batch does not add real image posting.
+
+
+## Details panel
+
+- Desktop (≥768px): nonmodal right-side panel; phone: full-screen sheet. Keep the opener list mounted. Previous/Next use its current order and filters; disable at the ends and hide when no list exists.
+- Use the existing route with encoded `?account=`. Opening pushes one entry, switching replaces it, direct links get a list baseline, and shared actionPanelHistory handles Back. Close restores opener focus. Dirty weight text uses ConfirmDialog with the player's name; clean navigation does not prompt.
+- Order: header with TH/name, PlayerCardMeta and Discord/DM; At a glance; Placement; Weight; collapsed Source & history; Signup; Danger; signup date. Use 15px bold / 13–14px regular / 12px muted text. Shared PlayerClanStatus supplies the location pill, mismatch and last-check age.
+- Save each section separately. Placement/lock changes are explicit instant actions with revision-checked Undo. Unassign and signup changes retain confirmation. CompactWeightField defaults to Loot; weight requires Save, and blank clears to source. Keep unsaved text through background refreshes. Never force a location check on open.
+- View-only reasons distinguish archived, Declaration and missing roster access. Hide editing sections rather than disabling a form. Signup-only permission exposes Signup/Remove only. Clan-managed weight links remain permission-gated.
+- Load the shared staff Details host with staff CWL views, not eagerly at the application entry: eager roster CSS changes the base/primitive cascade. Re-run `test:layout` when changing that boundary.
