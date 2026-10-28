@@ -109,7 +109,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Phones use a swipeable clan-card row.
 - The unpublished-changes banner is amber, compact and not dismissible while pending; it names the published version/time, says placement changes are draft only, and offers permission-gated Finalize navigation. Signup changes are never labelled draft.
 
-- Compare readability: row 1 name and weight use 15px/700 primary text; row 2 uses a 12px/600 location pill, 13px/400 secondary location name and 12px/400 muted age; row 3 metadata, tags and optional publication note use 12px/400. No Compare text is smaller than 12px.
+- Compare readability (X3): row 1 name and weight use 15px/700 primary text (a red No weight tag replaces missing weight); row 2 has a 16px TownHallIcon next to TH, tag and lock in 12px muted text; row 3 has Now in, a 13px secondary clan name and 12px muted age (or No clan / Checking location…); row 4 has the location pill and wrapping range/family tags. A relevant publication note adds one muted fifth row. No Compare text is smaller than 12px. Cards retain the location tint, left edge, Details body action and 44px menu target.
 - Compare card fills use a softened location tint over the raised surface and a 4px colored left edge. Only the location pill retains semibold emphasis below row 1. Card gaps are consistently 6px.
 - Clan headings/counts use 15px/700 primary text, Total uses 14px/700, and supporting details use 12px/400 muted text. Tally numbers use green/red/neutral/amber with muted labels. Gold identifies only the selected rail border, never header text.
 

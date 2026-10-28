@@ -265,11 +265,11 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 1px;
+  gap: 0;
   min-width: 0;
   width: 100%;
   min-height: 44px;
-  padding: 2px 6px;
+  padding: 8px 6px;
   border: 0;
   border-radius: 14px;
   background: transparent;
@@ -301,7 +301,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.compare-player-top > strong:last-child {
+.compare-player-weight {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -310,7 +310,6 @@
   align-items: center;
   min-width: 0;
   gap: 4px;
-  padding-right: 36px;
 }
 .compare-location-line {
   display: flex;
@@ -329,12 +328,24 @@
   font-weight: 400;
   color: var(--compare-text-secondary);
 }
+.compare-location-label,
 .compare-location-age {
   flex-shrink: 0;
   font-size: 12px;
   line-height: 14px;
   font-weight: 400;
   color: var(--roster-text-muted);
+}
+.compare-player-meta .town-hall-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.compare-player-meta .town-hall-fallback {
+  font-size: 12px;
+}
+.compare-player-meta {
+  min-height: 16px;
 }
 .compare-player-tags {
   display: flex;
