@@ -54,7 +54,17 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend — Player card v2:** `374e0995280dad7d13483a2fa655975d0af72280`, tag `player-card-2`, PR #29.
+- **Current frontend — Player card 3:** `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`, tag `player-card-3`, PR #30.
+  - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/00170063e15b7df43bd769f2c97b0a69bd0ebdf5/`.
+  - Backend unchanged: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`; PID 1053095, no restart.
+  - Previous frontend / rollback: `374e0995280dad7d13483a2fa655975d0af72280`.
+  - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 374e0995280dad7d13483a2fa655975d0af72280` (frontend only).
+  - Backup: `.local/player-card-3-backup-20261028T173130Z/dashboard.sqlite3`; integrity OK, 54 table counts matched. Signups/assigned/locks unchanged: Main 19/18/18; Lazy 90/83/64. Publication and member-season unchanged.
+  - Public entry `index-CScTR1be.js` and feature hashes matched; 634 frontend tests and clean tagged TypeScript/build passed. Evidence: `/tmp/wu-player-card-3-release/live-proof.json`.
+  - Claude read-only smoke PASSED, relayed by Ruggie: release/build, backend unchanged, line 2 one line on all 19 Main cards, no errors.
+
+
+- **Previous frontend — Player card v2:** `374e0995280dad7d13483a2fa655975d0af72280`, tag `player-card-2`, PR #29.
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/374e0995280dad7d13483a2fa655975d0af72280/`.
   - Backend unchanged: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`; PID 1053095, no restart.
   - Previous frontend / rollback: `61290a4ce2b87611119483d6376b879a675aeb81`.

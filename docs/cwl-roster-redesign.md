@@ -4,7 +4,7 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-28)
 
-- **Player card v2 frontend released:** `player-card-2`, `374e0995280dad7d13483a2fa655975d0af72280`, PR #29. Backend remains `61290a4` without restart; previous frontend `61290a4`. Scripted hashes/counts passed; Claude's read-only smoke passed (build, dot, hidden banner, 109 cards, line 3). Real long-tag line-2 polish follows as a separate preview before signup-changes.
+- **Player card 3 frontend released:** `player-card-3`, `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`, PR #30. Backend remains `61290a4` without restart; previous frontend `374e099`. Scripted hashes/counts passed; Claude read-only smoke passed (release, entry, all 19 Main cards have single-line metadata, no errors). Signup-changes follows on a separate branch from origin/main.
 
 - **CWL flow + shared player card released:** `cwl-flow-1`, `61290a4ce2b87611119483d6376b879a675aeb81`, PRs #27/#28. Frontend and isolated backend deployed; scripted hashes/cwd/counts and Claude read-only click smoke passed. Both rollback targets are `1a8b035`; verified backup `.local/cwl-flow-backup-20261028T145938Z/`.
 
