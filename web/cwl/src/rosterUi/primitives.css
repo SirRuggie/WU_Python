@@ -363,3 +363,9 @@
   -webkit-text-fill-color: currentColor;
   white-space: normal;
 }
+
+/* Disabled choices keep their explanatory text readable. */
+.roster-menu-item[data-disabled]:has(.roster-menu-item-description) {
+  opacity: 1;
+  color: var(--roster-text-muted);
+}

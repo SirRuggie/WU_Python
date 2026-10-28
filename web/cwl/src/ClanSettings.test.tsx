@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ClanSettings, { ClanSettingsEditor } from "./ClanSettings";
@@ -218,4 +218,113 @@ it("shows save failures inside the panel and blocks duplicate submissions", asyn
   );
   await act(async () => finish(false));
   expect(button("Save settings").disabled).toBe(false);
+});
+it("zero shows an inline error and disables Save; blank is allowed; e and negatives are rejected", async () => {
+  const save = vi.fn().mockResolvedValue(true);
+  await act(async () =>
+    root.render(
+      <ClanSettingsEditor
+        clan={clan}
+        archived={false}
+        busy={false}
+        trigger={null}
+        onClose={() => true}
+        onDirty={() => {}}
+        onSave={save}
+      />,
+    ),
+  );
+  await type("Minimum weight", "0");
+  expect(document.body.textContent).toContain(
+    "Enter a weight above 0, or leave blank for no limit.",
+  );
+  expect(button("Save settings").disabled).toBe(true);
+  await type("Minimum weight", "");
+  await type("Maximum weight", "");
+  expect(button("Save settings").disabled).toBe(false);
+  expect(document.body.textContent).toContain("Range: Any weight");
+  await type("Minimum weight", "1e3");
+  await type("Maximum weight", "-1");
+  expect([...document.querySelectorAll("input")].map((e) => e.value)).toEqual([
+    "",
+    "",
+  ]);
+  await act(async () => button("Save settings").click());
+  expect(save).toHaveBeenCalledWith({
+    pool: "main",
+    capacity: 15,
+    min_weight: null,
+    max_weight: null,
+  });
+});
+it("validates ranges live and shows changed-only impact with missing weights excluded", async () => {
+  const accounts = [149000, 150000, 170000, null].map(
+    (effective_weight, index) => ({
+      tag: String(index),
+      player_name: `Player ${index}`,
+      assigned_clan_tag: clan.tag,
+      effective_weight,
+    }),
+  ) as import("./roster").RosterAccount[];
+  await act(async () =>
+    root.render(
+      <ClanSettingsEditor
+        clan={clan}
+        accounts={accounts}
+        archived={false}
+        busy={false}
+        trigger={null}
+        onClose={() => true}
+        onDirty={() => {}}
+        onSave={vi.fn()}
+      />,
+    ),
+  );
+  expect(document.querySelector(".clan-settings-impact")).toBeNull();
+  await type("Maximum weight", "150");
+  expect(button("Save settings").disabled).toBe(true);
+  expect(document.body.textContent).toContain("Maximum weight must be greater");
+  await type("Maximum weight", "169");
+  expect(document.body.textContent).toContain(
+    "2 assigned players would be outside the new range",
+  );
+  expect(button("Save settings").disabled).toBe(false);
+});
+
+it("saving an empty clan in another pool offers View and switches to its highlighted row", async () => {
+  function Harness() {
+    const [pool, setPool] = useState<"main" | "lazy">("main");
+    const [current, setClan] = useState({ ...clan, assigned_count: 0 });
+    return (
+      <ClanSettings
+        clans={[current]}
+        pool={pool}
+        archived={false}
+        busy={false}
+        onPoolChange={setPool}
+        onDirty={() => {}}
+        onLeave={() => true}
+        onSave={async (_, rules) => {
+          setClan({ ...current, ...rules });
+          return true;
+        }}
+      />
+    );
+  }
+  await act(async () => root.render(<Harness />));
+  await act(async () => button("Amber Knights").click());
+  await act(async () => button("Main CWL").click());
+  const lazy = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((e) => e.textContent === "Lazy CWL")!;
+  await act(async () => lazy.click());
+  await act(async () => button("Save settings").click());
+  expect(document.body.textContent).toContain(
+    "Amber Knights moved to Lazy CWL",
+  );
+  expect(document.querySelector(".clan-settings-row")).toBeNull();
+  await act(async () => button("View").click());
+  expect(
+    document.querySelector(".clan-settings-row.is-selected")?.textContent,
+  ).toContain("Amber Knights");
 });

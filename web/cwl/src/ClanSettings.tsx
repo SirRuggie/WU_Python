@@ -1,8 +1,15 @@
+import { compactRosterWeight } from "./rosterCompactWeight";
+import {
+  capacityState,
+  rangeImpact,
+  settingsWeight,
+  weightKeystroke,
+} from "./clanSettingsModel";
 import { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import type { Pool } from "./api";
-import type { RosterClan } from "./roster";
-import { parseWeightK, weightInputText } from "./roster";
+import type { RosterAccount, RosterClan } from "./roster";
+import { weightInputText } from "./roster";
 import { comparisonWeightRange } from "./comparePresentation";
 import {
   poolChangeReason,
@@ -17,6 +24,7 @@ import "./ClanSettings.css";
 
 type Props = {
   clans: RosterClan[];
+  accounts?: RosterAccount[];
   pool: Pool;
   busy: boolean;
   archived: boolean;
@@ -81,7 +89,7 @@ export default function ClanSettings(props: Props) {
                 <Button
                   key={item.tag}
                   data-clan={item.tag}
-                  className={`roster-clan-chip clan-settings-row${highlight === item.tag ? " is-selected" : ""}`}
+                  className={`roster-clan-chip clan-settings-row is-${capacityState(item.assigned_count, item.capacity)}${highlight === item.tag ? " is-selected" : ""}`}
                   disabled={props.busy}
                   onClick={(event) => {
                     setTrigger(event.currentTarget);
@@ -94,6 +102,13 @@ export default function ClanSettings(props: Props) {
                       <strong>{item.name}</strong>
                       <span className="roster-clan-chip-count">
                         {item.assigned_count} / {item.capacity ?? "—"}
+                        {item.capacity &&
+                          item.assigned_count > item.capacity && (
+                            <span className="clan-settings-over">
+                              {" "}
+                              · +{item.assigned_count - item.capacity} over
+                            </span>
+                          )}
                       </span>
                     </span>
                     <span className="clan-settings-description">
@@ -120,6 +135,7 @@ export default function ClanSettings(props: Props) {
         <ClanSettingsEditor
           key={clan.tag}
           clan={clan}
+          accounts={props.accounts || []}
           busy={props.busy}
           archived={props.archived}
           saveError={props.saveError}
@@ -143,6 +159,7 @@ export default function ClanSettings(props: Props) {
 
 export function ClanSettingsEditor({
   clan,
+  accounts = [],
   busy,
   archived,
   saveError,
@@ -152,6 +169,7 @@ export function ClanSettingsEditor({
   onSave,
 }: {
   clan: RosterClan;
+  accounts?: RosterAccount[];
   busy: boolean;
   archived: boolean;
   saveError?: string;
@@ -184,6 +202,39 @@ export function ClanSettingsEditor({
     onDirty(changed);
     return () => onDirty(false);
   }, [changed, onDirty]);
+  const min = settingsWeight(draft.min),
+    max = settingsWeight(draft.max);
+  const rangeError =
+    !min.error &&
+    !max.error &&
+    min.value !== null &&
+    max.value !== null &&
+    min.value >= max.value
+      ? "Maximum weight must be greater than minimum weight."
+      : "";
+  const invalid = !!(min.error || max.error || rangeError);
+  const impact =
+    changed && !invalid
+      ? rangeImpact(accounts, clan.tag, min.value, max.value)
+      : [];
+  const capacity = draft.capacity ? Number(draft.capacity) : null;
+  const count = (
+    <p className="clan-settings-count">
+      {clan.assigned_count} assigned
+      {capacity && (
+        <>
+          {" "}
+          · {capacity}v{capacity}
+          {clan.assigned_count > capacity && (
+            <span className="clan-settings-over">
+              {" "}
+              · +{clan.assigned_count - capacity} over
+            </span>
+          )}
+        </>
+      )}
+    </p>
+  );
   const submit = async () => {
     if (
       busy ||
@@ -192,14 +243,11 @@ export function ClanSettingsEditor({
       stale ||
       !changed ||
       !draft.pool ||
-      !draft.capacity
+      !draft.capacity ||
+      invalid
     )
       return;
     try {
-      const min = parseWeightK(draft.min),
-        max = parseWeightK(draft.max);
-      if (min !== null && max !== null && min >= max)
-        throw new Error("Maximum weight must be greater than minimum weight.");
       if (poolChangeReason(clan, draft.pool as Pool)) return;
       submitting.current = true;
       setError("");
@@ -207,8 +255,8 @@ export function ClanSettingsEditor({
         await onSave({
           pool: draft.pool as Pool,
           capacity: Number(draft.capacity),
-          min_weight: min,
-          max_weight: max,
+          min_weight: min.value,
+          max_weight: max.value,
         })
       )
         setBase(draft);
@@ -233,7 +281,12 @@ export function ClanSettingsEditor({
             variant="primary"
             icon={Check}
             disabled={
-              busy || stale || !changed || !draft.pool || !draft.capacity
+              busy ||
+              stale ||
+              !changed ||
+              !draft.pool ||
+              !draft.capacity ||
+              invalid
             }
             onClick={() => void submit()}
           >
@@ -291,22 +344,63 @@ export function ClanSettingsEditor({
           />
           <div className="clan-settings-weights">
             <Input
+              className="clan-settings-k-input"
+              inputMode="decimal"
+              error={min.error}
               label="Minimum weight"
               value={draft.min}
               disabled={busy}
               onChange={(event) =>
+                weightKeystroke(event.target.value) &&
                 setDraft({ ...draft, min: event.target.value })
               }
             />
             <Input
+              className="clan-settings-k-input"
+              inputMode="decimal"
+              error={max.error || rangeError}
               label="Maximum weight"
               value={draft.max}
               disabled={busy}
               onChange={(event) =>
+                weightKeystroke(event.target.value) &&
                 setDraft({ ...draft, max: event.target.value })
               }
             />
           </div>
+          {!invalid && (
+            <div className="clan-settings-range" aria-live="polite">
+              <p>
+                Range:{" "}
+                {comparisonWeightRange({
+                  min_weight: min.value,
+                  max_weight: max.value,
+                }) || "Any weight"}
+              </p>
+              {min.value !== null && max.value !== null && (
+                <small>
+                  Includes {compactRosterWeight(min.value)}, up to just under{" "}
+                  {compactRosterWeight(max.value)}.
+                </small>
+              )}
+            </div>
+          )}
+          {count}
+          {impact.length > 0 && (
+            <details className="clan-settings-impact">
+              <summary>
+                {impact.length} assigned players would be outside the new range
+              </summary>
+              <ul>
+                {impact.map((account) => (
+                  <li key={account.tag}>
+                    {account.player_name} ·{" "}
+                    {compactRosterWeight(account.effective_weight)}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           {(error || saveError) && <p role="alert">{error || saveError}</p>}
           {stale && changed && (
             <p role="alert">

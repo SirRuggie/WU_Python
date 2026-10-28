@@ -1038,6 +1038,7 @@ export default function RosterWorkspace({
             <ClanSettings
               key={seasonId}
               clans={roster.clans}
+              accounts={roster.accounts}
               pool={poolFilter}
               busy={busy}
               archived={!!archived}
