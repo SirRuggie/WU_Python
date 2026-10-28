@@ -111,3 +111,10 @@
   outline: 2px solid var(--roster-text);
   outline-offset: 2px;
 }
+
+.signup-activity-panel.is-danger .action-panel-heading {
+  border-bottom-color: #aa636d;
+}
+.signup-activity-panel.is-danger .signup-activity-intro {
+  color: #ffb3ba;
+}

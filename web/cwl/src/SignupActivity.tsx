@@ -71,7 +71,7 @@ export default function SignupActivity({
         <ActionPanel
           title="Signup changes"
           variant="side"
-          className="roster-ui signup-activity-panel"
+          className={`roster-ui signup-activity-panel${summary.danger ? " is-danger" : ""}`}
           trigger={trigger.current}
           busy={busy || !!confirm}
           onClose={() => setOpen(false)}
