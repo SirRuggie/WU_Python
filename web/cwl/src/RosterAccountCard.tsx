@@ -4,7 +4,7 @@ import RosterAccountMenu from "./RosterAccountMenu";
 import TownHallIcon from "./TownHallIcon";
 import { Chip } from "./rosterUi/primitives";
 import { compactRosterWeight } from "./rosterCompactWeight";
-import { comparisonAge } from "./comparisonLocation";
+import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
 import type { RosterAccount } from "./roster";
 import "./PlayerCard.css";
 import "./RosterAccountCard.css";
@@ -44,15 +44,15 @@ export default function RosterAccountCard({
 }: Props) {
   const descriptionId = useId();
   const maySelect = !archived && (canRoster || canSignups);
-  const currentClanKnown = Number.isFinite(
-    Date.parse(account.current_clan_checked_at || ""),
+  const status = playerClanStatus(
+    account.assigned_clan_tag,
+    assignedClanName,
+    account,
+    now,
   );
-  const currentClanText = currentClanKnown
-    ? `· ${account.current_clan_name || account.current_clan_tag ? `now in ${account.current_clan_name || account.current_clan_tag}` : "in no clan"} · ${comparisonAge(account.current_clan_checked_at, now)}`
-    : "· location not checked yet";
   return (
     <article
-      className={`player-card roster-player-card${account.assigned_clan_tag ? " is-assigned" : ""}${selected ? " is-selected" : ""}`}
+      className={`player-card player-card-responsive roster-player-card${account.assigned_clan_tag ? " is-assigned" : ""}${selected ? " is-selected" : ""}`}
     >
       <label className="roster-player-select">
         <input
@@ -99,14 +99,7 @@ export default function RosterAccountCard({
             <LockKeyhole size={13} aria-label="Locked placement" />
           )}
         </span>
-        <span className="roster-player-placement">
-          <strong>
-            {account.assigned_clan_tag ? assignedClanName : "Not assigned"}
-          </strong>
-          <span className="roster-player-current" title={currentClanText}>
-            {currentClanText}
-          </span>
-        </span>
+        <PlayerClanStatus status={status} />
         {account.outside_family_and_hosts && (
           <span className="roster-player-warning">
             <Chip tone="warning">Outside family / hosting clans</Chip>
@@ -125,8 +118,7 @@ export default function RosterAccountCard({
       </button>
       <span id={descriptionId} className="roster-player-sr-only">
         {account.tag}. TH {account.town_hall ?? "unknown"}. Weight{" "}
-        {compactRosterWeight(account.effective_weight)}. Assigned clan:{" "}
-        {account.assigned_clan_tag ? assignedClanName : "Not assigned"}.
+        {compactRosterWeight(account.effective_weight)}. {status.description}
         {account.kept ? " Locked placement." : ""}
       </span>
       <RosterAccountMenu

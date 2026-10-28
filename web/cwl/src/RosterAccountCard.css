@@ -20,24 +20,6 @@
   height: 20px;
   accent-color: var(--roster-gold);
 }
-.roster-player-placement {
-  font-size: 13px;
-  line-height: 16px;
-  display: flex;
-  gap: 4px;
-  white-space: nowrap;
-  min-width: 0;
-}
-.roster-player-placement strong {
-  flex-shrink: 0;
-  color: var(--roster-text);
-}
-.roster-player-current {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--roster-text-muted);
-}
 .roster-player-warning,
 .roster-player-note {
   font-size: 12px;

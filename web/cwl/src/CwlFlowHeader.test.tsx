@@ -31,7 +31,11 @@ it("Build loads draft state; signup warning and Fix remain in the header on ever
       : path.endsWith("/publication")
         ? {
             published: null,
-            last_publication: null,
+            last_publication: {
+              version: 1,
+              published_at: "2026-10-15T12:00:00Z",
+              withdrawn_at: "2026-10-28T12:00:00Z",
+            },
             draft_changed: false,
             preview: { assigned_count: 125 },
           }
@@ -62,6 +66,9 @@ it("Build loads draft state; signup warning and Fix remain in the header on ever
   const root = createRoot(host);
   try {
     await act(async () => root.render(<Harness />));
+    expect(host.querySelector(".publication-awareness")?.textContent).toContain(
+      "Hidden from members · last published version 1 on",
+    );
     expect(api).toHaveBeenCalledWith("/seasons/1/publication");
     expect(
       host.querySelector('[aria-label="Unpublished changes"]'),

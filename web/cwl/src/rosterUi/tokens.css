@@ -14,6 +14,15 @@
   --roster-card-hover: rgb(255 255 255 / 3%);
   --roster-card-success: #2b4b38;
   --roster-card-danger: #493235;
+  --roster-card-glow-neutral: rgb(210 215 230 / 8%);
+  --roster-card-glow-success: rgb(80 240 145 / 20%);
+  --roster-card-glow-danger: rgb(250 100 110 / 20%);
+  --roster-card-edge-neutral: #9a9da8;
+  --roster-card-edge-success: #43e58c;
+  --roster-card-edge-danger: #ff737d;
+  --roster-card-text-muted: #e2e4eb;
+  --roster-card-text-success: #00d659;
+  --roster-card-text-danger: #ff9f9f;
   --roster-border: #494950;
   --roster-border-subtle: #38383e;
   --roster-text: #f5f4f0;

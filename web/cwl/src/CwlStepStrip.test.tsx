@@ -70,3 +70,19 @@ describe("CWL step strip", () => {
     expect(markup(["cwl_signups"], null)).toContain("1 Build");
   });
 });
+
+it("marks withdrawn rosters with placements even when draft_changed is false", () => {
+  const html = markup(["cwl"], {
+    published: null,
+    last_publication: {
+      version: 1,
+      published_at: "2026-10-15T19:58:00Z",
+      withdrawn_at: "2026-10-28T12:00:00Z",
+      joining_instructions: "",
+    },
+    draft_changed: false,
+    preview: { assigned_count: 5 } as PublicationDraft["preview"],
+  });
+  expect(html).toContain('aria-label="Unpublished changes"');
+  expect(html).not.toContain('aria-label="Published and current"');
+});

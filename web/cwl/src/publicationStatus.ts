@@ -9,12 +9,18 @@ export function publicationDate(value: string): string {
   });
 }
 
+export function hiddenPublicationStatus(
+  last: NonNullable<PublicationDraft["last_publication"]>,
+): string {
+  return `Hidden from members · last published version ${last.version} on ${publicationDate(last.published_at)}`;
+}
+
 export function finalizeStatus(draft: PublicationDraft): string {
   if (draft.published) {
     return `Members ${draft.draft_changed ? "still see" : "see"} roster version ${draft.published.version} · Published ${publicationDate(draft.published.published_at)}`;
   }
   if (draft.last_publication?.withdrawn_at) {
-    return `Hidden from members · last published version ${draft.last_publication.version} on ${publicationDate(draft.last_publication.published_at)}`;
+    return hiddenPublicationStatus(draft.last_publication);
   }
   return "Draft · members can't see placements yet";
 }

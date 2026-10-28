@@ -1,33 +1,53 @@
-/* Shared Accounts / Compare player shape and text hierarchy. */
+/* Shared surface; responsive Accounts and always-compact Compare use one grid. */
 .roster-ui .player-card {
+  --roster-text-muted: var(--roster-card-text-muted);
+  --player-card-fill: var(--roster-card);
+  --player-card-glow: var(--roster-card-glow-neutral);
+  --player-card-edge: var(--roster-card-edge-neutral);
   position: relative;
   display: block;
   min-width: 0;
   flex-shrink: 0;
   border: 1px solid var(--roster-border);
-  border-left: 4px solid var(--roster-text-muted);
   border-radius: var(--roster-radius-card);
-  background: var(--roster-card);
+  background:
+    linear-gradient(to bottom, var(--player-card-glow), transparent 44px),
+    var(--player-card-fill);
+  box-shadow: none;
+}
+.roster-ui .player-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 5px;
+  border-radius: 999px;
+  background: var(--player-card-edge);
+  pointer-events: none;
 }
 .roster-ui .player-card.is-assigned,
 .roster-ui .player-card.compare-account-arrived {
-  border-left-color: var(--roster-success);
-  background: var(--roster-card-success);
+  --player-card-fill: var(--roster-card-success);
+  --player-card-glow: var(--roster-card-glow-success);
+  --player-card-edge: var(--roster-card-edge-success);
 }
 .roster-ui .player-card.compare-account-missing {
-  border-left-color: var(--roster-danger);
-  background: var(--roster-card-danger);
+  --player-card-fill: var(--roster-card-danger);
+  --player-card-glow: var(--roster-card-glow-danger);
+  --player-card-edge: var(--roster-card-edge-danger);
 }
 .roster-ui .player-card > button.player-card-body {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 0;
   min-width: 0;
   width: 100%;
   min-height: 44px;
   margin: 0;
-  padding: 8px 6px;
+  padding: 8px 6px 8px 10px;
   border: 0;
   border-radius: var(--roster-radius-card);
   background: transparent;
@@ -37,44 +57,52 @@
   text-align: left;
   -webkit-text-fill-color: currentColor;
 }
+.roster-ui .player-card-body * {
+  -webkit-text-fill-color: currentColor;
+}
 .roster-ui .player-card-body:focus-visible {
-  outline: 2px solid white;
+  outline: 2px solid var(--roster-gold);
   outline-offset: -2px;
 }
 .player-card-top {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-right: 36px;
-  min-width: 0;
+  display: contents;
   color: var(--roster-text);
-  font-size: 15px;
-  line-height: 18px;
+  font-size: 16px;
+  line-height: 20px;
   font-weight: 700;
 }
 .player-card-top > span:first-child {
-  flex-shrink: 0;
+  grid-column: 1;
+  grid-row: 1 / 3;
+  align-self: center;
 }
 .player-card-top .town-hall-icon {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: 40px;
+  height: 40px;
 }
 .player-card-top .town-hall-fallback {
   font-size: 12px;
 }
 .player-card-top .player-card-name {
-  flex: 1;
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
 }
+.player-card-top .player-card-weight,
+.player-card-top > .is-danger {
+  grid-column: 3;
+  grid-row: 1;
+  margin-right: 36px;
+}
 .player-card-weight {
-  flex-shrink: 0;
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 20px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -85,18 +113,31 @@
   line-height: 16px;
 }
 .player-card-meta {
+  grid-column: 2 / -1;
+  grid-row: 2;
   min-height: 16px;
   padding-right: 36px;
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
   font-weight: 400;
   color: var(--roster-text-muted);
 }
 .player-card-meta svg {
   flex-shrink: 0;
+}
+.player-card-body > .player-clan-status,
+.player-card-body > .compare-player-location {
+  grid-column: 2 / -1;
+  grid-row: 3;
+}
+.player-card-body > .compare-player-tags,
+.player-card-body > .compare-publish-note,
+.player-card-body > .roster-player-warning,
+.player-card-body > .roster-player-note {
+  grid-column: 2 / -1;
 }
 .player-card > .roster-player-menu {
   position: absolute;
@@ -109,7 +150,111 @@
   height: 44px;
   min-height: 44px;
 }
-
 .roster-ui .player-card > button.player-card-body:hover:not(:disabled) {
   background: var(--roster-card-hover);
+}
+/* Accounts alone gains the wide layout; Compare remains compact at any width. */
+@media (min-width: 701px) {
+  .roster-ui .player-card-responsive > button.player-card-body {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+  }
+  .player-card-responsive .player-card-top > span:first-child {
+    grid-row: 1 / 4;
+  }
+  .player-card-responsive .town-hall-icon {
+    width: 56px;
+    height: 56px;
+  }
+  .player-card-responsive .player-card-name {
+    font-size: 18px;
+    line-height: 23px;
+  }
+  .player-card-responsive .player-card-weight {
+    grid-row: 1 / 4;
+    align-self: center;
+    font-size: 22px;
+    line-height: 28px;
+  }
+  .player-card-responsive .player-card-meta,
+  .player-card-responsive .player-clan-status {
+    grid-column: 2;
+    padding-right: 0;
+  }
+  .player-card-responsive > .roster-player-menu {
+    top: 50%;
+    transform: translateY(-50%);
+  }
+}
+/* Keep Compare's extra chip row compact without reducing text or hit targets. */
+.roster-ui .player-card-compact > button.player-card-body {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.player-card-compact .player-card-top > span:first-child {
+  grid-row: 1 / 4;
+  align-self: start;
+}
+
+/* One shared, single-line clan status. Keep menu hit areas clear. */
+.player-card .player-clan-status {
+  min-width: 0;
+  padding-right: 0;
+}
+.player-card .roster-player-placement {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+}
+.player-card .roster-player-placement strong {
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--roster-text);
+}
+.player-card .roster-player-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--roster-text-muted);
+}
+.player-card .roster-player-current::before {
+  content: " ";
+  white-space: pre;
+}
+.player-card .roster-player-placement.is-in-clan strong {
+  color: var(--roster-card-text-success);
+  flex-shrink: 1;
+}
+.player-card .roster-player-placement.is-checking strong,
+.player-card .roster-player-placement.is-unassigned strong {
+  color: var(--roster-text-muted);
+  font-weight: 400;
+}
+.player-card .player-current-clan.is-elsewhere {
+  color: var(--roster-card-text-danger);
+}
+.player-card .player-in-clan-pill {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 18px;
+  border: 1px solid var(--roster-card-text-success);
+  border-radius: 999px;
+  color: var(--roster-card-text-success);
+  background: #204d35;
+}
+@media (min-width: 701px) {
+  .player-card-responsive .player-clan-status {
+    padding-right: 0;
+  }
+}
+
+/* Row three starts below the 44px menu hit area, so it can use the full width. */
+.player-card-compact .player-clan-status {
+  margin-top: 6px;
 }

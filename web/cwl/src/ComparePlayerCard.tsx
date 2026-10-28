@@ -1,12 +1,12 @@
 import { useId } from "react";
 import "./PlayerCard.css";
+import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
 import TownHallIcon from "./TownHallIcon";
 import { LockKeyhole } from "lucide-react";
 import type { RosterAccount, RosterClan } from "./roster";
 import RosterAccountMenu from "./RosterAccountMenu";
 import {
   comparisonLocation,
-  comparisonAge,
   type ComparisonLocation,
 } from "./comparisonLocation";
 import {
@@ -35,17 +35,26 @@ export default function ComparePlayerCard({
   onDetails,
 }: Props) {
   const id = useId();
-  const location = comparisonLocation(record, clan.tag, now);
+  const location = comparisonLocation(record, clan.tag, now, clan.name);
+  const status = playerClanStatus(
+    clan.tag,
+    clan.name || clan.tag,
+    record || {},
+    now,
+    true,
+  );
+  const outsideRange = outsideComparisonRange(account.effective_weight, clan);
+  const outsideFamily = !!record?.current_clan_tag && record.outside_family;
   const note = comparisonPublishNote(account, published);
   return (
     <article
-      className={`player-card compare-account compare-account-${location.state}`}
+      className={`player-card player-card-compact compare-account compare-account-${location.state}`}
     >
       <button
         type="button"
         className="player-card-body compare-player-body"
         aria-label={`Details for ${account.player_name}`}
-        aria-describedby={`${id}-weight ${id}-meta ${id}-location ${id}-tags${note ? ` ${id}-note` : ""}`}
+        aria-describedby={`${id}-weight ${id}-meta ${id}-location${outsideRange || outsideFamily ? ` ${id}-tags` : ""}${note ? ` ${id}-note` : ""}`}
         disabled={busy}
         onClick={onDetails}
       >
@@ -78,50 +87,29 @@ export default function ComparePlayerCard({
             <LockKeyhole size={13} aria-label="Locked placement" />
           )}
         </span>
-        <span id={`${id}-location`} className="compare-player-location">
-          {location.state === "checking" ? (
-            <span className="compare-location-label">Checking location…</span>
-          ) : (
-            <span className="compare-location-line" title={location.detail}>
-              {record?.current_clan_name || record?.current_clan_tag ? (
-                <>
-                  <span className="compare-location-label">Now in </span>
-                  <span className="compare-location-name">
-                    {record.current_clan_name || record.current_clan_tag}
-                  </span>
-                </>
-              ) : (
-                <span className="compare-location-label">No clan</span>
-              )}
-              <span className="compare-location-age">
+        <PlayerClanStatus
+          id={`${id}-location`}
+          className="compare-player-location"
+          status={status}
+        />
+        {(outsideRange || outsideFamily) && (
+          <span id={`${id}-tags`} className="compare-player-tags">
+            {outsideRange && (
+              <>
                 <span className="sr-only">, </span>
-                <span aria-hidden="true">· </span>
-                {comparisonAge(record?.current_clan_checked_at, now)}
-              </span>
-            </span>
-          )}
-        </span>
-        <span id={`${id}-tags`} className="compare-player-tags">
-          <span
-            className={`compare-tag compare-location-pill is-${location.state}`}
-          >
-            {location.label}
+                <span className="compare-tag is-warning">
+                  Outside weight range
+                </span>
+              </>
+            )}
+            {outsideFamily && (
+              <>
+                <span className="sr-only">, </span>
+                <span className="compare-tag is-warning">Outside family</span>
+              </>
+            )}
           </span>
-          {outsideComparisonRange(account.effective_weight, clan) && (
-            <>
-              <span className="sr-only">, </span>
-              <span className="compare-tag is-warning">
-                Outside weight range
-              </span>
-            </>
-          )}
-          {record?.current_clan_tag && record.outside_family && (
-            <>
-              <span className="sr-only">, </span>
-              <span className="compare-tag is-warning">Outside family</span>
-            </>
-          )}
-        </span>
+        )}
         {note && (
           <span id={`${id}-note`} className="compare-publish-note" title={note}>
             {note}

@@ -238,37 +238,6 @@
   max-height: none;
   padding: 4px;
 }
-.compare-player-location {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 4px;
-}
-.compare-location-line {
-  display: flex;
-  gap: 3px;
-  flex: 1;
-  min-width: 0;
-  align-items: baseline;
-}
-.compare-location-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  line-height: 16px;
-  font-weight: 400;
-  color: var(--compare-text-secondary);
-}
-.compare-location-label,
-.compare-location-age {
-  flex-shrink: 0;
-  font-size: 12px;
-  line-height: 14px;
-  font-weight: 400;
-  color: var(--roster-text-muted);
-}
 .compare-player-tags {
   display: flex;
   align-items: center;
@@ -286,15 +255,6 @@
   line-height: 14px;
   font-weight: 400;
 }
-.compare-location-pill {
-  flex-shrink: 0;
-  font-weight: 600;
-}
-.compare-tag.is-arrived {
-  color: var(--roster-success);
-  border-color: var(--roster-success);
-}
-.compare-tag.is-missing,
 .compare-tag.is-danger {
   color: var(--roster-danger);
   border-color: var(--roster-danger);
