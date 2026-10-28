@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current Announcements frontend: `/home/ruggie/.local/share/wu-dashboard/releases/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`
+  - Current Details frontend: `/home/ruggie/.local/share/wu-dashboard/releases/c767b55c010dd0de82416301a2c60057775a3662/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,18 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend + backend — Announcements:** `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, tag `announcements-1`, PR #32.
+- **Current frontend — Details:** `c767b55c010dd0de82416301a2c60057775a3662`, tag `details-1`, PR #33.
+  - Release: `/home/ruggie/.local/share/wu-dashboard/releases/c767b55c010dd0de82416301a2c60057775a3662/`.
+  - Previous frontend / rollback: `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`; command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 73fe3fa92d8d0d89491be6e350c130b9d375aaaf`.
+  - Backend unchanged: `/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`, PID 1366655; no restart.
+  - Backup: `.local/details-backup-20261028T232301Z/dashboard.sqlite3`; 1,142,784 bytes, integrity OK, all 54 table counts matched.
+  - Public `index-CsYgjk4R.js` and 15 asset hashes matched; Main 19/18/18 and Lazy 92/90/71 (signups/assigned/locks), publications, member season, signup activity and manual/saved weight checksums stayed identical.
+  - 719 frontend tests, TypeScript/build and layout passed in the clean tagged checkout. Layout required `WU_TEST_PYTHON` to point to the existing interpreter.
+  - Claude read-only 360px smoke PASSED, relayed by Ruggie: open/Next/focus/Back retain account URLs, direct link opens Ace, clean Save disabled; no errors or writes.
+  - Evidence: `/tmp/wu-details-release/live-proof.json`.
+
+
+- **Previous frontend / current backend — Announcements:** `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, tag `announcements-1`, PR #32.
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`.
   - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`; approved isolated restart, PID 1366655 at verification.
   - Previous frontend / rollback: `4404c3672872ebff706519402efa4ee9940d3a60`; previous backend / rollback: `61290a4ce2b87611119483d6376b879a675aeb81`.
