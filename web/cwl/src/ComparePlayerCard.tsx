@@ -2,7 +2,7 @@ import { useId } from "react";
 import "./PlayerCard.css";
 import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
 import TownHallIcon from "./TownHallIcon";
-import { LockKeyhole } from "lucide-react";
+import PlayerCardMeta from "./PlayerCardMeta";
 import type { RosterAccount, RosterClan } from "./roster";
 import RosterAccountMenu from "./RosterAccountMenu";
 import {
@@ -78,15 +78,11 @@ export default function ComparePlayerCard({
             </strong>
           )}
         </span>
-        <span
+        <PlayerCardMeta
+          account={account}
           id={`${id}-meta`}
-          className="player-card-meta compare-player-meta"
-        >
-          TH {account.town_hall ?? "—"} · {account.tag}
-          {account.kept && (
-            <LockKeyhole size={13} aria-label="Locked placement" />
-          )}
-        </span>
+          className="compare-player-meta"
+        />
         <PlayerClanStatus
           id={`${id}-location`}
           className="compare-player-location"

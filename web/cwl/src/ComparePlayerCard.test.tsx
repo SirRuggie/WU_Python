@@ -89,7 +89,7 @@ it("keeps the TH-first headline, metadata, shared clan status and warning row in
   expect(
     body.children[0].querySelector(".town-hall-icon")?.getAttribute("alt"),
   ).toBe("Town Hall 18");
-  expect(body.children[1].textContent).toContain("TH 18 · #P2Y");
+  expect(body.children[1].textContent).toContain("TH18 · #P2Y");
   expect(describedText(body.children[2])).toBe(
     "Assigned clan: Assigned clan. Now in Other clan, checked 2 minutes ago.",
   );
@@ -107,7 +107,7 @@ it("keeps the TH-first headline, metadata, shared clan status and warning row in
           )?.textContent,
       )
       .join(" "),
-  ).toContain("170k TH 18 · #P2Y");
+  ).toContain("170k TH18 · #P2Y");
 });
 it("checking names the assigned clan without an age; No clan retains age", () => {
   const host = document.createElement("div");

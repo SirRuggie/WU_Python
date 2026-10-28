@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { LockKeyhole } from "lucide-react";
+import PlayerCardMeta from "./PlayerCardMeta";
 import RosterAccountMenu from "./RosterAccountMenu";
 import TownHallIcon from "./TownHallIcon";
 import { Chip } from "./rosterUi/primitives";
@@ -90,15 +90,7 @@ export default function RosterAccountCard({
             )}
           </span>
         </span>
-        <span className="player-card-meta">
-          TH {account.town_hall ?? "—"} · {account.tag}
-          {showPool
-            ? ` · ${account.pool === "main" ? "Main" : "Lazy"} CWL`
-            : ""}
-          {account.kept && (
-            <LockKeyhole size={13} aria-label="Locked placement" />
-          )}
-        </span>
+        <PlayerCardMeta account={account} showPool={showPool} />
         <PlayerClanStatus status={status} />
         {account.outside_family_and_hosts && (
           <span className="roster-player-warning">
@@ -117,8 +109,10 @@ export default function RosterAccountCard({
           )}
       </button>
       <span id={descriptionId} className="roster-player-sr-only">
-        {account.tag}. TH {account.town_hall ?? "unknown"}. Weight{" "}
-        {compactRosterWeight(account.effective_weight)}. {status.description}
+        {account.tag}. Town Hall {account.town_hall ?? "unknown"}.
+        {showPool ? ` ${account.pool === "main" ? "Main" : "Lazy"} CWL.` : ""}{" "}
+        Weight {compactRosterWeight(account.effective_weight)}.{" "}
+        {status.description}
         {account.kept ? " Locked placement." : ""}
       </span>
       <RosterAccountMenu
