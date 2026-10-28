@@ -1,0 +1,51 @@
+.details-frame {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  width: min(460px, 45vw);
+  height: 100dvh;
+  max-height: 100dvh;
+  max-width: 100vw;
+  overflow: auto;
+  padding: 18px;
+  padding-bottom: max(18px, env(safe-area-inset-bottom));
+  border: 1px solid var(--roster-border);
+  border-radius: 0;
+  background: var(--roster-surface, #19191d);
+  color: var(--roster-text, #f5f4f0);
+  z-index: 100;
+}
+.details-frame-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.details-player-navigation {
+  display: none;
+  gap: 8px;
+}
+.details-frame .roster-player-dialog {
+  width: auto;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+}
+.details-frame .roster-player-dialog > header > button {
+  display: none;
+}
+.details-frame small,
+.details-frame dt {
+  font-size: 12px;
+}
+@media (max-width: 767px) {
+  .details-frame {
+    width: 100vw;
+    padding: 12px;
+  }
+  .details-player-navigation {
+    display: flex;
+  }
+}

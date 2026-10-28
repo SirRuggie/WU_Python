@@ -1,3 +1,4 @@
+import StaffDetailsHost from "./StaffDetailsHost";
 import CwlStepStrip from "./CwlStepStrip"
 import type { PublicationDraft } from "./publication"
 import { clearJourneyState } from './journeyState'
@@ -686,6 +687,7 @@ function App() {
         {view === 'issues' && session.is_owner && <DashboardIssues />}
         {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}
         </RouteLoadBoundary>
+        <StaffDetailsHost />
       </main>
     </div>
 

@@ -1,3 +1,4 @@
+import { detailsAccount, requestDetailsNavigation } from "./detailsNavigation";
 import { sortClans } from "./clanSort";
 import { comparisonOrder } from "./compare";
 import useLocationNow from "./useLocationNow";
@@ -98,7 +99,8 @@ export default function RosterWorkspace({
   const comparisonMemory = useMemo(createComparisonMemory, [seasonId]);
   const season = seasons.find((item) => String(item.id) === seasonId);
   const archived = season?.status === "archived";
-  const [editingTag, setEditingTag] = useState<string | null>(null);
+  const [detailsOrder, setDetailsOrder] = useState<string[]>([]);
+  const [editingTag, setEditingTag] = useState<string | null>(() => detailsAccount());
   const [roster, setRoster] = useState<RosterSnapshot | null>(null);
   const [now] = useLocationNow();
   const [loading, setLoading] = useState(false);
@@ -284,7 +286,7 @@ export default function RosterWorkspace({
     }
   }, [seasonId]);
   useEffect(() => {
-    setEditingTag(null);
+    setEditingTag(detailsAccount());
     setRoster(null);
     closePanel();
     setUndoToast(null);
@@ -585,6 +587,7 @@ export default function RosterWorkspace({
     }
   }, [filterKey]);
   const matchingTags = filtered.map((account) => account.tag);
+  const navigationTags = mode === "assign" ? matchingTags : detailsOrder;
   const hiddenTags = selectedTags.filter(
     (tag) => !pageAccounts.some((account) => account.tag === tag),
   );
@@ -905,7 +908,7 @@ export default function RosterWorkspace({
           if (uiLocked || !mayLeaveEditor()) return false;
           setSelectedTags([]);
           setFeedback(null);
-          setEditingTag(tag);
+          requestDetailsNavigation(() => setEditingTag(tag));
           return true;
         }}
         onFinalize={onReviewPublication}
@@ -1080,11 +1083,12 @@ export default function RosterWorkspace({
 
           {canRoster && mode === "weights" && (
             <WeightQueue
+              onOrderChange={setDetailsOrder}
               onClanWeights={onClanWeights}
               onDirty={setWeightsDirty}
               onEdit={(tag) => {
                 setFeedback(null);
-                setEditingTag(tag);
+                requestDetailsNavigation(() => setEditingTag(tag));
               }}
               key={seasonId}
               accounts={roster.accounts}
@@ -1127,7 +1131,9 @@ export default function RosterWorkspace({
               onClanWeights={onClanWeights}
               rosterUi
               onDirty={setPlayerDirty}
-              key={`${seasonId}:${editingTag}`}
+              key={seasonId}
+              previous={navigationTags.indexOf(editingTag) > 0 ? () => setEditingTag(navigationTags[navigationTags.indexOf(editingTag) - 1]) : undefined}
+              next={navigationTags.indexOf(editingTag) >= 0 && navigationTags.indexOf(editingTag) < navigationTags.length - 1 ? () => setEditingTag(navigationTags[navigationTags.indexOf(editingTag) + 1]) : undefined}
               account={roster.accounts.find((a) => a.tag === editingTag)!}
               clans={roster.clans}
               busy={busy}
@@ -1143,6 +1149,7 @@ export default function RosterWorkspace({
           )}
           {canRoster && mode === "compare" && (
             <CompareClans
+              onOrderChange={setDetailsOrder}
               memory={comparisonMemory}
               refreshKey={refreshEpoch}
               key={`${seasonId}:${compareJump}`}
@@ -1152,7 +1159,7 @@ export default function RosterWorkspace({
               busy={busy}
               onEdit={(tag) => {
                 setFeedback(null);
-                setEditingTag(tag);
+                requestDetailsNavigation(() => setEditingTag(tag));
               }}
             />
           )}
@@ -1305,7 +1312,7 @@ export default function RosterWorkspace({
                         onToggle={() => toggleSelected(account.tag)}
                         onDetails={() => {
                           setFeedback(null);
-                          setEditingTag(account.tag);
+                          requestDetailsNavigation(() => setEditingTag(account.tag));
                         }}
                         onAssign={(trigger) =>
                           openPanel("assign", trigger, [account.tag])

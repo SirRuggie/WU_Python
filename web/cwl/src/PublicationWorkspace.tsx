@@ -530,7 +530,9 @@ export default function PublicationWorkspace({
                               rosterUi
                               seasonId={seasonId}
                               tag={account.tag}
-                              disabled={locked || archived}
+                              disabled={busy || editBusy}
+                              archived={archived}
+                              order={visibleGroups.flatMap(item => item.accounts.map(account => account.tag))}
                               onChanged={load}
                               onDirty={setEditDirty}
                               onBusy={setEditBusy}

@@ -523,6 +523,7 @@ export default function StaffSignupControls({
                                 </label>
                                 {account.signed_up_pool && (
                                   <StaffPlayerButton
+                                    order={matching.filter(item => item.signed_up_pool).map(item => item.tag)}
                                     rosterUi
                                     onDirty={setEditorDirty}
                                     onBusy={setEditorBusy}

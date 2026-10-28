@@ -141,7 +141,7 @@ export default function ArrivalCheck({seasonId, onDirty, onBusy}: Props) {
                 {a.current_clan_checked_at && Number.isFinite(Date.parse(a.current_clan_checked_at)) && <small>Checked {new Date(a.current_clan_checked_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</small>}
               </div>
               <div className="arrival-actions"><DiscordContact userId={a.user_id} compact/>
-                {source === 'draft' && data.source === 'draft' && <StaffPlayerButton seasonId={seasonId} tag={a.tag} onChanged={() => load(true)} disabled={locked} onDirty={reportDirty} onBusy={setEditBusy} onOpenChange={setEditOpen}>Details</StaffPlayerButton>}
+                {source === 'draft' && data.source === 'draft' && <StaffPlayerButton viewOnly="declaration" order={groups.flatMap(group => group.visible.map(account => account.tag))} seasonId={seasonId} tag={a.tag} onChanged={() => load(true)} disabled={busy || editBusy} onDirty={reportDirty} onBusy={setEditBusy} onOpenChange={setEditOpen}>Details</StaffPlayerButton>}
               </div>
             </div>)}
           </div>}
