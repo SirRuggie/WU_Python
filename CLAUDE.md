@@ -54,7 +54,17 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current CWL flow frontend + backend:** `61290a4ce2b87611119483d6376b879a675aeb81`, tag `cwl-flow-1`, PRs #27 (`3631408`) and #28 (`61290a4`).
+- **Current frontend — Player card v2:** `374e0995280dad7d13483a2fa655975d0af72280`, tag `player-card-2`, PR #29.
+  - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/374e0995280dad7d13483a2fa655975d0af72280/`.
+  - Backend unchanged: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`; PID 1053095, no restart.
+  - Previous frontend / rollback: `61290a4ce2b87611119483d6376b879a675aeb81`.
+  - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 61290a4ce2b87611119483d6376b879a675aeb81` (frontend only; no backend restart).
+  - Scripted public index/feature hashes, counts, publication and member-season checks passed. Main 19/18/18 and Lazy 89/83/64 unchanged during deployment. No backup required by the approved frontend-only release prompt.
+  - Claude read-only smoke PASSED, relayed by Ruggie: build, strip dot, hidden banner, 109 cards, line 3 all correct. Real long-tag line-2 polish is a separate preview batch.
+  - Evidence: `/tmp/wu-player-card-2-release/live-proof.json`; 631 frontend tests and clean tagged TypeScript/build passed.
+
+
+- **Previous CWL flow frontend / current backend:** `61290a4ce2b87611119483d6376b879a675aeb81`, tag `cwl-flow-1`, PRs #27 (`3631408`) and #28 (`61290a4`).
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/61290a4ce2b87611119483d6376b879a675aeb81/`.
   - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`.
   - Previous frontend + backend: `1a8b035461ec46fba60f6ed4808111d3c67d87cf` (`finalize-1`).

@@ -4,6 +4,8 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-28)
 
+- **Player card v2 frontend released:** `player-card-2`, `374e0995280dad7d13483a2fa655975d0af72280`, PR #29. Backend remains `61290a4` without restart; previous frontend `61290a4`. Scripted hashes/counts passed; Claude's read-only smoke passed (build, dot, hidden banner, 109 cards, line 3). Real long-tag line-2 polish follows as a separate preview before signup-changes.
+
 - **CWL flow + shared player card released:** `cwl-flow-1`, `61290a4ce2b87611119483d6376b879a675aeb81`, PRs #27/#28. Frontend and isolated backend deployed; scripted hashes/cwd/counts and Claude read-only click smoke passed. Both rollback targets are `1a8b035`; verified backup `.local/cwl-flow-backup-20261028T145938Z/`.
 
 - **Weights frontend released:** PR #25, `e6353fb9ef77244a6b366550f030d7fd8e75daf7`, tag `weights-1`. Public entry/roster hashes verified; backend stays `c19db57`. Rollback frontend with `switch-release.py c19db57523928f6fee9d6bc93d95d83fa5814bb0`. Backup `.local/weights-backup-20261028T022902Z/`; protected counts, publication and weights unchanged.
@@ -183,6 +185,8 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
+- Player card CSS guards untested: Compare line-3 margin-top that clears the ⋯ menu (PlayerCard.css:258), glow stop at 44px, green token; the 360px test checks padding only (needs a real-browser layout test).
 
 - Manual / Source weight filter on Accounts & signups to spot hand-entered weights.
 
