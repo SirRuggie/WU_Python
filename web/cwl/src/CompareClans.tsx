@@ -1,3 +1,4 @@
+import useCompareRail from "./useCompareRail";
 import type { ComparisonMemory } from "./comparisonMemory";
 import SortTrigger from "./rosterUi/SortTrigger";
 import {
@@ -219,19 +220,8 @@ export default function CompareClans({
     const tag = visibleClans[index];
     if (!tag) return;
     setFocusedClan(tag);
-    const el = rail.current,
-      card = el?.children[index] as HTMLElement | undefined;
-    if (el && card)
-      el.scrollTo({
-        left:
-          el.scrollLeft +
-          card.getBoundingClientRect().left -
-          el.getBoundingClientRect().left,
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "instant"
-          : "smooth",
-      });
   }
+  useCompareRail(rail, visibleClans, selectedFocus, setFocusedClan);
   const filterCount = leagues.length + townHalls.length;
   return (
     <section
@@ -410,8 +400,16 @@ export default function CompareClans({
               disabled={visibleClans.indexOf(selectedFocus) === 0}
               onClick={() => focusAt(visibleClans.indexOf(selectedFocus) - 1)}
             />
-            <span>
-              {visibleClans.indexOf(selectedFocus) + 1} of {visibleClans.length}
+            <span aria-live="polite" aria-atomic="true">
+              <span aria-hidden="true">
+                {visibleClans.indexOf(selectedFocus) + 1} of{" "}
+                {visibleClans.length}
+              </span>
+              <span className="sr-only">
+                Clan {visibleClans.indexOf(selectedFocus) + 1} of{" "}
+                {visibleClans.length}:{" "}
+                {available.find((clan) => clan.tag === selectedFocus)?.name}
+              </span>
             </span>
             <Button
               icon={ArrowRight}

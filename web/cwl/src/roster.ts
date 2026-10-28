@@ -9,7 +9,7 @@ export type RosterAccount = {
   clan_weight_managed?: boolean;
   initial_manual_weight?: number | null; manual_weight: number | null; effective_weight: number | null; assigned_clan_tag: string | null; kept: boolean
 }
-export type RosterClan = { cwl_league?: string | null; cwl_league_stale?: boolean; tag: string; name: string; archived: boolean; pool: Pool | null; capacity: number | null; effective_capacity: number; min_weight: number | null; max_weight: number | null; lower_league: boolean | null; assigned_count: number }
+export type RosterClan = { cwl_league?: string | null; cwl_league_stale?: boolean; tag: string; name: string; archived: boolean; pool: Pool | null; capacity: number | null; effective_capacity: number; min_weight: number | null; max_weight: number | null; assigned_count: number }
 export type RosterUndo = { id: number; label: string; revision: number }
 export type RosterSnapshot = { metadata_updating?: boolean; revision: number; accounts: RosterAccount[]; clans: RosterClan[]; undo: RosterUndo | null }
 export type AutoPreview = { revision: number; placements: { tag: string; assigned_clan_tag: string }[]; unassigned: { tag: string; reason: string }[] }

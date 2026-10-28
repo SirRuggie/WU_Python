@@ -1,3 +1,5 @@
+import ClanSettings from "./ClanSettings";
+import type { ClanRules } from "./clanSettingsModel";
 import { placementMessage } from "./publicationAwareness";
 import { createComparisonMemory } from "./comparisonMemory";
 import SortTrigger from "./rosterUi/SortTrigger";
@@ -16,9 +18,7 @@ import SignupActivity from "./SignupActivity";
 import useWorkspacePreference from "./useWorkspacePreference";
 import useRosterPreferences from "./useRosterPreferences";
 import useUnsavedWork from "./useUnsavedWork";
-import RosterMenu from "./rosterUi/Menu";
-import { Button, Input } from "./rosterUi/primitives";
-import { Check } from "lucide-react";
+import { Button } from "./rosterUi/primitives";
 import "./rosterUi/rosterRefresh.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import RosterPlayerDialog from "./RosterPlayerDialog";
@@ -47,13 +47,10 @@ import {
   useEffect,
   useRef,
   useState,
-  type FormEvent,
 } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import {
   mergeRosterMetadata,
-  parseWeightK,
-  weightInputText,
   type RosterClan,
   type RosterSnapshot,
 } from "./roster";
@@ -130,10 +127,6 @@ export default function RosterWorkspace({
     "assign" | "compare" | "rules" | "weights"
   >(`wu-roster-${seasonId}-mode`, "assign");
   const [renderCount, setRenderCount] = useState(50);
-  const [ruleTag, setRuleTag] = useWorkspacePreference(
-    `wu-roster-${seasonId}-clan`,
-    "",
-  );
   const [releasePreferences, setReleasePreferences] =
     useRosterPreferences(seasonId);
   const [poolFilter, setPoolFilter] = useCwlPool();
@@ -491,16 +484,7 @@ export default function RosterWorkspace({
       setBusy(false);
     }
   };
-  const saveRules = async (
-    clan: RosterClan,
-    rules: {
-      pool: Pool;
-      capacity: number;
-      min_weight: number | null;
-      max_weight: number | null;
-      lower_league: boolean | null;
-    },
-  ) => {
+  const saveRules = async (clan: RosterClan, rules: ClanRules) => {
     if (!canRoster || !roster || !seasonId || working || archived) return false;
     const sid = seasonId;
     setBusy(true);
@@ -516,7 +500,7 @@ export default function RosterWorkspace({
       return true;
     } catch (error) {
       if (activeSeason.current === sid) await fail(error);
-      return false;
+      throw new Error(errorText(error));
     } finally {
       setBusy(false);
     }
@@ -750,12 +734,7 @@ export default function RosterWorkspace({
     }
   };
   const globalMissingWeight = releaseResult?.globalMissingWeightCount ?? 0;
-  const activeClans =
-    roster?.clans.filter(
-      (clan) => !clan.archived && (clan.pool === poolFilter || !clan.pool),
-    ) || [];
-  const ruleClan =
-    activeClans.find((clan) => clan.tag === ruleTag) || activeClans[0];
+
   const clanName = (tag: string | null) =>
     roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
 
@@ -992,7 +971,6 @@ export default function RosterWorkspace({
                 if (!mayLeaveEditor()) return;
                 setPoolFilter(pool);
                 closePanel();
-                setRuleTag("");
                 setEditingTag(null);
               }}
             />
@@ -1057,40 +1035,18 @@ export default function RosterWorkspace({
             />
           )}
           {canRoster && mode === "rules" && (
-            <section id="clan-range-editor" className="roster-rules card">
-              <div className="card-heading">
-                <h2>Clan ranges & capacity</h2>
-              </div>
-              <p>
-                Set this season’s weight range and capacity. Automatic placement
-                uses these settings. Existing assignments stay unchanged.
-              </p>
-              {ruleClan ? (
-                <>
-                  <RosterMenu
-                    label="Hosting clan"
-                    value={ruleClan.tag}
-                    disabled={busy}
-                    onValueChange={(value) => {
-                      if (mayLeaveEditor()) setRuleTag(value);
-                    }}
-                    options={activeClans.map((clan) => ({
-                      value: clan.tag,
-                      label: `${clan.name} · ${clan.cwl_league || "League unavailable"} · ${clan.tag}`,
-                    }))}
-                  />
-                  <RuleForm
-                    onDirty={setRulesDirty}
-                    key={`${seasonId}-${ruleClan.tag}`}
-                    clan={ruleClan}
-                    busy={busy}
-                    onSave={(rules) => saveRules(ruleClan, rules)}
-                  />
-                </>
-              ) : (
-                <p>Add a hosting clan in Seasons & clans first.</p>
-              )}
-            </section>
+            <ClanSettings
+              key={seasonId}
+              clans={roster.clans}
+              accounts={roster.accounts}
+              pool={poolFilter}
+              busy={busy}
+              archived={!!archived}
+              onPoolChange={setPoolFilter}
+              onDirty={setRulesDirty}
+              onLeave={mayLeaveEditor}
+              onSave={saveRules}
+            />
           )}
           {editingTag && roster.accounts.some((a) => a.tag === editingTag) && (
             <RosterPlayerDialog
@@ -1316,169 +1272,5 @@ export default function RosterWorkspace({
         aria-hidden="true"
       />
     </div>
-  );
-}
-function RuleForm({
-  clan,
-  busy,
-  onSave,
-  onDirty,
-}: {
-  onDirty: (dirty: boolean) => void;
-  clan: RosterClan;
-  busy: boolean;
-  onSave: (rules: {
-    pool: Pool;
-    capacity: number;
-    min_weight: number | null;
-    max_weight: number | null;
-    lower_league: boolean | null;
-  }) => Promise<boolean>;
-}) {
-  const [pool, setPool] = useState<Pool | "">(clan.pool ?? "");
-  const [capacity, setCapacity] = useState(
-    clan.capacity === null ? "" : String(clan.capacity),
-  );
-  const [minWeight, setMinWeight] = useState(weightInputText(clan.min_weight));
-  const [maxWeight, setMaxWeight] = useState(weightInputText(clan.max_weight));
-  const [error, setError] = useState("");
-  const values = {
-    pool: clan.pool ?? "",
-    capacity: clan.capacity === null ? "" : String(clan.capacity),
-    minWeight: weightInputText(clan.min_weight),
-    maxWeight: weightInputText(clan.max_weight),
-  };
-  const [base, setBase] = useState(values);
-  const changed =
-    pool !== base.pool ||
-    capacity !== base.capacity ||
-    minWeight !== base.minWeight ||
-    maxWeight !== base.maxWeight;
-  const stale = JSON.stringify(base) !== JSON.stringify(values);
-  const useLatest = () => {
-    setPool(clan.pool ?? "");
-    setCapacity(values.capacity);
-    setMinWeight(values.minWeight);
-    setMaxWeight(values.maxWeight);
-    setBase(values);
-  };
-  useEffect(() => {
-    if (!changed && stale) useLatest();
-  }, [clan, changed, stale]);
-  useEffect(() => {
-    onDirty(changed);
-    return () => onDirty(false);
-  }, [changed, onDirty]);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy || stale) return;
-    try {
-      const min = parseWeightK(minWeight);
-      const max = parseWeightK(maxWeight);
-      if (min !== null && max !== null && min >= max)
-        throw new Error("Maximum weight must be greater than minimum weight.");
-      const size = Number(capacity);
-      if (!pool) throw new Error("Choose a signup pool for this hosting clan.");
-      if (capacity === "" || (size !== 15 && size !== 30))
-        throw new Error("Capacity must be 15 or 30.");
-      setError("");
-      if (
-        await onSave({
-          pool,
-          capacity: size,
-          min_weight: min,
-          max_weight: max,
-          lower_league: clan.lower_league,
-        })
-      )
-        setBase({ pool, capacity, minWeight, maxWeight });
-    } catch (error) {
-      setError(errorText(error));
-    }
-  };
-  return (
-    <form className="roster-rule-form" onSubmit={submit}>
-      <fieldset disabled={busy}>
-        <div className="card-heading">
-          <h3>{clan.name}</h3>
-          <span className="badge">
-            {clan.assigned_count}/{clan.capacity ?? "—"} assigned
-          </span>
-        </div>
-        <small>{clan.tag}</small>
-        <div className="rule-fields">
-          <RosterMenu
-            label="Signup pool"
-            value={pool}
-            disabled={busy}
-            onValueChange={(value) => setPool(value as Pool)}
-            options={[
-              { value: "", label: "Not set" },
-              { value: "main", label: "Main CWL" },
-              { value: "lazy", label: "Lazy CWL" },
-            ]}
-          />
-          <RosterMenu
-            label="Capacity"
-            value={capacity}
-            disabled={busy}
-            onValueChange={setCapacity}
-            options={[
-              { value: "", label: "Not set" },
-              { value: "15", label: "15" },
-              { value: "30", label: "30" },
-            ]}
-          />
-          <label>
-            Minimum weight (k, included)
-            <Input
-              type="number"
-              min="0"
-              step="0.001"
-              value={minWeight}
-              onChange={(event) => setMinWeight(event.target.value)}
-              placeholder="No minimum"
-            />
-          </label>
-          <label>
-            Maximum weight (k, excluded)
-            <Input
-              type="number"
-              min="0"
-              step="0.001"
-              value={maxWeight}
-              onChange={(event) => setMaxWeight(event.target.value)}
-              placeholder="No maximum"
-            />
-          </label>
-        </div>
-        <p className="small">
-          Enter weights in thousands: 160 means 160,000. Leave either end blank
-          for no limit. The maximum is excluded, so 160–174 includes 160k up to
-          just below 174k.
-        </p>
-        {error && (
-          <p className="inline-reason" role="alert">
-            {error}
-          </p>
-        )}
-        <Button
-          type="submit"
-          variant="primary"
-          icon={Check}
-          disabled={busy || stale || !changed}
-        >
-          Save clan range & rules
-        </Button>
-        {stale && changed && (
-          <p role="alert">
-            Clan settings changed elsewhere. Your edits are preserved.
-            <Button type="button" disabled={busy} onClick={useLatest}>
-              Discard edits and use latest settings
-            </Button>
-          </p>
-        )}
-      </fieldset>
-    </form>
   );
 }

@@ -1,3 +1,5 @@
+import { useId } from "react";
+import TownHallIcon from "./TownHallIcon";
 import { LockKeyhole } from "lucide-react";
 import type { RosterAccount, RosterClan } from "./roster";
 import RosterAccountMenu from "./RosterAccountMenu";
@@ -31,6 +33,7 @@ export default function ComparePlayerCard({
   busy,
   onDetails,
 }: Props) {
+  const id = useId();
   const location = comparisonLocation(record, clan.tag, now);
   const note = comparisonPublishNote(account, published);
   return (
@@ -39,55 +42,77 @@ export default function ComparePlayerCard({
         type="button"
         className="compare-player-body"
         aria-label={`Details for ${account.player_name}`}
+        aria-describedby={`${id}-weight ${id}-meta ${id}-location ${id}-tags${note ? ` ${id}-note` : ""}`}
         disabled={busy}
         onClick={onDetails}
       >
         <span className="compare-player-top">
           <strong title={account.player_name}>{account.player_name}</strong>
-          <strong>
-            {account.effective_weight === null
-              ? "—"
-              : compactRosterWeight(account.effective_weight)}
-          </strong>
+          {account.effective_weight === null ? (
+            <span id={`${id}-weight`} className="compare-tag is-danger">
+              No weight
+            </span>
+          ) : (
+            <strong id={`${id}-weight`} className="compare-player-weight">
+              {compactRosterWeight(account.effective_weight)}
+            </strong>
+          )}
         </span>
-        <span className="compare-player-location">
+        <span id={`${id}-meta`} className="compare-player-meta">
+          <span aria-hidden="true">
+            <TownHallIcon level={account.town_hall} />
+          </span>
+          TH {account.town_hall ?? "—"} · {account.tag}
+          {account.kept && (
+            <LockKeyhole size={13} aria-label="Locked placement" />
+          )}
+        </span>
+        <span id={`${id}-location`} className="compare-player-location">
+          {location.state === "checking" ? (
+            <span className="compare-location-label">Checking location…</span>
+          ) : (
+            <span className="compare-location-line" title={location.detail}>
+              {record?.current_clan_name || record?.current_clan_tag ? (
+                <>
+                  <span className="compare-location-label">Now in </span>
+                  <span className="compare-location-name">
+                    {record.current_clan_name || record.current_clan_tag}
+                  </span>
+                </>
+              ) : (
+                <span className="compare-location-label">No clan</span>
+              )}
+              <span className="compare-location-age">
+                <span className="sr-only">, </span>
+                <span aria-hidden="true">· </span>
+                {comparisonAge(record?.current_clan_checked_at, now)}
+              </span>
+            </span>
+          )}
+        </span>
+        <span id={`${id}-tags`} className="compare-player-tags">
           <span
             className={`compare-tag compare-location-pill is-${location.state}`}
           >
             {location.label}
           </span>
-          {location.state !== "checking" && (
-            <span className="compare-location-line" title={location.detail}>
-              <span className="compare-location-name">
-                {record?.current_clan_name || record?.current_clan_tag
-                  ? `Now in: ${record.current_clan_name || record.current_clan_tag}`
-                  : "No clan"}
-              </span>
-              <span className="compare-location-age">
-                · {comparisonAge(record?.current_clan_checked_at, now)}
-              </span>
-            </span>
-          )}
-        </span>
-        <span className="compare-player-tags">
-          <span className="compare-player-meta">
-            TH {account.town_hall ?? "—"} · {account.tag}{" "}
-            {account.kept && (
-              <LockKeyhole size={13} aria-label="Locked placement" />
-            )}
-          </span>
-          {account.effective_weight === null && (
-            <span className="compare-tag is-danger">No weight</span>
-          )}
           {outsideComparisonRange(account.effective_weight, clan) && (
-            <span className="compare-tag is-warning">Outside weight range</span>
+            <>
+              <span className="sr-only">, </span>
+              <span className="compare-tag is-warning">
+                Outside weight range
+              </span>
+            </>
           )}
           {record?.current_clan_tag && record.outside_family && (
-            <span className="compare-tag is-warning">Outside family</span>
+            <>
+              <span className="sr-only">, </span>
+              <span className="compare-tag is-warning">Outside family</span>
+            </>
           )}
         </span>
         {note && (
-          <span className="compare-publish-note" title={note}>
+          <span id={`${id}-note`} className="compare-publish-note" title={note}>
             {note}
           </span>
         )}

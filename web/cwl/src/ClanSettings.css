@@ -1,0 +1,146 @@
+.clan-settings-list,
+.clan-settings-group {
+  display: grid;
+  gap: 6px;
+}
+.clan-settings-group h3 {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--roster-text-muted);
+}
+.clan-settings .clan-settings-row {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 64px;
+  padding: 7px 10px;
+}
+.clan-settings .clan-settings-row.is-selected {
+  border-color: var(--roster-gold);
+}
+.clan-settings .clan-settings-archived,
+.clan-settings-panel .clan-settings-archived {
+  font-size: 12px;
+  color: var(--roster-text-muted);
+}
+.clan-settings-row .roster-clan-chip-content {
+  gap: 4px;
+}
+.clan-settings-row .roster-clan-chip-top strong,
+.clan-settings-row .roster-clan-chip-count {
+  font-size: 15px;
+  font-weight: 700;
+}
+.clan-settings-row .roster-clan-chip-top strong {
+  flex: 1;
+}
+.clan-settings-row .roster-clan-chip-top {
+  flex-wrap: nowrap;
+}
+.clan-settings-description {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+}
+.shell .clan-settings-row,
+.shell .clan-settings-row * {
+  -webkit-text-fill-color: currentColor;
+}
+.clan-settings-row {
+  color: var(--roster-text);
+}
+.clan-settings-panel .roster-menu-current,
+.clan-settings-panel input {
+  font-size: 15px;
+  font-weight: 400;
+}
+.clan-settings-panel .roster-menu-label,
+.clan-settings-panel label,
+.clan-settings-panel dt {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+}
+.clan-settings-panel p,
+.clan-settings-panel dd {
+  font-size: 14px;
+}
+.clan-settings-panel .roster-menu {
+  margin-block: 12px;
+}
+.clan-settings-weights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.clan-settings-moved {
+  font-size: 14px;
+}
+.clan-settings .clan-settings-row {
+  padding-block: 5px;
+}
+.clan-settings .clan-settings-row.is-room .roster-ui-progress-track > span {
+  background: var(--roster-text-muted);
+}
+.clan-settings-row.is-full .roster-ui-progress-track > span {
+  background: var(--roster-warning);
+}
+.clan-settings-row.is-over .roster-ui-progress-track > span {
+  background: var(--roster-danger);
+}
+.clan-settings-row .roster-clan-chip-top strong,
+.clan-settings-row .roster-clan-chip-count {
+  color: var(--roster-text);
+}
+.clan-settings .clan-settings-over,
+.clan-settings-panel .clan-settings-over {
+  color: var(--roster-danger);
+  font-size: 12px;
+  font-weight: 400;
+}
+.clan-settings-k-input .roster-ui-input-control {
+  position: relative;
+}
+.clan-settings-k-input .roster-ui-input-control::after {
+  content: "k";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 15px;
+  color: var(--roster-text-muted);
+  pointer-events: none;
+}
+.clan-settings-k-input input {
+  padding-right: 32px;
+}
+.clan-settings-panel .roster-ui-input-error {
+  font-size: 12px;
+}
+.clan-settings-panel .clan-settings-count {
+  font-size: 12px;
+}
+.clan-settings-range p {
+  margin: 12px 0 4px;
+}
+.clan-settings-range small {
+  font-size: 12px;
+  color: var(--roster-text-muted);
+}
+.clan-settings-impact {
+  color: var(--roster-warning);
+  font-size: 14px;
+  margin-top: 12px;
+}
+.clan-settings-impact summary {
+  min-height: 44px;
+  cursor: pointer;
+}
+.clan-settings-impact li {
+  font-size: 12px;
+  color: var(--roster-text-muted);
+}
+.clan-settings-panel .action-panel-heading h2 {
+  font-size: 15px;
+  font-weight: 700;
+}

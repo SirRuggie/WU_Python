@@ -265,11 +265,11 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 1px;
+  gap: 0;
   min-width: 0;
   width: 100%;
   min-height: 44px;
-  padding: 2px 6px;
+  padding: 8px 6px;
   border: 0;
   border-radius: 14px;
   background: transparent;
@@ -301,7 +301,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.compare-player-top > strong:last-child {
+.compare-player-weight {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -310,7 +310,6 @@
   align-items: center;
   min-width: 0;
   gap: 4px;
-  padding-right: 36px;
 }
 .compare-location-line {
   display: flex;
@@ -329,12 +328,21 @@
   font-weight: 400;
   color: var(--compare-text-secondary);
 }
+.compare-location-label,
 .compare-location-age {
   flex-shrink: 0;
   font-size: 12px;
   line-height: 14px;
   font-weight: 400;
   color: var(--roster-text-muted);
+}
+.compare-player-meta .town-hall-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.compare-player-meta .town-hall-fallback {
+  font-size: 12px;
 }
 .compare-player-tags {
   display: flex;
@@ -343,6 +351,8 @@
   gap: 1px 4px;
 }
 .compare-player-meta {
+  min-height: 16px;
+  padding-right: 36px;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -530,10 +540,6 @@
   .compare-side > .compare-clan-summary > * {
     display: none;
   }
-  .compare-side > .compare-clan-summary > small:first-of-type {
-    display: block;
-    padding: 0 4px 4px;
-  }
   .compare-side > .compare-clan-summary > .compare-clan-top {
     display: block;
     position: absolute;
@@ -565,4 +571,28 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+.compare-rail-subtitle {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+}
+
+.compare-mobile-navigation .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }

@@ -44,7 +44,7 @@ const clan = (tag: string, capacity: number): RosterClan => ({
   effective_capacity: capacity,
   min_weight: null,
   max_weight: null,
-  lower_league: null,
+
   assigned_count: 0,
 });
 const accounts = [

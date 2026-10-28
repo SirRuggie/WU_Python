@@ -1,3 +1,16 @@
+/* Always available to roster panels, including before lazy feature CSS loads. */
+.roster-ui .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .roster-ui-button {
   box-sizing: border-box;
   display: inline-flex;
@@ -352,4 +365,20 @@
     outline: 2px solid var(--roster-text);
     outline-offset: 0;
   }
+}
+
+.roster-menu-item-description {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--roster-text-muted);
+  -webkit-text-fill-color: currentColor;
+  white-space: normal;
+}
+
+/* Disabled choices keep their explanatory text readable. */
+.roster-menu-item[data-disabled]:has(.roster-menu-item-description) {
+  opacity: 1;
+  color: var(--roster-text-muted);
 }

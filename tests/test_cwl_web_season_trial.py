@@ -31,7 +31,7 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
         await request('DELETE', '/signups/%23G2Y', who=self.member)
         # Staff prepares actual rules and source weights, then applies the preview.
         await self.host('#C2Y', 'main')
-        await self.host('#R2Y', 'lazy', True)
+        await self.host('#R2Y', 'lazy')
         await request('POST', '/roster/refresh-weights', {'revision': await self.revision()})
         preview = await request('POST', '/roster/auto-preview', {'revision': await self.revision()})
         self.assertEqual(len(preview['placements']), 2)

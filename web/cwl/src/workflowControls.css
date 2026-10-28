@@ -42,7 +42,6 @@
 @media(max-width:600px) {
   .shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button { padding: 10px 12px; }
 }
-.roster-rule-form > fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 #clan-directory-picker .clan-category-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #clan-directory-picker .clan-category-filters button { padding: 8px; overflow-wrap: anywhere; }
 

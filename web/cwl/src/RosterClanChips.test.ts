@@ -41,7 +41,7 @@ const clan = (
   effective_capacity: capacity || 0,
   min_weight: null,
   max_weight: null,
-  lower_league: null,
+
   assigned_count: 99,
 });
 
