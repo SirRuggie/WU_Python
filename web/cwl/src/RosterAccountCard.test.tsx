@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+const cardCss = readFileSync("src/PlayerCard.css", "utf8");
+const accountCss = readFileSync("src/RosterAccountCard.css", "utf8");
+import { describe, expect, it, vi } from "vitest";
 import type { RosterAccount } from "./roster";
 import RosterAccountCard from "./RosterAccountCard";
 
@@ -63,18 +66,19 @@ describe("roster account card", () => {
     ).not.toBeNull();
     expect(
       host.querySelector(".roster-player-placement")?.textContent,
-    ).toContain("Not assigned · now in —");
+    ).toContain("Not assigned· location not checked yet");
     host.innerHTML = render({
       account: {
         ...account,
         assigned_clan_tag: "#CLAN",
         current_clan_status: "current",
         current_clan_name: "Home",
+        current_clan_checked_at: new Date().toISOString(),
       },
       assignedClanName: "Assigned",
     });
     expect(host.querySelector(".roster-player-placement")?.textContent).toBe(
-      "Assigned · now in Home",
+      "Assigned· now in Home · just now",
     );
   });
   it("escapes player text and presents missing, locked and unavailable values", () => {
@@ -84,30 +88,77 @@ describe("roster account card", () => {
     expect(html).toContain('aria-label="Select &lt;Alpha &amp; Beta&gt;"');
     expect(html).toContain("No weight");
     expect(html).toContain("Held unassigned");
-    expect(html).toContain('is-unknown">—</span>');
+    expect(html).toContain("location not checked yet");
     expect(html).not.toContain("Unavailable");
     expect(html).toContain("Main CWL");
   });
 
-  it("shows a dim dash for stale clan data, and the name for current data", () => {
-    const stale = render({
+  it("keeps stale location results with Compare's age formatter", () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-28T14:00:00Z"));
+    const html = render({
       account: {
         ...account,
         current_clan_status: "stale",
         current_clan_name: "Old clan",
+        current_clan_checked_at: "2026-10-28T12:00:00Z",
       },
     });
-    expect(stale).toContain('is-unknown">—</span>');
-    expect(stale).not.toContain("Old clan");
-    const current = render({
+    expect(html).toContain("· now in Old clan · 2h 0m ago");
+    expect(html).not.toContain("location not checked yet");
+    vi.restoreAllMocks();
+  });
+  it("omits duplicate Not assigned notes but preserves real notes and Held", () => {
+    const host = document.createElement("div");
+    host.innerHTML = render({
       account: {
         ...account,
-        current_clan_status: "current",
-        current_clan_name: "Home clan",
+        kept: false,
+        auto_placement_reason: "missing_weight",
       },
     });
-    expect(current).toContain("Home clan");
-    expect(current).not.toContain("is-unknown");
+    expect(host.querySelector(".roster-player-note")).toBeNull();
+    expect(host.querySelector(".roster-player-sr-only")?.textContent).toContain(
+      "Assigned clan: Not assigned.",
+    );
+    host.innerHTML = render({
+      account: { ...account, kept: false, auto_placement_note: "Needs review" },
+    });
+    expect(host.querySelector(".roster-player-note")?.textContent).toBe(
+      "Needs review",
+    );
+    expect(render()).toContain("Held unassigned");
+  });
+  it("keeps the full location in a title and ellipsizes only the current clan", () => {
+    const html = render({
+      account: {
+        ...account,
+        current_clan_checked_at: new Date().toISOString(),
+        current_clan_name: "A very long current clan",
+      },
+    });
+    expect(html).toContain(
+      'title="· now in A very long current clan · just now"',
+    );
+    const css = accountCss;
+    expect(css).toMatch(
+      /roster-player-placement\s*\{[^}]*white-space: nowrap/s,
+    );
+    expect(css).toMatch(
+      /roster-player-current\s*\{[^}]*text-overflow: ellipsis/s,
+    );
+    expect(css).toMatch(
+      /roster-player-placement strong\s*\{[^}]*flex-shrink: 0/s,
+    );
+  });
+  it("keeps card text at least 12px and both headline weights 15px bold", () => {
+    for (const css of [cardCss, accountCss]) {
+      for (const match of css.matchAll(/font-size:\s*(\d+)px/g))
+        expect(Number(match[1])).toBeGreaterThanOrEqual(12);
+    }
+    const css = cardCss;
+    expect(css).toMatch(
+      /player-card-weight\s*\{[^}]*font-size: 15px;[^}]*font-weight: 700/s,
+    );
   });
 
   it("prevents selection in archived or read-only views while retaining Details", () => {

@@ -23,13 +23,19 @@
 .roster-player-placement {
   font-size: 13px;
   line-height: 16px;
-  overflow-wrap: anywhere;
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+  min-width: 0;
 }
 .roster-player-placement strong {
+  flex-shrink: 0;
   color: var(--roster-text);
 }
-.roster-player-current,
-.roster-player-current .is-unknown {
+.roster-player-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--roster-text-muted);
 }
 .roster-player-warning,
@@ -49,6 +55,10 @@
   white-space: nowrap;
 }
 .roster-player-select:focus-within {
-  outline: 2px solid white;
+  outline: 2px solid var(--roster-gold);
   outline-offset: -3px;
+}
+
+.roster-ui .roster-player-body:focus-visible {
+  outline-color: var(--roster-gold);
 }

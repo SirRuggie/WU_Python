@@ -146,6 +146,6 @@ Shared player card (2026-10-27): Accounts & signups and Compare use `PlayerCard.
 
 1. TownHallIcon first (16px), name (15px bold, ellipsis), bold weight right, existing 44px action menu.
 2. Muted 12px `TH 18 · #TAG` and lock. Accounts retains its existing pool text. The lock appears only here.
-3. Compare keeps `Now in X · 10m ago`, location chips and relevant publication note. Accounts shows the assigned clan in bold (or `Not assigned`) plus muted `· now in X`; unknown/stale location still shows `—`. Warning/note lines remain below.
+3. Compare keeps `Now in X · 10m ago`, location chips and relevant publication note. Accounts shows the assigned clan in bold (or `Not assigned`) plus muted `· now in X`; last-known location keeps its age using Compare’s formatter; before any result it says `location not checked yet`. The current-clan portion ellipsizes on one line with its full text in a title. Warning/note lines remain below.
 
 Accounts keeps its 44px left checkbox, green for assigned and gold selection outline. Compare uses green for in-clan, red for elsewhere and neutral while checking. Status is also written in chips. Neither card changes selection, Details, menu permissions, location, swipe or request behavior. Text is at least 12px; measured text-fill colors, including muted text, must contrast at least 4.5:1 with their rendered backgrounds. Accounts readability continues in a later audit.
