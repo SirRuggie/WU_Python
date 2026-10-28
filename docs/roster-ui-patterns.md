@@ -112,3 +112,13 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Compare readability: row 1 name and weight use 15px/700 primary text; row 2 uses a 12px/600 location pill, 13px/400 secondary location name and 12px/400 muted age; row 3 metadata, tags and optional publication note use 12px/400. No Compare text is smaller than 12px.
 - Compare card fills use a softened location tint over the raised surface and a 4px colored left edge. Only the location pill retains semibold emphasis below row 1. Card gaps are consistently 6px.
 - Clan headings/counts use 15px/700 primary text, Total uses 14px/700, and supporting details use 12px/400 muted text. Tally numbers use green/red/neutral/amber with muted labels. Gold identifies only the selected rail border, never header text.
+
+## Clan settings
+
+- Overview rows reuse the roster clan capacity card style, grouped by pool; Needs a pool appears in both tabs.
+- Tap a row to edit in ActionPanel; Close gets initial focus and dirty/stale protections remain. Explicit Save is the only write boundary.
+- Weight inputs use a k suffix, digits and one decimal point, up to 0.001k precision. Zero is an inline error; blank means no limit.
+- Live range preview uses Compare's formatter: min–max, min+, under max, Any weight; min inclusive, max exclusive.
+- Changed ranges show a known-weight-only impact disclosure. Over-full war sizes show a red +N over count, with no reassignment.
+- Archived seasons use text values and no Save. Settings-save feedback is never labelled draft-only.
+- Phone Compare rail commits selection after scroll settles and keeps arrows/taps/player swipes synchronized. League, tag and optional range live on the phone rail card; desktop headers stay unchanged.

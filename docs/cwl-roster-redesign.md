@@ -10,6 +10,8 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 - Deploy pipeline rebuilt: `current` symlink → `releases/<sha>`; workspace builds isolated from production (tested); rollback tested.
 - **Compare clans batch:** decisions 1–16 confirmed 2026-10-27 (see "Decisions — Compare clans"). **LIVE** at `a65b98ecc5c8d58601ec69d3efd184419b649e73` (tag `compare-clans-1`, PR #23). A–B2 accepted; final polish verified with 498 frontend tests. Public hashes and read-only smoke passed; protected counts unchanged. Rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py fea7e668b21823d9e31943867e25654ce0d60bf8`.
 
+- Clan settings batch: decisions confirmed; implementation on codex/clan-settings; not deployed. Production public entry hash remains the `a65b98e` manifest (read-only check during this batch).
+
 ## Terminology
 
 - **Pool** = Main CWL / Lazy CWL. Never call these "league".
@@ -106,6 +108,21 @@ A4 fixes: reset selected Compare rail text-fill to currentColor; queue one force
 
 C4 publish awareness: reuse the header publication response for a persistent placement-only banner with permission-based review actions. Placement-edit messages identify draft-only changes; signup messages remain unchanged. Finalize fetches the existing published account export only while its review is open, compares assignments/pools and available saved account fields, and includes Other changes for weight/details differences or otherwise unexplained changed status. A version mismatch requires refresh; publishing remains revision-checked and always requires an explicit confirmation.
 
+## Decisions — Clan settings (2026-10-27)
+
+1. Main/Lazy overview lists use the existing clan-card primitives; no-pool clans appear under Needs a pool in both tabs. Rows open ActionPanel, preserve dirty/stale guards, and pool changes offer a moved-to-pool toast with View.
+2. The other pool is disabled with an assigned-player explanation while any players are assigned. No-pool setup remains allowed. This is a UI guard; the API still permits pool changes.
+3. CWL war size is 15v15 or 30v30. Over-full counts show red +N over, full bars amber, room neutral. **B1, Ruggie-approved:** remove the capacity-below-assigned 409; existing assignments never move when rules save.
+4. No Not set menu option. Incomplete clans start both fields empty and require pool + war size before Set up clan.
+5. Minimum/Maximum weight inputs use an inline k suffix, digits and one decimal point, with 0.001k precision. Values must be above zero; blank means no limit. Zero disables Save with the approved inline explanation.
+6. Live range preview shares Compare wording; minimum inclusive, maximum exclusive. No instructional paragraphs.
+7. Clan name/count 15px bold; values 14–15px regular; supporting labels 12px muted. Check color and text-fill. Gold identifies selection/active state.
+8. Archived settings remain visible as read-only text with no Save.
+9. **B2, Ruggie-approved:** remove lower_league from application reads, responses, validation, writes and the frontend type. Requests containing it are rejected as unknown fields. Keep the database column and existing values untouched; no migration.
+10. Changed settings show a live, expandable outside-range impact list (known weights only, inclusive min/exclusive max) and over-capacity count. Save changes rules only and its toast is not labelled Draft only.
+
+Compare additions X1/X2: phone rail selection follows the snapped card only after scrolling settles, with reverse synchronization for arrows/taps/player swipes, reduced-motion support and a polite clan announcement. League/tag/range appears on each phone card; the duplicate subtitle below navigation is removed. No additional location requests.
+
 ## Backend facts (from code discovery)
 
 - Endpoints (prefix `/api/cwl`):
@@ -132,6 +149,7 @@ C4 publish awareness: reuse the header publication response for a persistent pla
 
 - **Release 2 — Details as its own page:** route `/cwl/roster/account/{encodedTag}?season={id}` (the tag contains `#`). Back restores scroll, filters, tab and selection. Assigned clan via the Assign panel (instant + Undo). Weight keeps Save. Remove signup red + confirm. Weight shown once (source in a collapsible).
 - **Release 3 — backend:**
+  - B1 (war size below assigned count) brought forward into the Clan settings branch, Ruggie-approved; not yet deployed. B2 removes the unused lower_league application field while retaining its stored column.
   - Atomic larger selections: raise the 50 limit in one transaction; never sequential batches.
   - Overfill policy (contracts above), the Balance opt-in overflow step, and a Finalize publish warning.
 - **Release 4:**
@@ -141,6 +159,9 @@ C4 publish awareness: reuse the header publication response for a persistent pla
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
+- Optionally drop the unused lineup_rules.lower_league column (no longer read or written).
+- Server-side guard against changing a hosting clan's pool while players are assigned (UI guard exists).
 
 - FilterPicker (ClanFilters.tsx, still used by App.tsx) is also a native <details> dropdown and likely shares the stays-open bug; review it outside the roster scope.
 - Optional clan filter on arrival-check (visible clans only) — trigger: signups grow a lot or the API rate-limits.
