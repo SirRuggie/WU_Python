@@ -1022,9 +1022,7 @@ export default function RosterWorkspace({
               accounts={roster.accounts}
               busy={busy}
               onRefresh={() => void refreshWeights()}
-              onClose={() => {
-                if (mayLeaveEditor()) setMode("assign");
-              }}
+              archived={!!archived}
               onSave={(tag, weight) =>
                 edit(
                   tag,

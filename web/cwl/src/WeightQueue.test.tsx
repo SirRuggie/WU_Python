@@ -1,0 +1,193 @@
+// @vitest-environment happy-dom
+import { act, useState } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import WeightQueue from "./WeightQueue";
+import type { RosterAccount } from "./roster";
+
+const accounts = Array.from(
+  { length: 65 },
+  (_, i) =>
+    ({
+      tag: `#P${i}Y`,
+      player_name: `Player ${i}`,
+      pool: i % 2 ? "lazy" : "main",
+      town_hall: 16,
+      effective_weight: null,
+      manual_weight: null,
+      source_status: i % 3 ? "missing" : "unavailable",
+      clan_weight_managed: false,
+    }) as RosterAccount,
+);
+let host: HTMLDivElement, root: Root;
+const rows = () => [
+  ...host.querySelectorAll<HTMLFormElement>(".weight-queue-row"),
+];
+const input = (i = 0) => rows()[i].querySelector<HTMLInputElement>("input")!;
+const button = (text: string, scope: ParentNode = host) =>
+  [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
+    (e) => e.textContent === text,
+  )!;
+async function type(element: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(element, value);
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+async function click(element: HTMLElement) {
+  await act(async () => element.click());
+}
+async function render(
+  overrides: Partial<Parameters<typeof WeightQueue>[0]> = {},
+) {
+  const props = {
+    accounts,
+    busy: false,
+    onEdit: vi.fn(),
+    onSave: vi.fn().mockResolvedValue(true),
+    onRefresh: vi.fn(),
+    ...overrides,
+  };
+  await act(async () => root.render(<WeightQueue {...props} />));
+  return props;
+}
+beforeEach(() => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+  vi.restoreAllMocks();
+});
+it("defaults to Loot and previews 25,000 as 125,000 full weight without saving", async () => {
+  const props = await render();
+  expect(button("Loot", rows()[0]).getAttribute("aria-pressed")).toBe("true");
+  expect(input().inputMode).toBe("decimal");
+  expect(input().placeholder).toBe("Loot");
+  await type(input(), "25,000");
+  expect(rows()[0].textContent).toContain(
+    "= 125,000 full weight · saved for future seasons",
+  );
+  expect(props.onSave).not.toHaveBeenCalled();
+});
+it("keeps typed text when switching to Full and re-evaluates", async () => {
+  await render();
+  await type(input(), "25,000");
+  await click(button("Full", rows()[0]));
+  expect(input().value).toBe("25,000");
+  expect(input().placeholder).toBe("Full weight");
+  expect(rows()[0].textContent).toContain(
+    "= 25,000 · saved for future seasons",
+  );
+});
+it.each(["e3", "-1", "0", "100001", "0.01"])(
+  "shows inline validation and disables Save for invalid loot %s",
+  async (value) => {
+    const props = await render();
+    await type(input(), value);
+    expect(button("Save", rows()[0]).disabled).toBe(true);
+    expect(input().getAttribute("aria-invalid")).toBe("true");
+    expect(rows()[0].querySelector(".is-error")?.textContent).not.toBe("");
+    expect(props.onSave).not.toHaveBeenCalled();
+  },
+);
+it("saves converted full weight only after explicit Save and focuses the next row", async () => {
+  const save = vi.fn();
+  function Harness() {
+    const [items, setItems] = useState(accounts);
+    return (
+      <WeightQueue
+        accounts={items}
+        busy={false}
+        onEdit={() => {}}
+        onRefresh={() => {}}
+        onSave={async (tag, weight) => {
+          save(tag, weight);
+          setItems((current) => current.filter((a) => a.tag !== tag));
+          return true;
+        }}
+      />
+    );
+  }
+  await act(async () => root.render(<Harness />));
+  await type(input(), "25,000");
+  await click(button("Save", rows()[0]));
+  expect(save).toHaveBeenCalledExactlyOnceWith("#P0Y", 125000);
+  expect(document.activeElement).toBe(input());
+  expect(input().getAttribute("aria-label")).toBe("Loot for Player 1");
+});
+it("renders only 50 then Load more; search includes unrendered accounts", async () => {
+  await render();
+  expect(rows()).toHaveLength(50);
+  expect(host.textContent).toContain("Showing 50 of 65");
+  await click(button("Load more"));
+  expect(rows()).toHaveLength(65);
+  await type(host.querySelector('input[type="search"]')!, "Player 64");
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0].textContent).toContain("Player 64");
+});
+it("retains unmounted drafts across search and reports dirty until input is cleared", async () => {
+  const onDirty = vi.fn();
+  await render({ onDirty });
+  await type(input(), "25000");
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+  await type(host.querySelector('input[type="search"]')!, "Player 64");
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+  await type(host.querySelector('input[type="search"]')!, "");
+  expect(input().value).toBe("25000");
+  await type(input(), "");
+  expect(onDirty).toHaveBeenLastCalledWith(false);
+});
+it("has the concise header, primitive Refresh icon, no instructions or Back button", async () => {
+  const props = await render();
+  expect(host.querySelectorAll("p")).toHaveLength(0);
+  expect(host.textContent).not.toContain("Back to roster");
+  const refresh = button("Refresh weights");
+  expect(refresh.classList.contains("roster-ui-button")).toBe(true);
+  expect(refresh.querySelector("svg")).not.toBeNull();
+  await click(refresh);
+  expect(props.onRefresh).toHaveBeenCalledOnce();
+});
+it("retains input on failed saves and prevents duplicate submits while pending", async () => {
+  let finish!: (value: boolean) => void;
+  const save = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render({ onSave: save });
+  await type(input(), "25000");
+  await click(button("Save", rows()[0]));
+  await act(async () =>
+    rows()[0].dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(save).toHaveBeenCalledOnce();
+  await act(async () => finish(false));
+  expect(input().value).toBe("25000");
+  expect(rows()[0].textContent).toContain("Weight wasn't saved");
+});
+it("disables edits and refresh in archived seasons and while busy", async () => {
+  await render({ archived: true });
+  expect(input().disabled).toBe(true);
+  expect(button("Refresh weights").disabled).toBe(true);
+  expect(button("Save", rows()[0]).disabled).toBe(true);
+});
+it("uses 15px primary names and 12px regular metadata and helper text, with a text-fill reset", () => {
+  const css = readFileSync("src/WeightQueue.css", "utf8");
+  expect(css).toContain("font-size: 15px");
+  expect(css).toContain("font-weight: 700");
+  expect(css).toContain("font-size: 12px");
+  expect(css).toContain("font-weight: 400");
+  expect(css).toContain("-webkit-text-fill-color: currentColor");
+  expect(css).not.toMatch(/font-size: (?:[0-9]|1[01])px/);
+});
