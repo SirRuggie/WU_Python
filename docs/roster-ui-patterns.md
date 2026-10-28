@@ -145,3 +145,12 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Review styles are scoped to Finalize; announcement editors retain their styles.
   Change list displays four entries then explicit expansion. Archived publishing
   stays disabled. Short dates share the publication banner formatter.
+
+## CWL flow navigation and season controls
+
+- The CWL sidebar follows the season: Seasons → Signup reminders → Build roster → Finalize roster → Announcements → Declaration readiness check → Return reminders → Results. Other sections are unchanged.
+- Use the compact `1 Build · 2 Finalize · 3 Announce` strip with 44px targets, gold for the active step, an amber unpublished-changes indicator, and a check for a current publication. Keep existing routes and independent publish/send permissions.
+- Show the next-step cue at the end of Build, after a successful publication, and after a confirmed announcement delivery (not a queued send). Sidebar entry resets Build to Accounts & signups; in-visit tab choices remain remembered.
+- Seasons and the roster signup controls share one signup-visibility action. Re-read on opening, confirm explicitly, and preserve partial success without automatic retries. An open hidden season uses an amber warning and Fix; Fix only makes that season visible when signups remain open.
+- Create-season confirmation has no estimated clan count. First season says it starts with no hosting clans; otherwise it says it inherits hosting clans and settings from the previous season. The success message uses the server's actual copied count and states that signups start empty.
+- Add hosting clan lives in Clan settings: searchable non-host family clans or a read-only tag lookup, followed by explicit Confirm through the existing add endpoint. Archive uses a red confirmation, explains its global effect, and preserves existing assignments. Settings-only staff receive no partial roster access; hosting controls also require Build roster access and retain existing backend mutation authorization.

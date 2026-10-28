@@ -242,3 +242,24 @@ Status: deployed as `finalize-1` (`1a8b035461ec46fba60f6ed4808111d3c67d87cf`), P
 Later: Version history on Finalize (number, time, who, counts, hidden) via a new
 read-only endpoint. The separate flow batch (step strip/sidebar/renames) is not
 part of this implementation.
+
+
+## Decisions — CWL flow (2026-10-27)
+
+Implementation in progress on `codex/cwl-flow`; not a release approval.
+
+- S1 carries active hosting lineup rows and their pool/capacity/weight rules from the latest season with lineup rows, atomically. No signups, placements, locks or publications are copied.
+- Create-season confirmation (Ruggie correction, 2026-10-28): before saving, “<Label> will start with the hosting clans and their settings from the previous season. Signups start empty.” For the first season: “<Label> will start with no hosting clans.” After creation, use S1's actual response count: “<Label> created with N hosting clans and their settings. Signups start empty.” Do not add an inheritance-preview endpoint (S4 was declined).
+- S2 (approved 2026-10-28): optional strict-boolean `expected_signup_open` compare-and-set; a mismatch returns 409 without writes. Show and open sets member visibility first, then opens signups. A second-call failure reports partial success without retry or rollback. Fix for an already-open hidden season only changes member visibility; no signup PATCH.
+- S3 (approved 2026-10-28): editor-authorized read-only clan lookup validates with `tag()`, returns `{tag, name}`, 400 for invalid tags and 404 for missing clans. No database writes. Confirm still uses the existing add POST. S1/S2/S3 require one isolated backend release when approved for deployment.
+- CWL sidebar order: Seasons, Signup reminders, Build roster, Finalize roster, Announcements, Declaration readiness check, Return reminders, Results. Other sidebar sections stay unchanged.
+- Build / Finalize / Announce use a numbered step strip, existing routes and permission-gated destinations. Missing weights replaces Weights. Declaration remains a post-publish, read-only check against the published roster; rebuilding it is a later batch.
+
+- N4 option B (approved 2026-10-28): Add hosting clan and Archive require Build roster access; settings-only staff see neither control and receive no partial roster access. Existing `cwl_settings` mutation authorization remains required by the unchanged backend. Seasons retains its own settings permissions.
+- F5: Seasons keeps creation, member-season visibility, the direct signup link and guarded signup opening/closing; host/family directory sections move out. A per-user dismissible note links to Clan settings. Hosting clans may be outside the family directory. Add uses family selection or S3 lookup; Archive uses the existing global archive operation and preserves this season's assignments and history.
+- F6/F7: Missing weights uses a global missing count. Pool tabs belong to Accounts & signups, Compare clans and Clan settings, not Finalize. Build sidebar entry resets to Accounts & signups; in-visit tabs retain their state. The header's redundant Finalize button is removed; the publication-awareness banner remains.
+- F4/F9: “Readiness” names only the Declaration readiness check. The isolated member journey checks Home → CWL signups → My clan assignments before/after a deliberate fixture publication. No real Discord sends or production writes are part of the checkpoint.
+
+### Later — CWL flow
+
+- Regroup the rest of the staff sidebar (Ruggie dislikes everything under “Staff tools”).
