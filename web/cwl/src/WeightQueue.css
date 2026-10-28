@@ -144,6 +144,8 @@
 /* Override the roster-wide button height only for the compact name link. */
 .roster-workspace.roster-ui .weight-queue .weight-queue-name button {
   min-height: 24px !important;
+  display: block;
+  text-align: left;
 }
 @media (max-width: 650px) {
   .roster-workspace .card.weight-queue {
