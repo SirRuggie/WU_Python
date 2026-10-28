@@ -61,7 +61,14 @@ describe("roster account card", () => {
     expect(
       headline.firstElementChild?.querySelector(".town-hall-icon"),
     ).not.toBeNull();
-    expect(headline.children[1].textContent).toBe(account.player_name);
+    expect(headline.querySelector(".player-card-name-text")?.textContent).toBe(
+      account.player_name,
+    );
+    expect(
+      headline
+        .querySelector(".player-card-name")
+        ?.firstElementChild?.querySelector(".town-hall-icon"),
+    ).not.toBeNull();
     expect(
       host.querySelectorAll('[aria-label="Locked placement"]'),
     ).toHaveLength(1);
@@ -136,10 +143,10 @@ describe("roster account card", () => {
       account: {
         ...account,
         current_clan_checked_at: new Date().toISOString(),
-        current_clan_name: "A very long current clan",
+        current_clan_name: "ClashofThrones",
       },
     });
-    expect(html).toContain('title="→ A very long current clan · just now"');
+    expect(html).toContain('title="→ ClashofThrones · just now"');
     const style = document.createElement("style");
     style.textContent = cardCss + accountCss;
     const host = document.createElement("div");
@@ -220,15 +227,15 @@ it("prioritizes a long assigned name on one line with complete title and accessi
       current_clan_name: "Other clan",
       current_clan_checked_at: "2026-10-28T12:00:00Z",
     },
-    assignedClanName: "Warriors United International Champions",
+    assignedClanName: "Warriors Unite!",
     now: Date.parse("2026-10-28T12:04:00Z"),
   });
   const row = host.querySelector(".roster-player-placement")!;
   expect(row.getAttribute("title")).toBe(
-    "Warriors United International Champions → Other clan · 4m ago",
+    "Warriors Unite! → Other clan · 4m ago",
   );
   expect(host.querySelector(".roster-player-sr-only")?.textContent).toContain(
-    "Assigned clan: Warriors United International Champions. Now in Other clan, checked 4 minutes ago.",
+    "Assigned clan: Warriors Unite!. Now in Other clan, checked 4 minutes ago.",
   );
   const style = document.createElement("style");
   style.textContent = cardCss + accountCss;
@@ -287,10 +294,10 @@ it.each([360, 700, 701, 1440])(
     expect(weight.fontSize).toBe(width > 700 ? "22px" : "16px");
     expect(weight.gridRow).toBe(width > 700 ? "1 / 4" : "1");
     const icon = w.getComputedStyle(card.querySelector(".town-hall-icon")!);
-    expect(icon.width).toBe(width > 700 ? "56px" : "40px");
+    expect(icon.width).toBe(width > 700 ? "26px" : "22px");
     expect(
       w.getComputedStyle(card.querySelector(".player-card-meta")!).gridColumn,
-    ).toBe(width > 700 ? "2" : "2 / -1");
+    ).toBe(width > 700 ? "1" : "1 / -1");
     expect(
       card.querySelector(".town-hall-icon")?.getAttribute("src"),
     ).toContain("?size=64");
@@ -321,7 +328,7 @@ it("matches by tag first, falls back to name, colors only an elsewhere current n
   for (const [tag, name, inClan] of [
     ["#A", "Different display name", true],
     [null, "Home", true],
-    [null, "Warriors United International Champions", false],
+    [null, "Warriors Unite!", false],
     ["#B", "Home", false],
   ] as const) {
     w.document.body.innerHTML = `<main class="roster-ui">${render({ account: { ...account, assigned_clan_tag: "#A", current_clan_tag: tag, current_clan_name: name, current_clan_checked_at: "2026-10-28T12:00:00Z" }, assignedClanName: "Home", now: Date.parse("2026-10-28T14:05:00Z") })}</main>`;

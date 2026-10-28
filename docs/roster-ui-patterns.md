@@ -171,3 +171,20 @@ Keep row 3 on one line below the menu hit area in compact cards, using the full 
 Glow top opacity: green/red 20%, neutral 8%, fading out at 44px before line 3. Upper text passes 4.5:1 at the brightest point; saturated green/red clan text and pills pass 4.5:1 at their actual lower-card position, including hover. Compare tint, tally and status all share tag-first/name-fallback matching with a completed read. The age formatter and ticking now remain unchanged.
 
 Item 6: withdrawn rosters with placements show the amber step dot; the Build banner shares Finalize's Hidden from members wording. Background metadata enrichment includes checked_at with the location name/tag/status so already-mounted cards render completed reads. Existing season/revision/request guards remain; no backend change.
+
+## Signup-change review
+
+A single header alert below the summary chips opens a side panel on desktop or full-screen sheet on phones. Amber is the default; red means a previous hosting clan is now below its known war size. Keep loading silent, Retry visible on read failure, short local dates, and the published-version caveat only for an active publication. Mark all requires confirmation with names; sequential review failures retain remaining rows and report partial progress. Reviews never modify placements or signup records.
+
+### Player card — inline icon refinement (2026-10-28)
+
+Supersedes the v2 40/56px icon column: TownHallIcon sits inside line 1 before the name, 22px compact / 26px wide, centered within the existing 20/23px name row. Same source and size=64, same TH text fallback. Metadata and clan status start at the left content edge in both views. Preserve one-line priority: assigned clan first, age disappears before the current-clan suffix; never wrap. Realistic layout worst cases use **15-character maximum player and clan names** and 8–9-character player tags; ellipsis remains a safety net. Layout tests and fixtures live in `web/cwl/tests/`, run with `npm run test:layout` and the documented Playwright runtime.
+
+The summary clan row initially shows only occupied clans. A small per-pool reveal exposes empty clans for the current visit; an empty pool says No clans have players yet. This is a presentation filter only, not a hosting or assignment rule.
+
+Signup-change review fix: Fill spot prepends the affected clan to the saved Compare
+set (deduplicated, existing order retained, maximum 10; drop the last when full).
+A missing clan tag leaves the preference unchanged. Dirty/busy guards run before
+navigation or storage changes. The red alert leads with the below-war-size clan
+or clan count. Row actions share the 44px secondary-button style. The inline TH
+image may extend beyond the name line box; only the name text clips/ellipsizes.

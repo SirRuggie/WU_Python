@@ -76,11 +76,11 @@ export default function RosterAccountCard({
         onClick={selectionMode && maySelect ? onToggle : onDetails}
       >
         <span className="player-card-top">
-          <span aria-hidden="true">
-            <TownHallIcon level={account.town_hall} />
-          </span>
           <strong className="player-card-name" title={account.player_name}>
-            {account.player_name}
+            <span className="player-card-inline-th" aria-hidden="true">
+              <TownHallIcon level={account.town_hall} />
+            </span>
+            <span className="player-card-name-text">{account.player_name}</span>
           </strong>
           <span className="player-card-weight">
             {account.effective_weight == null ? (

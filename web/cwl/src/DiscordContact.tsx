@@ -12,21 +12,25 @@ export function discordContact(userId?: string | null, compact = false) {
 export default function DiscordContact({
   userId,
   compact = false,
+  label,
+  className = "button",
 }: {
   userId?: string | null;
   compact?: boolean;
+  label?: string;
+  className?: string;
 }) {
   const contact = discordContact(userId, compact);
   if (!contact.href) return <small>{contact.unavailable}</small>;
   return (
     <a
-      className="button discord-contact"
+      className={`${className} discord-contact`}
       href={contact.href}
       target="_blank"
       rel="noopener noreferrer"
       title={contact.title}
     >
-      {contact.label}
+      {label ?? contact.label}
     </a>
   );
 }

@@ -1,34 +1,120 @@
-.card.signup-activity {
-  background: #301c20;
-  border: 1px solid #b96c76;
-  border-inline-start: 4px solid #f28c98;
-  margin-block: 1rem;
+.roster-header > .signup-activity {
+  grid-column: 1 / -1;
+  min-width: 0;
 }
-.signup-activity h2 {
-  margin-top: 0;
-  color: #ffd5db;
+.signup-activity:empty {
+  display: none;
 }
-.signup-activity-row {
+.roster-ui .signup-activity-line {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 0;
-  border-top: 1px solid #75454d;
+  gap: 6px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--roster-warning);
+  -webkit-text-fill-color: currentColor;
+  font-size: 13px;
+  text-align: left;
 }
-.signup-activity-row > div {
+.signup-activity-line span {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.signup-activity-row p {
-  margin: 0.3rem 0;
-}
-.signup-activity-row button {
+.signup-activity-line svg {
   flex-shrink: 0;
 }
-@media (max-width: 650px) {
-  .signup-activity-row {
-    align-items: stretch;
-    flex-direction: column;
+.roster-ui .signup-activity-line.is-danger {
+  color: #ffb3ba;
+}
+.signup-activity-load-error {
+  color: var(--roster-text-muted);
+  font-size: 13px;
+}
+.signup-activity-panel .action-panel-heading {
+  border-bottom-color: #94723d;
+}
+.signup-activity-panel .signup-activity-intro {
+  color: var(--roster-warning);
+  font-size: 14px;
+  margin-top: 0;
+}
+.signup-activity-row {
+  padding: 16px 0;
+  border-top: 1px solid var(--roster-border);
+}
+.signup-activity-identity {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.signup-activity-identity strong {
+  color: var(--roster-text);
+  font-size: 15px;
+}
+.signup-activity-identity time {
+  color: var(--roster-text-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.roster-ui .signup-activity-name {
+  color: var(--roster-text);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 0;
+  min-height: 44px;
+  background: transparent;
+  border: 0;
+}
+.signup-activity-row p {
+  font-size: 13px;
+  color: var(--roster-text-muted);
+  margin: 6px 0 10px;
+}
+.signup-activity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.signup-activity-actions .roster-ui-button {
+  height: 44px;
+  min-height: 44px;
+}
+.signup-activity-actions a.roster-ui-button {
+  text-decoration: none;
+}
+.signup-activity-review {
+  margin-left: auto;
+}
+.signup-activity-row .signup-activity-row-error {
+  color: #ffb3ba;
+}
+@media (max-width: 680px) {
+  .action-panel.signup-activity-panel {
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
   }
+  .signup-activity-identity {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}
+
+.roster-ui .signup-activity-line:focus-visible {
+  outline: 2px solid var(--roster-text);
+  outline-offset: 2px;
+}
+
+.signup-activity-panel.is-danger .action-panel-heading {
+  border-bottom-color: #aa636d;
+}
+.signup-activity-panel.is-danger .signup-activity-intro {
+  color: #ffb3ba;
 }

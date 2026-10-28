@@ -59,11 +59,11 @@ export default function ComparePlayerCard({
         onClick={onDetails}
       >
         <span className="player-card-top compare-player-top">
-          <span aria-hidden="true">
-            <TownHallIcon level={account.town_hall} />
-          </span>
           <strong className="player-card-name" title={account.player_name}>
-            {account.player_name}
+            <span className="player-card-inline-th" aria-hidden="true">
+              <TownHallIcon level={account.town_hall} />
+            </span>
+            <span className="player-card-name-text">{account.player_name}</span>
           </strong>
           {account.effective_weight === null ? (
             <span id={`${id}-weight`} className="compare-tag is-danger">

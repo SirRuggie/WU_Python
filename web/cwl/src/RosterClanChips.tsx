@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { totalRosterWeight } from "./rosterTotalWeight";
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
@@ -98,6 +99,7 @@ export default function RosterClanChips({
   onSelect,
   disabled,
 }: Props) {
+  const [revealed, setRevealed] = useState<string[]>([]);
   const summaries = buildRosterClanChipSummaries(
     roster.accounts,
     roster.clans,
@@ -116,6 +118,12 @@ export default function RosterClanChips({
           (summary) => summary.clan.pool === group.pool,
         );
         if (!members.length) return null;
+        const emptyCount = members.filter(
+          (member) => member.assignedCount === 0,
+        ).length;
+        const visible = revealed.includes(group.label)
+          ? members
+          : members.filter((member) => member.assignedCount > 0);
         return (
           <section
             className="roster-clan-chips-group"
@@ -124,7 +132,12 @@ export default function RosterClanChips({
           >
             <h3>{group.label}</h3>
             <div className="roster-clan-chips-list">
-              {members.map((summary) => {
+              {!members.some((member) => member.assignedCount > 0) && (
+                <p className="roster-clan-empty-note">
+                  No clans have players yet
+                </p>
+              )}
+              {visible.map((summary) => {
                 const active = selected.has(summary.clan.tag);
                 const full =
                   summary.capacity !== null &&
@@ -187,6 +200,18 @@ export default function RosterClanChips({
                   </Button>
                 );
               })}
+              {emptyCount > 0 && !revealed.includes(group.label) && (
+                <Button
+                  className="roster-clan-empty-reveal"
+                  disabled={disabled}
+                  onClick={() =>
+                    setRevealed((current) => [...current, group.label])
+                  }
+                >
+                  +{emptyCount} {emptyCount === 1 ? "clan" : "clans"} with no
+                  players
+                </Button>
+              )}
             </div>
           </section>
         );

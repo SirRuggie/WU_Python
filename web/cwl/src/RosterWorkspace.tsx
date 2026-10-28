@@ -1,3 +1,5 @@
+import { sortClans } from "./clanSort";
+import { comparisonOrder } from "./compare";
 import useLocationNow from "./useLocationNow";
 import ClanSettings from "./ClanSettings";
 import type { ClanRules } from "./clanSettingsModel";
@@ -15,7 +17,6 @@ import RosterAccountCard from "./RosterAccountCard";
 import RosterFilters from "./RosterFilters";
 import RosterClanChips from "./RosterClanChips";
 import { rosterMemberKey } from "./rosterGrouping";
-import SignupActivity from "./SignupActivity";
 import useWorkspacePreference from "./useWorkspacePreference";
 import useRosterPreferences from "./useRosterPreferences";
 import useUnsavedWork from "./useUnsavedWork";
@@ -51,6 +52,7 @@ import {
 } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import {
+  assignmentOptions,
   mergeRosterMetadata,
   type RosterClan,
   type RosterSnapshot,
@@ -102,6 +104,7 @@ export default function RosterWorkspace({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [hostingBusy, setHostingBusy] = useState(false);
+  const [compareJump, setCompareJump] = useState(0);
   const [hasPublication, setHasPublication] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [panel, setPanel] = useState<
@@ -865,6 +868,46 @@ export default function RosterWorkspace({
           }
           openPanel("auto", trigger);
         }}
+        onFillSignupSpot={(item) => {
+          if (!canRoster || uiLocked || !mayLeaveEditor()) return false;
+          const pool = item.from_pool === "lazy" ? "lazy" : "main";
+          try {
+            if (item.assigned_clan_tag) {
+              const key = `wu-compare-clans:${seasonId}:${pool}`;
+              const available = sortClans(
+                assignmentOptions(roster?.clans ?? []).filter(
+                  (clan) => clan.pool === pool,
+                ),
+                "name",
+              ).map((clan) => clan.tag);
+              const saved: unknown = JSON.parse(
+                localStorage.getItem(key) || "null",
+              );
+              const existing = comparisonOrder(saved, available);
+              localStorage.setItem(
+                key,
+                JSON.stringify(
+                  comparisonOrder(
+                    [item.assigned_clan_tag, ...existing],
+                    available,
+                  ),
+                ),
+              );
+            }
+          } catch {}
+          setPoolFilter(pool);
+          setSelectedTags([]);
+          setCompareJump((value) => value + 1);
+          setMode("compare");
+          return true;
+        }}
+        onSignupDetails={(tag) => {
+          if (uiLocked || !mayLeaveEditor()) return false;
+          setSelectedTags([]);
+          setFeedback(null);
+          setEditingTag(tag);
+          return true;
+        }}
         onFinalize={onReviewPublication}
         onStatusFilter={(status) => {
           if (mode !== "assign" && !mayLeaveEditor()) return;
@@ -905,9 +948,6 @@ export default function RosterWorkspace({
         }
         onAccessError={(error) => void fail(error)}
       />
-      {seasonId && canSignups && (
-        <SignupActivity key={seasonId} seasonId={seasonId} />
-      )}
       {!seasonId && (
         <div className="card empty">
           <p>Select a season to build its CWL roster.</p>
@@ -1020,8 +1060,9 @@ export default function RosterWorkspace({
               }}
             />
           )}
-          {mode === "assign" && (
+          <div hidden={mode !== "assign"}>
             <RosterClanChips
+              key={seasonId}
               roster={roster}
               pool={viewPool}
               selectedTags={releasePreferences.assignedClanTags}
@@ -1035,7 +1076,7 @@ export default function RosterWorkspace({
                 }))
               }
             />
-          )}
+          </div>
 
           {canRoster && mode === "weights" && (
             <WeightQueue
@@ -1104,7 +1145,7 @@ export default function RosterWorkspace({
             <CompareClans
               memory={comparisonMemory}
               refreshKey={refreshEpoch}
-              key={seasonId}
+              key={`${seasonId}:${compareJump}`}
               pool={poolFilter}
               seasonId={seasonId}
               roster={roster}

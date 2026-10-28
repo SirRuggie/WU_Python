@@ -169,7 +169,8 @@ describe("clan filter summaries", () => {
       }),
     );
     expect(html).toContain("Total 2,579k");
-    expect(html).toContain("Total —");
+    expect(html).not.toContain("Total —");
+    expect(html).toContain("with no players");
     expect(html).toContain("1 of 2 weighed");
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("is-selected");

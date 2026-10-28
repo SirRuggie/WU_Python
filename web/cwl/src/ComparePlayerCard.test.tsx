@@ -160,7 +160,7 @@ it.each([360, 700, 1440])(
     expect(article.classList.contains("player-card-compact")).toBe(true);
     expect(
       w.getComputedStyle(article.querySelector(".town-hall-icon")!).width,
-    ).toBe("40px");
+    ).toBe("22px");
     expect(
       w.getComputedStyle(article.querySelector(".player-card-body")!)
         .paddingTop,

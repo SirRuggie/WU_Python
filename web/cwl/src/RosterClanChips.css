@@ -163,3 +163,12 @@
     gap: 4px;
   }
 }
+
+/* Scoped to the summary row: Clan settings shares the card CSS, not these controls. */
+.roster-clan-chips .roster-clan-empty-note,
+.roster-clan-chips .roster-clan-empty-reveal {
+  align-self: center;
+  color: var(--roster-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}

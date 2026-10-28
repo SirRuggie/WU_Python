@@ -291,7 +291,7 @@ Frontend styling/markup only; behavior and location freshness rules unchanged. S
 Branch `codex/player-card-v2` from `bf4cfe704747061aca1c3afecef76be374998c49`, following accepted cwl-flow-1 smoke. Preview-only checkpoint; release remains a separate approval.
 
 1. State meaning retained: Accounts assigned green / unassigned neutral; Compare in-clan green / elsewhere red / checking neutral.
-2. Compact (≤700px Accounts and all Compare): 40px emoji, 16px bold name/weight, 13px metadata; lower rows span under the name. Wide Accounts: centered 56px emoji, 18px name, 22px centered right weight. Checkbox/menu remain 44px. Approximate 76px compact target is measured, with extra rows for tags/notes.
+2. **Superseded by Signup-change alert Item 8 (inline 22/26px TH icon; no icon column).** Compact (≤700px Accounts and all Compare): 40px emoji, 16px bold name/weight, 13px metadata; lower rows span under the name. Wide Accounts: centered 56px emoji, 18px name, 22px centered right weight. Checkbox/menu remain 44px. Approximate 76px compact target is measured, with extra rows for tags/notes.
 3. Shared lighter fills plus tokenized internal top-edge gradient and brighter rounded 5px left bar; no outer glow. Gold selection/focus and existing card gaps remain. Card text meets 4.5:1 on its rendered background including hover; the final polish below measures clan text on line 3 after the glow fades.
 4. Accounts row 3 distinguishes assigned-in-clan, assigned-elsewhere, unassigned/clanless and not-checked states; full words in the accessible description. Current-clan suffix ellipsizes first. Ruggie's approved exception: an assigned name longer than the entire line ellipsizes too, hiding the suffix; full line in title and accessible description. No wrapping. **Superseded for Compare by the refinement below:** both pages now use the shared assigned-clan status line and inline In clan pill; redundant location chips are removed.
 5. Existing checkbox, menu, lock, chips, real warning/note rules, ticking ages, actions and selection behavior retained; emoji size param unchanged by Ruggie's choice (`size=64`), current source unchanged.
@@ -304,3 +304,22 @@ Ruggie approved one shared line 3 on Accounts and Compare: assigned clan first; 
 ### Player card v2 final polish (2026-10-28)
 
 Compact line 3 is below the 44px menu hit area and uses the full available width; common names Emerald Watch and W. U. Lazy .125 retain the inline age at 360px. Glow fades out at 44px, before line 3, so saturated clan text is measured against its actual lower-card background including hover. Assigned clanless players say red No clan; unassigned retain muted in no clan. Compare tint, header tally and line 3 share tag-first/name-fallback matching and require a completed location read. Checking is described as Checking location. No backend or write-path change.
+
+## Decisions — Signup-change alert (2026-10-28)
+
+Preview branch `codex/signup-changes` starts from origin/main `3168f68061cdcb8f395700d19e4217a59c07047d`, after the accepted player-card-3 smoke. Frontend only; no deployment, merge, tag, schema or endpoint changes.
+
+1. Replace the inline signup-activity card with a single header alert below the summary chips on every Build tab. It opens a side ActionPanel on desktop and a full-screen phone sheet; the last review closes it. Loading is silent, failure has Retry, and 30-second polling pauses while hidden.
+2. Amber is the default. Red requires the previous clan’s known 15/30 capacity and current assigned count below that capacity; unknown capacity stays amber.
+3. Distinguish withdrawals, pool switches and mixed changes with singular/plural and 100+ wording. The panel says spots are open in the draft; only an active publication adds the version members still see.
+4. Rows show the name/action, short local Finalize date with full timestamp title, player tag and previous clan/pool (no clan tag). Only a pool-switch account still on the roster opens Details. Message reuses DiscordContact; controls retain 44px targets.
+5. Fill spot navigates through dirty/busy guards to Compare with the prior pool/clan selected through its existing preference state. Mark reviewed writes immediately with a synchronous duplicate guard and inline errors. Mark all confirms the names, calls existing review POSTs sequentially, stops on the first failure, and reports partial progress without retry. The cwl_signups visibility permission is unchanged.
+6. Summary cards hide clans with no assigned accounts, recounted from this season’s roster. Each pool has a +N clans with no players reveal and an empty-pool message. Reveal state survives Build tab switches, and resets on season/page leave. Assignment/hosting settings, Compare choices and other counts remain unchanged.
+7. Realistic player/clan names in card fixtures are at most 15 characters, with 8–9-character player tags. Ellipsis remains a safety net for untrusted input.
+8. TownHallIcon is inline before the name: 22px compact / 26px wide, centered without increasing the name row’s height. Lines 2 and 3 start at the left content edge; checkbox, weight and menu behavior stays. `npm run test:layout` starts the repository fixture and runs the Chrome metadata/indent/long-clan checks; see `web/cwl/tests/README.md` for the installed Playwright runtime.
+
+Signup-change review follow-up: preserve the saved Compare clan set when filling
+a spot (prepend/dedupe, cap at the existing maximum, null tag leaves it alone);
+lead red alerts with the shortage; uniform 44px row actions; unclipped inline TH
+images. Layout tests use locked Playwright and frontend/backend from the same
+checkout, with locally fulfilled images and an explicit skip when Chrome is absent.
