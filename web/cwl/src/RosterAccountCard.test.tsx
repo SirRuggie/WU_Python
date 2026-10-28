@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { renderToStaticMarkup } from "react-dom/server";
+import { Window } from "happy-dom";
 import { readFileSync } from "node:fs";
 const cardCss = readFileSync("src/PlayerCard.css", "utf8");
 const accountCss = readFileSync("src/RosterAccountCard.css", "utf8");
@@ -81,7 +82,7 @@ describe("roster account card", () => {
       assignedClanName: "Assigned",
     });
     expect(host.querySelector(".roster-player-placement")?.textContent).toBe(
-      "Assigned· now in Home · just now",
+      "Assigned→ Home · just now",
     );
   });
   it("escapes player text and presents missing, locked and unavailable values", () => {
@@ -106,7 +107,7 @@ describe("roster account card", () => {
         current_clan_checked_at: "2026-10-28T12:00:00Z",
       },
     });
-    expect(html).toContain("· now in Old clan · 2h 0m ago");
+    expect(html).toContain("→ Old clan · 2h 0m ago");
     expect(html).not.toContain("location not checked yet");
   });
   it("omits duplicate Not assigned notes but preserves real notes and Held", () => {
@@ -138,9 +139,7 @@ describe("roster account card", () => {
         current_clan_name: "A very long current clan",
       },
     });
-    expect(html).toContain(
-      'title="· now in A very long current clan · just now"',
-    );
+    expect(html).toContain('title="→ A very long current clan · just now"');
     const style = document.createElement("style");
     style.textContent = cardCss + accountCss;
     const host = document.createElement("div");
@@ -164,14 +163,14 @@ describe("roster account card", () => {
       style.remove();
     }
   });
-  it("keeps card text at least 12px and both headline weights 15px bold", () => {
+  it("keeps card text at least 12px and both compact headline weights 16px bold", () => {
     for (const css of [cardCss, accountCss]) {
       for (const match of css.matchAll(/font-size:\s*(\d+)px/g))
         expect(Number(match[1])).toBeGreaterThanOrEqual(12);
     }
     const css = cardCss;
     expect(css).toMatch(
-      /player-card-weight\s*\{[^}]*font-size: 15px;[^}]*font-weight: 700/s,
+      /player-card-weight\s*\{[^}]*font-size: 16px;[^}]*font-weight: 700/s,
     );
   });
 
@@ -207,6 +206,94 @@ it("says in no clan for a checked clanless account", () => {
       current_clan_name: null,
     },
   });
-  expect(html).toContain("· in no clan · just now");
+  expect(html).toContain("→ in no clan · just now");
   expect(html).not.toContain("now in No clan");
 });
+
+it("prioritizes a long assigned name on one line with complete title and accessible location", () => {
+  const host = document.createElement("div");
+  host.innerHTML = render({
+    account: {
+      ...account,
+      assigned_clan_tag: "#A",
+      current_clan_tag: "#B",
+      current_clan_name: "Other clan",
+      current_clan_checked_at: "2026-10-28T12:00:00Z",
+    },
+    assignedClanName: "Warriors United International Champions",
+    now: Date.parse("2026-10-28T12:04:00Z"),
+  });
+  const row = host.querySelector(".roster-player-placement")!;
+  expect(row.getAttribute("title")).toBe(
+    "Warriors United International Champions → Other clan · 4m ago",
+  );
+  expect(host.querySelector(".roster-player-sr-only")?.textContent).toContain(
+    "Assigned clan: Warriors United International Champions. Now in Other clan, checked 4 minutes ago.",
+  );
+  const style = document.createElement("style");
+  style.textContent = accountCss;
+  document.head.append(style);
+  document.body.append(host);
+  try {
+    const name = getComputedStyle(row.querySelector("strong")!);
+    expect(name.maxWidth).toBe("100%");
+    expect(name.textOverflow).toBe("ellipsis");
+    expect(name.flexShrink).toBe("0");
+    expect(getComputedStyle(row).whiteSpace).toBe("nowrap");
+    expect(
+      getComputedStyle(row.querySelector(".roster-player-current")!).minWidth,
+    ).toMatch(/^0(px)?$/);
+  } finally {
+    style.remove();
+    host.remove();
+  }
+});
+it.each([
+  ["#A", "Home", true, "Home· in clan · 4m ago", "is-in-clan"],
+  ["#B", "Elsewhere", true, "Home→ Elsewhere · 4m ago", "is-elsewhere"],
+  [null, null, false, "Not assigned→ in no clan · 4m ago", "is-unassigned"],
+] as const)(
+  "renders the location state %s",
+  (tag, name, assigned, text, state) => {
+    const host = document.createElement("div");
+    host.innerHTML = render({
+      account: {
+        ...account,
+        assigned_clan_tag: assigned ? "#A" : null,
+        current_clan_tag: tag,
+        current_clan_name: name,
+        current_clan_checked_at: "2026-10-28T12:00:00Z",
+      },
+      assignedClanName: "Home",
+      now: Date.parse("2026-10-28T12:04:00Z"),
+    });
+    const row = host.querySelector(".roster-player-placement")!;
+    expect(row.textContent).toBe(text);
+    expect(row.classList.contains(state)).toBe(true);
+  },
+);
+
+it.each([360, 700, 701, 1440])(
+  "uses the compact/wide weight and icon layout at %ipx",
+  (width) => {
+    const w = new Window({ width });
+    w.document.head.innerHTML = `<style>${cardCss}${accountCss}</style>`;
+    w.document.body.innerHTML = `<main class="roster-ui roster-workspace">${render({ account: { ...account, town_hall: 18, effective_weight: 170000 } })}</main>`;
+    const card = w.document.querySelector(".player-card")!;
+    expect(card.classList.contains("player-card-responsive")).toBe(true);
+    const weight = w.getComputedStyle(
+      card.querySelector(".player-card-weight")!,
+    );
+    expect(weight.fontSize).toBe(width > 700 ? "22px" : "16px");
+    expect(weight.gridRow).toBe(width > 700 ? "1 / 4" : "1");
+    const icon = w.getComputedStyle(card.querySelector(".town-hall-icon")!);
+    expect(icon.width).toBe(width > 700 ? "56px" : "40px");
+    expect(
+      w.getComputedStyle(card.querySelector(".player-card-meta")!).gridColumn,
+    ).toBe(width > 700 ? "2" : "2 / -1");
+    expect(
+      card.querySelector(".town-hall-icon")?.getAttribute("src"),
+    ).toContain("?size=64");
+    w.happyDOM.abort();
+  },
+);

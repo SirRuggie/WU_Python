@@ -47,12 +47,31 @@ export default function RosterAccountCard({
   const currentClanKnown = Number.isFinite(
     Date.parse(account.current_clan_checked_at || ""),
   );
-  const currentClanText = currentClanKnown
-    ? `· ${account.current_clan_name || account.current_clan_tag ? `now in ${account.current_clan_name || account.current_clan_tag}` : "in no clan"} · ${comparisonAge(account.current_clan_checked_at, now)}`
-    : "· location not checked yet";
+  const assigned = !!account.assigned_clan_tag;
+  const inAssignedClan =
+    assigned &&
+    currentClanKnown &&
+    account.current_clan_tag === account.assigned_clan_tag;
+  const currentClanName =
+    account.current_clan_name || account.current_clan_tag || "in no clan";
+  const age = comparisonAge(account.current_clan_checked_at, now);
+  const currentClanText = !currentClanKnown
+    ? "· location not checked yet"
+    : inAssignedClan
+      ? `· in clan · ${age}`
+      : `→ ${currentClanName} · ${age}`;
+  const minutes = Math.max(
+    0,
+    Math.floor(
+      (now - Date.parse(account.current_clan_checked_at || "")) / 60000,
+    ),
+  );
+  const locationDescription = currentClanKnown
+    ? ` Now in ${account.current_clan_name || account.current_clan_tag || "no clan"}, checked ${minutes === 0 ? "just now" : `${minutes} minute${minutes === 1 ? "" : "s"} ago`}.`
+    : " Location not checked yet.";
   return (
     <article
-      className={`player-card roster-player-card${account.assigned_clan_tag ? " is-assigned" : ""}${selected ? " is-selected" : ""}`}
+      className={`player-card player-card-responsive roster-player-card${account.assigned_clan_tag ? " is-assigned" : ""}${selected ? " is-selected" : ""}`}
     >
       <label className="roster-player-select">
         <input
@@ -99,7 +118,10 @@ export default function RosterAccountCard({
             <LockKeyhole size={13} aria-label="Locked placement" />
           )}
         </span>
-        <span className="roster-player-placement">
+        <span
+          title={`${assigned ? assignedClanName : "Not assigned"} ${currentClanText}`}
+          className={`roster-player-placement${inAssignedClan ? " is-in-clan" : assigned && currentClanKnown ? " is-elsewhere" : ""}${!assigned ? " is-unassigned" : ""}`}
+        >
           <strong>
             {account.assigned_clan_tag ? assignedClanName : "Not assigned"}
           </strong>
@@ -127,6 +149,7 @@ export default function RosterAccountCard({
         {account.tag}. TH {account.town_hall ?? "unknown"}. Weight{" "}
         {compactRosterWeight(account.effective_weight)}. Assigned clan:{" "}
         {account.assigned_clan_tag ? assignedClanName : "Not assigned"}.
+        {locationDescription}
         {account.kept ? " Locked placement." : ""}
       </span>
       <RosterAccountMenu

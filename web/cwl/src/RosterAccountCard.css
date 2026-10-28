@@ -24,15 +24,19 @@
   font-size: 13px;
   line-height: 16px;
   display: flex;
-  gap: 4px;
+  gap: 0;
   white-space: nowrap;
   min-width: 0;
 }
 .roster-player-placement strong {
   flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--roster-text);
 }
 .roster-player-current {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -61,4 +65,20 @@
 
 .roster-ui .roster-player-body:focus-visible {
   outline-color: var(--roster-gold);
+}
+.roster-player-placement.is-in-clan strong {
+  color: var(--roster-card-text-success);
+}
+.roster-player-placement.is-elsewhere .roster-player-current {
+  flex: 1;
+  color: var(--roster-card-text-danger);
+}
+.roster-player-placement.is-unassigned strong {
+  color: var(--roster-text-muted);
+  font-weight: 400;
+}
+
+.roster-player-current::before {
+  content: " ";
+  white-space: pre;
 }

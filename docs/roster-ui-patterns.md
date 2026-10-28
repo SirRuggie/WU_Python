@@ -151,10 +151,19 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 
 ## Player card
 
-Shared player card (2026-10-27): Accounts & signups and Compare use `PlayerCard.css` for the 14px radius, 4px colored left edge, compact spacing and text hierarchy. Fills live in `rosterUi/tokens.css`: `--roster-card` (neutral), `--roster-card-success` (green), `--roster-card-danger` (red).
+Player card v2 (2026-10-28), superseding the earlier shared-card dimensions above. Accounts stays green when assigned / neutral when unassigned; Compare stays green in clan / red elsewhere / neutral before a result.
 
-1. TownHallIcon first (16px), name (15px bold, ellipsis), bold weight right, existing 44px action menu.
-2. Muted 12px `TH 18 · #TAG` and lock. Accounts retains its existing pool text. The lock appears only here.
-3. Compare keeps `Now in X · 10m ago`, location chips and relevant publication note. Accounts shows the assigned clan in bold (or `Not assigned`) plus muted `· now in X`; last-known location keeps its age using Compare’s formatter; before any result it says `location not checked yet`. The current-clan portion ellipsizes on one line with its full text in a title. Warning/note lines remain below.
+- Compact: phones ≤700px and every Compare card. TownHallIcon 40px; name and weight 16px/700 on row 1; metadata 13px muted on row 2; location row 3 uses the full available width below the name. Compare chips/notes and Accounts warnings/notes stay. Target about 76px; wrapping tags and notes add height.
+- Wide Accounts (>700px): 56px icon centered left; 18px bold name; metadata/location below; 22px bold weight centered right. Keep the 44px checkbox and 44px menu target. Emoji source and size=64 unchanged by Ruggie's choice; fallback is TH text.
+- Surface: existing base fill tokens, plus `--roster-card-glow-neutral/success/danger` top-to-bottom internal gradient. Rounded 5px left edge uses `--roster-card-edge-*`; no external glow. Gold selection/focus remains. Card-local muted, green and red text tokens meet 4.5:1 at the brightest gradient point (including hover).
 
-Accounts keeps its 44px left checkbox, green for assigned and gold selection outline. Compare uses green for in-clan, red for elsewhere and neutral while checking. Status is also written in chips. Neither card changes selection, Details, menu permissions, location, swipe or request behavior. Text is at least 12px; measured text-fill colors, including muted text, must contrast at least 4.5:1 with their rendered backgrounds. Accounts readability continues in a later audit.
+| Accounts location | Row 3 |
+| --- | --- |
+| Assigned and in that clan | Green bold assigned clan · in clan · age |
+| Assigned elsewhere | Bold assigned clan → red current clan · age |
+| Not assigned | Muted Not assigned → current clan (in no clan if clanless) · age |
+| No result | Assigned clan / Not assigned · location not checked yet |
+
+Keep row 3 on one line. Assigned name has priority: suffix shrinks/ellipsizes first. Ruggie's overflow exception (2026-10-28): if the assigned name alone is too long, it ellipsizes too and the suffix has zero visible width. Full text remains in the title and accessible description. Compare keeps its Now in / No clan / Checking location line, with red elsewhere-clan text and existing chips. The shared age formatter and ticking now are unchanged.
+
+Item 6: withdrawn rosters with placements show the amber step dot; the Build banner shares Finalize's Hidden from members wording. Background metadata enrichment includes checked_at with the location name/tag/status so already-mounted cards render completed reads. Existing season/revision/request guards remain; no backend change.

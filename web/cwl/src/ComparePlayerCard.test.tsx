@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { Window } from "happy-dom";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import ComparePlayerCard from "./ComparePlayerCard";
@@ -138,3 +140,28 @@ it("a publication note adds exactly one fifth row and missing weight replaces th
   );
   expect(body.children[3].textContent).not.toContain("No weight");
 });
+
+it.each([360, 700, 1440])(
+  "Compare stays compact at %ipx and colors an elsewhere clan red",
+  (width) => {
+    const body = card();
+    const w = new Window({ width });
+    w.document.head.innerHTML = `<style>${readFileSync("src/PlayerCard.css", "utf8")}</style>`;
+    w.document.body.innerHTML = `<main class="roster-ui">${body.parentElement!.outerHTML}</main>`;
+    const article = w.document.querySelector("article")!;
+    expect(article.classList.contains("player-card-compact")).toBe(true);
+    expect(
+      w.getComputedStyle(article.querySelector(".town-hall-icon")!).width,
+    ).toBe("40px");
+    expect(
+      w.getComputedStyle(article.querySelector(".player-card-weight")!)
+        .fontSize,
+    ).toBe("16px");
+    expect(
+      article
+        .querySelector(".compare-location-name")
+        ?.classList.contains("is-elsewhere"),
+    ).toBe(true);
+    w.happyDOM.abort();
+  },
+);

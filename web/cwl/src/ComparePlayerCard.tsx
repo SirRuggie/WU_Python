@@ -39,7 +39,7 @@ export default function ComparePlayerCard({
   const note = comparisonPublishNote(account, published);
   return (
     <article
-      className={`player-card compare-account compare-account-${location.state}`}
+      className={`player-card player-card-compact compare-account compare-account-${location.state}`}
     >
       <button
         type="button"
@@ -86,7 +86,9 @@ export default function ComparePlayerCard({
               {record?.current_clan_name || record?.current_clan_tag ? (
                 <>
                   <span className="compare-location-label">Now in </span>
-                  <span className="compare-location-name">
+                  <span
+                    className={`compare-location-name${location.state === "missing" ? " is-elsewhere" : ""}`}
+                  >
                     {record.current_clan_name || record.current_clan_tag}
                   </span>
                 </>

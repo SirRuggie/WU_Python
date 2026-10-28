@@ -281,3 +281,14 @@ Released as `cwl-flow-1` on 2026-10-28; S1/S2/S3 and shared player cards include
 Accounts & signups / Compare: one shared rounded card shape, 4px colored left edge, small card gap and lighter tokenized fills. Row 1 starts with TownHallIcon, then bold name (ellipsis), bold weight right and the existing menu; row 2 is muted TH/tag and lock (plus Accounts' existing pool). Compare retains its location line, chips and publication note. Accounts row 3 uses bold assigned clan or `Not assigned`, followed by muted `· now in X`; existing warning/note lines remain below. Accounts keeps its checkbox and green-for-assigned meaning; Compare keeps green-in-clan/red-elsewhere/neutral-checking. Gold selection outline remains.
 
 Frontend styling/markup only; behavior and location freshness rules unchanged. Shared source: `web/cwl/src/PlayerCard.css`; fills: `rosterUi/tokens.css`. Text levels retain the 12px minimum and measured 4.5:1 contrast, including text-fill colors. Accounts readability continues in a later audit. Branch checkpoint pending review; no merge, tag or deployment for this batch.
+
+## Player card v2 (2026-10-28)
+
+Branch `codex/player-card-v2` from `bf4cfe704747061aca1c3afecef76be374998c49`, following accepted cwl-flow-1 smoke. Preview-only checkpoint; release remains a separate approval.
+
+1. State meaning retained: Accounts assigned green / unassigned neutral; Compare in-clan green / elsewhere red / checking neutral.
+2. Compact (≤700px Accounts and all Compare): 40px emoji, 16px bold name/weight, 13px metadata; lower rows span under the name. Wide Accounts: centered 56px emoji, 18px name, 22px centered right weight. Checkbox/menu remain 44px. Approximate 76px compact target is measured, with extra rows for tags/notes.
+3. Shared lighter fills plus tokenized internal top-edge gradient and brighter rounded 5px left bar; no outer glow. Gold selection/focus and existing card gaps remain. Card-local text tints meet 4.5:1 at the brightest gradient/hover point.
+4. Accounts row 3 distinguishes assigned-in-clan, assigned-elsewhere, unassigned/clanless and not-checked states; full words in the accessible description. Current-clan suffix ellipsizes first. Ruggie's approved exception: an assigned name longer than the entire line ellipsizes too, hiding the suffix; full line in title and accessible description. No wrapping. Compare retains its location line/chips, with red elsewhere-clan text.
+5. Existing checkbox, menu, lock, chips, real warning/note rules, ticking ages, actions and selection behavior retained; emoji size param unchanged by Ruggie's choice (`size=64`), current source unchanged.
+6. Live follow-ups (separate commit): withdrawn roster with placements gets the step dot; withdrawn banner uses Finalize wording; background roster enrichment copies current_clan_checked_at with the other location fields. Frontend-only; no changed write endpoints or backend behavior.
