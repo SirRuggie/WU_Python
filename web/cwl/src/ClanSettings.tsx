@@ -1,3 +1,4 @@
+import HostingClanControls, { ArchiveHostingClan } from "./HostingClanControls";
 import { compactRosterWeight } from "./rosterCompactWeight";
 import {
   capacityState,
@@ -23,6 +24,9 @@ import "./RosterClanChips.css";
 import "./ClanSettings.css";
 
 type Props = {
+  onHostingChanged?: () => Promise<void>;
+  onHostingBusy?: (busy: boolean) => void;
+  onFamily?: () => void;
   clans: RosterClan[];
   accounts?: RosterAccount[];
   pool: Pool;
@@ -64,6 +68,7 @@ export default function ClanSettings(props: Props) {
   };
   return (
     <section className="roster-ui clan-settings" aria-label="Clan settings">
+      {props.onHostingChanged && props.onHostingBusy && !props.archived && <HostingClanControls clans={props.clans} onChanged={props.onHostingChanged} onBusy={props.onHostingBusy} onFamily={props.onFamily} disabled={props.busy || !!tag} />}
       {moved && (
         <div role="status" className="clan-settings-moved">
           {moved.name} moved to {moved.pool === "main" ? "Main" : "Lazy"} CWL ·{" "}
@@ -139,11 +144,13 @@ export default function ClanSettings(props: Props) {
             </div>
           ) : null;
         })}
-        {!visible.length && <p>Add a hosting clan in Seasons & clans first.</p>}
+        {!visible.length && <p>No hosting clans in this pool.</p>}
       </div>
       {clan && (
         <ClanSettingsEditor
           key={clan.tag}
+          onArchiveChanged={props.onHostingChanged}
+          onArchiveBusy={props.onHostingBusy}
           clan={clan}
           accounts={props.accounts || []}
           busy={props.busy}
@@ -167,6 +174,7 @@ export default function ClanSettings(props: Props) {
 }
 
 export function ClanSettingsEditor({
+  onArchiveChanged, onArchiveBusy,
   clan,
   accounts = [],
   busy,
@@ -176,6 +184,8 @@ export function ClanSettingsEditor({
   onDirty,
   onSave,
 }: {
+  onArchiveChanged?: () => Promise<void>;
+  onArchiveBusy?: (busy: boolean) => void;
   clan: RosterClan;
   accounts?: RosterAccount[];
   busy: boolean;
@@ -459,6 +469,7 @@ export function ClanSettingsEditor({
           )}
         </>
       )}
+      {!archived && onArchiveChanged && onArchiveBusy && <ArchiveHostingClan clan={clan} disabled={busy || changed} onChanged={onArchiveChanged} onBusy={onArchiveBusy} />}
     </ActionPanel>
   );
 }

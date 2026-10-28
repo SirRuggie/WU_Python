@@ -56,6 +56,7 @@ import {
 } from "./roster";
 
 type Props = {
+  onFamilyClans?: () => void;
   onPublication?: (draft: import("./publication").PublicationDraft) => void;
   onClanWeights?: () => void;
   seasonId: string;
@@ -77,6 +78,7 @@ const encoded = (value: string) => encodeURIComponent(value);
 export default function RosterWorkspace({
   seasonId,
   onClanWeights,
+  onFamilyClans,
   onPublication,
   seasons,
   onSeasonChange,
@@ -97,6 +99,7 @@ export default function RosterWorkspace({
   const [roster, setRoster] = useState<RosterSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hostingBusy, setHostingBusy] = useState(false);
   const [hasPublication, setHasPublication] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [panel, setPanel] = useState<
@@ -207,7 +210,7 @@ export default function RosterWorkspace({
   const [signupBusy, setSignupBusy] = useState(false);
   const [signupReviewOpen, setSignupReviewOpen] = useState(false);
   const [signupOpen, setSignupOpen] = useState(false);
-  const working = busy || signupBusy;
+  const working = busy || signupBusy || hostingBusy;
   const uiLocked = working || signupReviewOpen || signupOpen || !!panel;
   const dirty =
     !!panel ||
@@ -1050,10 +1053,13 @@ export default function RosterWorkspace({
           {canRoster && mode === "rules" && (
             <ClanSettings
               key={seasonId}
+              onHostingChanged={async () => { await refresh(); }}
+              onHostingBusy={setHostingBusy}
+              onFamily={onFamilyClans}
               clans={roster.clans}
               accounts={roster.accounts}
               pool={poolFilter}
-              busy={busy}
+              busy={busy || hostingBusy}
               archived={!!archived}
               onPoolChange={setPoolFilter}
               onDirty={setRulesDirty}

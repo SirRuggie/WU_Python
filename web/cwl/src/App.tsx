@@ -641,6 +641,7 @@ function App() {
           <RosterWorkspace
             onPublication={draft => setFlowPublication({season: seasonId, draft})}
             onClanWeights={() => changeView("weight-trial")}
+            onFamilyClans={() => changeView("clan-management")}
             onBusy={setRosterBusy}
             onSeasonRefresh={loadSeasons}
             onDirty={setCwlDirty}
