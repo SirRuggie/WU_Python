@@ -213,6 +213,9 @@ export function ClanSettingsEditor({
       ? "Maximum weight must be greater than minimum weight."
       : "";
   const invalid = !!(min.error || max.error || rangeError);
+  const poolError = draft.pool
+    ? poolChangeReason(clan, draft.pool as Pool)
+    : "";
   const impact =
     changed && !invalid
       ? rangeImpact(accounts, clan.tag, min.value, max.value)
@@ -244,11 +247,11 @@ export function ClanSettingsEditor({
       !changed ||
       !draft.pool ||
       !draft.capacity ||
-      invalid
+      invalid ||
+      poolError
     )
       return;
     try {
-      if (poolChangeReason(clan, draft.pool as Pool)) return;
       submitting.current = true;
       setError("");
       if (
@@ -286,7 +289,8 @@ export function ClanSettingsEditor({
               !changed ||
               !draft.pool ||
               !draft.capacity ||
-              invalid
+              invalid ||
+              !!poolError
             }
             onClick={() => void submit()}
           >
@@ -401,6 +405,7 @@ export function ClanSettingsEditor({
               </ul>
             </details>
           )}
+          {poolError && <p role="alert">{poolError}</p>}
           {(error || saveError) && <p role="alert">{error || saveError}</p>}
           {stale && changed && (
             <p role="alert">

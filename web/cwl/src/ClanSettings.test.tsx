@@ -328,3 +328,32 @@ it("saving an empty clan in another pool offers View and switches to its highlig
     document.querySelector(".clan-settings-row.is-selected")?.textContent,
   ).toContain("Amber Knights");
 });
+it("blocks a previously chosen pool if assigned players arrive during editing", async () => {
+  const props = {
+    busy: false,
+    archived: false,
+    trigger: null,
+    onClose: () => true,
+    onDirty: vi.fn(),
+    onSave: vi.fn(),
+  };
+  await act(async () =>
+    root.render(
+      <ClanSettingsEditor {...props} clan={{ ...clan, assigned_count: 0 }} />,
+    ),
+  );
+  await act(async () => button("Main CWL").click());
+  const lazy = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((e) => e.textContent === "Lazy CWL")!;
+  await act(async () => lazy.click());
+  await act(async () =>
+    root.render(<ClanSettingsEditor {...props} clan={clan} />),
+  );
+  expect(button("Save settings").disabled).toBe(true);
+  expect(
+    document.querySelector(".clan-settings-panel > .action-panel-content")
+      ?.textContent,
+  ).toContain("Can't move to Lazy CWL: 16 players are assigned here.");
+  expect(props.onSave).not.toHaveBeenCalled();
+});
