@@ -184,6 +184,9 @@ it("disables edits and refresh in archived seasons and while busy", async () => 
 });
 it("uses 15px primary names and 12px regular metadata and helper text, with a text-fill reset", () => {
   const css = readFileSync("src/WeightQueue.css", "utf8");
+  expect(readFileSync("src/ManualWeightFields.css", "utf8")).not.toContain(
+    ".weight-queue",
+  );
   expect(css).toContain("font-size: 15px");
   expect(css).toMatch(
     /\.roster-workspace\.roster-ui \.weight-queue \.weight-queue-name button \{[^}]*display: block;[^}]*text-align: left;/,
