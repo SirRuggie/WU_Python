@@ -54,6 +54,7 @@ export function mergeRosterMetadata(current: RosterSnapshot, incoming: RosterSna
       const live = accounts.get(account.tag);
       return live ? { ...account, current_clan_tag: live.current_clan_tag,
         current_clan_name: live.current_clan_name, current_clan_status: live.current_clan_status,
+        current_clan_checked_at: live.current_clan_checked_at,
         outside_family_and_hosts: live.outside_family_and_hosts } : account;
     }),
     clans: current.clans.map(clan => {

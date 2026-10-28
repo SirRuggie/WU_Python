@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import PublicationAwarenessBanner from "./PublicationAwarenessBanner";
 import { placementMessage, publicationChanges } from "./publicationAwareness";
+import { publicationDate } from "./publicationStatus";
 import type { PublicationDraft } from "./publication";
 const account = (
   tag: string,
@@ -67,4 +68,26 @@ it("placement wording is explicit before and after first publish", () => {
     "Assigned. · Draft only, not published",
   );
   expect(placementMessage("Assigned.", false)).toBe("Assigned. · Draft only");
+});
+
+it("shows the Finalize hidden wording for a withdrawn publication", () => {
+  const lastPublication = {
+    version: 1,
+    published_at: "2026-10-15T19:58:00Z",
+    withdrawn_at: "2026-10-28T12:00:00Z",
+    joining_instructions: "",
+  };
+  const html = renderToStaticMarkup(
+    <PublicationAwarenessBanner
+      published={null}
+      lastPublication={lastPublication}
+      changed
+      canPublish
+      onReview={() => {}}
+    />,
+  );
+  expect(html).toContain(
+    `Hidden from members · last published version 1 on ${publicationDate(lastPublication.published_at)}`,
+  );
+  expect(html).not.toContain("Draft ·");
 });

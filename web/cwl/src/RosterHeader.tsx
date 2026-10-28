@@ -299,6 +299,7 @@ export default function RosterHeader({
         publication.draft && (
           <PublicationAwarenessBanner
             published={publication.draft.published}
+            lastPublication={publication.draft.last_publication}
             changed={publication.draft.draft_changed}
             canPublish={canPublish}
             onReview={onFinalize}

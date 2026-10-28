@@ -36,9 +36,7 @@ export default function CwlStepStrip({
         >
           2 Finalize
           {draft?.draft_changed ||
-          (!draft?.published &&
-            !draft?.last_publication &&
-            (draft?.preview.assigned_count ?? 0) > 0) ? (
+          (!draft?.published && (draft?.preview.assigned_count ?? 0) > 0) ? (
             <span className="cwl-step-changes" aria-label="Unpublished changes">
               {" "}
               ●
