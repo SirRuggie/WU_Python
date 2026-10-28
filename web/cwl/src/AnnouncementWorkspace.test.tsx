@@ -139,7 +139,13 @@ it("loads the derived month only on tap, then confirms a linked change once", as
     setter.call(input, "2026-12");
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  // React's month control emits input/change depending on browser; the bind test above covers the live endpoint.
+  await click("Change month");
+  expect(document.querySelectorAll(".confirm-dialog")).toHaveLength(1);
+  expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
+    "from 2026-11 to 2026-12",
+  );
+  await click("Cancel");
+  expect(api.mock.calls.filter((c) => c[1] === "POST")).toHaveLength(1);
 });
 it("shows both cards without tabs, opens Preview and an unsaved prefilled Edit", async () => {
   bridge.pools.main.roster_url = "";
@@ -254,4 +260,40 @@ it("refresh with edits is one Cancel-first confirmation and Cancel preserves edi
       (b) => b.textContent === "Refresh status",
     ),
   ).toHaveLength(1);
+});
+it("test send requires the no-pings confirmation and cannot queue a real announcement", async () => {
+  await mount();
+  await click("Edit");
+  const field = document.querySelector<HTMLInputElement>(
+    'input[aria-label="Test channel"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(field, channels[0].id);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Send test");
+  expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
+    "Send a Main test to #main-cwl? No roles are pinged and the real announcement stays unsent.",
+  );
+  expect(api.mock.calls.some((c) => c[1])).toBe(false);
+  await click("Cancel");
+  expect(api.mock.calls.some((c) => c[1])).toBe(false);
+  await click("Send test");
+  await click("Confirm");
+  expect(api.mock.calls.filter((c) => c[1] === "POST")).toHaveLength(1);
+  expect(api.mock.calls.find((c) => c[1] === "POST")?.[0]).toBe(
+    "/seasons/1/manage-bridge/main/test",
+  );
+});
+it("bot unavailable prevents all sends, and loading explains the wait without hiding the header", async () => {
+  bridge.worker_ready = false;
+  await mount();
+  expect(host.textContent).toContain(
+    "The bot can't send right now. Refresh status in a minute.",
+  );
+  expect(button("Review and send").disabled).toBe(true);
+  expect(host.textContent).not.toContain("Sender ready");
 });

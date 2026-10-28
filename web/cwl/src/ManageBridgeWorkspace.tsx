@@ -10,10 +10,10 @@ import "./announcementWorkspace.css";
 import AnnouncementSendReview from "./AnnouncementSendReview";
 import { useReminderLookup } from "./useReminderLookups";
 import {
-  deliveryLabel,
-  deliveryExplanation,
-  deliveryTime,
+  announcementDeliveryStatus,
+  announcementPublicationStatus,
 } from "./announcementDelivery";
+import type { PublicationDraft } from "./publication";
 import { useDashboardPermission } from "./DashboardPermissions";
 import {
   reconcileAnnouncementSave,
@@ -33,6 +33,8 @@ import {
 } from "./manageBridge";
 
 type Props = {
+  publication?: Pick<PublicationDraft, "published" | "last_publication">;
+  onFinalize?: () => void;
   seasonLabel?: string;
   onDeclaration?: () => void;
   seasonId: string;
@@ -69,6 +71,8 @@ const safeMessageUrl = (url: string | null | undefined) =>
 export default function ManageBridgeWorkspace({
   seasonId,
   seasonLabel = "",
+  publication,
+  onFinalize,
   publicationVersion,
   onDirty,
   onBusy,
@@ -384,8 +388,19 @@ export default function ManageBridgeWorkspace({
     }
   };
   const sendTest = async (pool: Pool) => {
-    if (!canManage || !bridge || busy || loading || bridgeError || !testChannel)
+    if (
+      !canManage ||
+      !bridge ||
+      busy ||
+      loading ||
+      bridgeError ||
+      channelsError ||
+      draftGeneration !== bridge.generation ||
+      sending.current ||
+      !channels.some((channel) => channel.id === testChannel)
+    )
       return;
+    sending.current = true;
     setConfirmation(null);
     const sid = seasonId;
     setBusy(true);
@@ -418,6 +433,7 @@ export default function ManageBridgeWorkspace({
       if (activeSeason.current === sid)
         setNotice({ kind: "error", text: errorText(error) });
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
@@ -543,9 +559,15 @@ export default function ManageBridgeWorkspace({
       </p>
       <header className="announcement-toolbar">
         <span>
-          {bridge?.published_version
-            ? `Published roster · Version ${bridge.published_version}`
-            : "Publish a roster before sending"}
+          {announcementPublicationStatus(publication)}
+          {publication && !publication.published && onFinalize && (
+            <Button
+              disabled={busy || dirty || !!sendReview}
+              onClick={onFinalize}
+            >
+              Finalize roster ›
+            </Button>
+          )}
         </span>
         <Button
           icon={RefreshCw}
@@ -576,20 +598,14 @@ export default function ManageBridgeWorkspace({
           </button>
         </div>
       )}
-      {loading && <p role="status">Checking announcement settings…</p>}
+      {loading && (
+        <div role="status">
+          <p>Checking announcement settings…</p>
+          <p className="announcement-muted">This can take up to 20 seconds.</p>
+        </div>
+      )}
       {bridge && (
         <>
-          <div className="announcement-status">
-            <strong>
-              {bridge.published_version
-                ? `Published roster · Version ${bridge.published_version}`
-                : "Publish a roster before sending"}
-            </strong>
-            <span>
-              {bridge.worker_ready ? "Sender ready" : "Sender unavailable"}
-            </span>
-            <span>{bridge.cycle || "No CWL month selected"}</span>
-          </div>
           <AnnouncementMonth
             key={`${seasonId}:${bridge.cycle}`}
             value={cycleInput}
@@ -603,7 +619,7 @@ export default function ManageBridgeWorkspace({
           />
           {bridge.cycle && !bridge.worker_ready && (
             <p className="notice error" role="alert">
-              The bot sender is unavailable. Refresh status before sending.
+              The bot can't send right now. Refresh status in a minute.
             </p>
           )}
           {bridge.cycle && (
@@ -660,10 +676,12 @@ export default function ManageBridgeWorkspace({
                       }
                       status={
                         <>
-                          <strong>{deliveryLabel(delivery?.status)}</strong>
-                          <span>{deliveryExplanation(delivery?.status)}</span>
-                          {deliveryTime(delivery)}
-                          {delivery?.error && <span>{delivery.error}</span>}
+                          <span>
+                            {announcementDeliveryStatus(
+                              delivery,
+                              bridge.published_version,
+                            )}
+                          </span>
                           {safeMessageUrl(delivery?.message_url) && (
                             <a
                               href={delivery!.message_url!}

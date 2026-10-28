@@ -100,29 +100,19 @@ export default function ClanRosterImages({
       setBusy(false);
     }
   }
-  const pictures = clan
-    ? Array.from({ length: clan.pages }, (_, i) => (
-        <div key={`${tag}:${data?.version}:${i}`}>
-          <img
-            src={imageUrl(i + 1)}
-            alt={`${clan.name} finalized roster, page ${i + 1}`}
-            className="clan-roster-image"
-            onLoad={() => setLoaded(true)}
-            onError={() => {
-              setLoaded(false);
-              setError("Image unavailable. Refresh this section.");
-            }}
-          />
-          <a
-            className="button"
-            href={imageUrl(i + 1)}
-            download={`roster-${tag.slice(1)}-${i + 1}.png`}
-          >
-            Download{clan.pages > 1 ? ` page ${i + 1}` : " image"}
-          </a>
-        </div>
-      ))
-    : null;
+  const pictures = clan ? (
+    <RosterPictures
+      clan={clan}
+      tag={tag}
+      version={data?.version}
+      imageUrl={imageUrl}
+      onLoad={() => setLoaded(true)}
+      onError={() => {
+        setLoaded(false);
+        setError("Image unavailable. Refresh this section.");
+      }}
+    />
+  ) : null;
   return (
     <section className="clan-roster-images roster-ui">
       <div className="card-heading">
@@ -237,5 +227,44 @@ export default function ClanRosterImages({
         />
       )}
     </section>
+  );
+}
+
+function RosterPictures({
+  clan,
+  tag,
+  version,
+  imageUrl,
+  onLoad,
+  onError,
+}: {
+  clan: Clan;
+  tag: string;
+  version?: number;
+  imageUrl: (page: number) => string;
+  onLoad: () => void;
+  onError: () => void;
+}) {
+  return (
+    <>
+      {Array.from({ length: clan.pages }, (_, i) => (
+        <div key={`${tag}:${version}:${i}`}>
+          <img
+            src={imageUrl(i + 1)}
+            alt={`${clan.name} finalized roster, page ${i + 1}`}
+            className="clan-roster-image"
+            onLoad={onLoad}
+            onError={onError}
+          />
+          <a
+            className="button"
+            href={imageUrl(i + 1)}
+            download={`roster-${tag.slice(1)}-${i + 1}.png`}
+          >
+            Download{clan.pages > 1 ? ` page ${i + 1}` : " image"}
+          </a>
+        </div>
+      ))}
+    </>
   );
 }

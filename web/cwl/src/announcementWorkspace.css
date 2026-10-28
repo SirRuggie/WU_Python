@@ -190,3 +190,35 @@
     width: 100%;
   }
 }
+
+.announcement-workspace a,
+.announcement-edit-panel a,
+.clan-roster-images a {
+  color: #bdd5ef;
+  -webkit-text-fill-color: currentColor;
+}
+.announcement-editor-body textarea {
+  color: var(--roster-text-primary, #f3f3f5);
+  -webkit-text-fill-color: currentColor;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.announcement-workspace {
+  margin: 0 0 35px;
+}
+.announcement-editor-body {
+  min-width: 0;
+}
+.announcement-edit-panel .announcement-test {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--roster-border, #444650);
+  border-radius: 0;
+  background: transparent;
+}
+.announcement-edit-panel .announcement-test > summary {
+  color: var(--roster-text-primary, #f3f3f5);
+  -webkit-text-fill-color: currentColor;
+  font-weight: 400;
+}
