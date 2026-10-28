@@ -4,9 +4,9 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`, tag `cwl-flow-1`.
-- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`.
-- Both are clean `git archive` exports. All 168 tracked files under `cwl_web/` and `utils/` were byte-compared with their commits.
+- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`, tag `announcements-1`.
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`.
+- Both are clean `git archive` exports. Current release imports were verified from the isolated directory using the existing virtualenv.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
 - The original service unit stays unchanged. Preserve `frontend-routing.conf` and `storage-guard.conf` byte-for-byte. The only new drop-in is `~/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf`, containing `[Service]` and one `WorkingDirectory=` line.
@@ -29,12 +29,9 @@ Prove `/proc/<MainPID>/cwd`, active service and clean restart journal. Verify pu
 Triggers include startup/journal failure, wrong cwd or public hashes, failed smoke, or protected-data mismatch. Do not overwrite data to resolve a count mismatch; investigate legitimate concurrent edits separately.
 
 ```bash
-# Frontend rollback:
-/home/ruggie/.local/share/wu-dashboard/switch-release.py 1a8b035461ec46fba60f6ed4808111d3c67d87cf
-# Backend rollback (preserves frontend-routing.conf and storage-guard.conf):
-printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+/home/ruggie/.local/share/wu-dashboard/switch-release.py 4404c3672872ebff706519402efa4ee9940d3a60
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
 systemctl --user daemon-reload
-systemctl --user show -p WorkingDirectory,DropInPaths wu-cwl-demo-web.service
 systemctl --user restart wu-cwl-demo-web.service
 readlink /proc/$(systemctl --user show -p MainPID --value wu-cwl-demo-web.service)/cwd
 ```
@@ -55,6 +52,10 @@ Ruggie approved these changes for the CWL flow batch (2026-10-28): S1 atomically
 
 Deployed together on 2026-10-28 at `61290a4ce2b87611119483d6376b879a675aeb81` (`cwl-flow-1`) from a clean archive, with the approved service restart. Public config readiness passed twice consecutively before A4; public assets, 401 authorization checks, cwd and protected data matched. Claude's read-only click smoke passed. Backup: `.local/cwl-flow-backup-20261028T145938Z/dashboard.sqlite3`. Never restart from the workspace. S4 was declined: the frontend confirmation omits the copied count before creation and uses S1's response count afterwards.
 
-## Pending Announcements B1 release
+## Deployed Announcements B1 release
 
-Ruggie approved one read-only backend extension: `_delivery()` in `cwl_web/manage_bridge.py` exposes the existing send record's `publication_version` as an integer or null. No schema, new endpoint or write-path change. The Announcements batch therefore requires an isolated `backend/<sha>/` release plus `release.conf`, daemon-reload and restart when deployment is separately approved. Never restart from the workspace. After activation, poll the public `/api/cwl/config` until two consecutive 200 responses (maximum 90 seconds) before HTTP verification. Retain the prior backend and frontend rollback targets. Nothing in this checkpoint activates a release.
+Ruggie approved one read-only backend extension: `_delivery()` in `cwl_web/manage_bridge.py` exposes the existing send record's `publication_version` as an integer or null. No schema, new endpoint or write-path change.
+
+Deployed 2026-10-28 as `announcements-1` (`73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, PR #32), with a clean frontend build, isolated backend archive and approved service restart. Only `release.conf` changed; `frontend-routing.conf` and `storage-guard.conf` remained byte-identical. Imports, MainPID cwd, active service and restart journal passed. Public config returned two consecutive 200s after 5.53 seconds (transient startup 502s before readiness); public entry/feature hashes matched the manifest, and unauthenticated Manage read returned 401. Protected SQLite data, including Manage bindings, matched exactly. No scripted send/test-send/bind/save or Mongo access; normal backend startup retained its existing restore behavior.
+
+Backup: `.local/announcements-backup-20261028T205112Z/dashboard.sqlite3`; integrity OK, all 54 table counts matched. Previous frontend `4404c3672872ebff706519402efa4ee9940d3a60` and backend `61290a4ce2b87611119483d6376b879a675aeb81` remain the rollback pair. Claude's read-only 360px smoke PASSED, relayed by Ruggie: entry `index-Dn86Au-2.js`, backend, hidden status, real channels/roles, Preview and Edit open/close with no unsaved change; zero write requests, no errors, clean journal. Release complete.

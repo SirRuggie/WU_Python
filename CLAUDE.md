@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current signup-changes frontend: `/home/ruggie/.local/share/wu-dashboard/releases/4404c3672872ebff706519402efa4ee9940d3a60/`
+  - Current Announcements frontend: `/home/ruggie/.local/share/wu-dashboard/releases/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,27 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend — Signup changes:** `4404c3672872ebff706519402efa4ee9940d3a60`, tag `signup-changes-1`, PR #31.
+- **Current frontend + backend — Announcements:** `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, tag `announcements-1`, PR #32.
+  - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`.
+  - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`; approved isolated restart, PID 1366655 at verification.
+  - Previous frontend / rollback: `4404c3672872ebff706519402efa4ee9940d3a60`; previous backend / rollback: `61290a4ce2b87611119483d6376b879a675aeb81`.
+  - Backup: `.local/announcements-backup-20261028T205112Z/dashboard.sqlite3`; 1,138,688 bytes, integrity OK, all 54 table counts matched.
+  - Deployment signups/assigned/locks unchanged: Main 19/18/18; Lazy 91/90/71. Publication v1 remains withdrawn, member season 1/revision 0, unreviewed signup activity 1 and November 2026 Manage binding unchanged.
+  - Public `index-Dn86Au-2.js` and feature hashes match the manifest; config readiness passed twice consecutively; unauthenticated Manage read returns 401; clean restart journal. 681 frontend tests, 4,702 backend tests (21 skipped), TypeScript/build, layout and all four send-guard mutations passed.
+  - Claude read-only 360px smoke PASSED, relayed by Ruggie: entry/backend, hidden status line, real channels/roles, Preview, Edit opened/closed with no unsaved change; zero write requests, no errors, clean journal.
+  - Evidence: `/tmp/CWL-announcements-release-73fe3fa.html`, `/tmp/wu-announcements-release/live-proof.json`.
+
+Rollback both code layers (never restore the DB to roll back code):
+
+```bash
+/home/ruggie/.local/share/wu-dashboard/switch-release.py 4404c3672872ebff706519402efa4ee9940d3a60
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+systemctl --user daemon-reload
+systemctl --user restart wu-cwl-demo-web.service
+readlink /proc/$(systemctl --user show -p MainPID --value wu-cwl-demo-web.service)/cwd
+```
+
+- **Previous frontend — Signup changes:** `4404c3672872ebff706519402efa4ee9940d3a60`, tag `signup-changes-1`, PR #31.
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/4404c3672872ebff706519402efa4ee9940d3a60/`.
   - Backend unchanged: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`; PID 1053095, no restart.
   - Previous frontend / rollback: `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`.

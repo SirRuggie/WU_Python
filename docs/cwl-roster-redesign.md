@@ -4,7 +4,9 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-28)
 
-- **Signup changes frontend released:** `signup-changes-1`, `4404c3672872ebff706519402efa4ee9940d3a60`, PR #31. Backend remains `61290a4` without restart; previous frontend/rollback `0017006`. Public `index-DptKfiRQ.js` and roster hashes match the manifest; protected deployment counts, publication/member season, and unreviewed signup changes (1) are unchanged. 657 frontend tests, TypeScript/build and layout 10/10 passed. Claude read-only 360px smoke passed: alert fits, panel opens/closes without review, “+21 clans with no players”, inline 22px emoji, 74px cards, no errors. Backup `.local/signup-changes-backup-20261028T191131Z/`. Batch complete; Announcements awaits a refreshed prompt from Claude.
+- **Announcements frontend + B1 backend released:** `announcements-1`, `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, PR #32. Clean tagged frontend and isolated backend deployed; previous rollback frontend `4404c3672872ebff706519402efa4ee9940d3a60`, backend `61290a4ce2b87611119483d6376b879a675aeb81`. Public `index-Dn86Au-2.js` and feature hashes, backend cwd, readiness and 401 checks passed. Protected counts/publication/member season/Manage bindings unchanged; backup `.local/announcements-backup-20261028T205112Z/dashboard.sqlite3`. 681 frontend tests, 4,702 backend tests (21 skipped), TypeScript/build, layout and four guard mutations passed. Claude read-only 360px smoke PASSED: hidden status line, real channels/roles, Preview, Edit opened/closed with no unsaved change; zero write requests, no errors, clean journal. Batch complete.
+
+- **Signup changes frontend released:** `signup-changes-1`, `4404c3672872ebff706519402efa4ee9940d3a60`, PR #31. Backend remains `61290a4` without restart; previous frontend/rollback `0017006`. Public `index-DptKfiRQ.js` and roster hashes match the manifest; protected deployment counts, publication/member season, and unreviewed signup changes (1) are unchanged. 657 frontend tests, TypeScript/build and layout 10/10 passed. Claude read-only 360px smoke passed: alert fits, panel opens/closes without review, “+21 clans with no players”, inline 22px emoji, 74px cards, no errors. Backup `.local/signup-changes-backup-20261028T191131Z/`. Batch complete; Announcements has since released as recorded above.
 
 - **Player card 3 frontend released:** `player-card-3`, `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`, PR #30. Backend remains `61290a4` without restart; previous frontend `374e099`. Scripted hashes/counts passed; Claude read-only smoke passed (release, entry, all 19 Main cards have single-line metadata, no errors). Signup changes has since released as recorded above.
 
@@ -188,6 +190,9 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 
 ## Later
 
+- Announcements review preview shows raw role IDs (`@role 3333…`) instead of role names.
+- Announcements: opening Edit on an empty link marks the pool unsaved at once on HTTPS (by design); revisit if staff find it confusing.
+
 - Player card CSS guards untested: Compare line-3 margin-top that clears the ⋯ menu (PlayerCard.css:258), glow stop at 44px, green token; the 360px test checks padding only (needs a real-browser layout test).
 
 - Manual / Source weight filter on Accounts & signups to spot hand-entered weights.
@@ -328,7 +333,7 @@ checkout, with locally fulfilled images and an explicit skip when Chrome is abse
 
 ## Decisions — Announcements (2026-10-27)
 
-Implementation checkpoint on `codex/announcements`, based on `afc6f22edd88aa637648514a0fa56f33d618c319`. Awaiting review; no merge, tag or deployment. Production remains signup-changes-1 frontend / CWL flow backend.
+Released frontend + approved B1 backend as `announcements-1` at `73fe3fa92d8d0d89491be6e350c130b9d375aaaf` via PR #32 on 2026-10-28. Scripted verification and Claude read-only click smoke passed; see Status and rollback docs.
 
 1. Derive an unlinked CWL month from the season label. Show the named month, Change, and an explicit Load button; never bind automatically. Unparseable labels show the picker. Changing a linked month has one Cancel-first confirmation, including any unsaved-edit warning.
 2. Show Main CWL then Lazy CWL as compact pool cards, with status, destination, roles, roster-link description, Preview and Edit. Edit uses ActionPanel. Preserve template-disabled and delivery-lock rules.
@@ -336,9 +341,9 @@ Implementation checkpoint on `codex/announcements`, based on `afc6f22edd88aa6376
 4. Use plain queued/sending/sent/failed/stale/uncertain wording. Bot availability is shown only when unavailable. The existing declaration-readiness cue remains after confirmed delivery. The loading message explains that campaign settings can take up to 20 seconds; publication status renders independently.
 5. Show announced versus current publication version, short local dates, and the shared hidden-publication wording. Republishing never resends an announcement.
 6. One Review and send includes all currently ready pools; per-pool results remain separate. A lone eligible pool can show Send or Retry. Only failed/stale deliveries retry. Generation, version, destination, duplicate-submit and once-per-pool/month checks remain; polling is every five seconds only for pending/sending. Publication refreshes retain unsaved drafts.
-7. On opening an editable message with an empty saved link, prefill My clan assignments for that season. It is an unsaved edit until Save. Custom saved links are retained; server HTTPS validation is unchanged.
+7. On an HTTPS origin, opening an editable message with an empty saved link prefills My clan assignments for that season. It is an unsaved edit until Save. Custom saved links are retained; server HTTPS validation is unchanged.
 
-**B1 (Ruggie approved):** the existing manage-bridge delivery response adds nullable `publication_version` from the existing send record. No schema, write path or endpoint changes. Deployment needs an isolated backend release and restart as well as frontend assets; see `dashboard-backend-releases.md`.
+**B1 (Ruggie approved):** the existing manage-bridge delivery response adds nullable `publication_version` from the existing send record. No schema, write path or endpoint changes. Deployed with the isolated backend restart in `announcements-1`; see `dashboard-backend-releases.md`.
 
 ### Next — Roster images (approved design; not implemented here)
 
