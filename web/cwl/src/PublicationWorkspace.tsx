@@ -532,7 +532,9 @@ export default function PublicationWorkspace({
                               tag={account.tag}
                               disabled={busy || editBusy}
                               archived={archived}
-                              order={visibleGroups.flatMap(item => item.accounts.map(account => account.tag))}
+                              order={visibleGroups.flatMap((item) =>
+                                item.accounts.map((account) => account.tag),
+                              )}
                               onChanged={load}
                               onDirty={setEditDirty}
                               onBusy={setEditBusy}

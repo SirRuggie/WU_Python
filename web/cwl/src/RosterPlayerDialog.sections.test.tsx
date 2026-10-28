@@ -65,11 +65,16 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
 });
-async function render(overrides: Partial<RosterAccount> = {}) {
+async function render(
+  overrides: Partial<RosterAccount> = {},
+  permissions = ["cwl_roster", "cwl_signups"],
+  extra: { archived?: boolean; viewOnly?: "declaration" } = {},
+) {
   await act(async () =>
     root.render(
-      <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+      <DashboardPermissions.Provider value={{ owner: false, permissions }}>
         <RosterPlayerDialog
+          {...extra}
           account={{ ...account, ...overrides }}
           clans={roster.clans}
           roster={roster}
@@ -162,4 +167,55 @@ it("keeps the last known location with age rather than an unavailable placeholde
   await render({ current_clan_status: "unavailable" });
   expect(document.body.textContent).toContain("Other clan");
   expect(document.body.textContent).toContain("12m ago");
+});
+
+it.each([
+  ["Archived season · view only", { archived: true }],
+  [
+    "View only here · change placements in Build roster ›",
+    { viewOnly: "declaration" as const },
+  ],
+])("view-only hides every editing section: %s", async (reason, extra) => {
+  await render({}, undefined, extra);
+  expect(document.body.textContent).toContain(reason);
+  for (const label of ["Placement", "Weight", "Signup", "Danger area"])
+    expect(document.querySelector(`section[aria-label="${label}"]`)).toBeNull();
+  expect(document.body.textContent).toContain("Source & history");
+  expect(save).not.toHaveBeenCalled();
+});
+it("signup-only staff can edit Signup, but cannot edit placements or weights", async () => {
+  await render({}, ["cwl_signups"]);
+  expect(document.body.textContent).toContain(
+    "View only · you don't have roster editing access",
+  );
+  expect(document.querySelector('section[aria-label="Signup"]')).not.toBeNull();
+  expect(document.querySelector('section[aria-label="Placement"]')).toBeNull();
+  expect(document.querySelector(".compact-weight-controls")).toBeNull();
+});
+it("staff without roster or signup access see no editing actions", async () => {
+  await render({}, []);
+  expect(document.querySelector('section[aria-label="Signup"]')).toBeNull();
+  expect(
+    document.querySelector('section[aria-label="Danger area"]'),
+  ).toBeNull();
+  expect(document.body.textContent).toContain(
+    "View only · you don't have roster editing access",
+  );
+});
+
+it("a concurrent refresh does not erase unsaved weight text", async () => {
+  await render();
+  const input = document.querySelector<HTMLInputElement>(
+    ".compact-weight-controls input",
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, "31000");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await render({ manual_weight: 130000 });
+  expect(input.value).toBe("31000");
+  expect(save).not.toHaveBeenCalled();
 });

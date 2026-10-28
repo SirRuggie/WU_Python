@@ -36,6 +36,13 @@ export default function DetailsFrame({
   next?: () => void;
   children: ReactNode;
 }) {
+  // A nonmodal desktop panel opened from a modal must remain in that modal's
+  // top-layer subtree; otherwise the browser makes it inert.
+  const [portalTarget] = useState(
+    () =>
+      document.querySelector("dialog[open]:has(.staff-signup-form)") ||
+      document.body,
+  );
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [pending, setPending] = useState<null | (() => void)>(null);
@@ -120,6 +127,16 @@ export default function DetailsFrame({
       }}
       onKeyDown={(event) => {
         if (
+          event.key === "Escape" &&
+          isTopActionPanel(marker) &&
+          dialog.current?.contains(event.target as Node)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          request(onClose);
+          return;
+        }
+        if (
           matchMedia("(max-width: 767px)").matches &&
           isTopActionPanel(marker) &&
           dialog.current?.contains(event.target as Node)
@@ -172,6 +189,6 @@ export default function DetailsFrame({
         />
       )}
     </dialog>,
-    document.body,
+    portalTarget,
   );
 }

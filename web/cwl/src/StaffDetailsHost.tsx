@@ -11,7 +11,11 @@ import {
 } from "./staffDetailsRequest";
 
 /** One host across all staff rows: switching rows never stacks panels. */
-export default function StaffDetailsHost() {
+export default function StaffDetailsHost({
+  archived = false,
+}: {
+  archived?: boolean;
+}) {
   const [request, setRequest] = useState<StaffDetailsRequest | null>(null);
   const [snapshot, setSnapshot] = useState<RosterSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
@@ -184,6 +188,8 @@ export default function StaffDetailsHost() {
       {request && snapshot && account && (
         <RosterPlayerDialog
           account={account}
+          archived={archived || request.archived}
+          viewOnly={request.viewOnly}
           clans={snapshot.clans}
           roster={snapshot}
           undo={

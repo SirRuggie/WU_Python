@@ -87,3 +87,8 @@
 .roster-player-dialog .player-clan-status {
   display: block;
 }
+
+.roster-player-dialog .details-view-only {
+  color: var(--roster-text-muted);
+  font-size: 12px;
+}

@@ -69,10 +69,12 @@ export default function PlayerClanStatus({
   status,
   className = "",
   id,
+  showAssigned = true,
 }: {
   status: ReturnType<typeof playerClanStatus>;
   className?: string;
   id?: string;
+  showAssigned?: boolean;
 }) {
   return (
     <span id={id} className={`player-clan-status ${className}`}>
@@ -81,7 +83,7 @@ export default function PlayerClanStatus({
         title={`${status.name} ${status.suffix}`}
         aria-hidden="true"
       >
-        <strong>{status.name}</strong>
+        {showAssigned && <strong>{status.name}</strong>}
         {status.inClan && <span className="player-in-clan-pill">In clan</span>}
         <span className="roster-player-current" title={status.suffix}>
           {!status.currentClanKnown ? (

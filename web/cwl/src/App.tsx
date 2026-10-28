@@ -1,4 +1,3 @@
-import StaffDetailsHost from "./StaffDetailsHost";
 import CwlStepStrip from "./CwlStepStrip"
 import type { PublicationDraft } from "./publication"
 import { clearJourneyState } from './journeyState'
@@ -28,11 +27,12 @@ import { AccountIdentity } from './AccountIdentity'
 import { useMobileNavigation } from './useMobileNavigation'
 import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
-import { lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
 // Each destination loads only when opened. Keep shell, auth, and signup form helpers eager.
+const StaffDetailsHost = lazy(() => import("./StaffDetailsHost"))
 const WeightTrial = lazy(() => import('./weightTrial/WeightTrial'))
 const SeasonsPage = lazy(() => import('./SeasonsPage'))
 const WarsWorkspace = lazy(() => import('./activity/WarsWorkspace'))
@@ -687,7 +687,7 @@ function App() {
         {view === 'issues' && session.is_owner && <DashboardIssues />}
         {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}
         </RouteLoadBoundary>
-        <StaffDetailsHost />
+        {["roster", "publication", "declaration"].includes(view) && <Suspense fallback={null}><StaffDetailsHost key={`${view}:${seasonId}`} archived={season?.status === "archived"} /></Suspense>}
       </main>
     </div>
 

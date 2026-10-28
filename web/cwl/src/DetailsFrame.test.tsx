@@ -114,3 +114,61 @@ it("dirty Back restores the panel entry and requires confirmation", async () => 
   expect(detailsAccount()).toBe("#P028YU9Q");
   expect(document.body.textContent).toContain("Discard the unsaved weight");
 });
+
+it.each(["‹ Previous", "Next ›", "‹ Build roster"])(
+  "dirty %s waits for discard confirmation",
+  async (label) => {
+    const navigate = vi.fn();
+    await act(async () =>
+      root.render(
+        <DetailsFrame
+          tag="#P028YU9Q"
+          name="Amber"
+          dirty
+          busy={false}
+          onClose={close}
+          previous={navigate}
+          next={navigate}
+        >
+          Account
+        </DetailsFrame>,
+      ),
+    );
+    const button = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === label,
+    )!;
+    await act(async () => button.click());
+    expect(navigate).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain(
+      "Discard the unsaved weight for Amber?",
+    );
+  },
+);
+it("phone navigation follows the supplied filtered order and disables its ends", async () => {
+  const next = vi.fn();
+  await act(async () =>
+    root.render(
+      <DetailsFrame
+        tag="#P028YU9Q"
+        name="Amber"
+        dirty={false}
+        busy={false}
+        onClose={close}
+        next={next}
+      >
+        Account
+      </DetailsFrame>,
+    ),
+  );
+  const previous = Array.from(document.querySelectorAll("button")).find(
+    (b) => b.textContent?.trim() === "‹ Previous",
+  )!;
+  expect(previous.disabled).toBe(true);
+  await act(async () =>
+    Array.from(document.querySelectorAll("button"))
+      .find((b) => b.textContent?.trim() === "Next ›")!
+      .click(),
+  );
+  expect(next).toHaveBeenCalledOnce();
+});

@@ -1132,13 +1132,36 @@ export default function RosterWorkspace({
               rosterUi
               onDirty={setPlayerDirty}
               key={seasonId}
-              previous={navigationTags.indexOf(editingTag) > 0 ? () => setEditingTag(navigationTags[navigationTags.indexOf(editingTag) - 1]) : undefined}
-              next={navigationTags.indexOf(editingTag) >= 0 && navigationTags.indexOf(editingTag) < navigationTags.length - 1 ? () => setEditingTag(navigationTags[navigationTags.indexOf(editingTag) + 1]) : undefined}
+              previous={
+                navigationTags.indexOf(editingTag) > 0
+                  ? () =>
+                      setEditingTag(
+                        navigationTags[navigationTags.indexOf(editingTag) - 1],
+                      )
+                  : undefined
+              }
+              next={
+                navigationTags.indexOf(editingTag) >= 0 &&
+                navigationTags.indexOf(editingTag) < navigationTags.length - 1
+                  ? () =>
+                      setEditingTag(
+                        navigationTags[navigationTags.indexOf(editingTag) + 1],
+                      )
+                  : undefined
+              }
               account={roster.accounts.find((a) => a.tag === editingTag)!}
               clans={roster.clans}
               roster={roster}
               locations={comparisonMemory.records}
-              undo={undoToast && <RosterUndoToast state={undoToast} onUndo={() => void undoPlacement()} onDismiss={() => setUndoToast(null)} />}
+              undo={
+                undoToast && (
+                  <RosterUndoToast
+                    state={undoToast}
+                    onUndo={() => void undoPlacement()}
+                    onDismiss={() => setUndoToast(null)}
+                  />
+                )
+              }
               busy={busy}
               error={feedback?.kind === "error" ? feedback.text : undefined}
               onClose={() => {
@@ -1315,7 +1338,9 @@ export default function RosterWorkspace({
                         onToggle={() => toggleSelected(account.tag)}
                         onDetails={() => {
                           setFeedback(null);
-                          requestDetailsNavigation(() => setEditingTag(account.tag));
+                          requestDetailsNavigation(() =>
+                            setEditingTag(account.tag),
+                          );
                         }}
                         onAssign={(trigger) =>
                           openPanel("assign", trigger, [account.tag])

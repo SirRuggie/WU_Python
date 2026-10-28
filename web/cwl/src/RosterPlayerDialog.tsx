@@ -21,6 +21,7 @@ import RosterDiscordIdentity from "./RosterDiscordIdentity";
 import RosterAssignPanel from "./RosterAssignPanel";
 import PlayerCardMeta from "./PlayerCardMeta";
 import TownHallIcon from "./TownHallIcon";
+import "./PlayerCard.css";
 import "./RosterPlayerDialog.css";
 
 type Props = {
@@ -40,14 +41,9 @@ type Props = {
   onRemove: () => Promise<boolean>;
   onPoolChange?: (pool: Pool) => Promise<boolean>;
   archived?: boolean;
+  viewOnly?: "declaration";
   rosterUi?: boolean;
 };
-export function dialogOwnsEvent(
-  dialog: Pick<HTMLDialogElement, "contains"> | null,
-  target: EventTarget | null,
-): boolean {
-  return !!dialog && !!target && dialog.contains(target as Node);
-}
 const detailsWeightDraft = (weight: number | null): ManualWeightDraft => ({
   unit: "loot",
   text: weight === null ? "" : String(weight / 5),
@@ -81,6 +77,7 @@ export default function RosterPlayerDialog({
   onPoolChange,
   onDirty,
   archived = false,
+  viewOnly,
 }: Props) {
   const [now] = useLocationNow();
   const locationCache = useRef<LocationRecords>({});
@@ -96,13 +93,26 @@ export default function RosterPlayerDialog({
     })),
   ]);
   const weightInput = useRef<HTMLInputElement>(null);
-  const canRoster = useDashboardPermission("cwl_roster");
-  const canSignups = useDashboardPermission("cwl_signups");
+  const rosterPermission = useDashboardPermission("cwl_roster");
+  const canRoster = rosterPermission && !archived && !viewOnly;
+  const signupPermission = useDashboardPermission("cwl_signups");
+  const canSignups = signupPermission && !archived && !viewOnly;
+  const reason = archived
+    ? "Archived season · view only"
+    : viewOnly === "declaration"
+      ? "View only here · change placements in Build roster ›"
+      : !rosterPermission
+        ? "View only · you don't have roster editing access"
+        : "";
   const pending = useRef(false);
   const assignTrigger = useRef<HTMLButtonElement>(null);
   const [weight, setWeight] = useState(
     detailsWeightDraft(account.manual_weight),
   );
+  const baseline = useRef({
+    tag: account.tag,
+    draft: detailsWeightDraft(account.manual_weight),
+  });
   const [localError, setLocalError] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
   const [review, setReview] = useState<"unassign" | "remove" | "pool" | null>(
@@ -114,7 +124,15 @@ export default function RosterPlayerDialog({
     JSON.stringify(detailsWeightDraft(account.manual_weight));
   useUnsavedWork(dirty || busy, onDirty);
   useEffect(() => {
-    setWeight(detailsWeightDraft(account.manual_weight));
+    const previous = baseline.current;
+    const draft = detailsWeightDraft(account.manual_weight);
+    setWeight((current) =>
+      previous.tag !== account.tag ||
+      JSON.stringify(current) === JSON.stringify(previous.draft)
+        ? draft
+        : current,
+    );
+    baseline.current = { tag: account.tag, draft };
   }, [account.tag, account.manual_weight]);
   useEffect(() => {
     setLocalError("");
@@ -140,8 +158,11 @@ export default function RosterPlayerDialog({
     if (!canRoster || account.clan_weight_managed) return;
     try {
       const value = parseManualWeight(weight);
-      if (value !== account.manual_weight)
-        await run(() => onSave({ manual_weight: value }));
+      if (
+        value === account.manual_weight ||
+        (await run(() => onSave({ manual_weight: value })))
+      )
+        setWeight(detailsWeightDraft(value));
     } catch (cause) {
       setLocalError((cause as Error).message);
     }
@@ -187,6 +208,7 @@ export default function RosterPlayerDialog({
           <PlayerCardMeta account={account} />
           <RosterDiscordIdentity userId={account.user_id} />
         </header>
+        {reason && <p className="details-view-only">{reason}</p>}
         <section aria-label="At a glance">
           <h3>At a glance</h3>
           <p>
@@ -198,6 +220,7 @@ export default function RosterPlayerDialog({
             {account.kept ? " · Locked" : ""}
           </p>
           <PlayerClanStatus
+            showAssigned={false}
             status={playerClanStatus(
               account.assigned_clan_tag,
               currentHost?.name || account.assigned_clan_tag || "Not assigned",
@@ -343,6 +366,7 @@ export default function RosterPlayerDialog({
         )}
         {review && (
           <ConfirmDialog
+            danger={review === "remove"}
             heading={
               review === "unassign"
                 ? "Unassign from clan?"
