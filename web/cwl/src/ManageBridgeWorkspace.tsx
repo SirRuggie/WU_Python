@@ -1,3 +1,6 @@
+import AnnouncementMonth from "./AnnouncementMonth"
+import { announcementMonth } from "./announcementMonth"
+import ConfirmDialog from "./ConfirmDialog"
 import './announcementWorkspace.css'
 import AnnouncementSendReview from './AnnouncementSendReview'
 import { useReminderLookup } from './useReminderLookups'
@@ -12,7 +15,7 @@ import { poolLabel, type AnnouncementChannel } from './announcements'
 import ChannelCombobox from './ChannelCombobox'
 import { canQueueAnnouncement, dashboardRosterUrl, normalizeManageBridge, shouldPollBridge, type ManageBridge, type ManageDelivery } from './manageBridge'
 
-type Props = { onDeclaration?: () => void; seasonId: string; publicationVersion: number | null; onDirty?: (dirty: boolean) => void; onBusy?: (busy: boolean) => void }
+type Props = { seasonLabel?: string; onDeclaration?: () => void; seasonId: string; publicationVersion: number | null; onDirty?: (dirty: boolean) => void; onBusy?: (busy: boolean) => void }
 type PoolDraft = AnnouncementDraft
 type Notice = { kind: 'success' | 'error'; text: string } | null
 const pools: Pool[] = ['main', 'lazy']
@@ -24,9 +27,10 @@ const draftFrom = (bridge: ManageBridge): Record<Pool, PoolDraft> => ({
 })
 const safeMessageUrl = (url: string | null | undefined) => !!url && /^https:\/\/(discord\.com|ptb\.discord\.com)\/channels\//.test(url)
 
-export default function ManageBridgeWorkspace({ seasonId, publicationVersion, onDirty, onBusy, onDeclaration }: Props) {
+export default function ManageBridgeWorkspace({ seasonId, seasonLabel = "", publicationVersion, onDirty, onBusy, onDeclaration }: Props) {
   const canManage = useDashboardPermission('cwl_send')
   const canDeclare = useDashboardPermission('cwl_roster')
+  const [confirmMonth, setConfirmMonth] = useState(false)
   const [sendReview, setSendReview] = useState<Pool[] | null>(null)
   const roles = useReminderLookup<{ id: string; name: string }>('/announcement-roles', 'roles')
   const sending = useRef(false)
@@ -67,11 +71,11 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
         const reconciliation = initialize || typeof resetDraft !== 'string' ? null : reconcileAnnouncementSave(resetDraft, latestDrafts.current, latestBridge.current ? draftFrom(latestBridge.current) : null, saved)
         setDrafts(reconciliation?.drafts || saved)
         if (!reconciliation?.conflict) setDraftGeneration(result.generation)
-        if (initialize) setCycleInput(result.cycle || '')
+        if (initialize) setCycleInput(result.cycle || announcementMonth(seasonLabel))
       }
     } catch (error) { if (id === requestId.current && activeSeason.current === sid) {setBridgeError(errorText(error)); if (error instanceof ApiError && [401,403].includes(error.status)) {setBridge(null);setDrafts(emptyDraft());setDraftGeneration(null)}} }
     finally { if (id === requestId.current && activeSeason.current === sid) setLoading(false) }
-  }, [seasonId])
+  }, [seasonId, seasonLabel])
   const loadChannels = useCallback(async () => {
     try { setChannels((await api<{ channels: AnnouncementChannel[] }>('/announcement-channels')).channels); setChannelsError('') }
     catch (error) { setChannels([]); setChannelsError(errorText(error)) }
@@ -106,7 +110,7 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
     const current = drafts[pool]
     return saved.channel_id !== current.channel_id || saved.body !== current.body || saved.roster_url !== current.roster_url
   }
-  const dirty = !!bridge && (pools.some(unsaved) || cycleInput !== (bridge.cycle || ''))
+  const dirty = !!bridge && (pools.some(unsaved) || cycleInput !== (bridge.cycle || announcementMonth(seasonLabel)))
   useEffect(() => {onBusy?.(busy || !!sendReview); return () => onBusy?.(false)}, [busy, sendReview, onBusy])
   useEffect(() => { onDirty?.(dirty); return () => onDirty?.(false) }, [dirty, onDirty])
   useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn) }, [dirty])
@@ -116,8 +120,7 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
   }
   const bindCycle = async () => {
     if (!canManage || !seasonId || busy || loading || !!bridgeError || !/^\d{4}-(0[1-9]|1[0-2])$/.test(cycleInput)) { setNotice({ kind: 'error', text: 'Choose a CWL month in YYYY-MM format.' }); return }
-    if (pools.some(unsaved) && !window.confirm('Changing the CWL month will discard unsaved message edits. Continue?')) return
-    if (bridge?.cycle && bridge.cycle !== cycleInput && !window.confirm(`Change this season's Manage CWL settings from ${bridge.cycle} to ${cycleInput}? Review both pool templates before sending.`)) return
+    setConfirmMonth(false)
     const sid = seasonId
     setBusy(true); setNotice(null)
     try {
@@ -209,14 +212,12 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
         <span>{bridge.worker_ready ? 'Sender ready' : 'Sender unavailable'}</span>
         <span>{bridge.cycle || 'No CWL month selected'}</span>
       </div>
-      <details key={bridge.cycle || 'unbound'} className="manage-cycle" open={!bridge.cycle}>
-        <summary>{bridge.cycle ? 'CWL month settings' : 'Choose CWL month'}</summary>
-        <div className="manage-cycle-fields">
-          <p>Choose the month these announcements belong to.</p>
-          <label>CWL month<input type="month" value={cycleInput} disabled={!canManage || busy || loading} onChange={event => setCycleInput(event.target.value)}/></label>
-          <button disabled={!canManage || busy || loading || !!bridgeError || !cycleInput || cycleInput === bridge.cycle} onClick={() => void bindCycle()}>{bridge.cycle ? 'Change month' : 'Load month'}</button>
-        </div>
-      </details>
+      <AnnouncementMonth key={`${seasonId}:${bridge.cycle}`} value={cycleInput} linked={bridge.cycle}
+        disabled={!canManage || busy || loading || !!bridgeError}
+        onChange={setCycleInput} onLoad={() => {
+          if (bridge.cycle || pools.some(unsaved)) setConfirmMonth(true)
+          else void bindCycle()
+        }} />
       {bridge.cycle && !bridge.worker_ready && <p className="notice error" role="alert">The bot sender is unavailable. Refresh status before sending.</p>}
       {bridge.cycle && <>
         <div className="manage-pool-tabs" role="tablist" aria-label="Announcement pool">
@@ -304,6 +305,9 @@ export default function ManageBridgeWorkspace({ seasonId, publicationVersion, on
       onCancel={() => setSendReview(null)}
       onConfirm={() => { setSendReview(null); if (sendReview.length === 2) void sendBoth(); else void send(sendReview[0]); }}
     />}
+    {confirmMonth && <ConfirmDialog
+      text={`Change this season's Manage CWL settings from ${bridge?.cycle || 'no month'} to ${cycleInput}? Review both pool templates before sending.${pools.some(unsaved) ? ' Unsaved message edits will be discarded.' : ''}`}
+      onCancel={() => setConfirmMonth(false)} onConfirm={() => void bindCycle()} disabled={busy || loading} />}
     {expandedPreview && <AnnouncementPreviewDialog title={`${poolLabel(expandedPreview)} preview`} onClose={() => setExpandedPreview(null)}>{preview(expandedPreview)}</AnnouncementPreviewDialog>}
   </section>
 }

@@ -584,6 +584,7 @@ export default function PublicationWorkspace({
             onDirty={setAnnouncementDirty}
             onBusy={setAnnouncementBusy}
             seasonId={seasonId}
+            seasonLabel={seasons.find(season => String(season.id) === seasonId)?.label}
             publicationVersion={draft?.published?.version ?? null}
           />
           <details
