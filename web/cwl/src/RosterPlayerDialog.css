@@ -92,3 +92,9 @@
   color: var(--roster-text-muted);
   font-size: 12px;
 }
+
+.roster-player-dialog .details-view-only a {
+  color: var(--roster-text);
+  -webkit-text-fill-color: currentColor;
+  text-decoration: underline;
+}

@@ -119,7 +119,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 ## Weights
 
 - Compact missing-weight queue: TH icon and name open Details; TH/tag/pool/source metadata stays readable at 12px. Desktop controls sit beside identity; phone controls sit below it.
-- Loot-first single input with Loot / Full switch, live full-weight conversion and inline validation. Reuse `parseManualWeight`. Never save on typing or unit changes; explicit Save only, then focus the next editable row. Keep `ManualWeightFields` in Details.
+- Loot-first single input with Loot / Full switch, live full-weight conversion and inline validation. Reuse `parseManualWeight`. Never save on typing or unit changes; explicit Save only, then focus the next editable row. Details now shares `CompactWeightField` with its own explicit Save and clear-to-source behavior.
 - Render 50 rows and Load more. Search covers all missing accounts; keep unsaved drafts even when rows are filtered out, and retain the app's leave guard.
 - Clan-weight-managed accounts have no manual input. Share the `clan_weights`-permission-gated link in queue and Details, using the app's normal guarded navigation. Otherwise show the staff-access guidance.
 - Header: Needs weight count, primitive Refresh button with Lucide icon, full-width search, and one muted note about preserving placements/manual weights.
