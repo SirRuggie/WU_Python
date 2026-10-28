@@ -1,3 +1,4 @@
+import useLocationNow from "./useLocationNow";
 import { fetchReadWithRetry } from "./readRetry";
 import { handleAuthorizationFailure } from "./api";
 import {
@@ -53,7 +54,7 @@ export function useComparisonLocations(
   const [, redraw] = useState(0);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useLocationNow();
   const checks = useRef<ReturnType<typeof createComparisonChecks> | null>(null);
   const enabled = useRef(hasClans);
   enabled.current = hasClans;
@@ -94,14 +95,10 @@ export function useComparisonLocations(
       );
     document.addEventListener("visibilitychange", visibility);
     visibility();
-    const clock = setInterval(() => {
-      if (document.visibilityState === "visible") setNow(Date.now());
-    }, 30_000);
     return () => {
       runner.dispose();
       checks.current = null;
       document.removeEventListener("visibilitychange", visibility);
-      clearInterval(clock);
     };
   }, [season, pool, memory]);
   useEffect(() => {

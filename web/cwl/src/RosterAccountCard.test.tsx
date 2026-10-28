@@ -3,9 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 const cardCss = readFileSync("src/PlayerCard.css", "utf8");
 const accountCss = readFileSync("src/RosterAccountCard.css", "utf8");
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RosterAccount } from "./roster";
 import RosterAccountCard from "./RosterAccountCard";
+
+afterEach(() => vi.restoreAllMocks());
 
 const account: RosterAccount = {
   tag: "#PLAYER",
@@ -31,6 +33,7 @@ function render(
 ) {
   return renderToStaticMarkup(
     <RosterAccountCard
+      now={Date.now()}
       account={account}
       assignedClanName="Unassigned"
       showPool
@@ -105,7 +108,6 @@ describe("roster account card", () => {
     });
     expect(html).toContain("· now in Old clan · 2h 0m ago");
     expect(html).not.toContain("location not checked yet");
-    vi.restoreAllMocks();
   });
   it("omits duplicate Not assigned notes but preserves real notes and Held", () => {
     const host = document.createElement("div");
@@ -139,16 +141,28 @@ describe("roster account card", () => {
     expect(html).toContain(
       'title="· now in A very long current clan · just now"',
     );
-    const css = accountCss;
-    expect(css).toMatch(
-      /roster-player-placement\s*\{[^}]*white-space: nowrap/s,
-    );
-    expect(css).toMatch(
-      /roster-player-current\s*\{[^}]*text-overflow: ellipsis/s,
-    );
-    expect(css).toMatch(
-      /roster-player-placement strong\s*\{[^}]*flex-shrink: 0/s,
-    );
+    const style = document.createElement("style");
+    style.textContent = cardCss + accountCss;
+    const host = document.createElement("div");
+    host.className = "roster-ui roster-workspace";
+    host.style.width = "300px";
+    host.innerHTML = html;
+    document.head.append(style);
+    document.body.append(host);
+    try {
+      const row = host.querySelector(".roster-player-placement")!;
+      const current = host.querySelector(".roster-player-current")!;
+      expect(getComputedStyle(row).display).toBe("flex");
+      expect(getComputedStyle(row).whiteSpace).toBe("nowrap");
+      expect(getComputedStyle(current).overflow).toBe("hidden");
+      expect(getComputedStyle(current).textOverflow).toBe("ellipsis");
+      expect(getComputedStyle(row.querySelector("strong")!).flexShrink).toBe(
+        "0",
+      );
+    } finally {
+      host.remove();
+      style.remove();
+    }
   });
   it("keeps card text at least 12px and both headline weights 15px bold", () => {
     for (const css of [cardCss, accountCss]) {
@@ -169,4 +183,30 @@ describe("roster account card", () => {
     expect(readOnly).toMatch(/type="checkbox"[^>]*disabled=""/);
     expect(readOnly).toContain("Details for &lt;Alpha &amp; Beta&gt;");
   });
+});
+
+it("hides backend ready notes for unassigned, unkept accounts", () => {
+  const host = document.createElement("div");
+  host.innerHTML = render({
+    account: {
+      ...account,
+      kept: false,
+      auto_placement_reason: "ready",
+      auto_placement_note:
+        "Ready for auto-placement. Preview and apply to assign.",
+    },
+  });
+  expect(host.querySelector(".roster-player-note")).toBeNull();
+});
+it("says in no clan for a checked clanless account", () => {
+  const html = render({
+    account: {
+      ...account,
+      current_clan_checked_at: new Date().toISOString(),
+      current_clan_tag: null,
+      current_clan_name: null,
+    },
+  });
+  expect(html).toContain("· in no clan · just now");
+  expect(html).not.toContain("now in No clan");
 });

@@ -10,6 +10,7 @@ import "./PlayerCard.css";
 import "./RosterAccountCard.css";
 
 type Props = {
+  now: number;
   account: RosterAccount;
   assignedClanName: string;
   showPool: boolean;
@@ -26,6 +27,7 @@ type Props = {
 };
 
 export default function RosterAccountCard({
+  now,
   account,
   assignedClanName,
   showPool,
@@ -46,7 +48,7 @@ export default function RosterAccountCard({
     Date.parse(account.current_clan_checked_at || ""),
   );
   const currentClanText = currentClanKnown
-    ? `· now in ${account.current_clan_name || account.current_clan_tag || "No clan"} · ${comparisonAge(account.current_clan_checked_at, Date.now())}`
+    ? `· ${account.current_clan_name || account.current_clan_tag ? `now in ${account.current_clan_name || account.current_clan_tag}` : "in no clan"} · ${comparisonAge(account.current_clan_checked_at, now)}`
     : "· location not checked yet";
   return (
     <article
@@ -111,7 +113,9 @@ export default function RosterAccountCard({
           </span>
         )}
         {!account.assigned_clan_tag &&
-          (account.kept || !!account.auto_placement_note) && (
+          (account.kept ||
+            (account.auto_placement_reason !== "ready" &&
+              !!account.auto_placement_note)) && (
             <small className="roster-player-note">
               {account.kept
                 ? "Held unassigned · unlock in Details to auto-place"
