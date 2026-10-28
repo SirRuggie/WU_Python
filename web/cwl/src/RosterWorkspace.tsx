@@ -1039,8 +1039,9 @@ export default function RosterWorkspace({
               }}
             />
           )}
-          {mode === "assign" && (
+          <div hidden={mode !== "assign"}>
             <RosterClanChips
+              key={seasonId}
               roster={roster}
               pool={viewPool}
               selectedTags={releasePreferences.assignedClanTags}
@@ -1054,7 +1055,7 @@ export default function RosterWorkspace({
                 }))
               }
             />
-          )}
+          </div>
 
           {canRoster && mode === "weights" && (
             <WeightQueue
