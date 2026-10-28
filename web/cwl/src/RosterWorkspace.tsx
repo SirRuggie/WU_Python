@@ -56,6 +56,7 @@ import {
 } from "./roster";
 
 type Props = {
+  onPublication?: (draft: import("./publication").PublicationDraft) => void;
   onClanWeights?: () => void;
   seasonId: string;
   seasons: Season[];
@@ -76,6 +77,7 @@ const encoded = (value: string) => encodeURIComponent(value);
 export default function RosterWorkspace({
   seasonId,
   onClanWeights,
+  onPublication,
   seasons,
   onSeasonChange,
   initialReadiness = "all",
@@ -825,7 +827,7 @@ export default function RosterWorkspace({
         seasons={seasons}
         roster={roster}
         showAwareness={mode !== "weights"}
-        onPublication={(draft) => setHasPublication(!!draft.published)}
+        onPublication={(draft) => { setHasPublication(!!draft.published); onPublication?.(draft); }}
         pool={viewPool}
         canRoster={canRoster}
         canSignups={canSignups}
@@ -931,7 +933,7 @@ export default function RosterWorkspace({
                   { id: "rules", label: "Clan settings" },
                   {
                     id: "weights",
-                    label: `Weights · ${globalMissingWeight} missing`,
+                    label: `Missing weights · ${globalMissingWeight}`,
                   },
                 ] as const
               ).map((item) => (
@@ -1275,6 +1277,7 @@ export default function RosterWorkspace({
           )}
         </>
       )}
+      <button className="cwl-next-cue" disabled={!canPublish || uiLocked || !onReviewPublication} onClick={onReviewPublication}>Next: Finalize roster ›</button>
       <div
         className="roster-selection-spacer"
         style={{

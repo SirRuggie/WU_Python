@@ -9,7 +9,7 @@ import ConfirmDialog from "./ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Season } from './api';
 import ClanRosterImages from './ClanRosterImages';
-import CwlPoolTabs, { useCwlPool } from './CwlPoolTabs';
+
 import { useDashboardPermission } from './DashboardPermissions';
 import ManageBridgeWorkspace from './ManageBridgeWorkspace';
 import { type PublicationDraft, type PublicationMeta } from './publication';
@@ -19,6 +19,8 @@ import './publicationFlow.css';
 
 type Step = 'review' | 'announce';
 type Props = {
+  onPublication?: (draft: PublicationDraft) => void;
+  onDeclaration?: () => void;
   seasonId: string;
   seasons: Season[];
   onSeasonChange: (id: string) => void;
@@ -34,15 +36,18 @@ const errorText = (error: unknown) => error instanceof Error
   : 'Publication request failed. Try again.';
 
 export default function PublicationWorkspace({
-  seasonId, seasons, onSeasonChange, onFix, step, onStepChange, onDirty, onBusy,
+  seasonId, seasons, onSeasonChange, onFix, step, onStepChange, onDirty, onBusy, onPublication, onDeclaration,
 }: Props) {
   const canManage = useDashboardPermission('cwl_publish');
-  const [pool, setPool] = useCwlPool();
+  const publicationCallback = useRef(onPublication);
+  publicationCallback.current = onPublication;
+
   const [imagesOpen, setImagesOpen] = useState(false);
   const [changesReady, setChangesReady] = useState(false);
   const [confirmRevision, setConfirmRevision] = useState<number | null>(null);
   const [hideTarget, setHideTarget] = useState<{ revision: number; version: number } | null>(null);
   const [draft, setDraft] = useState<PublicationDraft | null>(null);
+  useEffect(() => { if (draft) publicationCallback.current?.(draft); }, [draft]);
   const [rosterSearch, setRosterSearch] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
   const [instructions, setInstructions] = useState('');
@@ -236,7 +241,7 @@ export default function PublicationWorkspace({
   for (const account of draft?.preview.accounts || []) {
     const hostingPool = draft?.preview.clans.find(clan => clan.tag === account.assigned_clan_tag)?.pool || account.pool;
     poolCounts[hostingPool] += 1;
-    if (hostingPool !== pool) continue;
+
     const key = account.assigned_clan_tag || 'unassigned';
     const name = account.assigned_clan_tag
       ? clanNames.get(account.assigned_clan_tag) || account.assigned_clan_tag
@@ -332,7 +337,7 @@ export default function PublicationWorkspace({
           {success}
           {draft?.published && step !== "announce" && (
             <button type="button" onClick={() => onStepChange("announce")}>
-              Continue to announcements
+              Next: Announcements ›
             </button>
           )}
         </div>
@@ -469,11 +474,6 @@ export default function PublicationWorkspace({
                 {poolCounts.lazy} ›
               </summary>
               <div className="publication-preview-filters">
-                <CwlPoolTabs
-                  value={pool}
-                  onChange={setPool}
-                  disabled={locked || loading}
-                />
                 <label>
                   Find an account or clan
                   <input
@@ -550,7 +550,7 @@ export default function PublicationWorkspace({
                 </div>
               ) : draft.preview.accounts.length ? (
                 <p>
-                  No {pool === "main" ? "Main" : "Lazy"} accounts match this
+                  No accounts match this
                   view.
                 </p>
               ) : (
@@ -580,6 +580,7 @@ export default function PublicationWorkspace({
       {seasonId && step === "announce" && (
         <div>
           <ManageBridgeWorkspace
+            onDeclaration={onDeclaration}
             onDirty={setAnnouncementDirty}
             onBusy={setAnnouncementBusy}
             seasonId={seasonId}

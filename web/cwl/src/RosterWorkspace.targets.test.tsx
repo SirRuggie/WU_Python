@@ -15,7 +15,7 @@ vi.mock("./CompareClans", () => ({
   default: () => <div>Compare target content</div>,
 }));
 it.each([
-  ["missing_weight", "Weights", "Weights target content"],
+  ["missing_weight", "Missing weights", "Weights target content"],
   ["over_capacity", "Compare clans", "Compare target content"],
 ] as const)(
   "opens the real workspace mode for %s",

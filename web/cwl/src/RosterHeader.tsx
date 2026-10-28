@@ -209,15 +209,6 @@ export default function RosterHeader({
               </span>
             </StatusPill>
           )}
-          {canPublish && onFinalize && publicationStatus !== "current" && (
-            <Button
-              className="roster-header-finalize"
-              disabled={uiLocked || !roster || archived}
-              onClick={onFinalize}
-            >
-              Finalize →
-            </Button>
-          )}
           {roster && (
             <details
               ref={actions}
