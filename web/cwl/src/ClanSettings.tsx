@@ -5,7 +5,7 @@ import {
   settingsWeight,
   weightKeystroke,
 } from "./clanSettingsModel";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan } from "./roster";
@@ -28,7 +28,6 @@ type Props = {
   pool: Pool;
   busy: boolean;
   archived: boolean;
-  saveError?: string;
   onPoolChange: (pool: Pool) => void;
   onDirty: (dirty: boolean) => void;
   onLeave: () => boolean;
@@ -72,14 +71,23 @@ export default function ClanSettings(props: Props) {
             onClick={() => {
               props.onPoolChange(moved.pool);
               setHighlight(moved.tag);
+              setMoved(null);
             }}
             disabled={props.busy}
           >
             View
           </Button>
+          <Button aria-label="Dismiss message" onClick={() => setMoved(null)}>
+            ×
+          </Button>
         </div>
       )}
       <div ref={list} className="clan-settings-list">
+        {props.archived && (
+          <p className="clan-settings-archived">
+            Archived season · settings are read-only.
+          </p>
+        )}
         {[null, props.pool].map((group) => {
           const rows = visible.filter((item) => item.pool === group);
           return rows.length ? (
@@ -95,6 +103,7 @@ export default function ClanSettings(props: Props) {
                     setTrigger(event.currentTarget);
                     setTag(item.tag);
                     setHighlight(null);
+                    setMoved(null);
                   }}
                 >
                   <span className="roster-clan-chip-content">
@@ -118,6 +127,7 @@ export default function ClanSettings(props: Props) {
                     </span>
                     {item.capacity && (
                       <ProgressBar
+                        decorative
                         value={item.assigned_count}
                         max={item.capacity}
                         label={`${item.name} assigned accounts`}
@@ -138,7 +148,6 @@ export default function ClanSettings(props: Props) {
           accounts={props.accounts || []}
           busy={props.busy}
           archived={props.archived}
-          saveError={props.saveError}
           trigger={trigger}
           onClose={close}
           onDirty={props.onDirty}
@@ -162,7 +171,6 @@ export function ClanSettingsEditor({
   accounts = [],
   busy,
   archived,
-  saveError,
   trigger,
   onClose,
   onDirty,
@@ -172,7 +180,6 @@ export function ClanSettingsEditor({
   accounts?: RosterAccount[];
   busy: boolean;
   archived: boolean;
-  saveError?: string;
   trigger: HTMLElement | null;
   onClose: () => boolean;
   onDirty: (dirty: boolean) => void;
@@ -188,6 +195,7 @@ export function ClanSettingsEditor({
   const [draft, setDraft] = useState(values);
   const [error, setError] = useState("");
   const submitting = useRef(false);
+  const unitId = useId();
   const changed = JSON.stringify(base) !== JSON.stringify(draft);
   const stale = JSON.stringify(base) !== JSON.stringify(values());
   const latest = () => {
@@ -216,9 +224,25 @@ export function ClanSettingsEditor({
   const poolError = draft.pool
     ? poolChangeReason(clan, draft.pool as Pool)
     : "";
+  const rangeChanged = draft.min !== base.min || draft.max !== base.max;
+  const oldOutside = rangeImpact(
+    accounts,
+    clan.tag,
+    settingsWeight(base.min).value,
+    settingsWeight(base.max).value,
+  );
+  const newOutside = rangeImpact(accounts, clan.tag, min.value, max.value);
   const impact =
-    changed && !invalid
-      ? rangeImpact(accounts, clan.tag, min.value, max.value)
+    rangeChanged && !invalid
+      ? newOutside.filter(
+          (account) => !oldOutside.some((old) => old.tag === account.tag),
+        )
+      : [];
+  const inside =
+    rangeChanged && !invalid
+      ? oldOutside.filter(
+          (account) => !newOutside.some((next) => next.tag === account.tag),
+        )
       : [];
   const capacity = draft.capacity ? Number(draft.capacity) : null;
   const count = (
@@ -301,7 +325,9 @@ export function ClanSettingsEditor({
     >
       {archived ? (
         <>
-          <p>Archived season · settings are read-only.</p>
+          <p className="clan-settings-archived">
+            Archived season · settings are read-only.
+          </p>
           <dl>
             <dt>Pool</dt>
             <dd>
@@ -346,12 +372,16 @@ export function ClanSettingsEditor({
               { value: "30", label: "30v30" },
             ]}
           />
+          <span id={unitId} className="sr-only">
+            Weights in thousands (k)
+          </span>
           <div className="clan-settings-weights">
             <Input
               className="clan-settings-k-input"
               inputMode="decimal"
               error={min.error}
               label="Minimum weight"
+              aria-describedby={unitId}
               value={draft.min}
               disabled={busy}
               onChange={(event) =>
@@ -364,6 +394,7 @@ export function ClanSettingsEditor({
               inputMode="decimal"
               error={max.error || rangeError}
               label="Maximum weight"
+              aria-describedby={unitId}
               value={draft.max}
               disabled={busy}
               onChange={(event) =>
@@ -390,23 +421,34 @@ export function ClanSettingsEditor({
             </div>
           )}
           {count}
-          {impact.length > 0 && (
+          {(impact.length > 0 || inside.length > 0) && (
             <details className="clan-settings-impact">
               <summary>
-                {impact.length} assigned players would be outside the new range
+                {impact.length > 0 &&
+                  `${impact.length} more assigned ${impact.length === 1 ? "player" : "players"} would be outside the range`}
+                {impact.length > 0 && inside.length > 0 && " · "}
+                {inside.length > 0 && `${inside.length} would move inside`}
               </summary>
               <ul>
                 {impact.map((account) => (
                   <li key={account.tag}>
                     {account.player_name} ·{" "}
-                    {compactRosterWeight(account.effective_weight)}
+                    {compactRosterWeight(account.effective_weight)} · Would move
+                    outside
+                  </li>
+                ))}
+                {inside.map((account) => (
+                  <li key={account.tag}>
+                    {account.player_name} ·{" "}
+                    {compactRosterWeight(account.effective_weight)} · Would move
+                    inside
                   </li>
                 ))}
               </ul>
             </details>
           )}
           {poolError && <p role="alert">{poolError}</p>}
-          {(error || saveError) && <p role="alert">{error || saveError}</p>}
+          {error && <p role="alert">{error}</p>}
           {stale && changed && (
             <p role="alert">
               Clan settings changed elsewhere. Your edits are preserved.{" "}

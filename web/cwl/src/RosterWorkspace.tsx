@@ -500,7 +500,7 @@ export default function RosterWorkspace({
       return true;
     } catch (error) {
       if (activeSeason.current === sid) await fail(error);
-      return false;
+      throw new Error(errorText(error));
     } finally {
       setBusy(false);
     }
@@ -1042,7 +1042,6 @@ export default function RosterWorkspace({
               pool={poolFilter}
               busy={busy}
               archived={!!archived}
-              saveError={feedback?.kind === "error" ? feedback.text : undefined}
               onPoolChange={setPoolFilter}
               onDirty={setRulesDirty}
               onLeave={mayLeaveEditor}

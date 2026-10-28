@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -96,7 +97,35 @@ it("opens on row tap, focuses Close, respects dirty close guard and writes only 
   expect(document.activeElement?.getAttribute("aria-label")).toBe(
     "Close panel",
   );
-  expect(document.body.textContent).not.toContain("Not set");
+  for (const label of ["Main CWL", "15v15"]) {
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>(".roster-menu-trigger")]
+        .find((item) => item.textContent?.includes(label))!
+        .click(),
+    );
+    const options = [...document.querySelectorAll('[role="menuitem"]')];
+    expect(options.length).toBe(2);
+    expect(options.map((item) => item.textContent).join(" ")).not.toContain(
+      "Not set",
+    );
+    await act(async () =>
+      [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          '[aria-label="Close panel"]',
+        ),
+      ]
+        .at(-1)!
+        .click(),
+    );
+  }
+  expect(document.querySelector("button [role=progressbar]")).toBeNull();
+  expect(document.querySelector("button div")).toBeNull();
+  for (const input of document.querySelectorAll("input")) {
+    expect(
+      document.getElementById(input.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toContain("in thousands (k)");
+  }
   await type("Minimum weight", "151");
   await act(async () => button("Close").click());
   expect(leave).toHaveBeenCalled();
@@ -186,11 +215,11 @@ it("explains disabled pool choices and never submits via a disabled option", asy
   expect(save).not.toHaveBeenCalled();
 });
 it("shows save failures inside the panel and blocks duplicate submissions", async () => {
-  let finish!: (value: boolean) => void;
+  let finish!: (reason: Error) => void;
   const save = vi.fn(
     () =>
-      new Promise<boolean>((resolve) => {
-        finish = resolve;
+      new Promise<boolean>((_resolve, reject) => {
+        finish = reject;
       }),
   );
   await act(async () =>
@@ -200,7 +229,6 @@ it("shows save failures inside the panel and blocks duplicate submissions", asyn
         archived={false}
         busy={false}
         trigger={null}
-        saveError="Another staff member changed this roster."
         onClose={() => true}
         onDirty={() => {}}
         onSave={save}
@@ -213,10 +241,12 @@ it("shows save failures inside the panel and blocks duplicate submissions", asyn
     button("Save settings").click();
   });
   expect(save).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    finish(new Error("Another staff member changed this roster.")),
+  );
   expect(document.querySelector("dialog")!.textContent).toContain(
     "Another staff member changed this roster.",
   );
-  await act(async () => finish(false));
   expect(button("Save settings").disabled).toBe(false);
 });
 it("zero shows an inline error and disables Save; blank is allowed; e and negatives are rejected", async () => {
@@ -258,7 +288,7 @@ it("zero shows an inline error and disables Save; blank is allowed; e and negati
   });
 });
 it("validates ranges live and shows changed-only impact with missing weights excluded", async () => {
-  const accounts = [149000, 150000, 170000, null].map(
+  const accounts = [149000, 150000, 168000, 169000, 170000, null].map(
     (effective_weight, index) => ({
       tag: String(index),
       player_name: `Player ${index}`,
@@ -286,9 +316,33 @@ it("validates ranges live and shows changed-only impact with missing weights exc
   expect(document.body.textContent).toContain("Maximum weight must be greater");
   await type("Maximum weight", "169");
   expect(document.body.textContent).toContain(
-    "2 assigned players would be outside the new range",
+    "1 more assigned player would be outside the range",
   );
   expect(button("Save settings").disabled).toBe(false);
+  await type("Maximum weight", "168");
+  expect(
+    document.querySelector(".clan-settings-impact summary")?.textContent,
+  ).toBe("2 more assigned players would be outside the range");
+  await type("Minimum weight", "148");
+  expect(
+    document.querySelector(".clan-settings-impact summary")?.textContent,
+  ).toBe(
+    "2 more assigned players would be outside the range · 1 would move inside",
+  );
+  expect(document.querySelectorAll(".clan-settings-impact li")).toHaveLength(3);
+  await type("Maximum weight", "170");
+  expect(
+    document.querySelector(".clan-settings-impact summary")?.textContent,
+  ).toBe("1 would move inside");
+  await type("Minimum weight", "150");
+  expect(document.querySelector(".clan-settings-impact")).toBeNull();
+  await act(async () => button("15v15").click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent === "30v30")!
+      .click(),
+  );
+  expect(document.querySelector(".clan-settings-impact")).toBeNull();
 });
 
 it("saving an empty clan in another pool offers View and switches to its highlighted row", async () => {
@@ -327,6 +381,14 @@ it("saving an empty clan in another pool offers View and switches to its highlig
   expect(
     document.querySelector(".clan-settings-row.is-selected")?.textContent,
   ).toContain("Amber Knights");
+  const css = readFileSync("src/ClanSettings.css", "utf8");
+  expect(css).toMatch(
+    /\.clan-settings-row\.is-selected\s*\{\s*border-color: var\(--roster-gold\)/,
+  );
+  expect(document.querySelector(".clan-settings-moved")).toBeNull();
+  await act(async () => button("Amber Knights").click());
+  expect(document.querySelector(".clan-settings-row.is-selected")).toBeNull();
+  expect(document.querySelector(".clan-settings-impact")).toBeNull();
 });
 it("blocks a previously chosen pool if assigned players arrive during editing", async () => {
   const props = {
@@ -356,4 +418,29 @@ it("blocks a previously chosen pool if assigned players arrive during editing", 
       ?.textContent,
   ).toContain("Can't move to Lazy CWL: 16 players are assigned here.");
   expect(props.onSave).not.toHaveBeenCalled();
+});
+
+it("puts the archived notice first in the list at muted 12px", async () => {
+  await act(async () =>
+    root.render(
+      <ClanSettings
+        clans={[clan]}
+        pool="main"
+        archived
+        busy={false}
+        onPoolChange={() => {}}
+        onDirty={() => {}}
+        onLeave={() => true}
+        onSave={vi.fn()}
+      />,
+    ),
+  );
+  expect(
+    document.querySelector(".clan-settings-list")?.firstElementChild
+      ?.textContent,
+  ).toBe("Archived season · settings are read-only.");
+  const css = readFileSync("src/ClanSettings.css", "utf8");
+  expect(css).toMatch(
+    /\.clan-settings-panel \.clan-settings-archived\s*\{\s*font-size: 12px;\s*color: var\(--roster-text-muted\)/,
+  );
 });

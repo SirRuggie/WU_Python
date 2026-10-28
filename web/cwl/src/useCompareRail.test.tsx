@@ -41,9 +41,17 @@ it.each([false, true])(
         card.getBoundingClientRect = () =>
           ({ left: index * 300 - rail.scrollLeft, width: 300 }) as DOMRect;
       });
+      let priorScrollCanSettle = true;
       rail.scrollTo = vi.fn((options) => {
+        // A prior scroll may settle while the requested destination is still in flight.
+        if (priorScrollCanSettle) {
+          priorScrollCanSettle = false;
+          rail.dispatchEvent(new Event("scroll"));
+          rail.dispatchEvent(new Event("scrollend"));
+        }
         rail.scrollLeft = (options as ScrollToOptions).left!;
         rail.dispatchEvent(new Event("scroll"));
+        rail.dispatchEvent(new Event("scrollend"));
       });
       await act(async () => {
         rail.scrollLeft = 300;
@@ -55,6 +63,7 @@ it.each([false, true])(
       expect(host.textContent).toContain("B players");
       expect(change).toHaveBeenCalledExactlyOnceWith("B");
       await act(async () => host.querySelector("button")!.click());
+      expect(change).toHaveBeenCalledTimes(1);
       expect(rail.scrollTo).toHaveBeenCalledWith({
         left: 600,
         behavior: reduced ? "auto" : "smooth",

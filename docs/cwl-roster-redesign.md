@@ -149,6 +149,7 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 
 - **Release 2 — Details as its own page:** route `/cwl/roster/account/{encodedTag}?season={id}` (the tag contains `#`). Back restores scroll, filters, tab and selection. Assigned clan via the Assign panel (instant + Undo). Weight keeps Save. Remove signup red + confirm. Weight shown once (source in a collapsible).
 - **Release 3 — backend:**
+  - Swap or Undo into an over-full clan still returns 409 "Hosting clan exceeds capacity" (`cwl_web/app.py` swap/undo capacity guards). B1 makes this reachable; resolve with Release 3’s overfill policy, not in Clan settings CS2.
   - B1 (war size below assigned count) brought forward into the Clan settings branch, Ruggie-approved; not yet deployed. B2 removes the unused lower_league application field while retaining its stored column.
   - Atomic larger selections: raise the 50 limit in one transaction; never sequential batches.
   - Overfill policy (contracts above), the Balance opt-in overflow step, and a Finalize publish warning.

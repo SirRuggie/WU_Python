@@ -62,11 +62,13 @@ export function ProgressBar({
   label,
   valueText,
   className = "",
+  decorative = false,
 }: {
   value: number;
   max?: number;
   label: string;
   valueText?: string;
+  decorative?: boolean;
   className?: string;
 }) {
   const boundedMax = Number.isFinite(max) && max > 0 ? max : 100;
@@ -74,20 +76,22 @@ export function ProgressBar({
     ? Math.max(0, Math.min(value, boundedMax))
     : 0;
   const percent = (boundedValue / boundedMax) * 100;
+  const Element = decorative ? "span" : "div";
   return (
-    <div
+    <Element
       className={`roster-ui roster-ui-progress${className ? ` ${className}` : ""}`}
-      role="progressbar"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={boundedMax}
-      aria-valuenow={boundedValue}
-      aria-valuetext={valueText}
+      role={decorative ? undefined : "progressbar"}
+      aria-hidden={decorative || undefined}
+      aria-label={decorative ? undefined : label}
+      aria-valuemin={decorative ? undefined : 0}
+      aria-valuemax={decorative ? undefined : boundedMax}
+      aria-valuenow={decorative ? undefined : boundedValue}
+      aria-valuetext={decorative ? undefined : valueText}
     >
       <span className="roster-ui-progress-track">
         <span style={{ width: `${percent}%` }} />
       </span>
-    </div>
+    </Element>
   );
 }
 
