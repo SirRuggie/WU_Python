@@ -56,6 +56,7 @@ export default function SignupActivity({
         activity.items.length > 0 && (
           <button
             ref={trigger}
+            title={summary.text}
             className={`signup-activity-line${summary.danger ? " is-danger" : ""}`}
             disabled={disabled}
             onClick={() => setOpen(true)}

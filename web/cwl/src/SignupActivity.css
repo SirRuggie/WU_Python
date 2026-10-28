@@ -106,3 +106,8 @@
     gap: 4px;
   }
 }
+
+.roster-ui .signup-activity-line:focus-visible {
+  outline: 2px solid var(--roster-text);
+  outline-offset: 2px;
+}

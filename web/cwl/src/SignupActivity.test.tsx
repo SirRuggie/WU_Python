@@ -235,3 +235,83 @@ it("load failure shows Retry, loading shows nothing, and hidden polling pauses",
   await act(async () => vi.advanceTimersByTime(30000));
   expect(api).toHaveBeenCalledTimes(count);
 });
+it("keeps loading silent and leaves the panel open when navigation is guarded", async () => {
+  let finish!: (value: { items: SignupChange[] }) => void;
+  api.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () =>
+    root.render(
+      <SignupActivity
+        seasonId="1"
+        roster={null}
+        canCompare
+        onFill={() => false}
+        onDetails={() => false}
+      />,
+    ),
+  );
+  expect(host.textContent).toBe("");
+  await act(async () => finish({ items: [item()] }));
+  await open();
+  await click("Fill spot");
+  expect(document.querySelector(".signup-activity-panel")).not.toBeNull();
+  await click("Close");
+  expect(api.mock.calls.filter((call) => call[1] === "POST")).toHaveLength(0);
+});
+it("polls every 30 seconds only while visible, including returning to the tab", async () => {
+  vi.useFakeTimers();
+  await render();
+  const before = api.mock.calls.length;
+  await act(async () => vi.advanceTimersByTime(30000));
+  expect(api).toHaveBeenCalledTimes(before + 1);
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    value: true,
+  });
+  await act(async () => vi.advanceTimersByTime(60000));
+  expect(api).toHaveBeenCalledTimes(before + 1);
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    value: false,
+  });
+  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  expect(api).toHaveBeenCalledTimes(before + 2);
+});
+it("the header neither fetches nor exposes signup changes without cwl_signups", async () => {
+  const { default: Header } = await import("./RosterHeader");
+  api.mockResolvedValue({
+    published: null,
+    draft_changed: false,
+    preview: { accounts: [], clans: [] },
+  });
+  await act(async () =>
+    root.render(
+      <Header
+        seasonId="1"
+        seasons={[]}
+        roster={null}
+        pool="all"
+        canRoster
+        canSignups={false}
+        canPublish={false}
+        archived={false}
+        uiLocked={false}
+        onSeasonChange={() => {}}
+        onRefresh={() => {}}
+        onAutoPlace={() => {}}
+        onStatusFilter={() => {}}
+        onAccessError={() => {}}
+        onFillSignupSpot={() => true}
+        onSignupDetails={() => true}
+      />,
+    ),
+  );
+  expect(
+    api.mock.calls.some((call) => call[0].includes("signup-activity")),
+  ).toBe(false);
+  expect(document.querySelector(".signup-activity")).toBeNull();
+});

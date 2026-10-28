@@ -877,12 +877,14 @@ export default function RosterWorkspace({
             );
           } catch {}
           setPoolFilter(pool);
+          setSelectedTags([]);
           setCompareJump((value) => value + 1);
           setMode("compare");
           return true;
         }}
         onSignupDetails={(tag) => {
           if (uiLocked || !mayLeaveEditor()) return false;
+          setSelectedTags([]);
           setFeedback(null);
           setEditingTag(tag);
           return true;
