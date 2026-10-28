@@ -10,6 +10,9 @@
   --roster-surface: #19191d;
   --roster-surface-raised: #242429;
   --roster-surface-soft: #2d2d33;
+  --roster-card: #242429;
+  --roster-card-success: #2c3434;
+  --roster-card-danger: #302a2f;
   --roster-border: #494950;
   --roster-border-subtle: #38383e;
   --roster-text: #f5f4f0;

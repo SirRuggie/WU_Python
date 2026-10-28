@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { RosterAccount } from "./roster";
@@ -46,6 +47,36 @@ function render(
 }
 
 describe("roster account card", () => {
+  it("shares the TH-first headline and keeps the lock only on the meta line", () => {
+    const host = document.createElement("div");
+    host.innerHTML = render({ account: { ...account, town_hall: 18 } });
+    const headline = host.querySelector(".player-card-top")!;
+    expect(
+      headline.firstElementChild?.querySelector(".town-hall-icon"),
+    ).not.toBeNull();
+    expect(headline.children[1].textContent).toBe(account.player_name);
+    expect(
+      host.querySelectorAll('[aria-label="Locked placement"]'),
+    ).toHaveLength(1);
+    expect(
+      host.querySelector('.player-card-meta [aria-label="Locked placement"]'),
+    ).not.toBeNull();
+    expect(
+      host.querySelector(".roster-player-placement")?.textContent,
+    ).toContain("Not assigned · now in —");
+    host.innerHTML = render({
+      account: {
+        ...account,
+        assigned_clan_tag: "#CLAN",
+        current_clan_status: "current",
+        current_clan_name: "Home",
+      },
+      assignedClanName: "Assigned",
+    });
+    expect(host.querySelector(".roster-player-placement")?.textContent).toBe(
+      "Assigned · now in Home",
+    );
+  });
   it("escapes player text and presents missing, locked and unavailable values", () => {
     const html = render();
     expect(html).toContain("&lt;Alpha &amp; Beta&gt;");

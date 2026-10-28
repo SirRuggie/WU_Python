@@ -65,17 +65,23 @@ it("shows a dot before the age but describes a comma for clan and no-clan locati
     expect(describedText(row)).toBe(`${label}, 2m ago`);
   }
 });
-it("has four rows in order with the TH icon beside TH, a separate Now in row and complete accessible description", () => {
+it("has four rows in order with the TH icon before the name, a separate Now in row and complete accessible description", () => {
   const body = card();
   expect([...body.children].map((row) => row.className)).toEqual([
-    "compare-player-top",
-    "compare-player-meta",
+    "player-card-top compare-player-top",
+    "player-card-meta compare-player-meta",
     "compare-player-location",
     "compare-player-tags",
   ]);
-  expect(body.children[0].querySelector(".town-hall-icon")).toBeNull();
+  expect(body.children[1].querySelector(".town-hall-icon")).toBeNull();
   expect(
-    body.children[1].querySelector(".town-hall-icon")?.getAttribute("alt"),
+    body.children[0].firstElementChild?.querySelector(".town-hall-icon"),
+  ).not.toBeNull();
+  expect(
+    body.children[1].querySelector('[aria-label="Locked placement"]'),
+  ).not.toBeNull();
+  expect(
+    body.children[0].querySelector(".town-hall-icon")?.getAttribute("alt"),
   ).toBe("Town Hall 18");
   expect(body.children[1].textContent).toContain("TH 18 · #P2Y");
   expect(describedText(body.children[2])).toBe("Now in Other clan, 2m ago");
