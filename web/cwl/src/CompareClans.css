@@ -238,73 +238,6 @@
   max-height: none;
   padding: 4px;
 }
-.compare-workspace .compare-account {
-  position: relative;
-  display: block;
-  min-width: 0;
-  flex-shrink: 0;
-  margin: 0;
-  border: 1px solid var(--roster-border);
-  border-left: 4px solid var(--roster-text-muted);
-  border-radius: 14px;
-  background: var(--roster-surface-raised);
-}
-.compare-workspace .compare-account-arrived {
-  border-left-color: var(--roster-success);
-  background:
-    linear-gradient(rgb(121 200 155 / 10%), rgb(121 200 155 / 10%)),
-    var(--roster-surface-raised);
-}
-.compare-workspace .compare-account-missing {
-  border-left-color: var(--roster-danger);
-  background:
-    linear-gradient(rgb(233 133 133 / 6%), rgb(233 133 133 / 6%)),
-    var(--roster-surface-raised);
-}
-.compare-workspace .compare-player-body {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  min-width: 0;
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 6px;
-  border: 0;
-  border-radius: 14px;
-  background: transparent;
-  color: var(--roster-text-muted);
-  font-size: 12px;
-  font-weight: 400;
-  text-align: left;
-}
-.compare-player-body:focus-visible {
-  outline: 2px solid white;
-  outline-offset: -2px;
-}
-.compare-player-top {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-right: 36px;
-}
-.compare-player-top strong {
-  font-size: 15px;
-  line-height: 18px;
-  font-weight: 700;
-  color: var(--roster-text);
-}
-.compare-player-top > strong:first-child {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.compare-player-weight {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
 .compare-player-location {
   display: flex;
   align-items: center;
@@ -336,30 +269,11 @@
   font-weight: 400;
   color: var(--roster-text-muted);
 }
-.compare-player-meta .town-hall-icon {
-  display: block;
-  width: 16px;
-  height: 16px;
-}
-.compare-player-meta .town-hall-fallback {
-  font-size: 12px;
-}
 .compare-player-tags {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 1px 4px;
-}
-.compare-player-meta {
-  min-height: 16px;
-  padding-right: 36px;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 12px;
-  line-height: 14px;
-  font-weight: 400;
-  color: var(--roster-text-muted);
 }
 .compare-tag {
   display: inline-flex;
@@ -397,11 +311,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.compare-account > .roster-player-menu {
-  position: absolute;
-  top: 0;
-  right: 0;
 }
 .compare-workspace .roster-player-menu {
   padding: 0;

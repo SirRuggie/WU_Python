@@ -65,13 +65,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
   - Full name (wraps, never truncated) + `5 / 15` right-aligned.
   - `Total 698k` at the same size/weight as the count; "4 of 5 weighed" small and muted, only when incomplete.
   - Thin capacity bar pinned to the bottom (green with room, amber full, red over).
-- **Account card:**
-  - Mobile, 3 lines, ~94px:
-    1. name (ellipsis) + weight
-    2. `#TAG · TH 18 · Main CWL`
-    3. `🔒 W. U. Lazy .125 · ClashofThrones` (current clan dimmed; "—" when unknown)
-  - Desktop: one row with labelled columns (Weight, Assigned clan, Current clan, `⋯`).
-  - The left 48px strip toggles selection. Tags: red "No weight", amber outside-family badge.
+- **Account card:** shared Player card below; left checkbox target remains 44px.
 - **Filter panel:**
   - Sections (Status, Weight, Town Hall, Assigned clan) with per-option counts.
   - Footer: `Reset` + `Show N accounts`. One line explaining OR within a section, AND across sections.
@@ -109,8 +103,8 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Phones use a swipeable clan-card row.
 - The unpublished-changes banner is amber, compact and not dismissible while pending; it names the published version/time, says placement changes are draft only, and offers permission-gated Finalize navigation. Signup changes are never labelled draft.
 
-- Compare readability (X3): row 1 name and weight use 15px/700 primary text (a red No weight tag replaces missing weight); row 2 has a 16px TownHallIcon next to TH, tag and lock in 12px muted text; row 3 has Now in, a 13px secondary clan name and 12px muted age (or No clan / Checking location…); row 4 has the location pill and wrapping range/family tags. A relevant publication note adds one muted fifth row. No Compare text is smaller than 12px. Cards retain the location tint, left edge, Details body action and 44px menu target.
-- Compare card fills use a softened location tint over the raised surface and a 4px colored left edge. Only the location pill retains semibold emphasis below row 1. Card gaps are consistently 6px; the row gap inside each card is 0px.
+- Compare readability (X3): row 1 starts with a 16px TownHallIcon, then the 15px/700 name and bold weight (a red No weight tag replaces missing weight); row 2 has TH, tag and lock in 12px muted text; row 3 has Now in, a 13px secondary clan name and 12px muted age (or No clan / Checking location…); row 4 has the location pill and wrapping range/family tags. A relevant publication note adds one muted fifth row. No Compare text is smaller than 12px. Cards retain the location tint, left edge, Details body action and 44px menu target.
+- Compare card fills use the shared lighter green/red/neutral tokens and a 4px colored left edge. Only the location pill retains semibold emphasis below row 1. Card gaps are consistently 6px; the row gap inside each card is 0px.
 - Clan headings/counts use 15px/700 primary text, Total uses 14px/700, and supporting details use 12px/400 muted text. Tally numbers use green/red/neutral/amber with muted labels. Gold identifies only the selected rail border, never header text.
 
 ## Clan settings
@@ -154,3 +148,13 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Seasons and the roster signup controls share one signup-visibility action. Re-read on opening, confirm explicitly, and preserve partial success without automatic retries. An open hidden season uses an amber warning and Fix; Fix only makes that season visible when signups remain open.
 - Create-season confirmation has no estimated clan count. First season says it starts with no hosting clans; otherwise it says it inherits hosting clans and settings from the previous season. The success message uses the server's actual copied count and states that signups start empty.
 - Add hosting clan lives in Clan settings: searchable non-host family clans or a read-only tag lookup, followed by explicit Confirm through the existing add endpoint. Archive uses a red confirmation, explains its global effect, and preserves existing assignments. Settings-only staff receive no partial roster access; hosting controls also require Build roster access and retain existing backend mutation authorization.
+
+## Player card
+
+Shared player card (2026-10-27): Accounts & signups and Compare use `PlayerCard.css` for the 14px radius, 4px colored left edge, compact spacing and text hierarchy. Fills live in `rosterUi/tokens.css`: `--roster-card` (neutral), `--roster-card-success` (green), `--roster-card-danger` (red).
+
+1. TownHallIcon first (16px), name (15px bold, ellipsis), bold weight right, existing 44px action menu.
+2. Muted 12px `TH 18 · #TAG` and lock. Accounts retains its existing pool text. The lock appears only here.
+3. Compare keeps `Now in X · 10m ago`, location chips and relevant publication note. Accounts shows the assigned clan in bold (or `Not assigned`) plus muted `· now in X`; last-known location keeps its age using Compare’s formatter; before any result it says `location not checked yet`. The current-clan portion ellipsizes on one line with its full text in a title. Warning/note lines remain below.
+
+Accounts keeps its 44px left checkbox, green for assigned and gold selection outline. Compare uses green for in-clan, red for elsewhere and neutral while checking. Status is also written in chips. Neither card changes selection, Details, menu permissions, location, swipe or request behavior. Text is at least 12px; measured text-fill colors, including muted text, must contrast at least 4.5:1 with their rendered backgrounds. Accounts readability continues in a later audit.

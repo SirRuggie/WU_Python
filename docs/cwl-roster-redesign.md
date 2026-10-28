@@ -270,3 +270,9 @@ Implementation in progress on `codex/cwl-flow`; not a release approval.
 - The Finalize step marks unpublished changes or a never-published draft with placements. A current publication has a checkmark. Desktop steps are compact; mobile layout is retained.
 - A stale Fix re-reads visibility and writes nothing when already visible. Failed reads expose Retry; a lost signup PATCH response is uncertain and followed by read-only refresh, never a write retry.
 - S3 lookup enforces `cwl_settings` on its GET, matching the add POST. S1 duplicate labels return 409; transactional carry-forward failures return a clear 500 after rollback.
+
+## Shared player card (2026-10-27)
+
+Accounts & signups / Compare: one shared rounded card shape, 4px colored left edge, small card gap and lighter tokenized fills. Row 1 starts with TownHallIcon, then bold name (ellipsis), bold weight right and the existing menu; row 2 is muted TH/tag and lock (plus Accounts' existing pool). Compare retains its location line, chips and publication note. Accounts row 3 uses bold assigned clan or `Not assigned`, followed by muted `· now in X`; existing warning/note lines remain below. Accounts keeps its checkbox and green-for-assigned meaning; Compare keeps green-in-clan/red-elsewhere/neutral-checking. Gold selection outline remains.
+
+Frontend styling/markup only; behavior and location freshness rules unchanged. Shared source: `web/cwl/src/PlayerCard.css`; fills: `rosterUi/tokens.css`. Text levels retain the 12px minimum and measured 4.5:1 contrast, including text-fill colors. Accounts readability continues in a later audit. Branch checkpoint pending review; no merge, tag or deployment for this batch.

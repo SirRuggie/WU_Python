@@ -10,6 +10,10 @@
   --roster-surface: #19191d;
   --roster-surface-raised: #242429;
   --roster-surface-soft: #2d2d33;
+  --roster-card: #303037;
+  --roster-card-hover: rgb(255 255 255 / 3%);
+  --roster-card-success: #2b4b38;
+  --roster-card-danger: #493235;
   --roster-border: #494950;
   --roster-border-subtle: #38383e;
   --roster-text: #f5f4f0;

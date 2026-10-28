@@ -1,0 +1,115 @@
+/* Shared Accounts / Compare player shape and text hierarchy. */
+.roster-ui .player-card {
+  position: relative;
+  display: block;
+  min-width: 0;
+  flex-shrink: 0;
+  border: 1px solid var(--roster-border);
+  border-left: 4px solid var(--roster-text-muted);
+  border-radius: var(--roster-radius-card);
+  background: var(--roster-card);
+}
+.roster-ui .player-card.is-assigned,
+.roster-ui .player-card.compare-account-arrived {
+  border-left-color: var(--roster-success);
+  background: var(--roster-card-success);
+}
+.roster-ui .player-card.compare-account-missing {
+  border-left-color: var(--roster-danger);
+  background: var(--roster-card-danger);
+}
+.roster-ui .player-card > button.player-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: var(--roster-radius-card);
+  background: transparent;
+  color: var(--roster-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+  -webkit-text-fill-color: currentColor;
+}
+.roster-ui .player-card-body:focus-visible {
+  outline: 2px solid white;
+  outline-offset: -2px;
+}
+.player-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 36px;
+  min-width: 0;
+  color: var(--roster-text);
+  font-size: 15px;
+  line-height: 18px;
+  font-weight: 700;
+}
+.player-card-top > span:first-child {
+  flex-shrink: 0;
+}
+.player-card-top .town-hall-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.player-card-top .town-hall-fallback {
+  font-size: 12px;
+}
+.player-card-top .player-card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+}
+.player-card-weight {
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.player-card-weight .roster-ui-chip {
+  min-height: 18px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.player-card-meta {
+  min-height: 16px;
+  padding-right: 36px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+}
+.player-card-meta svg {
+  flex-shrink: 0;
+}
+.player-card > .roster-player-menu {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0;
+}
+.player-card .roster-action-trigger {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+}
+
+.roster-ui .player-card > button.player-card-body:hover:not(:disabled) {
+  background: var(--roster-card-hover);
+}
