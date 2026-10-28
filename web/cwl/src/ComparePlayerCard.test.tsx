@@ -154,6 +154,10 @@ it.each([360, 700, 1440])(
       w.getComputedStyle(article.querySelector(".town-hall-icon")!).width,
     ).toBe("40px");
     expect(
+      w.getComputedStyle(article.querySelector(".player-card-body")!)
+        .paddingTop,
+    ).toBe("3px");
+    expect(
       w.getComputedStyle(article.querySelector(".player-card-weight")!)
         .fontSize,
     ).toBe("16px");

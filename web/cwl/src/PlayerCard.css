@@ -188,3 +188,12 @@
     transform: translateY(-50%);
   }
 }
+/* Keep Compare's extra chip row compact without reducing text or hit targets. */
+.roster-ui .player-card-compact > button.player-card-body {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.player-card-compact .player-card-top > span:first-child {
+  grid-row: 1 / 4;
+  align-self: start;
+}
