@@ -4,6 +4,8 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-27)
 
+- **Weights frontend released:** PR #25, `e6353fb9ef77244a6b366550f030d7fd8e75daf7`, tag `weights-1`. Public entry/roster hashes verified; backend stays `c19db57`. Rollback frontend with `switch-release.py c19db57523928f6fee9d6bc93d95d83fa5814bb0`. Backup `.local/weights-backup-20261028T022902Z/`; protected counts, publication and weights unchanged.
+
 - **Release 1: previous production / rollback** as `fea7e66` (roster `a72939f` + preserved moderation fixes). Branch `codex/roster-release-1` and tag `release-1` are pushed to `origin` (`https://github.com/SirRuggie/WU_Python.git`), verified on 2026-10-27. The release tag remains on `fea7e66`; later docs-only commits advance the branch only.
 - Release 1 commit trail: `856b9f0` (panels + visual refresh) → `76fe46c` (header, chips, cards, filters) → `b0fd451` (Load more, select-all-matching, max-50, preferences, mobile polish) → `a68b386` (final polish) → `356d563` (wider clan cards, total weight) → `9dceb81` (chip/card states) → `a72939f` (state rules unified in primitives.css).
 - Dirty-editor guard (Clan settings / Weights → leave → Cancel keeps the edit, Leave discards it): manually verified by Ruggie.
@@ -14,7 +16,7 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Decisions — Weights tab (2026-10-27)
 
-Frontend-only batch on `codex/weights`; review checkpoint pending. Production remains `clan-settings-1`.
+Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`, tag `weights-1`. Backend remains the isolated `c19db57` release; no restart. 542 frontend tests, typecheck/build, three guard mutations and read-only live smoke passed; protected counts and weights unchanged.
 
 - **1. Compact rows:** TownHallIcon and 15px bold name (opens Details), then 12px TH/tag/pool/source metadata. Desktop identity and controls share a row; phone rows target roughly 110px.
 - **2. Loot-first field:** one input with Loot / Full switch, Loot default. Switching units retains typed text and re-evaluates through `parseManualWeight`.
