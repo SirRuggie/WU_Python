@@ -21,12 +21,18 @@ with fixture.app['store'].tx() as db:
 @web.middleware
 async def permissions(request, handler):
     response = await handler(request)
+    if request.path.endswith('/staff-signup-members') and response.status == 200:
+        payload = json.loads(response.text)
+        for member in payload['options']:
+            member.update(value=member['id'], label=member['display_name'], role_ids=[], role_names=[])
+        payload.update(next=None, truncated=False)
+        response = web.json_response(payload)
     if request.path.endswith('/auth/me') and response.status == 200:
         mode = fixture.mode.get('details_permissions', 'all')
         if mode != 'all':
             payload = json.loads(response.text)
             payload['is_owner'] = False
-            payload['dashboard_permissions'] = ['cwl_signups'] if mode == 'signups' else ['cwl_declaration']
+            payload['dashboard_permissions'] = ['cwl_signups'] if mode == 'signups' else ['cwl_publish']
             response = web.json_response(payload)
     return response
 
