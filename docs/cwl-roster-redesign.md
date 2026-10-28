@@ -33,7 +33,7 @@ Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`,
 - **5. Concise copy:** remove the instructional paragraphs; retain “Saving doesn't move anyone. Refresh keeps manual weights.”
 - **6. Navigation:** remove Back to roster; existing section tabs and unsaved-input guard remain.
 - **7. Explicit Save:** decimal input mode and matching placeholder; valid full integer weight 1–500,000 only; successful save removes the row and focuses the next editable input. The existing revision-checked endpoint also saves the weight for future seasons.
-- **8. Live feedback:** typed loot previews full weight ×5; Full previews the entered full weight. Inline validation replaces conversion text and disables Save. Details retains ManualWeightFields.
+- **8. Live feedback:** typed loot previews full weight ×5; Full previews the entered full weight. Inline validation replaces conversion text and disables Save. Details now reuses CompactWeightField (superseded by the Details panel decisions below).
 - **9. Missing weights:** the tab stays focused on missing weights; correcting existing weights stays in Details. Later: a Manual / Source weight filter on Accounts & signups.
 - **10. Clan-managed accounts:** no manual weight input or Save. Queue and Details share the permission-gated “Open Clan weights →” link through normal guarded app navigation; users without `clan_weights` see the access guidance.
 - **11. Responsibilities:** WeightQueue owns filtering/drafts/progressive rendering, WeightQueueRow owns identity/source, CompactWeightField owns conversion feedback; formatted CSS and shared parser.
@@ -82,7 +82,7 @@ Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`,
    - Mobile: a 3-line card of about 94px (name with ellipsis + weight; tag · TH · pool; lock + assigned clan · current clan dimmed, "—" when unknown).
    - Desktop: a single row with labelled columns.
    - Left strip toggles selection; the body opens Details; in selection mode, a tap toggles. A `⋯` menu holds Assign, Change signup, DM (opens the Discord profile), Details. No swipe actions.
-   - Details is still the existing modal; it moves to its own route in Release 2.
+   - Release 1 kept the modal; the approved Release 2 replacement is the linked hybrid panel described below.
 5. **Status visuals:** green background = assigned (keep). Selected = green + gold border + check. Red "No weight" tag. Lock icon + full clan name. The outside-family warning is a small amber badge that keeps the green.
 6. **Header:**
    - Mobile: `Nov 2026 ▾ · Draft · Finalize · ⋯` on one line. Desktop: season box plus the Draft/Published status pill.
@@ -176,7 +176,7 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 
 ## Release plan
 
-- **Release 2 — Details as its own page:** route `/cwl/roster/account/{encodedTag}?season={id}` (the tag contains `#`). Back restores scroll, filters, tab and selection. Assigned clan via the Assign panel (instant + Undo). Weight keeps Save. Remove signup red + confirm. Weight shown once (source in a collapsible).
+- **Release 2 — Details as a linked hybrid panel:** desktop right-side panel / phone full-screen sheet, `?account=<encodedTag>` on the existing route. This replaces the own-page plan by Ruggie's choice, for fewer taps per player. Back closes; list, scroll, filters and selection stay mounted. Placement uses instant revision-checked saves + Undo; weight keeps its own Save; Remove signup stays confirmed.
 - **Release 3 — backend:**
   - Swap or Undo into an over-full clan still returns 409 "Hosting clan exceeds capacity" (`cwl_web/app.py` swap/undo capacity guards). B1 makes this reachable; resolve with Release 3’s overfill policy, not in Clan settings CS2.
   - B1 (war size below assigned count) brought forward into Clan settings, Ruggie-approved and released in `clan-settings-1`. B2 removes the unused lower_league application field while retaining its stored column.
@@ -189,6 +189,13 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
+- Pre-existing roster season-menu history issue: without Details, Back can show
+  `season=1` in the URL while the page still displays the newer season.
+- `mayLeaveEditor` still uses `window.confirm` for season and mode changes.
+- Details: a successful save followed by a failed reload drops the Undo toast.
+- `RosterWorkspace.tsx` restates the weight dirty rule separately from `dirty`;
+  consolidate these rules in a later cleanup.
 
 - Announcements review preview shows raw role IDs (`@role 3333…`) instead of role names.
 - Announcements: opening Edit on an empty link marks the pool unsaved at once on HTTPS (by design); revisit if staff find it confusing.
@@ -348,3 +355,15 @@ Released frontend + approved B1 backend as `announcements-1` at `73fe3fa92d8d0d8
 ### Next — Roster images (approved design; not implemented here)
 
 Main/Lazy image channels are saved server-side and carried over. Post per pool sends one message per clan, with no pings, idempotent receipts and retry of failed messages only. Republish updates existing messages in place; a new clan gets a new post, and a dropped clan's post is edited to “<Clan> is no longer hosting · Roster vN”, never deleted. Test all sends to a chosen channel with a TEST label and is never recorded as production delivery. Preview and download remain. Ruggie approved the backend and schema work for that separate batch.
+
+
+## Decisions — Details panel (2026-10-27)
+
+Frontend-only implementation on `codex/details`; pending checkpoint review, not a release.
+
+- **1. Linked hybrid panel:** every staff opener uses the same Details surface. At 768px and above the right panel leaves the list usable; below 768px it is a full-screen sheet. Previous/Next follow the current opener list, with disabled ends. Opening pushes an encoded `account` query; switching replaces it; direct links establish a list entry and Back closes through `actionPanelHistory`. Only unsaved weight text triggers the named ConfirmDialog discard prompt. Add signup's nested surface stays within its modal's active subtree.
+- **2. Section order and saving:** header (TH/name, shared metadata, Discord/DM), At a glance, Placement, Weight, Source & history, Signup, Danger, signup timestamp. Change clan reuses RosterAssignPanel and the current manual-placement lock behavior. Lock saves independently. Placement changes offer the existing revision-checked Undo; Unassign, pool switch and Remove retain explicit confirmations. Weight has its own Save; there is no shared Save changes form. Pool changes are immediately visible to members; placement changes remain draft until publication.
+- **3. Existing weight/location rules:** CompactWeightField defaults to Loot, uses parseManualWeight, previews full weight and validates inline. Details alone allows blank Save to clear the override to its source. Clan-managed weights use ClanWeightSource without an input. Effective weight appears at a glance; source/first saved values and short timestamps are under Source & history. PlayerClanStatus and the shared location records preserve the last result and age; opening Details does not force a refresh. A refresh cannot erase unsaved weight text.
+- **4. View-only:** archived seasons, Declaration and missing roster access show their approved reason and hide placement/weight editing. Archived and Declaration also hide Signup and Danger. Signup-only staff keep Signup/Remove controls, without roster or weight editing. Server permissions and endpoints are unchanged.
+
+Details rework: direct-link requests register with their hosting page before opening; same-page route refreshes preserve the account and overlay history marker, while season changes close Details. Finalize preview and Add-signup Details deliberately include the same confirmed pool-switch action as other Details openers.

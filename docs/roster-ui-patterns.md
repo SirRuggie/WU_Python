@@ -119,7 +119,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 ## Weights
 
 - Compact missing-weight queue: TH icon and name open Details; TH/tag/pool/source metadata stays readable at 12px. Desktop controls sit beside identity; phone controls sit below it.
-- Loot-first single input with Loot / Full switch, live full-weight conversion and inline validation. Reuse `parseManualWeight`. Never save on typing or unit changes; explicit Save only, then focus the next editable row. Keep `ManualWeightFields` in Details.
+- Loot-first single input with Loot / Full switch, live full-weight conversion and inline validation. Reuse `parseManualWeight`. Never save on typing or unit changes; explicit Save only, then focus the next editable row. Details now shares `CompactWeightField` with its own explicit Save and clear-to-source behavior.
 - Render 50 rows and Load more. Search covers all missing accounts; keep unsaved drafts even when rows are filtered out, and retain the app's leave guard.
 - Clan-weight-managed accounts have no manual input. Share the `clan_weights`-permission-gated link in queue and Details, using the app's normal guarded navigation. Otherwise show the staff-access guidance.
 - Header: Needs weight count, primitive Refresh button with Lucide icon, full-width search, and one muted note about preserving placements/manual weights.
@@ -197,3 +197,15 @@ image may extend beyond the name line box; only the name text clips/ellipsizes.
 - Status text: Not announced yet; Queued · waiting for the bot; Sending…; Sent <short local date>; Failed · <reason>; Check Discord first: it may have posted. Resending is blocked.; Message settings changed since it was queued · review and retry. Older sent versions explain that the roster link shows the new version and announcements are not resent.
 - Publication status reuses Finalize's version/date and hidden-publication wording. One Refresh status control; no sender-ready badge. Three text levels: 15px bold, 13–14px regular, 12px muted. Check text-fill as well as color; links must stay legible on dark cards.
 - Images keep their existing select/preview/download/test behavior. This batch does not add real image posting.
+
+
+## Details panel
+
+- Desktop (≥768px): nonmodal right-side panel; phone: full-screen sheet. Keep the opener list mounted. Previous/Next use its current order and filters; disable at the ends and hide when no list exists.
+- Use the existing route with encoded `?account=`. Opening pushes one entry, switching replaces it, direct links get a list baseline, and shared actionPanelHistory handles Back. Close restores opener focus. Dirty weight text uses ConfirmDialog with the player's name; clean navigation does not prompt.
+- Order: header with TH/name, PlayerCardMeta and Discord/DM; At a glance; Placement; Weight; collapsed Source & history; Signup; Danger; signup date. Use 15px bold / 13–14px regular / 12px muted text. Shared PlayerClanStatus supplies the location pill, mismatch and last-check age.
+- Save each section separately. Placement/lock changes are explicit instant actions with revision-checked Undo. Unassign and signup changes retain confirmation. CompactWeightField defaults to Loot; weight requires Save, and blank clears to source. Keep unsaved text through background refreshes. Never force a location check on open.
+- View-only reasons distinguish archived, Declaration and missing roster access. Hide editing sections rather than disabling a form. Signup-only permission exposes Signup/Remove only. Clan-managed weight links remain permission-gated.
+- Register the lightweight shared Details request host eagerly in staff CWL views. Keep panel UI and roster CSS lazy to preserve the base/primitive cascade. Retain the latest open request while the chunk loads; mount one panel once loaded. Re-run `test:layout` when changing that boundary.
+
+Direct-link Details uses the hosting page’s refresh, busy, open and dirty callbacks. Preserve account and panel history during same-page access refreshes; clear them on season/page changes. Finalize and Add signup use the shared confirmed pool switch.

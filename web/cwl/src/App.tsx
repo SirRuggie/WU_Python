@@ -32,6 +32,7 @@ import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
 // Each destination loads only when opened. Keep shell, auth, and signup form helpers eager.
+import StaffDetailsHost from "./StaffDetailsHost"
 const WeightTrial = lazy(() => import('./weightTrial/WeightTrial'))
 const SeasonsPage = lazy(() => import('./SeasonsPage'))
 const WarsWorkspace = lazy(() => import('./activity/WarsWorkspace'))
@@ -71,6 +72,7 @@ function App() {
   const [authState, setAuthState] = useState<'loading' | 'signed-out' | 'error' | 'ready'>('loading')
   const [authError, setAuthError] = useState(() => new URLSearchParams(window.location.search).get('signin_error') === 'discord' ? 'Discord sign-in did not finish. Please try again.' : '')
   const [fixtureMode, setFixtureMode] = useState(false)
+  const [entryAccount, setEntryAccount] = useState(() => new URLSearchParams(window.location.search).get("account"))
   const [entryTarget] = useState(() => dashboardTarget(window.location.search, window.location.pathname))
   const [publicationDirty, setPublicationDirty] = useState(false)
   const [publicationBusy, setPublicationBusy] = useState(false)
@@ -527,6 +529,14 @@ function App() {
     <div className="workspace" inert={mobile && menuOpen}>
       <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
+        {["roster", "publication", "declaration"].includes(view) && (
+          <StaffDetailsHost
+            key={`${view}:${seasonId}`}
+            archived={season?.status === "archived"}
+            initialAccount={view === entryTarget.view && seasonId === entryTarget.season ? entryAccount : null}
+            onInitialConsumed={() => setEntryAccount(null)}
+          />
+        )}
         <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
         {seasonError && view !== 'signup' && view !== 'home' && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
@@ -633,8 +643,83 @@ function App() {
         </>}
         {view === 'assignments' && <MemberAssignments onSignup={() => { setSignupPanel('register'); changeView('signup') }} seasonId={seasonId} seasons={seasons} />}
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} disabled={declarationBusy} onChange={e=>{if (canLeave()) setSeasonId(e.target.value)}}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId} onDirty={setDeclarationDirty} onBusy={setDeclarationBusy}/>}</>}
-        {view === 'publication' && session.can_edit && <PublicationWorkspace onDeclaration={() => changeView("declaration")} onPublication={draft => setFlowPublication({season: seasonId, draft})} onBusy={setPublicationBusy} onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationBusy && (!publicationDirty || window.confirm('Discard unsaved publication or announcement changes?'))) setSeasonId(id) }} />}
+        {
+          view === "declaration" && session.can_edit && (
+            <>
+              <div className="page-head">
+                <div>
+                  <p className="eyebrow">CWL</p>
+                  <h1>Declaration readiness check</h1>
+                </div>
+                <label>
+                  Season
+                  <select
+                    value={seasonId}
+                    disabled={declarationBusy}
+                    onChange={(e) => {
+                      if (canLeave()) {
+                        if (e.target.value !== seasonId)
+                          navigation.current?.write(
+                            { view: "declaration", season: e.target.value },
+                            false,
+                          );
+                        setSeasonId(e.target.value);
+                      }
+                    }}
+                  >
+                    {seasons.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {seasonId && (
+                <ArrivalCheck
+                  key={seasonId}
+                  seasonId={seasonId}
+                  onDirty={setDeclarationDirty}
+                  onBusy={setDeclarationBusy}
+                />
+              )}
+            </>
+          )
+        }
+        {
+          view === "publication" && session.can_edit && (
+            <PublicationWorkspace
+              onDeclaration={() => changeView("declaration")}
+              onPublication={(draft) => setFlowPublication({ season: seasonId, draft })}
+              onBusy={setPublicationBusy}
+              onDirty={setPublicationDirty}
+              step={publicationStep}
+              onStepChange={setPublicationStep}
+              onFix={(filter) => {
+                setRosterReadiness(filter);
+                changeView("roster");
+              }}
+              seasonId={seasonId}
+              seasons={seasons}
+              onSeasonChange={(id) => {
+                if (
+                  !publicationBusy &&
+                  (!publicationDirty ||
+                    window.confirm(
+                      "Discard unsaved publication or announcement changes?",
+                    ))
+                ) {
+                  if (id !== seasonId)
+                    navigation.current?.write(
+                      { view: "publication", season: id, step: publicationStep },
+                      false,
+                    );
+                  setSeasonId(id);
+                }
+              }}
+            />
+          )
+        }
         {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === "roster" && session.can_edit && (
@@ -658,6 +743,7 @@ function App() {
             seasonId={seasonId}
             seasons={seasons}
             onSeasonChange={(id) => {
+              if (id !== seasonId) navigation.current?.write({ view: "roster", season: id }, false)
               setSeasonId(id);
               setPool(null);
               setSignupPanel("register");

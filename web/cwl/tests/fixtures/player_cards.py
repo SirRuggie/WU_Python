@@ -172,4 +172,5 @@ async def main():
     requests.clear()
     print(json.dumps({'ready': True, 'db': folder.name + '/isolated.sqlite', 'counts': baseline}), flush=True)
     await asyncio.Event().wait()
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,3 +1,4 @@
+import useStaffDetailsPage from "./useStaffDetailsPage";
 import {useCallback, useEffect, useRef, useState} from 'react'
 import CwlPoolTabs, {useCwlPool} from './CwlPoolTabs'
 import StaffPlayerButton from './StaffPlayerButton'
@@ -91,6 +92,17 @@ export default function ArrivalCheck({seasonId, onDirty, onBusy}: Props) {
       [a.player_name, a.tag, a.assigned_clan_name, a.assigned_clan_tag, a.current_clan_name, a.current_clan_tag]
         .some(value => value?.toLocaleLowerCase().includes(needle))))})).filter(group => group.visible.length)
 
+  useStaffDetailsPage({
+    seasonId,
+    viewOnly: "declaration",
+    order: groups.flatMap((group) =>
+      group.visible.map((account) => account.tag),
+    ),
+    onChanged: () => load(),
+    onDirty: reportDirty,
+    onBusy: setEditBusy,
+    onOpenChange: setEditOpen,
+  });
   return <section className="arrival-check" aria-label="Clan arrival checks">
     <div className="arrival-toolbar">
       <CwlPoolTabs value={pool} disabled={locked} onChange={value => {if (!locked) setPool(value)}}/>
@@ -141,7 +153,7 @@ export default function ArrivalCheck({seasonId, onDirty, onBusy}: Props) {
                 {a.current_clan_checked_at && Number.isFinite(Date.parse(a.current_clan_checked_at)) && <small>Checked {new Date(a.current_clan_checked_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</small>}
               </div>
               <div className="arrival-actions"><DiscordContact userId={a.user_id} compact/>
-                {source === 'draft' && data.source === 'draft' && <StaffPlayerButton seasonId={seasonId} tag={a.tag} onChanged={() => load(true)} disabled={locked} onDirty={reportDirty} onBusy={setEditBusy} onOpenChange={setEditOpen}>Details</StaffPlayerButton>}
+                {source === 'draft' && data.source === 'draft' && <StaffPlayerButton viewOnly="declaration" order={groups.flatMap(group => group.visible.map(account => account.tag))} seasonId={seasonId} tag={a.tag} onChanged={() => load(true)} disabled={busy || editBusy} onDirty={reportDirty} onBusy={setEditBusy} onOpenChange={setEditOpen}>Details</StaffPlayerButton>}
               </div>
             </div>)}
           </div>}

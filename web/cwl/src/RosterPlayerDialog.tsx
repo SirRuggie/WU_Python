@@ -1,27 +1,39 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import DetailsFrame from "./DetailsFrame";
 import ClanWeightSource from "./ClanWeightSource";
 import ConfirmDialog from "./ConfirmDialog";
-import ManualWeightFields from "./ManualWeightFields";
-import { manualWeightDraft, parseManualWeight } from "./manualWeight";
+import CompactWeightField, { compactWeightState } from "./CompactWeightField";
+import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
+import useLocationNow from "./useLocationNow";
+import {
+  mergeComparisonLocations,
+  type LocationRecords,
+} from "./comparisonLocation";
+import "./WeightQueue.css";
+import { parseManualWeight, type ManualWeightDraft } from "./manualWeight";
 import { useDashboardPermission } from "./DashboardPermissions";
 import useUnsavedWork from "./useUnsavedWork";
-import ClanDestinationOptions, {
-  rosterDestinationMenuOptions,
-} from "./ClanDestinationOptions";
-import RosterMenu from "./rosterUi/Menu";
-import { Button, StatusPill } from "./rosterUi/primitives";
-import { ArrowRightLeft, Save, Trash2, UserMinus, X } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { createPortal } from "react-dom";
-import type { RosterAccount, RosterClan } from "./roster";
+import { Button } from "./rosterUi/primitives";
+import { ArrowRightLeft, Trash2, UserMinus } from "lucide-react";
+import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
 import type { Pool } from "./api";
 import RosterDiscordIdentity from "./RosterDiscordIdentity";
+import RosterAssignPanel from "./RosterAssignPanel";
+import PlayerCardMeta from "./PlayerCardMeta";
+import TownHallIcon from "./TownHallIcon";
+import "./PlayerCard.css";
 import "./RosterPlayerDialog.css";
 
 type Props = {
+  previous?: () => void;
+  next?: () => void;
   onClanWeights?: () => void;
   onDirty?: (dirty: boolean) => void;
   account: RosterAccount;
   clans: RosterClan[];
+  roster?: RosterSnapshot;
+  undo?: ReactNode;
+  locations?: LocationRecords;
   busy: boolean;
   error?: string;
   onClose: () => void;
@@ -29,31 +41,34 @@ type Props = {
   onRemove: () => Promise<boolean>;
   onPoolChange?: (pool: Pool) => Promise<boolean>;
   archived?: boolean;
+  viewOnly?: "declaration";
   rosterUi?: boolean;
 };
-
+const detailsWeightDraft = (weight: number | null): ManualWeightDraft => ({
+  unit: "loot",
+  text: weight === null ? "" : String(weight / 5),
+});
 const fullWeight = (value: number | null) =>
   value === null ? "Missing weight" : value.toLocaleString();
-
-/** React portal events can bubble through this component without belonging to its dialog. */
-export function dialogOwnsEvent(
-  dialog: Pick<HTMLDialogElement, "contains"> | null,
-  target: EventTarget | null,
-): boolean {
-  return !!dialog && !!target && dialog.contains(target as Node);
-}
-
-const sourceStatus = (status: RosterAccount["source_status"]) =>
-  status === "current"
-    ? "Current"
-    : status === "unavailable"
-      ? "Source unavailable; prior value may be stale"
-      : "Missing weight";
+export const detailsDate = (value?: string | null) =>
+  value && Number.isFinite(Date.parse(value))
+    ? new Date(value).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "Not recorded";
 
 export default function RosterPlayerDialog({
   account,
+  previous,
+  next,
   onClanWeights,
   clans,
+  roster,
+  undo,
+  locations,
   busy,
   error,
   onClose,
@@ -62,611 +77,339 @@ export default function RosterPlayerDialog({
   onPoolChange,
   onDirty,
   archived = false,
-  rosterUi = false,
+  viewOnly,
 }: Props) {
-  const canRoster = useDashboardPermission("cwl_roster");
-  const canSignups = useDashboardPermission("cwl_signups");
-  const ref = useRef<HTMLDialogElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const unassignButton = useRef<HTMLButtonElement>(null);
-  const removeButton = useRef<HTMLButtonElement>(null);
-  const switchButton = useRef<HTMLButtonElement>(null);
-  const pendingAction = useRef(false);
+  const [now] = useLocationNow();
+  const locationCache = useRef<LocationRecords>({});
+  locationCache.current = mergeComparisonLocations(locationCache.current, [
+    {
+      ...account,
+      current_clan_tag: account.current_clan_tag ?? null,
+      current_clan_name: account.current_clan_name ?? null,
+    },
+    ...Object.entries(locations || {}).map(([tag, value]) => ({
+      ...value,
+      tag,
+    })),
+  ]);
+  const weightInput = useRef<HTMLInputElement>(null);
+  const rosterPermission = useDashboardPermission("cwl_roster");
+  const canRoster = rosterPermission && !archived && !viewOnly;
+  const signupPermission = useDashboardPermission("cwl_signups");
+  const canSignups = signupPermission && !archived && !viewOnly;
+  const reason = archived
+    ? "Archived season · view only"
+    : viewOnly === "declaration"
+      ? "View only here · change placements in Build roster ›"
+      : !rosterPermission
+        ? "View only · you don't have roster editing access"
+        : "";
+  const pending = useRef(false);
+  const assignTrigger = useRef<HTMLButtonElement>(null);
   const [weight, setWeight] = useState(
-    manualWeightDraft(account.manual_weight),
+    detailsWeightDraft(account.manual_weight),
   );
-  const [clan, setClan] = useState(account.assigned_clan_tag || "");
-  const [kept, setKept] = useState(account.kept);
+  const baseline = useRef({
+    tag: account.tag,
+    draft: detailsWeightDraft(account.manual_weight),
+  });
   const [localError, setLocalError] = useState("");
-  const [actionReview, setActionReview] = useState<
-    "unassign" | "remove" | null
-  >(null);
-  const [poolReview, setPoolReview] = useState<Pool | null>(null);
-  const currentHost = clans.find(
-    (item) => item.tag === account.assigned_clan_tag,
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [review, setReview] = useState<"unassign" | "remove" | "pool" | null>(
+    null,
   );
+  const currentHost = clans.find((c) => c.tag === account.assigned_clan_tag);
+  const parsedWeight = compactWeightState(weight);
   const dirty =
-    JSON.stringify(weight) !==
-      JSON.stringify(manualWeightDraft(account.manual_weight)) ||
-    clan !== (account.assigned_clan_tag || "") ||
-    kept !== account.kept;
-  useUnsavedWork(dirty || busy || !!poolReview || !!actionReview, onDirty);
-
-  const close = () => {
-    if (
-      !busy &&
-      !pendingAction.current &&
-      (!(dirty || poolReview) ||
-        window.confirm("Discard unsaved account changes?"))
-    )
-      onClose();
-  };
+    !!parsedWeight.error || parsedWeight.weight !== account.manual_weight;
+  useUnsavedWork(dirty || busy, onDirty);
   useEffect(() => {
-    const dialog = ref.current;
-    const trigger =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    dialog?.showModal();
-    closeButton.current?.focus({ preventScroll: true });
-    return () => {
-      dialog?.close();
-      requestAnimationFrame(() => {
-        if (
-          trigger?.isConnected &&
-          trigger.getClientRects().length &&
-          !trigger.closest("[inert]")
-        ) {
-          trigger.focus({ preventScroll: true });
-        }
-      });
-    };
-  }, []);
-
-  function containFocus(event: KeyboardEvent<HTMLDialogElement>) {
-    if (event.key !== "Tab") return;
-    const dialog = ref.current;
-    if (!dialog || !dialogOwnsEvent(dialog, event.target)) return;
-    const controls = Array.from(
-      dialog.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter(
-      (control) =>
-        control.getClientRects().length > 0 &&
-        !control.closest("fieldset[disabled]"),
+    const previous = baseline.current;
+    const draft = detailsWeightDraft(account.manual_weight);
+    setWeight((current) =>
+      previous.tag !== account.tag ||
+      JSON.stringify(current) === JSON.stringify(previous.draft)
+        ? draft
+        : current,
     );
-    const first = controls[0];
-    const last = controls[controls.length - 1];
-    if (!first || !last) return;
-    if (
-      event.shiftKey &&
-      (document.activeElement === first || document.activeElement === dialog)
-    ) {
-      event.preventDefault();
-      last.focus();
-    } else if (
-      !event.shiftKey &&
-      (document.activeElement === last || document.activeElement === dialog)
-    ) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
-  async function save() {
-    if (!canRoster || archived || busy || pendingAction.current) return;
+    baseline.current = { tag: account.tag, draft };
+  }, [account.tag, account.manual_weight]);
+  useEffect(() => {
+    setLocalError("");
+    setAssignOpen(false);
+    setReview(null);
+  }, [account.tag]);
+  async function run(action: () => Promise<boolean>) {
+    if (pending.current || busy || archived) return false;
+    pending.current = true;
+    setLocalError("");
     try {
-      const body: Record<string, unknown> = {};
-      const value = account.clan_weight_managed
-        ? account.manual_weight
-        : parseManualWeight(weight);
-      if (!account.clan_weight_managed && value !== account.manual_weight)
-        body.manual_weight = value;
-      if (clan !== (account.assigned_clan_tag || ""))
-        body.assigned_clan_tag = clan || null;
-      if (kept !== account.kept || clan !== (account.assigned_clan_tag || ""))
-        body.kept = kept;
-      if (!Object.keys(body).length) {
-        onClose();
-        return;
-      }
-      setLocalError("");
-      pendingAction.current = true;
-      try {
-        if (await onSave(body)) onClose();
-      } finally {
-        pendingAction.current = false;
-      }
+      return await action();
     } catch (cause) {
       setLocalError(
         cause instanceof Error ? cause.message : "Could not save changes.",
       );
-    }
-  }
-
-  async function confirmAction() {
-    const action = actionReview;
-    if (
-      !action ||
-      archived ||
-      busy ||
-      pendingAction.current ||
-      dirty ||
-      poolReview
-    )
-      return;
-    if (
-      action === "unassign"
-        ? !canRoster || !account.assigned_clan_tag
-        : !canSignups
-    )
-      return;
-    pendingAction.current = true;
-    let completed = false;
-    setActionReview(null);
-    setLocalError("");
-    try {
-      const success =
-        action === "unassign"
-          ? await onSave({ assigned_clan_tag: null, kept: false })
-          : await onRemove();
-      completed = success;
-      if (success) onClose();
-    } catch (cause) {
-      setLocalError(
-        cause instanceof Error
-          ? cause.message
-          : `Could not ${action === "unassign" ? "unassign account" : "remove signup"}.`,
-      );
+      return false;
     } finally {
-      pendingAction.current = false;
-      if (!completed)
-        requestAnimationFrame(() => {
-          (action === "unassign"
-            ? unassignButton
-            : removeButton
-          ).current?.focus({ preventScroll: true });
-        });
+      pending.current = false;
     }
   }
-
-  async function changePool() {
-    if (
-      !poolReview ||
-      !onPoolChange ||
-      !canSignups ||
-      archived ||
-      busy ||
-      pendingAction.current
-    )
-      return;
-    setLocalError("");
-    pendingAction.current = true;
+  async function saveWeight() {
+    if (!canRoster || account.clan_weight_managed) return;
     try {
-      if (await onPoolChange(poolReview)) onClose();
+      const value = parseManualWeight(weight);
+      if (
+        value === account.manual_weight ||
+        (await run(() => onSave({ manual_weight: value })))
+      )
+        setWeight(detailsWeightDraft(value));
     } catch (cause) {
-      setLocalError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not change signup type.",
-      );
-    } finally {
-      pendingAction.current = false;
+      setLocalError((cause as Error).message);
     }
   }
-
-  return createPortal(
-    <dialog
-      className={
-        rosterUi
-          ? "roster-player-dialog roster-ui is-roster-ui"
-          : "roster-player-dialog"
-      }
-      ref={ref}
-      onCancel={(event) => {
-        if (event.target !== event.currentTarget) return;
-        event.preventDefault();
-        if (!busy) close();
-      }}
-      onKeyDown={containFocus}
-      aria-labelledby="roster-player-title"
-      aria-busy={busy}
+  const targetPool: Pool = account.pool === "main" ? "lazy" : "main";
+  async function confirm() {
+    if (!review || dirty) return;
+    const action = review;
+    if (action === "unassign" ? !canRoster : !canSignups) return;
+    const success = await run(() =>
+      action === "remove"
+        ? onRemove()
+        : action === "pool"
+          ? (onPoolChange?.(targetPool) ?? Promise.resolve(false))
+          : onSave({ assigned_clan_tag: null, kept: false }),
+    );
+    if (success) {
+      setReview(null);
+      if (action === "remove") onClose();
+    }
+  }
+  const source = account.clan_weight_managed
+    ? "Clan weights"
+    : account.manual_weight !== null
+      ? "Manual"
+      : "Imported";
+  return (
+    <DetailsFrame
+      tag={account.tag}
+      name={account.player_name}
+      dirty={dirty}
+      busy={busy}
+      onClose={onClose}
+      previous={previous}
+      next={next}
     >
-      <header>
-        <h2 id="roster-player-title">{account.player_name}</h2>
-        <button
-          ref={closeButton}
-          type="button"
-          className={
-            rosterUi ? "roster-ui roster-ui-button is-secondary" : undefined
-          }
-          disabled={busy}
-          onClick={close}
-        >
-          {rosterUi ? (
-            <>
-              <X size={16} aria-hidden="true" /> Close
-            </>
-          ) : (
-            "Close ×"
-          )}
-        </button>
-      </header>
-      <small>
-        {account.tag} · TH {account.town_hall ?? "—"} ·{" "}
-        {rosterUi ? (
-          <StatusPill tone="info">
-            {account.pool === "main" ? "Main" : "Lazy"} CWL
-          </StatusPill>
-        ) : (
-          `${account.pool === "main" ? "Main" : "Lazy"} CWL`
-        )}
-      </small>
-      <RosterDiscordIdentity userId={account.user_id} />
-      <small className="roster-signup-time">
-        Signed up:{" "}
-        {account.signed_up_at &&
-        Number.isFinite(Date.parse(account.signed_up_at)) ? (
-          <time dateTime={account.signed_up_at}>
-            {new Date(account.signed_up_at).toLocaleString(undefined, {
-              dateStyle: "medium",
-              timeStyle: "short",
-            })}
-          </time>
-        ) : (
-          "Not recorded"
-        )}
-      </small>
-      <dl className="roster-player-context">
-        <div>
-          <dt>Current clan</dt>
-          <dd>
-            {account.current_clan_status === "unavailable" ||
-            !account.current_clan_status
-              ? "Unavailable"
-              : account.current_clan_name ||
-                account.current_clan_tag ||
-                "No clan"}
-            {account.current_clan_status === "stale" ? " · Last checked" : ""}
-          </dd>
-        </div>
-        <div>
-          <dt>Weight used</dt>
-          <dd>{fullWeight(account.effective_weight)}</dd>
-        </div>
-      </dl>
-      <details className="roster-player-source">
-        <summary>Weight source &amp; saved details</summary>
-        <dl className="roster-player-context">
-          <div>
-            <dt>Saved hosting clan</dt>
-            <dd>
-              {currentHost?.name || account.assigned_clan_tag || "Unassigned"}
-              {currentHost?.archived ? " · Archived" : ""}
-              <small>
-                {account.kept
-                  ? "Kept placement"
-                  : "Available for auto-placement"}
-              </small>
-            </dd>
-          </div>
-          <div>
-            <dt>Weight used</dt>
-            <dd>
-              {fullWeight(account.effective_weight)}
-              <small>
-                {account.clan_weight_managed
-                  ? "Using Clan weights"
-                  : account.manual_weight === null
-                    ? "Using imported weight"
-                    : `Manual override: ${fullWeight(account.manual_weight)}`}
-              </small>
-              {account.initial_manual_weight != null && (
-                <small>
-                  First saved weight:{" "}
-                  {fullWeight(account.initial_manual_weight)}
-                </small>
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Source weight</dt>
-            <dd>
-              {fullWeight(account.source_weight)}
-              <small>
-                {sourceStatus(account.source_status)}
-                {account.source_name ? ` · ${account.source_name}` : ""}
-              </small>
-              {account.source_modified_at && (
-                <small>
-                  Source updated{" "}
-                  {new Date(account.source_modified_at).toLocaleString()}
-                </small>
-              )}
-              {account.source_checked_at && (
-                <small>
-                  Fetched {new Date(account.source_checked_at).toLocaleString()}
-                </small>
-              )}
-            </dd>
-          </div>
-        </dl>
-      </details>
-      {account.clan_weight_managed && (
-        <ClanWeightSource onNavigate={onClanWeights} />
-      )}
-      {canRoster && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
-          <fieldset
-            disabled={busy || archived || !!poolReview || !!actionReview}
-          >
-            {!account.clan_weight_managed && (
+      <section className="roster-player-dialog roster-ui" aria-busy={busy}>
+        <header className="details-player-heading">
+          <h2>
+            <TownHallIcon level={account.town_hall} />
+            {account.player_name}
+          </h2>
+          <PlayerCardMeta account={account} />
+          <RosterDiscordIdentity userId={account.user_id} />
+        </header>
+        {reason && (
+          <p className="details-view-only">
+            {viewOnly === "declaration" && !archived ? (
               <>
-                <ManualWeightFields
-                  value={weight}
-                  onChange={setWeight}
-                  disabled={busy || !canRoster}
-                />
-                <small>
-                  Saved for future seasons. Leave blank to use source weight.
-                </small>
-              </>
-            )}
-            {rosterUi ? (
-              <RosterMenu
-                label="Hosting clan"
-                value={clan}
-                disabled={busy || archived || !!poolReview || !!actionReview}
-                onValueChange={(value) => {
-                  setClan(value);
-                  setKept(true);
-                }}
-                options={[
-                  { value: "", label: "Not assigned" },
-                  ...(account.assigned_clan_tag && currentHost?.archived
-                    ? [
-                        {
-                          value: account.assigned_clan_tag,
-                          label: `Archived clan · ${account.assigned_clan_tag}`,
-                        },
-                      ]
-                    : []),
-                  ...rosterDestinationMenuOptions(
-                    clans,
-                    account.pool,
-                    account.assigned_clan_tag,
-                  ),
-                ]}
-              />
-            ) : (
-              <label>
-                Hosting clan
-                <select
-                  value={clan}
-                  onChange={(event) => {
-                    setClan(event.target.value);
-                    setKept(true);
-                  }}
+                View only here · change placements in{" "}
+                <a
+                  href={`/cwl/roster?season=${encodeURIComponent(new URLSearchParams(location.search).get("season") || "")}&account=${encodeURIComponent(account.tag)}`}
                 >
-                  <option value="">Not assigned</option>
-                  {account.assigned_clan_tag && currentHost?.archived && (
-                    <option value={account.assigned_clan_tag}>
-                      Archived clan · {account.assigned_clan_tag}
-                    </option>
-                  )}
-                  <ClanDestinationOptions
-                    clans={clans}
-                    pool={account.pool}
-                    current={account.assigned_clan_tag}
-                  />
-                </select>
-              </label>
+                  Build roster ›
+                </a>
+              </>
+            ) : (
+              reason
             )}
-            <label className="check-label">
+          </p>
+        )}
+        <section aria-label="At a glance">
+          <h3>At a glance</h3>
+          <p>
+            {currentHost
+              ? `Assigned: ${currentHost.name}`
+              : account.assigned_clan_tag
+                ? `Assigned: ${account.assigned_clan_tag}`
+                : "Not assigned"}
+            {account.kept ? " · Locked" : ""}
+          </p>
+          <PlayerClanStatus
+            showAssigned={false}
+            status={playerClanStatus(
+              account.assigned_clan_tag,
+              currentHost?.name || account.assigned_clan_tag || "Not assigned",
+              locationCache.current[account.tag] || {},
+              now,
+            )}
+          />
+          <p>
+            Weight {fullWeight(account.effective_weight)} · {source}
+          </p>
+        </section>
+        {canRoster && !archived && (
+          <section aria-label="Placement">
+            <h3>Placement</h3>
+            <Button
+              disabled={busy || dirty || !roster}
+              onClick={(event) => {
+                assignTrigger.current = event.currentTarget;
+                setAssignOpen(true);
+              }}
+            >
+              Change clan
+            </Button>
+            <label className="details-lock">
               <input
                 type="checkbox"
-                checked={kept}
-                onChange={(event) => setKept(event.target.checked)}
+                checked={account.kept}
+                disabled={busy || dirty}
+                onChange={(event) =>
+                  void run(() => onSave({ kept: event.target.checked }))
+                }
               />
               Lock placement
             </label>
-            <small>Auto-place won’t move this account.</small>
-            {rosterUi ? (
-              <Button variant="primary" icon={Save} type="submit">
-                {busy ? "Saving…" : "Save changes"}
-              </Button>
+            <Button
+              icon={UserMinus}
+              disabled={busy || dirty || !account.assigned_clan_tag}
+              onClick={() => setReview("unassign")}
+            >
+              Unassign from clan
+            </Button>
+            <small>
+              Changes apply to the working roster. Publish again to update the
+              published roster.
+            </small>
+          </section>
+        )}
+        {canRoster && !archived && (
+          <section aria-label="Weight">
+            <h3>Weight</h3>
+            {account.clan_weight_managed ? (
+              <ClanWeightSource onNavigate={onClanWeights} />
             ) : (
-              <button className="primary" type="submit">
-                {busy ? "Saving…" : "Save changes"}
-              </button>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveWeight();
+                }}
+              >
+                <CompactWeightField
+                  value={weight}
+                  onChange={setWeight}
+                  disabled={busy}
+                  inputRef={weightInput}
+                  name={account.player_name}
+                  unchanged={!dirty}
+                  allowClear
+                />
+                <small>Leave blank to use source weight.</small>
+              </form>
             )}
-          </fieldset>
-        </form>
-      )}
-      {canRoster && (
-        <small>
-          Changes apply to the working roster. Publish again to update the
-          published roster.
-        </small>
-      )}
-      {busy && <p role="status">Saving account changes…</p>}
-      {(localError || error) && <p role="alert">{localError || error}</p>}
-      {archived && <p>Archived season · account changes are unavailable.</p>}
-      {canSignups && !archived && (
-        <section className="roster-player-signup" aria-label="Signup actions">
-          <h3>Signup type</h3>
-          <p>
-            {account.pool === "main" ? "Main CWL" : "Lazy CWL"}
-            {onPoolChange
-              ? " · Switching type clears the working placement."
-              : ""}
-          </p>
-          {onPoolChange &&
-            (!poolReview ? (
-              <button
-                ref={switchButton}
-                type="button"
-                className={
-                  rosterUi
-                    ? "roster-ui roster-ui-button is-secondary"
-                    : undefined
-                }
+          </section>
+        )}
+        <details className="roster-player-source">
+          <summary>Source &amp; history</summary>
+          <dl>
+            <dt>Source weight</dt>
+            <dd>
+              {fullWeight(account.source_weight)} · {account.source_status}
+              {account.source_name ? ` · ${account.source_name}` : ""}
+            </dd>
+            <dt>First saved weight</dt>
+            <dd>{fullWeight(account.initial_manual_weight ?? null)}</dd>
+            <dt>Source updated</dt>
+            <dd>{detailsDate(account.source_modified_at)}</dd>
+            <dt>Fetched</dt>
+            <dd>{detailsDate(account.source_checked_at)}</dd>
+          </dl>
+        </details>
+        {canSignups && !archived && (
+          <section aria-label="Signup">
+            <h3>Signup</h3>
+            <p>{account.pool === "main" ? "Main CWL" : "Lazy CWL"}</p>
+            {onPoolChange && (
+              <Button
+                icon={ArrowRightLeft}
                 disabled={busy || dirty}
-                onClick={() =>
-                  setPoolReview(account.pool === "main" ? "lazy" : "main")
-                }
+                onClick={() => setReview("pool")}
               >
-                {rosterUi && <ArrowRightLeft size={16} aria-hidden="true" />}
-                Switch to {account.pool === "main" ? "Lazy" : "Main"} CWL
-              </button>
-            ) : (
-              <div
-                className="roster-player-pool-review"
-                role="group"
-                aria-label="Review signup type change"
-              >
-                <strong>
-                  Move {account.player_name} to{" "}
-                  {poolReview === "main" ? "Main" : "Lazy"} CWL?
-                </strong>
-                <small>
-                  Any working hosting-clan assignment will be cleared. Published
-                  rosters stay unchanged until republished. Main CWL eligibility
-                  is checked before saving.
-                </small>
-                <div>
-                  {rosterUi ? (
-                    <Button
-                      icon={X}
-                      disabled={busy}
-                      onClick={() => {
-                        setPoolReview(null);
-                        requestAnimationFrame(() =>
-                          switchButton.current?.focus({ preventScroll: true }),
-                        );
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setPoolReview(null);
-                        requestAnimationFrame(() =>
-                          switchButton.current?.focus({ preventScroll: true }),
-                        );
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                  {rosterUi ? (
-                    <Button
-                      variant="primary"
-                      icon={ArrowRightLeft}
-                      disabled={busy}
-                      onClick={() => void changePool()}
-                    >
-                      {busy ? "Saving…" : "Confirm signup change"}
-                    </Button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={busy}
-                      onClick={() => void changePool()}
-                    >
-                      {busy ? "Saving…" : "Confirm signup change"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-        </section>
-      )}
-      {(canRoster || canSignups) && !archived && (
-        <section
-          className="roster-player-remove"
-          aria-label="Placement and signup actions"
-        >
-          {canRoster && (
-            <div>
-              <button
-                ref={unassignButton}
-                type="button"
-                className={
-                  rosterUi
-                    ? "roster-ui roster-ui-button is-secondary"
-                    : undefined
-                }
-                disabled={
-                  busy || !!poolReview || dirty || !account.assigned_clan_tag
-                }
-                onClick={() => setActionReview("unassign")}
-              >
-                {rosterUi && <UserMinus size={16} aria-hidden="true" />}{" "}
-                Unassign from clan
-              </button>
-              <small>
-                {account.assigned_clan_tag
-                  ? "Keeps the signup. Clears the clan and placement lock."
-                  : "This account is already unassigned."}
-              </small>
-            </div>
-          )}
-          {canSignups && (
-            <div>
-              <button
-                ref={removeButton}
-                type="button"
-                className={
-                  rosterUi ? "roster-ui roster-ui-button is-danger" : "danger"
-                }
-                disabled={busy || !!poolReview || dirty}
-                onClick={() => setActionReview("remove")}
-              >
-                {rosterUi && <Trash2 size={16} aria-hidden="true" />} Remove
-                signup
-              </button>
-              <small>
-                Removes this season’s signup and placement. Saved weights stay.
-              </small>
-            </div>
-          )}
-          {dirty && (
-            <small>Save your changes before using these actions.</small>
-          )}
-        </section>
-      )}
-      {actionReview && (
-        <ConfirmDialog
-          heading={
-            actionReview === "unassign"
-              ? "Unassign from clan?"
-              : "Remove signup?"
-          }
-          text={
-            actionReview === "unassign"
-              ? `${account.player_name} will be unassigned from ${currentHost?.name || account.assigned_clan_tag}. Their signup and saved weight stay. The placement lock is cleared. Publish again to update the published roster.`
-              : `Remove ${account.player_name} from this season’s signup and working roster? Saved weights stay. Publish again to update the published roster.`
-          }
-          confirmLabel={
-            actionReview === "unassign" ? "Unassign from clan" : "Remove signup"
-          }
-          disabled={busy}
-          onCancel={() => setActionReview(null)}
-          onConfirm={() => void confirmAction()}
-        />
-      )}
-    </dialog>,
-    document.body,
+                Switch to {targetPool === "main" ? "Main" : "Lazy"} CWL
+              </Button>
+            )}
+          </section>
+        )}
+        {canSignups && !archived && (
+          <section aria-label="Danger area">
+            <h3>Danger area</h3>
+            <Button
+              icon={Trash2}
+              variant="danger"
+              disabled={busy || dirty}
+              onClick={() => setReview("remove")}
+            >
+              Remove signup
+            </Button>
+            <small>
+              Removes this season’s signup and placement. Saved weights stay.
+            </small>
+          </section>
+        )}
+        {(localError || error) && <p role="alert">{localError || error}</p>}
+        {busy && <p role="status">Saving account changes…</p>}
+        <footer>Signed up {detailsDate(account.signed_up_at)}</footer>
+        {undo}
+        {assignOpen && roster && (
+          <RosterAssignPanel
+            roster={roster}
+            selectedAccounts={[account]}
+            hiddenTags={[]}
+            busy={busy}
+            trigger={assignTrigger.current}
+            onClose={() => setAssignOpen(false)}
+            onAssign={async (destination) => {
+              if (destination === null) {
+                setAssignOpen(false);
+                setReview("unassign");
+                return true;
+              }
+              return run(() =>
+                onSave({ assigned_clan_tag: destination, kept: true }),
+              );
+            }}
+          />
+        )}
+        {review && (
+          <ConfirmDialog
+            danger={review === "remove"}
+            heading={
+              review === "unassign"
+                ? "Unassign from clan?"
+                : review === "remove"
+                  ? "Remove signup?"
+                  : `Switch to ${targetPool === "main" ? "Main" : "Lazy"} CWL?`
+            }
+            text={
+              review === "unassign"
+                ? `${account.player_name} will be unassigned from ${currentHost?.name || account.assigned_clan_tag}. Their signup and saved weight stay. The placement lock is cleared. Publish again to update the published roster.`
+                : review === "remove"
+                  ? `Remove ${account.player_name} from this season’s signup and working roster? Saved weights stay. Publish again to update the published roster.${account.kept ? " This account has a locked placement." : ""}`
+                  : `${account.player_name}: switching signup type clears the working placement and lock and is visible to members. Published rosters stay unchanged until republished. Main CWL eligibility is checked before saving.${account.kept ? " This account has a locked placement." : ""}`
+            }
+            confirmLabel={
+              review === "unassign"
+                ? "Unassign from clan"
+                : review === "remove"
+                  ? "Remove signup"
+                  : "Confirm signup change"
+            }
+            disabled={busy}
+            onCancel={() => setReview(null)}
+            onConfirm={() => void confirm()}
+          />
+        )}
+      </section>
+    </DetailsFrame>
   );
 }

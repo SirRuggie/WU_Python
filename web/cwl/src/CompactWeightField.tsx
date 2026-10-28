@@ -17,6 +17,8 @@ export default function CompactWeightField({
   inputRef,
   name,
   error,
+  allowClear = false,
+  unchanged = false,
 }: {
   value: ManualWeightDraft;
   onChange: (value: ManualWeightDraft) => void;
@@ -24,6 +26,8 @@ export default function CompactWeightField({
   inputRef: Ref<HTMLInputElement>;
   name: string;
   error?: string;
+  allowClear?: boolean;
+  unchanged?: boolean;
 }) {
   const id = useId();
   const state = compactWeightState(value);
@@ -62,7 +66,12 @@ export default function CompactWeightField({
         <Button
           type="submit"
           variant="primary"
-          disabled={disabled || state.weight === null || !!state.error}
+          disabled={
+            disabled ||
+            unchanged ||
+            (!allowClear && state.weight === null) ||
+            !!state.error
+          }
         >
           Save
         </Button>

@@ -214,48 +214,54 @@
   padding-bottom: 3px;
 }
 /* One shared, single-line clan status. Keep menu hit areas clear. */
-.player-card .player-clan-status {
+:is(.player-card, .roster-player-dialog) .player-clan-status {
   min-width: 0;
   padding-right: 0;
 }
-.player-card .roster-player-placement {
+:is(.player-card, .roster-player-dialog) .roster-player-placement {
   display: flex;
   min-width: 0;
   white-space: nowrap;
   font-size: 13px;
   line-height: 20px;
 }
-.player-card .roster-player-placement strong {
+:is(.player-card, .roster-player-dialog) .roster-player-placement strong {
   flex-shrink: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--roster-text);
 }
-.player-card .roster-player-current {
+:is(.player-card, .roster-player-dialog) .roster-player-current {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--roster-text-muted);
 }
-.player-card .roster-player-current::before {
+:is(.player-card, .roster-player-dialog) .roster-player-current::before {
   content: " ";
   white-space: pre;
 }
-.player-card .roster-player-placement.is-in-clan strong {
+:is(.player-card, .roster-player-dialog)
+  .roster-player-placement.is-in-clan
+  strong {
   color: var(--roster-card-text-success);
   flex-shrink: 1;
 }
-.player-card .roster-player-placement.is-checking strong,
-.player-card .roster-player-placement.is-unassigned strong {
+:is(.player-card, .roster-player-dialog)
+  .roster-player-placement.is-checking
+  strong,
+:is(.player-card, .roster-player-dialog)
+  .roster-player-placement.is-unassigned
+  strong {
   color: var(--roster-text-muted);
   font-weight: 400;
 }
-.player-card .player-current-clan.is-elsewhere {
+:is(.player-card, .roster-player-dialog) .player-current-clan.is-elsewhere {
   color: var(--roster-card-text-danger);
 }
-.player-card .player-in-clan-pill {
+:is(.player-card, .roster-player-dialog) .player-in-clan-pill {
   flex: 0 0 auto;
   margin-left: 4px;
   padding: 0 5px;

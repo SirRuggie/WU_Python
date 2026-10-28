@@ -36,3 +36,5 @@ approved long-clan examples and available/required suffix width.
 Fixture setup creates a publication in season 1, a withdrawn publication in
 season 3, and signup-change audit examples in a temporary database. Layout tests
 do not review or change signups. Vitest remains `npm test`.
+
+Details: `fixtures/details.py` extends the isolated 125-account fixture with managed/imported/manual weights, archived data and permission modes. Bind only to loopback, using a temporary DB and the fixture network guard.

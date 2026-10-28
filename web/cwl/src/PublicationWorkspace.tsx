@@ -1,3 +1,4 @@
+import useStaffDetailsPage from "./useStaffDetailsPage";
 import RosterMenu from "./rosterUi/Menu";
 import TownHallIcon from "./TownHallIcon";
 import { RefreshCw, Send, EyeOff } from "lucide-react";
@@ -266,6 +267,18 @@ export default function PublicationWorkspace({
   });
   const visibleCount = visibleGroups.reduce((total, group) => total + group.accounts.length, 0);
 
+  useStaffDetailsPage({
+    seasonId,
+    archived,
+    order: visibleGroups.flatMap((group) =>
+      group.accounts.map((account) => account.tag),
+    ),
+    onChanged: load,
+    onDirty: setEditDirty,
+    onBusy: setEditBusy,
+    onOpenChange: setEditOpen,
+  });
+
   return (
     <div
       className={`publication-workspace roster-ui${step === "review" ? " finalize-review" : ""}`}
@@ -530,7 +543,11 @@ export default function PublicationWorkspace({
                               rosterUi
                               seasonId={seasonId}
                               tag={account.tag}
-                              disabled={locked || archived}
+                              disabled={busy || editBusy}
+                              archived={archived}
+                              order={visibleGroups.flatMap((item) =>
+                                item.accounts.map((account) => account.tag),
+                              )}
                               onChanged={load}
                               onDirty={setEditDirty}
                               onBusy={setEditBusy}
