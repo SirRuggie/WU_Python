@@ -71,7 +71,8 @@ class SeasonFlowTests(unittest.IsolatedAsyncioTestCase):
         with store.tx() as db:
             db.execute("CREATE TRIGGER fail_copy BEFORE INSERT ON lineup_rules WHEN NEW.season_id > 1 BEGIN SELECT RAISE(ABORT, 'fixture failure'); END")
         response = await self.create('Must roll back')
-        self.assertEqual(response.status, 409)
+        self.assertEqual(response.status, 500)
+        self.assertIn("Couldn't copy hosting clans; nothing was created.", await response.text())
         self.assertEqual(before, {table: store.rows(f'SELECT * FROM {table}') for table in before})
 
     async def test_signup_guard_mismatch_is_409_without_any_write(self):
@@ -132,3 +133,21 @@ class SeasonFlowTests(unittest.IsolatedAsyncioTestCase):
         self.client.session.cookie_jar.clear()
         response = await self.client.get('/api/cwl/clans/lookup?tag=%23P2Y')
         self.assertEqual(response.status, 401)
+
+    async def test_duplicate_season_remains_409(self):
+        await self.create()
+        response = await self.create()
+        self.assertEqual(response.status, 409)
+        self.assertIn('Season already exists', await response.text())
+
+    async def test_lookup_requires_settings_permission_like_add(self):
+        from unittest.mock import AsyncMock
+        provider = self.app['providers']
+        provider.clan = AsyncMock(return_value={'tag': '#P2Y', 'name': 'Preview'})
+        with self.app['store'].tx() as db:
+            db.execute('INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?)',
+                       ('200', '505227988229554179', '["cwl_roster"]'))
+            db.execute("UPDATE sessions SET user_id='200'")
+        response = await self.call('GET', '/clans/lookup?tag=%23P2Y', None)
+        self.assertEqual(response.status, 403)
+        provider.clan.assert_not_awaited()

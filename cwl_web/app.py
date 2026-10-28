@@ -126,7 +126,10 @@ def _require(request, level="member"):
         _fail(403, "Owner access required")
     if level == "editor" and not _editor(request, session):
         _fail(403, "Dashboard access required")
-    if level == "editor" and not _owner(session) and request.method not in ("GET", "HEAD", "OPTIONS"):
+    if level == "editor" and not _owner(session) and (
+        request.method not in ("GET", "HEAD", "OPTIONS")
+        or request.match_info.handler.__name__ == "lookup_clan"
+    ):
         from .cwl_permissions import mutation_permission
         required = mutation_permission(request)
         if required is None or required not in request_scopes(request, session['user_id']):
@@ -457,7 +460,10 @@ async def create_season(request):
     try:
         with _store(request).tx() as db:
             source = db.execute("SELECT MAX(season_id) FROM lineup").fetchone()[0]
-            cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
+            try:
+                cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
+            except sqlite3.IntegrityError:
+                _fail(409, "Season already exists")
             row = _season(db, cursor.lastrowid)
             copied = 0
             if source is not None:
@@ -474,8 +480,8 @@ async def create_season(request):
                 )
             if db.execute('SELECT COUNT(*) FROM seasons').fetchone()[0] == 1:
                 db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1 AND season_id IS NULL', (row['id'],))
-    except sqlite3.IntegrityError:
-        _fail(409, "Season already exists")
+    except sqlite3.Error:
+        return web.json_response({"error": "Couldn't copy hosting clans; nothing was created."}, status=500)
     return web.json_response({**_season_dict(row), "copied_clan_count": copied}, status=201)
 
 
