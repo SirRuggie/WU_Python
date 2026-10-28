@@ -13,8 +13,10 @@ const gate = vi.hoisted(() => {
 });
 vi.mock("./StaffDetailsPanel", () => gate.promise);
 import StaffDetailsHost from "./StaffDetailsHost";
+import useStaffDetailsPage from "./useStaffDetailsPage";
 import StaffPlayerButton from "./StaffPlayerButton";
 
+let lastRequest: StaffDetailsRequest;
 let root: ReturnType<typeof createRoot> | undefined;
 let host: HTMLDivElement;
 afterEach(async () => {
@@ -49,6 +51,7 @@ it("queues Details before its lazy module resolves, opens the latest player exac
   await act(async () =>
     gate.resolve({
       default: function Panel({ request }: { request: StaffDetailsRequest }) {
+        lastRequest = request;
         useEffect(() => {
           opened(request);
         }, []);
@@ -64,7 +67,18 @@ it("queues Details before its lazy module resolves, opens the latest player exac
   await act(async () => root!.unmount());
   history.replaceState({}, "", "/cwl/readiness?season=1&account=%23DIRECT");
   root = createRoot(host);
-  await act(async () => root!.render(<StaffDetailsHost />));
+  function Page() {
+    useStaffDetailsPage({ seasonId: "1", viewOnly: "declaration" });
+    return null;
+  }
+  await act(async () =>
+    root!.render(
+      <>
+        <StaffDetailsHost initialAccount="#DIRECT" />
+        <Page />
+      </>,
+    ),
+  );
   expect(opened).toHaveBeenLastCalledWith(
     expect.objectContaining({
       tag: "#DIRECT",
@@ -72,3 +86,51 @@ it("queues Details before its lazy module resolves, opens the latest player exac
     }),
   );
 });
+
+it.each(["roster", "publish", "readiness"])(
+  "registers direct-link page callbacks on %s",
+  async (path) => {
+    history.replaceState({}, "", `/cwl/${path}?season=1&account=%23DIRECT`);
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    const changed = vi.fn(),
+      dirty = vi.fn(),
+      busy = vi.fn(),
+      open = vi.fn(),
+      direct = vi.fn();
+    function Page() {
+      useStaffDetailsPage({
+        seasonId: "1",
+        onChanged: changed,
+        onDirty: dirty,
+        onBusy: busy,
+        onOpenChange: open,
+        ...(path === "roster" ? { openDirect: direct } : {}),
+        ...(path === "readiness" ? { viewOnly: "declaration" as const } : {}),
+      });
+      return null;
+    }
+    await act(async () =>
+      root!.render(
+        <>
+          <StaffDetailsHost initialAccount="#DIRECT" />
+          <Page />
+        </>,
+      ),
+    );
+    if (path === "roster") {
+      expect(direct).toHaveBeenCalledExactlyOnceWith("#DIRECT");
+      expect(host.querySelector('[role="dialog"]')).toBeNull();
+    } else {
+      expect(open).toHaveBeenCalledWith(true);
+      await lastRequest.onChanged?.();
+      lastRequest.onDirty?.(true);
+      lastRequest.onBusy?.(true);
+      expect(changed).toHaveBeenCalledOnce();
+      expect(dirty).toHaveBeenCalledWith(true);
+      expect(busy).toHaveBeenCalledWith(true);
+      expect(host.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    }
+  },
+);

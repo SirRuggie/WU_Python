@@ -1,4 +1,6 @@
-import { detailsAccount, requestDetailsNavigation } from "./detailsNavigation";
+import ConfirmDialog from "./ConfirmDialog";
+import useStaffDetailsPage from "./useStaffDetailsPage";
+import { requestDetailsNavigation } from "./detailsNavigation";
 import { sortClans } from "./clanSort";
 import { comparisonOrder } from "./compare";
 import useLocationNow from "./useLocationNow";
@@ -48,6 +50,7 @@ import {
   useCallback,
   useMemo,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -100,7 +103,7 @@ export default function RosterWorkspace({
   const season = seasons.find((item) => String(item.id) === seasonId);
   const archived = season?.status === "archived";
   const [detailsOrder, setDetailsOrder] = useState<string[]>([]);
-  const [editingTag, setEditingTag] = useState<string | null>(() => detailsAccount());
+  const [editingTag, setEditingTag] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterSnapshot | null>(null);
   const [now] = useLocationNow();
   const [loading, setLoading] = useState(false);
@@ -235,6 +238,16 @@ export default function RosterWorkspace({
   useEffect(() => {
     if (!canRoster && mode !== "assign") setMode("assign");
   }, [canRoster, mode, setMode]);
+  const [pendingDetailsAction, setPendingDetailsAction] = useState<
+    null | (() => void)
+  >(null);
+  const requestSignupNavigation = (action: () => void) => {
+    requestDetailsNavigation(() => {
+      if (rulesDirty || weightsDirty || signupDirty || selectedTags.length > 0)
+        setPendingDetailsAction(() => action);
+      else action();
+    });
+  };
   const mayLeaveEditor = () =>
     !working &&
     (!dirty || window.confirm("Discard unsaved roster edits and selections?"));
@@ -285,8 +298,8 @@ export default function RosterWorkspace({
       throw error;
     }
   }, [seasonId]);
-  useEffect(() => {
-    setEditingTag(detailsAccount());
+  useLayoutEffect(() => {
+    setEditingTag(null);
     setRoster(null);
     closePanel();
     setUndoToast(null);
@@ -587,6 +600,10 @@ export default function RosterWorkspace({
     }
   }, [filterKey]);
   const matchingTags = filtered.map((account) => account.tag);
+  useStaffDetailsPage({
+    seasonId,
+    openDirect: (tag) => setEditingTag(tag),
+  });
   const navigationTags = mode === "assign" ? matchingTags : detailsOrder;
   const hiddenTags = selectedTags.filter(
     (tag) => !pageAccounts.some((account) => account.tag === tag),
@@ -834,6 +851,19 @@ export default function RosterWorkspace({
           onHeight={setBarHeight}
         />
       )}
+      {pendingDetailsAction && (
+        <ConfirmDialog
+          heading="Discard unsaved roster edits?"
+          text="Discard unsaved roster edits and selections?"
+          confirmLabel="Discard"
+          onCancel={() => setPendingDetailsAction(null)}
+          onConfirm={() => {
+            const action = pendingDetailsAction;
+            setPendingDetailsAction(null);
+            action();
+          }}
+        />
+      )}
       <RosterHeader
         seasonId={seasonId}
         seasons={seasons}
@@ -872,43 +902,48 @@ export default function RosterWorkspace({
           openPanel("auto", trigger);
         }}
         onFillSignupSpot={(item) => {
-          if (!canRoster || uiLocked || !mayLeaveEditor()) return false;
-          const pool = item.from_pool === "lazy" ? "lazy" : "main";
-          try {
-            if (item.assigned_clan_tag) {
-              const key = `wu-compare-clans:${seasonId}:${pool}`;
-              const available = sortClans(
-                assignmentOptions(roster?.clans ?? []).filter(
-                  (clan) => clan.pool === pool,
-                ),
-                "name",
-              ).map((clan) => clan.tag);
-              const saved: unknown = JSON.parse(
-                localStorage.getItem(key) || "null",
-              );
-              const existing = comparisonOrder(saved, available);
-              localStorage.setItem(
-                key,
-                JSON.stringify(
-                  comparisonOrder(
-                    [item.assigned_clan_tag, ...existing],
-                    available,
+          if (!canRoster || uiLocked) return false;
+          requestSignupNavigation(() => {
+            const pool = item.from_pool === "lazy" ? "lazy" : "main";
+            try {
+              if (item.assigned_clan_tag) {
+                const key = `wu-compare-clans:${seasonId}:${pool}`;
+                const available = sortClans(
+                  assignmentOptions(roster?.clans ?? []).filter(
+                    (clan) => clan.pool === pool,
                   ),
-                ),
-              );
-            }
-          } catch {}
-          setPoolFilter(pool);
-          setSelectedTags([]);
-          setCompareJump((value) => value + 1);
-          setMode("compare");
+                  "name",
+                ).map((clan) => clan.tag);
+                const saved: unknown = JSON.parse(
+                  localStorage.getItem(key) || "null",
+                );
+                const existing = comparisonOrder(saved, available);
+                localStorage.setItem(
+                  key,
+                  JSON.stringify(
+                    comparisonOrder(
+                      [item.assigned_clan_tag, ...existing],
+                      available,
+                    ),
+                  ),
+                );
+              }
+            } catch {}
+            setPoolFilter(pool);
+            setSelectedTags([]);
+            setCompareJump((value) => value + 1);
+            setMode("compare");
+            setEditingTag(null);
+          });
           return true;
         }}
         onSignupDetails={(tag) => {
-          if (uiLocked || !mayLeaveEditor()) return false;
-          setSelectedTags([]);
-          setFeedback(null);
-          requestDetailsNavigation(() => setEditingTag(tag));
+          if (uiLocked) return false;
+          requestSignupNavigation(() => {
+            setSelectedTags([]);
+            setFeedback(null);
+            setEditingTag(tag);
+          });
           return true;
         }}
         onFinalize={onReviewPublication}

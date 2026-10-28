@@ -27,7 +27,7 @@ import { AccountIdentity } from './AccountIdentity'
 import { useMobileNavigation } from './useMobileNavigation'
 import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
@@ -72,6 +72,7 @@ function App() {
   const [authState, setAuthState] = useState<'loading' | 'signed-out' | 'error' | 'ready'>('loading')
   const [authError, setAuthError] = useState(() => new URLSearchParams(window.location.search).get('signin_error') === 'discord' ? 'Discord sign-in did not finish. Please try again.' : '')
   const [fixtureMode, setFixtureMode] = useState(false)
+  const [entryAccount, setEntryAccount] = useState(() => new URLSearchParams(window.location.search).get("account"))
   const [entryTarget] = useState(() => dashboardTarget(window.location.search, window.location.pathname))
   const [publicationDirty, setPublicationDirty] = useState(false)
   const [publicationBusy, setPublicationBusy] = useState(false)
@@ -528,6 +529,14 @@ function App() {
     <div className="workspace" inert={mobile && menuOpen}>
       <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
       <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
+        {["roster", "publication", "declaration"].includes(view) && (
+          <StaffDetailsHost
+            key={`${view}:${seasonId}`}
+            archived={season?.status === "archived"}
+            initialAccount={view === entryTarget.view && seasonId === entryTarget.season ? entryAccount : null}
+            onInitialConsumed={() => setEntryAccount(null)}
+          />
+        )}
         <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
         {seasonError && view !== 'signup' && view !== 'home' && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
@@ -659,6 +668,7 @@ function App() {
             seasonId={seasonId}
             seasons={seasons}
             onSeasonChange={(id) => {
+              if (id !== seasonId) navigation.current?.write({ view: "roster", season: id }, false)
               setSeasonId(id);
               setPool(null);
               setSignupPanel("register");
@@ -687,7 +697,6 @@ function App() {
         {view === 'issues' && session.is_owner && <DashboardIssues />}
         {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}
         </RouteLoadBoundary>
-        {["roster", "publication", "declaration"].includes(view) && <Suspense fallback={null}><StaffDetailsHost key={`${view}:${seasonId}`} archived={season?.status === "archived"} /></Suspense>}
       </main>
     </div>
 

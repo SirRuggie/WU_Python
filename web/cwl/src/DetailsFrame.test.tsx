@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import DetailsFrame from "./DetailsFrame";
@@ -25,7 +26,7 @@ beforeEach(() => {
         addListener() {},
         removeListener() {},
         dispatchEvent: () => true,
-      }) as MediaQueryList,
+      }) as unknown as MediaQueryList,
   );
   HTMLDialogElement.prototype.show = function () {
     this.open = true;
@@ -171,4 +172,58 @@ it("phone navigation follows the supplied filtered order and disables its ends",
       .click(),
   );
   expect(next).toHaveBeenCalledOnce();
+});
+
+it("contains phone Tab events but does not consume events from a nested portal dialog", async () => {
+  vi.mocked(window.matchMedia).mockImplementation(
+    (query) =>
+      ({
+        matches: query.includes("max-width"),
+        media: query,
+        addEventListener() {},
+        removeEventListener() {},
+      }) as unknown as MediaQueryList,
+  );
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+    {},
+  ] as unknown as DOMRectList);
+  await act(async () =>
+    root.render(
+      <DetailsFrame
+        tag="#TAG"
+        name="Amber"
+        dirty={false}
+        busy={false}
+        onClose={close}
+      >
+        {createPortal(
+          <button id="foreign-portal-control">Nested dialog control</button>,
+          document.body,
+        )}
+      </DetailsFrame>,
+    ),
+  );
+  const panel = document.querySelector<HTMLDialogElement>(".details-frame")!;
+  const first = panel.querySelector<HTMLButtonElement>("button")!;
+  first.focus();
+  const tab = new KeyboardEvent("keydown", {
+    key: "Tab",
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => first.dispatchEvent(tab));
+  expect(tab.defaultPrevented).toBe(true);
+  const outside = document.querySelector<HTMLButtonElement>(
+    "#foreign-portal-control",
+  )!;
+  outside.focus();
+  const foreignTab = new KeyboardEvent("keydown", {
+    key: "Tab",
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => outside.dispatchEvent(foreignTab));
+  expect(foreignTab.defaultPrevented).toBe(false);
+  expect(document.activeElement).toBe(outside);
+  expect(close).not.toHaveBeenCalled();
 });

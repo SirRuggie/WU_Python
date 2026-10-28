@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import DetailsFrame from "./DetailsFrame";
 import ClanWeightSource from "./ClanWeightSource";
 import ConfirmDialog from "./ConfirmDialog";
-import CompactWeightField from "./CompactWeightField";
+import CompactWeightField, { compactWeightState } from "./CompactWeightField";
 import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
 import useLocationNow from "./useLocationNow";
 import {
@@ -119,9 +119,9 @@ export default function RosterPlayerDialog({
     null,
   );
   const currentHost = clans.find((c) => c.tag === account.assigned_clan_tag);
+  const parsedWeight = compactWeightState(weight);
   const dirty =
-    JSON.stringify(weight) !==
-    JSON.stringify(detailsWeightDraft(account.manual_weight));
+    !!parsedWeight.error || parsedWeight.weight !== account.manual_weight;
   useUnsavedWork(dirty || busy, onDirty);
   useEffect(() => {
     const previous = baseline.current;
@@ -208,7 +208,22 @@ export default function RosterPlayerDialog({
           <PlayerCardMeta account={account} />
           <RosterDiscordIdentity userId={account.user_id} />
         </header>
-        {reason && <p className="details-view-only">{reason}</p>}
+        {reason && (
+          <p className="details-view-only">
+            {viewOnly === "declaration" && !archived ? (
+              <>
+                View only here · change placements in{" "}
+                <a
+                  href={`/cwl/roster?season=${encodeURIComponent(new URLSearchParams(location.search).get("season") || "")}&account=${encodeURIComponent(account.tag)}`}
+                >
+                  Build roster ›
+                </a>
+              </>
+            ) : (
+              reason
+            )}
+          </p>
+        )}
         <section aria-label="At a glance">
           <h3>At a glance</h3>
           <p>
@@ -286,6 +301,7 @@ export default function RosterPlayerDialog({
                   disabled={busy}
                   inputRef={weightInput}
                   name={account.player_name}
+                  unchanged={!dirty}
                   allowClear
                 />
                 <small>Leave blank to use source weight.</small>

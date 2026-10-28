@@ -1,3 +1,4 @@
+import useStaffDetailsPage from "./useStaffDetailsPage";
 import RosterMenu from "./rosterUi/Menu";
 import TownHallIcon from "./TownHallIcon";
 import { RefreshCw, Send, EyeOff } from "lucide-react";
@@ -84,7 +85,7 @@ export default function PublicationWorkspace({
   const locked = busy || editBusy || editOpen || editDirty || announcementBusy;
   useEffect(() => {
     onDirty?.(editDirty || announcementDirty || instructionsDirty);
-    return () => onDirty?.(false);
+  return () => onDirty?.(false);
   }, [editDirty, announcementDirty, instructionsDirty, onDirty]);
   useEffect(() => {
     if (!instructionsDirty) return;
@@ -265,6 +266,18 @@ export default function PublicationWorkspace({
     return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) || left.tag.localeCompare(right.tag);
   });
   const visibleCount = visibleGroups.reduce((total, group) => total + group.accounts.length, 0);
+
+    useStaffDetailsPage({
+      seasonId,
+      archived,
+      order: visibleGroups.flatMap((group) =>
+        group.accounts.map((account) => account.tag),
+      ),
+      onChanged: load,
+      onDirty: setEditDirty,
+      onBusy: setEditBusy,
+      onOpenChange: setEditOpen,
+    });
 
   return (
     <div

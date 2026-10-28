@@ -219,3 +219,102 @@ it("a concurrent refresh does not erase unsaved weight text", async () => {
   expect(input.value).toBe("31000");
   expect(save).not.toHaveBeenCalled();
 });
+
+it("blocks a second tap before the first lock save settles", async () => {
+  let resolve!: (value: boolean) => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise<boolean>((done) => {
+        resolve = done;
+      }),
+  );
+  await render();
+  const lock = document.querySelector<HTMLInputElement>(
+    'input[type="checkbox"]',
+  )!;
+  await act(async () => {
+    lock.click();
+    lock.click();
+  });
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => resolve(true));
+});
+it("rechecks permission at confirmation after access is revoked", async () => {
+  await render();
+  await click("Remove signup");
+  await render({}, []);
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>(".confirm-dialog .confirm-danger")!
+      .click(),
+  );
+  expect(remove).not.toHaveBeenCalled();
+});
+it("rechecks dirty weight at confirmation", async () => {
+  await render();
+  await click("Remove signup");
+  const input = document.querySelector<HTMLInputElement>(
+    ".compact-weight-controls input",
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, "31000");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>(".confirm-dialog .confirm-danger")!
+      .click(),
+  );
+  expect(remove).not.toHaveBeenCalled();
+});
+it("disables an unchanged weight Save and exposes a real Declaration link", async () => {
+  await render();
+  expect(
+    Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Save",
+    )?.disabled,
+  ).toBe(true);
+  await render({}, undefined, { viewOnly: "declaration" });
+  expect(
+    document
+      .querySelector<HTMLAnchorElement>(".details-view-only a")
+      ?.getAttribute("href"),
+  ).toBe("/cwl/roster?season=1&account=%23P028YU9Q");
+});
+
+it("Change clan immediately sends the exact manual placement body", async () => {
+  await render({ assigned_clan_tag: null, kept: false });
+  await click("Change clan");
+  const target = document.querySelector<HTMLButtonElement>(
+    ".roster-assign-clan",
+  )!;
+  expect(target).toBeTruthy();
+  await act(async () => target.click());
+  expect(save).toHaveBeenCalledExactlyOnceWith({
+    assigned_clan_tag: "#CLAN",
+    kept: true,
+  });
+});
+
+it("keeps Save disabled for an equivalent full-weight value", async () => {
+  await render();
+  await click("Full");
+  const input = document.querySelector<HTMLInputElement>(
+    ".compact-weight-controls input",
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, "125000");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent === "Save",
+    )?.disabled,
+  ).toBe(true);
+});

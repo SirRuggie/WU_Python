@@ -50,7 +50,9 @@ export default function WeightQueue({
   );
   const shown = matching.slice(0, limit);
   const orderKey = matching.map(account => account.tag).join("|");
-  useEffect(() => { onOrderChange?.(orderKey ? orderKey.split("|") : []); }, [orderKey, onOrderChange]);
+  useEffect(() => {
+    onOrderChange?.(orderKey ? orderKey.split("|") : []);
+  }, [orderKey, onOrderChange]);
   const disabled = busy || saving || archived;
   const dirty = missing.some((account) => !!drafts[account.tag]?.text);
   useEffect(() => {

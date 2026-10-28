@@ -72,6 +72,7 @@ export default function StaffDetailsPanel({
     setBusy(true);
     setError("");
     const path = `/seasons/${encodeURIComponent(request.seasonId)}`;
+    let saved = false;
     try {
       await api(
         pool
@@ -82,6 +83,7 @@ export default function StaffDetailsPanel({
           ? { revision: snapshot.revision, tags: [request.tag], action: pool }
           : { revision: snapshot.revision, ...body },
       );
+      saved = true;
       if (id !== generation.current) return false;
       const latest = await api<RosterSnapshot>(`${path}/roster`);
       if (id !== generation.current) return false;
@@ -101,11 +103,32 @@ export default function StaffDetailsPanel({
       return true;
     } catch (cause) {
       if (id === generation.current) {
+        if (saved) {
+          setError(
+            "Saved. Couldn't refresh. Refresh the page to see the latest.",
+          );
+          receipt.current = null;
+          setUndo(null);
+          await Promise.resolve(request.onChanged?.()).catch(() => {});
+          return true;
+        }
         setError(
           cause instanceof Error ? cause.message : "Could not save account.",
         );
-        if (cause instanceof ApiError && [401, 403].includes(cause.status))
+        if (
+          cause instanceof ApiError &&
+          [401, 403, 409].includes(cause.status)
+        ) {
           setSnapshot(null);
+          if (cause.status === 409) {
+            try {
+              const latest = await api<RosterSnapshot>(`${path}/roster`);
+              if (id === generation.current) setSnapshot(latest);
+            } catch {
+              // Keep the stale editor closed; the visible error remains discoverable.
+            }
+          }
+        }
       }
       return false;
     } finally {

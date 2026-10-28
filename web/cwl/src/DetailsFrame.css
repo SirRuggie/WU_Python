@@ -45,7 +45,17 @@
     width: 100vw;
     padding: 12px;
   }
+  .details-frame-navigation {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .details-frame-navigation .roster-ui-button {
+    padding-inline: 8px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
   .details-player-navigation {
+    gap: 4px;
     display: flex;
   }
 }
