@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 
 export const dashboardViews = ['weight-trial', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'member-activity', 'moderation', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access', 'issues'] as const
 export type DashboardView = typeof dashboardViews[number]
-type Item = { view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
+type Item = { step?: 'review' | 'announce'; view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: DashboardIconName; items: Item[]; access?: 'staff' | 'owner' }
 // Add future working features here; permission checks still live on the server.
 const sections: Section[] = [
@@ -24,15 +24,16 @@ const sections: Section[] = [
     { view: 'staff-overview', label: 'Staff overview', icon: 'overview', permissions: ['cwl','cwl_signups','cwl_roster','cwl_publish','cwl_reminders','cwl_results','cwl_bonuses','cwl_send','cwl_settings','clan_weights','clans','text_commands','recruitment','tickets','member_roles','fwa','server_tools'] },
   ] },
   { id: 'cwl-management', label: 'CWL', icon: 'trophy', access: 'staff', items: [
-    { view: 'roster', permissions: ['cwl_roster', 'cwl_signups'], label: 'Roster', icon: 'roster' },
+    { view: 'staff', permissions: ['cwl_settings'], label: 'Seasons', icon: 'settings' },
+    { view: 'reminders', permissions: ['cwl_reminders'], label: 'Signup reminders', icon: 'mail' },
+    { view: 'roster', permissions: ['cwl_roster', 'cwl_signups'], label: 'Build roster', icon: 'roster' },
+    { view: 'publication', step: 'review', permissions: ['cwl_publish'], label: 'Finalize roster', icon: 'publish' },
+    { view: 'publication', step: 'announce', permissions: ['cwl_send'], label: 'Announcements', icon: 'mail' },
     { view: 'declaration', permissions: ['cwl_roster'], label: 'Declaration readiness check', icon: 'tasks' },
     { view: 'cwl-returns', permissions: ['cwl_reminders'], label: 'Return reminders', icon: 'return' },
-    { view: 'reminders', permissions: ['cwl_reminders'], label: 'Signup reminders', icon: 'mail' },
-    { view: 'publication', permissions: ['cwl_publish', 'cwl_send'], label: 'Publish roster', icon: 'publish' },
     { view: 'participation', permissions: ['cwl_results'], label: 'Results & participation', icon: 'results' },
     { view: 'bonuses', permissions: ['cwl_bonuses', 'cwl_send'], label: 'Bonus medals', icon: 'medal' },
     { view: 'exports', permissions: ['cwl_results'], label: 'Exports & history', icon: 'download' },
-    { view: 'staff', permissions: ['cwl_settings'], label: 'CWL settings', icon: 'settings' },
   ] },
   { id: 'clans', label: 'Clan management', icon: 'shield', items: [
     {view:'clan-management',label:'Family clans',icon:'shield',permissions:['clans']},
@@ -64,7 +65,8 @@ export function visibleNavigationSections(canEdit: boolean, isOwner: boolean, pe
       (item.access !== 'owner' || isOwner) && (isOwner || !item.permissions || item.permissions.some(scope => (permissions.includes(scope) || (scope.startsWith('cwl_') && permissions.includes('cwl')))))) }))
     .filter(section => section.items.length > 0)
 }
-export function navigationLabel(view: DashboardView): string {
+export function navigationLabel(view: DashboardView, step: 'review' | 'announce' = 'review'): string {
+  if (view === 'publication') return step === 'announce' ? 'Announcements' : 'Finalize roster'
   if (view === 'member-activity') return 'Moderation'
   return sections.flatMap(section => section.items).find(item => item.view === view)?.label
     || (view === 'manage' ? 'Server management' : 'Dashboard')
@@ -73,8 +75,8 @@ export function navigationSection(view: DashboardView) {
   if (view === 'member-activity') return navigationSection('moderation')
   return sections.find(section => section.items.some(item => item.view === view))?.label
 }
-export default function SidebarNavigation({ userId, view, canEdit, isOwner, permissions = [], onNavigate }: {
-  userId: string; view: DashboardView; canEdit: boolean; isOwner: boolean; permissions?: string[]; onNavigate: (view: DashboardView) => void
+export default function SidebarNavigation({ userId, view, canEdit, isOwner, permissions = [], onNavigate, publicationStep = "review", onPublication }: {
+  userId: string; view: DashboardView; canEdit: boolean; isOwner: boolean; permissions?: string[]; onNavigate: (view: DashboardView) => void; publicationStep?: "review" | "announce"; onPublication?: (step: "review" | "announce") => void
 }) {
   const key = `wu-navigation-v2:${userId}`
   const [staffExpanded, setStaffExpanded] = useState(() => {
@@ -90,13 +92,13 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
   useEffect(() => {
     const active = sections.find(section => section.items.some(item => item.view === view))
     if (active && !['my-dashboard', 'activity', 'my-cwl'].includes(active.id)) setStaffExpanded(true)
-    const group = ['reminders','cwl-returns'].includes(view) ? 'cwl-reminders' : ['participation','bonuses','exports'].includes(view) ? 'cwl-results' : null
+    const group = ['participation','bonuses','exports'].includes(view) ? 'cwl-results' : null
     if (group) setExpanded(current => ({...current,[group]:true}))
     if (active) setExpanded(current => ({ ...current, [active.id]: true }))
   }, [view])
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(expanded)) } catch { /* Preferences are optional. */ } }, [expanded, key])
-  const itemActive = (item: Item) => view === item.view || (item.view === 'roster' && view === 'publication')
-  const itemButton = (item: Item) => <button key={item.view} aria-current={itemActive(item) ? 'page' : undefined} onClick={() => onNavigate(item.view)}><span className="navigation-icon" aria-hidden="true"><DashboardIcon name={item.icon} /></span><span>{item.label}</span></button>
+  const itemActive = (item: Item) => view === item.view && (!item.step || item.step === publicationStep)
+  const itemButton = (item: Item) => <button key={`${item.view}:${item.step || ""}`} aria-current={itemActive(item) ? 'page' : undefined} onClick={() => item.step && onPublication ? onPublication(item.step) : onNavigate(item.view)}><span className="navigation-icon" aria-hidden="true"><DashboardIcon name={item.icon} /></span><span>{item.label}</span></button>
   const visible = visibleNavigationSections(canEdit, isOwner, permissions)
   const memberSections = visible.filter(section => ['my-dashboard', 'activity', 'my-cwl'].includes(section.id))
   const staffSections = visible.filter(section => !['my-dashboard', 'activity', 'my-cwl'].includes(section.id))
@@ -113,9 +115,16 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
           <span className="navigation-icon" aria-hidden="true"><DashboardIcon name={section.icon} /></span><span>{section.label}</span><span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded[section.id] ? "chevronDown" : "chevronRight"} /></span>
         </button>
         <div id={`navigation-${section.id}`} className="navigation-children" hidden={!expanded[section.id]}>{section.id === 'cwl-management' ? <>
-          {section.items.filter(item => item.view === 'roster' || item.view === 'declaration' || (item.view === 'publication' && !section.items.some(entry => entry.view === 'roster'))).map(itemButton)}
-          {[{id:'cwl-reminders',label:'Reminders',icon:'bell' as const,views:['reminders','cwl-returns']},{id:'cwl-results',label:'Results & bonuses',icon:'medal' as const,views:['participation','bonuses','exports']}].filter(group => section.items.some(item => group.views.includes(item.view))).map(group => <div key={group.id}><button className="navigation-toggle" aria-expanded={!!expanded[group.id]} aria-controls={group.id} onClick={() => setExpanded(current => ({...current,[group.id]:!current[group.id]}))}><span className="navigation-icon"><DashboardIcon name={group.icon}/></span><span>{group.label}</span><span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded[group.id] ? "chevronDown" : "chevronRight"} /></span></button><div id={group.id} className="navigation-children" hidden={!expanded[group.id]}>{section.items.filter(item => group.views.includes(item.view)).map(itemButton)}</div></div>)}
-          {section.items.filter(item => item.view === 'staff').map(itemButton)}
+          {section.items.filter(item => !['participation','bonuses','exports'].includes(item.view)).map(itemButton)}
+          {section.items.some(item => ['participation','bonuses','exports'].includes(item.view)) && <div>
+            <button className="navigation-toggle" aria-expanded={!!expanded['cwl-results']} aria-controls="cwl-results" onClick={() => setExpanded(current => ({...current,'cwl-results':!current['cwl-results']}))}>
+              <span className="navigation-icon"><DashboardIcon name="medal" /></span><span>Results</span>
+              <span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded['cwl-results'] ? 'chevronDown' : 'chevronRight'} /></span>
+            </button>
+            <div id="cwl-results" className="navigation-children" hidden={!expanded['cwl-results']}>
+              {section.items.filter(item => ['participation','bonuses','exports'].includes(item.view)).map(itemButton)}
+            </div>
+          </div>}
         </> : section.id === 'clans' ? <>
           {section.items.filter(item => ['clan-management','weight-trial'].includes(item.view)).map(itemButton)}
           {section.items.some(item => item.view === 'strikes') && <div className="strikes-nav-group">

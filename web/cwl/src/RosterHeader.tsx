@@ -193,7 +193,7 @@ export default function RosterHeader({
       <div className="roster-header-title-row">
         <div className="roster-header-title">
           <p className="eyebrow">Staff roster</p>
-          <h1>CWL roster &amp; signups</h1>
+          <h1>Build roster</h1>
         </div>
         <div className="roster-header-title-actions">
           {seasonId && (
