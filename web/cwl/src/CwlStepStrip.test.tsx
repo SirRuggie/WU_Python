@@ -51,6 +51,18 @@ describe("CWL step strip", () => {
     );
     expect(markup(["cwl"], null)).toContain('aria-current="step"');
   });
+  it("empty never-published seasons show neither status marker", () => {
+    const html = markup(["cwl"], {
+      published: null,
+      last_publication: null,
+      draft_changed: false,
+      preview: { assigned_count: 0 } as PublicationDraft["preview"],
+    });
+    expect(html).not.toContain("Unpublished changes");
+    expect(html).not.toContain("Published and current");
+    expect(html).not.toContain("✓");
+    expect(html).not.toContain("●");
+  });
   it("respects independent build, publish and send permissions", () => {
     expect(markup(["cwl_send"], null)).toContain("3 Announce");
     expect(markup(["cwl_send"], null)).not.toContain("2 Finalize");

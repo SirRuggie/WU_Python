@@ -70,7 +70,10 @@ class SeasonFlowTests(unittest.IsolatedAsyncioTestCase):
         before = {table: store.rows(f'SELECT * FROM {table}') for table in ['seasons', 'lineup', 'lineup_rules']}
         with store.tx() as db:
             db.execute("CREATE TRIGGER fail_copy BEFORE INSERT ON lineup_rules WHEN NEW.season_id > 1 BEGIN SELECT RAISE(ABORT, 'fixture failure'); END")
-        response = await self.create('Must roll back')
+        with self.assertLogs('cwl.seasons', level='ERROR') as captured:
+            response = await self.create('Must roll back')
+        self.assertIn('IntegrityError', captured.output[0])
+        self.assertIn('fixture failure', captured.output[0])
         self.assertEqual(response.status, 500)
         self.assertIn("Couldn't copy hosting clans; nothing was created.", await response.text())
         self.assertEqual(before, {table: store.rows(f'SELECT * FROM {table}') for table in before})
@@ -151,3 +154,14 @@ class SeasonFlowTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call('GET', '/clans/lookup?tag=%23P2Y', None)
         self.assertEqual(response.status, 403)
         provider.clan.assert_not_awaited()
+
+    async def test_lookup_allows_settings_staff(self):
+        from unittest.mock import AsyncMock
+        self.app['providers'].clan = AsyncMock(return_value={'tag': '#P2Y', 'name': 'Preview'})
+        with self.app['store'].tx() as db:
+            db.execute('INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?)',
+                       ('200', '505227988229554179', '["cwl_settings"]'))
+            db.execute("UPDATE sessions SET user_id='200'")
+        response = await self.call('GET', '/clans/lookup?tag=%23P2Y', None)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(await response.json(), {'tag': '#P2Y', 'name': 'Preview'})

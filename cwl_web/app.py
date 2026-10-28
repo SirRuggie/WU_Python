@@ -480,7 +480,10 @@ async def create_season(request):
                 )
             if db.execute('SELECT COUNT(*) FROM seasons').fetchone()[0] == 1:
                 db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1 AND season_id IS NULL', (row['id'],))
-    except sqlite3.Error:
+    except sqlite3.Error as error:
+        logging.getLogger("cwl.seasons").error(
+            "Hosting clan copy failed (%s): %s", type(error).__name__, str(error)
+        )
         return web.json_response({"error": "Couldn't copy hosting clans; nothing was created."}, status=500)
     return web.json_response({**_season_dict(row), "copied_clan_count": copied}, status=201)
 
