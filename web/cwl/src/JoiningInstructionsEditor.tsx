@@ -4,19 +4,21 @@ export default function JoiningInstructionsEditor({
   value,
   onChange,
   disabled,
+  visible = true,
 }: {
   value: string;
   onChange: (text: string) => void;
   disabled: boolean;
+  visible?: boolean;
 }) {
   const id = useId();
   const textarea = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const element = textarea.current;
-    if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${element.scrollHeight + element.offsetHeight - element.clientHeight}px`;
-  }, [value]);
+    if (!element || !visible) return;
+    // Grow to fit content without undoing a user’s manual resize.
+    element.style.height = `${Math.max(element.offsetHeight, element.scrollHeight + element.offsetHeight - element.clientHeight)}px`;
+  }, [value, visible]);
   const tooLong = value.length > 2000;
   return (
     <div className="joining-instructions-editor">

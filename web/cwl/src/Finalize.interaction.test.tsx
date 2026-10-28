@@ -435,3 +435,33 @@ it("shows only one refresh instruction for a rejected publish conflict", async (
   expect(alert.textContent?.match(/Refresh draft/g)).toHaveLength(1);
   expect(alert.textContent).toContain("Roster changed");
 });
+
+it("shows exactly one visible Refresh draft with a loaded review draft", async () => {
+  await render();
+  expect(host.querySelector("textarea")).not.toBeNull();
+  const refresh = [...host.querySelectorAll("button")].filter(
+    (b) => b.textContent === "Refresh draft" && !b.closest("[hidden]"),
+  );
+  expect(refresh).toHaveLength(1);
+  expect(refresh[0].disabled).toBe(false);
+});
+it("remeasures instructions when Review becomes visible and preserves a manual height", async () => {
+  await render(true, "announce");
+  const textarea = host.querySelector("textarea")!;
+  Object.defineProperty(textarea, "scrollHeight", {
+    configurable: true,
+    get: () => (textarea.closest("[hidden]") ? 0 : 240),
+  });
+  await render(true, "review");
+  expect(textarea.style.height).toBe("240px");
+  Object.defineProperty(textarea, "offsetHeight", {
+    configurable: true,
+    get: () => 320,
+  });
+  Object.defineProperty(textarea, "clientHeight", {
+    configurable: true,
+    get: () => 318,
+  });
+  await type("New text");
+  expect(textarea.style.height).toBe("320px");
+});

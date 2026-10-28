@@ -422,6 +422,7 @@ export default function PublicationWorkspace({
               aria-label="Publish roster"
             >
               <JoiningInstructionsEditor
+                visible={step === "review"}
                 value={instructions}
                 onChange={setInstructions}
                 disabled={locked || loading || archived || !canManage}

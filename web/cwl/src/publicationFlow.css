@@ -259,7 +259,11 @@
   .publication-steps{display:grid;grid-template-columns:1fr 1fr}
   .publication-steps button{padding:8px;font-size:12px}
   .publication-group summary{align-items:start;flex-wrap:wrap;gap:3px 8px}
-  .publication-group summary span{width:100%;text-align:left;padding-left:20px}
+  .publication-group summary > span {
+    width: 100%;
+    text-align: left;
+    padding-left: 20px;
+  }
   .manage-pool-tabs{display:grid;grid-template-columns:1fr 1fr}
   .manage-pool-tabs button{display:block;min-width:0;padding:9px;font-size:12px}
   .manage-pool-tabs small{display:block;margin-top:3px}
