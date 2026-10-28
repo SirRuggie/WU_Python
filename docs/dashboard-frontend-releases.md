@@ -4,7 +4,7 @@ Production frontend serving is separate from the workspace as of 2026-10-27.
 
 - Public domain: `https://dash.warriorsunited.cc`
 - User service `wu-dashboard-static.service`: Caddy gateway bound to loopback 8766.
-- Existing user service `wu-cwl-demo-web.service`: unchanged API, loopback 8767.
+- Existing user service `wu-cwl-demo-web.service`: API, loopback 8767; now runs from a clean isolated backend release (see [backend releases](dashboard-backend-releases.md)).
   Its historical name does not mean it is a test service.
 - Gateway `/api/*` requests go to the API. Legacy `cwl.ruggie.zone` requests go
   through the existing canonical-host middleware. HTTPS remains at the existing

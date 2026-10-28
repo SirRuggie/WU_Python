@@ -8,9 +8,9 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 - Release 1 commit trail: `856b9f0` (panels + visual refresh) → `76fe46c` (header, chips, cards, filters) → `b0fd451` (Load more, select-all-matching, max-50, preferences, mobile polish) → `a68b386` (final polish) → `356d563` (wider clan cards, total weight) → `9dceb81` (chip/card states) → `a72939f` (state rules unified in primitives.css).
 - Dirty-editor guard (Clan settings / Weights → leave → Cancel keeps the edit, Leave discards it): manually verified by Ruggie.
 - Deploy pipeline rebuilt: `current` symlink → `releases/<sha>`; workspace builds isolated from production (tested); rollback tested.
-- **Compare clans batch:** decisions 1–16 confirmed 2026-10-27 (see "Decisions — Compare clans"). **LIVE** at `a65b98ecc5c8d58601ec69d3efd184419b649e73` (tag `compare-clans-1`, PR #23). A–B2 accepted; final polish verified with 498 frontend tests. Public hashes and read-only smoke passed; protected counts unchanged. Rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py fea7e668b21823d9e31943867e25654ce0d60bf8`.
+- **Compare clans batch:** decisions 1–16 confirmed 2026-10-27 (see "Decisions — Compare clans"). Initially released at `a65b98ecc5c8d58601ec69d3efd184419b649e73` (tag `compare-clans-1`, PR #23). A–B2 accepted; final polish verified with 498 frontend tests. Public hashes and read-only smoke passed; protected counts unchanged. Rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py fea7e668b21823d9e31943867e25654ce0d60bf8`.
 
-- Clan settings batch: decisions confirmed; implementation on codex/clan-settings; not deployed. Production public entry hash remains the `a65b98e` manifest (read-only check during this batch).
+- Clan settings released via PR #24: `c19db57523928f6fee9d6bc93d95d83fa5814bb0`, tag `clan-settings-1`. Frontend and isolated backend deployed; public hashes, read-only smoke, protected counts and lineup rules verified. CS2/X3/CS3 and final visible age-separator polish included. Backend rollback uses clean `2f7ae7a`, never the workspace.
 
 ## Terminology
 
@@ -152,7 +152,7 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 - **Release 2 — Details as its own page:** route `/cwl/roster/account/{encodedTag}?season={id}` (the tag contains `#`). Back restores scroll, filters, tab and selection. Assigned clan via the Assign panel (instant + Undo). Weight keeps Save. Remove signup red + confirm. Weight shown once (source in a collapsible).
 - **Release 3 — backend:**
   - Swap or Undo into an over-full clan still returns 409 "Hosting clan exceeds capacity" (`cwl_web/app.py` swap/undo capacity guards). B1 makes this reachable; resolve with Release 3’s overfill policy, not in Clan settings CS2.
-  - B1 (war size below assigned count) brought forward into the Clan settings branch, Ruggie-approved; not yet deployed. B2 removes the unused lower_league application field while retaining its stored column.
+  - B1 (war size below assigned count) brought forward into Clan settings, Ruggie-approved and released in `clan-settings-1`. B2 removes the unused lower_league application field while retaining its stored column.
   - Atomic larger selections: raise the 50 limit in one transaction; never sequential batches.
   - Overfill policy (contracts above), the Balance opt-in overflow step, and a Finalize publish warning.
 - **Release 4:**
