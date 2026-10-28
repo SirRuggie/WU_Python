@@ -1,3 +1,4 @@
+import JoiningInstructionsEditor from "./JoiningInstructionsEditor";
 import { capacityWarnings, finalizeStatus } from "./publicationStatus";
 import PublicationChanges from "./PublicationChanges";
 import ConfirmDialog from "./ConfirmDialog";
@@ -39,6 +40,11 @@ export default function PublicationWorkspace({
   const [draft, setDraft] = useState<PublicationDraft | null>(null);
   const [rosterSearch, setRosterSearch] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
+  const [instructions, setInstructions] = useState('');
+  const [instructionsBaseline, setInstructionsBaseline] = useState('');
+  const instructionsDirty = instructions !== instructionsBaseline;
+  const instructionsDirtyRef = useRef(false);
+  instructionsDirtyRef.current = instructionsDirty;
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -57,15 +63,19 @@ export default function PublicationWorkspace({
       previousStep.current = step;
     }
   }, [step]);
+  useEffect(() => {
+    // The parent has already confirmed leaving the review step.
+    if (step !== 'review') setInstructions(instructionsBaseline);
+  }, [step, instructionsBaseline]);
   const mutationPending = useRef(false);
   const currentSeason = useRef(seasonId);
   currentSeason.current = seasonId;
 
   const locked = busy || editBusy || editOpen || editDirty || announcementBusy;
   useEffect(() => {
-    onDirty?.(editDirty || announcementDirty);
+    onDirty?.(editDirty || announcementDirty || instructionsDirty);
     return () => onDirty?.(false);
-  }, [editDirty, announcementDirty, onDirty]);
+  }, [editDirty, announcementDirty, instructionsDirty, onDirty]);
   useEffect(() => {
     onBusy?.(busy || editBusy || editOpen || announcementBusy);
     return () => onBusy?.(false);
@@ -81,6 +91,9 @@ export default function PublicationWorkspace({
       const result = await api<PublicationDraft>(`/seasons/${encodeURIComponent(sid)}/publication`);
       if (id !== requestId.current || currentSeason.current !== sid) return;
       setDraft(result);
+      const savedInstructions = result.published?.joining_instructions ?? result.last_publication?.joining_instructions ?? '';
+      if (!instructionsDirtyRef.current) setInstructions(savedInstructions);
+      setInstructionsBaseline(savedInstructions);
       setAcknowledged(false);
     } catch (cause) {
       if (id === requestId.current && currentSeason.current === sid) {
@@ -96,6 +109,9 @@ export default function PublicationWorkspace({
   useEffect(() => {
     requestId.current += 1;
     setDraft(null);
+    setInstructions('');
+    setInstructionsBaseline('');
+    instructionsDirtyRef.current = false;
     setConfirmRevision(null);
     setChangesReady(false);
     setAcknowledged(false);
@@ -114,7 +130,7 @@ export default function PublicationWorkspace({
   }));
   const hasWarnings = checks.some(check => check.accounts.length > 0);
   const canPublish = Boolean(draft && canManage && !locked && !loading && !error && !archived
-    && changesReady && draft.preview.accounts.length
+    && instructions.length <= 2000 && changesReady && draft.preview.accounts.length
     && (draft.preview.unassigned_count === 0 || acknowledged));
 
   async function publish() {
@@ -137,7 +153,7 @@ export default function PublicationWorkspace({
         {
           revision: draft.draft_revision,
           acknowledge_unassigned: acknowledged,
-          joining_instructions: draft.published?.joining_instructions || '',
+          joining_instructions: instructions,
         },
       );
       if (currentSeason.current !== sid) return;
@@ -148,6 +164,8 @@ export default function PublicationWorkspace({
         published: result.published,
       } : current);
       setAcknowledged(false);
+      setInstructionsBaseline(instructions);
+      instructionsDirtyRef.current = false;
       onStepChange('announce');
       setSuccess(`Version ${result.published.version} published. Members can now view these assignments.`);
       await load();
@@ -277,6 +295,9 @@ export default function PublicationWorkspace({
             {step === "review" && (
               <PublicationChanges seasonId={seasonId} draft={draft} onReady={setChangesReady} />
             )}
+            {instructions !== (draft.published?.joining_instructions ?? '') && (
+              <p className="publication-instructions-changed">Joining instructions changed</p>
+            )}
             <section className="publication-readiness" aria-labelledby="publication-readiness-title">
               <h2 id="publication-readiness-title">Before you publish</h2>
               <div className="publication-check-chips">
@@ -300,6 +321,8 @@ export default function PublicationWorkspace({
                   <h2 id="publication-finalize-title">Publish this roster</h2>
                 </div>
               </div>
+              <JoiningInstructionsEditor value={instructions} onChange={setInstructions}
+                disabled={locked || loading || archived || !canManage} />
               {draft.preview.unassigned_count > 0 && (
                 <label className="publication-ack">
                   <input
