@@ -2,12 +2,19 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import DetailsFrame from "./DetailsFrame";
 import ClanWeightSource from "./ClanWeightSource";
 import ConfirmDialog from "./ConfirmDialog";
-import ManualWeightFields from "./ManualWeightFields";
-import { manualWeightDraft, parseManualWeight } from "./manualWeight";
+import CompactWeightField from "./CompactWeightField";
+import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
+import useLocationNow from "./useLocationNow";
+import {
+  mergeComparisonLocations,
+  type LocationRecords,
+} from "./comparisonLocation";
+import "./WeightQueue.css";
+import { parseManualWeight, type ManualWeightDraft } from "./manualWeight";
 import { useDashboardPermission } from "./DashboardPermissions";
 import useUnsavedWork from "./useUnsavedWork";
 import { Button } from "./rosterUi/primitives";
-import { ArrowRightLeft, Save, Trash2, UserMinus } from "lucide-react";
+import { ArrowRightLeft, Trash2, UserMinus } from "lucide-react";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
 import type { Pool } from "./api";
 import RosterDiscordIdentity from "./RosterDiscordIdentity";
@@ -25,6 +32,7 @@ type Props = {
   clans: RosterClan[];
   roster?: RosterSnapshot;
   undo?: ReactNode;
+  locations?: LocationRecords;
   busy: boolean;
   error?: string;
   onClose: () => void;
@@ -40,6 +48,10 @@ export function dialogOwnsEvent(
 ): boolean {
   return !!dialog && !!target && dialog.contains(target as Node);
 }
+const detailsWeightDraft = (weight: number | null): ManualWeightDraft => ({
+  unit: "loot",
+  text: weight === null ? "" : String(weight / 5),
+});
 const fullWeight = (value: number | null) =>
   value === null ? "Missing weight" : value.toLocaleString();
 export const detailsDate = (value?: string | null) =>
@@ -60,6 +72,7 @@ export default function RosterPlayerDialog({
   clans,
   roster,
   undo,
+  locations,
   busy,
   error,
   onClose,
@@ -69,12 +82,26 @@ export default function RosterPlayerDialog({
   onDirty,
   archived = false,
 }: Props) {
+  const [now] = useLocationNow();
+  const locationCache = useRef<LocationRecords>({});
+  locationCache.current = mergeComparisonLocations(locationCache.current, [
+    {
+      ...account,
+      current_clan_tag: account.current_clan_tag ?? null,
+      current_clan_name: account.current_clan_name ?? null,
+    },
+    ...Object.entries(locations || {}).map(([tag, value]) => ({
+      ...value,
+      tag,
+    })),
+  ]);
+  const weightInput = useRef<HTMLInputElement>(null);
   const canRoster = useDashboardPermission("cwl_roster");
   const canSignups = useDashboardPermission("cwl_signups");
   const pending = useRef(false);
   const assignTrigger = useRef<HTMLButtonElement>(null);
   const [weight, setWeight] = useState(
-    manualWeightDraft(account.manual_weight),
+    detailsWeightDraft(account.manual_weight),
   );
   const [localError, setLocalError] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
@@ -84,10 +111,10 @@ export default function RosterPlayerDialog({
   const currentHost = clans.find((c) => c.tag === account.assigned_clan_tag);
   const dirty =
     JSON.stringify(weight) !==
-    JSON.stringify(manualWeightDraft(account.manual_weight));
+    JSON.stringify(detailsWeightDraft(account.manual_weight));
   useUnsavedWork(dirty || busy, onDirty);
   useEffect(() => {
-    setWeight(manualWeightDraft(account.manual_weight));
+    setWeight(detailsWeightDraft(account.manual_weight));
   }, [account.tag, account.manual_weight]);
   useEffect(() => {
     setLocalError("");
@@ -170,11 +197,14 @@ export default function RosterPlayerDialog({
                 : "Not assigned"}
             {account.kept ? " · Locked" : ""}
           </p>
-          <p>
-            {account.current_clan_name ||
-              account.current_clan_tag ||
-              "Location not checked yet"}
-          </p>
+          <PlayerClanStatus
+            status={playerClanStatus(
+              account.assigned_clan_tag,
+              currentHost?.name || account.assigned_clan_tag || "Not assigned",
+              locationCache.current[account.tag] || {},
+              now,
+            )}
+          />
           <p>
             Weight {fullWeight(account.effective_weight)} · {source}
           </p>
@@ -227,22 +257,15 @@ export default function RosterPlayerDialog({
                   void saveWeight();
                 }}
               >
-                <ManualWeightFields
+                <CompactWeightField
                   value={weight}
                   onChange={setWeight}
                   disabled={busy}
+                  inputRef={weightInput}
+                  name={account.player_name}
+                  allowClear
                 />
-                <small>
-                  Saved for future seasons. Leave blank to use source weight.
-                </small>
-                <Button
-                  type="submit"
-                  icon={Save}
-                  variant="primary"
-                  disabled={busy || !dirty}
-                >
-                  Save weight
-                </Button>
+                <small>Leave blank to use source weight.</small>
               </form>
             )}
           </section>

@@ -1137,6 +1137,7 @@ export default function RosterWorkspace({
               account={roster.accounts.find((a) => a.tag === editingTag)!}
               clans={roster.clans}
               roster={roster}
+              locations={comparisonMemory.records}
               undo={undoToast && <RosterUndoToast state={undoToast} onUndo={() => void undoPlacement()} onDismiss={() => setUndoToast(null)} />}
               busy={busy}
               error={feedback?.kind === "error" ? feedback.text : undefined}

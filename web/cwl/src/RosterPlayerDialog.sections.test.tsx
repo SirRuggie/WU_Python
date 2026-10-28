@@ -65,12 +65,12 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
 });
-async function render() {
+async function render(overrides: Partial<RosterAccount> = {}) {
   await act(async () =>
     root.render(
       <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
         <RosterPlayerDialog
-          account={account}
+          account={{ ...account, ...overrides }}
           clans={roster.clans}
           roster={roster}
           busy={false}
@@ -125,4 +125,41 @@ it("unassign confirms its exact existing placement body and stays open", async (
     kept: false,
   });
   expect(close).not.toHaveBeenCalled();
+});
+
+it("Loot defaults to the manual value, previews full weight, and blank clears to source", async () => {
+  await render();
+  const input = document.querySelector<HTMLInputElement>(
+    ".compact-weight-controls input",
+  )!;
+  expect(input.value).toBe("25000");
+  expect(input.getAttribute("aria-label")).toBe("Loot for Amber");
+  expect(document.body.textContent).toContain(
+    "= 125,000 full weight · saved for future seasons",
+  );
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    setter.call(input, "");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Save");
+  expect(save).toHaveBeenCalledExactlyOnceWith({ manual_weight: null });
+  expect(close).not.toHaveBeenCalled();
+});
+it("keeps the last known location with age rather than an unavailable placeholder", async () => {
+  await render({
+    current_clan_tag: "#OTHER",
+    current_clan_name: "Other clan",
+    current_clan_checked_at: new Date(Date.now() - 720000).toISOString(),
+    current_clan_status: "stale",
+  });
+  expect(document.body.textContent).toContain("Other clan");
+  expect(document.body.textContent).toContain("12m ago");
+  expect(document.body.textContent).not.toContain("Unavailable");
+  await render({ current_clan_status: "unavailable" });
+  expect(document.body.textContent).toContain("Other clan");
+  expect(document.body.textContent).toContain("12m ago");
 });
