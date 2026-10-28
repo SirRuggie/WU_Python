@@ -43,6 +43,28 @@ function card(
   );
   return host.querySelector<HTMLButtonElement>(".compare-player-body")!;
 }
+function describedText(element: Element) {
+  const copy = element.cloneNode(true) as Element;
+  copy
+    .querySelectorAll('[aria-hidden="true"]')
+    .forEach((node) => node.remove());
+  return copy.textContent;
+}
+function visibleText(element: Element) {
+  const copy = element.cloneNode(true) as Element;
+  copy.querySelectorAll(".sr-only").forEach((node) => node.remove());
+  return copy.textContent;
+}
+it("shows a dot before the age but describes a comma for clan and no-clan locations", () => {
+  for (const [location, label] of [
+    [record, "Now in Other clan"],
+    [{ ...record, current_clan_tag: null, current_clan_name: null }, "No clan"],
+  ] as const) {
+    const row = card(location).children[2];
+    expect(visibleText(row)).toBe(`${label}· 2m ago`);
+    expect(describedText(row)).toBe(`${label}, 2m ago`);
+  }
+});
 it("has four rows in order with the TH icon beside TH, a separate Now in row and complete accessible description", () => {
   const body = card();
   expect([...body.children].map((row) => row.className)).toEqual([
@@ -56,7 +78,7 @@ it("has four rows in order with the TH icon beside TH, a separate Now in row and
     body.children[1].querySelector(".town-hall-icon")?.getAttribute("alt"),
   ).toBe("Town Hall 18");
   expect(body.children[1].textContent).toContain("TH 18 · #P2Y");
-  expect(body.children[2].textContent).toContain("Now in Other clan, 2m ago");
+  expect(describedText(body.children[2])).toBe("Now in Other clan, 2m ago");
   expect(body.children[2].querySelector(".compare-location-pill")).toBeNull();
   expect(body.children[3].textContent).toBe(
     "Not in this clan, Outside weight range, Outside family",
@@ -93,8 +115,10 @@ it("checking has its own row with no age; No clan retains age", () => {
     "Checking…",
   );
   expect(
-    card({ ...record, current_clan_tag: null, current_clan_name: null })
-      .children[2].textContent,
+    describedText(
+      card({ ...record, current_clan_tag: null, current_clan_name: null })
+        .children[2],
+    ),
   ).toBe("No clan, 2m ago");
   expect(host.querySelector(".compare-player-body")?.children).toHaveLength(4);
 });

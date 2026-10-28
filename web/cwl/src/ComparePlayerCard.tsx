@@ -83,7 +83,9 @@ export default function ComparePlayerCard({
                 <span className="compare-location-label">No clan</span>
               )}
               <span className="compare-location-age">
-                , {comparisonAge(record?.current_clan_checked_at, now)}
+                <span className="sr-only">, </span>
+                <span aria-hidden="true">· </span>
+                {comparisonAge(record?.current_clan_checked_at, now)}
               </span>
             </span>
           )}
