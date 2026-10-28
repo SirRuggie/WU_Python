@@ -4,6 +4,7 @@
 }
 .staff-signup-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -143,4 +144,10 @@
     font-size: 12px;
     padding-inline: 10px;
   }
+}
+
+.staff-signup-bar > .roster-ui-status {
+  max-width: 100%;
+  white-space: normal;
+  border-radius: var(--roster-radius-card, 14px);
 }

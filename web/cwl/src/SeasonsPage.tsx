@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
+import "./SeasonsPage.css";
 import { api, type Season } from "./api";
 import { Button, Input, StatusPill } from "./rosterUi/primitives";
 import RosterMenu from "./rosterUi/Menu";
@@ -132,7 +133,7 @@ export default function SeasonsPage({
         />
       </div>
       {!dismissed && (
-        <div className="notice">
+        <div className="notice season-hosting-note">
           <button onClick={onClans}>
             Hosting clans moved to Build roster → Clan settings ›
           </button>
