@@ -1,4 +1,4 @@
-import { comparisonAge } from "./comparisonLocation";
+import { comparisonAge, sameLocationClan } from "./comparisonLocation";
 
 type Location = {
   current_clan_tag?: string | null;
@@ -16,15 +16,13 @@ export function playerClanStatus(
     Date.parse(location.current_clan_checked_at || ""),
   );
   const sameClan =
-    assignedTag &&
-    (location.current_clan_tag
-      ? location.current_clan_tag === assignedTag
-      : !!location.current_clan_name &&
-        location.current_clan_name === assignedName);
+    !!assignedTag && sameLocationClan(location, assignedTag, assignedName);
   const inClan = !!(currentClanKnown && sameClan);
   const name = assignedTag ? assignedName : "Not assigned";
   const current =
-    location.current_clan_name || location.current_clan_tag || "in no clan";
+    location.current_clan_name ||
+    location.current_clan_tag ||
+    (assignedTag ? "No clan" : "in no clan");
   const age = comparisonAge(location.current_clan_checked_at || undefined, now);
   const minutes = Math.max(
     0,
@@ -51,8 +49,10 @@ export function playerClanStatus(
   const description =
     `Assigned clan: ${name}.` +
     (!currentClanKnown
-      ? " Location not checked yet."
-      : ` ${inClan ? "In clan" : `Now in ${current === "in no clan" ? "no clan" : current}`}, checked ${spokenAge}.`);
+      ? checking
+        ? " Checking location."
+        : " Location not checked yet."
+      : ` ${inClan ? "In clan" : `Now in ${current === "in no clan" || current === "No clan" ? "no clan" : current}`}, checked ${spokenAge}.`);
   return {
     currentClanKnown,
     checking,

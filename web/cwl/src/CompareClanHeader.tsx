@@ -25,6 +25,7 @@ export default function CompareClanHeader({
     accounts.filter((a) => a.assigned_clan_tag === clan.tag).map((a) => a.tag),
     locations,
     clan.tag,
+    clan.name,
   );
   const range = comparisonWeightRange(clan);
   return (

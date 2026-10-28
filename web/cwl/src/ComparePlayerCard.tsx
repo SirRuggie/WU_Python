@@ -35,7 +35,7 @@ export default function ComparePlayerCard({
   onDetails,
 }: Props) {
   const id = useId();
-  const location = comparisonLocation(record, clan.tag, now);
+  const location = comparisonLocation(record, clan.tag, now, clan.name);
   const status = playerClanStatus(
     clan.tag,
     clan.name || clan.tag,

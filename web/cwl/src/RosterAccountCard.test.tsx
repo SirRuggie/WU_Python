@@ -336,7 +336,7 @@ it("matches by tag first, falls back to name, colors only an elsewhere current n
       const nameColor = w.getComputedStyle(
         w.document.querySelector(".player-current-clan")!,
       ).color;
-      expect(nameColor).toBe("#ffdbde");
+      expect(nameColor).toBe("#ff9f9f");
       expect(
         w.getComputedStyle(w.document.querySelector(".roster-player-current")!)
           .color,
@@ -345,3 +345,52 @@ it("matches by tag first, falls back to name, colors only an elsewhere current n
   }
   w.happyDOM.abort();
 });
+
+it("unassigned current clans are always muted and assigned clanless wording is No clan", () => {
+  const w = new Window({ width: 360 });
+  w.document.head.innerHTML = `<style>${readFileSync("src/rosterUi/tokens.css", "utf8")}${cardCss}</style>`;
+  for (const name of ["Other clan", null]) {
+    w.document.body.innerHTML = `<main class="roster-ui">${render({ account: { ...account, current_clan_name: name, current_clan_checked_at: "2026-10-28T12:00:00Z" }, now: Date.parse("2026-10-28T12:04:00Z") })}</main>`;
+    const current = w.document.querySelector(".player-current-clan")!;
+    expect(current.classList.contains("is-elsewhere")).toBe(false);
+    expect(w.getComputedStyle(current).color).toBe(
+      w.getComputedStyle(w.document.querySelector(".roster-player-current")!)
+        .color,
+    );
+    expect(current.textContent).toBe(name || "in no clan");
+  }
+  w.document.body.innerHTML = render({
+    account: {
+      ...account,
+      assigned_clan_tag: "#A",
+      current_clan_checked_at: "2026-10-28T12:00:00Z",
+    },
+    assignedClanName: "Amber Knights",
+    now: Date.parse("2026-10-28T12:04:00Z"),
+  });
+  expect(
+    w.document.querySelector(".roster-player-placement")?.textContent,
+  ).toBe("Amber Knights→ No clan · 4m ago");
+  expect(
+    w.document.querySelector(".player-current-clan.is-elsewhere")?.textContent,
+  ).toBe("No clan");
+  w.happyDOM.abort();
+});
+it.each(["Emerald Watch", "W. U. Lazy .125"])(
+  "gives %s and its inline age the full compact line at 360px",
+  (name) => {
+    const w = new Window({ width: 360 });
+    w.document.head.innerHTML = `<style>${cardCss}</style>`;
+    for (const minutes of [0, 15]) {
+      w.document.body.innerHTML = `<main class="roster-ui">${render({ account: { ...account, assigned_clan_tag: "#A", current_clan_tag: "#A", current_clan_checked_at: "2026-10-28T12:00:00Z" }, assignedClanName: name, now: Date.parse("2026-10-28T12:00:00Z") + minutes * 60000 })}</main>`;
+      expect(
+        w.getComputedStyle(w.document.querySelector(".player-clan-status")!)
+          .paddingRight,
+      ).toBe("0px");
+      expect(
+        w.document.querySelector(".roster-player-placement")?.textContent,
+      ).toBe(`${name}In clan· ${minutes ? "15m ago" : "just now"}`);
+    }
+    w.happyDOM.abort();
+  },
+);

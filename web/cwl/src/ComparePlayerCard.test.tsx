@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import ComparePlayerCard from "./ComparePlayerCard";
+import CompareClanHeader from "./CompareClanHeader";
 import type { RosterAccount, RosterClan } from "./roster";
 import type { ComparisonLocation } from "./comparisonLocation";
 const account = {
@@ -58,22 +59,19 @@ function visibleText(element: Element) {
   copy.querySelectorAll(".sr-only").forEach((node) => node.remove());
   return copy.textContent;
 }
-it("shows a dot before the age but describes a comma for clan and no-clan locations", () => {
+it("shows assigned clan, current location and spoken age", () => {
   for (const [location, label] of [
     [record, "Other clan"],
-    [
-      { ...record, current_clan_tag: null, current_clan_name: null },
-      "in no clan",
-    ],
+    [{ ...record, current_clan_tag: null, current_clan_name: null }, "No clan"],
   ] as const) {
     const row = card(location).children[2];
     expect(visibleText(row)).toBe(`Assigned clan→ ${label} · 2m ago`);
     expect(describedText(row)).toBe(
-      `Assigned clan: Assigned clan. Now in ${label === "in no clan" ? "no clan" : label}, checked 2 minutes ago.`,
+      `Assigned clan: Assigned clan. Now in ${label === "No clan" ? "no clan" : label}, checked 2 minutes ago.`,
     );
   }
 });
-it("has four rows in order with the TH icon before the name, a separate Now in row and complete accessible description", () => {
+it("keeps the TH-first headline, metadata, shared clan status and warning row in order", () => {
   const body = card();
   expect([...body.children].map((row) => row.className)).toEqual([
     "player-card-top compare-player-top",
@@ -111,7 +109,7 @@ it("has four rows in order with the TH icon before the name, a separate Now in r
       .join(" "),
   ).toContain("170k TH 18 · #P2Y");
 });
-it("checking has its own row with no age; No clan retains age", () => {
+it("checking names the assigned clan without an age; No clan retains age", () => {
   const host = document.createElement("div");
   host.innerHTML = renderToStaticMarkup(
     <ComparePlayerCard
@@ -173,11 +171,11 @@ it.each([360, 700, 1440])(
     ).toBe("16px");
     expect(
       w.getComputedStyle(article.querySelector(".player-current-clan")!).color,
-    ).toBe("#ffdbde");
+    ).toBe("#ff9f9f");
     expect(
       w.getComputedStyle(article.querySelector(".player-clan-status")!)
         .paddingRight,
-    ).toBe("40px");
+    ).toBe("0px");
     w.happyDOM.abort();
   },
 );
@@ -200,4 +198,45 @@ it("puts In clan inline and omits the chip row entirely when there are no warnin
   expect(body.querySelector(".compare-player-tags")).toBeNull();
   expect(body.querySelector(".compare-location-pill")).toBeNull();
   expect(body.children).toHaveLength(3);
+});
+
+it.each([
+  [null, "Assigned clan", "arrived", "1 in clan"],
+  ["#B", "Assigned clan", "missing", "1 elsewhere"],
+  ["#A", "Changed name", "arrived", "1 in clan"],
+] as const)(
+  "keeps the card tint, pill and real header tally in sync for %s / %s",
+  (tag, name, state, tally) => {
+    const location = {
+      ...record,
+      current_clan_tag: tag,
+      current_clan_name: name,
+    };
+    const body = card(location, null, 160000);
+    expect(
+      body.closest("article")?.classList.contains(`compare-account-${state}`),
+    ).toBe(true);
+    expect(!!body.querySelector(".player-in-clan-pill")).toBe(
+      state === "arrived",
+    );
+    const header = document.createElement("div");
+    header.innerHTML = renderToStaticMarkup(
+      <CompareClanHeader
+        clan={clan}
+        accounts={[account]}
+        locations={{ [account.tag]: location }}
+      />,
+    );
+    expect(header.textContent).toContain(tally);
+  },
+);
+it("describes Compare checking as Checking location", () => {
+  const body = card({ ...record, current_clan_checked_at: undefined });
+  expect(describedText(body.children[2])).toBe(
+    "Assigned clan: Assigned clan. Checking location.",
+  );
+  expect(
+    body.closest("article")?.classList.contains("compare-account-checking"),
+  ).toBe(true);
+  expect(body.querySelector(".player-in-clan-pill")).toBeNull();
 });

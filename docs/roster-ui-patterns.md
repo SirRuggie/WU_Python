@@ -154,20 +154,20 @@ Player card v2 (2026-10-28), superseding the earlier shared-card dimensions abov
 
 - Compact: phones ≤700px and every Compare card. TownHallIcon 40px; name and weight 16px/700 on row 1; metadata 13px muted on row 2; location row 3 uses the full available width below the name. Compare chips/notes and Accounts warnings/notes stay. Target about 76px; wrapping tags and notes add height.
 - Wide Accounts (>700px): 56px icon centered left; 18px bold name; metadata/location below; 22px bold weight centered right. Keep the 44px checkbox and 44px menu target. Emoji source and size=64 unchanged by Ruggie's choice; fallback is TH text.
-- Surface: existing base fill tokens, plus `--roster-card-glow-neutral/success/danger` top-to-bottom internal gradient. Rounded 5px left edge uses `--roster-card-edge-*`; no external glow. Gold selection/focus remains. Card-local muted, green and red text tokens meet 4.5:1 at the brightest gradient point (including hover).
+- Surface: existing base fill tokens, plus `--roster-card-glow-neutral/success/danger` top-to-bottom internal gradient. Rounded 5px left edge uses `--roster-card-edge-*`; no external glow. Gold selection/focus remains. Card-local text tokens meet 4.5:1 including hover: upper text at the brightest gradient, clan text where line 3 sits below the glow.
 
 | Location (both pages) | Row 3 |
 | --- | --- |
 | In assigned clan | Green bold assigned clan + nonshrinking green `In clan` pill + muted · age |
-| Assigned elsewhere | Bold assigned clan → red current clan name + muted · age |
+| Assigned elsewhere | Bold assigned clan → red current clan name (No clan when clanless) + muted · age |
 | Not assigned (Accounts) | Muted Not assigned → current clan (in no clan if clanless) · age |
 | No result (Accounts) | Assigned clan / Not assigned · location not checked yet |
 | Checking (Compare) | Column clan · Checking… |
 
 One shared component renders both pages. Compare's column clan is the assigned clan; its former In this clan / Not in this clan / Checking chips are removed. Other warnings retain their own row, omitted when empty. No weight stays at the headline weight position.
 
-Keep row 3 on one line and clear of the menu hit area. Assigned name gets priority; the suffix ellipsizes first. If the assigned name alone is too long, it ellipsizes and the arrow suffix hides. The In clan pill never shrinks; its fixed width is reserved before the name. Full text stays in title and accessible words (hours and minutes). Determine same clan by tags; fall back to names only when a tag is missing. Never show the green text or pill before a completed location read. Only the current clan name is red, not its age.
+Keep row 3 on one line below the menu hit area in compact cards, using the full line width. Assigned name gets priority; the suffix ellipsizes first. If the assigned name alone is too long, it ellipsizes and the arrow suffix hides. The In clan pill never shrinks; its fixed width is reserved before the name. Full text stays in title and accessible words (hours and minutes). Determine same clan by tags; fall back to names only when a tag is missing. Never show the green text or pill before a completed location read. Only the current clan name is red, not its age.
 
-Glow top opacity: green/red 20%, neutral 8%, fading out by 85%; text, pills and clan-name tokens must pass 4.5:1 at that brightest point. The age formatter and ticking now remain unchanged.
+Glow top opacity: green/red 20%, neutral 8%, fading out at 44px before line 3. Upper text passes 4.5:1 at the brightest point; saturated green/red clan text and pills pass 4.5:1 at their actual lower-card position, including hover. Compare tint, tally and status all share tag-first/name-fallback matching with a completed read. The age formatter and ticking now remain unchanged.
 
 Item 6: withdrawn rosters with placements show the amber step dot; the Build banner shares Finalize's Hidden from members wording. Background metadata enrichment includes checked_at with the location name/tag/status so already-mounted cards render completed reads. Existing season/revision/request guards remain; no backend change.

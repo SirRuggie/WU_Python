@@ -11,7 +11,7 @@
   border: 1px solid var(--roster-border);
   border-radius: var(--roster-radius-card);
   background:
-    linear-gradient(to bottom, var(--player-card-glow), transparent 85%),
+    linear-gradient(to bottom, var(--player-card-glow), transparent 44px),
     var(--player-card-fill);
   box-shadow: none;
 }
@@ -198,7 +198,7 @@
 /* One shared, single-line clan status. Keep menu hit areas clear. */
 .player-card .player-clan-status {
   min-width: 0;
-  padding-right: 40px;
+  padding-right: 0;
 }
 .player-card .roster-player-placement {
   display: flex;
@@ -252,4 +252,9 @@
   .player-card-responsive .player-clan-status {
     padding-right: 0;
   }
+}
+
+/* Row three starts below the 44px menu hit area, so it can use the full width. */
+.player-card-compact .player-clan-status {
+  margin-top: 6px;
 }
