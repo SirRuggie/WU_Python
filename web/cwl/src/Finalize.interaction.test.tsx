@@ -13,7 +13,11 @@ vi.mock("./api", () => ({
 }));
 vi.mock("./ClanRosterImages", () => ({ default: () => null }));
 vi.mock("./ManageBridgeWorkspace", () => ({ default: () => null }));
-vi.mock("./StaffPlayerButton", () => ({ default: () => null }));
+vi.mock("./StaffPlayerButton", () => ({
+  default: ({ rosterUi }: { rosterUi?: boolean }) => (
+    <button data-roster-ui={rosterUi}>Details</button>
+  ),
+}));
 let host: HTMLDivElement, root: Root;
 const dirty = vi.fn(),
   navigate = vi.fn();
@@ -221,4 +225,17 @@ it("uses a danger confirmation for Hide, Cancel sends no write, and a successful
     "Hidden from members · last published version 3",
   );
   expect(button("Hide roster from members")).toBeUndefined();
+});
+
+it("uses the roster season menu, capacity preview and roster-styled Details", async () => {
+  const data = base();
+  data.preview.clans[0].effective_capacity = 0;
+  api.mockResolvedValue(data);
+  await render();
+  expect(host.querySelector("select")).toBeNull();
+  expect(host.querySelector('button[aria-label="Season"]')).not.toBeNull();
+  expect(host.querySelector(".publication-group")!.textContent).toContain(
+    "1 / 0",
+  );
+  expect(host.querySelector('[data-roster-ui="true"]')).not.toBeNull();
 });

@@ -97,9 +97,9 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
     text.indexOf("Before you publish"),
   );
   expect(text.indexOf("Before you publish")).toBeLessThan(
-    text.indexOf("Publish this roster"),
+    text.indexOf("Joining instructions"),
   );
-  expect(text.indexOf("Publish this roster")).toBeLessThan(
+  expect(text.indexOf("Joining instructions")).toBeLessThan(
     text.indexOf("Full roster preview"),
   );
   expect(

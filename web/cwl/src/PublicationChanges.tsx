@@ -1,3 +1,4 @@
+import { Button } from "./rosterUi/primitives";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import type { PublicationDraft } from "./publication";
@@ -82,9 +83,9 @@ export default function PublicationChanges({
             )}
           </ul>
           {!expanded && result.lines.length > 4 && (
-            <button type="button" onClick={() => setExpanded(true)}>
+            <Button onClick={() => setExpanded(true)}>
               Show all {result.lines.length} changes ›
-            </button>
+            </Button>
           )}
           {draft.draft_changed && (
             <p className="publication-change-caveat">
