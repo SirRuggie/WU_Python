@@ -68,7 +68,15 @@ export default function ClanSettings(props: Props) {
   };
   return (
     <section className="roster-ui clan-settings" aria-label="Clan settings">
-      {props.onHostingChanged && props.onHostingBusy && !props.archived && <HostingClanControls clans={props.clans} onChanged={props.onHostingChanged} onBusy={props.onHostingBusy} onFamily={props.onFamily} disabled={props.busy || !!tag} />}
+      {props.onHostingChanged && props.onHostingBusy && !props.archived && (
+        <HostingClanControls
+          clans={props.clans}
+          onChanged={props.onHostingChanged}
+          onBusy={props.onHostingBusy}
+          onFamily={props.onFamily}
+          disabled={props.busy || !!tag}
+        />
+      )}
       {moved && (
         <div role="status" className="clan-settings-moved">
           {moved.name} moved to {moved.pool === "main" ? "Main" : "Lazy"} CWL ·{" "}
@@ -174,7 +182,8 @@ export default function ClanSettings(props: Props) {
 }
 
 export function ClanSettingsEditor({
-  onArchiveChanged, onArchiveBusy,
+  onArchiveChanged,
+  onArchiveBusy,
   clan,
   accounts = [],
   busy,
@@ -469,7 +478,14 @@ export function ClanSettingsEditor({
           )}
         </>
       )}
-      {!archived && onArchiveChanged && onArchiveBusy && <ArchiveHostingClan clan={clan} disabled={busy || changed} onChanged={onArchiveChanged} onBusy={onArchiveBusy} />}
+      {!archived && onArchiveChanged && onArchiveBusy && (
+        <ArchiveHostingClan
+          clan={clan}
+          disabled={busy || changed}
+          onChanged={onArchiveChanged}
+          onBusy={onArchiveBusy}
+        />
+      )}
     </ActionPanel>
   );
 }

@@ -831,7 +831,10 @@ export default function RosterWorkspace({
         seasons={seasons}
         roster={roster}
         showAwareness={mode !== "weights"}
-        onPublication={(draft) => { setHasPublication(!!draft.published); onPublication?.(draft); }}
+        onPublication={(draft) => {
+          setHasPublication(!!draft.published);
+          onPublication?.(draft);
+        }}
         pool={viewPool}
         canRoster={canRoster}
         canSignups={canSignups}
@@ -1053,7 +1056,12 @@ export default function RosterWorkspace({
           {canRoster && mode === "rules" && (
             <ClanSettings
               key={seasonId}
-              onHostingChanged={async () => { await refresh(); }}
+              onHostingChanged={async () => {
+                if (!(await refresh()))
+                  throw new Error(
+                    "Saved, but the roster could not refresh. Reload before making more changes.",
+                  );
+              }}
               onHostingBusy={setHostingBusy}
               onFamily={onFamilyClans}
               clans={roster.clans}
@@ -1284,7 +1292,13 @@ export default function RosterWorkspace({
           )}
         </>
       )}
-      <button className="cwl-next-cue" disabled={!canPublish || uiLocked || !onReviewPublication} onClick={onReviewPublication}>Next: Finalize roster ›</button>
+      <button
+        className="cwl-next-cue"
+        disabled={!canPublish || uiLocked || !onReviewPublication}
+        onClick={onReviewPublication}
+      >
+        Next: Finalize roster ›
+      </button>
       <div
         className="roster-selection-spacer"
         style={{

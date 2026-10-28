@@ -6,6 +6,7 @@ import { useDashboardPermission } from "./DashboardPermissions";
 import ActionPanel from "./ActionPanel";
 import ConfirmDialog from "./ConfirmDialog";
 import { Button, Input } from "./rosterUi/primitives";
+import "./HostingClanControls.css";
 
 type Choice = { tag: string; name: string };
 export function availableFamily(clans: Choice[], hosts: RosterClan[]) {
@@ -222,6 +223,7 @@ export default function HostingClanControls({
               )}
               {familyAllowed && onFamily && (
                 <Button
+                  className="hosting-family-link"
                   disabled={busy}
                   onClick={() => {
                     setOpen(false);
