@@ -210,7 +210,7 @@ See the [approved Finalize read metadata extension](dashboard-backend-releases.m
 
 ## Decisions — Finalize roster (2026-10-27)
 
-Status: implemented on `codex/finalize`, pending review; no merge, tag or deployment.
+Status: deployed as `finalize-1` (`1a8b035461ec46fba60f6ed4808111d3c67d87cf`), PR #26, 2026-10-28. Scripted release checks passed; authenticated read and click smoke remain with Claude.
 
 1. Review order: status/Refresh draft, publishing changes (first four, expandable),
    checks, joining instructions and explicit Publish, collapsed full roster preview,

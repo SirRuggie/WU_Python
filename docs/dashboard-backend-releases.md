@@ -4,8 +4,8 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/c19db57523928f6fee9d6bc93d95d83fa5814bb0/`, tag `clan-settings-1`.
-- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/2f7ae7a53cedd70d9485dfd75151533194c69e01/`.
+- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`, tag `finalize-1`.
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/c19db57523928f6fee9d6bc93d95d83fa5814bb0/`.
 - Both are clean `git archive` exports. All 168 tracked files under `cwl_web/` and `utils/` were byte-compared with their commits.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
@@ -30,9 +30,9 @@ Triggers include startup/journal failure, wrong cwd or public hashes, failed smo
 
 ```bash
 # Frontend rollback:
-/home/ruggie/.local/share/wu-dashboard/switch-release.py a65b98ecc5c8d58601ec69d3efd184419b649e73
+/home/ruggie/.local/share/wu-dashboard/switch-release.py e6353fb9ef77244a6b366550f030d7fd8e75daf7
 # Backend rollback (preserves frontend-routing.conf and storage-guard.conf):
-printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/2f7ae7a53cedd70d9485dfd75151533194c69e01\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/c19db57523928f6fee9d6bc93d95d83fa5814bb0\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
 systemctl --user daemon-reload
 systemctl --user show -p WorkingDirectory,DropInPaths wu-cwl-demo-web.service
 systemctl --user restart wu-cwl-demo-web.service
@@ -43,9 +43,8 @@ Re-check service health, cwd, public hashes, protected counts and rules after ro
 
 ## Finalize read metadata (Ruggie-approved backend extension)
 
-Finalize requires a backend release from an isolated release directory and a service
-restart, following the backend release procedure. The draft response adds
+Deployed 2026-10-28 as `finalize-1` (`1a8b035461ec46fba60f6ed4808111d3c67d87cf`) from an isolated release directory with a service restart. The draft response adds
 `last_publication` (latest version including withdrawn, publication/withdrawal dates
 and joining instructions) and `next_version` (the publish path's season-scoped
 MAX + 1). `published` retains its active-only meaning. This is read-only: no schema
-or publication/withdrawal write-path change. No deployment is part of this batch.
+or publication/withdrawal write-path change. Scripted checks passed and protected data matched before/after. Authenticated metadata read and click smoke remain with Claude, as approved by Ruggie; the release remains live. Backup: `.local/finalize-backup-20261028T040608Z/dashboard.sqlite3`.

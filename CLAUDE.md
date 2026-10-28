@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current Weights frontend: `/home/ruggie/.local/share/wu-dashboard/releases/e6353fb9ef77244a6b366550f030d7fd8e75daf7/`
+  - Current Finalize frontend: `/home/ruggie/.local/share/wu-dashboard/releases/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -52,9 +52,24 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - When changing a script: return the full updated script.
 - He reviews on his phone; mobile layout matters as much as desktop.
 
-## Standby rollback targets (verified 2026-10-27)
+## Standby rollback targets (verified 2026-10-28)
 
-- **Current Weights frontend:** `e6353fb9ef77244a6b366550f030d7fd8e75daf7`, tag `weights-1`, merged via PR #25.
+- **Current Finalize frontend + backend:** `1a8b035461ec46fba60f6ed4808111d3c67d87cf`, tag `finalize-1`, PR #26.
+  - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`.
+  - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/1a8b035461ec46fba60f6ed4808111d3c67d87cf/`.
+  - Backup: `.local/finalize-backup-20261028T040608Z/dashboard.sqlite3`; integrity OK, all 54 table counts matched, 1,122,304 bytes.
+  - Scripted checks passed: active service/cwd, public entry and roster/publication hashes match manifest, unauthenticated publication GET returns 401. Protected data unchanged: Main 18/18/18; Lazy 84/84/65 (signups/assigned/locks), plus publications/instructions, weights and rules.
+  - Authenticated metadata read and click smoke are delegated to Claude; Ruggie approved leaving the release live after scripted checks. No Publish or Hide submitted.
+  - Previous frontend: `e6353fb9ef77244a6b366550f030d7fd8e75daf7`; previous backend: `c19db57523928f6fee9d6bc93d95d83fa5814bb0`.
+
+```bash
+/home/ruggie/.local/share/wu-dashboard/switch-release.py e6353fb9ef77244a6b366550f030d7fd8e75daf7
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/c19db57523928f6fee9d6bc93d95d83fa5814bb0\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+systemctl --user daemon-reload
+systemctl --user restart wu-cwl-demo-web.service
+```
+
+- **Previous Weights frontend:** `e6353fb9ef77244a6b366550f030d7fd8e75daf7`, tag `weights-1`, merged via PR #25.
   - Release: `/home/ruggie/.local/share/wu-dashboard/releases/e6353fb9ef77244a6b366550f030d7fd8e75daf7/`.
   - Frontend rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py c19db57523928f6fee9d6bc93d95d83fa5814bb0`.
   - Reactivate Weights: `/home/ruggie/.local/share/wu-dashboard/switch-release.py e6353fb9ef77244a6b366550f030d7fd8e75daf7`.
@@ -65,7 +80,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
   - Clean tagged checkout with `npm ci`: 542 frontend tests, TypeScript and build passed. Three missing-guard mutations caught.
   - Rollback on count mismatch, load errors or staff-reported write issues. Never restore the database just to roll back the frontend.
 
-- **Previous Clan settings frontend / current backend:** `c19db57523928f6fee9d6bc93d95d83fa5814bb0`, tag `clan-settings-1`, merged via PR #24.
+- **Previous Clan settings frontend / previous backend:** `c19db57523928f6fee9d6bc93d95d83fa5814bb0`, tag `clan-settings-1`, merged via PR #24.
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/c19db57523928f6fee9d6bc93d95d83fa5814bb0/`.
   - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/c19db57523928f6fee9d6bc93d95d83fa5814bb0/`, clean tag archive.
   - Frontend rollback: `a65b98ecc5c8d58601ec69d3efd184419b649e73`; backend rollback: `2f7ae7a53cedd70d9485dfd75151533194c69e01` (clean pre-merge archive).
@@ -99,7 +114,7 @@ To reactivate this release, use `switch-release.py c19db57523928f6fee9d6bc93d95d
 - **Original roster UI, before Release 1:** `bad19e1bf3b71cddcb87e26f9f926c676e87a31b` (parent of the first Release 1 commit, `ee1023e`).
   - Path: `/home/ruggie/.local/share/wu-dashboard/releases/bad19e1bf3b71cddcb87e26f9f926c676e87a31b/`
   - Clean detached checkout build; locked dependencies; 396 frontend tests passed; TypeScript and Vite build passed. Artifact hashes are recorded in `/home/ruggie/.local/share/wu-dashboard/manifests/bad19e1bf3b71cddcb87e26f9f926c676e87a31b.json`.
-  - Standby only: built and staged, **not activated**. Production now runs the Weights frontend with the Clan settings backend listed above.
+  - Standby only: built and staged, **not activated**. Production now runs the Finalize frontend and backend listed above.
   - This restores the entire older frontend, including older moderation screens. It does not revert backend code or data. Live compatibility has not been smoke-tested; use the preserved live snapshot when that is the appropriate rollback.
   - Activation, only when explicitly authorized: `/home/ruggie/.local/share/wu-dashboard/switch-release.py bad19e1bf3b71cddcb87e26f9f926c676e87a31b`
 - **Pre-deploy snapshot (already includes early Release 1 UI):** `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`. This is not the original roster UI.
