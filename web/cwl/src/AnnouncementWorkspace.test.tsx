@@ -230,3 +230,28 @@ it("without cwl_send no editing, binding, or send is enabled", async () => {
   expect(button("Change").disabled).toBe(true);
   expect(api.mock.calls.some((c) => c[1])).toBe(false);
 });
+it("refresh with edits is one Cancel-first confirmation and Cancel preserves edits", async () => {
+  bridge.pools.main.roster_url = "";
+  await mount();
+  await click("Edit");
+  const close =
+    document.querySelector<HTMLButtonElement>(".action-panel-close") ||
+    [...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(
+      (b) =>
+        b.getAttribute("aria-label")?.includes("Close") ||
+        b.textContent === "Close",
+    )!;
+  await act(async () => close.click());
+  await click("Refresh status");
+  expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
+    "Discard unsaved announcement edits and reload?",
+  );
+  await click("Cancel");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  expect(api.mock.calls.some((c) => c[1])).toBe(false);
+  expect(
+    [...host.querySelectorAll("button")].filter(
+      (b) => b.textContent === "Refresh status",
+    ),
+  ).toHaveLength(1);
+});

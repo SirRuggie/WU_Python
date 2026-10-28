@@ -2,7 +2,7 @@ import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
 import AnnouncementPoolCard from "./AnnouncementPoolCard";
 import AnnouncementEditor from "./AnnouncementEditor";
 import { Button } from "./rosterUi/primitives";
-import { Send } from "lucide-react";
+import { RefreshCw, Send } from "lucide-react";
 import AnnouncementMonth from "./AnnouncementMonth";
 import { announcementMonth } from "./announcementMonth";
 import ConfirmDialog from "./ConfirmDialog";
@@ -76,6 +76,9 @@ export default function ManageBridgeWorkspace({
 }: Props) {
   const canManage = useDashboardPermission("cwl_send");
   const canDeclare = useDashboardPermission("cwl_roster");
+  const [confirmation, setConfirmation] = useState<"refresh" | Pool | null>(
+    null,
+  );
   const [confirmMonth, setConfirmMonth] = useState(false);
   const [sendReview, setSendReview] = useState<Pool[] | null>(null);
   const roles = useReminderLookup<{ id: string; name: string }>(
@@ -177,6 +180,7 @@ export default function ManageBridgeWorkspace({
     setExpandedPreview(null);
     setEditor(null);
     setConfirmMonth(false);
+    setConfirmation(null);
     setTestUrl("");
     setBridge(null);
     setDrafts(emptyDraft());
@@ -241,9 +245,9 @@ export default function ManageBridgeWorkspace({
     (pools.some(unsaved) ||
       cycleInput !== (bridge.cycle || announcementMonth(seasonLabel)));
   useEffect(() => {
-    onBusy?.(busy || !!sendReview);
+    onBusy?.(busy || !!sendReview || !!confirmation || confirmMonth);
     return () => onBusy?.(false);
-  }, [busy, sendReview, onBusy]);
+  }, [busy, sendReview, confirmation, confirmMonth, onBusy]);
   useEffect(() => {
     onDirty?.(dirty);
     return () => onDirty?.(false);
@@ -257,17 +261,15 @@ export default function ManageBridgeWorkspace({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
-  const reviewRefresh = () => {
-    if (
-      dirty &&
-      !window.confirm(
-        "Discard unsaved CWL settings edits and load the latest Manage settings?",
-      )
-    )
-      return;
+  const refresh = () => {
+    setConfirmation(null);
     setNotice(null);
     void load(true);
     void loadChannels();
+  };
+  const reviewRefresh = () => {
+    if (dirty) setConfirmation("refresh");
+    else refresh();
   };
   const bindCycle = async () => {
     if (
@@ -384,15 +386,7 @@ export default function ManageBridgeWorkspace({
   const sendTest = async (pool: Pool) => {
     if (!canManage || !bridge || busy || loading || bridgeError || !testChannel)
       return;
-    const name =
-      channels.find((channel) => channel.id === testChannel)?.name ||
-      testChannel;
-    if (
-      !window.confirm(
-        `Send a ${poolLabel(pool)} test to #${name}? No pings will be sent.`,
-      )
-    )
-      return;
+    setConfirmation(null);
     const sid = seasonId;
     setBusy(true);
     setNotice(null);
@@ -541,19 +535,25 @@ export default function ManageBridgeWorkspace({
   return (
     <section
       className="manage-bridge-workspace announcement-workspace"
-      aria-labelledby="manage-title"
+      aria-label="Announcements"
     >
+      <p className="announcement-muted">
+        Sending posts to Discord and pings the listed roles. Publishing doesn't
+        send anything.
+      </p>
       <header className="announcement-toolbar">
-        <div>
-          <h2 id="manage-title">Discord announcements</h2>
-          <p>
-            Publishing makes placements visible. Sending notifies members
-            separately.
-          </p>
-        </div>
-        <button disabled={busy || loading} onClick={reviewRefresh}>
+        <span>
+          {bridge?.published_version
+            ? `Published roster · Version ${bridge.published_version}`
+            : "Publish a roster before sending"}
+        </span>
+        <Button
+          icon={RefreshCw}
+          disabled={busy || loading}
+          onClick={reviewRefresh}
+        >
           Refresh status
-        </button>
+        </Button>
       </header>
       {notice && (
         <div
@@ -805,7 +805,25 @@ export default function ManageBridgeWorkspace({
           onDraft={(update) => setDraft(editor.pool, update)}
           onClose={() => setEditor(null)}
           onSave={() => void save(editor.pool)}
-          onTest={() => void sendTest(editor.pool)}
+          onTest={() => setConfirmation(editor.pool)}
+        />
+      )}
+      {confirmation && (
+        <ConfirmDialog
+          heading={
+            confirmation === "refresh" ? "Reload announcements" : "Send test"
+          }
+          text={
+            confirmation === "refresh"
+              ? "Discard unsaved announcement edits and reload?"
+              : `Send a ${confirmation === "main" ? "Main" : "Lazy"} test to #${channels.find((channel) => channel.id === testChannel)?.name || testChannel}? No roles are pinged and the real announcement stays unsent.`
+          }
+          disabled={busy || loading}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => {
+            if (confirmation === "refresh") refresh();
+            else void sendTest(confirmation);
+          }}
         />
       )}
       {confirmMonth && (
