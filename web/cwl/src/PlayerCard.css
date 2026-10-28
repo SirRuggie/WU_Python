@@ -124,9 +124,19 @@
   line-height: 16px;
   font-weight: 400;
   color: var(--roster-text-muted);
+  min-width: 0;
+  white-space: nowrap;
+  flex-wrap: nowrap;
 }
+.player-card-meta-core,
 .player-card-meta svg {
   flex-shrink: 0;
+}
+.player-card-meta-pool {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .player-card-body > .player-clan-status,
 .player-card-body > .compare-player-location {
