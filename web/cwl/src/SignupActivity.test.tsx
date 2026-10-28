@@ -114,7 +114,7 @@ it("words single, plural, mixed and 100+ changes; red only for known below-war-s
   ).toBe("100+ assigned players withdrew");
   expect(signupActivitySummary([item()], [clan(15)])).toEqual({
     danger: true,
-    text: "1 signup change · Morning Woods! now below 15",
+    text: "Morning Woods! below 15 · 1 change",
   });
   expect(signupActivitySummary([item()], [clan(null)]).danger).toBe(false);
   expect(signupActivitySummary([item()], [clan(15, 15)]).danger).toBe(false);
@@ -314,4 +314,34 @@ it("the header neither fetches nor exposes signup changes without cwl_signups", 
     api.mock.calls.some((call) => call[0].includes("signup-activity")),
   ).toBe(false);
   expect(document.querySelector(".signup-activity")).toBeNull();
+});
+
+it("counts distinct below-war-size clans and leads with the vacancy", () => {
+  expect(signupActivitySummary([item(), item(2)], [clan(15)]).text).toBe(
+    "Morning Woods! below 15 · 2 changes",
+  );
+  expect(
+    signupActivitySummary(
+      [item(), { ...item(2), assigned_clan_tag: "#OTHER" }, item(3)],
+      [clan(15), { ...clan(30), tag: "#OTHER" }],
+    ).text,
+  ).toBe("2 clans below war size · 3 changes");
+});
+it("a late poll cannot resurrect an item reviewed while the read was in flight", async () => {
+  vi.useFakeTimers();
+  await render();
+  await open();
+  let finish!: (value: unknown) => void;
+  api.mockImplementation((_path: string, method?: string) =>
+    method
+      ? Promise.resolve({ ok: true })
+      : new Promise((resolve) => {
+          finish = resolve;
+        }),
+  );
+  await act(async () => vi.advanceTimersByTime(30000));
+  await click("Mark reviewed");
+  expect(host.querySelector(".signup-activity-line")).toBeNull();
+  await act(async () => finish({ items: [item()] }));
+  expect(host.querySelector(".signup-activity-line")).toBeNull();
 });

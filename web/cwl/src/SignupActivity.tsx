@@ -127,7 +127,11 @@ export default function SignupActivity({
                 >
                   Fill spot ›
                 </Button>
-                <DiscordContact userId={item.user_id} label="Message ↗" />
+                <DiscordContact
+                  userId={item.user_id}
+                  label="Message ↗"
+                  className="roster-ui roster-ui-button is-secondary"
+                />
                 <Button
                   className="signup-activity-review"
                   disabled={busy}

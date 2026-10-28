@@ -119,3 +119,41 @@ it("the Assign panel still offers an empty hosting clan", async () => {
     host.remove();
   }
 });
+it("uses singular for one empty clan", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <RosterClanChips
+          roster={
+            {
+              accounts: [],
+              clans: [
+                {
+                  tag: "#P",
+                  name: "Empty",
+                  pool: "main",
+                  archived: false,
+                  capacity: 15,
+                },
+              ],
+            } as unknown as RosterSnapshot
+          }
+          pool="main"
+          selectedTags={[]}
+          onSelect={() => {}}
+          disabled={false}
+        />,
+      ),
+    );
+    expect(host.querySelector("button")?.textContent).toBe(
+      "+1 clan with no players",
+    );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

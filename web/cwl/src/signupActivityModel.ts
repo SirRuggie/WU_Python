@@ -18,18 +18,17 @@ export function signupActivitySummary(
   clans: RosterClan[],
 ) {
   const count = items.length === 100 ? "100+" : String(items.length);
-  const below = items
-    .map((item) => clans.find((clan) => clan.tag === item.assigned_clan_tag))
-    .find(
-      (clan) =>
-        clan &&
-        (clan.capacity === 15 || clan.capacity === 30) &&
-        clan.assigned_count < clan.capacity,
-    );
-  if (below)
+  const affected = new Set(items.map((item) => item.assigned_clan_tag));
+  const below = clans.filter(
+    (clan) =>
+      affected.has(clan.tag) &&
+      (clan.capacity === 15 || clan.capacity === 30) &&
+      clan.assigned_count < clan.capacity,
+  );
+  if (below.length)
     return {
       danger: true,
-      text: `${count} signup change${items.length === 1 ? "" : "s"} · ${below.name} now below ${below.capacity}`,
+      text: `${below.length === 1 ? `${below[0].name} below ${below[0].capacity}` : `${below.length} clans below war size`} · ${count} change${items.length === 1 ? "" : "s"}`,
     };
   const withdrawn = items.filter(
     (item) => item.action === "member_withdrawal",

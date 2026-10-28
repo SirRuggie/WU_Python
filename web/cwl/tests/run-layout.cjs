@@ -1,18 +1,18 @@
-/* npm run test:layout: isolated fixture, clean backend export, no live services. */
-const { spawn, execFileSync } = require("node:child_process");
-const { mkdtempSync, mkdirSync, rmSync } = require("node:fs");
+/* npm run test:layout: isolated fixture, working-tree backend and frontend, no live services. */
+const { spawn } = require("node:child_process");
+const { mkdtempSync, existsSync, rmSync } = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const root = path.resolve(__dirname, "../../..");
 const temp = mkdtempSync(path.join(os.tmpdir(), "wu-card-layout-"));
-const backend = path.join(temp, "backend");
-mkdirSync(backend);
-execFileSync("tar", ["-x", "-C", backend], {
-  input: execFileSync("git", ["archive", "HEAD"], {
-    cwd: root,
-    maxBuffer: 100 * 1024 * 1024,
-  }),
-});
+const chrome = process.env.CHROME_PATH || "/usr/bin/google-chrome";
+if (!existsSync(chrome)) {
+  console.log(
+    `SKIP test:layout: Chrome not found at ${chrome}. Set CHROME_PATH to an installed Chrome.`,
+  );
+  rmSync(temp, { recursive: true, force: true });
+  process.exit(0);
+}
 const port = 8952;
 const python =
   process.env.WU_TEST_PYTHON || path.join(root, ".venv/bin/python");
@@ -25,7 +25,7 @@ const server = spawn(
     String(port),
   ],
   {
-    env: { PATH: process.env.PATH, HOME: temp, WU_FIXTURE_BACKEND: backend },
+    env: { PATH: process.env.PATH, HOME: temp, WU_FIXTURE_BACKEND: root },
     stdio: ["ignore", "pipe", "inherit"],
   },
 );

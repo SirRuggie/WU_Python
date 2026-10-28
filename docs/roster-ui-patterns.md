@@ -181,3 +181,10 @@ A single header alert below the summary chips opens a side panel on desktop or f
 Supersedes the v2 40/56px icon column: TownHallIcon sits inside line 1 before the name, 22px compact / 26px wide, centered within the existing 20/23px name row. Same source and size=64, same TH text fallback. Metadata and clan status start at the left content edge in both views. Preserve one-line priority: assigned clan first, age disappears before the current-clan suffix; never wrap. Realistic layout worst cases use **15-character maximum player and clan names** and 8–9-character player tags; ellipsis remains a safety net. Layout tests and fixtures live in `web/cwl/tests/`, run with `npm run test:layout` and the documented Playwright runtime.
 
 The summary clan row initially shows only occupied clans. A small per-pool reveal exposes empty clans for the current visit; an empty pool says No clans have players yet. This is a presentation filter only, not a hosting or assignment rule.
+
+Signup-change review fix: Fill spot prepends the affected clan to the saved Compare
+set (deduplicated, existing order retained, maximum 10; drop the last when full).
+A missing clan tag leaves the preference unchanged. Dirty/busy guards run before
+navigation or storage changes. The red alert leads with the below-war-size clan
+or clan count. Row actions share the 44px secondary-button style. The inline TH
+image may extend beyond the name line box; only the name text clips/ellipsizes.

@@ -1,3 +1,4 @@
+import { comparisonOrder } from "./compare";
 import useLocationNow from "./useLocationNow";
 import ClanSettings from "./ClanSettings";
 import type { ClanRules } from "./clanSettingsModel";
@@ -869,12 +870,20 @@ export default function RosterWorkspace({
           if (!canRoster || uiLocked || !mayLeaveEditor()) return false;
           const pool = item.from_pool === "lazy" ? "lazy" : "main";
           try {
-            localStorage.setItem(
-              `wu-compare-clans:${seasonId}:${pool}`,
-              JSON.stringify(
-                item.assigned_clan_tag ? [item.assigned_clan_tag] : [],
-              ),
-            );
+            if (item.assigned_clan_tag) {
+              const key = `wu-compare-clans:${seasonId}:${pool}`;
+              const saved: unknown = JSON.parse(
+                localStorage.getItem(key) || "[]",
+              );
+              const next = [
+                item.assigned_clan_tag,
+                ...(Array.isArray(saved) ? saved : []),
+              ].filter((tag): tag is string => typeof tag === "string");
+              localStorage.setItem(
+                key,
+                JSON.stringify(comparisonOrder(next, next)),
+              );
+            }
           } catch {}
           setPoolFilter(pool);
           setSelectedTags([]);
