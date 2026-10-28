@@ -27,6 +27,7 @@ import { type AnnouncementChannel } from "./announcements";
 import {
   canQueueAnnouncement,
   dashboardRosterUrl,
+  isSecureOrigin,
   normalizeManageBridge,
   shouldPollBridge,
   type ManageBridge,
@@ -398,8 +399,14 @@ export default function ManageBridgeWorkspace({
       draftGeneration !== bridge.generation ||
       sending.current ||
       !channels.some((channel) => channel.id === testChannel)
-    )
+    ) {
+      setConfirmation(null);
+      setNotice({
+        kind: "error",
+        text: "Test not sent: permissions, settings or channel availability changed. Refresh status and review before trying again.",
+      });
       return;
+    }
     sending.current = true;
     setConfirmation(null);
     const sid = seasonId;
@@ -561,12 +568,15 @@ export default function ManageBridgeWorkspace({
         <span>
           {announcementPublicationStatus(publication)}
           {publication && !publication.published && onFinalize && (
-            <Button
-              disabled={busy || dirty || !!sendReview}
-              onClick={onFinalize}
-            >
-              Finalize roster ›
-            </Button>
+            <>
+              {" · "}
+              <Button
+                disabled={busy || dirty || !!sendReview}
+                onClick={onFinalize}
+              >
+                Finalize roster ›
+              </Button>
+            </>
           )}
         </span>
         <Button
@@ -703,7 +713,11 @@ export default function ManageBridgeWorkspace({
                       onPreview={() => setExpandedPreview(pool)}
                       onSend={() => setSendReview([pool])}
                       onEdit={(trigger) => {
-                        if (!locked && !drafts[pool].roster_url)
+                        if (
+                          isSecureOrigin() &&
+                          !locked &&
+                          !drafts[pool].roster_url
+                        )
                           setDraft(pool, {
                             roster_url: dashboardRosterUrl(
                               window.location.origin,

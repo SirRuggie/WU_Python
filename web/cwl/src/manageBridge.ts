@@ -30,3 +30,7 @@ export function dashboardRosterUrl(origin: string, seasonId: string): string {
   url.searchParams.set('season', seasonId)
   return url.toString()
 }
+
+export function isSecureOrigin(): boolean {
+  return window.location.protocol === "https:";
+}

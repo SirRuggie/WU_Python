@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import * as manageBridge from "./manageBridge";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -120,6 +121,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.restoreAllMocks();
 });
 it("loads the derived month only on tap, then confirms a linked change once", async () => {
   bridge.cycle = null;
@@ -148,6 +150,7 @@ it("loads the derived month only on tap, then confirms a linked change once", as
   expect(api.mock.calls.filter((c) => c[1] === "POST")).toHaveLength(1);
 });
 it("shows both cards without tabs, opens Preview and an unsaved prefilled Edit", async () => {
+  vi.spyOn(manageBridge, "isSecureOrigin").mockReturnValue(true);
   bridge.pools.main.roster_url = "";
   await mount();
   expect(host.querySelectorAll(".announcement-pool-card")).toHaveLength(2);
@@ -237,6 +240,7 @@ it("without cwl_send no editing, binding, or send is enabled", async () => {
   expect(api.mock.calls.some((c) => c[1])).toBe(false);
 });
 it("refresh with edits is one Cancel-first confirmation and Cancel preserves edits", async () => {
+  vi.spyOn(manageBridge, "isSecureOrigin").mockReturnValue(true);
   bridge.pools.main.roster_url = "";
   await mount();
   await click("Edit");
@@ -296,4 +300,33 @@ it("bot unavailable prevents all sends, and loading explains the wait without hi
   );
   expect(button("Review and send").disabled).toBe(true);
   expect(host.textContent).not.toContain("Sender ready");
+});
+it("HTTP origins leave an empty roster link untouched", async () => {
+  expect(manageBridge.isSecureOrigin()).toBe(false);
+  bridge.pools.main.roster_url = "";
+  await mount();
+  await click("Edit");
+  expect(dirty).toHaveBeenLastCalledWith(false);
+  expect(button("Save message").disabled).toBe(true);
+  expect(api.mock.calls.some((c) => c[1])).toBe(false);
+});
+it("a test-send guard closes the confirmation and explains why nothing was sent", async () => {
+  await mount();
+  await click("Edit");
+  const field = document.querySelector<HTMLInputElement>(
+    'input[aria-label="Test channel"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(field, channels[0].id);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Send test");
+  await mount(false);
+  await click("Confirm");
+  expect(document.querySelector(".confirm-dialog")).toBeNull();
+  expect(host.textContent).toContain("Test not sent:");
+  expect(api.mock.calls.some((c) => c[1])).toBe(false);
 });

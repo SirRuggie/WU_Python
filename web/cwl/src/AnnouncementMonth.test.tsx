@@ -50,6 +50,7 @@ it("prefills without binding; Change reveals the picker and Load is explicit", a
       ),
     );
     expect(host.querySelector("input")).not.toBeNull();
+    expect(host.textContent).not.toContain("CWL month:");
   } finally {
     await act(async () => root.unmount());
   }

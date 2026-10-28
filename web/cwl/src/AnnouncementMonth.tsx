@@ -17,12 +17,14 @@ export default function AnnouncementMonth({
   const [editing, setEditing] = useState(false);
   return (
     <div className="manage-cycle-fields">
-      <div>
-        CWL month: {announcementMonthLabel(value)}{" "}
-        <Button disabled={disabled} onClick={() => setEditing(true)}>
-          Change
-        </Button>
-      </div>
+      {value && (
+        <div>
+          CWL month: {announcementMonthLabel(value)}{" "}
+          <Button disabled={disabled} onClick={() => setEditing(true)}>
+            Change
+          </Button>
+        </div>
+      )}
       {(editing || !value) && (
         <Input
           label="CWL month"
