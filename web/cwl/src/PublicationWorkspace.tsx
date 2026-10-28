@@ -187,9 +187,7 @@ export default function PublicationWorkspace({
     } catch (cause) {
       if (currentSeason.current === sid) {
         if (cause instanceof ApiError && cause.status === 403) setDraft(null);
-        setError(cause instanceof ApiError && cause.status === 409
-          ? `${cause.message} Refresh the draft and review it before publishing.`
-          : errorText(cause));
+        setError(errorText(cause));
       }
     } finally {
       mutationPending.current = false;
@@ -264,12 +262,18 @@ export default function PublicationWorkspace({
   const visibleCount = visibleGroups.reduce((total, group) => total + group.accounts.length, 0);
 
   return (
-    <div className={`publication-workspace roster-ui${step === 'review' ? ' finalize-review' : ''}`}>
+    <div
+      className={`publication-workspace roster-ui${step === "review" ? " finalize-review" : ""}`}
+    >
       {confirmRevision !== null && draft && (
         <ConfirmDialog
-          heading={`Publish version ${draft.next_version}?`}
+          heading={
+            draft.next_version == null
+              ? "Publish roster?"
+              : `Publish version ${draft.next_version}?`
+          }
           confirmLabel="Publish roster"
-          text={`Publish the current draft for Main and Lazy? ${draft.preview.accounts.length} accounts: ${draft.preview.assigned_count} assigned and ${draft.preview.unassigned_count} awaiting placement. Members will see these assignments. No Discord message is sent.`}
+          text={`Publish the current draft for Main and Lazy? ${draft.preview.accounts.length} account${draft.preview.accounts.length === 1 ? "" : "s"}: ${draft.preview.assigned_count} assigned and ${draft.preview.unassigned_count} awaiting placement. Members will see these assignments. No Discord message is sent.`}
           onCancel={() => setConfirmRevision(null)}
           onConfirm={() => void publish()}
           disabled={!canPublish}
@@ -277,120 +281,249 @@ export default function PublicationWorkspace({
       )}
 
       {hideTarget && draft?.published && (
-        <ConfirmDialog heading="Hide roster from members?" confirmLabel="Hide roster" danger
+        <ConfirmDialog
+          heading="Hide roster from members?"
+          confirmLabel="Hide roster"
+          danger
           text="Members will see no assignments until you publish again. The working roster and signups are kept. Discord messages already sent stay as they are. Publishing again creates the next version."
-          onCancel={() => setHideTarget(null)} onConfirm={() => void withdraw()}
-          disabled={locked || loading || !!error || !canManage} />
+          onCancel={() => setHideTarget(null)}
+          onConfirm={() => void withdraw()}
+          disabled={locked || loading || !!error || !canManage}
+        />
       )}
 
       <div className="page-head">
         <div>
           <p className="eyebrow">Staff · CWL</p>
-          <h1 ref={pageHeading} tabIndex={-1}>{step === 'announce' ? 'Announcements' : 'Finalize roster'}</h1>
+          <h1 ref={pageHeading} tabIndex={-1}>
+            {step === "announce" ? "Announcements" : "Finalize roster"}
+          </h1>
         </div>
-        <RosterMenu label="Season" value={seasonId} disabled={locked || loading}
-          aria-label="Season" onValueChange={onSeasonChange}
-          options={[{ value: '', label: 'Select a season' }, ...seasons.map(season => ({ value: String(season.id), label: season.label }))]} />
+        <RosterMenu
+          label="Season"
+          value={seasonId}
+          disabled={locked || loading}
+          aria-label="Season"
+          onValueChange={onSeasonChange}
+          options={[
+            { value: "", label: "Select a season" },
+            ...seasons.map((season) => ({
+              value: String(season.id),
+              label: season.label,
+            })),
+          ]}
+        />
       </div>
-      {!seasonId && <div className="card empty"><p>Select a season to review its working roster.</p></div>}
+      {!seasonId && (
+        <div className="card empty">
+          <p>Select a season to review its working roster.</p>
+        </div>
+      )}
       {error && (
         <div className="notice error" role="alert">
-          <span>{error} Use Refresh draft to try again.</span>
+          <span>
+            {error}
+            {!error.includes("Refresh") && " Use Refresh draft to try again."}
+          </span>
         </div>
       )}
       {success && (
         <div className="notice success" role="status">
           {success}
-          {draft?.published && step !== 'announce' && <button type="button" onClick={() => onStepChange('announce')}>Continue to announcements</button>}
+          {draft?.published && step !== "announce" && (
+            <button type="button" onClick={() => onStepChange("announce")}>
+              Continue to announcements
+            </button>
+          )}
         </div>
       )}
       {loading && !draft && <p role="status">Loading publication preview…</p>}
 
-      <div hidden={step !== 'review'}>
-        {!draft && seasonId && <Button icon={RefreshCw} disabled={locked || loading} onClick={() => void load()}>Refresh draft</Button>}
+      {!draft && seasonId && (
+        <Button
+          icon={RefreshCw}
+          disabled={locked || loading}
+          onClick={() => void load()}
+        >
+          Refresh draft
+        </Button>
+      )}
+      <div hidden={step !== "review"}>
         {draft && (
           <>
-            <section className="publication-summary" aria-label="Publication and draft status">
+            <section
+              className="publication-summary"
+              aria-label="Publication and draft status"
+            >
               <strong>{finalizeStatus(draft)}</strong>
-              <Button icon={RefreshCw} disabled={locked || loading} onClick={() => void load()}>Refresh draft</Button>
+              <Button
+                icon={RefreshCw}
+                disabled={locked || loading}
+                onClick={() => void load()}
+              >
+                Refresh draft
+              </Button>
             </section>
             {step === "review" && (
-              <PublicationChanges seasonId={seasonId} draft={draft} onReady={setChangesReady} />
+              <PublicationChanges
+                seasonId={seasonId}
+                draft={draft}
+                archived={archived}
+                onReady={setChangesReady}
+              />
             )}
-            {instructions !== (draft.published?.joining_instructions ?? '') && (
-              <p className="publication-instructions-changed">Joining instructions changed</p>
+            {instructionsDirty && (
+              <p className="publication-instructions-changed">
+                Joining instructions changed
+              </p>
             )}
-            <section className="publication-readiness" aria-labelledby="publication-readiness-title">
+            <section
+              className="publication-readiness"
+              aria-labelledby="publication-readiness-title"
+            >
               <h2 id="publication-readiness-title">Before you publish</h2>
               <div className="publication-check-chips">
-                {checks.filter(check => check.filter !== 'over_capacity' && check.accounts.length > 0).map(check => (
-                  <Button key={check.filter} disabled={locked || loading} onClick={() => onFix(check.filter)}>
-                    {check.accounts.length} {check.filter === 'missing_weight' ? 'missing weights' : 'awaiting placement'} ›
-                  </Button>
-                ))}
+                {checks
+                  .filter(
+                    (check) =>
+                      check.filter !== "over_capacity" &&
+                      check.accounts.length > 0,
+                  )
+                  .map((check) => (
+                    <Button
+                      key={check.filter}
+                      disabled={locked || loading}
+                      onClick={() => onFix(check.filter)}
+                    >
+                      {check.accounts.length}{" "}
+                      {check.filter === "missing_weight"
+                        ? `missing weight${check.accounts.length === 1 ? "" : "s"}`
+                        : `account${check.accounts.length === 1 ? "" : "s"} awaiting placement`}{" "}
+                      ›
+                    </Button>
+                  ))}
                 {overCapacity.clans > 0 && (
-                  <Button className="publication-capacity-warning" disabled={locked || loading} onClick={() => onFix('over_capacity')}>
-                    {overCapacity.clans} clans over capacity · +{overCapacity.players} ›
+                  <Button
+                    className="publication-capacity-warning"
+                    disabled={locked || loading}
+                    onClick={() => onFix("over_capacity")}
+                  >
+                    {overCapacity.clans} clan
+                    {overCapacity.clans === 1 ? "" : "s"} over capacity · +
+                    {overCapacity.players} ›
                   </Button>
                 )}
                 {!hasWarnings && <span>Checks clear</span>}
               </div>
             </section>
 
-            <section className="publication-finalize" aria-label="Publish roster">
-              <JoiningInstructionsEditor value={instructions} onChange={setInstructions}
-                disabled={locked || loading || archived || !canManage} />
+            <section
+              className="publication-finalize"
+              aria-label="Publish roster"
+            >
+              <JoiningInstructionsEditor
+                value={instructions}
+                onChange={setInstructions}
+                disabled={locked || loading || archived || !canManage}
+              />
               {draft.preview.unassigned_count > 0 && (
                 <label className="publication-ack">
                   <input
                     type="checkbox"
                     checked={acknowledged}
                     disabled={locked}
-                    onChange={event => setAcknowledged(event.target.checked)}
+                    onChange={(event) => setAcknowledged(event.target.checked)}
                   />
-                  <span>I understand {draft.preview.unassigned_count} account{draft.preview.unassigned_count === 1 ? ' is' : 's are'} still awaiting placement and will appear that way to members.</span>
+                  <span>
+                    I understand {draft.preview.unassigned_count} account
+                    {draft.preview.unassigned_count === 1
+                      ? " is"
+                      : "s are"}{" "}
+                    still awaiting placement and will appear that way to
+                    members.
+                  </span>
                 </label>
               )}
-              {archived && <p className="inline-reason">This season is archived. Its roster cannot be published or republished.</p>}
-              {!draft.preview.accounts.length && <p className="inline-reason">No signed-up accounts are in this roster yet.</p>}
-              <Button variant="primary" icon={Send} disabled={!canPublish} onClick={() => setConfirmRevision(draft.draft_revision)}>
-                {busy ? 'Publishing…' : draft.published ? 'Publish updated roster' : 'Publish roster'}
+              {!draft.preview.accounts.length && (
+                <p className="inline-reason">
+                  No signed-up accounts are in this roster yet.
+                </p>
+              )}
+              <Button
+                variant="primary"
+                icon={Send}
+                disabled={!canPublish}
+                onClick={() => setConfirmRevision(draft.draft_revision)}
+              >
+                {busy
+                  ? "Publishing…"
+                  : draft.published
+                    ? "Publish updated roster"
+                    : "Publish roster"}
               </Button>
             </section>
             <details className="publication-preview">
-              <summary>Full roster preview · Main {poolCounts.main} · Lazy {poolCounts.lazy} ›</summary>
+              <summary>
+                Full roster preview · Main {poolCounts.main} · Lazy{" "}
+                {poolCounts.lazy} ›
+              </summary>
               <div className="publication-preview-filters">
-                <CwlPoolTabs value={pool} onChange={setPool} disabled={locked || loading} />
+                <CwlPoolTabs
+                  value={pool}
+                  onChange={setPool}
+                  disabled={locked || loading}
+                />
                 <label>
                   Find an account or clan
                   <input
                     type="search"
                     value={rosterSearch}
                     disabled={locked || loading}
-                    onChange={event => setRosterSearch(event.target.value)}
+                    onChange={(event) => setRosterSearch(event.target.value)}
                     placeholder="Name, tag, pool, or clan"
                   />
                 </label>
               </div>
-              {query && <p className="publication-result-count">{visibleCount} matching account{visibleCount === 1 ? '' : 's'}</p>}
+              {query && (
+                <p className="publication-result-count">
+                  {visibleCount} matching account{visibleCount === 1 ? "" : "s"}
+                </p>
+              )}
               {visibleGroups.length ? (
                 <div className="publication-groups">
-                  {visibleGroups.map(group => (
-                    <details key={`${group.tag}:${query}`} className="publication-group" open={!!query}>
+                  {visibleGroups.map((group) => (
+                    <details
+                      key={`${group.tag}:${query}`}
+                      className="publication-group"
+                      open={!!query}
+                    >
                       <summary>
                         <strong>{group.name}</strong>
-                        <span className={group.capacity && group.total > group.capacity ? 'publication-over' : group.total === group.capacity ? 'publication-full' : ''}>
-                          {group.tag === 'unassigned' ? `${group.total} accounts` : `${group.tag} · ${group.total} / ${group.capacity ?? '—'}`}
-                          {group.capacity && group.total > group.capacity ? ` · +${group.total - group.capacity} over` : ''}
+                        <span
+                          className={
+                            group.total === group.capacity
+                              ? "publication-full"
+                              : "publication-clan-meta"
+                          }
+                        >
+                          {group.tag === "unassigned"
+                            ? `${group.total} account${group.total === 1 ? "" : "s"}`
+                            : `${group.tag} · ${group.total} / ${group.capacity ?? "—"}`}
+                          {group.capacity && group.total > group.capacity ? (
+                            <span className="publication-over">{` · +${group.total - group.capacity} over`}</span>
+                          ) : null}
                         </span>
                       </summary>
                       <div className="publication-list">
-                        {group.accounts.map(account => (
+                        {group.accounts.map((account) => (
                           <div key={account.tag} className="publication-row">
                             <TownHallIcon level={account.town_hall} />
                             <div>
                               <strong>{account.player_name}</strong>
-                              <small>TH {account.town_hall ?? '—'} · {account.tag} · {account.pool === 'main' ? 'Main' : 'Lazy'} CWL</small>
+                              <small>
+                                TH {account.town_hall ?? "—"} · {account.tag} ·{" "}
+                                {account.pool === "main" ? "Main" : "Lazy"} CWL
+                              </small>
                             </div>
                             <StaffPlayerButton
                               rosterUi
@@ -402,7 +535,11 @@ export default function PublicationWorkspace({
                               onBusy={setEditBusy}
                               onOpenChange={setEditOpen}
                             >
-                              Details<span className="publication-visually-hidden"> for {account.player_name}</span>
+                              Details
+                              <span className="publication-visually-hidden">
+                                {" "}
+                                for {account.player_name}
+                              </span>
                             </StaffPlayerButton>
                           </div>
                         ))}
@@ -411,30 +548,54 @@ export default function PublicationWorkspace({
                   ))}
                 </div>
               ) : draft.preview.accounts.length ? (
-                <p>No {pool === 'main' ? 'Main' : 'Lazy'} accounts match this view.</p>
+                <p>
+                  No {pool === "main" ? "Main" : "Lazy"} accounts match this
+                  view.
+                </p>
               ) : (
                 <p>No signup accounts are in the working roster.</p>
               )}
             </details>
             {draft.published && canManage && (
               <section className="publication-hide" aria-label="Hide roster">
-                <Button variant="danger" icon={EyeOff} disabled={locked || loading || !!error}
-                  onClick={() => setHideTarget({ revision: draft.draft_revision, version: draft.published!.version })}>
+                <Button
+                  variant="danger"
+                  icon={EyeOff}
+                  disabled={locked || loading || !!error}
+                  onClick={() =>
+                    setHideTarget({
+                      revision: draft.draft_revision,
+                      version: draft.published!.version,
+                    })
+                  }
+                >
                   Hide roster from members
                 </Button>
               </section>
             )}
-
-
           </>
         )}
       </div>
-      {seasonId && step === 'announce' && (
+      {seasonId && step === "announce" && (
         <div>
-          <ManageBridgeWorkspace onDirty={setAnnouncementDirty} onBusy={setAnnouncementBusy} seasonId={seasonId} publicationVersion={draft?.published?.version ?? null} />
-          <details className="card" onToggle={event => setImagesOpen(event.currentTarget.open)}>
+          <ManageBridgeWorkspace
+            onDirty={setAnnouncementDirty}
+            onBusy={setAnnouncementBusy}
+            seasonId={seasonId}
+            publicationVersion={draft?.published?.version ?? null}
+          />
+          <details
+            className="card"
+            onToggle={(event) => setImagesOpen(event.currentTarget.open)}
+          >
             <summary>Clan roster images &amp; testing</summary>
-            {imagesOpen && <ClanRosterImages key={seasonId} seasonId={seasonId} version={draft?.published?.version ?? null} />}
+            {imagesOpen && (
+              <ClanRosterImages
+                key={seasonId}
+                seasonId={seasonId}
+                version={draft?.published?.version ?? null}
+              />
+            )}
           </details>
         </div>
       )}

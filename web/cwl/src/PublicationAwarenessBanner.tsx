@@ -31,9 +31,7 @@ export default function PublicationAwarenessBanner({
         {published && (
           <p>
             <span className="publication-awareness-date">
-              Published{" "}
-              {publicationDate(published.published_at)}
-              .
+              Published {publicationDate(published.published_at)}.
             </span>{" "}
             Placement changes made since then are draft only.
           </p>

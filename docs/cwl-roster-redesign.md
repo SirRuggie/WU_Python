@@ -206,12 +206,7 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 
 ## Finalize read metadata (Ruggie-approved backend extension)
 
-Finalize requires a backend release from an isolated release directory and a service
-restart, following the backend release procedure. The draft response adds
-`last_publication` (latest version including withdrawn, publication/withdrawal dates
-and joining instructions) and `next_version` (the publish path's season-scoped
-MAX + 1). `published` retains its active-only meaning. This is read-only: no schema
-or publication/withdrawal write-path change. No deployment is part of this batch.
+See the [approved Finalize read metadata extension](dashboard-backend-releases.md#finalize-read-metadata-ruggie-approved-backend-extension).
 
 ## Decisions — Finalize roster (2026-10-27)
 
@@ -243,10 +238,6 @@ Status: implemented on `codex/finalize`, pending review; no merge, tag or deploy
 9. One Refresh draft action; errors point to it. Change comparison is fetched only
    while Review is shown; `changesReady`, explicit confirmation and revision checks
    remain. No automatic publication or notification.
-
-Approved backend exception: read-only draft `last_publication` and `next_version`;
-no schema or write-path changes. This batch needs an isolated backend release and
-restart when separately authorized. See `dashboard-backend-releases.md`.
 
 Later: Version history on Finalize (number, time, who, counts, hidden) via a new
 read-only endpoint. The separate flow batch (step strip/sidebar/renames) is not

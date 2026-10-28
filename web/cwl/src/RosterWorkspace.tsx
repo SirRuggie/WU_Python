@@ -156,7 +156,13 @@ export default function RosterWorkspace({
     if (appliedInitialReadiness.current) return;
     appliedInitialReadiness.current = true;
     if (initialReadiness !== "all") {
-      setMode(initialReadiness === "missing_weight" ? "weights" : initialReadiness === "over_capacity" ? "compare" : "assign");
+      setMode(
+        initialReadiness === "missing_weight"
+          ? "weights"
+          : initialReadiness === "over_capacity"
+            ? "compare"
+            : "assign",
+      );
       setReleasePreferences((current) => ({
         ...current,
         statuses: initialReadiness === "unassigned" ? ["unassigned"] : [],

@@ -11,10 +11,12 @@ export default function PublicationChanges({
   seasonId,
   draft,
   onReady,
+  archived = false,
 }: {
   seasonId: string;
   draft: PublicationDraft;
   onReady: (ready: boolean) => void;
+  archived?: boolean;
 }) {
   const [result, setResult] = useState<ReturnType<
     typeof publicationChanges
@@ -64,7 +66,18 @@ export default function PublicationChanges({
       className="publication-change-list"
       aria-label="Changes to publish"
     >
-      <h3>Publishing creates version {draft.next_version}</h3>
+      {archived ? (
+        <p className="inline-reason">
+          This season is archived. Its roster cannot be published or
+          republished.
+        </p>
+      ) : (
+        <h3>
+          {draft.next_version == null
+            ? "Publishing creates a new version"
+            : `Publishing creates version ${draft.next_version}`}
+        </h3>
+      )}
       <p>For Main and Lazy · no Discord message is sent</p>
       {error ? (
         <p role="alert">{error} Use Refresh draft to try again.</p>
@@ -76,8 +89,7 @@ export default function PublicationChanges({
             {(expanded ? result.lines : result.lines.slice(0, 4)).map(
               (line) => (
                 <li key={line.tag}>
-                  <strong>{line.name}</strong>
-                  <span>{line.text}</span>
+                  <strong>{line.name}</strong> <span>{line.text}</span>
                 </li>
               ),
             )}

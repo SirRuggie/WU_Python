@@ -35,8 +35,10 @@
   margin: 6px 0;
 }
 .finalize-review .publication-change-list li {
+  display: block;
   padding: 3px 0;
   font-size: 13px;
+  line-height: 1.3;
 }
 .finalize-review .publication-change-list > p,
 .finalize-review .joining-instructions-editor > p,
@@ -188,9 +190,6 @@
 .finalize-review > .page-head {
   margin-bottom: 12px;
 }
-.finalize-review .publication-change-list li {
-  line-height: 1.3;
-}
 .finalize-review .publication-change-list > p {
   margin: 5px 0;
   line-height: 1.4;
@@ -226,6 +225,15 @@
   }
 }
 
+.finalize-review .publication-change-list li strong {
+  margin-right: 0.4em;
+}
+.finalize-review .publication-change-list li strong::after {
+  content: none;
+}
+.finalize-review .publication-group summary .publication-clan-meta {
+  color: var(--roster-text-muted);
+}
 .manage-bridge-workspace{margin:0 0 35px}
 .manage-bridge-workspace .section-heading{margin-bottom:12px}
 .manage-bridge-workspace .section-heading p{max-width:68ch}
