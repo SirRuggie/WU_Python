@@ -10,6 +10,7 @@ export type RosterMenuOption = {
   value: string;
   label: string;
   disabled?: boolean;
+  description?: string;
   icon?: LucideIcon;
 };
 
@@ -104,11 +105,7 @@ export default function RosterMenu({
                     key={option.value}
                     id={option.value}
                     textValue={option.label}
-                    aria-label={
-                      option.value === value
-                        ? `${option.label}, selected`
-                        : option.label
-                    }
+                    aria-label={`${option.label}${option.value === value ? ", selected" : ""}${option.description ? `. ${option.description}` : ""}`}
                     isDisabled={option.disabled}
                     className="roster-menu-item"
                     onAction={() => activate(option.value)}
@@ -118,6 +115,11 @@ export default function RosterMenu({
                     )}
                     <span className="roster-menu-item-label">
                       {option.label}
+                      {option.description && (
+                        <small className="roster-menu-item-description">
+                          {option.description}
+                        </small>
+                      )}
                     </span>
                     {option.value === value && (
                       <Check

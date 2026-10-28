@@ -353,3 +353,13 @@
     outline-offset: 0;
   }
 }
+
+.roster-menu-item-description {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--roster-text-muted);
+  -webkit-text-fill-color: currentColor;
+  white-space: normal;
+}

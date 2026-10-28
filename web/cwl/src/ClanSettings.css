@@ -1,0 +1,76 @@
+.clan-settings-list,
+.clan-settings-group {
+  display: grid;
+  gap: 6px;
+}
+.clan-settings-group h3 {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--roster-text-muted);
+}
+.clan-settings .clan-settings-row {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 64px;
+  padding: 7px 10px;
+}
+.clan-settings-row .roster-clan-chip-content {
+  gap: 4px;
+}
+.clan-settings-row .roster-clan-chip-top strong,
+.clan-settings-row .roster-clan-chip-count {
+  font-size: 15px;
+  font-weight: 700;
+}
+.clan-settings-row .roster-clan-chip-top strong {
+  flex: 1;
+}
+.clan-settings-row .roster-clan-chip-top {
+  flex-wrap: nowrap;
+}
+.clan-settings-description {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+}
+.shell .clan-settings-row,
+.shell .clan-settings-row * {
+  -webkit-text-fill-color: currentColor;
+}
+.clan-settings-row {
+  color: var(--roster-text);
+}
+.clan-settings-panel .roster-menu-current,
+.clan-settings-panel input {
+  font-size: 15px;
+  font-weight: 400;
+}
+.clan-settings-panel .roster-menu-label,
+.clan-settings-panel label,
+.clan-settings-panel dt {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+}
+.clan-settings-panel p,
+.clan-settings-panel dd {
+  font-size: 14px;
+}
+.clan-settings-panel .roster-menu {
+  margin-block: 12px;
+}
+.clan-settings-weights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.clan-settings-moved {
+  font-size: 14px;
+}
+.clan-settings-panel .roster-menu-item-description {
+  display: block;
+  font-size: 12px;
+  color: var(--roster-text-muted);
+  white-space: normal;
+}

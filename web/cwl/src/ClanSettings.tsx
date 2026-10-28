@@ -1,0 +1,323 @@
+import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
+import type { Pool } from "./api";
+import type { RosterClan } from "./roster";
+import { parseWeightK, weightInputText } from "./roster";
+import { comparisonWeightRange } from "./comparePresentation";
+import {
+  poolChangeReason,
+  settingsClans,
+  type ClanRules,
+} from "./clanSettingsModel";
+import ActionPanel from "./ActionPanel";
+import RosterMenu from "./rosterUi/Menu";
+import { Button, Input, ProgressBar } from "./rosterUi/primitives";
+import "./RosterClanChips.css";
+import "./ClanSettings.css";
+
+type Props = {
+  clans: RosterClan[];
+  pool: Pool;
+  busy: boolean;
+  archived: boolean;
+  saveError?: string;
+  onPoolChange: (pool: Pool) => void;
+  onDirty: (dirty: boolean) => void;
+  onLeave: () => boolean;
+  onSave: (clan: RosterClan, rules: ClanRules) => Promise<boolean>;
+};
+
+export default function ClanSettings(props: Props) {
+  const [tag, setTag] = useState<string | null>(null);
+  const [trigger, setTrigger] = useState<HTMLElement | null>(null);
+  const [moved, setMoved] = useState<{
+    tag: string;
+    name: string;
+    pool: Pool;
+  } | null>(null);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const clan = props.clans.find((item) => item.tag === tag && !item.archived);
+  const visible = settingsClans(props.clans, props.pool);
+  useEffect(() => {
+    setTag(null);
+  }, [props.pool]);
+  useEffect(() => {
+    if (!highlight) return;
+    const row = Array.from(
+      list.current?.querySelectorAll<HTMLButtonElement>("[data-clan]") || [],
+    ).find((item) => item.dataset.clan === highlight);
+    row?.scrollIntoView({ block: "nearest", behavior: "auto" });
+    row?.focus({ preventScroll: true });
+  }, [highlight, props.pool]);
+  const close = () => {
+    if (!props.onLeave()) return false;
+    setTag(null);
+    return true;
+  };
+  return (
+    <section className="roster-ui clan-settings" aria-label="Clan settings">
+      {moved && (
+        <div role="status" className="clan-settings-moved">
+          {moved.name} moved to {moved.pool === "main" ? "Main" : "Lazy"} CWL ·{" "}
+          <Button
+            onClick={() => {
+              props.onPoolChange(moved.pool);
+              setHighlight(moved.tag);
+            }}
+            disabled={props.busy}
+          >
+            View
+          </Button>
+        </div>
+      )}
+      <div ref={list} className="clan-settings-list">
+        {[null, props.pool].map((group) => {
+          const rows = visible.filter((item) => item.pool === group);
+          return rows.length ? (
+            <div key={group || "unset"} className="clan-settings-group">
+              {!group && <h3>Needs a pool</h3>}
+              {rows.map((item) => (
+                <Button
+                  key={item.tag}
+                  data-clan={item.tag}
+                  className={`roster-clan-chip clan-settings-row${highlight === item.tag ? " is-selected" : ""}`}
+                  disabled={props.busy}
+                  onClick={(event) => {
+                    setTrigger(event.currentTarget);
+                    setTag(item.tag);
+                    setHighlight(null);
+                  }}
+                >
+                  <span className="roster-clan-chip-content">
+                    <span className="roster-clan-chip-top">
+                      <strong>{item.name}</strong>
+                      <span className="roster-clan-chip-count">
+                        {item.assigned_count} / {item.capacity ?? "—"}
+                      </span>
+                    </span>
+                    <span className="clan-settings-description">
+                      {item.pool && item.capacity
+                        ? `${item.capacity}v${item.capacity} · ${comparisonWeightRange(item) || "Any weight"} · ${item.cwl_league || "League unavailable"}`
+                        : "Not set up"}
+                    </span>
+                    {item.capacity && (
+                      <ProgressBar
+                        value={item.assigned_count}
+                        max={item.capacity}
+                        label={`${item.name} assigned accounts`}
+                      />
+                    )}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          ) : null;
+        })}
+        {!visible.length && <p>Add a hosting clan in Seasons & clans first.</p>}
+      </div>
+      {clan && (
+        <ClanSettingsEditor
+          key={clan.tag}
+          clan={clan}
+          busy={props.busy}
+          archived={props.archived}
+          saveError={props.saveError}
+          trigger={trigger}
+          onClose={close}
+          onDirty={props.onDirty}
+          onSave={async (rules) => {
+            const saved = await props.onSave(clan, rules);
+            if (saved) {
+              setTag(null);
+              if (clan.pool !== rules.pool)
+                setMoved({ tag: clan.tag, name: clan.name, pool: rules.pool });
+            }
+            return saved;
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+export function ClanSettingsEditor({
+  clan,
+  busy,
+  archived,
+  saveError,
+  trigger,
+  onClose,
+  onDirty,
+  onSave,
+}: {
+  clan: RosterClan;
+  busy: boolean;
+  archived: boolean;
+  saveError?: string;
+  trigger: HTMLElement | null;
+  onClose: () => boolean;
+  onDirty: (dirty: boolean) => void;
+  onSave: (rules: ClanRules) => Promise<boolean>;
+}) {
+  const values = () => ({
+    pool: clan.pool && clan.capacity ? clan.pool : "",
+    capacity: clan.pool && clan.capacity ? String(clan.capacity) : "",
+    min: weightInputText(clan.min_weight),
+    max: weightInputText(clan.max_weight),
+  });
+  const [base, setBase] = useState(values);
+  const [draft, setDraft] = useState(values);
+  const [error, setError] = useState("");
+  const submitting = useRef(false);
+  const changed = JSON.stringify(base) !== JSON.stringify(draft);
+  const stale = JSON.stringify(base) !== JSON.stringify(values());
+  const latest = () => {
+    setBase(values());
+    setDraft(values());
+    setError("");
+  };
+  useEffect(() => {
+    if (!changed && stale) latest();
+  }, [clan, changed, stale]);
+  useEffect(() => {
+    onDirty(changed);
+    return () => onDirty(false);
+  }, [changed, onDirty]);
+  const submit = async () => {
+    if (
+      busy ||
+      submitting.current ||
+      archived ||
+      stale ||
+      !changed ||
+      !draft.pool ||
+      !draft.capacity
+    )
+      return;
+    try {
+      const min = parseWeightK(draft.min),
+        max = parseWeightK(draft.max);
+      if (min !== null && max !== null && min >= max)
+        throw new Error("Maximum weight must be greater than minimum weight.");
+      if (poolChangeReason(clan, draft.pool as Pool)) return;
+      submitting.current = true;
+      setError("");
+      if (
+        await onSave({
+          pool: draft.pool as Pool,
+          capacity: Number(draft.capacity),
+          min_weight: min,
+          max_weight: max,
+        })
+      )
+        setBase(draft);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Settings could not be saved.",
+      );
+    } finally {
+      submitting.current = false;
+    }
+  };
+  return (
+    <ActionPanel
+      title={`${clan.name} · ${clan.tag}`}
+      trigger={trigger}
+      onClose={onClose}
+      busy={busy}
+      className="roster-ui clan-settings-panel"
+      footer={
+        !archived && (
+          <Button
+            variant="primary"
+            icon={Check}
+            disabled={
+              busy || stale || !changed || !draft.pool || !draft.capacity
+            }
+            onClick={() => void submit()}
+          >
+            {clan.pool && clan.capacity ? "Save settings" : "Set up clan"}
+          </Button>
+        )
+      }
+    >
+      {archived ? (
+        <>
+          <p>Archived season · settings are read-only.</p>
+          <dl>
+            <dt>Pool</dt>
+            <dd>
+              {clan.pool
+                ? `${clan.pool === "main" ? "Main" : "Lazy"} CWL`
+                : "Not set up"}
+            </dd>
+            <dt>CWL war size</dt>
+            <dd>
+              {clan.capacity
+                ? `${clan.capacity}v${clan.capacity}`
+                : "Not set up"}
+            </dd>
+            <dt>Range</dt>
+            <dd>{comparisonWeightRange(clan) || "Any weight"}</dd>
+          </dl>
+        </>
+      ) : (
+        <>
+          <p className="clan-settings-description">
+            Auto-place uses these settings. Existing assignments don't change.
+          </p>
+          <RosterMenu
+            label="Pool"
+            value={draft.pool}
+            disabled={busy}
+            onValueChange={(pool) => setDraft({ ...draft, pool })}
+            options={(["main", "lazy"] as const).map((pool) => ({
+              value: pool,
+              label: `${pool === "main" ? "Main" : "Lazy"} CWL`,
+              disabled: !!poolChangeReason(clan, pool),
+              description: poolChangeReason(clan, pool),
+            }))}
+          />
+          <RosterMenu
+            label="CWL war size"
+            value={draft.capacity}
+            disabled={busy}
+            onValueChange={(capacity) => setDraft({ ...draft, capacity })}
+            options={[
+              { value: "15", label: "15v15" },
+              { value: "30", label: "30v30" },
+            ]}
+          />
+          <div className="clan-settings-weights">
+            <Input
+              label="Minimum weight"
+              value={draft.min}
+              disabled={busy}
+              onChange={(event) =>
+                setDraft({ ...draft, min: event.target.value })
+              }
+            />
+            <Input
+              label="Maximum weight"
+              value={draft.max}
+              disabled={busy}
+              onChange={(event) =>
+                setDraft({ ...draft, max: event.target.value })
+              }
+            />
+          </div>
+          {(error || saveError) && <p role="alert">{error || saveError}</p>}
+          {stale && changed && (
+            <p role="alert">
+              Clan settings changed elsewhere. Your edits are preserved.{" "}
+              <Button disabled={busy} onClick={latest}>
+                Discard edits and use latest settings
+              </Button>
+            </p>
+          )}
+        </>
+      )}
+    </ActionPanel>
+  );
+}
