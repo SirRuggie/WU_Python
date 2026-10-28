@@ -154,18 +154,14 @@ assert(Number.isInteger(port) && port >= 8900 && port <= 8999);
                   row.className = "roster-player-placement is-elsewhere";
                   row.innerHTML = `<strong>${assigned}</strong><span class="roster-player-current">→ <span class="player-current-clan is-elsewhere">${current}</span> · ${age}</span>`;
                   const suffix = row.querySelector(".roster-player-current");
-                  const range = document.createRange();
-                  range.selectNodeContents(row);
                   results.push({
                     assigned,
                     current,
                     age,
                     oneLine:
-                      new Set(
-                        [...range.getClientRects()]
-                          .filter((rect) => rect.height > 0)
-                          .map((rect) => Math.round(rect.top)),
-                      ).size <= 2,
+                      getComputedStyle(row).whiteSpace === "nowrap" &&
+                      row.getBoundingClientRect().height <=
+                        parseFloat(getComputedStyle(row).lineHeight) + 1,
                     fits: suffix.scrollWidth <= suffix.clientWidth,
                     available: suffix.clientWidth,
                     needed: suffix.scrollWidth,
