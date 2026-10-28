@@ -1,13 +1,15 @@
+import DeclarationPlayerCard from "./DeclarationPlayerCard";
+import { declarationGroups } from "./declarationGroups";
 import { useMemo } from "react";
 import useDeclarationData from "./useDeclarationData";
 import { declarationSnapshot } from "./declarationData";
 import useStaffDetailsPage from "./useStaffDetailsPage";
-import StaffPlayerButton from "./StaffPlayerButton";
+
 import { hiddenPublicationStatus } from "./publicationStatus";
 import { Button } from "./rosterUi/primitives";
 import "./ArrivalCheck.css";
 export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
-  const { data, error, refresh } = useDeclarationData(seasonId);
+  const { data, error, refresh, records, now } = useDeclarationData(seasonId);
   const published =
     !!data?.publication.published &&
     data.arrival.source === "published" &&
@@ -60,18 +62,34 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
               changes members can't see yet
             </p>
           )}
-          {context?.roster.accounts.map((a) => (
-            <StaffPlayerButton
-              key={a.tag}
-              seasonId={seasonId}
-              tag={a.tag}
-              viewOnly="declaration"
-              publishedSnapshot={context}
-              order={context.roster.accounts.map((x) => x.tag)}
-            >
-              {a.player_name}
-            </StaffPlayerButton>
-          ))}
+          {context &&
+            declarationGroups(data, context.roster, records, now).map(
+              (group) => (
+                <section key={group.key}>
+                  <h2>
+                    {group.name} ·{" "}
+                    {group.readiness.ready ? "Ready" : "Not ready"} ·{" "}
+                    {group.readiness.arrivedCount}/{group.capacity ?? "—"} in
+                    clan
+                  </h2>
+                  {group.accounts.map((account) => (
+                    <DeclarationPlayerCard
+                      key={account.tag}
+                      account={account}
+                      clanName={group.name}
+                      record={records[account.tag]}
+                      now={now}
+                      request={{
+                        seasonId,
+                        viewOnly: "declaration",
+                        publishedSnapshot: context,
+                        order: group.accounts.map((a) => a.tag),
+                      }}
+                    />
+                  ))}
+                </section>
+              ),
+            )}
         </>
       )}
     </section>
