@@ -103,8 +103,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Phones use a swipeable clan-card row.
 - The unpublished-changes banner is amber, compact and not dismissible while pending; it names the published version/time, says placement changes are draft only, and offers permission-gated Finalize navigation. Signup changes are never labelled draft.
 
-- Compare readability (X3): row 1 starts with a 16px TownHallIcon, then the 15px/700 name and bold weight (a red No weight tag replaces missing weight); row 2 has TH, tag and lock in 12px muted text; row 3 has Now in, a 13px secondary clan name and 12px muted age (or No clan / Checking location…); row 4 has the location pill and wrapping range/family tags. A relevant publication note adds one muted fifth row. No Compare text is smaller than 12px. Cards retain the location tint, left edge, Details body action and 44px menu target.
-- Compare card fills use the shared lighter green/red/neutral tokens and a 4px colored left edge. Only the location pill retains semibold emphasis below row 1. Card gaps are consistently 6px; the row gap inside each card is 0px.
+- Compare cards use the Player card v2 rules below: 40px TownHallIcon, 16px bold name/weight, 5px rounded left edge. Shared one-line clan status replaces location status chips. Range/family warnings appear on a separate chip line only when applicable; a publication note adds one line. Card gap stays 6px and internal row gap stays 0.
 - Clan headings/counts use 15px/700 primary text, Total uses 14px/700, and supporting details use 12px/400 muted text. Tally numbers use green/red/neutral/amber with muted labels. Gold identifies only the selected rail border, never header text.
 
 ## Clan settings
@@ -157,13 +156,18 @@ Player card v2 (2026-10-28), superseding the earlier shared-card dimensions abov
 - Wide Accounts (>700px): 56px icon centered left; 18px bold name; metadata/location below; 22px bold weight centered right. Keep the 44px checkbox and 44px menu target. Emoji source and size=64 unchanged by Ruggie's choice; fallback is TH text.
 - Surface: existing base fill tokens, plus `--roster-card-glow-neutral/success/danger` top-to-bottom internal gradient. Rounded 5px left edge uses `--roster-card-edge-*`; no external glow. Gold selection/focus remains. Card-local muted, green and red text tokens meet 4.5:1 at the brightest gradient point (including hover).
 
-| Accounts location | Row 3 |
+| Location (both pages) | Row 3 |
 | --- | --- |
-| Assigned and in that clan | Green bold assigned clan · in clan · age |
-| Assigned elsewhere | Bold assigned clan → red current clan · age |
-| Not assigned | Muted Not assigned → current clan (in no clan if clanless) · age |
-| No result | Assigned clan / Not assigned · location not checked yet |
+| In assigned clan | Green bold assigned clan + nonshrinking green `In clan` pill + muted · age |
+| Assigned elsewhere | Bold assigned clan → red current clan name + muted · age |
+| Not assigned (Accounts) | Muted Not assigned → current clan (in no clan if clanless) · age |
+| No result (Accounts) | Assigned clan / Not assigned · location not checked yet |
+| Checking (Compare) | Column clan · Checking… |
 
-Keep row 3 on one line. Assigned name has priority: suffix shrinks/ellipsizes first. Ruggie's overflow exception (2026-10-28): if the assigned name alone is too long, it ellipsizes too and the suffix has zero visible width. Full text remains in the title and accessible description. Compare keeps its Now in / No clan / Checking location line, with red elsewhere-clan text and existing chips. The shared age formatter and ticking now are unchanged.
+One shared component renders both pages. Compare's column clan is the assigned clan; its former In this clan / Not in this clan / Checking chips are removed. Other warnings retain their own row, omitted when empty. No weight stays at the headline weight position.
+
+Keep row 3 on one line and clear of the menu hit area. Assigned name gets priority; the suffix ellipsizes first. If the assigned name alone is too long, it ellipsizes and the arrow suffix hides. The In clan pill never shrinks; its fixed width is reserved before the name. Full text stays in title and accessible words (hours and minutes). Determine same clan by tags; fall back to names only when a tag is missing. Never show the green text or pill before a completed location read. Only the current clan name is red, not its age.
+
+Glow top opacity: green/red 20%, neutral 8%, fading out by 85%; text, pills and clan-name tokens must pass 4.5:1 at that brightest point. The age formatter and ticking now remain unchanged.
 
 Item 6: withdrawn rosters with placements show the amber step dot; the Build banner shares Finalize's Hidden from members wording. Background metadata enrichment includes checked_at with the location name/tag/status so already-mounted cards render completed reads. Existing season/revision/request guards remain; no backend change.

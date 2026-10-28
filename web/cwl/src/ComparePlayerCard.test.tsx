@@ -16,6 +16,7 @@ const account = {
 } as RosterAccount;
 const clan = {
   tag: "#A",
+  name: "Assigned clan",
   min_weight: 150000,
   max_weight: 170000,
 } as RosterClan;
@@ -59,12 +60,17 @@ function visibleText(element: Element) {
 }
 it("shows a dot before the age but describes a comma for clan and no-clan locations", () => {
   for (const [location, label] of [
-    [record, "Now in Other clan"],
-    [{ ...record, current_clan_tag: null, current_clan_name: null }, "No clan"],
+    [record, "Other clan"],
+    [
+      { ...record, current_clan_tag: null, current_clan_name: null },
+      "in no clan",
+    ],
   ] as const) {
     const row = card(location).children[2];
-    expect(visibleText(row)).toBe(`${label}· 2m ago`);
-    expect(describedText(row)).toBe(`${label}, 2m ago`);
+    expect(visibleText(row)).toBe(`Assigned clan→ ${label} · 2m ago`);
+    expect(describedText(row)).toBe(
+      `Assigned clan: Assigned clan. Now in ${label === "in no clan" ? "no clan" : label}, checked 2 minutes ago.`,
+    );
   }
 });
 it("has four rows in order with the TH icon before the name, a separate Now in row and complete accessible description", () => {
@@ -72,7 +78,7 @@ it("has four rows in order with the TH icon before the name, a separate Now in r
   expect([...body.children].map((row) => row.className)).toEqual([
     "player-card-top compare-player-top",
     "player-card-meta compare-player-meta",
-    "compare-player-location",
+    "player-clan-status compare-player-location",
     "compare-player-tags",
   ]);
   expect(body.children[1].querySelector(".town-hall-icon")).toBeNull();
@@ -86,10 +92,12 @@ it("has four rows in order with the TH icon before the name, a separate Now in r
     body.children[0].querySelector(".town-hall-icon")?.getAttribute("alt"),
   ).toBe("Town Hall 18");
   expect(body.children[1].textContent).toContain("TH 18 · #P2Y");
-  expect(describedText(body.children[2])).toBe("Now in Other clan, 2m ago");
+  expect(describedText(body.children[2])).toBe(
+    "Assigned clan: Assigned clan. Now in Other clan, checked 2 minutes ago.",
+  );
   expect(body.children[2].querySelector(".compare-location-pill")).toBeNull();
   expect(body.children[3].textContent).toBe(
-    "Not in this clan, Outside weight range, Outside family",
+    ", Outside weight range, Outside family",
   );
   const ids = body.getAttribute("aria-describedby")!.split(" ");
   expect(
@@ -115,11 +123,11 @@ it("checking has its own row with no age; No clan retains age", () => {
       onDetails={() => {}}
     />,
   );
-  expect(host.querySelector(".compare-player-location")?.textContent).toBe(
-    "Checking location…",
+  expect(visibleText(host.querySelector(".compare-player-location")!)).toBe(
+    "Assigned clan· Checking…",
   );
   expect(host.querySelector(".compare-location-age")).toBeNull();
-  expect(host.querySelector(".compare-player-tags")?.textContent).toContain(
+  expect(host.querySelector(".compare-player-tags")?.textContent).not.toContain(
     "Checking…",
   );
   expect(
@@ -127,7 +135,9 @@ it("checking has its own row with no age; No clan retains age", () => {
       card({ ...record, current_clan_tag: null, current_clan_name: null })
         .children[2],
     ),
-  ).toBe("No clan, 2m ago");
+  ).toBe(
+    "Assigned clan: Assigned clan. Now in no clan, checked 2 minutes ago.",
+  );
   expect(host.querySelector(".compare-player-body")?.children).toHaveLength(4);
 });
 it("a publication note adds exactly one fifth row and missing weight replaces the headline number", () => {
@@ -146,7 +156,7 @@ it.each([360, 700, 1440])(
   (width) => {
     const body = card();
     const w = new Window({ width });
-    w.document.head.innerHTML = `<style>${readFileSync("src/PlayerCard.css", "utf8")}</style>`;
+    w.document.head.innerHTML = `<style>${readFileSync("src/rosterUi/tokens.css", "utf8")}${readFileSync("src/PlayerCard.css", "utf8")}</style>`;
     w.document.body.innerHTML = `<main class="roster-ui">${body.parentElement!.outerHTML}</main>`;
     const article = w.document.querySelector("article")!;
     expect(article.classList.contains("player-card-compact")).toBe(true);
@@ -162,10 +172,32 @@ it.each([360, 700, 1440])(
         .fontSize,
     ).toBe("16px");
     expect(
-      article
-        .querySelector(".compare-location-name")
-        ?.classList.contains("is-elsewhere"),
-    ).toBe(true);
+      w.getComputedStyle(article.querySelector(".player-current-clan")!).color,
+    ).toBe("#ffdbde");
+    expect(
+      w.getComputedStyle(article.querySelector(".player-clan-status")!)
+        .paddingRight,
+    ).toBe("40px");
     w.happyDOM.abort();
   },
 );
+
+it("puts In clan inline and omits the chip row entirely when there are no warnings", () => {
+  const body = card(
+    {
+      ...record,
+      current_clan_tag: "#A",
+      current_clan_name: "Assigned clan",
+      outside_family: false,
+    },
+    null,
+    160000,
+  );
+  expect(visibleText(body.children[2])).toBe("Assigned clanIn clan· 2m ago");
+  expect(body.querySelector(".player-in-clan-pill")?.textContent).toBe(
+    "In clan",
+  );
+  expect(body.querySelector(".compare-player-tags")).toBeNull();
+  expect(body.querySelector(".compare-location-pill")).toBeNull();
+  expect(body.children).toHaveLength(3);
+});

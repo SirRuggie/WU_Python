@@ -1,4 +1,4 @@
-import { publicationDate } from "./publicationStatus";
+import { publicationDate, hiddenPublicationStatus } from "./publicationStatus";
 import type { PublicationDraft, PublicationMeta } from "./publication";
 import { publicationReviewLabel } from "./publicationAwareness";
 import "./publicationAwareness.css";
@@ -29,7 +29,7 @@ export default function PublicationAwarenessBanner({
           {published
             ? `Members still see roster version ${published.version}`
             : lastPublication?.withdrawn_at
-              ? `Hidden from members · last published version ${lastPublication.version} on ${publicationDate(lastPublication.published_at)}`
+              ? hiddenPublicationStatus(lastPublication)
               : "Draft · members can't see placements yet"}
         </strong>
         {published && (

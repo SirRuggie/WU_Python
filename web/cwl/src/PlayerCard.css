@@ -128,7 +128,7 @@
 .player-card-meta svg {
   flex-shrink: 0;
 }
-.player-card-body > .roster-player-placement,
+.player-card-body > .player-clan-status,
 .player-card-body > .compare-player-location {
   grid-column: 2 / -1;
   grid-row: 3;
@@ -153,9 +153,6 @@
 .roster-ui .player-card > button.player-card-body:hover:not(:disabled) {
   background: var(--roster-card-hover);
 }
-.player-card .compare-location-name.is-elsewhere {
-  color: var(--roster-card-text-danger);
-}
 /* Accounts alone gains the wide layout; Compare remains compact at any width. */
 @media (min-width: 701px) {
   .roster-ui .player-card-responsive > button.player-card-body {
@@ -179,7 +176,7 @@
     line-height: 28px;
   }
   .player-card-responsive .player-card-meta,
-  .player-card-responsive .roster-player-placement {
+  .player-card-responsive .player-clan-status {
     grid-column: 2;
     padding-right: 0;
   }
@@ -196,4 +193,63 @@
 .player-card-compact .player-card-top > span:first-child {
   grid-row: 1 / 4;
   align-self: start;
+}
+
+/* One shared, single-line clan status. Keep menu hit areas clear. */
+.player-card .player-clan-status {
+  min-width: 0;
+  padding-right: 40px;
+}
+.player-card .roster-player-placement {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+}
+.player-card .roster-player-placement strong {
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--roster-text);
+}
+.player-card .roster-player-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--roster-text-muted);
+}
+.player-card .roster-player-current::before {
+  content: " ";
+  white-space: pre;
+}
+.player-card .roster-player-placement.is-in-clan strong {
+  color: var(--roster-card-text-success);
+  flex-shrink: 1;
+}
+.player-card .roster-player-placement.is-checking strong,
+.player-card .roster-player-placement.is-unassigned strong {
+  color: var(--roster-text-muted);
+  font-weight: 400;
+}
+.player-card .player-current-clan.is-elsewhere {
+  color: var(--roster-card-text-danger);
+}
+.player-card .player-in-clan-pill {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 18px;
+  border: 1px solid var(--roster-card-text-success);
+  border-radius: 999px;
+  color: var(--roster-card-text-success);
+  background: #204d35;
+}
+@media (min-width: 701px) {
+  .player-card-responsive .player-clan-status {
+    padding-right: 0;
+  }
 }

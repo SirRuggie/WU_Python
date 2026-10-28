@@ -231,7 +231,7 @@ it("prioritizes a long assigned name on one line with complete title and accessi
     "Assigned clan: Warriors United International Champions. Now in Other clan, checked 4 minutes ago.",
   );
   const style = document.createElement("style");
-  style.textContent = accountCss;
+  style.textContent = cardCss + accountCss;
   document.head.append(style);
   document.body.append(host);
   try {
@@ -249,7 +249,7 @@ it("prioritizes a long assigned name on one line with complete title and accessi
   }
 });
 it.each([
-  ["#A", "Home", true, "Home· in clan · 4m ago", "is-in-clan"],
+  ["#A", "Home", true, "HomeIn clan· 4m ago", "is-in-clan"],
   ["#B", "Elsewhere", true, "Home→ Elsewhere · 4m ago", "is-elsewhere"],
   [null, null, false, "Not assigned→ in no clan · 4m ago", "is-unassigned"],
 ] as const)(
@@ -297,3 +297,51 @@ it.each([360, 700, 701, 1440])(
     w.happyDOM.abort();
   },
 );
+
+it("never checked location with a matching tag cannot show the green in-clan pill", () => {
+  const host = document.createElement("div");
+  host.innerHTML = render({
+    account: {
+      ...account,
+      assigned_clan_tag: "#A",
+      current_clan_tag: "#A",
+      current_clan_name: "Home",
+    },
+    assignedClanName: "Home",
+  });
+  expect(host.querySelector(".is-in-clan")).toBeNull();
+  expect(host.querySelector(".player-in-clan-pill")).toBeNull();
+  expect(host.querySelector(".roster-player-placement")?.textContent).toContain(
+    "location not checked yet",
+  );
+});
+it("matches by tag first, falls back to name, colors only an elsewhere current name and keeps the pill nonshrinking", () => {
+  const w = new Window({ width: 360 });
+  w.document.head.innerHTML = `<style>${readFileSync("src/rosterUi/tokens.css", "utf8")}${cardCss}${accountCss}</style>`;
+  for (const [tag, name, inClan] of [
+    ["#A", "Different display name", true],
+    [null, "Home", true],
+    [null, "Warriors United International Champions", false],
+    ["#B", "Home", false],
+  ] as const) {
+    w.document.body.innerHTML = `<main class="roster-ui">${render({ account: { ...account, assigned_clan_tag: "#A", current_clan_tag: tag, current_clan_name: name, current_clan_checked_at: "2026-10-28T12:00:00Z" }, assignedClanName: "Home", now: Date.parse("2026-10-28T14:05:00Z") })}</main>`;
+    const pill = w.document.querySelector(".player-in-clan-pill");
+    expect(!!pill).toBe(inClan);
+    if (pill) {
+      expect(w.getComputedStyle(pill).flexShrink).toBe("0");
+      expect(
+        w.document.querySelector(".roster-player-sr-only")?.textContent,
+      ).toContain("In clan, checked 2 hours 5 minutes ago.");
+    } else {
+      const nameColor = w.getComputedStyle(
+        w.document.querySelector(".player-current-clan")!,
+      ).color;
+      expect(nameColor).toBe("#ffdbde");
+      expect(
+        w.getComputedStyle(w.document.querySelector(".roster-player-current")!)
+          .color,
+      ).not.toBe(nameColor);
+    }
+  }
+  w.happyDOM.abort();
+});
