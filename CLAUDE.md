@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current CWL flow frontend: `/home/ruggie/.local/share/wu-dashboard/releases/61290a4ce2b87611119483d6376b879a675aeb81/`
+  - Current signup-changes frontend: `/home/ruggie/.local/share/wu-dashboard/releases/4404c3672872ebff706519402efa4ee9940d3a60/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,17 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend — Player card 3:** `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`, tag `player-card-3`, PR #30.
+- **Current frontend — Signup changes:** `4404c3672872ebff706519402efa4ee9940d3a60`, tag `signup-changes-1`, PR #31.
+  - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/4404c3672872ebff706519402efa4ee9940d3a60/`.
+  - Backend unchanged: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`; PID 1053095, no restart.
+  - Previous frontend / rollback: `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`.
+  - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 00170063e15b7df43bd769f2c97b0a69bd0ebdf5` (frontend only).
+  - Backup: `.local/signup-changes-backup-20261028T191131Z/dashboard.sqlite3`; 1,138,688 bytes, integrity OK, all 54 table counts matched.
+  - Deployment signups/assigned/locks unchanged: Main 19/18/18; Lazy 91/90/71. Publication version 1 remains withdrawn; member season 1/revision 0 unchanged. Unreviewed signup changes 1 → 1; reviewed rows 41 → 41.
+  - Public entry `index-DptKfiRQ.js` and roster hashes matched the manifest; 657 frontend tests, TypeScript/build and layout 10/10 passed. Evidence: `/tmp/wu-signup-release/live-proof.json`.
+  - Claude read-only smoke PASSED, relayed by Ruggie: at 360px the shortage-first alert fits, panel opens/closes without review (1 still unreviewed), summary shows “+21 clans with no players”, inline emoji is 22px, cards are 74px, and no errors occurred.
+
+- **Previous frontend — Player card 3:** `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`, tag `player-card-3`, PR #30.
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/00170063e15b7df43bd769f2c97b0a69bd0ebdf5/`.
   - Backend unchanged: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`; PID 1053095, no restart.
   - Previous frontend / rollback: `374e0995280dad7d13483a2fa655975d0af72280`.

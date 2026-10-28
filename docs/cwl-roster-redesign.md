@@ -4,7 +4,9 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-28)
 
-- **Player card 3 frontend released:** `player-card-3`, `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`, PR #30. Backend remains `61290a4` without restart; previous frontend `374e099`. Scripted hashes/counts passed; Claude read-only smoke passed (release, entry, all 19 Main cards have single-line metadata, no errors). Signup-changes follows on a separate branch from origin/main.
+- **Signup changes frontend released:** `signup-changes-1`, `4404c3672872ebff706519402efa4ee9940d3a60`, PR #31. Backend remains `61290a4` without restart; previous frontend/rollback `0017006`. Public `index-DptKfiRQ.js` and roster hashes match the manifest; protected deployment counts, publication/member season, and unreviewed signup changes (1) are unchanged. 657 frontend tests, TypeScript/build and layout 10/10 passed. Claude read-only 360px smoke passed: alert fits, panel opens/closes without review, “+21 clans with no players”, inline 22px emoji, 74px cards, no errors. Backup `.local/signup-changes-backup-20261028T191131Z/`. Batch complete; Announcements awaits a refreshed prompt from Claude.
+
+- **Player card 3 frontend released:** `player-card-3`, `00170063e15b7df43bd769f2c97b0a69bd0ebdf5`, PR #30. Backend remains `61290a4` without restart; previous frontend `374e099`. Scripted hashes/counts passed; Claude read-only smoke passed (release, entry, all 19 Main cards have single-line metadata, no errors). Signup changes has since released as recorded above.
 
 - **CWL flow + shared player card released:** `cwl-flow-1`, `61290a4ce2b87611119483d6376b879a675aeb81`, PRs #27/#28. Frontend and isolated backend deployed; scripted hashes/cwd/counts and Claude read-only click smoke passed. Both rollback targets are `1a8b035`; verified backup `.local/cwl-flow-backup-20261028T145938Z/`.
 
