@@ -7,6 +7,29 @@ import test_cwl_web_foundation as foundation
 from test_cwl_dashboard_integration import MemoryMongo
 from cwl_web.manage_bridge import GUILD_ID
 from utils import cwl_campaign
+from cwl_web.member_timing import utc_timing
+
+
+def test_utc_math_and_null_never_produce_naive_dates():
+    assert utc_timing(None) == {'signup_deadline': None, 'placements_by': None}
+    assert utc_timing('2026-10-30T17:00:00') == utc_timing(None)
+    assert utc_timing('2026-10-30T21:00:00Z') == {
+        'signup_deadline': '2026-10-30T21:00:00+00:00',
+        'placements_by': '2026-10-31T21:00:00+00:00'}
+
+
+def test_non_utc_and_dst_weekend_use_24_elapsed_hours():
+    for at, expected in [('2026-10-30T17:00:00-04:00', '2026-10-31T21:00:00+00:00'),
+                         ('2026-10-31T17:00:00-04:00', '2026-11-01T21:00:00+00:00'),
+                         ('2026-03-07T17:00:00-05:00', '2026-03-08T22:00:00+00:00')]:
+        campaign = cwl_campaign.default_campaign()
+        campaign['timezone'] = 'America/New_York'
+        campaign['signup_deadline'] = {'at': at}
+        result = utc_timing(cwl_campaign.signup_deadline(campaign, at[:7]))
+        assert result['placements_by'] == expected
+        start, end = (datetime.fromisoformat(result[k]) for k in ('signup_deadline', 'placements_by'))
+        assert start.utcoffset() == end.utcoffset() == timedelta(0)
+        assert end - start == timedelta(hours=24)
 
 
 class MemberTimingTests(unittest.IsolatedAsyncioTestCase):

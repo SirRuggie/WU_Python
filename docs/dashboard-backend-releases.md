@@ -1,5 +1,9 @@
 # Dashboard backend releases
 
+## Pending Member signup flow
+
+Ruggie approved a read-only season projection of `signup_deadline` and `placements_by`, from the bound Mongo campaign with a five-minute process cache. UTC-aware arithmetic adds exactly 24 elapsed hours, including DST weekends; missing/unavailable campaigns return null. No schema or write-path change. This batch needs a separately authorized isolated dashboard backend release **and bot release** for Check my signups (see `cwl-discord-member-release.md`). This review does not activate either service.
+
 Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-web.service` runs from an isolated git archive, never the shared workspace. A workspace edit or frontend build cannot change the deployed backend on restart.
 
 ## Layout and invariants

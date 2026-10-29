@@ -1,5 +1,11 @@
 # Roster UI patterns
 
+## Member signup confirmation
+
+Home and My clan assignments share a green confirmation naming signed accounts and pools. Remaining linked accounts are muted, never an alarm. Closed signups remove mutation-navigation links, not read-only navigation. Partial published assignments retain their clan cards; hidden publications use unpublished wording.
+
+Optional campaign guidance uses local dates and minute-updated relative time, or a muted taking-longer line. Missing guidance never hides saved signups. The member strip reuses the staff pattern: Sign up / My signups / My clan. My CWL starts expanded and remembers collapse.
+
 The roster page's UI system. Source of truth for tokens and states: `web/cwl/src/rosterUi/primitives.css`. Scope: roster page only (other dashboard pages adopt these later, by decision, not by drift).
 
 ## Visual direction
