@@ -4,7 +4,7 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-29)
 
-`staff-nav-1` released at `95808221f85200c3f51a9a036a6fbb266b2eda57` (PR #54), frontend only. 865 tests, TypeScript/build and full isolated layout passed. Public index-Dd77bclu.js and 47 asset hashes match; backend/PID unchanged without restart; protected counts unchanged (Main22/18/18, Lazy118/92/73). Backup and rollback evidence are in CLAUDE.md. Claude click smoke pending.
+`staff-nav-1` released at `95808221f85200c3f51a9a036a6fbb266b2eda57` (PR #54), frontend only. 865 tests, TypeScript/build and full isolated layout passed. Public index-Dd77bclu.js and 47 asset hashes match; backend/PID unchanged without restart; protected counts unchanged (Main22/18/18, Lazy118/92/73). Backup and rollback evidence are in CLAUDE.md. Claude read-only owner smoke PASSED (handoff52): correct flat menu and saved preferences, no dialogs or errors.
 
 Previous `owner-prank-3` released at `ae511de81bde1a2220fa51f604125099a9caecee` (PR #52). Immediate optimistic cards with serialized confirmed writes and private-art preload; uncertain failures never automatically retry notifications. 865 frontend tests, TypeScript/build, and isolated layout passed. Claude infrastructure smoke PASSED (handoff 49); Ruggie will check replay speed separately. Public entry and 47 assets match; backend remains `f95830b`/PID 2249061 without restart. Backup integrity/all 58 table counts and protected records match (Main 22/18/18, Lazy 118/92/73). Frontend rollback: `b200c77d67f525a4a1afed515e2baed34dc31dd2`; evidence in CLAUDE.md. Staff navigation is now released; roster readability prompt 15 waits for Claude smoke/NEXT, and moderation prompt 14 requires direct approval.
 
