@@ -209,6 +209,11 @@
   min-height: 44px;
 }
 @media (max-width: 650px) {
+  .signup-review-heading + .signup-review-heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
   .member-signup-head {
     margin-bottom: 12px;
   }

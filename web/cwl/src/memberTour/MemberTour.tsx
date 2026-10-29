@@ -101,13 +101,15 @@ export default function MemberTour({
         : allSigned
           ? "All your accounts are already signed up — nice!"
           : current.text;
-  const copy = text.split("\n").map((line) =>
-    line
-      .split(/\*\*(.*?)\*\*/g)
-      .map((part, index) =>
-        index % 2 === 1 ? <strong key={index}>{part}</strong> : part,
-      ),
-  );
+  const copy = text
+    .split("\n")
+    .map((line) =>
+      line
+        .split(/\*\*(.*?)\*\*/g)
+        .map((part, index) =>
+          index % 2 === 1 ? <strong key={index}>{part}</strong> : part,
+        ),
+    );
   const sidebarStep = [
     "home",
     "todo",
