@@ -8,6 +8,8 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Decisions — Member signup flow (2026-10-28)
 
+Hotfix review (handoff prompts 01/03): deadline reads are cache-only. A nonblocking startup task refreshes eligible seasons immediately and every five minutes, with one Mongo context, a separate 30-second timeout per season and a 120-second whole-pass cap. Eligibility additionally requires the current/next UTC cycle or the selected member season. Per-season errors preserve the last good value for six hours; changed bindings and closed published seasons cannot reuse inappropriate dates. A failed eligibility read or unexpected pass error is logged without terminating the worker; the next interval retries. Shutdown cancels cleanly after failures. Mutable lifecycle state is registered before startup. Each refresh logs counts and elapsed time; failed passes have exception diagnostics. Unsigned-account summaries show six names plus the remaining count on web and Discord; signup actions retain the full count.
+
 From Luke's feedback; Ruggie approved items 1–5:
 
 1. Home and My clan assignments share a green signup confirmation naming signed accounts and pools. Hidden rosters use unpublished wording. Partial published placements retain their clan sections. Remaining accounts are muted, with signup links only while open.
@@ -16,7 +18,7 @@ From Luke's feedback; Ruggie approved items 1–5:
 4. Signup/reminder bodies add “Already signed up? Tap **Check my signups** anytime to see your accounts.” Exactly two buttons, including the website link.
 5. My CWL starts expanded and remembers collapse. Sign up, My signups and My clan assignments have separate sidebar entries and a shared step strip. `/my-signups` and legacy `signupPanel=saved` work. Closed signup navigation remains available.
 
-Member signup review fixes: signup and reminder posts 1–5 carry the same button and optional guidance sentence (skip the sentence when it would exceed the message limit). Navigation migrates other section preferences from `wu-navigation-v2:<user>` to `wu-navigation-v3:<user>`; My CWL defaults open and is saved only after an explicit toggle. Timing uses a single Mongo context per batch, a 1.5-second overall budget, startup-owned cache/lock, and a five-minute cross-season negative cache after outages. Closed published seasons skip the lookup. Discord published/partial confirmation matches the website. Ruggie dropped preselection: “Sign up the other N” still lists accounts with nothing ticked.
+Member signup review fixes: signup and reminder posts 1–5 carry the same button and optional guidance sentence (skip the sentence when it would exceed the message limit). Navigation migrates other section preferences from `wu-navigation-v2:<user>` to `wu-navigation-v3:<user>`; My CWL defaults open and is saved only after an explicit toggle. The original request-bound timing budget was superseded by the background hotfix above. Closed published seasons skip the lookup. Discord published/partial confirmation matches the website. Ruggie dropped preselection: “Sign up the other N” still lists accounts with nothing ticked.
 
 ## Released batches
 
@@ -212,7 +214,8 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 
 ## Later
 
-- Member timing: one bad campaign nulls every season in a batch for five minutes; isolate per season (prompt 01).
+- Linked-account request cadence predates Member signup: `accountDisplay.ts` already polls every 750 ms while updating (up to 135 seconds), with separate loads for each page visit. Home and Signup retained their original calls; MemberAssignments adds one necessary load for its new remaining-account summary. MemberSignupStatus makes zero fetches, and App's signup load is gated to the signup view, so there is no summary/page duplicate to combine. Consider shared page-transition snapshots separately.
+
 - Wire `web/cwl/tests/member-signup.browser.cjs` into `npm run test:layout`; its member-specific checks currently run manually.
 - Restore the closed-state helper: "Select another season or ask staff for help."
 - Discord partial My signups pages count all signed accounts but list only waiting accounts, allowing empty final pages at 16+ accounts.

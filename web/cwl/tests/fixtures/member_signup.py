@@ -6,6 +6,7 @@ import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 ROOT = Path(os.environ['WU_FIXTURE_BACKEND'])
 sys.path[:0] = [str(ROOT), str(ROOT / 'tests'), str(Path(__file__).parent)]
@@ -41,6 +42,19 @@ provider.linked_tags = linked_tags
 provider.linked_owner = linked_owner
 mongo = MemoryMongo()
 app['manage_bridge_mongo'] = mongo
+# Optional review-only upstream delay: readiness and requests must remain fast.
+delay = float(os.environ.get('WU_TIMING_FIXTURE_DELAY', '0'))
+if delay:
+    from cwl_web import member_timing
+    original_mongo = member_timing._mongo
+
+    @asynccontextmanager
+    async def slow_mongo(request):
+        await asyncio.sleep(delay)
+        async with original_mongo(request) as fake:
+            yield fake
+
+    member_timing._mongo = slow_mongo
 now = datetime.now(timezone.utc)
 with app['store'].tx() as db:
     db.execute("UPDATE seasons SET label='Open · 2 days' WHERE id=1")

@@ -143,7 +143,13 @@ export default function MemberSignupStatus({
               ? "not signed up"
               : `${remaining.length === 1 ? "wasn't" : "weren't"} signed up · signups are closed`}
           </p>
-          <p>{remaining.map((a) => a.name).join(" · ")}</p>
+          <p>
+            {remaining
+              .slice(0, 6)
+              .map((a) => a.name)
+              .join(" · ")}
+            {remaining.length > 6 && ` · + ${remaining.length - 6} more`}
+          </p>
           {open && (
             <button onClick={onRemaining}>
               Sign up{" "}
