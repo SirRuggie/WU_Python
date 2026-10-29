@@ -2,9 +2,11 @@
 
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
-## Status (2026-10-28)
+## Status (2026-10-29)
 
-- Member signup flow released as `member-signup-1`, `5539cba3c800d91372fd5c6adc62564a758ddff4` (PR #37, moderation PR #36 first). Frontend, isolated backend and bot verified; 761 frontend / 4,792 backend tests, typecheck/build/layout passed. Claude web smoke and Ruggie's private Discord check passed. Date-line defect: fix in progress (handoff prompt 01), because the 1.5-second budget expires before the real Mongo read.
+- `member-tour-1` released at `16cc79e7db39e3aaadf99c99117994b9103a47e8` (PRs #38/#39), frontend/backend/bot. 774 frontend / 4,797 backend checks passed. Claude smoke PASSED WITH DEFECTS; keep live. Missing-date timeout fixed; campaign-month and phone spotlight defects under prompt 07. Ruggie confirmed Discord dates appear but show the wrong month.
+
+- Member signup flow released as `member-signup-1`, `5539cba3c800d91372fd5c6adc62564a758ddff4` (PR #37, moderation PR #36 first). Frontend, isolated backend and bot verified; 761 frontend / 4,792 backend tests, typecheck/build/layout passed. Claude web smoke and Ruggie's private Discord check passed. The missing-date timeout was fixed in member-tour-1; wrong-month correction is in progress (prompt 07).
 
 ## Decisions — Member signup flow (2026-10-28)
 
@@ -454,3 +456,8 @@ The storage owner migrates the existing `roster_image_posts` CHECK constraint to
 2. Eight numbered steps include the six practice substeps. Demo Barbarian and Demo Warriors are pure presentation, never API submissions. Targets advance without navigating the underlying page. Exit restores the original menu, scroll and focus.
 3. A modal spotlight uses a gold ring, white SVG glove and two ripples; phones open the menu for navigation steps and reserve space above the bottom card. Focus is trapped, Escape exits, motion reduces to fades, and all controls have 44px targets. Confetti appears only in practice success and is hidden for reduced motion.
 4. Ruggie's Fan Kit selections are cropped at alpha >60 and exported as 340px WebP assets, loaded per step from `/assets/tour/`. Non-wide art renders at 140px phone / 160px desktop height, with maximum width equal to that height (Claude handoff entry 7 clarification); padding follows the art width. Wide art sits across the top at 220px width and at least 90px height. Desktop placement tries right, left, below and above without clamping into a target. Phone menu follows breakpoint changes. SOURCES.md records provenance and the exact notice on Welcome/Help and Finish. No backend or dependency change.
+
+## Later — Member tour release review
+
+- Below roughly 450px viewport height, placement.ts can place Next off-screen; spotlight tap/Escape still work.
+- Test gaps recorded at release: no art-height cap, no text/art overlap assertion, and no chevron assertion.
