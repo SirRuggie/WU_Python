@@ -340,7 +340,7 @@ it("corrupt or unavailable browser storage fails safely", () => {
 it("tour opens only the target sidebar section and preserves the saved expansion state", async () => {
   localStorage.setItem(
     "wu-navigation-v3:tour-fixture",
-    JSON.stringify({ "my-cwl": false }),
+    JSON.stringify({ "my-cwl": false, clans: true, bot: true }),
   );
   await act(async () =>
     root.render(
@@ -372,11 +372,14 @@ it("tour opens only the target sidebar section and preserves the saved expansion
         `[data-tour-target="${view === "signup" ? "register" : view}"]`,
       );
       expect(target?.closest("[hidden]")).toBeNull();
-      expect(
-        host
-          .querySelector("#navigation-cwl-management")
-          ?.hasAttribute("hidden") ?? true,
-      ).toBe(true);
+      expect(target).not.toBeNull();
+      for (const id of ["cwl", "clans", "members", "bot", "admin"]) {
+        const group = host.querySelector(`#navigation-${id}`);
+        if (isOwner) {
+          expect(group).not.toBeNull();
+          expect(group!.hasAttribute("hidden")).toBe(true);
+        } else expect(group).toBeNull();
+      }
       expect(localStorage.getItem("wu-navigation-v3:tour-fixture")).toBe(
         before,
       );

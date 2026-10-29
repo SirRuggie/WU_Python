@@ -55,7 +55,7 @@ it.each(["sent", "pending"])(
         ),
       );
       const button = [...host.querySelectorAll("button")].find(
-        (b) => b.textContent === "Next: Declaration readiness check ›",
+        (b) => b.textContent === "Next: Declaration check ›",
       );
       expect(!!button).toBe(status === "sent");
       if (button) {

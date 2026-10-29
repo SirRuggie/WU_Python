@@ -144,3 +144,23 @@ it("does not expose an empty group or unauthorized direct link", async () => {
   expect(host.textContent).not.toContain("Moderation");
   expect(host.textContent).toContain("Staff overview");
 });
+
+it("persists explicit toggles but never an automatic current-group opening", async () => {
+  await render("roster");
+  expect(children("cwl").hidden).toBe(false);
+  const saved = () =>
+    JSON.parse(localStorage.getItem("wu-navigation-v3:staff-nav-test")!);
+  expect(saved().cwl).toBe(false);
+  await render("image-gallery");
+  expect(children("bot").hidden).toBe(false);
+  expect(saved().bot).toBe(false);
+  await act(async () => toggle("clans").click());
+  expect(saved().clans).toBe(true);
+  expect(saved().bot).toBe(false);
+  expect(saved().cwl).toBe(false);
+  await act(async () => root.render(<div />));
+  await render("home");
+  expect(children("cwl").hidden).toBe(true);
+  expect(children("bot").hidden).toBe(true);
+  expect(children("clans").hidden).toBe(false);
+});

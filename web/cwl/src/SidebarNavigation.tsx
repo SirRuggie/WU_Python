@@ -409,6 +409,7 @@ export default function SidebarNavigation({
 }) {
   const key = `wu-navigation-v3:${userId}`;
   const cwlToggled = useRef(false);
+  const preferences = useRef<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     let carried: Record<string, boolean> = {};
     try {
@@ -438,6 +439,7 @@ export default function SidebarNavigation({
           : id === "my-dashboard" || id === "my-cwl",
       ]),
     ) as Record<string, boolean>;
+    preferences.current = { ...initial };
     const active = sections.find((section) =>
       section.items.some((item) => item.view === view),
     );
@@ -460,7 +462,7 @@ export default function SidebarNavigation({
 
   useEffect(() => {
     try {
-      const saved = { ...expanded };
+      const saved = { ...preferences.current };
       if (!cwlToggled.current) delete saved["my-cwl"];
       localStorage.setItem(key, JSON.stringify(saved));
     } catch {
@@ -513,7 +515,7 @@ export default function SidebarNavigation({
         </section>
       );
     const active = section.items.some((item) => item.view === view);
-    const shown = !!expanded[section.id] || (tourExpanded && active);
+    const shown = tourExpanded ? active : !!expanded[section.id];
     return (
       <section
         className={`navigation-section${active ? " contains-current" : ""}`}
@@ -525,6 +527,7 @@ export default function SidebarNavigation({
           aria-controls={`navigation-${section.id}`}
           onClick={() => {
             if (section.id === "my-cwl") cwlToggled.current = true;
+            preferences.current[section.id] = !expanded[section.id];
             setExpanded((current) => ({
               ...current,
               [section.id]: !current[section.id],

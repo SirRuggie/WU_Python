@@ -8,7 +8,7 @@ export function ImageGallery({
 }) {
   return (
     <section className="image-gallery">
-      <p className="eyebrow">Settings</p>
+      <p className="eyebrow">Bot</p>
       <h1>Image gallery</h1>
       <p>Find and organize images for commands and server messages.</p>
       <ImageCollection onDirty={onDirty} />
