@@ -918,7 +918,9 @@ function App() {
     </div>
 
     {session.is_owner && <OwnerPrankBoundary key={session.user.id} onFailure={() => setPrankReadyUser(session.user.id)}>
-      <Suspense fallback={null}><OwnerPrank view={view} blockedByTour={tourActive} replaySignal={prankReplaySignal}
+      <Suspense fallback={null}><OwnerPrank view={view} blockedByTour={tourActive}
+        startBlocked={pending || signupBusy.current || signupDirty || rosterBusy || manageDirty || cwlDirty || publicationBusy || publicationDirty || reminderDirty || savedSignupDirty}
+        replaySignal={prankReplaySignal}
         onSettled={() => setPrankReadyUser(session.user.id)} onReplayAvailable={setPrankReplayAvailable}
         onError={text => setNotice({kind: 'error', text})} /></Suspense>
     </OwnerPrankBoundary>}
