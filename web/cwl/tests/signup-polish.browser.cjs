@@ -183,6 +183,9 @@ const base = `http://127.0.0.1:${port}`;
         await page.locator(".account-menu-avatar-trigger").click();
         await page.getByRole("menuitem", { name: "Sign out" }).waitFor();
         await page.keyboard.press("Escape");
+        await page
+          .locator(".account-menu-popover")
+          .waitFor({ state: "hidden" });
         assert(
           await page
             .locator(".account-menu-avatar-trigger")
