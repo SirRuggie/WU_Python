@@ -68,7 +68,8 @@ afterEach(() => {
 });
 it("defaults to Loot and previews 25,000 as 125,000 full weight without saving", async () => {
   const props = await render();
-  expect(button("Loot", rows()[0]).getAttribute("aria-pressed")).toBe("true");
+  expect(button("Loot").getAttribute("aria-pressed")).toBe("true");
+  expect(rows()[0].querySelectorAll("[aria-pressed]")).toHaveLength(0);
   expect(input().inputMode).toBe("decimal");
   expect(input().placeholder).toBe("Loot");
   await type(input(), "25,000");
@@ -80,13 +81,66 @@ it("defaults to Loot and previews 25,000 as 125,000 full weight without saving",
 it("keeps typed text when switching to Full and re-evaluates", async () => {
   await render();
   await type(input(), "25,000");
-  await click(button("Full", rows()[0]));
+  await click(button("Full"));
   expect(input().value).toBe("25,000");
   expect(input().placeholder).toBe("Full weight");
   expect(rows()[0].textContent).toContain(
     "= 25,000 · saved for future seasons",
   );
+  expect(rows()[1].querySelectorAll("[aria-pressed]")).toHaveLength(0);
 });
+it("uses the same save payload for Loot and Full as the former row units", async () => {
+  const props = await render();
+  await type(input(), "25,000");
+  await click(button("Save", rows()[0]));
+  expect(props.onSave).toHaveBeenLastCalledWith("#P0Y", 125000);
+  await click(button("Full"));
+  await type(input(1), "25,000");
+  await click(button("Save", rows()[1]));
+  expect(props.onSave).toHaveBeenLastCalledWith("#P1Y", 25000);
+});
+
+it("does not save or rewrite unsaved text when the top unit changes", async () => {
+  const props = await render();
+  await type(input(), "25,000");
+  await type(input(1), "12,000");
+  await click(button("Full"));
+  expect(input().value).toBe("25,000");
+  expect(input(1).value).toBe("12,000");
+  expect(rows()[0].textContent).toContain("= 25,000 · saved for future seasons");
+  expect(rows()[1].textContent).toContain("= 12,000 · saved for future seasons");
+  expect(props.onSave).not.toHaveBeenCalled();
+  expect(
+    host.querySelectorAll(".weight-queue-unit-picker [aria-pressed]"),
+  ).toHaveLength(2);
+  expect(host.querySelectorAll(".weight-queue-row [aria-pressed]")).toHaveLength(0);
+});
+
+it("reports nonempty drafts and clears drafts and errors on reset without saving", async () => {
+  const onDirtyCount = vi.fn();
+  const onDirty = vi.fn();
+  const props = await render({
+    onDirtyCount,
+    onDirty,
+    resetToken: 0,
+    onSave: vi.fn().mockResolvedValue(false),
+  });
+  expect(onDirtyCount).toHaveBeenLastCalledWith(0);
+  await type(input(), "25,000");
+  await type(input(1), "12,000");
+  expect(onDirtyCount).toHaveBeenLastCalledWith(2);
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+  await click(button("Save", rows()[0]));
+  expect(rows()[0].textContent).toContain("Weight wasn't saved");
+  await render({ ...props, resetToken: 1 });
+  expect(input().value).toBe("");
+  expect(input(1).value).toBe("");
+  expect(rows()[0].textContent).not.toContain("Weight wasn't saved");
+  expect(onDirtyCount).toHaveBeenLastCalledWith(0);
+  expect(onDirty).toHaveBeenLastCalledWith(false);
+  expect(props.onSave).toHaveBeenCalledOnce();
+});
+
 it.each(["e3", "-1", "0", "100001", "0.01"])(
   "shows inline validation and disables Save for invalid loot %s",
   async (value) => {
@@ -145,6 +199,21 @@ it("retains unmounted drafts across search and reports dirty until input is clea
   await type(input(), "");
   expect(onDirty).toHaveBeenLastCalledWith(false);
 });
+it("clears the dirty count when refreshed accounts no longer need the drafted weight", async () => {
+  const onDirty = vi.fn();
+  const onDirtyCount = vi.fn();
+  const onSave = vi.fn();
+  await render({ onDirty, onDirtyCount, onSave });
+  await type(input(), "25000");
+  expect(onDirtyCount).toHaveBeenLastCalledWith(1);
+  await type(host.querySelector('input[type="search"]')!, "Player 64");
+  expect(onDirtyCount).toHaveBeenLastCalledWith(1);
+  await render({ accounts: accounts.slice(1), onDirty, onDirtyCount, onSave });
+  expect(onDirtyCount).toHaveBeenLastCalledWith(0);
+  expect(onDirty).toHaveBeenLastCalledWith(false);
+  expect(onSave).not.toHaveBeenCalled();
+});
+
 it("has the concise header, primitive Refresh icon, no instructions or Back button", async () => {
   const props = await render();
   expect(host.querySelectorAll("p")).toHaveLength(0);
@@ -166,6 +235,7 @@ it("retains input on failed saves and prevents duplicate submits while pending",
   await render({ onSave: save });
   await type(input(), "25000");
   await click(button("Save", rows()[0]));
+  expect(button("Full").disabled).toBe(true);
   await act(async () =>
     rows()[0].dispatchEvent(
       new Event("submit", { bubbles: true, cancelable: true }),

@@ -19,6 +19,7 @@ export default function CompactWeightField({
   error,
   allowClear = false,
   unchanged = false,
+  showUnitToggle = true,
 }: {
   value: ManualWeightDraft;
   onChange: (value: ManualWeightDraft) => void;
@@ -28,13 +29,16 @@ export default function CompactWeightField({
   error?: string;
   allowClear?: boolean;
   unchanged?: boolean;
+  showUnitToggle?: boolean;
 }) {
   const id = useId();
   const state = compactWeightState(value);
   const message = state.error || error;
   return (
     <div className="compact-weight-field">
-      <div className="compact-weight-controls">
+      <div
+        className={`compact-weight-controls${showUnitToggle ? "" : " single-unit"}`}
+      >
         <input
           ref={inputRef}
           type="text"
@@ -47,22 +51,24 @@ export default function CompactWeightField({
           disabled={disabled}
           onChange={(event) => onChange({ ...value, text: event.target.value })}
         />
-        <div
-          className="compact-weight-units"
-          role="group"
-          aria-label={`Weight unit for ${name}`}
-        >
-          {(["loot", "full"] as const).map((unit) => (
-            <Button
-              key={unit}
-              aria-pressed={value.unit === unit}
-              disabled={disabled}
-              onClick={() => onChange({ ...value, unit })}
-            >
-              {unit === "loot" ? "Loot" : "Full"}
-            </Button>
-          ))}
-        </div>
+        {showUnitToggle && (
+          <div
+            className="compact-weight-units"
+            role="group"
+            aria-label={`Weight unit for ${name}`}
+          >
+            {(["loot", "full"] as const).map((unit) => (
+              <Button
+                key={unit}
+                aria-pressed={value.unit === unit}
+                disabled={disabled}
+                onClick={() => onChange({ ...value, unit })}
+              >
+                {unit === "loot" ? "Loot" : "Full"}
+              </Button>
+            ))}
+          </div>
+        )}
         <Button
           type="submit"
           variant="primary"

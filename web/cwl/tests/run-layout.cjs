@@ -221,6 +221,62 @@ server.stdout.on("data", (chunk) => {
             readabilityServer.kill();
           }
         }
+        if (!process.exitCode) {
+          const hotfixPort = 8988;
+          await new Promise((resolve, reject) => {
+            const probe = require("node:net").createServer();
+            probe.once("error", reject);
+            probe.listen(hotfixPort, "127.0.0.1", () => probe.close(resolve));
+          });
+          const hotfixServer = spawn(
+            python,
+            [
+              "-I",
+              path.join(__dirname, "fixtures/roster_hotfix.py"),
+              path.join(root, "web/cwl/dist"),
+              String(hotfixPort),
+            ],
+            {
+              env: {
+                PATH: process.env.PATH,
+                HOME: temp,
+                WU_FIXTURE_BACKEND: root,
+              },
+              stdio: ["ignore", "ignore", "inherit"],
+            },
+          );
+          try {
+            let ready = false;
+            for (let attempt = 0; attempt < 100; attempt++) {
+              if (hotfixServer.exitCode !== null)
+                throw new Error("Hotfix fixture exited");
+              try {
+                ready = (
+                  await fetch(`http://127.0.0.1:${hotfixPort}/api/cwl/config`)
+                ).ok;
+              } catch {
+                /* Starting isolated fixture. */
+              }
+              if (ready) break;
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+            if (!ready) throw new Error("Hotfix fixture startup timed out");
+            const code = await new Promise((resolve) => {
+              const child = spawn(
+                process.execPath,
+                [
+                  path.join(__dirname, "roster-hotfix.browser.cjs"),
+                  String(hotfixPort),
+                ],
+                { stdio: "inherit", env: process.env },
+              );
+              child.on("exit", resolve);
+            });
+            if (code) process.exitCode = code;
+          } finally {
+            hotfixServer.kill();
+          }
+        }
       } catch (error) {
         console.error(error);
         process.exitCode = 1;

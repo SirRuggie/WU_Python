@@ -71,6 +71,8 @@ type Props = {
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
+  onDirtySummary?: (summary: { weightCount: number; onlyWeights: boolean }) => void;
+  onEditFocus?: (element: HTMLElement) => void;
   onSeasonChange: (id: string) => void;
   initialReadiness?: "all" | "unassigned" | "missing_weight" | "over_capacity";
   onReviewPublication?: () => void;
@@ -96,6 +98,8 @@ export default function RosterWorkspace({
   onSeasonRefresh,
   onBusy,
   onDirty,
+  onDirtySummary,
+  onEditFocus,
 }: Props) {
   const canRoster = useDashboardPermission("cwl_roster");
   const canSignups = useDashboardPermission("cwl_signups");
@@ -221,6 +225,9 @@ export default function RosterWorkspace({
   }, [groupByDiscord, seasonId, groupNamesRetry]);
   const [rulesDirty, setRulesDirty] = useState(false);
   const [weightsDirty, setWeightsDirty] = useState(false);
+  const [weightsDirtyCount, setWeightsDirtyCount] = useState(0);
+  const lastEditFocus = useRef<HTMLElement | null>(null);
+  const [discardToken, setDiscardToken] = useState(0);
   const [playerDirty, setPlayerDirty] = useState(false);
   const [signupDirty, setSignupDirty] = useState(false);
   const [signupBusy, setSignupBusy] = useState(false);
@@ -238,25 +245,35 @@ export default function RosterWorkspace({
     selectedTags.length > 0;
   useUnsavedWork(dirty || working, onDirty);
   useEffect(() => {
+    onDirtySummary?.({
+      weightCount: weightsDirtyCount,
+      onlyWeights: weightsDirtyCount > 0 && !rulesDirty && !playerDirty && !signupDirty && !signupReviewOpen && !panel && selectedTags.length === 0,
+    });
+  }, [weightsDirtyCount, rulesDirty, playerDirty, signupDirty, signupReviewOpen, panel, selectedTags.length, onDirtySummary]);
+  useEffect(() => {
     onBusy?.(working);
     return () => onBusy?.(false);
   }, [working, onBusy]);
   useEffect(() => {
     if (!canRoster && mode !== "assign") setMode("assign");
   }, [canRoster, mode, setMode]);
-  const [pendingDetailsAction, setPendingDetailsAction] = useState<
-    null | (() => void)
-  >(null);
-  const requestSignupNavigation = (action: () => void) => {
-    requestDetailsNavigation(() => {
-      if (rulesDirty || weightsDirty || signupDirty || selectedTags.length > 0)
-        setPendingDetailsAction(() => action);
-      else action();
-    });
+  const [pendingLeave, setPendingLeave] = useState<null | { action: () => void; working: boolean }>(null);
+  const requestLeave = (action: () => void) => {
+    if (working) {
+      setPendingLeave({ action: () => {}, working: true });
+      return false;
+    }
+    if (dirty) {
+      setPendingLeave({ action, working: false });
+      return false;
+    }
+    action();
+    return true;
   };
-  const mayLeaveEditor = () =>
-    !working &&
-    (!dirty || window.confirm("Discard unsaved roster edits and selections?"));
+  const requestSignupNavigation = (action: () => void) => {
+    requestDetailsNavigation(() => requestLeave(action));
+  };
+  const mayLeaveEditor = (action: () => void) => requestLeave(action);
   const listHeading = useRef<HTMLDivElement>(null);
   const focusListHeading = () =>
     requestAnimationFrame(() =>
@@ -791,6 +808,12 @@ export default function RosterWorkspace({
   return (
     <div
       className={`roster-workspace roster-ui${mode === "assign" ? " roster-workspace-assign" : ""}`}
+      onFocusCapture={(event) => {
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+          lastEditFocus.current = event.target;
+          onEditFocus?.(event.target);
+        }
+      }}
     >
       {roster && panel === "assign" && (
         <RosterAssignPanel
@@ -857,15 +880,35 @@ export default function RosterWorkspace({
           onHeight={setBarHeight}
         />
       )}
-      {pendingDetailsAction && (
+      {pendingLeave && (
         <ConfirmDialog
-          heading="Discard unsaved roster edits?"
-          text="Discard unsaved roster edits and selections?"
-          confirmLabel="Discard"
-          onCancel={() => setPendingDetailsAction(null)}
+          key={pendingLeave.working ? "working" : "dirty"}
+          heading={pendingLeave.working ? "Save in progress" : "Unsaved changes"}
+          text={pendingLeave.working ? "Wait for the save to finish." : weightsDirtyCount > 0 && !rulesDirty && !playerDirty && !signupDirty && !signupReviewOpen && !panel && selectedTags.length === 0 ? `You have ${weightsDirtyCount} unsaved weight${weightsDirtyCount === 1 ? "" : "s"}.` : "You have unsaved roster changes."}
+          confirmLabel={pendingLeave.working ? "OK" : "Discard"}
+          cancelLabel="Keep editing"
+          hideCancel={pendingLeave.working}
+          cancelOnBackdrop
+          returnFocus={() => lastEditFocus.current}
+          danger={!pendingLeave.working}
+          onCancel={() => setPendingLeave(null)}
           onConfirm={() => {
-            const action = pendingDetailsAction;
-            setPendingDetailsAction(null);
+            const { action, working: wasWorking } = pendingLeave;
+            setPendingLeave(null);
+            if (wasWorking) return;
+            if (working) {
+              setPendingLeave({ action: () => {}, working: true });
+              return;
+            }
+            setWeightsDirtyCount(0);
+            setWeightsDirty(false);
+            setRulesDirty(false);
+            setPlayerDirty(false);
+            setSignupDirty(false);
+            setSelectedTags([]);
+            setEditingTag(null);
+            closePanel();
+            setDiscardToken((value) => value + 1);
             action();
           }}
         />
@@ -883,31 +926,34 @@ export default function RosterWorkspace({
         canSignups={canSignups}
         canPublish={canPublish}
         uiLocked={uiLocked}
+        navigationDisabled={uiLocked && !working}
         archived={!!archived}
         refreshKey={refreshEpoch}
         activeStatuses={mode === "assign" ? releasePreferences.statuses : []}
         onSeasonChange={(value) => {
-          if (mayLeaveEditor()) onSeasonChange(value);
+          mayLeaveEditor(() => onSeasonChange(value));
         }}
         onRefresh={() => {
-          if (mayLeaveEditor())
+          mayLeaveEditor(() => {
             void refresh().catch((error) =>
               setFeedback({ kind: "error", text: errorText(error) }),
             );
+          });
         }}
         onAutoPlace={(trigger) => {
           if (mode !== "assign") {
-            if (!mayLeaveEditor()) return;
-            setReleasePreferences((current) => ({
-              ...current,
-              pool: viewPool,
-            }));
-            setMode("assign");
+            mayLeaveEditor(() => {
+              setReleasePreferences((current) => ({ ...current, pool: viewPool }));
+              setMode("assign");
+              openPanel("auto", trigger);
+            });
+          } else {
+            openPanel("auto", trigger);
           }
-          openPanel("auto", trigger);
         }}
         onFillSignupSpot={(item) => {
-          if (!canRoster || uiLocked) return false;
+          if (!canRoster || (uiLocked && !working)) return false;
+          if (working) { requestLeave(() => {}); return false; }
           requestSignupNavigation(() => {
             const pool = item.from_pool === "lazy" ? "lazy" : "main";
             try {
@@ -943,7 +989,8 @@ export default function RosterWorkspace({
           return true;
         }}
         onSignupDetails={(tag) => {
-          if (uiLocked) return false;
+          if (uiLocked && !working) return false;
+          if (working) { requestLeave(() => {}); return false; }
           requestSignupNavigation(() => {
             setSelectedTags([]);
             setFeedback(null);
@@ -953,33 +1000,38 @@ export default function RosterWorkspace({
         }}
         onFinalize={onReviewPublication}
         onCapacitySettings={(tag) => {
-          if (uiLocked || !mayLeaveEditor()) return;
+          if (uiLocked && !working) return;
           const clan = roster?.clans.find((item) => item.tag === tag);
           if (!clan) return;
-          setPoolFilter(clan.pool || "main");
-          setFocusClanTag(tag);
-          setFocusClanRequest((value) => value + 1);
-          setMode("rules");
+          mayLeaveEditor(() => {
+            setPoolFilter(clan.pool || "main");
+            setFocusClanTag(tag);
+            setFocusClanRequest((value) => value + 1);
+            setMode("rules");
+          });
         }}
         onStatusFilter={(status) => {
-          if (mode !== "assign" && !mayLeaveEditor()) return;
-          setMode("assign");
-          setReleasePreferences((current) => ({
-            ...current,
-            pool: status === "missing_weight" ? "all" : viewPool,
-            search: "",
-            statuses: status === "all" ? [] : [status],
-            minWeight: null,
-            maxWeight: null,
-            townHalls: [],
-            assignedClanTags: [],
-          }));
+          const action = () => {
+            setMode("assign");
+            setReleasePreferences((current) => ({
+              ...current,
+              pool: status === "missing_weight" ? "all" : viewPool,
+              search: "",
+              statuses: status === "all" ? [] : [status],
+              minWeight: null,
+              maxWeight: null,
+              townHalls: [],
+              assignedClanTags: [],
+            }));
+          };
+          if (mode !== "assign") mayLeaveEditor(action);
+          else action();
         }}
         signupControls={
           season &&
           (canSignups || canSettings) && (
             <StaffSignupControls
-              key={seasonId}
+              key={`${seasonId}:${discardToken}`}
               disabled={
                 busy ||
                 selectedTags.length > 0 ||
@@ -1066,13 +1118,16 @@ export default function RosterWorkspace({
               ).map((item) => (
                 <Button
                   key={item.id}
-                  disabled={uiLocked}
+                  disabled={uiLocked && !working}
                   aria-pressed={mode === item.id}
                   className={mode === item.id ? "active" : ""}
                   onClick={() => {
-                    if (item.id !== mode && !mayLeaveEditor()) return;
-                    setMode(item.id);
-                    setSelectedTags([]);
+                    if (item.id === mode) return;
+                    const action = () => {
+                      setMode(item.id);
+                      setSelectedTags([]);
+                    };
+                    mayLeaveEditor(action);
                   }}
                 >
                   {item.label}
@@ -1090,10 +1145,13 @@ export default function RosterWorkspace({
                 <Button
                   key={pool}
                   aria-pressed={releasePreferences.pool === pool}
-                  disabled={uiLocked}
-                  onClick={() =>
-                    setReleasePreferences((current) => ({ ...current, pool }))
-                  }
+                  disabled={uiLocked && !working}
+                  onClick={() => {
+                    if (releasePreferences.pool === pool) return;
+                    mayLeaveEditor(() =>
+                      setReleasePreferences((current) => ({ ...current, pool })),
+                    );
+                  }}
                 >
                   {pool === "all"
                     ? "All accounts"
@@ -1106,12 +1164,13 @@ export default function RosterWorkspace({
           ) : mode === "weights" ? null : (
             <CwlPoolTabs
               value={poolFilter}
-              disabled={uiLocked}
+              disabled={uiLocked && !working}
               onChange={(pool) => {
-                if (!mayLeaveEditor()) return;
-                setPoolFilter(pool);
-                closePanel();
-                setEditingTag(null);
+                mayLeaveEditor(() => {
+                  setPoolFilter(pool);
+                  closePanel();
+                  setEditingTag(null);
+                });
               }}
             />
           )}
@@ -1138,6 +1197,8 @@ export default function RosterWorkspace({
               onOrderChange={setDetailsOrder}
               onClanWeights={onClanWeights}
               onDirty={setWeightsDirty}
+              onDirtyCount={setWeightsDirtyCount}
+              resetToken={discardToken}
               onEdit={(tag) => {
                 setFeedback(null);
                 requestDetailsNavigation(() => setEditingTag(tag));
@@ -1158,7 +1219,7 @@ export default function RosterWorkspace({
           )}
           {canRoster && mode === "rules" && (
             <ClanSettings
-              key={seasonId}
+              key={`${seasonId}:${discardToken}`}
               focusClanTag={focusClanTag}
               focusClanRequest={focusClanRequest}
               onFocusHandled={() => setFocusClanTag(null)}

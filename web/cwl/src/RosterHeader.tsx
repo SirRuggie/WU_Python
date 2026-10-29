@@ -50,6 +50,7 @@ type Props = {
   canSignups: boolean;
   canPublish: boolean;
   uiLocked: boolean;
+  navigationDisabled?: boolean;
   archived: boolean;
   refreshKey?: number;
   activeStatuses?: readonly string[];
@@ -72,6 +73,7 @@ export default function RosterHeader({
   canSignups,
   canPublish,
   uiLocked,
+  navigationDisabled = uiLocked,
   archived,
   refreshKey = 0,
   activeStatuses = [],
@@ -169,6 +171,18 @@ export default function RosterHeader({
     !archived &&
     unplaced > 0 &&
     !!roster?.clans.some((clan) => !clan.archived);
+  const assignedClanTags = new Set(
+    allAccounts.map((account) => account.assigned_clan_tag).filter(Boolean),
+  );
+  const missingCapacityClans =
+    roster?.clans.filter(
+      (clan) =>
+        !clan.archived &&
+        clan.pool &&
+        assignedClanTags.has(clan.tag) &&
+        clan.capacity !== 15 &&
+        clan.capacity !== 30,
+    ) ?? [];
   useEffect(() => {
     if (uiLocked) actions.current?.removeAttribute("open");
   }, [uiLocked]);
@@ -240,7 +254,7 @@ export default function RosterHeader({
           label="Season"
           value={seasonId}
           aria-label={`Season: ${selectedSeasonLabel || "Select a season"}`}
-          disabled={uiLocked}
+          disabled={navigationDisabled}
           onValueChange={onSeasonChange}
           options={[
             { value: "", label: "Select a season" },
@@ -297,29 +311,24 @@ export default function RosterHeader({
           onDetails={onSignupDetails}
         />
       )}
-      {canRoster &&
-        roster?.clans
-          .filter(
-            (clan) =>
-              !clan.archived &&
-              clan.pool &&
-              clan.capacity !== 15 &&
-              clan.capacity !== 30,
-          )
-          .map((clan) => (
-            <div className="roster-capacity-alert" key={clan.tag}>
-              <span>⚠ {clan.name} has no capacity set</span>
-              {onCapacitySettings && (
-                <button
-                  type="button"
-                  disabled={uiLocked}
-                  onClick={() => onCapacitySettings(clan.tag)}
-                >
-                  Set in Clan settings ›
-                </button>
-              )}
-            </div>
-          ))}
+      {canRoster && missingCapacityClans.length > 0 && (
+        <div className="roster-capacity-alert">
+          <span>
+            ⚠ {missingCapacityClans.length === 1
+              ? `${missingCapacityClans[0].name} has`
+              : `${missingCapacityClans.length} clans have`} no capacity set
+          </span>
+          {onCapacitySettings && (
+            <button
+              type="button"
+              disabled={navigationDisabled}
+              onClick={() => onCapacitySettings(missingCapacityClans[0].tag)}
+            >
+              Set in Clan settings ›
+            </button>
+          )}
+        </div>
+      )}
       {roster && (
         <div
           ref={workingFades.ref}

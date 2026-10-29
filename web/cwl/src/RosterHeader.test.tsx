@@ -78,9 +78,10 @@ describe("roster header counts", () => {
     expect(html).toContain("Checking publication…");
     expect(html).not.toContain("roster-header-draft-pill");
   });
-  it("shows one top capacity warning per unconfigured hosting clan with a settings action", () => {
+  it("shows one top capacity warning for an assigned hosting clan with a settings action", () => {
     const testRoster = {
       ...roster,
+      accounts: [account("#A", "main", "#ONE", 170000)],
       clans: [
         {
           tag: "#ONE",

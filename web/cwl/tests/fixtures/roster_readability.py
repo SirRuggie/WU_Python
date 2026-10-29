@@ -181,6 +181,21 @@ with app["store"].tx() as db:
         "UPDATE roster_entries SET assigned_clan_tag=?,kept=0 WHERE tag=?",
         ("#U2Y", players[5]),
     )
+    if os.environ.get("WU_CAPACITY_HOTFIX") == "1":
+        # Reproduce the live cardinality, without adding signups or assignments.
+        db.execute("UPDATE lineup_rules SET capacity=NULL WHERE tag='#L2Y'")
+        for index in range(20):
+            ct = "#UU" + "PYLQ"[index // 5] + "0289G"[index % 5]
+            db.execute(
+                "INSERT INTO clans(tag,name) VALUES (?,?)",
+                (ct, f"Empty hosting candidate {index + 1:02}"),
+            )
+            db.execute("INSERT INTO lineup(season_id,tag) VALUES (1,?)", (ct,))
+            db.execute(
+                "INSERT INTO lineup_rules(season_id,tag,pool,capacity) "
+                "VALUES(1,?,'main',NULL)",
+                (ct,),
+            )
     db.execute(
         "INSERT INTO seasons(id,label,status,signup_open) "
         "VALUES (2,'October 2026','archived',0)"
