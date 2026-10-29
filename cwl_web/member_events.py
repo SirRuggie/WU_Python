@@ -94,21 +94,28 @@ def _channel_type(channel):
         return "text"
     if channel.get("type") == 15:
         return "forum"
+    if channel.get("type") == 11:
+        return "forum_post"
     return None
 
 
-def _channel_option(channel, actor, effective, staff=None):
+def _channel_option(channel, actor, effective, staff=None, parent=None):
     from hikari import Permissions
     kind = _channel_type(channel)
     if str(channel.get("guild_id")) != str(GUILD_ID) or not kind:
         return None
-    overwrites = channel.get("permission_overwrites", [])
+    if kind == "forum_post":
+        if not parent or parent.get("type") != 15 or str(parent.get("guild_id")) != str(GUILD_ID) or str(parent.get("id")) != str(channel.get("parent_id")):
+            return None
+    overwrites = (parent if kind == "forum_post" else channel).get("permission_overwrites", [])
     rights = effective(actor["permissions"], actor["role_ids"], actor["user_id"], overwrites, GUILD_ID)
     if staff is not None:
         staff_rights = effective(staff["permissions"], staff["role_ids"], staff["user_id"], overwrites, GUILD_ID)
         if not (staff_rights & (Permissions.ADMINISTRATOR | Permissions.VIEW_CHANNEL)):
             return None
     needed = Permissions.VIEW_CHANNEL | Permissions.SEND_MESSAGES | Permissions.ATTACH_FILES
+    if kind == "forum_post":
+        needed = Permissions.VIEW_CHANNEL | Permissions.SEND_MESSAGES_IN_THREADS | Permissions.ATTACH_FILES
     if kind == "forum":
         needed |= Permissions.EMBED_LINKS
     tags = [{"id": str(tag["id"]), "name": str(tag.get("name") or tag["id"]),
@@ -116,9 +123,37 @@ def _channel_option(channel, actor, effective, staff=None):
             for tag in channel.get("available_tags", [])] if kind == "forum" else []
     return {"id": str(channel["id"]), "name": str(channel.get("name") or channel["id"]),
             "type": kind, "available_tags": tags,
-            "can_post": bool(rights & Permissions.ADMINISTRATOR) or rights & needed == needed,
-            "requires_tag": bool(int(channel.get("flags") or 0) & 16),
+            "can_post": (bool(rights & Permissions.ADMINISTRATOR) or rights & needed == needed) and not (kind == "forum_post" and channel.get("thread_metadata", {}).get("locked")),
+            "requires_tag": kind == "forum" and bool(int(channel.get("flags") or 0) & 16),
             "can_manage_threads": bool(rights & (Permissions.ADMINISTRATOR | Permissions.MANAGE_THREADS))}
+
+
+async def _resolve_option(request, channel_id, actor, effective, staff):
+    from .server_management import discord
+    channel = await discord(request, "GET", f"/channels/{channel_id}")
+    parent = None
+    if channel.get("type") == 11 and str(channel.get("guild_id")) == str(GUILD_ID):
+        parent = await discord(request, "GET", f"/channels/{channel['parent_id']}")
+    return _channel_option(channel, actor, effective, staff, parent)
+
+
+async def destination(request):
+    staff = await require_manage(request, "roles")
+    channel_id = request.match_info["channel_id"]
+    if not channel_id.isascii() or not channel_id.isdigit() or not 15 <= len(channel_id) <= 22:
+        raise web.HTTPBadRequest(text="Enter a valid channel or forum post ID.")
+    actor, effective = await _bot_permissions(request)
+    try:
+        option = await _resolve_option(request, channel_id, actor, effective, staff)
+    except (web.HTTPNotFound, web.HTTPForbidden):
+        raise web.HTTPBadRequest(text="That destination is missing or inaccessible to the bot.") from None
+    if not option:
+        raise web.HTTPBadRequest(text="Choose an accessible text channel, forum, or forum post in this server.")
+    if not option["can_post"]:
+        raise web.HTTPBadRequest(text="The bot cannot post here. Check its permissions and whether the forum post is locked.")
+    response = web.json_response(option)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 async def settings(request):
@@ -131,8 +166,26 @@ async def settings(request):
         channels = await discord(request, "GET", f"/guilds/{GUILD_ID}/channels")
         options = [_channel_option(row, actor, effective, staff) for row in channels]
         options = [row for row in options if row]
+        parents = {str(row["id"]): row for row in channels}
+        post_warning = None
+        try:
+            active = await discord(request, "GET", f"/guilds/{GUILD_ID}/threads/active")
+            for thread in active.get("threads", []):
+                option = _channel_option(thread, actor, effective, staff, parents.get(str(thread.get("parent_id"))))
+                if option:
+                    options.append(option)
+        except web.HTTPException:
+            post_warning = "Forum post search is unavailable. You can still look up a post by ID."
+        known = {row["id"] for row in options}
+        for channel_id in {config["channel_id"] for config in saved["events"].values() if config["channel_id"]} - known:
+            try:
+                option = await _resolve_option(request, channel_id, actor, effective, staff)
+                if option:
+                    options.append(option)
+            except (web.HTTPNotFound, web.HTTPForbidden):
+                pass
         channels_available = True
-        warning = None if int(actor["permissions"]) & ((1 << 7) | 8) else "The bot lacks View Audit Log; confirmed kick events cannot be recorded."
+        warning = post_warning if int(actor["permissions"]) & ((1 << 7) | 8) else "The bot lacks View Audit Log; confirmed kick events cannot be recorded."
     except web.HTTPException:
         options = None
         channels_available = False
@@ -175,14 +228,13 @@ async def save_settings(request):
             raise web.HTTPBadRequest(text="A forum tag requires a channel.")
         if enabled:
             try:
-                channel = await discord(request, "GET", f"/channels/{channel_id}")
-            except web.HTTPNotFound:
-                raise web.HTTPBadRequest(text=f"The {kind} channel no longer exists.") from None
-            option = _channel_option(channel, actor, effective, staff)
+                option = await _resolve_option(request, channel_id, actor, effective, staff)
+            except (web.HTTPNotFound, web.HTTPForbidden):
+                raise web.HTTPBadRequest(text=f"The {kind} destination is missing or inaccessible to the bot.") from None
             if not option:
-                raise web.HTTPBadRequest(text=f"The {kind} channel must be a text or forum channel in this server.")
+                raise web.HTTPBadRequest(text=f"The {kind} channel must be an accessible text channel, forum, or forum post in this server.")
             if not option["can_post"]:
-                raise web.HTTPBadRequest(text=f"The bot needs View Channel, Send Messages, Attach Files and, for forums, Embed Links in the {kind} channel.")
+                raise web.HTTPBadRequest(text=f"The bot cannot post in the {kind} destination. Check permissions, including Send Messages in Threads for posts, and whether the post is locked.")
             if option["type"] != "forum" and tag_id:
                 raise web.HTTPBadRequest(text="Forum tags can only be used with forum channels.")
             if option["requires_tag"] and not tag_id:
@@ -205,3 +257,5 @@ async def save_settings(request):
 
 
 routes.extend([web.get(PREFIX + "/settings", settings), web.put(PREFIX + "/settings", save_settings)])
+
+routes.append(web.get(PREFIX + "/destinations/{channel_id}", destination))

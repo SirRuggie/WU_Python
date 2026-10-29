@@ -233,6 +233,79 @@ class ModerationBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(api._channel_option({**channel, "guild_id": "999"}, admin,
                                                effective_permissions, staff))
 
+    def test_forum_post_inherits_parent_permissions_and_rejects_unsafe_destinations(self):
+        rights = hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES_IN_THREADS | hikari.Permissions.ATTACH_FILES
+        actor = {"permissions": int(rights), "role_ids": set(), "user_id": "100"}
+        parent = {"id": "123456789012345678", "guild_id": str(GUILD_ID), "type": 15, "flags": 16}
+        post = {"id": "123456789012345679", "guild_id": str(GUILD_ID), "parent_id": parent["id"], "type": 11, "name": "Member log", "thread_metadata": {"archived": True}}
+        option = api._channel_option(post, actor, effective_permissions, actor, parent)
+        self.assertEqual(option["type"], "forum_post")
+        self.assertTrue(option["can_post"])
+        self.assertFalse(option["requires_tag"])
+        self.assertFalse(api._channel_option({**post, "thread_metadata": {"locked": True}}, actor, effective_permissions, actor, parent)["can_post"])
+        for bad_parent in (None, {**parent, "type": 0}, {**parent, "guild_id": "999"}, {**parent, "id": "999"}):
+            self.assertIsNone(api._channel_option(post, actor, effective_permissions, actor, bad_parent))
+        hidden = {**actor, "permissions": 0}
+        self.assertIsNone(api._channel_option(post, actor, effective_permissions, hidden, parent))
+        denied_parent = {**parent, "permission_overwrites": [{"id": str(GUILD_ID), "type": 0, "allow": "0", "deny": str(int(hikari.Permissions.SEND_MESSAGES_IN_THREADS))}]}
+        self.assertFalse(api._channel_option(post, actor, effective_permissions, actor, denied_parent)["can_post"])
+        self.assertIsNone(api._channel_option({**post, "type": 12}, actor, effective_permissions, actor, parent))
+
+    async def test_post_lookup_checks_access_and_malformed_ids_before_discord(self):
+        request = NS(match_info={"channel_id": "invalid"})
+        with patch.object(api, "require_manage", new=AsyncMock(return_value={})), patch.object(api, "_bot_permissions", new=AsyncMock()) as permissions:
+            with self.assertRaises(web.HTTPBadRequest):
+                await api.destination(request)
+            permissions.assert_not_awaited()
+        with patch.object(api, "require_manage", new=AsyncMock(side_effect=web.HTTPForbidden())), patch.object(api, "_resolve_option", new=AsyncMock()) as resolve:
+            with self.assertRaises(web.HTTPForbidden):
+                await api.destination(request)
+            resolve.assert_not_awaited()
+
+    async def test_post_id_resolution_and_save_revalidate_parent(self):
+        from cwl_web import server_management
+        import json
+        actor = {"permissions": 8, "role_ids": set(), "user_id": "100"}
+        parent = {"id": "123456789012345678", "guild_id": str(GUILD_ID), "type": 15, "flags": 16}
+        post = {"id": str(self.channel_id), "guild_id": str(GUILD_ID), "parent_id": parent["id"], "type": 11, "name": "History"}
+        events = MemberEventStore.default_settings()["events"]
+        request = NS(match_info={"channel_id": str(self.channel_id)}, json=AsyncMock(return_value={"revision": 0, "events": events}))
+        class Context:
+            async def __aenter__(self): return NS(member_events=object())
+            async def __aexit__(self, *args): pass
+        store = NS(save_settings=AsyncMock(return_value={"revision": 1, "events": events}))
+        async def discord(_request, method, path):
+            return parent if path.endswith(parent["id"]) else post
+        with patch.object(api, "require_manage", new=AsyncMock(return_value=actor)), patch.object(api, "_bot_permissions", new=AsyncMock(return_value=(actor, effective_permissions))), patch.object(server_management, "discord", side_effect=discord), patch.object(api, "mongo", return_value=Context()), patch.object(api, "MemberEventStore", return_value=store):
+            result = json.loads((await api.destination(request)).text)
+            self.assertEqual(result["type"], "forum_post")
+            self.assertEqual((await api.save_settings(request)).status, 200)
+            parent["guild_id"] = "999"
+            with self.assertRaises(web.HTTPBadRequest):
+                await api.save_settings(request)
+            self.assertEqual(store.save_settings.await_count, 1)
+
+    async def test_existing_post_delivery_checks_parent_and_uses_reply_transport(self):
+        post = NS(id=self.channel_id, guild_id=GUILD_ID, type=hikari.ChannelType.GUILD_PUBLIC_THREAD,
+                  parent_id=123456789012345678, is_locked=False)
+        parent = NS(id=post.parent_id, guild_id=GUILD_ID, type=hikari.ChannelType.GUILD_FORUM, permission_overwrites={})
+        rights = hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES_IN_THREADS | hikari.Permissions.ATTACH_FILES
+        bot = NS(rest=NS(fetch_channel=AsyncMock(side_effect=lambda cid: post if cid == self.channel_id else parent),
+                        fetch_my_user=AsyncMock(return_value=NS(id=100)), fetch_member=AsyncMock(return_value=NS(role_ids=[])),
+                        fetch_roles=AsyncMock(return_value=[NS(id=GUILD_ID, permissions=rights)])))
+        self.assertIs(await transport.channel_ready(bot, self.row), post)
+        settings = MemberEventStore.default_settings()
+        settings["events"]["kick"] = {"enabled": True, "channel_id": str(self.channel_id), "forum_tag_id": None}
+        store = NS(settings=AsyncMock(return_value=settings), claim=AsyncMock(return_value=self.row), finish=AsyncMock())
+        with patch.object(transport, "post_card", new=AsyncMock(return_value="123")) as send:
+            self.assertTrue(await transport.deliver(store, bot, self.row))
+            send.assert_awaited_once_with(self.row, forum=False)
+        post.is_locked = True
+        self.assertIsNone(await transport.channel_ready(bot, self.row))
+        post.is_locked = False
+        parent.guild_id = 999
+        self.assertIsNone(await transport.channel_ready(bot, self.row))
+
     async def test_disable_or_move_skips_only_unsent_rows(self):
         store = NS(settings=AsyncMock(), skip_queued=AsyncMock(return_value=True),
                    claim=AsyncMock(), finish=AsyncMock())
