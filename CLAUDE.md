@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current Member tour frontend: `/home/ruggie/.local/share/wu-dashboard/releases/16cc79e7db39e3aaadf99c99117994b9103a47e8/`
+  - Current tour/deadline frontend: `/home/ruggie/.local/share/wu-dashboard/releases/8e0ee01337db50da8f2f289d257449c46440a440/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,11 +54,18 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend, backend and bot — Member tour + timing (2026-10-29):** `16cc79e7db39e3aaadf99c99117994b9103a47e8`, tag `member-tour-1`, timing PR #38 and tour PR #39.
+- **Current frontend + backend — Tour/deadline hotfix (2026-10-29):** `8e0ee01337db50da8f2f289d257449c46440a440`, tag `tour-deadline-1`, PR #40.
+  - Frontend/backend: `/home/ruggie/.local/share/wu-dashboard/{releases,backend}/8e0ee01337db50da8f2f289d257449c46440a440/`. Bot remains `16cc79e`; no bot restart.
+  - Rollback frontend with `/home/ruggie/.local/share/wu-dashboard/switch-release.py 16cc79e7db39e3aaadf99c99117994b9103a47e8`; set only `release.conf` WorkingDirectory to `/home/ruggie/.local/share/wu-dashboard/backend/16cc79e7db39e3aaadf99c99117994b9103a47e8`, then `systemctl --user daemon-reload` and `systemctl --user restart wu-cwl-demo-web.service`. Restore shared `assets/tour/SOURCES.md` from that previous release if rolling back its provenance too. Never restore the DB for a code rollback.
+  - Backup `.local/tour-deadline-backup-20261029T151849Z/dashboard.sqlite3`: 1,204,224 bytes, integrity OK, 57 table counts match. Main 21/18/18 and Lazy 114/92/73 unchanged (signups/assigned/locks), along with all protected records.
+  - Public `index-DUNRfMkr.js`, SHA256 `25bdc11e4013c79ef2a70e10d15c6ecca02f27e823abd5e201fe05d68a2207c9`; 42 asset hashes verified. Two readiness 200s by 6.42s, isolated backend cwd verified, clean journal with `refreshed=1 failures=0`.
+  - 782 frontend / 4,799 backend passed, 21 skipped; typecheck/build/layout and 24 cleanup cases passed. Claude smoke PASSED (handoff 17); Ruggie ran the real-page tour. November deadline correctly uses the stored October campaign: Oct 30 21:00Z; placements Oct 31 21:00Z. The initial Oct 29 expectation was corrected by Claude; the first attempt was safely rolled back before retry. Evidence `/tmp/wu-tour-deadline-retry/`.
+
+- **Previous frontend/backend; current bot — Member tour + timing (2026-10-29):** `16cc79e7db39e3aaadf99c99117994b9103a47e8`, tag `member-tour-1`, timing PR #38 and tour PR #39.
   - Frontend/backend: `/home/ruggie/.local/share/wu-dashboard/{releases,backend}/16cc79e7db39e3aaadf99c99117994b9103a47e8/`; bot at the same SHA. Rollback all three to `5539cba3c800d91372fd5c6adc62564a758ddff4` using switch-release, release.conf + daemon-reload/dashboard restart, and bot reset/restart. Never restore the database for a code rollback.
   - Backup `.local/member-tour-backup-20261029T122118Z/dashboard.sqlite3`: 1,196,032 bytes, integrity OK, 57 table counts matched. Main 19/18/18 and Lazy 113/92/73 unchanged.
   - 774 frontend / 4,797 backend passed (21 skipped, 126 subtests); typecheck/build/layout including 78 tour measurements passed. Public `index-CKbJjEBO.js`, 28 asset hashes, backend cwd and bot startup verified. Timing refresh completes in 5.8s every five minutes.
-  - Claude smoke **PASSED WITH DEFECTS — keep live**: 360px date line/invite/art, runtime/hashes, zero writes. Ruggie sees dates in Discord but the wrong campaign month. Original missing-date timeout fixed; wrong-month and off-screen phone spotlight defects are in progress under handoff prompt 07. Evidence `/tmp/wu-tour-release/live-proof.json`.
+  - Claude smoke **PASSED WITH DEFECTS — keep live**: 360px date line/invite/art, runtime/hashes, zero writes. Ruggie sees dates in Discord but the wrong campaign month. Original missing-date timeout fixed; wrong-month and real-page tour defects were fixed by tour-deadline-1; remaining spotlight sizing and copy refinements are queued under handoff prompt 11. Evidence `/tmp/wu-tour-release/live-proof.json`.
 
 - **Previous frontend, backend and bot — Member signup (2026-10-29):** `5539cba3c800d91372fd5c6adc62564a758ddff4`, tag `member-signup-1`, PR #37; moderation preservation merged first through PR #36.
   - Frontend and backend under `/home/ruggie/.local/share/wu-dashboard/{releases,backend}/5539cba3c800d91372fd5c6adc62564a758ddff4/`; bot `/home/botrunner/wu-bot` at the same SHA.

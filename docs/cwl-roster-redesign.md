@@ -4,9 +4,11 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-29)
 
-- `member-tour-1` released at `16cc79e7db39e3aaadf99c99117994b9103a47e8` (PRs #38/#39), frontend/backend/bot. 774 frontend / 4,797 backend checks passed. Claude smoke PASSED WITH DEFECTS; keep live. Missing-date timeout fixed; campaign-month and phone spotlight defects under prompt 07. Ruggie confirmed Discord dates appear but show the wrong month.
+- **Tour/deadline hotfix complete:** `tour-deadline-1`, `8e0ee01337db50da8f2f289d257449c46440a440`, PR #40. Frontend and isolated backend released; bot unchanged. Claude smoke PASSED (handoff 17), Ruggie verified the real-page tour. November uses the stored October campaign close, **Oct 30, 5 PM ET**, with placements by Oct 31, 5 PM ET. Wrong-month defect fixed. 782 frontend / 4,799 backend tests, typecheck/build and layout passed; 24 cleanup cases and seven mutations verified. Backup integrity/57 table counts and protected records unchanged (Main 21/18/18, Lazy 114/92/73). Runtime, public hashes and five-minute timing refresh verified. Next: prompt 11 red signup card and tour refinements, then prompt 10 signup polish; each requires review before release.
 
-- Member signup flow released as `member-signup-1`, `5539cba3c800d91372fd5c6adc62564a758ddff4` (PR #37, moderation PR #36 first). Frontend, isolated backend and bot verified; 761 frontend / 4,792 backend tests, typecheck/build/layout passed. Claude web smoke and Ruggie's private Discord check passed. The missing-date timeout was fixed in member-tour-1; wrong-month correction is in progress (prompt 07).
+- `member-tour-1` released at `16cc79e7db39e3aaadf99c99117994b9103a47e8` (PRs #38/#39), frontend/backend/bot. 774 frontend / 4,797 backend checks passed. Claude smoke PASSED WITH DEFECTS; keep live. Missing-date timeout fixed; campaign-month and real-page tour corrections completed in tour-deadline-1; remaining refinements are queued under prompt 11. Ruggie confirmed Discord dates appear but show the wrong month.
+
+- Member signup flow released as `member-signup-1`, `5539cba3c800d91372fd5c6adc62564a758ddff4` (PR #37, moderation PR #36 first). Frontend, isolated backend and bot verified; 761 frontend / 4,792 backend tests, typecheck/build/layout passed. Claude web smoke and Ruggie's private Discord check passed. The missing-date timeout was fixed in member-tour-1; wrong-month correction completed in tour-deadline-1.
 
 ## Decisions — Member signup flow (2026-10-28)
 
@@ -462,7 +464,7 @@ The storage owner migrates the existing `roster_image_posts` CHECK constraint to
 - Below roughly 450px viewport height, placement.ts can place Next off-screen; spotlight tap/Escape still work.
 - Test gaps recorded at release: no art-height cap, no text/art overlap assertion, and no chevron assertion.
 
-### Tour/deadline hotfix (prompt 07; review pending, not released)
+### Tour/deadline hotfix (prompts 07/08; released as tour-deadline-1)
 
 Ruggie removed the Fan Content Policy notice from the tour on 2026-10-29;
 Claude noted the policy asks for it where Supercell art is used.
@@ -489,4 +491,10 @@ uses October, January uses December of the prior year. A missing earlier campaig
 uses the bot's merged guild defaults for that signup month (prompt 08); unavailable
 Mongo retains the existing last-good/null cache behavior. Eligibility, refresh interval,
 timeout and last-good cache rules are unchanged. This requires a backend release
-alongside the tour frontend; no deployment is included in this branch.
+alongside the tour frontend; both shipped in tour-deadline-1. Live stored campaign overrides yield October 30, not the built-in October 29 default.
+
+### Later — tour-deadline-1 smoke follow-ups
+
+- Prompt 11: Back during the tour must preserve the previous history entry; clear the staff Save/discard notice when the editor becomes clean.
+- Prompt 11: step 5b highlights the entire selectable account card; keep the glove off its text. Apply whole-block targets to all practice steps and restore the approved playful copy.
+- Prompt 11: separate red remaining-signup card below the green confirmation, no account-name list; then prompt 10 signup polish, including Help/account-menu changes.
