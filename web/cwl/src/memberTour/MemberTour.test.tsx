@@ -75,6 +75,7 @@ afterEach(() => {
 async function render(
   view = "home",
   signupState: import("./session").SignupTourState = "open",
+  startBlocked = false,
 ) {
   await act(async () => {
     root.render(
@@ -86,19 +87,26 @@ async function render(
             </button>
           ))}
         </nav>
-        {[
-          "signup-pool",
-          "signup-account",
-          "signup-review",
-          "signup-confirm",
-        ].map((id) => (
-          <button key={id} data-tour-target={id} onClick={() => control(id)}>
-            {id}
-          </button>
-        ))}
+        <button
+          data-tour-target="signup-pool"
+          onClick={() => control("signup-pool")}
+        >
+          Lazy CWL
+        </button>
+        <article data-tour-target="signup-account">
+          <input
+            type="checkbox"
+            aria-label="Select account"
+            onClick={() => control("signup-account")}
+          />
+          <span>Account name · tag · current clan</span>
+        </article>
+        <section data-tour-target="signup-review">Review block</section>
+        <button data-tour-target="signup-confirm">Sign up</button>
         <MemberTour
           view={view}
           signupState={signupState}
+          startBlocked={startBlocked}
           menuOpen={false}
           onMenu={menu}
           onActive={active}
@@ -149,15 +157,17 @@ it("walks every step, target advances, phone menu closes for practice, finishes 
       );
     }
     await click(".tour-next");
+    if (i === 5)
+      expect(
+        document.querySelector<HTMLInputElement>(
+          '[data-tour-target="signup-account"] input',
+        )?.checked,
+      ).toBe(true);
   }
   expect(document.querySelector("dialog")).toBeNull();
   expect(readPreference().dismissed).toBe(true);
   expect(fetch).not.toHaveBeenCalled();
-  expect(control.mock.calls).toEqual([
-    ["signup-pool"],
-    ["signup-account"],
-    ["signup-review"],
-  ]);
+  expect(control.mock.calls).toEqual([["signup-pool"], ["signup-account"]]);
   expect(navigate.mock.calls.map((call) => call[0])).toEqual([
     "home",
     "todo",
@@ -361,12 +371,42 @@ it("failed account reads explain the error and allow continuing", async () => {
     steps[9].title,
   );
 });
-it("blocked staff editors get a visible explanation", async () => {
+it("clears the blocked staff editor explanation as soon as the editor is clean", async () => {
   active.mockReturnValueOnce(false);
-  await render("signup");
+  await render("signup", "open", true);
   await click(".tour-launcher");
   expect(host.textContent).toContain("Save or discard your changes first.");
   expect(document.querySelector("dialog")).toBeNull();
+  await render("signup", "open", false);
+  expect(host.textContent).not.toContain("Save or discard your changes first.");
+});
+
+it("uses the approved playful tour copy and bolds each navigation tap target", () => {
+  expect(steps.map(({ title }) => title)).toEqual([
+    "Hey Chief! Welcome to Warriors United!",
+    "Start here, Chief!",
+    "Ready to smash some bases?",
+    "Up here, Chief!",
+    "Feeling lazy? Same.",
+    "That one! Pick an account.",
+    "Hmm… did you pick the right ones?",
+    "SMASH that button!",
+    "WOOO! That's all it takes!",
+    "Don't sleep on the job!",
+    "Going crazy wondering if you signed up? 🤪",
+    "Don't give the King a headache!",
+    "Told you it was easy.",
+  ]);
+  expect(
+    steps.filter(({ text }) => text.includes("**")).map(({ text }) => text),
+  ).toEqual([
+    "Tap **Home** — it shows what to do next.",
+    "Tap **Tasks** — your attacks and events live here.",
+    "Tap **Sign up** — this is where you join every month.",
+    "Tap **Lazy CWL** — we'll practice with Lazy.",
+    "Tap **My signups** — every account you signed up is right here.",
+    "Make sure you join the right clan — tap **My clan assignments** to check yours.",
+  ]);
 });
 
 it("hides offscreen rings and remeasures the real target after drawer transition", async () => {

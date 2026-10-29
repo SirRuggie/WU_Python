@@ -168,11 +168,33 @@ const base = `http://127.0.0.1:${port}`;
             0,
           );
         }
+        if (scenario === "prior-back") {
+          // The signup draft is deliberately dirty: allow the normal leave prompt.
+          page.on("dialog", (dialog) => dialog.accept());
+          await page.goBack();
+          await page.waitForTimeout(300);
+          assert.equal(
+            new URL(page.url()).pathname,
+            "/",
+            "Back preserves Home",
+          );
+          await page.goForward();
+          await page.waitForTimeout(300);
+          assert.equal(
+            new URL(page.url()).pathname,
+            "/signup",
+            "Forward returns once",
+          );
+          assert.equal(
+            await page.evaluate(() => history.length),
+            initialHistory,
+          );
+        }
         assert.deepEqual(writes, []);
         let submitted = 0;
         if (["exit", "finish"].includes(scenario)) {
           await page.locator(".account-select input").first().check();
-          await page.locator('[data-tour-target="signup-review"]').click();
+          await page.locator(".submit-bar .primary").click();
           const response = page.waitForResponse(
             (r) =>
               r.request().method() === "POST" &&

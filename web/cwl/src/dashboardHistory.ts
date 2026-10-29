@@ -80,6 +80,15 @@ export class DashboardHistory {
       url.pathname + url.search,
     );
   }
+  restoreTourEntry(state: unknown) {
+    const target = (state as { wuDashboardIndex?: number } | null)
+      ?.wuDashboardIndex;
+    if (target === this.index) return;
+    this.restoring = true;
+    // A legacy same-document entry may have no index. Back still needs to
+    // return forward once before the tour restores its saved URL.
+    this.history.go(Number.isInteger(target) ? this.index - target! : 1);
+  }
   pop(state: unknown, allow: () => boolean): boolean {
     const target = (state as { wuDashboardIndex?: number } | null)
       ?.wuDashboardIndex;

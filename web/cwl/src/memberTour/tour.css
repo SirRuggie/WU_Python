@@ -181,10 +181,11 @@
   position: absolute;
   width: 50px;
   height: 58px;
-  right: -28px;
-  top: 50%;
+  right: 4px;
+  top: calc(100% + 5px);
+  transform: scale(var(--tour-glove-scale, 1));
+  transform-origin: top right;
   pointer-events: none;
-  transform: translateY(-15%);
 }
 .tour-glove svg {
   position: relative;
@@ -299,9 +300,6 @@
   }
   .shell.tour-active .sidebar {
     padding-bottom: 0;
-  }
-  .tour-glove {
-    right: -18px;
   }
 }
 .tour-card.wide-art {

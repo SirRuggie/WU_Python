@@ -85,53 +85,81 @@ const click = async (text: string) => {
   await act(async () => button.click());
 };
 
-it("caps remaining names at six in open and closed states without changing the signup action", async () => {
+it("shows a red action card without remaining account names only while signups are open", async () => {
   const many = Array.from({ length: 44 }, (_, i) => ({
     tag: `remaining-${i}`,
     name: `Reserve ${i + 1}`,
   }));
-  for (const signup_open of [true, false]) {
-    await render({ accounts: many, season: { ...season, signup_open } });
-    const text = host.querySelector(".member-signup-remaining")!.textContent!;
-    expect(text).toContain("Reserve 6");
-    expect(text).not.toContain("Reserve 7");
-    expect(text).toContain("+ 38 more");
-    expect(text.includes("Sign up the other 44")).toBe(signup_open);
-  }
+  const callbacks = await render({ accounts: many });
+  const card = host.querySelector(".member-signup-remaining")!;
+  expect(card.tagName).toBe("SECTION");
+  expect(card.previousElementSibling?.className).toBe("member-signup-success");
+  expect(card.textContent).toContain("44 accounts not signed up yet");
+  expect(card.textContent).toContain("Sign up 44 more accounts ›");
+  expect(card.textContent).not.toContain("Reserve");
+  expect(card.querySelector("svg[aria-hidden=true]")).not.toBeNull();
+  expect(card.querySelector(".member-signup-date")?.textContent).toBe(
+    host.querySelector(".member-signup-success .member-signup-date")
+      ?.textContent,
+  );
+  await click("Sign up 44 more accounts ›");
+  expect(callbacks.onRemaining).toHaveBeenCalledOnce();
+
+  await render({ accounts: many, season: { ...season, signup_open: false } });
+  expect(host.querySelector(".member-signup-remaining")).toBeNull();
+  expect(host.textContent).not.toContain("weren't signed up");
 });
 
-it("reassures two of five and lists remaining accounts without a warning; navigation is explicit", async () => {
+it("reassures two of five and offers the remaining accounts in a separate card", async () => {
   const callbacks = await render();
   expect(host.textContent).toContain("✓ You're signed up · 2 of 5 accounts");
   expect(host.textContent).toContain("Aurora · Main CWL");
   expect(host.textContent).toContain("Ace · Lazy CWL");
   expect(host.querySelector(".member-signup-remaining")?.textContent).toContain(
-    "3 accounts not signed up",
+    "3 accounts not signed up yet",
   );
+  expect(
+    host.querySelector(".member-signup-remaining")?.textContent,
+  ).not.toContain("Birch");
   expect(host.querySelector("[role=alert]")).toBeNull();
   expect(callbacks.onChange).not.toHaveBeenCalled();
   await click("Change signups ›");
   expect(callbacks.onChange).toHaveBeenCalledOnce();
-  await click("Sign up the other 3 ›");
+  await click("Sign up 3 more accounts ›");
   expect(callbacks.onRemaining).toHaveBeenCalledOnce();
+});
+it("uses singular copy and omits the deadline when unavailable", async () => {
+  await render({
+    signups: signups.slice(0, 1),
+    accounts: accounts.slice(0, 2),
+    season: { ...season, signup_deadline: null },
+  });
+  const card = host.querySelector(".member-signup-remaining")!;
+  expect(card.textContent).toContain("1 account not signed up yet");
+  expect(card.textContent).toContain("Sign up 1 more account ›");
+  expect(card.querySelector(".member-signup-date")).toBeNull();
 });
 it("closed and hidden remain reassuring, all signed counts correctly, empty never claims success", async () => {
   await render({ season: { ...season, signup_open: false }, published: false });
-  expect(host.textContent).toContain(
-    "3 accounts weren't signed up · signups are closed",
-  );
+  expect(host.querySelector(".member-signup-remaining")).toBeNull();
+  expect(host.textContent).not.toContain("weren't signed up");
   expect(host.textContent).not.toContain("hidden");
   expect(host.querySelector("button")).toBeNull();
   await render({ accounts: accounts.slice(0, 2) });
   expect(host.textContent).toContain("all 2 accounts");
+  expect(host.querySelector(".member-signup-remaining")).toBeNull();
   await render({
     signups: signups.slice(0, 1),
     accounts: accounts.slice(0, 1),
   });
   expect(host.textContent).toContain("all 1 account");
+  expect(host.querySelector(".member-signup-remaining")).toBeNull();
   await render({ signups: [], accounts: accounts.slice(0, 3) });
   expect(host.textContent).toContain("You haven't signed up any accounts yet.");
   expect(host.querySelector(".member-signup-success")).toBeNull();
+  expect(host.querySelector(".member-signup-remaining")?.textContent).toContain(
+    "3 accounts not signed up yet",
+  );
 });
 it("partly placed lists only waiting names and does not invent totals when links are unavailable", async () => {
   await render({
@@ -228,4 +256,15 @@ it("step strip and canonical plus legacy saved URLs keep the same destination", 
     expect(memberTarget(query, path).signupPanel).toBe("saved");
     expect(loginPath(query, false, path)).toContain("view=my-signups");
   }
+});
+
+it("remaining card keeps the deadline without a placement estimate or on a published roster", async () => {
+  await render({ season: { ...season, placements_by: null }, published: true });
+  expect(
+    host.querySelector(".member-signup-remaining .member-signup-date")
+      ?.textContent,
+  ).toContain("Signups close");
+  expect(
+    host.querySelector(".member-signup-success .member-signup-date"),
+  ).toBeNull();
 });

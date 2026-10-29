@@ -2,7 +2,8 @@
   margin: 16px 0;
 }
 .member-signup-success,
-.member-signup-empty {
+.member-signup-empty,
+.member-signup-remaining {
   padding: 18px;
   border: 1px solid #3a7962;
   border-radius: 14px;
@@ -12,6 +13,22 @@
 .member-signup-empty {
   background: #1b1d22;
   border-color: #464a52;
+}
+.member-signup-remaining {
+  margin-top: 10px;
+  background: var(--roster-card-danger, #493235);
+  border-color: var(--roster-card-edge-danger, #ff737d);
+  color: #fbe7e9;
+}
+.member-signup-remaining h2 {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.member-signup-remaining h2 svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--roster-card-edge-danger, #ff737d);
 }
 .member-signup-summary h2 {
   font-size: 20px;
@@ -26,9 +43,11 @@
 .member-signup-summary ul {
   padding-left: 20px;
 }
-.member-signup-summary .member-signup-date,
-.member-signup-remaining {
+.member-signup-summary .member-signup-date {
   color: #bdc7c2;
+}
+.member-signup-remaining .member-signup-date {
+  color: #f1d5d8;
 }
 .member-signup-summary button {
   min-height: 44px;
@@ -40,7 +59,4 @@
   color: #bdc7c2;
   font-size: 13px;
   text-decoration: underline;
-}
-.member-signup-remaining {
-  margin: 12px 4px;
 }
