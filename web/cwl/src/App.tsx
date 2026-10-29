@@ -33,7 +33,8 @@ import { AccountIdentity } from './AccountIdentity'
 import { useMobileNavigation } from './useMobileNavigation'
 import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
-import { lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import OwnerPrankBoundary from './ownerPrank/OwnerPrankBoundary'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
@@ -64,6 +65,7 @@ const BonusWorkspace = lazy(() => import('./BonusWorkspace'))
 const MemberAssignments = lazy(() => import('./MemberAssignments'))
 const ImageGallery = lazy(() => import('./CommandImageLibrary').then(module => ({default:module.ImageGallery})))
 const TicketBrowser = lazy(() => import('./TicketBrowser'))
+const OwnerPrank = lazy(() => import('./ownerPrank/OwnerPrank'))
 const ModerationWorkspace = lazy(() => import('./ModerationWorkspace'))
 type View = DashboardView
 type Notice = { kind: 'success' | 'error'; text: string }
@@ -91,6 +93,9 @@ function App() {
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [tourActive, setTourActive] = useState(false)
+  const [prankReadyUser, setPrankReadyUser] = useState<string | null>(null)
+  const [prankReplayAvailable, setPrankReplayAvailable] = useState(false)
+  const [prankReplaySignal, setPrankReplaySignal] = useState(0)
   const { drawerRef, triggerRef, mobile } = useMobileNavigation(menuOpen, () => setMenuOpen(false), Boolean(session))
   const [seasons, setSeasons] = useState<Season[]>([])
   const [staffSeasonId, setSeasonId] = useState(entryTarget.season)
@@ -463,6 +468,9 @@ function App() {
         setDrafts({ main: {}, lazy: {} })
         setCompletion(null)
         setSession(null)
+        setPrankReadyUser(null)
+        setPrankReplayAvailable(false)
+        setPrankReplaySignal(0)
         setAuthState('signed-out')
       },
     )
@@ -651,16 +659,18 @@ function App() {
       <div className="brand-wrap"><Brand /><button className="menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button></div>
       <SidebarNavigation tourExpanded={tourActive} key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={navigateSidebar} publicationStep={publicationStep} onPublication={openPublication} signupPanel={signupPanel} onSignup={panel => changeView("signup", "", undefined, panel)} />
       <div className="sidebar-foot">
-        <MemberTour view={view} menuOpen={menuOpen} onMenu={setMenuOpen} onActive={tourSession} onNavigate={tourNavigate}
+        <MemberTour key={session.user.id} view={view} menuOpen={menuOpen} onMenu={setMenuOpen} onActive={tourSession} onNavigate={tourNavigate}
+          inviteBlocked={view === 'home' && session.is_owner && prankReadyUser !== session.user.id}
           startBlocked={pending || signupBusy.current || rosterBusy || manageDirty || cwlDirty || publicationBusy || publicationDirty || reminderDirty || savedSignupDirty}
           signupState={dataError || accountError ? 'error' : seasonsLoading || !season || loadingData ? 'loading' : !season.signup_open ? 'closed' : !accounts.length ? 'empty' : !visibleAccounts.length ? 'all-signed' : 'open'} />
-        <AccountMenu user={session.user} onSignOut={signOut} variant="profile" disabled={pending} />
+        <AccountMenu user={session.user} onSignOut={signOut} variant="profile" disabled={pending}
+          replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} />
       </div>
     </aside>
     {menuOpen && <button className="scrim" tabIndex={-1} aria-hidden="true" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     <div className="workspace" inert={mobile && menuOpen}>
-      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} /> : <AccountIdentity user={session.user} />}</header>
+      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}</header>
       <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
         {["roster", "publication", "declaration"].includes(view) && (
           <StaffDetailsHost
@@ -907,6 +917,11 @@ function App() {
       </main>
     </div>
 
+    {session.is_owner && <OwnerPrankBoundary key={session.user.id} onFailure={() => setPrankReadyUser(session.user.id)}>
+      <Suspense fallback={null}><OwnerPrank view={view} blockedByTour={tourActive} replaySignal={prankReplaySignal}
+        onSettled={() => setPrankReadyUser(session.user.id)} onReplayAvailable={setPrankReplayAvailable}
+        onError={text => setNotice({kind: 'error', text})} /></Suspense>
+    </OwnerPrankBoundary>}
   </div></DashboardPermissions.Provider>
 }
 function Brand() { return <div className="brand"><img className="emblem discord-server-icon" src={serverIconUrl} alt="Warriors United server icon" width={39} height={39} /><span><strong>WARRIORS UNITED</strong><small>SERVER DASHBOARD</small></span></div> }

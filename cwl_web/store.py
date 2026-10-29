@@ -7,8 +7,9 @@ from pathlib import Path
 
 from .push import SCHEMA as PUSH_SCHEMA
 from utils.cwl_roster_image_store import SCHEMA as ROSTER_IMAGE_SCHEMA
+from utils.owner_prank_store import SCHEMA as OWNER_PRANK_SCHEMA
 
-SCHEMA = PUSH_SCHEMA + ROSTER_IMAGE_SCHEMA + """
+SCHEMA = PUSH_SCHEMA + ROSTER_IMAGE_SCHEMA + OWNER_PRANK_SCHEMA + """
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS roster_test_messages (
  id TEXT PRIMARY KEY, season_id INTEGER NOT NULL, pool TEXT NOT NULL,

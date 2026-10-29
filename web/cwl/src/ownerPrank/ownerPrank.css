@@ -1,0 +1,220 @@
+.owner-prank-dialog {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff3d6;
+  overflow: visible;
+}
+
+.owner-prank-dialog::backdrop {
+  background: #000b;
+}
+
+.owner-prank-card {
+  --art-height: 160px;
+  --art-space: 180px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(500px, calc(100vw - 28px));
+  min-height: 170px;
+  transform: translate(-50%, -50%);
+  padding: 24px 20px 18px;
+}
+
+.owner-prank-card.plain {
+  animation: none;
+}
+
+.owner-prank-card.has-art {
+  padding-left: var(--art-space);
+}
+
+.owner-prank-card.wide-character {
+  --art-height: 205px;
+  --art-space: 225px;
+}
+
+.owner-prank-card.jump {
+  animation: owner-prank-pop 180ms ease-out;
+}
+.owner-prank-card.farewell {
+  border-color: #f4b9d6;
+  background: linear-gradient(145deg, #38263b, #211c28 65%);
+  box-shadow:
+    0 16px 60px #000a,
+    0 0 30px #f0a9ca40;
+}
+
+.owner-prank-card.has-art.farewell {
+  --art-height: 280px;
+  padding: 165px 20px 18px;
+}
+
+.owner-prank-character {
+  position: absolute;
+  left: -10px;
+  top: -35px;
+  width: auto;
+  height: var(--art-height);
+  max-width: var(--art-height);
+  object-fit: contain;
+  object-position: top;
+  pointer-events: none;
+}
+
+.owner-prank-card.farewell .owner-prank-character {
+  left: 8px;
+  top: -125px;
+}
+
+.owner-prank-card h2 {
+  margin: 9px 42px 10px 0;
+  color: #fff3d6;
+  font-size: 20px;
+  line-height: 1.2;
+}
+.owner-prank-card p {
+  margin: 9px 0;
+}
+.owner-prank-card .owner-prank-reassurance {
+  color: #f9cf84;
+  font-weight: 700;
+}
+.owner-prank-card .owner-prank-error {
+  color: #ffb0ad;
+}
+.owner-prank-rickroll {
+  display: block;
+  width: min(180px, 100%);
+  max-height: 160px;
+  object-fit: contain;
+  margin: 10px 0;
+}
+.owner-prank-card footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+.owner-prank-card button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #6e6657;
+  border-radius: 999px;
+  padding: 8px 15px;
+  background: #302c23;
+  color: #fff3d6;
+  font: inherit;
+  cursor: pointer;
+}
+.owner-prank-card button.primary {
+  background: #fac775;
+  border-color: #fac775;
+  color: #30220b;
+  font-weight: 700;
+}
+.owner-prank-card button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.owner-prank-card button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.owner-prank-card .owner-prank-close {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+@keyframes owner-prank-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.88);
+  }
+}
+
+@media (max-width: 900px) {
+  .owner-prank-card {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: auto;
+    transform: none;
+    animation: tour-enter 220ms ease-out;
+  }
+  .owner-prank-card.plain {
+    animation: none;
+  }
+  .owner-prank-card.jump {
+    animation: owner-prank-mobile-enter 160ms ease-out;
+  }
+  .owner-prank-card.has-art {
+    --art-height: 140px;
+    padding: 125px 16px 18px;
+  }
+  .owner-prank-card.has-art.wide-character {
+    --art-height: 180px;
+    padding-top: 165px;
+  }
+  .owner-prank-character {
+    top: -25px;
+  }
+  .owner-prank-card.has-art.farewell {
+    --art-height: 220px;
+    padding: 125px 16px 18px;
+  }
+  .owner-prank-card.farewell .owner-prank-character {
+    top: -105px;
+  }
+  .owner-prank-card p {
+    font-size: 13px;
+  }
+  @keyframes owner-prank-mobile-enter {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+}
+
+@media (max-width: 380px) {
+  .owner-prank-card {
+    padding-right: 12px;
+  }
+  .owner-prank-card h2 {
+    font-size: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owner-prank-card,
+  .owner-prank-card.jump {
+    animation: owner-prank-fade 120ms linear;
+  }
+  .owner-prank-card.plain {
+    animation: none;
+  }
+  @keyframes owner-prank-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}

@@ -30,6 +30,7 @@ type Props = {
   onNavigate?: (page: TourPage, step: number) => void;
   signupState?: SignupTourState;
   startBlocked?: boolean;
+  inviteBlocked?: boolean;
 };
 
 export default function MemberTour({
@@ -40,6 +41,7 @@ export default function MemberTour({
   onNavigate,
   signupState = "open",
   startBlocked,
+  inviteBlocked,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
@@ -205,7 +207,7 @@ export default function MemberTour({
   }, [open, step]);
 
   useEffect(() => {
-    if (view !== "home") return;
+    if (view !== "home" || inviteBlocked) return;
     if (
       !open &&
       !dismissedSession.current &&
@@ -215,7 +217,7 @@ export default function MemberTour({
       start();
     // Only visiting Home invites; other renders do not repeat an invitation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [view, inviteBlocked]);
   useEffect(() => {
     if (!open) return;
     const sync = () =>
@@ -337,6 +339,7 @@ export default function MemberTour({
       <button
         type="button"
         className="tour-launcher"
+        disabled={inviteBlocked}
         onClick={() => start(true)}
       >
         <CircleHelp size={20} aria-hidden="true" /> Help &amp; tour
