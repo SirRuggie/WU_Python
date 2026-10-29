@@ -73,17 +73,23 @@ it("sidebar Build resets to Accounts and topbar names follow each CWL destinatio
       await settle();
       expect(host.querySelector(".topbar strong")?.textContent).toBe(label);
     }
-    const results = [
-      ...host.querySelectorAll<HTMLButtonElement>(".sidebar button"),
-    ].find((b) => b.textContent?.trim() === "Results")!;
-    expect(results).toBeDefined();
-    expect(results.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => results.click());
-    expect(results.getAttribute("aria-expanded")).toBe("true");
-    const children = host.querySelector(
-      "#" + results.getAttribute("aria-controls"),
-    )!;
-    expect(children.hasAttribute("hidden")).toBe(false);
+    expect(
+      [...host.querySelectorAll(".sidebar button")].some(
+        (button) => button.textContent?.trim() === "Results",
+      ),
+    ).toBe(false);
+    for (const label of [
+      "Results & participation",
+      "Bonus medals",
+      "Exports & history",
+    ]) {
+      const item = nav(label);
+      expect(item).toBeDefined();
+      expect(
+        item.parentElement?.classList.contains("navigation-children"),
+      ).toBe(true);
+      expect(item.parentElement?.hasAttribute("hidden")).toBe(false);
+    }
   } finally {
     await act(async () => root.unmount());
     host.remove();

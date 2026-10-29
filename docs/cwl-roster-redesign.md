@@ -520,3 +520,12 @@ Released `signup-card-1` (`539853e`, PR #42), frontend only. Separate red remain
 Items 1–10 implemented frontend-only: unique member/staff-CWL menu icons; bold current signup step with Fan Kit Villager 52545/52538/52543 art and compact other steps; unnumbered member strip; one local season/deadline line without Draft; Main CWL naming and whole-card pool selection; review Change links retaining eligible selections and listing removed accounts; "your CWL clans" copy; pinned Help menu row and profile/avatar account menu. Internal staff season state is unchanged. No backend, schema, endpoint, bot or signup-save contract changes. The duplicate member season/Draft Later item is resolved by this batch. Release docs for preceding signup-card-1 were merged through PR #43.
 
 Released `signup-polish-1` (`ef90834`, PR #44), frontend only. Claude smoke passed (handoff 30): 360px signup steps, approved Villager art, copy, unique menu icons and account menu; GET only, no overflow. 804 frontend tests, TypeScript/build and isolated layout passed. Protected counts unchanged; backend `8e0ee01` unchanged with no restarts. Backup, public hashes and rollback targets are in CLAUDE.md.
+
+
+## Decisions — Staff navigation (2026-10-29)
+
+Approved prompt 13: keep member navigation, all routes/view IDs and item permissions unchanged. Replace the staff fold-out with a STAFF TOOLS label, direct Staff overview and Moderation links, and top-level CWL, Clans, Members, Bot and owner-only Admin groups. CWL results and Replacements are flat items. Empty groups and unauthorized direct links remain hidden.
+
+Use unique Lucide meaning icons across rendered menu items and groups; TicketCheck is available, so no fallback is needed. Labels are Declaration check, Image gallery, Tickets and Ticket settings, including page titles. The current group opens on navigation/remount, while manual collapse works on the current page; other staff groups default closed and persist validated booleans in wu-navigation-v3. Obsolete keys are discarded. My CWL and the tour's temporary expansion/restoration behavior stay unchanged.
+
+Implementation on codex/staff-nav is review-only until Claude ACCEPT; no backend, route or permission changes. Role-based fixture checks cover member, cwl_roster-only staff, multi-permission staff and owner at 360×800 and 1440×1000. Four mutation checks cover nested groups, duplicate icons, missing current-group auto-open and bypassed permission filtering.

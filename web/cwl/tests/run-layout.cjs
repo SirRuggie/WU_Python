@@ -109,6 +109,57 @@ server.stdout.on("data", (chunk) => {
             break;
           }
         }
+        if (!process.exitCode) {
+          const staffPort = 8981;
+          const staffServer = spawn(
+            python,
+            [
+              "-I",
+              path.join(__dirname, "fixtures/staff_nav.py"),
+              path.join(root, "web/cwl/dist"),
+              String(staffPort),
+            ],
+            {
+              env: {
+                PATH: process.env.PATH,
+                HOME: temp,
+                WU_FIXTURE_BACKEND: root,
+              },
+              stdio: ["ignore", "ignore", "inherit"],
+            },
+          );
+          try {
+            let ready = false;
+            for (let attempt = 0; attempt < 100; attempt++) {
+              if (staffServer.exitCode !== null)
+                throw new Error("Staff fixture exited");
+              try {
+                ready = (
+                  await fetch(`http://127.0.0.1:${staffPort}/api/cwl/config`)
+                ).ok;
+              } catch {
+                /* Fixture startup. */
+              }
+              if (ready) break;
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+            if (!ready) throw new Error("Staff fixture startup timed out");
+            const code = await new Promise((resolve) => {
+              const child = spawn(
+                process.execPath,
+                [
+                  path.join(__dirname, "staff-nav.browser.cjs"),
+                  String(staffPort),
+                ],
+                { stdio: "inherit", env: process.env },
+              );
+              child.on("exit", resolve);
+            });
+            if (code) process.exitCode = code;
+          } finally {
+            staffServer.kill();
+          }
+        }
       } catch (error) {
         console.error(error);
         process.exitCode = 1;

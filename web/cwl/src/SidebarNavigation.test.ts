@@ -1,220 +1,214 @@
-import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
-import {expect,it} from 'vitest'
-import DashboardIcon from './DashboardIcon'
-import {navigationSection,navigationLabel,visibleNavigationSections} from './SidebarNavigation'
-it('keeps all personal pages together without staff grants',()=>{
- const sections=visibleNavigationSections(false,false)
- expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL'])
- expect(sections.flatMap(section=>section.items.map(item=>item.view))).toEqual(['home','search','todo','wars','events','signup','signup','assignments'])
-})
-it('keeps CWL work separate from server configuration',()=>{
- const sections=visibleNavigationSections(true,false,['cwl'])
- expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL'])
- expect(sections.find(section=>section.id==='cwl-management')?.items.map(item=>item.view)).toContain('roster')
- expect(navigationSection('cwl-returns')).toBe('CWL')
-})
-it('gives member items and staff CWL destinations distinct icons', () => {
- const sections = visibleNavigationSections(true, true)
- const member = sections.filter(section => ['my-dashboard', 'activity', 'my-cwl'].includes(section.id))
- const cwl = sections.find(section => section.id === 'cwl-management')!
- const memberItems = member.flatMap(section => section.items)
- const iconMarkup = (name: typeof memberItems[number]['icon']) => renderToStaticMarkup(createElement(DashboardIcon, {name}))
- for (const items of [memberItems, cwl.items]) {
-  expect(new Set(items.map(item => item.icon)).size).toBe(items.length)
-  expect(new Set(items.map(item => iconMarkup(item.icon))).size).toBe(items.length)
- }
- expect(member.find(section => section.id === 'my-cwl')?.icon).toBe('trophy')
- expect(memberItems.map(item => item.icon)).not.toContain('trophy')
- expect(memberItems.filter(item => item.view === 'signup').map(item => item.icon)).toEqual(['signup', 'signedUp'])
- expect(memberItems.find(item => item.view === 'assignments')?.icon).toBe('castle')
- expect(cwl.icon).toBe('crown')
- expect(cwl.items.map(item => item.icon)).not.toContain('crown')
- expect(cwl.items.slice(0, 6).map(item => [item.label, item.icon])).toEqual([
-  ['Seasons', 'seasonSettings'],
-  ['Signup reminders', 'bell'],
-  ['Build roster', 'roster'],
-  ['Finalize roster', 'publish'],
-  ['Announcements', 'megaphone'],
-  ['Declaration readiness check', 'readiness'],
- ])
-})
-it('preserves every explicit scope without exposing other tools',()=>{
- for(const [scope,view] of Object.entries({clans:'clan-management',clan_weights:'weight-trial',strikes:'strikes',strikes_add:'strikes',strikes_remove:'strikes',member_roles:'members-settings',recruitment:'applications-settings',tickets:'applications-settings',fwa:'fwa-settings',text_commands:'text-commands',server_tools:'connections-settings'})){
-  const staff=visibleNavigationSections(false,false,[scope]).filter(section=>!['my-dashboard','activity','my-cwl','staff-overview'].includes(section.id))
-  expect(staff.flatMap(section=>section.items.map(item=>item.view))).toEqual(scope==='tickets'?['tickets',view]:scope==='text_commands'?[view,'image-gallery']:scope.startsWith('strikes')?[view,'replacements']:scope==='member_roles'?['members-settings','moderation']:[view])
- }
-})
-it('shows owners all groups and every destination once',()=>{
- const sections=visibleNavigationSections(true,true)
- expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL','Clan management','Tickets','Server tools','Settings'])
- const views = sections.flatMap((section) =>
-   section.items.map((item) => `${item.view}:${item.step || item.signupPanel || ""}`),
- );
- expect(new Set(views).size).toBe(views.length)
- expect(views).toHaveLength(33);
- expect(sections.find(section=>section.id==='settings')?.items.map(item=>item.view)).toEqual(['image-gallery','connections-settings','issues','access'])
- expect(navigationSection('tickets')).toBe('Tickets')
- expect(navigationSection('applications-settings')).toBe('Server tools')
- expect(navigationSection('clan-management')).toBe('Clan management')
- expect(navigationSection('strikes')).toBe('Clan management')
- expect(navigationSection('replacements')).toBe('Clan management')
-})
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { expect, it } from "vitest";
+import DashboardIcon from "./DashboardIcon";
+import SidebarNavigation, {
+  navigationLabel,
+  navigationSection,
+  visibleNavigationSections,
+} from "./SidebarNavigation";
 
-it("renders one Build roster entry in the staff sidebar only", async () => {
-  const { renderToStaticMarkup } = await import("react-dom/server");
-  const { createElement } = await import("react");
-  const { default: SidebarNavigation } = await import("./SidebarNavigation");
-  const props = {
-    userId: "audit",
-    view: "roster" as const,
-    canEdit: true,
-    isOwner: true,
-    onNavigate: () => {},
-  };
+const memberIds = ["my-dashboard", "activity", "my-cwl"];
+const itemsFor = (permissions: string[], canEdit = true, isOwner = false) =>
+  visibleNavigationSections(canEdit, isOwner, permissions).flatMap(
+    (section) => section.items,
+  );
+const markup = (
+  view: Parameters<typeof SidebarNavigation>[0]["view"],
+  permissions: string[] = [],
+  isOwner = false,
+) =>
+  renderToStaticMarkup(
+    createElement(SidebarNavigation, {
+      userId: "nav-fixture",
+      view,
+      canEdit: permissions.length > 0 || isOwner,
+      isOwner,
+      permissions,
+      onNavigate: () => {},
+    }),
+  );
+
+it("keeps member navigation unchanged and hides staff tools without grants", () => {
+  const sections = visibleNavigationSections(false, false);
+  expect(sections.map((section) => section.id)).toEqual(memberIds);
   expect(
-    renderToStaticMarkup(createElement(SidebarNavigation, props)),
-  ).toContain("Build roster");
-  expect(
-    renderToStaticMarkup(
-      createElement(SidebarNavigation, {
-        ...props,
-        canEdit: false,
-        isOwner: false,
-      }),
-    ),
-  ).not.toContain("Build roster");
+    sections.flatMap((section) => section.items.map((item) => item.view)),
+  ).toEqual([
+    "home",
+    "search",
+    "todo",
+    "wars",
+    "events",
+    "signup",
+    "signup",
+    "assignments",
+  ]);
+  expect(markup("home")).not.toContain("Staff tools");
 });
 
-it('renders the weight trial under clan management for clan staff only',async()=>{
- const {renderToStaticMarkup}=await import('react-dom/server')
- const React=await import('react')
- const {default:Sidebar}=await import('./SidebarNavigation')
- const render=(permissions:string[])=>renderToStaticMarkup(React.createElement(Sidebar,{userId:'1',view:'weight-trial',canEdit:false,isOwner:false,permissions,onNavigate:()=>{}}))
- expect(render(['clan_weights'])).toContain('Clan weights')
- expect(render(['clans'])).not.toContain('Clan weights')
- expect(render([])).not.toContain('Clan weights')
-})
+it("gives roster-only staff one flat CWL group and a direct overview", () => {
+  const sections = visibleNavigationSections(true, false, ["cwl_roster"]);
+  expect(sections.map((section) => section.id)).toEqual([
+    ...memberIds,
+    "staff-overview",
+    "cwl",
+  ]);
+  expect(
+    sections
+      .find((section) => section.id === "cwl")
+      ?.items.map((item) => item.label),
+  ).toEqual(["Build roster", "Declaration check"]);
+  const html = markup("roster", ["cwl_roster"]);
+  expect(html).toContain("Staff tools</h2>");
+  expect(html).toContain('aria-controls="navigation-cwl"');
+  expect(html).toContain('aria-expanded="true"');
+  expect(html).not.toContain("navigation-staff-tools");
+  expect(html).not.toContain("cwl-results");
+});
 
-it('separates CWL action permissions from clan management and access settings',()=>{
- const views=(permissions:string[])=>visibleNavigationSections(true,false,permissions).flatMap(s=>s.items.map(i=>i.view))
- expect(views(['cwl_roster'])).toContain('roster')
- expect(views(['cwl_roster'])).not.toContain('publication')
- expect(views(['cwl_publish'])).toContain('publication')
- expect(views(['cwl_publish'])).not.toContain('roster')
- expect(views(['cwl_send'])).toContain('bonuses')
- expect(views(['cwl_send'])).not.toContain('access')
- expect(views(['clans'])).not.toContain('roster')
-})
-
-it('keeps issue history owner-only even for CWL staff',()=>{
- expect(visibleNavigationSections(true,false,['cwl_signups']).flatMap(s=>s.items).some(i=>i.view==='issues')).toBe(false)
-})
-
-it('offers the same roster destination to signup and placement staff without exposing publishing', () => {
- for (const permissions of [['cwl_signups'], ['cwl_roster'], ['cwl_signups', 'cwl_roster']]) {
-  const views = visibleNavigationSections(true, false, permissions).flatMap(section => section.items.map(item => item.view))
-  expect(views.filter(view => view === 'roster')).toHaveLength(1)
-  expect(views).not.toContain('manage-signups')
-  expect(views).not.toContain('publication')
- }
-})
-
-it('does not render empty nested CWL groups for roster-only or signup-only staff', async () => {
- const {renderToStaticMarkup} = await import('react-dom/server')
- const React = await import('react')
- const {default: Sidebar} = await import('./SidebarNavigation')
- const render = (permissions: string[]) => renderToStaticMarkup(React.createElement(Sidebar, {
-  userId: 'audit', view: 'roster', canEdit: true, isOwner: false, permissions, onNavigate: () => {},
- }))
-
- for (const permissions of [['cwl_roster'], ['cwl_signups']]) {
-  const markup = render(permissions)
-  expect(markup).toContain("Build roster");
-  expect(markup).not.toContain('Reminders')
-  expect(markup).not.toContain("Results");
- }
-})
-
-it('renders publish-only access and results exports in their CWL sidebar groups', async () => {
- const {renderToStaticMarkup} = await import('react-dom/server')
- const React = await import('react')
- const {default: Sidebar} = await import('./SidebarNavigation')
- const render = (permissions: string[]) => renderToStaticMarkup(React.createElement(Sidebar, {
-  userId: 'audit', view: 'publication', canEdit: true, isOwner: false, permissions, onNavigate: () => {},
- }))
-
- const publishOnly = render(['cwl_publish'])
- expect(publishOnly).toContain("Finalize roster");
- expect(publishOnly).not.toContain("Build roster</span>");
- expect(publishOnly).not.toContain('Exports &amp; history')
-
- const results = render(['cwl_results'])
- expect(results).toContain('Exports &amp; history')
- expect(results).toMatch(/aria-controls="cwl-results"[^>]*>[\s\S]*?<span>Results<\/span>/);
- expect(results).not.toContain("Finalize roster");
-})
-
-it('names staff destinations without granting access',()=>{
- expect(navigationLabel("publication")).toBe("Finalize roster");
- expect(navigationLabel('connections-settings')).toBe('Integrations')
- expect(visibleNavigationSections(false,false).flatMap(section=>section.items).some(item=>item.view==='publication')).toBe(false)
-})
-
-it('puts member destinations first and collapses permission-filtered staff tools', async () => {
- const {renderToStaticMarkup} = await import('react-dom/server')
- const React = await import('react')
- const {default: Sidebar} = await import('./SidebarNavigation')
- const render = (view: 'home' | 'roster', permissions: string[]) => renderToStaticMarkup(React.createElement(Sidebar, {
-  userId: 'audit', view, canEdit: permissions.length > 0, isOwner: false, permissions, onNavigate: () => {},
- }))
- const member = render('home', ['cwl_roster'])
- expect(member.indexOf('My clan assignments')).toBeLessThan(member.indexOf('Staff tools'))
- expect(member).toContain('aria-expanded="false" aria-controls="navigation-staff-tools"')
- expect(member).toContain('id="navigation-staff-tools" class="navigation-children navigation-staff-children" hidden=""')
- expect(member.indexOf('Staff tools')).toBeLessThan(member.indexOf('Staff overview'))
- const staff = render('roster', ['cwl_roster'])
- expect(staff).toContain('aria-expanded="true" aria-controls="navigation-staff-tools"')
- expect(staff).toContain('aria-current="page"')
- expect(staff).toContain("Build roster");
- expect(render('home', [])).not.toContain('Staff tools')
-})
-
-
-it('shows Moderation only to staff with member-role access', () => {
- const {items} = visibleNavigationSections(true, false, ['member_roles']).find(section => section.id === 'server-tools')!
- expect(items.some(item => item.view === 'moderation' && item.label === 'Moderation')).toBe(true)
- expect(visibleNavigationSections(true, false, ['server_tools']).flatMap(section => section.items).some(item => item.view === 'moderation')).toBe(false)
- expect(visibleNavigationSections(true, false, ['member_roles']).flatMap(section => section.items).some(item => item.view === 'member-activity')).toBe(false)
-})
-
-it("orders the CWL season journey and gates each publication step", () => {
-  const items = visibleNavigationSections(true, true).find(
-    (s) => s.id === "cwl-management",
-  )!.items;
-  expect(items.map((i) => i.label)).toEqual([
+it("orders all owner destinations in top-level direct links and flat groups", () => {
+  const sections = visibleNavigationSections(true, true);
+  expect(sections.map((section) => section.id)).toEqual([
+    ...memberIds,
+    "staff-overview",
+    "cwl",
+    "moderation",
+    "clans",
+    "members",
+    "bot",
+    "admin",
+  ]);
+  expect(
+    sections
+      .find((section) => section.id === "cwl")
+      ?.items.map((item) => item.label),
+  ).toEqual([
     "Seasons",
     "Signup reminders",
     "Build roster",
     "Finalize roster",
     "Announcements",
-    "Declaration readiness check",
+    "Declaration check",
     "Return reminders",
     "Results & participation",
     "Bonus medals",
     "Exports & history",
   ]);
-  for (const [scope, included, excluded] of [
-    ["cwl_publish", "Finalize roster", "Announcements"],
-    ["cwl_send", "Announcements", "Finalize roster"],
-  ]) {
-    const labels = visibleNavigationSections(true, false, [scope]).flatMap(
-      (s) => s.items.map((i) => i.label),
-    );
-    expect(labels).toContain(included);
-    expect(labels).not.toContain(excluded);
+  expect(
+    sections
+      .find((section) => section.id === "clans")
+      ?.items.map((item) => item.label),
+  ).toEqual([
+    "Family clans",
+    "Clan weights",
+    "Strikes",
+    "Replacements",
+    "FWA tools",
+  ]);
+  expect(
+    sections
+      .find((section) => section.id === "members")
+      ?.items.map((item) => item.label),
+  ).toEqual(["Members & roles", "Tickets", "Ticket settings"]);
+  expect(
+    sections
+      .find((section) => section.id === "bot")
+      ?.items.map((item) => item.label),
+  ).toEqual(["Command triggers", "Image gallery", "Integrations"]);
+  expect(
+    sections
+      .find((section) => section.id === "admin")
+      ?.items.map((item) => item.label),
+  ).toEqual(["Staff access", "Dashboard issues"]);
+  const destinations = sections.flatMap((section) =>
+    section.items.map(
+      (item) => `${item.view}:${item.step || item.signupPanel || ""}`,
+    ),
+  );
+  expect(destinations).toHaveLength(33);
+  expect(new Set(destinations).size).toBe(destinations.length);
+  const html = markup("home", [], true);
+  expect(html.indexOf("Staff overview")).toBeLessThan(
+    html.indexOf("navigation-cwl"),
+  );
+  expect(html.indexOf("Moderation")).toBeLessThan(
+    html.indexOf("navigation-clans"),
+  );
+  expect(html).not.toContain("navigation-staff-tools");
+  expect(html).not.toContain("cwl-results");
+});
+
+it("preserves each permission list and hides empty groups or unauthorized direct links", () => {
+  const cases: Array<[string, string[]]> = [
+    ["clans", ["clan-management"]],
+    ["clan_weights", ["weight-trial"]],
+    ["strikes", ["strikes", "replacements"]],
+    ["strikes_add", ["strikes", "replacements"]],
+    ["strikes_remove", ["strikes", "replacements"]],
+    ["member_roles", ["moderation", "members-settings"]],
+    ["recruitment", ["applications-settings"]],
+    ["tickets", ["tickets", "applications-settings"]],
+    ["fwa", ["fwa-settings"]],
+    ["text_commands", ["text-commands", "image-gallery"]],
+    ["server_tools", ["connections-settings"]],
+  ];
+  for (const [scope, expected] of cases) {
+    const staffViews = visibleNavigationSections(false, false, [scope])
+      .filter(
+        (section) =>
+          !memberIds.includes(section.id) && section.id !== "staff-overview",
+      )
+      .flatMap((section) => section.items.map((item) => item.view));
+    expect(staffViews).toEqual(expected);
   }
-  expect(navigationLabel("roster")).toBe("Build roster");
-  expect(navigationLabel("staff")).toBe("Seasons");
+  expect(itemsFor(["cwl_roster"]).map((item) => item.view)).not.toContain(
+    "publication",
+  );
+  expect(itemsFor(["cwl_publish"]).map((item) => item.view)).not.toContain(
+    "roster",
+  );
+  expect(itemsFor(["cwl_send"]).map((item) => item.view)).toContain("bonuses");
+  expect(itemsFor(["server_tools"]).map((item) => item.view)).not.toContain(
+    "moderation",
+  );
+  expect(
+    itemsFor(["cwl_roster"], false).map((item) => item.view),
+  ).not.toContain("roster");
+  expect(itemsFor(["cwl_roster"]).map((item) => item.view)).not.toContain(
+    "access",
+  );
+});
+
+it("uses the approved labels for menu and page naming", () => {
+  expect(navigationLabel("declaration")).toBe("Declaration check");
+  expect(navigationLabel("image-gallery")).toBe("Image gallery");
+  expect(navigationLabel("tickets")).toBe("Tickets");
+  expect(navigationLabel("applications-settings")).toBe("Ticket settings");
   expect(navigationLabel("publication", "announce")).toBe("Announcements");
+  expect(navigationSection("applications-settings")).toBe("Members");
+  expect(navigationSection("weight-trial")).toBe("Clans");
+  expect(navigationSection("moderation")).toBe("Staff tools");
+});
+
+it("renders a unique semantic icon beside every member and staff label", () => {
+  const sections = visibleNavigationSections(true, true);
+  const icons = sections.flatMap((section) => [
+    ...(!section.direct ? [section.icon] : []),
+    ...section.items.map((item) => item.icon),
+  ]);
+  const rendered = icons.map((name) =>
+    renderToStaticMarkup(createElement(DashboardIcon, { name })),
+  );
+  expect(new Set(icons).size).toBe(icons.length);
+  expect(new Set(rendered).size).toBe(rendered.length);
+  expect(icons).toContain("war");
+  expect(icons).toContain("fwa");
+  expect(icons).not.toContain("tools");
+});
+
+it("uses the staff label for direct-link breadcrumbs", () => {
+  expect(navigationSection("staff-overview")).toBe("Staff tools");
+  expect(navigationSection("moderation")).toBe("Staff tools");
+  expect(navigationSection("member-activity")).toBe("Staff tools");
 });

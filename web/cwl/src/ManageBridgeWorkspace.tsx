@@ -766,7 +766,7 @@ export default function ManageBridgeWorkspace({
             disabled={busy}
             onClick={onDeclaration}
           >
-            Next: Declaration readiness check ›
+            Next: Declaration check ›
           </button>
         )}
       {sendReview && bridge && (
