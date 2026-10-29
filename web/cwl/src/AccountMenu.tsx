@@ -1,4 +1,4 @@
-import { ChevronDown, LogOut } from "lucide-react";
+import { ChevronDown, LogOut, RotateCcw } from "lucide-react";
 import {
   Button as AriaButton,
   Menu,
@@ -16,6 +16,7 @@ type Props = {
   onSignOut: () => void;
   variant: "profile" | "avatar";
   disabled?: boolean;
+  replayPrank?: () => void;
 };
 
 export default function AccountMenu({
@@ -23,6 +24,7 @@ export default function AccountMenu({
   onSignOut,
   variant,
   disabled = false,
+  replayPrank,
 }: Props) {
   const name = user.display_name || user.username;
 
@@ -60,6 +62,17 @@ export default function AccountMenu({
             aria-label={`Account actions for ${name}`}
             className="account-menu-list"
           >
+            {replayPrank && (
+              <MenuItem
+                className="account-menu-signout"
+                textValue="Replay prank"
+                isDisabled={disabled}
+                onAction={replayPrank}
+              >
+                <RotateCcw size={17} aria-hidden="true" />
+                <span>Replay prank</span>
+              </MenuItem>
+            )}
             <MenuItem
               className="account-menu-signout"
               textValue="Sign out"

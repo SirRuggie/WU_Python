@@ -76,6 +76,7 @@ async function render(
   view = "home",
   signupState: import("./session").SignupTourState = "open",
   startBlocked = false,
+  inviteBlocked = false,
 ) {
   await act(async () => {
     root.render(
@@ -107,6 +108,7 @@ async function render(
           view={view}
           signupState={signupState}
           startBlocked={startBlocked}
+          inviteBlocked={inviteBlocked}
           menuOpen={false}
           onMenu={menu}
           onActive={active}
@@ -119,6 +121,31 @@ async function render(
     await new Promise((resolve) => setTimeout(resolve, 25));
   });
 }
+it("waits for the owner prank before inviting the member tour", async () => {
+  await render("home", "open", false, true);
+  expect(document.querySelector(".member-tour")).toBeNull();
+  await render("home", "open", false, false);
+  expect(document.querySelector(".member-tour")).not.toBeNull();
+});
+it("queues manual Help & tour while the prank owns the dialog", async () => {
+  await render("home", "open", false, true);
+  await click(".tour-launcher");
+  expect(document.querySelector(".member-tour")).toBeNull();
+  expect(document.querySelector(".tour-launcher")?.textContent).toContain(
+    "Tour queued",
+  );
+  await render("home", "open", false, false);
+  expect(document.querySelectorAll(".member-tour")).toHaveLength(1);
+  expect(document.querySelector("#tour-title")?.textContent).toBe(
+    steps[0].title,
+  );
+  expect(active).toHaveBeenCalledTimes(1);
+});
+it("opens manual Help & tour immediately for ordinary members", async () => {
+  await render("todo");
+  await click(".tour-launcher");
+  expect(document.querySelector(".member-tour")).not.toBeNull();
+});
 async function click(selector: string) {
   await act(async () => {
     (document.querySelector(selector) as HTMLElement).click();

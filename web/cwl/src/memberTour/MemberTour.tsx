@@ -30,6 +30,7 @@ type Props = {
   onNavigate?: (page: TourPage, step: number) => void;
   signupState?: SignupTourState;
   startBlocked?: boolean;
+  inviteBlocked?: boolean;
 };
 
 export default function MemberTour({
@@ -40,8 +41,10 @@ export default function MemberTour({
   onNavigate,
   signupState = "open",
   startBlocked,
+  inviteBlocked,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [manualQueued, setManualQueued] = useState(false);
   const [step, setStep] = useState(0);
   const [dontShow, setDontShow] = useState(false);
   const [box, setBox] = useState<Box | null>(null);
@@ -205,6 +208,12 @@ export default function MemberTour({
   }, [open, step]);
 
   useEffect(() => {
+    if (inviteBlocked) return;
+    if (manualQueued) {
+      setManualQueued(false);
+      start(true);
+      return;
+    }
     if (view !== "home") return;
     if (
       !open &&
@@ -215,7 +224,7 @@ export default function MemberTour({
       start();
     // Only visiting Home invites; other renders do not repeat an invitation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [view, inviteBlocked, manualQueued]);
   useEffect(() => {
     if (!open) return;
     const sync = () =>
@@ -337,9 +346,13 @@ export default function MemberTour({
       <button
         type="button"
         className="tour-launcher"
-        onClick={() => start(true)}
+        onClick={() => {
+          if (inviteBlocked) setManualQueued(true);
+          else start(true);
+        }}
       >
-        <CircleHelp size={20} aria-hidden="true" /> Help &amp; tour
+        <CircleHelp size={20} aria-hidden="true" />{" "}
+        {manualQueued ? "Tour queued" : "Help & tour"}
       </button>
       {startError && <p role="status">{startError}</p>}
       {open &&
