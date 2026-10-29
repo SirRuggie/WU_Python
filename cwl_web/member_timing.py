@@ -12,31 +12,39 @@ from .manage_bridge import GUILD_ID, _mongo
 LOG = logging.getLogger(__name__)
 REFRESH_SECONDS = 300
 MAX_AGE_SECONDS = 6 * 60 * 60
+SEASON_TIMEOUT_SECONDS = 30
+PASS_TIMEOUT_SECONDS = 120
 
 
 def eligible_bindings(app):
+    now = datetime.now(timezone.utc)
+    next_month = (now.replace(day=1) + timedelta(days=32)).replace(day=1)
+    cycles = (now.strftime('%Y-%m'), next_month.strftime('%Y-%m'))
     with app['store'].tx() as db:
         return {row['id']: row['cycle'] for row in db.execute(
             'SELECT s.id,b.cycle FROM seasons s JOIN manage_campaign_bindings b '
-            'ON b.season_id=s.id WHERE s.signup_open OR NOT EXISTS '
-            '(SELECT 1 FROM roster_publications p WHERE p.season_id=s.id AND p.withdrawn_at IS NULL)')}
+            'ON b.season_id=s.id WHERE (s.signup_open OR NOT EXISTS '
+            '(SELECT 1 FROM roster_publications p WHERE p.season_id=s.id AND p.withdrawn_at IS NULL)) '
+            'AND (b.cycle IN (?,?) OR s.id=(SELECT season_id FROM member_season WHERE id=1))', cycles)}
 
 
 async def refresh(app):
     """One background Mongo context; failed seasons retain their last good result."""
     started = time.monotonic()
-    pending = eligible_bindings(app)
+    pending = {}
     cache = app['member_timing_cache']
     refreshed = 0
     failed = set()
     completed = set()
     try:
+        pending = eligible_bindings(app)
         if pending:
-            async with asyncio.timeout(30):
+            async with asyncio.timeout(PASS_TIMEOUT_SECONDS):
                 async with _mongo(SimpleNamespace(app=app)) as mongo:
                     for sid, cycle in pending.items():
                         try:
-                            loaded = await load_campaign(mongo, GUILD_ID, cycle)
+                            async with asyncio.timeout(SEASON_TIMEOUT_SECONDS):
+                                loaded = await load_campaign(mongo, GUILD_ID, cycle)
                             campaign = loaded['campaign']
                             value = utc_timing(signup_deadline(campaign, cycle)) if campaign.get('signup_deadline') is not None else utc_timing(None)
                             cache[sid] = (time.monotonic(), cycle, value)
@@ -47,6 +55,7 @@ async def refresh(app):
     except asyncio.CancelledError:
         raise
     except Exception:
+        LOG.exception('Member timing refresh failed; retaining last-good values')
         failed.update(set(pending) - completed)
     finally:
         LOG.info('Member timing refresh: refreshed=%d failures=%d elapsed=%.3fs',
@@ -56,16 +65,19 @@ async def refresh(app):
 async def lifecycle(app):
     async def worker():
         while True:
-            await refresh(app)
+            try:
+                await refresh(app)
+            except Exception:
+                LOG.exception('Member timing worker pass failed; retrying next interval')
             await asyncio.sleep(REFRESH_SECONDS)
 
     task = asyncio.create_task(worker(), name='member-timing-refresh')
-    app['member_timing_task'] = task
+    app['member_timing_state']['task'] = task
     try:
         yield
     finally:
         task.cancel()
-        with suppress(asyncio.CancelledError):
+        with suppress(asyncio.CancelledError, Exception):
             await task
 
 

@@ -1824,6 +1824,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app["dev_fixture"] = dev_fixture
     app["dev_identity"] = dev_identity
     app["member_timing_cache"] = {}
+    app["member_timing_state"] = {"task": None}
     app["participation_sync_locks"] = {}
     app["dashboard_accounts_cache"] = {}
     app["dashboard_accounts_inflight"] = {}

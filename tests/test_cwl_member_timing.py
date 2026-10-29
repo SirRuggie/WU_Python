@@ -1,9 +1,10 @@
 """Background timing keeps slow Mongo off member requests."""
 import asyncio
 import time
+import sqlite3
 import unittest
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -30,14 +31,19 @@ async def fake_mongo(request):
 
 
 class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp = foundation.WebFoundationTests.asyncSetUp
+    async def asyncSetUp(self):
+        await foundation.WebFoundationTests.asyncSetUp(self)
+        clock = patch.object(timing, 'datetime', wraps=datetime)
+        fake = clock.start()
+        fake.now.return_value = datetime(2026, 10, 29, tzinfo=timezone.utc)
+        self.addCleanup(clock.stop)
     asyncTearDown = foundation.WebFoundationTests.asyncTearDown
     auth = foundation.WebFoundationTests.auth
     call = foundation.WebFoundationTests.call
     season = foundation.WebFoundationTests.season
 
     async def setup_bound(self):
-        task = self.app['member_timing_task']
+        task = self.app['member_timing_state']['task']
         task.cancel()
         try:
             await task
@@ -95,7 +101,7 @@ class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0)
             self.assertEqual((await self.read(sid))['signup_deadline'], '2026-10-30T21:00:00+00:00')
-            task = self.app['member_timing_task']
+            task = self.app['member_timing_state']['task']
             await lifecycle.aclose()
             self.assertTrue(task.cancelled())
 
@@ -135,3 +141,96 @@ class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
             await timing.refresh(self.app)
             self.assertEqual(await self.read(sid), timing.utc_timing(None))
             mongo.assert_not_called()
+
+    async def test_sqlite_failure_logs_once_then_next_pass_populates_and_closes_cleanly(self):
+        sid = await self.setup_bound()
+        real_bindings = timing.eligible_bindings
+        calls = 0
+
+        def bindings(app):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise sqlite3.OperationalError('database is locked')
+            return real_bindings(app)
+
+        value = {'campaign': {'signup_deadline': {'at': '2026-10-30T21:00:00Z'}}}
+        with patch.object(timing, 'eligible_bindings', side_effect=bindings), patch.object(timing, 'REFRESH_SECONDS', .001), patch.object(timing, '_mongo', fake_mongo), patch.object(timing, 'load_campaign', return_value=value), patch.object(timing.LOG, 'exception') as log:
+            lifecycle = timing.lifecycle(self.app)
+            await anext(lifecycle)
+            try:
+                async with asyncio.timeout(.5):
+                    while sid not in self.app['member_timing_cache']:
+                        await asyncio.sleep(.001)
+                self.assertGreaterEqual(calls, 2)
+                self.assertEqual(log.call_count, 1)
+            finally:
+                await lifecycle.aclose()
+
+    async def test_worker_guards_unexpected_refresh_failure_and_shutdown(self):
+        await self.setup_bound()
+        recovered = asyncio.Event()
+        calls = 0
+
+        async def pass_once(app):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise sqlite3.OperationalError('disk I/O error')
+            recovered.set()
+
+        with patch.object(timing, 'refresh', side_effect=pass_once), patch.object(timing, 'REFRESH_SECONDS', .001), patch.object(timing.LOG, 'exception') as log:
+            lifecycle = timing.lifecycle(self.app)
+            await anext(lifecycle)
+            try:
+                await asyncio.wait_for(recovered.wait(), .5)
+                self.assertEqual(log.call_count, 1)
+            finally:
+                await lifecycle.aclose()
+
+    async def test_three_slow_seasons_each_get_their_own_budget(self):
+        await self.setup_bound()
+
+        async def slow(*args):
+            await asyncio.sleep(.03)
+            return {'campaign': {'signup_deadline': None}}
+
+        with patch.object(timing, 'eligible_bindings', return_value={1: '2026-10', 2: '2026-11', 3: '2026-10'}), patch.object(timing, '_mongo', fake_mongo), patch.object(timing, 'load_campaign', side_effect=slow), patch.object(timing, 'SEASON_TIMEOUT_SECONDS', .05), patch.object(timing, 'PASS_TIMEOUT_SECONDS', .2):
+            await timing.refresh(self.app)
+        self.assertEqual(set(self.app['member_timing_cache']), {1, 2, 3})
+
+    async def test_season_timeout_does_not_starve_next_season(self):
+        await self.setup_bound()
+
+        async def load(mongo, guild, cycle):
+            if cycle == 'slow':
+                await asyncio.Event().wait()
+            return {'campaign': {'signup_deadline': None}}
+
+        with patch.object(timing, 'eligible_bindings', return_value={1: 'slow', 2: 'fast'}), patch.object(timing, '_mongo', fake_mongo), patch.object(timing, 'load_campaign', side_effect=load), patch.object(timing, 'SEASON_TIMEOUT_SECONDS', .01), patch.object(timing, 'PASS_TIMEOUT_SECONDS', .3):
+            await asyncio.wait_for(timing.refresh(self.app), .2)
+        self.assertEqual(set(self.app['member_timing_cache']), {2})
+
+    async def test_whole_pass_timeout_bounds_context_entry_and_retains_cache(self):
+        sid = await self.setup_bound()
+        original = (time.monotonic(), '2026-10', timing.utc_timing('2026-10-30T21:00:00Z'))
+        self.app['member_timing_cache'][sid] = original
+
+        @asynccontextmanager
+        async def blocked(request):
+            await asyncio.Event().wait()
+            yield object()
+
+        with patch.object(timing, '_mongo', blocked), patch.object(timing, 'PASS_TIMEOUT_SECONDS', .01), patch.object(timing.LOG, 'exception') as log:
+            await asyncio.wait_for(timing.refresh(self.app), .2)
+            self.assertEqual(log.call_count, 1)
+        self.assertEqual(self.app['member_timing_cache'][sid], original)
+
+    async def test_eligibility_excludes_old_and_far_future_except_member_season(self):
+        sid = await self.setup_bound()
+        with self.app['store'].tx() as db:
+            for ident, cycle in [(90, '2026-09'), (91, '2026-11'), (92, '2027-01')]:
+                db.execute("INSERT INTO seasons(id,label,status,signup_open) VALUES(?,?,'archived',0)", (ident, cycle))
+                db.execute('INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES(?,?)', (ident, cycle))
+            db.execute('UPDATE member_season SET season_id=90 WHERE id=1')
+        self.assertEqual(timing.eligible_bindings(self.app), {sid: '2026-10', 90: '2026-09', 91: '2026-11'})
