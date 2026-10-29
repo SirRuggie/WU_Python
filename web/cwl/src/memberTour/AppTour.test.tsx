@@ -91,7 +91,7 @@ it.each(["exit", "finish"])(
       expect(writes).toEqual([]);
       await click('[data-tour-target="signup-pool"]');
       await click(".account-select input");
-      await click('[data-tour-target="signup-review"]');
+      await click(".submit-bar .primary");
       await click('[data-tour-target="signup-confirm"]');
       expect(writes).toEqual(["/seasons/1/signups"]);
     } finally {

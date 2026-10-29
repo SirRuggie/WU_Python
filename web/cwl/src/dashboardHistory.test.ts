@@ -200,3 +200,23 @@ it('keeps each task handoff with its history entry through Back and Forward', as
  expect(f.controller.pop(f.travel(1),()=>true)).toBe(true)
  expect(activityContext(f.current().state,'todo').activityFilter).toBe('#ABC')
 })
+
+it.each([false, true])(
+  "tour Back restores its own entry without replacing a prior entry (legacy=%s)",
+  (legacy) => {
+    const f = fixture();
+    f.controller.write({ view: "signup", season: "" }, true);
+    if (legacy) f.entries[0].state = null;
+    const prior = { ...f.entries[0] };
+    const state = f.travel(-1);
+    f.controller.restoreTourEntry(state);
+    expect(f.controller.pending).toBe(true);
+    expect(f.movements).toEqual([1]);
+    expect(f.controller.pop(f.port.state, () => true)).toBe(false);
+    expect(f.controller.pending).toBe(false);
+    f.controller.write({ view: "signup", season: "" }, false);
+    expect(f.entries[0]).toEqual(prior);
+    expect(f.entries).toHaveLength(2);
+    expect(f.current().url).toBe("/signup");
+  },
+);

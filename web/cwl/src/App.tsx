@@ -363,29 +363,54 @@ function App() {
     if (panel !== signupPanel) navigation.current?.write({view:'signup', season:'', signupPanel:panel}, true)
     setSignupPanel(panel); setReview(false); setCompletion(null)
   }
-  const navigationState = useRef({ canLeave, allowedView })
-  navigationState.current = { canLeave, allowedView }
+  const tourBackPending = useRef(false);
+  const navigationState = useRef({ canLeave, allowedView });
+  navigationState.current = { canLeave, allowedView };
   useEffect(() => {
-    const controller = new DashboardHistory(window.history)
-    navigation.current = controller
+    const controller = new DashboardHistory(window.history);
+    navigation.current = controller;
     const pop = (event: PopStateEvent) => {
-      if (!controller.pop(event.state, () => navigationState.current.canLeave())) return
-      if (isTourReadOnly()) { window.dispatchEvent(new Event('wu-tour-back')); return }
-      const route = dashboardTarget(window.location.search, window.location.pathname)
-      const target = {...route, ...activityContext(event.state, route.view)}
-      setActivityVisit(event.state?.wuDashboardIndex || 0)
-      setActivitySearch(target.activityFilter || '')
-      setActivityKind(target.activityKind)
-      const destination = navigationState.current.allowedView(target.view)
-      if (target.season && seasonViews.has(destination)) setSeasonId(target.season)
-      setPublicationStep(target.step || 'review')
-      setSignupPanel(target.signupPanel || 'register'); setCompletion(null); setReview(false)
-      acceptRoute(destination)
-      controller.write({ ...target, view: destination }, false)
-    }
-    window.addEventListener('popstate', pop)
-    return () => { window.removeEventListener('popstate', pop); navigation.current = null }
-  }, [])
+      if (isTourReadOnly() && !controller.pending) {
+        // Return to the tour's original history entry before restoring its URL.
+        // Replacing the entry reached by Back would destroy the previous page.
+        controller.restoreTourEntry(event.state);
+        tourBackPending.current = controller.pending;
+        if (!controller.pending) window.dispatchEvent(new Event("wu-tour-back"));
+        return;
+      }
+      if (
+        !controller.pop(event.state, () => navigationState.current.canLeave())
+      ) {
+        if (tourBackPending.current && !controller.pending) {
+          tourBackPending.current = false;
+          window.dispatchEvent(new Event("wu-tour-back"));
+        }
+        return;
+      }
+      const route = dashboardTarget(
+        window.location.search,
+        window.location.pathname,
+      );
+      const target = { ...route, ...activityContext(event.state, route.view) };
+      setActivityVisit(event.state?.wuDashboardIndex || 0);
+      setActivitySearch(target.activityFilter || "");
+      setActivityKind(target.activityKind);
+      const destination = navigationState.current.allowedView(target.view);
+      if (target.season && seasonViews.has(destination))
+        setSeasonId(target.season);
+      setPublicationStep(target.step || "review");
+      setSignupPanel(target.signupPanel || "register");
+      setCompletion(null);
+      setReview(false);
+      acceptRoute(destination);
+      controller.write({ ...target, view: destination }, false);
+    };
+    window.addEventListener("popstate", pop);
+    return () => {
+      window.removeEventListener("popstate", pop);
+      navigation.current = null;
+    };
+  }, []);
   useEffect(() => {
     if (authState !== 'ready') return
     const destination = allowedView(view)
@@ -513,7 +538,7 @@ function App() {
         setReview(false);
       } else if (step <= 6) {
         setSignupStep(2);
-        setReview(false);
+        setReview(step === 6);
       }
     }
   };
@@ -594,6 +619,7 @@ function App() {
       <SidebarNavigation tourExpanded={tourActive} key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={navigateSidebar} publicationStep={publicationStep} onPublication={openPublication} signupPanel={signupPanel} onSignup={panel => changeView("signup", "", undefined, panel)} />
       <div className="sidebar-foot">
         <MemberTour view={view} menuOpen={menuOpen} onMenu={setMenuOpen} onActive={tourSession} onNavigate={tourNavigate}
+          startBlocked={pending || signupBusy.current || rosterBusy || manageDirty || cwlDirty || publicationBusy || publicationDirty || reminderDirty || savedSignupDirty}
           signupState={dataError || accountError ? 'error' : seasonsLoading || !season || loadingData ? 'loading' : !season.signup_open ? 'closed' : !accounts.length ? 'empty' : !visibleAccounts.length ? 'all-signed' : 'open'} />
         <div className="sidebar-account">
           <AccountIdentity user={session.user} />
@@ -695,18 +721,18 @@ function App() {
               <details className="hub-help"><summary data-tour-target="signup-missing">Missing an account?</summary><AccountLinkHelp busy={loadingData || pending} onRefresh={() => void loadSignup()} /></details>
               <div className="account-list">{pageAccounts.map((account, index) => {
                 const chosen = Object.hasOwn(draft, account.tag) && !(pool === 'main' && account.current_clan_type === 'FWA')
-                return <article className={`account-card ${chosen ? 'chosen' : ''}`} key={account.tag}>
-                  <div className="account-top"><label className="account-select" data-tour-target={index === 0 ? "signup-account" : undefined}><input type="checkbox" checked={chosen} disabled={ !season.signup_open || season.status !== 'draft' || pending || loadingData || !!dataError || !!accountError} onChange={event => { if (!pool) return; if (event.target.checked && pool === 'main' && account.current_clan_type === 'FWA') { setFwaBlocked(true); return }; const next = { ...draft }; if (event.target.checked) next[account.tag] = false; else delete next[account.tag]; setDraft(next) }} /><span><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag}</small></span></label></div>
+                return <article data-tour-target={index === 0 ? "signup-account" : undefined} className={`account-card ${chosen ? 'chosen' : ''}`} key={account.tag}>
+                  <div className="account-top"><label className="account-select"><input type="checkbox" checked={chosen} disabled={ !season.signup_open || season.status !== 'draft' || pending || loadingData || !!dataError || !!accountError} onChange={event => { if (!pool) return; if (event.target.checked && pool === 'main' && account.current_clan_type === 'FWA') { setFwaBlocked(true); return }; const next = { ...draft }; if (event.target.checked) next[account.tag] = false; else delete next[account.tag]; setDraft(next) }} /><span><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag}</small></span></label></div>
                   <div className="account-meta"><span>Current clan <strong>{account.current_clan_name || 'None'}{account.current_clan_tag ? ` · ${account.current_clan_tag}` : ''}</strong></span></div>
                   {pool === 'main' && account.current_clan_type === 'FWA' && <p className="inline-reason">FWA account · Lazy CWL only. Choose Lazy CWL above to sign up this account.</p>}
                 </article>
               })}</div>
               {lastSignupPage > 0 && <nav className="hub-pagination" aria-label="Signup account pages"><button disabled={currentSignupPage === 0} onClick={() => setSignupPage(currentSignupPage - 1)}>Previous accounts</button><span>Page {currentSignupPage + 1} of {lastSignupPage + 1}</span><button disabled={currentSignupPage === lastSignupPage} onClick={() => setSignupPage(currentSignupPage + 1)}>Next accounts</button></nav>}
-              {season.signup_open && visibleAccounts.length > 0 && <div className="submit-bar"><div><strong>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected</strong><small>Selections across all pages · Not saved yet.</small></div><div className="signup-action-buttons"><button disabled={pending} onClick={() => setSignupStep(1)}>← Back</button><button data-tour-target="signup-review" className="primary" disabled={!selected.length || pending || loadingData || !!dataError || !!accountError} onClick={() => setReview(true)}>Continue →</button></div></div>}
+              {season.signup_open && visibleAccounts.length > 0 && <div className="submit-bar"><div><strong>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected</strong><small>Selections across all pages · Not saved yet.</small></div><div className="signup-action-buttons"><button disabled={pending} onClick={() => setSignupStep(1)}>← Back</button><button className="primary" disabled={!selected.length || pending || loadingData || !!dataError || !!accountError} onClick={() => setReview(true)}>Continue →</button></div></div>}
             </>}
             </>}
             {signupStep === 2 && !review && (!accounts.length || accountError || !season.signup_open) && <button disabled={pending} onClick={() => setSignupStep(1)}>← Back to CWL choice</button>}
-            {review && pool && <section className="signup-review card" aria-label="Review selected accounts">{notice?.kind === 'error' && <div className="notice error" role="alert">{notice.text}</div>}<h3>{poolName(pool)} · {season.label}</h3><p>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected. Staff will assign your hosting clans.</p><div className="review-list">{selected.map(item => { const account = accounts.find(candidate => candidate.tag === item.tag)!; return <div className="review-row" key={item.tag}><div><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.current_clan_name || 'No current clan'}</small></div>{account.current_clan_type === 'FWA' && pool === 'main' && <span className="transfer-review">FWA account · Lazy CWL only.</span>}</div> })}</div><div className="signup-actions submit-bar"><button disabled={pending} onClick={() => setReview(false)}>← Back</button><button data-tour-target="signup-confirm" className="primary" disabled={!selected.length || pending || loadingData || !season.signup_open || !!dataError || !!accountError} onClick={submit}>{pending ? 'Saving…' : `Sign up ${selected.length} ${selected.length === 1 ? 'account' : 'accounts'}`}</button></div></section>}
+            {review && pool && <section data-tour-target="signup-review" className="signup-review card" aria-label="Review selected accounts">{notice?.kind === 'error' && <div className="notice error" role="alert">{notice.text}</div>}<h3>{poolName(pool)} · {season.label}</h3><p>{selected.length} {selected.length === 1 ? 'account' : 'accounts'} selected. Staff will assign your hosting clans.</p><div className="review-list">{selected.map(item => { const account = accounts.find(candidate => candidate.tag === item.tag)!; return <div className="review-row" key={item.tag}><div><strong className="signed-up-name"><TownHallIcon level={account.town_hall} /><span>{account.name}</span></strong><small>{account.tag} · TH {account.town_hall ?? '—'} · {account.current_clan_name || 'No current clan'}</small></div>{account.current_clan_type === 'FWA' && pool === 'main' && <span className="transfer-review">FWA account · Lazy CWL only.</span>}</div> })}</div><div className="signup-actions submit-bar"><button disabled={pending} onClick={() => setReview(false)}>← Back</button><button data-tour-target="signup-confirm" className="primary" disabled={!selected.length || pending || loadingData || !season.signup_open || !!dataError || !!accountError} onClick={submit}>{pending ? 'Saving…' : `Sign up ${selected.length} ${selected.length === 1 ? 'account' : 'accounts'}`}</button></div></section>}
             </div>}
             {signupPanel === 'saved' && <section className="registered">
               {!savedSignupsLoaded && !dataError ? <p role="status">Loading saved signups…</p> : dataError ? null : <>

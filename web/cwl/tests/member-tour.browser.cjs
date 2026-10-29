@@ -142,6 +142,50 @@ const base = `http://127.0.0.1:${port}`;
               `Ring mismatch ${key} step ${step}`,
             );
         }
+        if (step >= 4 && step <= 7) {
+          const expected = [
+            ".pool-choice-grid button[data-tour-target]",
+            ".account-card[data-tour-target]",
+            ".signup-review.card",
+            ".signup-review button.primary",
+          ][step - 4];
+          assert.equal(
+            await page.locator(expected).getAttribute("data-tour-target"),
+            targetIds[step],
+          );
+          const overlapsText = await page.evaluate((selector) => {
+            const target = document.querySelector(selector);
+            const glove = document
+              .querySelector(".tour-glove")
+              ?.getBoundingClientRect();
+            if (!glove) return false;
+            const walker = document.createTreeWalker(
+              target,
+              NodeFilter.SHOW_TEXT,
+            );
+            let node;
+            while ((node = walker.nextNode())) {
+              if (!node.textContent.trim()) continue;
+              const range = document.createRange();
+              range.selectNodeContents(node);
+              for (const rect of range.getClientRects()) {
+                if (
+                  Math.min(rect.right, glove.right) >
+                    Math.max(rect.left, glove.left) &&
+                  Math.min(rect.bottom, glove.bottom) >
+                    Math.max(rect.top, glove.top)
+                )
+                  return true;
+              }
+            }
+            return false;
+          }, expected);
+          assert.equal(
+            overlapsText,
+            false,
+            `Glove overlaps target text: ${width} step ${step}`,
+          );
+        }
         results.push({ width, height, step, ...measured });
         assert.equal(measured.overlap, 0, JSON.stringify(results.at(-1)));
         assert.equal(measured.overflow, false);
@@ -166,8 +210,8 @@ const base = `http://127.0.0.1:${port}`;
           output &&
           ((width === 360 &&
             height === 800 &&
-            [1, 2, 4, 7, 10].includes(step)) ||
-            (width === 1440 && [1, 4, 9, 10].includes(step)) ||
+            [1, 2, 4, 5, 6, 7, 10].includes(step)) ||
+            (width === 1440 && [1, 4, 5, 6, 9, 10].includes(step)) ||
             (width === 1024 && step === 4))
         )
           await page.screenshot({

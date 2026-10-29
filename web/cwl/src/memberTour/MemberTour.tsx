@@ -29,6 +29,7 @@ type Props = {
   onActive: (active: boolean) => boolean | void;
   onNavigate?: (page: TourPage, step: number) => void;
   signupState?: SignupTourState;
+  startBlocked?: boolean;
 };
 
 export default function MemberTour({
@@ -38,11 +39,13 @@ export default function MemberTour({
   onActive,
   onNavigate,
   signupState = "open",
+  startBlocked,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const [dontShow, setDontShow] = useState(false);
   const [box, setBox] = useState<Box | null>(null);
+  const [gloveScale, setGloveScale] = useState(1);
   const dialog = useRef<HTMLDialogElement>(null);
   const card = useRef<HTMLElement>(null);
   const dismissedSession = useRef(false);
@@ -71,6 +74,9 @@ export default function MemberTour({
   const [startError, setStartError] = useState("");
   const [shake, setShake] = useState(0);
   const current = steps[step];
+  useEffect(() => {
+    if (startBlocked === false) setStartError("");
+  }, [startBlocked]);
   const closed = step >= 3 && step <= 7 && signupState === "closed";
   const empty = step >= 5 && step <= 7 && signupState === "empty";
   const allSigned = step >= 5 && step <= 7 && signupState === "all-signed";
@@ -93,6 +99,11 @@ export default function MemberTour({
         : allSigned
           ? "All your accounts are already signed up — nice!"
           : current.text;
+  const copy = text
+    .split(/\*\*(.*?)\*\*/g)
+    .map((part, index) =>
+      index % 2 === 1 ? <strong key={index}>{part}</strong> : part,
+    );
   const sidebarStep = [
     "home",
     "todo",
@@ -160,16 +171,20 @@ export default function MemberTour({
       setStep(8);
       return;
     }
-    if (step >= 4 && step <= 6) {
+    if (step === 4 || step === 5) {
       const target = document.querySelector<HTMLElement>(
         `[data-tour-target="${targetId}"]`,
       );
       if (!target || target.matches(":disabled")) return;
-      const checkbox =
-        target instanceof HTMLInputElement
-          ? target
-          : target.querySelector<HTMLInputElement>('input[type="checkbox"]');
-      if (!checkbox?.checked) target.click();
+      if (step === 4) target.click();
+      else {
+        const checkbox =
+          target instanceof HTMLInputElement
+            ? target
+            : target.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        if (!checkbox || checkbox.disabled) return;
+        if (!checkbox.checked) checkbox.click();
+      }
     }
     if (step === steps.length - 1) close("finish");
     else setStep(step + 1);
@@ -235,7 +250,9 @@ export default function MemberTour({
       }
       let rect = target.getBoundingClientRect();
       if (!sidebarStep && window.innerWidth <= 900 && card.current) {
-        const availableBottom = card.current.getBoundingClientRect().top - 18;
+        const panelTop = card.current.getBoundingClientRect().top;
+        const gap = Math.max(18, Math.min(68, panelTop - rect.height - 64));
+        const availableBottom = panelTop - gap;
         if (rect.bottom > availableBottom) {
           window.scrollBy(0, rect.bottom - availableBottom);
           rect = target.getBoundingClientRect();
@@ -259,6 +276,16 @@ export default function MemberTour({
             height: window.innerHeight,
           }),
         );
+      const panelTop =
+        card.current?.getBoundingClientRect().top ?? window.innerHeight;
+      const spaceBelow =
+        Math.min(
+          window.innerHeight,
+          panelTop > rect.bottom ? panelTop : window.innerHeight,
+        ) -
+        rect.bottom -
+        8;
+      setGloveScale(Math.max(0.15, Math.min(1, spaceBelow / 68)));
       setBox({
         top: rect.top,
         left: rect.left,
@@ -356,7 +383,9 @@ export default function MemberTour({
               <button
                 type="button"
                 className="tour-spotlight"
-                style={box}
+                style={
+                  { ...box, "--tour-glove-scale": gloveScale } as CSSProperties
+                }
                 onClick={() => advance(true)}
                 aria-label={`Continue: ${current.title}`}
               >
@@ -397,7 +426,7 @@ export default function MemberTour({
                   {current.title}
                 </h2>
                 <p key={shake} className={shake ? "tour-shake" : undefined}>
-                  {text}
+                  {copy}
                 </p>
                 {step === 0 && (
                   <label className="tour-remember">

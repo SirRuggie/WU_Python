@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TriangleAlert } from "lucide-react";
 import type { Season } from "./api";
 import "./MemberSignupStatus.css";
 
@@ -18,6 +19,20 @@ export function relativeMinutes(at: number, now: number) {
   if (minutes >= 60) return `in ${Math.ceil(minutes / 60)} h`;
   return `in ${minutes} min`;
 }
+function formatMemberDate(at: number) {
+  return new Date(at).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+function signupCloseLine(season: Season | undefined, now: number) {
+  const at = Date.parse(season?.signup_deadline || "");
+  return Number.isFinite(at)
+    ? `Signups close ${formatMemberDate(at)}${at > now ? ` · ${relativeMinutes(at, now)}` : ""}`
+    : null;
+}
 export function memberDateLines(
   season: Season | undefined,
   published: boolean,
@@ -27,22 +42,15 @@ export function memberDateLines(
   const deadline = Date.parse(season.signup_deadline),
     placement = Date.parse(season.placements_by);
   if (!Number.isFinite(deadline) || !Number.isFinite(placement)) return [];
-  const format = (n: number) =>
-    new Date(n).toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
   if (placement < now)
     return ["Taking a little longer than usual · check back soon"];
   if (season.signup_open && season.status === "draft")
     return [
-      `Signups close ${format(deadline)}${deadline > now ? ` · ${relativeMinutes(deadline, now)}` : ""}`,
-      `You'll see your clan by ${format(placement)}.`,
+      signupCloseLine(season, now)!,
+      `You'll see your clan by ${formatMemberDate(placement)}.`,
     ];
   return [
-    `Signups closed · you'll see your clan by ${format(placement)} · ${relativeMinutes(placement, now)}`,
+    `Signups closed · you'll see your clan by ${formatMemberDate(placement)} · ${relativeMinutes(placement, now)}`,
   ];
 }
 export function signupHeading(signed: number, total: number | null) {
@@ -83,6 +91,8 @@ export default function MemberSignupStatus({
   const waiting = signups.filter((s) => !s.assigned_clan_tag);
   const partial =
     published && waiting.length > 0 && waiting.length < signups.length;
+  const dateLines = memberDateLines(season, published, now);
+  const signupDeadlineLine = signupCloseLine(season, now);
   return (
     <div className="member-signup-summary">
       <section
@@ -114,7 +124,7 @@ export default function MemberSignupStatus({
             ))}
           </ul>
         )}
-        {memberDateLines(season, published, now).map((line) => (
+        {dateLines.map((line) => (
           <p className="member-signup-date" key={line}>
             {line}
           </p>
@@ -123,7 +133,6 @@ export default function MemberSignupStatus({
           <button onClick={onChange}>Change signups ›</button>
         )}
         {!signups.length &&
-          !remaining.length &&
           (open ? (
             <button onClick={onRemaining}>Sign up for CWL ›</button>
           ) : (
@@ -135,28 +144,21 @@ export default function MemberSignupStatus({
           </button>
         )}
       </section>
-      {remaining.length > 0 && (
-        <div className="member-signup-remaining">
-          <p>
-            {remaining.length} account{remaining.length === 1 ? "" : "s"}{" "}
-            {open
-              ? "not signed up"
-              : `${remaining.length === 1 ? "wasn't" : "weren't"} signed up · signups are closed`}
-          </p>
-          <p>
-            {remaining
-              .slice(0, 6)
-              .map((a) => a.name)
-              .join(" · ")}
-            {remaining.length > 6 && ` · + ${remaining.length - 6} more`}
-          </p>
-          {open && (
-            <button onClick={onRemaining}>
-              Sign up{" "}
-              {signups.length ? `the other ${remaining.length}` : "for CWL"} ›
-            </button>
+      {open && signups.length > 0 && remaining.length > 0 && (
+        <section className="member-signup-remaining">
+          <h2>
+            <TriangleAlert aria-hidden="true" size={22} />
+            {remaining.length} account{remaining.length === 1 ? "" : "s"} not
+            signed up yet
+          </h2>
+          {signupDeadlineLine && (
+            <p className="member-signup-date">{signupDeadlineLine}</p>
           )}
-        </div>
+          <button onClick={onRemaining}>
+            Sign up {remaining.length} more account
+            {remaining.length === 1 ? "" : "s"} ›
+          </button>
+        </section>
       )}
     </div>
   );
