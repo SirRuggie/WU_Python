@@ -69,10 +69,17 @@ div.shell {
   letter-spacing: .08em;
   text-transform: uppercase;
 }
+.shell .sidebar .navigation-staff {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #38383e;
+}
+.shell .sidebar .navigation-staff-label {
+  margin-bottom: 9px;
+}
 
 .shell .sidebar nav button,
-.shell .sidebar .navigation-children button,
-.shell .sidebar .strikes-subnav button {
+.shell .sidebar .navigation-children button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -135,8 +142,6 @@ div.shell {
 }
 .shell .sidebar .navigation-children[hidden] { display: none; }
 .shell .sidebar .navigation-children button { font-size: 13px; }
-.shell .sidebar .navigation-children .navigation-children { margin-left: 15px; }
-.shell .sidebar .strikes-subnav { margin-left: 15px; padding-left: 8px; }
 
 .shell .sidebar > .sidebar-foot {
   display: flex;

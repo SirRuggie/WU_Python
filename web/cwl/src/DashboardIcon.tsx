@@ -2,6 +2,8 @@ import {
   ArrowLeftRight,
   BadgeCheck,
   Bell,
+  Bot,
+  Bug,
   CalendarCog,
   CalendarDays,
   Castle,
@@ -16,32 +18,40 @@ import {
   Crown,
   Download,
   Flag,
+  Handshake,
   House,
   Image,
+  IdCard,
+  KeyRound,
   LayoutDashboard,
   ListChecks,
   LockKeyhole,
   Mail,
   Medal,
   Megaphone,
+  Network,
   Paperclip,
   Plug,
   Search,
   Send,
+  Scale,
   Settings,
   Shield,
+  ShieldAlert,
   Swords,
   Target,
   Tent,
   Terminal,
   Ticket,
+  TicketCheck,
   TriangleAlert,
   Trophy,
   Users,
   UsersRound,
+  UserCog,
   Wrench,
-} from 'lucide-react'
-import './dashboardIcons.css'
+} from "lucide-react";
+import "./dashboardIcons.css";
 
 const icons = {
   search: Search,
@@ -55,6 +65,16 @@ const icons = {
   signup: ClipboardPen,
   signedUp: ClipboardCheck,
   shield: Shield,
+  moderation: ShieldAlert,
+  family: Network,
+  weights: Scale,
+  fwa: Handshake,
+  memberRoles: IdCard,
+  ticketSettings: TicketCheck,
+  bot: Bot,
+  admin: KeyRound,
+  staffAccess: UserCog,
+  issues: Bug,
   castle: Castle,
   trophy: Trophy,
   crown: Crown,
@@ -85,11 +105,25 @@ const icons = {
   waiting: Clock,
   warning: TriangleAlert,
   attachment: Paperclip,
-} as const
-export type DashboardIconName = keyof typeof icons
+} as const;
+export type DashboardIconName = keyof typeof icons;
 
 /** Decorative UI icons always accompany a visible text label. */
-export default function DashboardIcon({ name, className = '' }: { name: DashboardIconName; className?: string }) {
-  const Icon = icons[name]
-  return <Icon className={`dashboard-icon ${className}`} size={18} strokeWidth={1.75} aria-hidden="true" focusable="false" />
+export default function DashboardIcon({
+  name,
+  className = "",
+}: {
+  name: DashboardIconName;
+  className?: string;
+}) {
+  const Icon = icons[name];
+  return (
+    <Icon
+      className={`dashboard-icon ${className}`}
+      size={18}
+      strokeWidth={1.75}
+      aria-hidden="true"
+      focusable="false"
+    />
+  );
 }
