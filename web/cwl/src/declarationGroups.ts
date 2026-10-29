@@ -45,7 +45,7 @@ export function declarationGroups(
           a.player_name.localeCompare(b.player_name) ||
           a.tag.localeCompare(b.tag),
       );
-      const late = accounts.filter((a) => !g.tag || !arrived(a));
+      const late = accounts.filter((a) => !!g.tag && !arrived(a));
       return {
         ...g,
         key: g.tag || `unassigned:${g.pool}`,

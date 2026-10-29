@@ -15,6 +15,7 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
   const { data, error, refresh, records, now, checkedAt, checking } =
     useDeclarationData(seasonId);
   const [pool, setPool] = useCwlPool();
+  const [helpOpen, setHelpOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
   const [activeClan, setActiveClan] = useState("");
@@ -86,20 +87,6 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
     setActiveClan(group.key);
     setExpanded([group.key]);
   }, [context, groups]);
-  useEffect(() => {
-    const media = matchMedia("(max-width: 767px)");
-    const compact = () => {
-      if (media.matches)
-        setExpanded((old) =>
-          old.length > 1
-            ? [old.includes(activeClan) ? activeClan : old[0]]
-            : old,
-        );
-    };
-    media.addEventListener("change", compact);
-    compact();
-    return () => media.removeEventListener("change", compact);
-  }, [activeClan]);
   const ordered =
     visible.find((g) => g.key === activeClan && expanded.includes(g.key))
       ?.accounts || [];
@@ -120,7 +107,9 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
       {error && (
         <p role="alert">
           {error}
-          {!data && <Button onClick={refresh}>Refresh</Button>}
+          {error === "Couldn't check locations" && (
+            <Button onClick={refresh}>Retry</Button>
+          )}
         </p>
       )}
       {!data && !error && <p role="status">Checking published roster…</p>}
@@ -142,8 +131,17 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
               {hosts.filter((g) => g.readiness.ready).length} / {hosts.length}{" "}
               clans ready to declare
             </strong>{" "}
-            · {groups.reduce((n, g) => n + g.late.length, 0)} players not in
+            · {hosts.reduce((n, g) => n + g.late.length, 0)} players not in
             their clan
+            <button
+              type="button"
+              className="declaration-info"
+              aria-label="About readiness"
+              aria-expanded={helpOpen}
+              onClick={() => setHelpOpen(!helpOpen)}
+            >
+              ⓘ
+            </button>
           </p>
           <div className="declaration-refresh">
             <span>
@@ -155,10 +153,12 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
               {checking ? "Checking…" : "Refresh"}
             </Button>
           </div>
-          <p className="declaration-help">
-            Ready = enough players in their clan for its war size, checked in
-            the last 5 minutes.
-          </p>
+          {helpOpen && (
+            <p className="declaration-help">
+              Ready = enough players in their clan for its war size, checked in
+              the last 5 minutes.
+            </p>
+          )}
           {data.arrival.publication_outdated && (
             <p className="declaration-help">
               Checking published version {data.arrival.version} · the draft has

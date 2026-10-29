@@ -41,7 +41,7 @@ export default function DeclarationClan({
   }
   return (
     <section
-      className={`declaration-clan ${ready ? "is-ready" : "is-not-ready"}`}
+      className={`declaration-clan ${!group.tag ? "is-unassigned" : ready ? "is-ready" : "is-not-ready"}`}
     >
       <h2>
         <button

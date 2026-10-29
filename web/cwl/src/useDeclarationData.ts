@@ -26,13 +26,18 @@ export default function useDeclarationData(season: string) {
   const [records, setRecords] = useState<LocationRecords>({});
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
-  const [checkedAt, setCheckedAt] = useState<number>();
+  const newest = Math.max(
+    ...Object.values(records)
+      .map((r) => Date.parse(r.current_clan_checked_at || ""))
+      .filter(Number.isFinite),
+  );
+  const checkedAt = Number.isFinite(newest) ? newest : undefined;
   const [now, setNow] = useLocationNow();
   const runner = useRef<ReturnType<typeof createComparisonChecks> | null>(null);
   useEffect(() => {
     setData(null);
     setRecords({});
-    setCheckedAt(undefined);
+    let hasResults = false;
     setError("");
     const path = `/api/cwl/seasons/${encodeURIComponent(season)}`;
     const checks = createComparisonChecks(
@@ -71,19 +76,25 @@ export default function useDeclarationData(season: string) {
             mergeComparisonLocations(previous, arrival.accounts),
           );
           setError("");
-          setCheckedAt(Date.now());
+          hasResults ||= arrival.accounts.some((a) =>
+            Number.isFinite(Date.parse(a.current_clan_checked_at || "")),
+          );
           setNow(Date.now());
-          return false;
+          return !!arrival.updating;
         } catch (cause) {
           if (!signal.aborted || signal.reason?.name === "TimeoutError")
-            setError("Couldn't update · showing last results");
+            setError(
+              hasResults
+                ? "Couldn't update · showing last results"
+                : "Couldn't check locations",
+            );
           throw cause;
         }
       },
       setChecking,
       -Infinity,
       () => {},
-      false,
+      "declaration",
     );
     runner.current = checks;
     const visibility = () =>

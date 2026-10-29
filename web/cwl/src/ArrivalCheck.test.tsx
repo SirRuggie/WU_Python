@@ -197,3 +197,35 @@ it("Copy mentions deduplicates, lists unlinked players and falls back to selecta
   await act(async () => copy.click());
   expect(host.textContent).toContain("Copied 1 mentions");
 });
+it("keeps the draft-changed notice muted without blocking readiness", async () => {
+  state.value.data.arrival.publication_outdated = true;
+  await render();
+  expect(host.querySelector(".declaration-help")?.textContent).toBe(
+    "Checking published version 1 · the draft has changes members can't see yet",
+  );
+  expect(host.textContent).toContain("1 / 2 clans ready to declare");
+});
+it("excludes awaiting placement from late totals and gives it a neutral section", async () => {
+  state.value.data.arrival.accounts[0].assigned_clan_tag = null;
+  state.value.data.arrival.accounts[0].assigned_clan_name = null;
+  await render();
+  expect(host.querySelector(".declaration-summary")?.textContent).toContain(
+    "0 players not in their clan",
+  );
+  expect(host.querySelector(".is-unassigned")?.textContent).toContain(
+    "Awaiting placement",
+  );
+  expect(host.querySelector(".is-unassigned")?.className).not.toContain(
+    "is-not-ready",
+  );
+});
+it("keeps readiness help collapsed until explicitly opened", async () => {
+  await render();
+  expect(host.textContent).not.toContain("Ready = enough");
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('[aria-label="About readiness"]')!
+      .click(),
+  );
+  expect(host.textContent).toContain("Ready = enough");
+});
