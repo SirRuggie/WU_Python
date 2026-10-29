@@ -134,7 +134,32 @@ const base = `http://127.0.0.1:${port}`;
           const real = await page
             .locator(`[data-tour-target="${targetIds[step]}"]`)
             .boundingBox();
-          const ring = await page.locator(".tour-spotlight").boundingBox();
+          const ring = await page
+            .locator(".tour-spotlight")
+            .boundingBox({ timeout: 2000 })
+            .catch(async () => {
+              const state = await page.evaluate((targetId) => {
+                const target = document.querySelector(
+                  `[data-tour-target="${targetId}"]`,
+                );
+                const card = document.querySelector(".tour-card");
+                const rect = (node) => {
+                  if (!node) return null;
+                  const { top, bottom, left, right } =
+                    node.getBoundingClientRect();
+                  return { top, bottom, left, right };
+                };
+                return {
+                  title: document.querySelector("#tour-title")?.textContent,
+                  target: rect(target),
+                  card: rect(card),
+                  scrollY,
+                };
+              }, targetIds[step]);
+              throw new Error(
+                `Missing spotlight at ${width}x${height}, step ${step}: ${JSON.stringify(state)}`,
+              );
+            });
           assert(real && ring, `Missing ring at ${width} step ${step}`);
           for (const key of ["x", "y", "width", "height"])
             assert(
@@ -143,6 +168,62 @@ const base = `http://127.0.0.1:${port}`;
             );
         }
         if (step >= 4 && step <= 7) {
+          if ([360, 1440].includes(width) && step === 6) {
+            const buttons = await page
+              .locator(".signup-review-heading button")
+              .evaluateAll((items) =>
+                items.map((button) => ({
+                  visible: button.textContent.trim(),
+                  accessible: button.getAttribute("aria-label"),
+                  height: button.getBoundingClientRect().height,
+                  overflow: button.scrollWidth > button.clientWidth,
+                })),
+              );
+            assert.deepEqual(
+              buttons.map(({ visible, accessible }) => [visible, accessible]),
+              [
+                ["Change CWL", "Change CWL"],
+                ["Change accounts", "Change accounts"],
+              ],
+            );
+            assert(
+              buttons.every(
+                ({ height, overflow }) => height >= 44 && !overflow,
+              ),
+            );
+            if (width === 360) {
+              const summaryWidth = await page
+                .locator(".signup-review-heading p")
+                .evaluate(
+                  (paragraph) => paragraph.getBoundingClientRect().width,
+                );
+              assert(
+                summaryWidth >= 200,
+                `Review summary squeezed to ${summaryWidth}px`,
+              );
+            }
+          }
+          if ([360, 1440].includes(width) && step === 7) {
+            const paragraphs = await page
+              .locator(".tour-copy > p")
+              .evaluateAll((items) =>
+                items.slice(1).map((item) => ({
+                  text: item.textContent,
+                  top: item.getBoundingClientRect().top,
+                  bottom: item.getBoundingClientRect().bottom,
+                  bold: item.querySelector("strong")?.textContent,
+                })),
+              );
+            assert.deepEqual(
+              paragraphs.map(({ text }) => text),
+              [
+                "When you are ready, tap Sign up.",
+                "This is only practice. Nothing is saved now.",
+              ],
+            );
+            assert.equal(paragraphs[0].bold, "Sign up");
+            assert(paragraphs[1].top >= paragraphs[0].bottom);
+          }
           const expected = [
             ".pool-choice-grid button[data-tour-target]",
             ".account-card[data-tour-target]",
@@ -227,7 +308,7 @@ const base = `http://127.0.0.1:${port}`;
           assert.equal(await page.locator("#tour-title").textContent(), title);
           await page.locator(".tour-spotlight").click();
           assert.equal(await page.locator("#tour-title").textContent(), title);
-          assert.equal(await page.locator(".tour-shake").count(), 1);
+          assert.equal(await page.locator(".tour-shake").count(), 2);
         }
         await page.locator(".tour-next").click();
       }

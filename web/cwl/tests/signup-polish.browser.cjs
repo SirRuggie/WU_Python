@@ -123,7 +123,7 @@ const base = `http://127.0.0.1:${port}`;
       );
       await page.locator(".submit-bar .primary").click();
       await page
-        .getByRole("button", { name: "Change CWL pool", exact: true })
+        .getByRole("button", { name: "Change CWL", exact: true })
         .click();
       await page.locator('[data-tour-target="signup-pool"]').click();
       await page.locator(".signup-review").waitFor();
@@ -183,6 +183,9 @@ const base = `http://127.0.0.1:${port}`;
         await page.locator(".account-menu-avatar-trigger").click();
         await page.getByRole("menuitem", { name: "Sign out" }).waitFor();
         await page.keyboard.press("Escape");
+        await page
+          .locator(".account-menu-popover")
+          .waitFor({ state: "hidden" });
         assert(
           await page
             .locator(".account-menu-avatar-trigger")

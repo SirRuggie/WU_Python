@@ -112,8 +112,8 @@ export const steps = [
   },
   {
     number: 5,
-    title: "SMASH that button!",
-    text: "…for real, when you're ready. In the tour we stop here, so nothing's saved.",
+    title: "This button signs you up",
+    text: "When you are ready, tap **Sign up**.\nThis is only practice. Nothing is saved now.",
     art: "U15",
     target: "signup-confirm",
   },
