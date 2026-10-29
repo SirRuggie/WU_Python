@@ -22,9 +22,9 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Deployment paths verified through 2026-10-29:
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current owner-prank-3 frontend: `/home/ruggie/.local/share/wu-dashboard/releases/ae511de81bde1a2220fa51f604125099a9caecee/`
+  - Current staff-nav-1 frontend: `/home/ruggie/.local/share/wu-dashboard/releases/95808221f85200c3f51a9a036a6fbb266b2eda57/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
-  - Current frontend rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py b200c77d67f525a4a1afed515e2baed34dc31dd2`
+  - Current frontend rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py ae511de81bde1a2220fa51f604125099a9caecee`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
 - Deploy procedure: back up and verify the DB → record live counts per season/pool (signups, assigned, locks, publication version) → build from a clean checkout of a tagged commit into `releases/<sha>/` → atomic symlink switch → read-only smoke test → counts must match exactly. Rollback = point the symlink back at the previous release.
 - Frontend-only unless Ruggie explicitly approves backend, schema, endpoint or policy changes. If a fix seems to need one, stop and ask.
@@ -52,9 +52,16 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - When changing a script: return the full updated script.
 - He reviews on his phone; mobile layout matters as much as desktop.
 
+## Staff navigation release — 2026-10-29
+
+- Current frontend: `staff-nav-1`, `95808221f85200c3f51a9a036a6fbb266b2eda57`, PR #54. Flat staff groups, distinct icons and unchanged routes/permissions. Automatic current-group opening never persists; only explicit choices do. The tour temporarily shows only its target group.
+- Frontend-only rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py ae511de81bde1a2220fa51f604125099a9caecee`. Backend remains `f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PID 2249061; no restart or bot change. Public `index-Dd77bclu.js`, SHA256 `a9745e061c0092a2b6baa8a85f74f297adc50305a80333e2d581290396d34a61`; index and 47 assets match the manifest, config 200, anonymous seasons 401, journal clean. Claude read-only owner smoke PASSED (handoff52): correct flat menu and saved preferences, no dialogs or errors.
+- Backup `.local/staff-nav-1-backup-20261029T220729Z/dashboard.sqlite3`: 1,216,512 bytes, integrity OK and all 58 table counts matched. Protected records unchanged: Main signups/assigned/locks 22/18/18, Lazy 118/92/73. Clean tagged checkout: 865 tests, TypeScript/build passed. Full isolated layout passed at 360×800 and 1440×1000; five mutations caught. Evidence `/tmp/wu-staff-nav-release/`; no database restore for frontend rollback.
+- Used the established recursive scratch staging helper for nested assets; installed helper and service config unchanged. Deferred moderation copy: `ModerationWorkspace.tsx` eyebrow “Server tools” belongs to the moderation batch.
+
 ## Owner prank speed release — 2026-10-29
 
-- Current frontend: `owner-prank-3`, `ae511de81bde1a2220fa51f604125099a9caecee`, PR #52. Cards advance immediately while confirmed progress writes serialize; all 13 private card images preload. An uncertain failure halts dependent writes without notification retries; cards remain viewable with an error, and reload resumes confirmed progress. Completion and replay remain server-confirmed.
+- Previous frontend: `owner-prank-3`, `ae511de81bde1a2220fa51f604125099a9caecee`, PR #52. Cards advance immediately while confirmed progress writes serialize; all 13 private card images preload. An uncertain failure halts dependent writes without notification retries; cards remain viewable with an error, and reload resumes confirmed progress. Completion and replay remain server-confirmed.
 - Frontend-only rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py b200c77d67f525a4a1afed515e2baed34dc31dd2`. Backend stays `f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PID 2249061; no restart or bot changes. Public `index-BBPDdxUl.js`, SHA256 `f9404755282073e043a96e9a533279589147bef9f3d202c28864111ad9fb7867`; index plus 47 assets match the manifest, config 200, anonymous seasons 401, clean journal. Claude infrastructure smoke PASSED (handoff 49), including anonymous prank state 404. Ruggie's replay experience check remains separate; no live DM delivery claim.
 - Backup `.local/owner-prank-3-backup-20261029T212323Z/dashboard.sqlite3`: 1,216,512 bytes, SHA256 `9ac153db6f69019f75813df33988175bda8c73109a723ef4445325de99417d0c`, integrity OK, all 58 table counts matched. Protected signups/assigned/locks unchanged: Main 22/18/18, Lazy 118/92/73; publication/rule/weight/image records unchanged. Clean tagged checkout: 865 frontend tests, TypeScript/build passed. Accepted branch: full isolated layout passed. Evidence `/tmp/wu-owner-prank-3-release/`.
 - Used the previously verified recursive scratch staging helper for nested assets; no installed helper or service configuration edits. No database restore for frontend rollback.
