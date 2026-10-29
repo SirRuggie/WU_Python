@@ -267,7 +267,7 @@ const base = `http://127.0.0.1:${port}`;
           assert.equal(await page.locator("#tour-title").textContent(), title);
           await page.locator(".tour-spotlight").click();
           assert.equal(await page.locator("#tour-title").textContent(), title);
-          assert.equal(await page.locator(".tour-shake").count(), 1);
+          assert.equal(await page.locator(".tour-shake").count(), 2);
         }
         await page.locator(".tour-next").click();
       }
