@@ -13,7 +13,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("review Change links keep selections, retain eligible accounts across pools, and never submit", async () => {
+it("review Change links retain eligible accounts and clear the removal notice after signup", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   history.replaceState({}, "", "/signup");
   localStorage.clear();
@@ -67,7 +67,9 @@ it("review Change links keep selections, retain eligible accounts across pools, 
             },
           ],
         };
-      else if (path.includes("signups")) data = { signups: [] };
+      else if (path.includes("signups"))
+        data =
+          init?.method === "POST" ? { ok: true, count: 1 } : { signups: [] };
       return new Response(JSON.stringify(data), { status: 200 });
     }),
   );
@@ -143,6 +145,96 @@ it("review Change links keep selections, retain eligible accounts across pools, 
       "No longer eligible for this pool: FWA fixture",
     );
     expect(signupPosts).toEqual([]);
+
+    await click(".signup-review .signup-actions .primary");
+    expect(signupPosts).toEqual(["/seasons/1/signups"]);
+    expect(host.querySelector(".completion-card")?.textContent).toContain(
+      "Normal fixture",
+    );
+    await click(".completion-actions button:last-child");
+    expect(host.querySelector(".pool-choice-grid")).not.toBeNull();
+    expect(host.textContent).not.toContain("No longer eligible for this pool");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("allows choosing a pool after an account-load error and shows the error on the account step", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  history.replaceState({}, "", "/signup");
+  localStorage.clear();
+  sessionStorage.clear();
+  vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(
+    () => {},
+  );
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  vi.spyOn(window, "matchMedia").mockReturnValue({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  } as unknown as MediaQueryList);
+
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const path = String(url).replace("/api/cwl", "");
+      if (path.startsWith("/linked-accounts"))
+        return new Response(
+          JSON.stringify({
+            accounts: [],
+            updating: false,
+            error: "Linked account fixture unavailable",
+            link_instruction: "",
+          }),
+          { status: 200 },
+        );
+      const data =
+        path === "/auth/me"
+          ? {
+              user: { id: "1", username: "Member" },
+              authenticated: true,
+              csrf_token: "fixture",
+              can_edit: false,
+            }
+          : path === "/seasons"
+            ? {
+                seasons: [
+                  {
+                    id: 1,
+                    label: "November",
+                    status: "draft",
+                    signup_open: true,
+                  },
+                ],
+                member_season: { season_id: 1, revision: 0 },
+              }
+            : { signups: [] };
+      return new Response(JSON.stringify(data), { status: 200 });
+    }),
+  );
+
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<App />));
+    for (let i = 0; i < 4; i++)
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    expect(host.textContent).toContain("Linked account fixture unavailable");
+    const lazy = [
+      ...host.querySelectorAll<HTMLButtonElement>(".pool-choice-grid button"),
+    ].find(
+      (button) => button.querySelector("strong")?.textContent === "Lazy CWL",
+    );
+    expect(lazy).toBeDefined();
+    expect(lazy?.disabled).toBe(false);
+    await act(async () => lazy!.click());
+    expect(host.querySelector(".pool-choice-grid")).toBeNull();
+    expect(host.textContent).toContain("Select linked accounts");
+    expect(host.textContent).toContain("Linked account fixture unavailable");
   } finally {
     await act(async () => root.unmount());
     host.remove();

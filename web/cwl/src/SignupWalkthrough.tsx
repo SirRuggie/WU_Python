@@ -22,18 +22,23 @@ export default function SignupWalkthrough({
   headingRef,
   onNavigate,
 }: Props) {
+  const poolLabel =
+    pool === "main" ? "Main CWL" : pool === "lazy" ? "Lazy CWL" : "CWL";
   const steps = [
     {
       number: 1 as const,
       title: "Choose your CWL",
       summary: "Main or Lazy CWL",
+      instruction:
+        "Choose Main or Lazy CWL. You can choose a different option for each account.",
       art: "U04",
       available: true,
     },
     {
       number: 2 as const,
       title: "Select your accounts",
-      summary: `${selectedCount} ${selectedCount === 1 ? "account" : "accounts"} selected`,
+      summary: `You’re signing up for ${poolLabel} · ${selectedCount} selected`,
+      instruction: `Select the accounts you want to sign up for ${poolLabel}.`,
       art: "U23",
       available: !!pool,
     },
@@ -41,6 +46,7 @@ export default function SignupWalkthrough({
       number: 3 as const,
       title: "Check and sign up",
       summary: "Not saved yet",
+      instruction: "Check your accounts. Select Sign up below to finish.",
       art: "U19",
       available: canReview,
     },
@@ -72,6 +78,9 @@ export default function SignupWalkthrough({
                 )}
               </button>
             </h2>
+            {stage === step.number && (
+              <p className="walkthrough-instruction">{step.instruction}</p>
+            )}
             {stage === step.number && (
               <img
                 className="walkthrough-art"

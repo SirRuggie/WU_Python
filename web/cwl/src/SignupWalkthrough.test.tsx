@@ -25,6 +25,20 @@ it("shows art and a large title only on the current step, with compact inactive 
           />,
         ),
       );
+      expect(host.querySelectorAll(".walkthrough-instruction")).toHaveLength(1);
+      expect(
+        host.querySelector(".current .walkthrough-instruction")?.textContent,
+      ).toBe(
+        [
+          "Choose Main or Lazy CWL. You can choose a different option for each account.",
+          "Select the accounts you want to sign up for Lazy CWL.",
+          "Check your accounts. Select Sign up below to finish.",
+        ][stage - 1],
+      );
+      if (stage === 2)
+        expect(
+          host.querySelector(".walkthrough-summary")?.textContent,
+        ).toContain("You’re signing up for Lazy CWL");
       expect(host.querySelectorAll("img")).toHaveLength(1);
       const image = host.querySelector("img")!;
       expect(image.getAttribute("src")).toBe(
@@ -65,6 +79,14 @@ it("shows one member season line with local close time, no internal Draft chip",
     await act(async () =>
       root.render(
         <MemberSeasonLine season={{ ...season, signup_deadline: null }} />,
+      ),
+    );
+    expect(host.textContent).toBe("November 2026 · Open");
+    await act(async () =>
+      root.render(
+        <MemberSeasonLine
+          season={{ ...season, status: "archived", signup_deadline: null }}
+        />,
       ),
     );
     expect(host.textContent).toBe("November 2026 · Open");

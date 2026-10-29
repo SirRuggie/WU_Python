@@ -92,7 +92,7 @@
 .signup-walkthrough .walkthrough-art {
   position: absolute;
   right: 8px;
-  bottom: 8px;
+  top: 8px;
   height: 120px;
   width: 120px;
   object-fit: contain;
@@ -126,5 +126,23 @@
   .signup-walkthrough li.current {
     background: Highlight;
     color: HighlightText;
+  }
+}
+
+.signup-walkthrough .walkthrough-instruction {
+  margin: 6px -124px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: inherit;
+}
+.signup-walkthrough .current h2 {
+  min-height: 120px;
+}
+@media (max-width: 650px) {
+  .signup-walkthrough .current h2 {
+    min-height: 96px;
+  }
+  .signup-walkthrough .walkthrough-instruction {
+    margin-right: -96px;
   }
 }
