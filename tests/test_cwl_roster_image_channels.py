@@ -39,7 +39,7 @@ class ImageChannelTests(fixtures.RosterTests):
         self.assertEqual((await self.call('GET', '/roster-image-channels', headers)).status, 403)
         response = await self.call('GET', f'/seasons/{self.sid}/roster-image-posts', headers)
         self.assertEqual(response.status, 200)
-        self.assertEqual(await response.json(), {'posts': [], 'published': None, 'last_publication': None})
+        self.assertEqual(await response.json(), {'posts': [], 'published': None, 'last_publication': None, 'clans': []})
 
     async def test_receipt_schema_has_frozen_text_and_no_image_blob(self):
         with self.app['store'].tx() as db:

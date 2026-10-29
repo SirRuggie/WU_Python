@@ -1,6 +1,7 @@
 """Shared, live Discord authorization for the web /manage interface."""
 import asyncio
 import os
+import json
 from contextlib import asynccontextmanager
 
 import aiohttp
@@ -30,7 +31,11 @@ async def mongo(request):
         await client.close()
 
 
-async def discord(request, method, path, **kwargs):
+class DiscordDeliveryUncertain(Exception):
+    """Discord may have accepted the request; never retry automatically."""
+
+
+async def discord(request, method, path, *, roster_delivery=False, **kwargs):
     injected = request.app.get('server_management_discord')
     if injected:
         return await injected(method, path, **kwargs)
@@ -45,12 +50,20 @@ async def discord(request, method, path, **kwargs):
                     raise web.HTTPNotFound(text='This Discord member or item is no longer available.')
                 if response.status == 403:
                     raise web.HTTPForbidden(text='Discord does not allow this action. Check bot permissions.')
+                if response.status == 429 and roster_delivery:
+                    data = await response.json()
+                    wait = max(0.0, float(data.get('retry_after', 1)))
+                    raise web.HTTPTooManyRequests(text=json.dumps({'retry_after': wait}), content_type='application/json')
+                if response.status >= 500 and roster_delivery:
+                    raise DiscordDeliveryUncertain('Discord response did not confirm delivery')
                 if response.status == 429:
                     raise web.HTTPServiceUnavailable(text='Discord is busy. Wait a moment before trying again.')
                 if response.status not in (200, 201, 204):
                     raise web.HTTPServiceUnavailable(text='Discord could not complete this request. Refresh before trying again.')
                 return await response.json() if response.status != 204 else None
     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        if roster_delivery:
+            raise DiscordDeliveryUncertain('Discord delivery could not be confirmed') from exc
         raise web.HTTPServiceUnavailable(text='Discord is unavailable. Try again shortly.') from exc
 
 

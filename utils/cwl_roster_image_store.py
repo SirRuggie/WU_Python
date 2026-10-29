@@ -50,6 +50,10 @@ class RosterImageStore:
             rows = [dict(r) for r in db.execute('SELECT * FROM roster_image_posts WHERE season_id=? ORDER BY pool,clan_tag', (sid,))]
             last = db.execute('SELECT version,published_at,withdrawn_at FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
             published = db.execute('SELECT version,published_at FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
+            for row in rows:
+                receipt = db.execute('SELECT operation,target_version FROM roster_image_requests WHERE request_id=?', (row['request_id'],)).fetchone()
+                row['operation'] = receipt['operation'] if receipt else 'post'
+                row['target_version'] = receipt['target_version'] if receipt else row['posted_version']
             return {'posts': rows, 'published': dict(published) if published else None, 'last_publication': dict(last) if last else None}
 
     def publication(self, sid, version=None):

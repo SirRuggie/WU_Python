@@ -120,7 +120,7 @@ async def send_test(request):
     payload={'content':f'TEST · {group["name"]} · {season["label"]} · Roster v{pub["version"]}', 'allowed_mentions':{'parse':[]},'nonce':nonce,'enforce_nonce':True,'components':[{'type':1,'components':[{'type':2,'style':5,'label':'Open clan','url':f'https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(group["tag"],safe="")}'}]}]}
     form.add_field('payload_json',json.dumps(payload))
     for i,data in enumerate(images):form.add_field(f'files[{i}]',data,filename=f'roster-{group["tag"][1:]}-{i+1}.png',content_type='image/png')
-    message=await discord(request,'POST',f'/channels/{channel}/messages',data=form)
+    message=await discord(request,'POST',f'/channels/{channel}/messages',data=form,roster_delivery=True)
     url=f'https://discord.com/channels/{GUILD_ID}/{channel}/{message["id"]}'
     with _store(request).tx() as db:db.execute('UPDATE roster_test_messages SET url=? WHERE id=?',(url,key))
     return web.json_response({'url':url})
