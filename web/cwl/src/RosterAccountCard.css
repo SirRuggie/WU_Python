@@ -44,3 +44,98 @@
 .roster-ui .roster-player-body:focus-visible {
   outline-color: var(--roster-gold);
 }
+
+.roster-account-columns {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .roster-workspace .roster-player-card {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+  }
+
+  .roster-ui.roster-workspace .player-card > button.roster-player-body {
+    display: block;
+    padding: 8px 4px;
+  }
+
+  .roster-workspace .roster-player-body > .player-card-top,
+  .roster-workspace .roster-player-body > .player-card-meta,
+  .roster-workspace .roster-player-body > .player-clan-status {
+    display: none;
+  }
+
+  .roster-workspace .roster-player-body > .roster-account-columns {
+    display: grid;
+    grid-template-columns:
+      minmax(0, 2fr) minmax(0, 0.55fr)
+      minmax(0, 1.25fr) minmax(0, 1.8fr) minmax(0, 0.65fr);
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .roster-account-columns > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .roster-account-column-name {
+    display: grid;
+    gap: 2px;
+  }
+
+  .roster-account-column-identity {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--roster-text);
+    font-size: 16px;
+  }
+
+  .roster-account-column-identity strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .roster-account-column-identity .town-hall-icon {
+    width: 24px;
+    height: 24px;
+    flex: none;
+  }
+
+  .roster-account-column-name small {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--roster-text-muted);
+    font-size: 12px;
+  }
+
+  .roster-account-column-now .roster-player-placement {
+    font-size: 14px;
+  }
+
+  .roster-account-column-now .roster-player-current {
+    display: block;
+  }
+
+  .roster-account-column-assigned.is-in-clan,
+  .roster-account-column-now .is-in-clan .player-current-clan {
+    color: var(--roster-card-text-success);
+  }
+
+  .roster-account-column-weight {
+    font-weight: 700;
+  }
+
+  .roster-player-card > .roster-player-menu {
+    position: static;
+    transform: none;
+  }
+}

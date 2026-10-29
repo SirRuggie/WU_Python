@@ -54,7 +54,7 @@ function render(
 }
 
 describe("roster account card", () => {
-  it("shares the TH-first headline and keeps the lock only on the meta line", () => {
+  it("shares the TH-first headline and keeps the lock in both responsive layouts", () => {
     const host = document.createElement("div");
     host.innerHTML = render({ account: { ...account, town_hall: 18 } });
     const headline = host.querySelector(".player-card-top")!;
@@ -71,7 +71,7 @@ describe("roster account card", () => {
     ).not.toBeNull();
     expect(
       host.querySelectorAll('[aria-label="Locked placement"]'),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(
       host.querySelector('.player-card-meta [aria-label="Locked placement"]'),
     ).not.toBeNull();
@@ -89,7 +89,7 @@ describe("roster account card", () => {
       assignedClanName: "Assigned",
     });
     expect(host.querySelector(".roster-player-placement")?.textContent).toBe(
-      "Assigned→ Home · just now",
+      "Assigned Home · just now",
     );
   });
   it("escapes player text and presents missing, locked and unavailable values", () => {
@@ -114,8 +114,32 @@ describe("roster account card", () => {
         current_clan_checked_at: "2026-10-28T12:00:00Z",
       },
     });
-    expect(html).toContain("→ Old clan · 2h 0m ago");
+    expect(html).toContain("Now in Old clan · 2h 0m ago");
     expect(html).not.toContain("location not checked yet");
+    expect(html).toContain(
+      'role="note" aria-label="Assigned clan: Not assigned. Now in Old clan',
+    );
+    expect(html).not.toContain("→");
+  });
+  it("removes only the capacity note from cards", () => {
+    const capacity = render({
+      account: {
+        ...account,
+        kept: false,
+        auto_placement_note:
+          "Hosting clans need a 15- or 30-player capacity in Clan settings.",
+      },
+    });
+    expect(capacity).not.toContain("Hosting clans need");
+    expect(
+      render({
+        account: {
+          ...account,
+          kept: false,
+          auto_placement_note: "Needs review",
+        },
+      }),
+    ).toContain("Needs review");
   });
   it("omits duplicate Not assigned notes but preserves real notes and Held", () => {
     const host = document.createElement("div");
@@ -146,7 +170,7 @@ describe("roster account card", () => {
         current_clan_name: "ClashofThrones",
       },
     });
-    expect(html).toContain('title="→ ClashofThrones · just now"');
+    expect(html).toContain('title="Now in ClashofThrones · just now"');
     const style = document.createElement("style");
     style.textContent = cardCss + accountCss;
     const host = document.createElement("div");
@@ -213,7 +237,7 @@ it("says in no clan for a checked clanless account", () => {
       current_clan_name: null,
     },
   });
-  expect(html).toContain("→ in no clan · just now");
+  expect(html).toContain("Now in no clan · just now");
   expect(html).not.toContain("now in No clan");
 });
 
@@ -232,7 +256,7 @@ it("prioritizes a long assigned name on one line with complete title and accessi
   });
   const row = host.querySelector(".roster-player-placement")!;
   expect(row.getAttribute("title")).toBe(
-    "Warriors Unite! → Other clan · 4m ago",
+    "Warriors Unite! Now in Other clan · 4m ago",
   );
   expect(host.querySelector(".roster-player-sr-only")?.textContent).toContain(
     "Assigned clan: Warriors Unite!. Now in Other clan, checked 4 minutes ago.",
@@ -257,8 +281,8 @@ it("prioritizes a long assigned name on one line with complete title and accessi
 });
 it.each([
   ["#A", "Home", true, "HomeIn clan· 4m ago", "is-in-clan"],
-  ["#B", "Elsewhere", true, "Home→ Elsewhere · 4m ago", "is-elsewhere"],
-  [null, null, false, "Not assigned→ in no clan · 4m ago", "is-unassigned"],
+  ["#B", "Elsewhere", true, "Home Elsewhere · 4m ago", "is-elsewhere"],
+  [null, null, false, "Not assigned in no clan · 4m ago", "is-unassigned"],
 ] as const)(
   "renders the location state %s",
   (tag, name, assigned, text, state) => {
@@ -304,6 +328,82 @@ it.each([360, 700, 701, 1440])(
     w.happyDOM.abort();
   },
 );
+
+it.each([360, 899, 900, 1440])(
+  "shows account columns only at desktop width %ipx",
+  (width) => {
+    const w = new Window({ width });
+    w.document.head.innerHTML = `<style>${cardCss}${accountCss}</style>`;
+    w.document.body.innerHTML = `<main class="roster-ui roster-workspace">${render(
+      {
+        account: {
+          ...account,
+          town_hall: 18,
+          effective_weight: 170000,
+          assigned_clan_tag: "#A",
+          current_clan_name: "Other clan",
+          current_clan_checked_at: "2026-10-28T12:00:00Z",
+        },
+        assignedClanName: "Assigned clan",
+        now: Date.parse("2026-10-28T12:04:00Z"),
+      },
+    )}</main>`;
+    const card = w.document.querySelector(".roster-player-card")!;
+    const columns = card.querySelector(".roster-account-columns")!;
+    expect(w.getComputedStyle(columns).display).toBe(
+      width >= 900 ? "grid" : "none",
+    );
+    expect(
+      w.getComputedStyle(card.querySelector(".player-card-meta")!).display,
+    ).toBe(width >= 900 ? "none" : "flex");
+    expect([...columns.children].map((column) => column.className)).toEqual([
+      "roster-account-column-name",
+      "roster-account-column-pool",
+      "roster-account-column-assigned",
+      "roster-account-column-now",
+      "roster-account-column-weight",
+    ]);
+    expect(
+      columns
+        .querySelector(".roster-account-column-now .player-location-pin")
+        ?.getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(
+      card.querySelector(".roster-account-column-name")?.textContent,
+    ).toContain("#PLAYER · TH18");
+    expect(
+      card.querySelector(".roster-account-column-assigned")?.textContent,
+    ).toBe("Assigned clan");
+    expect(
+      card.querySelector(".roster-account-column-weight")?.textContent,
+    ).toBe("170k");
+    expect(card.querySelector('input[type="checkbox"]')).not.toBeNull();
+    expect(card.querySelector('[aria-label^="Actions for"]')).not.toBeNull();
+    w.happyDOM.abort();
+  },
+);
+
+it("keeps an in-clan desktop location green with a pin and clan name", () => {
+  const host = document.createElement("div");
+  host.innerHTML = render({
+    account: {
+      ...account,
+      assigned_clan_tag: "#HOME",
+      current_clan_tag: "#HOME",
+      current_clan_name: "Home",
+      current_clan_checked_at: "2026-10-28T12:00:00Z",
+    },
+    assignedClanName: "Home",
+    now: Date.parse("2026-10-28T12:04:00Z"),
+  });
+  const now = host.querySelector(".roster-account-column-now")!;
+  expect(
+    now.querySelector('.player-location-pin[aria-hidden="true"]'),
+  ).not.toBeNull();
+  expect(now.querySelector(".player-current-clan")?.textContent).toBe("Home");
+  expect(now.querySelector(".player-current-clan.is-elsewhere")).toBeNull();
+  expect(now.querySelector(".is-in-clan")).not.toBeNull();
+});
 
 it("never checked location with a matching tag cannot show the green in-clan pill", () => {
   const host = document.createElement("div");
@@ -377,7 +477,7 @@ it("unassigned current clans are always muted and assigned clanless wording is N
   });
   expect(
     w.document.querySelector(".roster-player-placement")?.textContent,
-  ).toBe("Amber Knights→ No clan · 4m ago");
+  ).toBe("Amber Knights No clan · 4m ago");
   expect(
     w.document.querySelector(".player-current-clan.is-elsewhere")?.textContent,
   ).toBe("No clan");

@@ -67,7 +67,7 @@ it("Build loads draft state; signup warning and Fix remain in the header on ever
   try {
     await act(async () => root.render(<Harness />));
     expect(host.querySelector(".publication-awareness")?.textContent).toContain(
-      "Hidden from members · last published version 1 on",
+      "Hidden from members · v1 Oct 15",
     );
     expect(api).toHaveBeenCalledWith("/seasons/1/publication");
     expect(

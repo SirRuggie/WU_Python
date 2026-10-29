@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignupActivity from "./SignupActivity";
 import {
-  signupActivitySummary,
+  signupChangeLabel,
+  signupShortage,
   signupActivityIntro,
   type SignupChange,
 } from "./signupActivityModel";
@@ -93,31 +94,24 @@ async function open() {
     (host.querySelector(".signup-activity-line") as HTMLButtonElement).click(),
   );
 }
-it("words single, plural, mixed and 100+ changes; red only for known below-war-size", () => {
-  expect(signupActivitySummary([item()], []).text).toBe(
-    "1 assigned player withdrew",
+it("words single, plural and 100+ changes; shortage requires an active clan with known size", () => {
+  expect(signupChangeLabel([item()])).toBe(
+    "1 signup change to review · Review ›",
   );
-  expect(signupActivitySummary([item(1, "member_pool_change")], []).text).toBe(
-    "1 assigned player switched pool",
-  );
-  expect(signupActivitySummary([item(), item(2)], []).text).toBe(
-    "2 assigned players withdrew",
+  expect(signupChangeLabel([item(), item(2)])).toBe(
+    "2 signup changes to review · Review ›",
   );
   expect(
-    signupActivitySummary([item(), item(2, "member_pool_change")], []).text,
-  ).toBe("2 assigned players changed: 1 withdrew, 1 switched pool");
+    signupChangeLabel(Array.from({ length: 100 }, (_, i) => item(i))),
+  ).toBe("100+ signup changes to review · Review ›");
+  expect(signupShortage([item()], [clan(15)])?.text).toBe(
+    "Morning Woods! · 14 / 15 players",
+  );
+  expect(signupShortage([item()], [clan(null)])).toBeNull();
+  expect(signupShortage([item()], [clan(15, 15)])).toBeNull();
   expect(
-    signupActivitySummary(
-      Array.from({ length: 100 }, (_, i) => item(i)),
-      [],
-    ).text,
-  ).toBe("100+ assigned players withdrew");
-  expect(signupActivitySummary([item()], [clan(15)])).toEqual({
-    danger: true,
-    text: "Morning Woods! below 15 · 1 change",
-  });
-  expect(signupActivitySummary([item()], [clan(null)]).danger).toBe(false);
-  expect(signupActivitySummary([item()], [clan(15, 15)]).danger).toBe(false);
+    signupShortage([item()], [{ ...clan(15), archived: true }]),
+  ).toBeNull();
 });
 it("uses active publication only for the intro", () => {
   expect(signupActivityIntro(3)).toBe(
@@ -225,7 +219,7 @@ it("load failure shows Retry, loading shows nothing, and hidden polling pauses",
   expect(host.textContent).toContain("Couldn't check signup changes");
   api.mockResolvedValue({ items: [item()] });
   await click("Retry");
-  expect(host.textContent).toContain("1 assigned player withdrew");
+  expect(host.textContent).toContain("1 signup change to review");
   vi.useFakeTimers();
   Object.defineProperty(document, "hidden", {
     configurable: true,
@@ -317,15 +311,56 @@ it("the header neither fetches nor exposes signup changes without cwl_signups", 
 });
 
 it("counts distinct below-war-size clans and leads with the vacancy", () => {
-  expect(signupActivitySummary([item(), item(2)], [clan(15)]).text).toBe(
-    "Morning Woods! below 15 · 2 changes",
+  expect(signupShortage([item(), item(2)], [clan(15)])?.text).toBe(
+    "Morning Woods! · 14 / 15 players",
   );
   expect(
-    signupActivitySummary(
+    signupShortage(
       [item(), { ...item(2), assigned_clan_tag: "#OTHER" }, item(3)],
       [clan(15), { ...clan(30), tag: "#OTHER" }],
-    ).text,
-  ).toBe("2 clans below war size · 3 changes");
+    )?.text,
+  ).toBe("Morning Woods! · 14 / 30 players · +1 more");
+});
+it("shows amber changes before the worst shortage and opens their existing destinations", async () => {
+  api.mockResolvedValue({
+    items: [item(), { ...item(2), assigned_clan_tag: "#OTHER" }],
+  });
+  await act(async () =>
+    root.render(
+      <SignupActivity
+        seasonId="1"
+        roster={
+          {
+            revision: 1,
+            undo: null,
+            accounts: [],
+            clans: [
+              clan(15, 11),
+              { ...clan(30, 10), tag: "#OTHER", name: "Lazy 123" },
+            ],
+          } as RosterSnapshot
+        }
+        canCompare
+        onFill={fill}
+        onDetails={details}
+      />,
+    ),
+  );
+  const lines = [
+    ...host.querySelectorAll<HTMLButtonElement>(".signup-activity-line"),
+  ];
+  expect(lines).toHaveLength(2);
+  expect(lines[0].textContent).toContain("2 signup changes to review");
+  expect(lines[1].textContent).toContain(
+    "Lazy 123 · 10 / 30 players · +1 more",
+  );
+  await act(async () => lines[1].click());
+  expect(fill).toHaveBeenCalledWith(
+    expect.objectContaining({ assigned_clan_tag: "#OTHER" }),
+  );
+  await act(async () => lines[0].click());
+  expect(document.querySelector("dialog.signup-activity-panel")).toBeTruthy();
+  expect(signupShortage([], [clan(15)])).toBeNull();
 });
 it("a late poll cannot resurrect an item reviewed while the read was in flight", async () => {
   vi.useFakeTimers();

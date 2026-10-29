@@ -4,11 +4,13 @@ import { api, ApiError, type Pool, type Season } from "./api";
 import { draftPublicationStatus, type PublicationDraft } from "./publication";
 import type { RosterSnapshot } from "./roster";
 import RosterMenu from "./rosterUi/Menu";
-import { Button, StatusPill } from "./rosterUi/primitives";
+import { Button } from "./rosterUi/primitives";
 import "./RosterHeader.css";
 import SignupActivity from "./SignupActivity";
 import type { SignupChange } from "./signupActivityModel";
 import PublicationAwarenessBanner from "./PublicationAwarenessBanner";
+import { useHorizontalFades } from "./useHorizontalFades";
+import "./horizontalFades.css";
 
 type StatusFilter = "all" | "unassigned" | "missing_weight";
 
@@ -57,8 +59,8 @@ type Props = {
   onFinalize?: () => void;
   onStatusFilter: (status: StatusFilter) => void;
   onAccessError: (error: ApiError) => void;
-  showAwareness?: boolean;
   onPublication?: (draft: PublicationDraft) => void;
+  onCapacitySettings?: (tag: string) => void;
 };
 
 export default function RosterHeader({
@@ -82,8 +84,8 @@ export default function RosterHeader({
   signupControls,
   onFillSignupSpot,
   onSignupDetails,
-  showAwareness = true,
   onPublication,
+  onCapacitySettings,
 }: Props) {
   const [publication, setPublication] = useState<{
     seasonId: string;
@@ -93,6 +95,7 @@ export default function RosterHeader({
   } | null>(null);
   const [publicationAttempt, setPublicationAttempt] = useState(0);
   const actions = useRef<HTMLDetailsElement>(null);
+  const workingFades = useHorizontalFades<HTMLDivElement>();
   const actionsTrigger = useRef<HTMLElement>(null);
   const request = useRef(0);
   const onAccessErrorRef = useRef(onAccessError);
@@ -158,32 +161,6 @@ export default function RosterHeader({
   ).length;
   const publicationStatus =
     publication?.seasonId === seasonId ? publication.status : null;
-  const publicationLabel =
-    publicationStatus === "unpublished"
-      ? "Draft · not published"
-      : publicationStatus === "changed"
-        ? "Published · Unpublished changes"
-        : publicationStatus === "current"
-          ? "Published ✓"
-          : publicationStatus === "unavailable"
-            ? "Publication status unavailable"
-            : "Checking publication…";
-  const publicationTone =
-    publicationStatus === "current"
-      ? "success"
-      : publicationStatus === "changed" || publicationStatus === "unavailable"
-        ? "warning"
-        : "neutral";
-  const mobilePublicationLabel =
-    publicationStatus === "unpublished"
-      ? "Draft"
-      : publicationStatus === "changed"
-        ? "Changes"
-        : publicationStatus === "current"
-          ? "Published"
-          : publicationStatus === "unavailable"
-            ? "Unavailable"
-            : "Checking";
   const selectedSeasonLabel = seasons.find(
     (season) => String(season.id) === seasonId,
   )?.label;
@@ -204,19 +181,6 @@ export default function RosterHeader({
           <h1>Build roster</h1>
         </div>
         <div className="roster-header-title-actions">
-          {seasonId && (
-            <StatusPill
-              className="roster-header-draft-pill"
-              tone={publicationTone}
-            >
-              <span className="roster-header-status-full">
-                {publicationLabel}
-              </span>
-              <span className="roster-header-status-short" aria-hidden="true">
-                {mobilePublicationLabel}
-              </span>
-            </StatusPill>
-          )}
           {roster && (
             <details
               ref={actions}
@@ -300,9 +264,8 @@ export default function RosterHeader({
       {signupControls && (
         <div className="roster-header-signups">{signupControls}</div>
       )}
-      {showAwareness &&
-        publication?.seasonId === seasonId &&
-        publication.draft && (
+      {seasonId &&
+        (publication?.seasonId === seasonId && publication.draft ? (
           <PublicationAwarenessBanner
             published={publication.draft.published}
             lastPublication={publication.draft.last_publication}
@@ -311,10 +274,58 @@ export default function RosterHeader({
             onReview={onFinalize}
             disabled={uiLocked}
           />
-        )}
+        ) : (
+          <div className="publication-awareness" role="status">
+            {publicationStatus === "unavailable"
+              ? "Publication status unavailable"
+              : "Checking publication…"}
+          </div>
+        ))}
+      {seasonId && canSignups && (
+        <SignupActivity
+          key={seasonId}
+          seasonId={seasonId}
+          roster={roster}
+          publishedVersion={
+            publication?.seasonId === seasonId
+              ? publication.draft?.published?.version
+              : undefined
+          }
+          disabled={uiLocked}
+          canCompare={canRoster}
+          onFill={onFillSignupSpot}
+          onDetails={onSignupDetails}
+        />
+      )}
+      {canRoster &&
+        roster?.clans
+          .filter(
+            (clan) =>
+              !clan.archived &&
+              clan.pool &&
+              clan.capacity !== 15 &&
+              clan.capacity !== 30,
+          )
+          .map((clan) => (
+            <div className="roster-capacity-alert" key={clan.tag}>
+              <span>⚠ {clan.name} has no capacity set</span>
+              {onCapacitySettings && (
+                <button
+                  type="button"
+                  disabled={uiLocked}
+                  onClick={() => onCapacitySettings(clan.tag)}
+                >
+                  Set in Clan settings ›
+                </button>
+              )}
+            </div>
+          ))}
       {roster && (
         <div
-          className="roster-header-working"
+          ref={workingFades.ref}
+          className="roster-header-working has-horizontal-fades"
+          data-fade-left={workingFades.left}
+          data-fade-right={workingFades.right}
           aria-label="Working roster counts"
         >
           <Button onClick={() => onStatusFilter("all")} disabled={uiLocked}>
@@ -347,22 +358,6 @@ export default function RosterHeader({
             {pool === "all" ? "" : " (all pools)"}
           </Button>
         </div>
-      )}
-      {seasonId && canSignups && (
-        <SignupActivity
-          key={seasonId}
-          seasonId={seasonId}
-          roster={roster}
-          publishedVersion={
-            publication?.seasonId === seasonId
-              ? publication.draft?.published?.version
-              : undefined
-          }
-          disabled={uiLocked}
-          canCompare={canRoster}
-          onFill={onFillSignupSpot}
-          onDetails={onSignupDetails}
-        />
       )}
     </header>
   );

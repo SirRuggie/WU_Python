@@ -107,6 +107,21 @@ it("keeps the section order and saves a lock immediately without closing", async
   expect(save).toHaveBeenCalledExactlyOnceWith({ kept: false });
   expect(close).not.toHaveBeenCalled();
 });
+it("uses the shared Now in pin for a checked location", async () => {
+  await render({
+    current_clan_tag: "#OTHER",
+    current_clan_name: "Other clan",
+    current_clan_checked_at: "2026-10-28T12:00:00Z",
+  });
+  expect(
+    document.querySelector(
+      '.player-clan-status .player-location-pin[aria-hidden="true"]',
+    ),
+  ).not.toBeNull();
+  expect(
+    document.querySelector(".player-clan-status")?.textContent,
+  ).not.toContain("→");
+});
 it("unassign and remove require their own confirmation; cancel sends nothing", async () => {
   await render();
   await click("Unassign from clan");

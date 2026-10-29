@@ -195,6 +195,16 @@ navigation or storage changes. The red alert leads with the below-war-size clan
 or clan count. Row actions share the 44px secondary-button style. The inline TH
 image may extend beyond the name line box; only the name text clips/ellipsizes.
 
+### Build roster readability (approved 2026-10-29)
+
+These rules supersede the older Accounts card, status-pill and single-alert descriptions above. The shared `PlayerClanStatus` uses a text-sized outline MapPin, announced as “Now in”, before the current clan on Accounts, Compare, Declaration and dialogs; the status colors, age and truncation priority remain. At desktop widths of about 900px and above, Accounts rows align Name (TH icon, name, tag and TH), Pool, Assigned clan, Now in, Weight and `⋯` into readable columns. Phones retain their existing card layout, checkbox, select-all, Details and menu behavior.
+
+The Build header keeps its season and signup controls. One slim gold-accent status line replaces both Draft pills and the larger publication card; it states Draft, Hidden, or Published with version/date, and a permission-gated Review link where appropriate. When a published roster has unpublished changes, name the version members still see and say the changes are draft only. Directly below, an amber line shows the number of signup changes and opens review; when an affected clan is below its known 15/30 size, a separate red line below it names the worst shortage, adds `+N more` as needed and opens Compare. Missing hosting capacity appears once per clan in the top alert area, with a link focused on that clan in Clan settings, rather than repeating on player cards. Existing navigation guards and publication fetch/retry safeguards apply.
+
+The summary-chip and main-tab rows stay one line and show a soft fade only at edges with more content to scroll into view. Clan cards with no known weights say `Total: no weights yet`; other totals keep their existing format. This is frontend presentation only: saves, Undo, publication, signup review, permissions and endpoints retain their behavior.
+
+The card's capacity-note suppression matches the current server reason string from `cwl_web/placement_status.py:17`; keep the match in sync if that server copy changes.
+
 ## Announcements
 
 - Main CWL and Lazy CWL use two compact pool cards. Show destination and named roles; use IDs only when lookups fail, with Retry. Preview opens the Discord preview dialog; Edit opens ActionPanel with Close initially focused.

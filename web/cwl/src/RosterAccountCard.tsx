@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { LockKeyhole } from "lucide-react";
 import PlayerCardMeta from "./PlayerCardMeta";
 import RosterAccountMenu from "./RosterAccountMenu";
 import TownHallIcon from "./TownHallIcon";
@@ -92,6 +93,43 @@ export default function RosterAccountCard({
         </span>
         <PlayerCardMeta account={account} showPool={showPool} />
         <PlayerClanStatus status={status} />
+        <span className="roster-account-columns">
+          <span className="roster-account-column-name">
+            <span className="roster-account-column-identity">
+              <TownHallIcon level={account.town_hall} />
+              <strong title={account.player_name}>{account.player_name}</strong>
+            </span>
+            <small>
+              {account.tag} · TH{account.town_hall ?? "—"}
+              {account.kept && (
+                <LockKeyhole size={13} aria-label="Locked placement" />
+              )}
+            </small>
+          </span>
+          <span className="roster-account-column-pool">
+            {account.pool === "main" ? "Main" : "Lazy"}
+          </span>
+          <span
+            className={`roster-account-column-assigned${status.inClan ? " is-in-clan" : ""}`}
+            title={status.name}
+          >
+            {status.name}
+          </span>
+          <span className="roster-account-column-now">
+            <PlayerClanStatus
+              status={status}
+              showAssigned={false}
+              currentOnly
+            />
+          </span>
+          <span className="roster-account-column-weight">
+            {account.effective_weight == null ? (
+              <Chip tone="danger">No weight</Chip>
+            ) : (
+              compactRosterWeight(account.effective_weight)
+            )}
+          </span>
+        </span>
         {account.outside_family_and_hosts && (
           <span className="roster-player-warning">
             <Chip tone="warning">Outside family / hosting clans</Chip>
@@ -100,6 +138,8 @@ export default function RosterAccountCard({
         {!account.assigned_clan_tag &&
           (account.kept ||
             (account.auto_placement_reason !== "ready" &&
+              account.auto_placement_note !==
+                "Hosting clans need a 15- or 30-player capacity in Clan settings." &&
               !!account.auto_placement_note)) && (
             <small className="roster-player-note">
               {account.kept

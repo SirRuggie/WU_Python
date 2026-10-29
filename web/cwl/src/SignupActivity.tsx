@@ -8,7 +8,8 @@ import type { RosterSnapshot } from "./roster";
 import { publicationDate } from "./publicationStatus";
 import {
   signupActivityIntro,
-  signupActivitySummary,
+  signupChangeLabel,
+  signupShortage,
   signupPoolName,
   type SignupChange,
 } from "./signupActivityModel";
@@ -37,7 +38,7 @@ export default function SignupActivity({
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<SignupChange[] | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const summary = signupActivitySummary(activity.items, roster?.clans ?? []);
+  const shortage = signupShortage(activity.items, roster?.clans ?? []);
   useEffect(() => {
     if (!activity.items.length && activity.busy === null) {
       setOpen(false);
@@ -54,24 +55,35 @@ export default function SignupActivity({
         </div>
       ) : (
         activity.items.length > 0 && (
-          <button
-            ref={trigger}
-            title={summary.text}
-            className={`signup-activity-line${summary.danger ? " is-danger" : ""}`}
-            disabled={disabled}
-            onClick={() => setOpen(true)}
-          >
-            <TriangleAlert size={16} aria-hidden="true" />
-            <span>{summary.text}</span>
-            <ChevronRight size={16} aria-hidden="true" />
-          </button>
+          <>
+            <button
+              ref={trigger}
+              className="signup-activity-line"
+              disabled={disabled}
+              onClick={() => setOpen(true)}
+            >
+              <span aria-hidden="true">🔁</span>
+              <span>{signupChangeLabel(activity.items)}</span>
+            </button>
+            {shortage && (
+              <button
+                className="signup-activity-line is-danger"
+                disabled={disabled || !canCompare}
+                onClick={() => onFill(shortage.item)}
+              >
+                <TriangleAlert size={16} aria-hidden="true" />
+                <span>{shortage.text}</span>
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            )}
+          </>
         )
       )}
       {open && (
         <ActionPanel
           title="Signup changes"
           variant="side"
-          className={`roster-ui signup-activity-panel${summary.danger ? " is-danger" : ""}`}
+          className={`roster-ui signup-activity-panel${shortage ? " is-danger" : ""}`}
           trigger={trigger.current}
           busy={busy || !!confirm}
           onClose={() => setOpen(false)}

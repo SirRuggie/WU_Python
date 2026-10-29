@@ -1,0 +1,15 @@
+.has-horizontal-fades[data-fade-left="true"][data-fade-right="true"] {
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 10px,
+    #000 calc(100% - 10px),
+    transparent
+  );
+}
+.has-horizontal-fades[data-fade-left="true"][data-fade-right="false"] {
+  mask-image: linear-gradient(90deg, transparent, #000 10px);
+}
+.has-horizontal-fades[data-fade-left="false"][data-fade-right="true"] {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 10px), transparent);
+}

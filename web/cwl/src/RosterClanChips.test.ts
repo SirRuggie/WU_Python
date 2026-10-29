@@ -150,6 +150,24 @@ describe("clan filter summaries", () => {
     ]);
   });
 
+  it("labels a visible clan with no known weights", () => {
+    const html = renderToStaticMarkup(
+      createElement(RosterClanChips, {
+        roster: {
+          revision: 1,
+          accounts: [account("#A", "#MAIN", null)],
+          clans: [clan("#MAIN", "main", 15)],
+          undo: null,
+        },
+        pool: "all",
+        selectedTags: [],
+        onSelect: () => {},
+        disabled: false,
+      }),
+    );
+    expect(html).toContain("Total: no weights yet");
+  });
+
   it("formats grouped thousands, empty totals and missing-weight notes without changing selection", () => {
     const html = renderToStaticMarkup(
       createElement(RosterClanChips, {

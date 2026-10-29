@@ -160,6 +160,67 @@ server.stdout.on("data", (chunk) => {
             staffServer.kill();
           }
         }
+        if (!process.exitCode) {
+          const readabilityPort = 8986;
+          await new Promise((resolve, reject) => {
+            const probe = require("node:net").createServer();
+            probe.once("error", reject);
+            probe.listen(readabilityPort, "127.0.0.1", () =>
+              probe.close(resolve),
+            );
+          });
+          const readabilityServer = spawn(
+            python,
+            [
+              "-I",
+              path.join(__dirname, "fixtures/roster_readability.py"),
+              path.join(root, "web/cwl/dist"),
+              String(readabilityPort),
+            ],
+            {
+              env: {
+                PATH: process.env.PATH,
+                HOME: temp,
+                WU_FIXTURE_BACKEND: root,
+              },
+              stdio: ["ignore", "ignore", "inherit"],
+            },
+          );
+          try {
+            let ready = false;
+            for (let attempt = 0; attempt < 100; attempt++) {
+              if (readabilityServer.exitCode !== null)
+                throw new Error("Readability fixture exited");
+              try {
+                ready = (
+                  await fetch(
+                    `http://127.0.0.1:${readabilityPort}/api/cwl/config`,
+                  )
+                ).ok;
+              } catch {
+                /* Fixture startup. */
+              }
+              if (ready) break;
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+            if (!ready)
+              throw new Error("Readability fixture startup timed out");
+            const code = await new Promise((resolve) => {
+              const child = spawn(
+                process.execPath,
+                [
+                  path.join(__dirname, "roster-readability.browser.cjs"),
+                  String(readabilityPort),
+                ],
+                { stdio: "inherit", env: process.env },
+              );
+              child.on("exit", resolve);
+            });
+            if (code) process.exitCode = code;
+          } finally {
+            readabilityServer.kill();
+          }
+        }
       } catch (error) {
         console.error(error);
         process.exitCode = 1;
