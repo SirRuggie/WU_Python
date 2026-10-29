@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current Roster images frontend: `/home/ruggie/.local/share/wu-dashboard/releases/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`
+  - Current Member signup frontend: `/home/ruggie/.local/share/wu-dashboard/releases/5539cba3c800d91372fd5c6adc62564a758ddff4/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,15 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend + backend — Roster images:** `2279c95c3bc62ac74447c4a66a0a924dde45bda4`, tag `roster-images-1`, PR #35.
+- **Current frontend, backend and bot — Member signup (2026-10-29):** `5539cba3c800d91372fd5c6adc62564a758ddff4`, tag `member-signup-1`, PR #37; moderation preservation merged first through PR #36.
+  - Frontend and backend under `/home/ruggie/.local/share/wu-dashboard/{releases,backend}/5539cba3c800d91372fd5c6adc62564a758ddff4/`; bot `/home/botrunner/wu-bot` at the same SHA.
+  - Previous frontend/backend `2279c95c3bc62ac74447c4a66a0a924dde45bda4`; previous bot `2d7d2c92c246db886994dee8a3a515b6e0bf1076`.
+  - Backup `.local/member-signup-backup-20261029T044244Z/dashboard.sqlite3`: 1,167,360 bytes, integrity OK, all 57 table counts matched; Main 19/18/18 and Lazy 95/92/73 signups/assigned/locks unchanged.
+  - 761 frontend / 4,792 backend tests passed (21 skipped), typecheck/build/layout passed. Public `index-BosjyeFk.js` and 28 hashes verified; dashboard readiness and bot startup/gateway passed. Evidence `/tmp/wu-member-signup-release/retry-live-proof.json`.
+  - Claude read-only web smoke passed; Ruggie confirmed private Discord My signups and accounts: "Yes that looks fine". Date-line defect: fix in progress (handoff prompt 01); the current 1.5-second Mongo budget is too short.
+  - Rollback frontend with `switch-release.py 2279c95c3bc62ac74447c4a66a0a924dde45bda4`; set only `release.conf` WorkingDirectory to the matching backend directory, daemon-reload and restart dashboard. Bot rollback (only when approved): `sudo -n -u botrunner git -C /home/botrunner/wu-bot reset --hard 2d7d2c9`, then `sudo -n systemctl restart wu-bot.service`. Never restore the DB to roll back code.
+
+- **Previous frontend + backend — Roster images:** `2279c95c3bc62ac74447c4a66a0a924dde45bda4`, tag `roster-images-1`, PR #35.
   - Release root `/home/ruggie/.local/share/wu-dashboard`: frontend `releases/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`; backend `backend/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`, PID 1639904 verified.
   - Previous frontend `190313b81f4c8373dc08f5a63fca966c6caffab2`; previous backend `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`.
   - Backup `/nvme0n1-disk/Projects/Bot - Warriors United/.local/roster-images-backup-20261029T030832Z/dashboard.sqlite3`: 1,142,784 bytes, integrity OK, all 54 existing table counts matched. Main 19/18/18 and Lazy 95/92/73 signups/assigned/locks unchanged.

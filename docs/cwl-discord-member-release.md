@@ -1,8 +1,10 @@
 # Operator release: Discord CWL member flow
 
-## Pending Member signup flow
+## Member signup released — 2026-10-29
 
-This checkpoint requires a separately authorized bot release **and** dashboard backend release. Deploy the read-only deadline/placements fields before the bot that consumes them. The public signup/reminder renderer adds Check my signups, opening an ephemeral response through the existing loopback bridge; no live messages were tested. Current campaign edit-existing-post handlers are retired, so existing posts stay unchanged and the button appears from the next post. Do not restore the retired write path or edit messages automatically.
+`member-signup-1` (`5539cba3c800d91372fd5c6adc62564a758ddff4`) is deployed to the isolated dashboard and bot `/home/botrunner/wu-bot`, with moderation preserved by PR #36 before Member signup PR #37. Dashboard activated first; bot fast-forwarded and restarted with clean startup/gateway evidence. Previous bot `2d7d2c9`; dashboard rollback `2279c95`. Evidence `/tmp/wu-member-signup-release/retry-live-proof.json`. Claude web smoke and Ruggie's private `/cwl signup` → My signups check passed. Date-line defect: fix in progress (prompt 01).
+
+The public signup/reminder renderer adds Check my signups, opening an ephemeral response through the existing bridge. No scripted live messages were sent or edited. Existing posts stay unchanged; the button appears from the next post. Do not restore retired edit-existing-post handlers or edit messages automatically. The service paths below are historical; current dashboard runs from the isolated release directory documented in `dashboard-backend-releases.md`.
 
 This operator handoff was prepared while approval review blocked deployment.
 The user subsequently renewed explicit authorization, approval review accepted

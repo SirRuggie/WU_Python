@@ -4,7 +4,7 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-28)
 
-- Member signup flow: isolated review on `codex/member-signup`; no deployment. Approved read-only deadline projection and bot button require separate backend and bot releases.
+- Member signup flow released as `member-signup-1`, `5539cba3c800d91372fd5c6adc62564a758ddff4` (PR #37, moderation PR #36 first). Frontend, isolated backend and bot verified; 761 frontend / 4,792 backend tests, typecheck/build/layout passed. Claude web smoke and Ruggie's private Discord check passed. Date-line defect: fix in progress (handoff prompt 01), because the 1.5-second budget expires before the real Mongo read.
 
 ## Decisions — Member signup flow (2026-10-28)
 
@@ -211,6 +211,12 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
+- Member timing: one bad campaign nulls every season in a batch for five minutes; isolate per season (prompt 01).
+- Wire `web/cwl/tests/member-signup.browser.cjs` into `npm run test:layout`; its member-specific checks currently run manually.
+- Restore the closed-state helper: "Select another season or ask staff for help."
+- Discord partial My signups pages count all signed accounts but list only waiting accounts, allowing empty final pages at 16+ accounts.
+- Consolidate the campaign embed length rule; use a process-owned timing client rather than one per batch; strengthen surviving M3d/M4b mutation gaps.
 
 - Member signup pages already showed the season in both the header and status card, plus the internal Draft status, before this batch (confirmed against `origin/main` / `9b5fad0`). Leave unchanged in this fix; simplify member-only season/status presentation in a later batch.
 

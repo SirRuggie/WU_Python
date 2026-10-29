@@ -1,15 +1,15 @@
 # Dashboard backend releases
 
-## Pending Member signup flow
+## Member signup released — 2026-10-29
 
-Ruggie approved a read-only season projection of `signup_deadline` and `placements_by`, from the bound Mongo campaign with a five-minute process cache. UTC-aware arithmetic adds exactly 24 elapsed hours, including DST weekends; missing/unavailable campaigns return null. No schema or write-path change. This batch needs a separately authorized isolated dashboard backend release **and bot release** for Check my signups (see `cwl-discord-member-release.md`). This review does not activate either service.
+`member-signup-1` at `5539cba3c800d91372fd5c6adc62564a758ddff4` deployed with approved dashboard and bot restarts. Read-only UTC-aware timing adds 24 elapsed hours, including DST weekends; no schema/write-path change. Imports, two consecutive config 200s, public hashes and unchanged protected counts passed. Backup `.local/member-signup-backup-20261029T044244Z/dashboard.sqlite3`; evidence `/tmp/wu-member-signup-release/retry-live-proof.json`. Claude web and Ruggie Discord smoke passed. Date-line defect: fix in progress (prompt 01): Mongo exceeds the current request-path 1.5-second budget.
 
 Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-web.service` runs from an isolated git archive, never the shared workspace. A workspace edit or frontend build cannot change the deployed backend on restart.
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`, tag `roster-images-1`.
-- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`; paired frontend rollback `190313b81f4c8373dc08f5a63fca966c6caffab2`.
+- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/5539cba3c800d91372fd5c6adc62564a758ddff4/`, tag `member-signup-1`.
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`; paired frontend rollback `2279c95c3bc62ac74447c4a66a0a924dde45bda4`.
 - Both are clean `git archive` exports. Current release imports were verified from the isolated directory using the existing virtualenv.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
