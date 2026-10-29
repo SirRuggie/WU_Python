@@ -47,7 +47,7 @@ const base = `http://127.0.0.1:${port}`;
           await page.waitForTimeout(450);
           assert.equal(await page.locator(".sidebar.open").count(), 0);
         }
-        await page.waitForTimeout(420);
+        await page.waitForTimeout(900);
         await page.locator(".tour-character").evaluate(async (img) => {
           if (!img.complete)
             await new Promise((resolve, reject) => {
@@ -104,6 +104,44 @@ const base = `http://127.0.0.1:${port}`;
             realDisabled: document.querySelector(".tour-real-submit")?.disabled,
           };
         });
+        const expectedPath =
+          step === 0 || step === 1 || step === 12
+            ? "/"
+            : step === 2
+              ? "/tasks"
+              : step === 10
+                ? "/my-signups"
+                : step === 11
+                  ? "/assignments"
+                  : "/signup";
+        assert.equal(new URL(page.url()).pathname, expectedPath);
+        const targetIds = [
+          "",
+          "home",
+          "todo",
+          "register",
+          "signup-pool",
+          "signup-account",
+          "signup-review",
+          "signup-confirm",
+          "",
+          "",
+          "saved",
+          "assignments",
+          "",
+        ];
+        if (targetIds[step]) {
+          const real = await page
+            .locator(`[data-tour-target="${targetIds[step]}"]`)
+            .boundingBox();
+          const ring = await page.locator(".tour-spotlight").boundingBox();
+          assert(real && ring, `Missing ring at ${width} step ${step}`);
+          for (const key of ["x", "y", "width", "height"])
+            assert(
+              Math.abs(real[key] - ring[key]) <= 2,
+              `Ring mismatch ${key} step ${step}`,
+            );
+        }
         results.push({ width, height, step, ...measured });
         assert.equal(measured.overlap, 0, JSON.stringify(results.at(-1)));
         assert.equal(measured.overflow, false);
@@ -122,13 +160,13 @@ const base = `http://127.0.0.1:${port}`;
           );
           assert(measured.artWidth <= (width <= 900 ? 140.1 : 160.1));
         }
-        if (step === 0 || step === 12) assert(measured.notice);
-        if (step >= 4 && step <= 8) assert.equal(measured.realDisabled, true);
+        assert.equal(measured.notice, false);
+
         if (
           output &&
           ((width === 360 &&
             height === 800 &&
-            [0, 1, 5, 8, 9, 10, 11, 12].includes(step)) ||
+            [1, 2, 4, 7, 10].includes(step)) ||
             (width === 1440 && [1, 4, 9, 10].includes(step)) ||
             (width === 1024 && step === 4))
         )
@@ -137,6 +175,16 @@ const base = `http://127.0.0.1:${port}`;
             type: "jpeg",
             quality: 80,
           });
+        if (step === 7) {
+          const title = await page.locator("#tour-title").textContent();
+          await page
+            .locator('[data-tour-target="signup-confirm"]')
+            .evaluate((el) => el.click());
+          assert.equal(await page.locator("#tour-title").textContent(), title);
+          await page.locator(".tour-spotlight").click();
+          assert.equal(await page.locator("#tour-title").textContent(), title);
+          assert.equal(await page.locator(".tour-shake").count(), 1);
+        }
         await page.locator(".tour-next").click();
       }
       assert.equal(await page.locator(".tour-practice").count(), 0);

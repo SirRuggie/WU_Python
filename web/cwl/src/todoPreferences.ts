@@ -1,3 +1,4 @@
+import { isTourReadOnly } from "./memberTour/session"
 import type { TodoKind } from './todo'
 export type TodoPreferences = { tab: TodoKind; selected: string[] | null; sort: string }
 const defaults = (): TodoPreferences => ({ tab: 'war', selected: null, sort: 'deadline' })
@@ -15,6 +16,7 @@ export function readTodoPreferences(userId: string, storage: Pick<Storage, 'getI
   } catch { return defaults() }
 }
 export function saveTodoPreferences(userId: string, value: TodoPreferences, storage: Pick<Storage, 'setItem'>): void {
+  if (isTourReadOnly()) return
   try { storage.setItem(key(userId), JSON.stringify(value)) } catch { /* Storage can be blocked or full. */ }
 }
 export function rememberTodoReturn(search: string, storage: Pick<Storage, 'setItem' | 'removeItem'>): void {

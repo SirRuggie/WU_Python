@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current Member signup frontend: `/home/ruggie/.local/share/wu-dashboard/releases/5539cba3c800d91372fd5c6adc62564a758ddff4/`
+  - Current Member tour frontend: `/home/ruggie/.local/share/wu-dashboard/releases/16cc79e7db39e3aaadf99c99117994b9103a47e8/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,13 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend, backend and bot — Member signup (2026-10-29):** `5539cba3c800d91372fd5c6adc62564a758ddff4`, tag `member-signup-1`, PR #37; moderation preservation merged first through PR #36.
+- **Current frontend, backend and bot — Member tour + timing (2026-10-29):** `16cc79e7db39e3aaadf99c99117994b9103a47e8`, tag `member-tour-1`, timing PR #38 and tour PR #39.
+  - Frontend/backend: `/home/ruggie/.local/share/wu-dashboard/{releases,backend}/16cc79e7db39e3aaadf99c99117994b9103a47e8/`; bot at the same SHA. Rollback all three to `5539cba3c800d91372fd5c6adc62564a758ddff4` using switch-release, release.conf + daemon-reload/dashboard restart, and bot reset/restart. Never restore the database for a code rollback.
+  - Backup `.local/member-tour-backup-20261029T122118Z/dashboard.sqlite3`: 1,196,032 bytes, integrity OK, 57 table counts matched. Main 19/18/18 and Lazy 113/92/73 unchanged.
+  - 774 frontend / 4,797 backend passed (21 skipped, 126 subtests); typecheck/build/layout including 78 tour measurements passed. Public `index-CKbJjEBO.js`, 28 asset hashes, backend cwd and bot startup verified. Timing refresh completes in 5.8s every five minutes.
+  - Claude smoke **PASSED WITH DEFECTS — keep live**: 360px date line/invite/art, runtime/hashes, zero writes. Ruggie sees dates in Discord but the wrong campaign month. Original missing-date timeout fixed; wrong-month and off-screen phone spotlight defects are in progress under handoff prompt 07. Evidence `/tmp/wu-tour-release/live-proof.json`.
+
+- **Previous frontend, backend and bot — Member signup (2026-10-29):** `5539cba3c800d91372fd5c6adc62564a758ddff4`, tag `member-signup-1`, PR #37; moderation preservation merged first through PR #36.
   - Frontend and backend under `/home/ruggie/.local/share/wu-dashboard/{releases,backend}/5539cba3c800d91372fd5c6adc62564a758ddff4/`; bot `/home/botrunner/wu-bot` at the same SHA.
   - Previous frontend/backend `2279c95c3bc62ac74447c4a66a0a924dde45bda4`; previous bot `2d7d2c92c246db886994dee8a3a515b6e0bf1076`.
   - Backup `.local/member-signup-backup-20261029T044244Z/dashboard.sqlite3`: 1,167,360 bytes, integrity OK, all 57 table counts matched; Main 19/18/18 and Lazy 95/92/73 signups/assigned/locks unchanged.

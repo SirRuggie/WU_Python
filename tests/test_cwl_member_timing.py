@@ -6,7 +6,7 @@ import unittest
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 import test_cwl_web_foundation as foundation
 from cwl_web import member_timing as timing
@@ -27,7 +27,7 @@ def test_utc_math_and_null_never_produce_naive_dates():
 
 @asynccontextmanager
 async def fake_mongo(request):
-    yield object()
+    yield SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value={"campaign": {}})))
 
 
 class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
@@ -115,7 +115,7 @@ class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
         self.app['member_timing_cache'][sid] = (1000, '2026-10', value)
 
         async def load(mongo, guild, cycle):
-            if cycle == '2026-10':
+            if cycle == '2026-09':
                 raise ValueError('bad fake campaign')
             return {'campaign': {'signup_deadline': {'at': '2026-11-30T21:00:00Z'}}}
 
@@ -203,11 +203,11 @@ class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
         await self.setup_bound()
 
         async def load(mongo, guild, cycle):
-            if cycle == 'slow':
+            if cycle == '2026-09':
                 await asyncio.Event().wait()
             return {'campaign': {'signup_deadline': None}}
 
-        with patch.object(timing, 'eligible_bindings', return_value={1: 'slow', 2: 'fast'}), patch.object(timing, '_mongo', fake_mongo), patch.object(timing, 'load_campaign', side_effect=load), patch.object(timing, 'SEASON_TIMEOUT_SECONDS', .01), patch.object(timing, 'PASS_TIMEOUT_SECONDS', .3):
+        with patch.object(timing, 'eligible_bindings', return_value={1: '2026-10', 2: '2026-11'}), patch.object(timing, '_mongo', fake_mongo), patch.object(timing, 'load_campaign', side_effect=load), patch.object(timing, 'SEASON_TIMEOUT_SECONDS', .01), patch.object(timing, 'PASS_TIMEOUT_SECONDS', .3):
             await asyncio.wait_for(timing.refresh(self.app), .2)
         self.assertEqual(set(self.app['member_timing_cache']), {2})
 
@@ -219,7 +219,7 @@ class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
         @asynccontextmanager
         async def blocked(request):
             await asyncio.Event().wait()
-            yield object()
+            yield SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value={"campaign": {}})))
 
         with patch.object(timing, '_mongo', blocked), patch.object(timing, 'PASS_TIMEOUT_SECONDS', .01), patch.object(timing.LOG, 'exception') as log:
             await asyncio.wait_for(timing.refresh(self.app), .2)
@@ -234,3 +234,39 @@ class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
                 db.execute('INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES(?,?)', (ident, cycle))
             db.execute('UPDATE member_season SET season_id=90 WHERE id=1')
         self.assertEqual(timing.eligible_bindings(self.app), {sid: '2026-10', 90: '2026-09', 91: '2026-11'})
+
+
+    async def test_bound_cwl_month_uses_previous_campaign_and_january_rolls_year(self):
+        sid = await self.setup_bound()
+        campaign = {'timezone': 'America/New_York', 'signup_deadline': {'month_end_offset_days': 2, 'hour': 17}}
+        for bound, earlier, expected in [('2026-11', '2026-10', '2026-10-29T21:00:00+00:00'),
+                                         ('2027-01', '2026-12', '2026-12-29T22:00:00+00:00')]:
+            with patch.object(timing, 'eligible_bindings', return_value={sid: bound}), patch.object(timing, '_mongo', fake_mongo), patch.object(timing, 'load_campaign', return_value={'campaign': campaign}) as load:
+                await timing.refresh(self.app)
+                load.assert_awaited_once()
+                self.assertEqual(load.call_args.args[2], earlier)
+                self.assertEqual((await self.read(sid))['signup_deadline'], expected)
+
+    async def test_missing_previous_campaign_uses_guild_defaults_and_row_overrides(self):
+        from test_cwl_dashboard_integration import MemoryMongo
+        from utils.cwl_campaign import default_campaign, defaults_id, cycle_id
+        sid = await self.setup_bound()
+        mongo = MemoryMongo()
+        campaign = default_campaign()
+        campaign['timezone'] = 'America/New_York'
+        campaign['signup_deadline'] = {'month_end_offset_days': 2, 'hour': 17}
+        mongo.bot_config.documents[defaults_id(timing.GUILD_ID)] = {
+            '_id': defaults_id(timing.GUILD_ID), 'campaign': campaign}
+
+        @asynccontextmanager
+        async def source(request):
+            yield mongo
+
+        with patch.object(timing, '_mongo', source):
+            await timing.refresh(self.app)
+            self.assertEqual((await self.read(sid))['signup_deadline'], '2026-09-28T21:00:00+00:00')
+            row = dict(campaign, signup_deadline={'month_end_offset_days': 1, 'hour': 12})
+            key = cycle_id(timing.GUILD_ID, '2026-09')
+            mongo.bot_config.documents[key] = {'_id': key, 'campaign': row}
+            await timing.refresh(self.app)
+            self.assertEqual((await self.read(sid))['signup_deadline'], '2026-09-29T16:00:00+00:00')

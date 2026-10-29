@@ -11,15 +11,13 @@ import {
   artAspect,
   invitedThisSession,
   rememberSession,
-  policyNotice,
-  policyUrl,
   readPreference,
   savePreference,
   shouldInvite,
   skipPreference,
   steps,
 } from "./model";
-import Practice from "./Practice";
+import type { SignupTourState, TourPage } from "./session";
 import Glove from "./Glove";
 import { placeCard, type Box } from "./placement";
 import "./tour.css";
@@ -28,7 +26,9 @@ type Props = {
   view: string;
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
-  onActive: (active: boolean) => void;
+  onActive: (active: boolean) => boolean | void;
+  onNavigate?: (page: TourPage, step: number) => void;
+  signupState?: SignupTourState;
 };
 
 export default function MemberTour({
@@ -36,6 +36,8 @@ export default function MemberTour({
   menuOpen,
   onMenu,
   onActive,
+  onNavigate,
+  signupState = "open",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
@@ -56,10 +58,55 @@ export default function MemberTour({
   });
   const onMenuRef = useRef(onMenu);
   onMenuRef.current = onMenu;
+  const callbacks = useRef({ onActive, onNavigate });
+  callbacks.current = { onActive, onNavigate };
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(
+    () => () => {
+      if (openRef.current) callbacks.current.onActive(false);
+    },
+    [],
+  );
+  const [startError, setStartError] = useState("");
+  const [shake, setShake] = useState(0);
   const current = steps[step];
-  const sidebarStep = !!current.target && !current.target.startsWith("demo-");
+  const closed = step >= 3 && step <= 7 && signupState === "closed";
+  const empty = step >= 5 && step <= 7 && signupState === "empty";
+  const allSigned = step >= 5 && step <= 7 && signupState === "all-signed";
+  const failed = step >= 3 && step <= 7 && signupState === "error";
+  const targetId = failed
+    ? ""
+    : closed
+      ? "signup-closed"
+      : empty
+        ? "signup-missing"
+        : allSigned
+          ? ""
+          : current.target;
+  const text = failed
+    ? "We couldn't load your accounts — you can still finish the tour."
+    : closed
+      ? "Signups are closed right now — next month, this is where you'll sign up."
+      : empty
+        ? "Link your Clash account here first."
+        : allSigned
+          ? "All your accounts are already signed up — nice!"
+          : current.text;
+  const sidebarStep = [
+    "home",
+    "todo",
+    "register",
+    "saved",
+    "assignments",
+  ].includes(targetId);
 
   const start = (manual = false) => {
+    if (callbacks.current.onActive(true) === false) {
+      setStartError("Save or discard your changes first.");
+      return;
+    }
+    setStartError("");
     replay.current = manual;
     dismissedSession.current = true;
     rememberSession();
@@ -78,15 +125,69 @@ export default function MemberTour({
     } else dismissedSession.current = true;
     if (reason === "finish" || dontShow)
       savePreference({ ...readPreference(), dismissed: true });
-    setOpen(false);
-    onMenuRef.current(initial.current.menu);
-    window.requestAnimationFrame(() => {
-      window.scrollTo(0, initial.current.scroll);
-      initial.current.focus?.focus();
-    });
+    try {
+      callbacks.current.onActive(false);
+    } finally {
+      openRef.current = false;
+      setOpen(false);
+      onMenuRef.current(initial.current.menu);
+      window.requestAnimationFrame(() => {
+        window.scrollTo(0, initial.current.scroll);
+        initial.current.focus?.focus();
+      });
+    }
   };
-  const advance = () =>
-    step === steps.length - 1 ? close("finish") : setStep(step + 1);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    const back = () => {
+      if (openRef.current) closeRef.current("exit");
+    };
+    window.addEventListener("wu-tour-back", back);
+    return () => window.removeEventListener("wu-tour-back", back);
+  }, []);
+  const advance = (targetTap = false) => {
+    if (step === 7 && targetTap && !closed && !empty && !allSigned) {
+      setShake((value) => value + 1);
+      return;
+    }
+    if (step >= 3 && step <= 7 && signupState === "loading") return;
+    if (closed || empty || failed) {
+      setStep(9);
+      return;
+    }
+    if (allSigned) {
+      setStep(8);
+      return;
+    }
+    if (step >= 4 && step <= 6) {
+      const target = document.querySelector<HTMLElement>(
+        `[data-tour-target="${targetId}"]`,
+      );
+      if (!target || target.matches(":disabled")) return;
+      const checkbox =
+        target instanceof HTMLInputElement
+          ? target
+          : target.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      if (!checkbox?.checked) target.click();
+    }
+    if (step === steps.length - 1) close("finish");
+    else setStep(step + 1);
+  };
+  useEffect(() => {
+    if (!open || step === 0) return;
+    const page: TourPage =
+      step === 1 || step === 12
+        ? "home"
+        : step === 2
+          ? "todo"
+          : step === 10
+            ? "saved"
+            : step === 11
+              ? "assignments"
+              : "register";
+    callbacks.current.onNavigate?.(page, step);
+  }, [open, step]);
 
   useEffect(() => {
     if (view !== "home") return;
@@ -101,10 +202,6 @@ export default function MemberTour({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
   useEffect(() => {
-    onActive(open);
-    return () => onActive(false);
-  }, [open, onActive]);
-  useEffect(() => {
     if (!open) return;
     const sync = () =>
       onMenuRef.current(
@@ -113,7 +210,7 @@ export default function MemberTour({
     sync();
     window.addEventListener("resize", sync);
     return () => window.removeEventListener("resize", sync);
-  }, [open, sidebarStep, step]);
+  }, [open, sidebarStep, step, view]);
   useLayoutEffect(() => {
     if (!open) return;
     const node = dialog.current!;
@@ -127,16 +224,34 @@ export default function MemberTour({
     const nav = document.querySelector<HTMLElement>(".sidebar nav");
     const originalNavHeight = nav?.style.maxHeight ?? "";
     const update = () => {
-      const target = current.target
+      const target = targetId
         ? document.querySelector<HTMLElement>(
-            `[data-tour-target="${current.target}"]`,
+            `[data-tour-target="${targetId}"]`,
           )
         : null;
       if (!target || !target.getClientRects().length) {
         setBox(null);
         return;
       }
-      const rect = target.getBoundingClientRect();
+      let rect = target.getBoundingClientRect();
+      if (!sidebarStep && window.innerWidth <= 900 && card.current) {
+        const availableBottom = card.current.getBoundingClientRect().top - 18;
+        if (rect.bottom > availableBottom) {
+          window.scrollBy(0, rect.bottom - availableBottom);
+          rect = target.getBoundingClientRect();
+        }
+      }
+      if (
+        rect.width <= 0 ||
+        rect.height <= 0 ||
+        rect.left < 0 ||
+        rect.top < 0 ||
+        rect.right > window.innerWidth + 1 ||
+        rect.bottom > window.innerHeight + 1
+      ) {
+        setBox(null);
+        return;
+      }
       if (window.innerWidth > 900 && card.current)
         setPosition(
           placeCard(rect, card.current.getBoundingClientRect(), {
@@ -158,7 +273,7 @@ export default function MemberTour({
         nav.style.maxHeight = `${Math.max(100, card.current.getBoundingClientRect().top - nav.getBoundingClientRect().top - 16)}px`;
       }
       document
-        .querySelector<HTMLElement>(`[data-tour-target="${current.target}"]`)
+        .querySelector<HTMLElement>(`[data-tour-target="${targetId}"]`)
         ?.scrollIntoView({ block: "nearest" });
       update();
       card.current?.querySelector<HTMLElement>("h2")?.focus();
@@ -167,16 +282,28 @@ export default function MemberTour({
     observer.observe(document.body);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
-    const timer = window.setTimeout(update, 350); // after the existing drawer transition
+    let followFrame = 0;
+    const until = performance.now() + 800;
+    const follow = () => {
+      update();
+      if (performance.now() < until)
+        followFrame = requestAnimationFrame(follow);
+    };
+    followFrame = requestAnimationFrame(follow);
+    document.addEventListener("transitionend", update, true);
+    const target = document.querySelector(`[data-tour-target="${targetId}"]`);
+    if (target) observer.observe(target);
+    if (card.current) observer.observe(card.current);
     return () => {
       if (nav) nav.style.maxHeight = originalNavHeight;
       cancelAnimationFrame(frame);
-      clearTimeout(timer);
+      cancelAnimationFrame(followFrame);
+      document.removeEventListener("transitionend", update, true);
       observer.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open, step, current.target, menuOpen]);
+  }, [open, step, targetId, menuOpen, view, signupState]);
 
   return (
     <>
@@ -187,6 +314,7 @@ export default function MemberTour({
       >
         <CircleHelp size={20} aria-hidden="true" /> Help &amp; tour
       </button>
+      {startError && <p role="status">{startError}</p>}
       {open &&
         createPortal(
           <dialog
@@ -224,13 +352,12 @@ export default function MemberTour({
             }}
           >
             {!box && <div className="tour-dim" />}
-            <Practice step={step} advance={advance} />
             {box && (
               <button
                 type="button"
                 className="tour-spotlight"
                 style={box}
-                onClick={advance}
+                onClick={() => advance(true)}
                 aria-label={`Continue: ${current.title}`}
               >
                 <Glove />
@@ -269,22 +396,9 @@ export default function MemberTour({
                 <h2 id="tour-title" tabIndex={-1}>
                   {current.title}
                 </h2>
-                <p>{current.text}</p>
-                {step === 10 && (
-                  <div className="tour-mini">
-                    <small>PRACTICE · nothing is saved</small>
-                    <strong>Demo Barbarian · TH15 · Lazy CWL</strong>
-                  </div>
-                )}
-                {step === 11 && (
-                  <div className="tour-mini">
-                    <small>PRACTICE · nothing is saved</small>
-                    <strong>Demo Barbarian → Demo Warriors</strong>
-                    <button type="button" onClick={advance}>
-                      Open clan
-                    </button>
-                  </div>
-                )}
+                <p key={shake} className={shake ? "tour-shake" : undefined}>
+                  {text}
+                </p>
                 {step === 0 && (
                   <label className="tour-remember">
                     <input
@@ -330,7 +444,12 @@ export default function MemberTour({
                     Back
                   </button>
                 )}
-                <button type="button" className="tour-next" onClick={advance}>
+                <button
+                  type="button"
+                  className="tour-next"
+                  disabled={step >= 3 && step <= 7 && signupState === "loading"}
+                  onClick={() => advance()}
+                >
                   {step === 0
                     ? "Start tour"
                     : step === 12
@@ -346,14 +465,6 @@ export default function MemberTour({
                 >
                   Skip for now
                 </button>
-              )}
-              {(step === 0 || step === 12) && (
-                <p className="tour-policy">
-                  {policyNotice}{" "}
-                  <a href={policyUrl} target="_blank" rel="noopener noreferrer">
-                    www.supercell.com/fan-content-policy.
-                  </a>
-                </p>
               )}
             </section>
             {step === 8 && (

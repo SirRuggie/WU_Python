@@ -1,3 +1,4 @@
+import { isTourReadOnly } from "./memberTour/session"
 // Display-only snapshots. Permissions and every mutation still use live APIs.
 const prefix = 'wu-snapshot-v1:'
 const lifetime = 5 * 60 * 1000
@@ -9,6 +10,7 @@ export function readSnapshot<T>(key: string, valid: (value: unknown) => value is
   } catch { return null }
 }
 export function writeSnapshot(key: string, data: unknown, storage?: Pick<Storage, 'setItem'>, now = Date.now()) {
+  if (isTourReadOnly()) return
   try { (storage ?? window.localStorage).setItem(prefix + key, JSON.stringify({ savedAt: now, data })) } catch { /* Cache is optional. */ }
 }
 export function clearSnapshots() {

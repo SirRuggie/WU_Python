@@ -1,5 +1,9 @@
 # Dashboard backend releases
 
+## Member tour + timing released — 2026-10-29
+
+`member-tour-1` (`16cc79e7db39e3aaadf99c99117994b9103a47e8`) runs from the isolated backend archive and matching frontend; bot is at the same SHA. Background timing refresh fixes the request timeout, with 5.8s refreshes every five minutes. Readiness, journal, public hashes and protected counts passed. Smoke passed with defects: wrong campaign month and phone tour spotlight, tracked in handoff prompt 07; keep live. Backup `.local/member-tour-backup-20261029T122118Z/dashboard.sqlite3`; evidence `/tmp/wu-tour-release/live-proof.json`. Rollback all code layers to `5539cba3c800d91372fd5c6adc62564a758ddff4`, without restoring data.
+
 ## Member signup released — 2026-10-29
 
 `member-signup-1` at `5539cba3c800d91372fd5c6adc62564a758ddff4` deployed with approved dashboard and bot restarts. Read-only UTC-aware timing adds 24 elapsed hours, including DST weekends; no schema/write-path change. Imports, two consecutive config 200s, public hashes and unchanged protected counts passed. Backup `.local/member-signup-backup-20261029T044244Z/dashboard.sqlite3`; evidence `/tmp/wu-member-signup-release/retry-live-proof.json`. Claude web and Ruggie Discord smoke passed. Date-line defect: fix in progress (prompt 01): Mongo exceeds the current request-path 1.5-second budget.
@@ -8,8 +12,8 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/5539cba3c800d91372fd5c6adc62564a758ddff4/`, tag `member-signup-1`.
-- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`; paired frontend rollback `2279c95c3bc62ac74447c4a66a0a924dde45bda4`.
+- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/16cc79e7db39e3aaadf99c99117994b9103a47e8/`, tag `member-tour-1`.
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/5539cba3c800d91372fd5c6adc62564a758ddff4/`; paired frontend and bot rollback `5539cba3c800d91372fd5c6adc62564a758ddff4`.
 - Both are clean `git archive` exports. Current release imports were verified from the isolated directory using the existing virtualenv.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
@@ -75,3 +79,8 @@ Ruggie approved the roster-image channel/post schema, per-clan post/update/drop 
 Additive tables: `roster_image_channels`, `roster_image_posts`, `roster_image_requests`. Never store PNG bytes in SQLite/audit logs. Retry rendering uses the immutable publication and frozen metadata. Preserve these tables on code rollback; never restore a database to roll back code. Uncertain posts require a duplicate warning; uncertain edits PATCH the saved message ID. No automatic resend or Discord DELETE.
 
 Use normal backup/integrity/count evidence, retain both rollback targets, then verify public assets, runtime cwd, readiness and protected counts. Fake-Discord tests are not proof of live delivery; no live test send is authorized by the implementation batch.
+
+Prompt 07 tour/deadline hotfix (not yet released): member timing reads the existing
+campaign one month before the CWL binding. No schema or write-path change. Deploy
+its backend from an isolated tagged release only after approval; current runtime
+remains member-tour-1 / 16cc79e.

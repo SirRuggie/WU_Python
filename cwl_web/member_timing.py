@@ -28,6 +28,12 @@ def eligible_bindings(app):
             'AND (b.cycle IN (?,?) OR s.id=(SELECT season_id FROM member_season WHERE id=1))', cycles)}
 
 
+def signup_cycle(bound_cycle):
+    """The dashboard binds the CWL month; campaigns collect the month before."""
+    year, month = map(int, bound_cycle.split("-"))
+    return f"{year - (month == 1):04d}-{12 if month == 1 else month - 1:02d}"
+
+
 async def refresh(app):
     """One background Mongo context; failed seasons retain their last good result."""
     started = time.monotonic()
@@ -44,9 +50,12 @@ async def refresh(app):
                     for sid, cycle in pending.items():
                         try:
                             async with asyncio.timeout(SEASON_TIMEOUT_SECONDS):
-                                loaded = await load_campaign(mongo, GUILD_ID, cycle)
-                            campaign = loaded['campaign']
-                            value = utc_timing(signup_deadline(campaign, cycle)) if campaign.get('signup_deadline') is not None else utc_timing(None)
+                                earlier = signup_cycle(cycle)
+                                # Use the same merged monthly defaults as the bot,
+                                # even before a cycle-specific row has been saved.
+                                loaded = await load_campaign(mongo, GUILD_ID, earlier)
+                            campaign = loaded['campaign'] if loaded else {}
+                            value = utc_timing(signup_deadline(campaign, earlier)) if campaign.get('signup_deadline') is not None else utc_timing(None)
                             cache[sid] = (time.monotonic(), cycle, value)
                             refreshed += 1
                         except Exception:

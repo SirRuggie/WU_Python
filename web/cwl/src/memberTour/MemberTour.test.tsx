@@ -14,7 +14,9 @@ import {
 
 let root: Root, host: HTMLDivElement;
 const menu = vi.fn(),
-  active = vi.fn();
+  active = vi.fn(),
+  navigate = vi.fn(),
+  control = vi.fn();
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear();
@@ -39,6 +41,19 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(
     () => {},
   );
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    top: 10,
+    left: 10,
+    right: 110,
+    bottom: 54,
+    width: 100,
+    height: 44,
+    x: 10,
+    y: 10,
+    toJSON() {
+      return {};
+    },
+  });
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   vi.spyOn(window, "matchMedia").mockReturnValue({
     matches: true,
@@ -54,8 +69,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
   menu.mockClear();
   active.mockClear();
+  navigate.mockClear();
+  control.mockClear();
 });
-async function render(view = "home") {
+async function render(
+  view = "home",
+  signupState: import("./session").SignupTourState = "open",
+) {
   await act(async () => {
     root.render(
       <>
@@ -66,11 +86,23 @@ async function render(view = "home") {
             </button>
           ))}
         </nav>
+        {[
+          "signup-pool",
+          "signup-account",
+          "signup-review",
+          "signup-confirm",
+        ].map((id) => (
+          <button key={id} data-tour-target={id} onClick={() => control(id)}>
+            {id}
+          </button>
+        ))}
         <MemberTour
           view={view}
+          signupState={signupState}
           menuOpen={false}
           onMenu={menu}
           onActive={active}
+          onNavigate={navigate}
         />
       </>,
     );
@@ -90,7 +122,7 @@ async function click(selector: string) {
 it("walks every step, target advances, phone menu closes for practice, finishes without any request", async () => {
   await render();
   expect(document.querySelector(".tour-back")).toBeNull();
-  expect(document.querySelector(".tour-policy")?.textContent).toContain(
+  expect(document.body.textContent).not.toContain(
     "This material is unofficial",
   );
   for (let i = 0; i < steps.length; i++) {
@@ -103,32 +135,49 @@ it("walks every step, target advances, phone menu closes for practice, finishes 
     if (steps[i].target)
       expect(document.querySelector(".tour-spotlight")).not.toBeNull();
     if (i === 1) expect(menu).toHaveBeenLastCalledWith(true);
-    if (i === 4) {
-      expect(menu).toHaveBeenLastCalledWith(false);
-      expect(
-        document.querySelector(".tour-real-submit")?.hasAttribute("disabled"),
-      ).toBe(true);
-      expect(document.querySelector(".tour-practice-badge")?.textContent).toBe(
-        "PRACTICE · nothing is saved",
-      );
-    }
+    if (i === 4) expect(menu).toHaveBeenLastCalledWith(false);
     if (i === 8)
       expect(document.querySelector(".tour-confetti")).not.toBeNull();
     if (i === 9) expect(document.querySelector(".tour-practice")).toBeNull();
-    if (i === 12)
-      expect(document.querySelector(".tour-policy")?.textContent).toContain(
-        "This material is unofficial",
+    expect(document.querySelector(".tour-policy")).toBeNull();
+    if (i === 7) {
+      await click(".tour-spotlight");
+      expect(document.querySelector(".tour-shake")).not.toBeNull();
+      expect(control).not.toHaveBeenCalledWith("signup-confirm");
+      expect(document.querySelector("#tour-title")?.textContent).toBe(
+        steps[7].title,
       );
-    await click(steps[i].target ? ".tour-spotlight" : ".tour-next");
+    }
+    await click(".tour-next");
   }
   expect(document.querySelector("dialog")).toBeNull();
   expect(readPreference().dismissed).toBe(true);
   expect(fetch).not.toHaveBeenCalled();
+  expect(control.mock.calls).toEqual([
+    ["signup-pool"],
+    ["signup-account"],
+    ["signup-review"],
+  ]);
+  expect(navigate.mock.calls.map((call) => call[0])).toEqual([
+    "home",
+    "todo",
+    "register",
+    "register",
+    "register",
+    "register",
+    "register",
+    "register",
+    "register",
+    "saved",
+    "assignments",
+    "home",
+  ]);
+  expect(active).toHaveBeenLastCalledWith(false);
   await click(".tour-launcher");
   expect(document.querySelector("#tour-title")?.textContent).toBe(
     steps[0].title,
   );
-});
+}, 20000);
 it("skips only three visits, not three renders, and does not invite away from Home", async () => {
   await render("todo");
   expect(document.querySelector("dialog")).toBeNull();
@@ -213,7 +262,7 @@ it("focus enters the card and wraps in both directions; dim clicks do nothing", 
       }),
     ),
   );
-  expect(document.activeElement?.tagName).toBe("A");
+  expect(document.activeElement?.textContent).toBe("Skip for now");
   await act(async () =>
     dialog.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
@@ -238,24 +287,119 @@ it("corrupt or unavailable browser storage fails safely", () => {
   expect(() => savePreference({ skips: 3, dismissed: true })).not.toThrow();
 });
 
-it("real member and staff navigation expose every sidebar tour target", async () => {
+it("tour opens only the target sidebar section and preserves the saved expansion state", async () => {
+  localStorage.setItem(
+    "wu-navigation-v3:tour-fixture",
+    JSON.stringify({ "my-cwl": false }),
+  );
+  await act(async () =>
+    root.render(
+      <SidebarNavigation
+        userId="tour-fixture"
+        view="home"
+        canEdit={false}
+        isOwner={false}
+        onNavigate={vi.fn()}
+      />,
+    ),
+  );
   for (const isOwner of [false, true]) {
-    await act(async () =>
-      root.render(
-        <SidebarNavigation
-          userId="tour-fixture"
-          view="home"
-          canEdit={isOwner}
-          isOwner={isOwner}
-          onNavigate={vi.fn()}
-          tourExpanded
-        />,
-      ),
-    );
-    for (const id of ["home", "todo", "register", "saved", "assignments"]) {
-      const target = host.querySelector(`[data-tour-target="${id}"]`);
-      expect(target).not.toBeNull();
+    for (const view of ["home", "todo", "signup", "assignments"] as const) {
+      const before = localStorage.getItem("wu-navigation-v3:tour-fixture");
+      await act(async () =>
+        root.render(
+          <SidebarNavigation
+            userId="tour-fixture"
+            view={view}
+            canEdit={isOwner}
+            isOwner={isOwner}
+            onNavigate={vi.fn()}
+            tourExpanded
+          />,
+        ),
+      );
+      const target = host.querySelector(
+        `[data-tour-target="${view === "signup" ? "register" : view}"]`,
+      );
       expect(target?.closest("[hidden]")).toBeNull();
+      expect(
+        host
+          .querySelector("#navigation-cwl-management")
+          ?.hasAttribute("hidden") ?? true,
+      ).toBe(true);
+      expect(localStorage.getItem("wu-navigation-v3:tour-fixture")).toBe(
+        before,
+      );
     }
   }
+  await act(async () =>
+    root.render(
+      <SidebarNavigation
+        userId="tour-fixture"
+        view="home"
+        canEdit={false}
+        isOwner={false}
+        onNavigate={vi.fn()}
+      />,
+    ),
+  );
+  expect(host.querySelector("#navigation-my-cwl")?.hasAttribute("hidden")).toBe(
+    true,
+  );
+});
+it("failed account reads explain the error and allow continuing", async () => {
+  await render("home", "error");
+  for (let i = 0; i < 3; i++) await click(".tour-next");
+  expect(document.querySelector(".tour-copy")?.textContent).toContain(
+    "We couldn't load your accounts — you can still finish the tour.",
+  );
+  expect(
+    document.querySelector<HTMLButtonElement>(".tour-next")?.disabled,
+  ).toBe(false);
+  await click(".tour-next");
+  expect(document.querySelector("#tour-title")?.textContent).toBe(
+    steps[9].title,
+  );
+});
+it("blocked staff editors get a visible explanation", async () => {
+  active.mockReturnValueOnce(false);
+  await render("signup");
+  await click(".tour-launcher");
+  expect(host.textContent).toContain("Save or discard your changes first.");
+  expect(document.querySelector("dialog")).toBeNull();
+});
+
+it("hides offscreen rings and remeasures the real target after drawer transition", async () => {
+  let left = -283;
+  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(
+    function (this: HTMLElement) {
+      const x = this.dataset.tourTarget ? left : 10;
+      return {
+        top: 10,
+        left: x,
+        right: x + 100,
+        bottom: 54,
+        width: 100,
+        height: 44,
+        x,
+        y: 10,
+        toJSON() {
+          return {};
+        },
+      };
+    },
+  );
+  await render();
+  await click(".tour-next");
+  expect(document.querySelector(".tour-spotlight")).toBeNull();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 900));
+  });
+  left = 10;
+  await act(async () => {
+    document.dispatchEvent(new Event("transitionend", { bubbles: true }));
+  });
+  expect(
+    (document.querySelector(".tour-spotlight") as HTMLElement).style.left,
+  ).toBe("10px");
 });
