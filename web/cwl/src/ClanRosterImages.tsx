@@ -1,20 +1,23 @@
-import ConfirmDialog from "./ConfirmDialog";
-import { Button } from "./rosterUi/primitives";
-import { RefreshCw, Eye, Send } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { api, type Pool } from "./api";
 import { useDashboardPermission } from "./DashboardPermissions";
-import { useEffect, useState } from "react";
-import { api } from "./api";
+import { Button } from "./rosterUi/primitives";
 import ChannelCombobox from "./ChannelCombobox";
 import type { AnnouncementChannel } from "./announcements";
-import AnnouncementPreviewDialog from "./AnnouncementPreviewDialog";
-type Clan = {
-  tag: string;
-  name: string;
-  pool: string;
-  count: number;
-  pages: number;
-};
-type Data = { version: number; season: string; clans: Clan[] };
+import ConfirmDialog from "./ConfirmDialog";
+import { hiddenPublicationStatus } from "./publicationStatus";
+import SingleClanRosterTest from "./SingleClanRosterTest";
+import {
+  imageConfirm,
+  imageJobs,
+  imagePoolStatus,
+  runImageJobs,
+  type ImageChannel,
+  type ImageData,
+  type ImageJob,
+} from "./rosterImagePosting";
+import "./RosterImagePosting.css";
+
 export default function ClanRosterImages({
   seasonId,
   version,
@@ -22,249 +25,396 @@ export default function ClanRosterImages({
   seasonId: string;
   version: number | null;
 }) {
-  const canManage = useDashboardPermission("cwl_send");
-  const [data, setData] = useState<Data | null>(null),
-    [tag, setTag] = useState(""),
-    [channel, setChannel] = useState(""),
-    [channels, setChannels] = useState<AnnouncementChannel[]>([]),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [url, setUrl] = useState(""),
-    [expanded, setExpanded] = useState(false),
-    [loaded, setLoaded] = useState(false),
-    [nonce, setNonce] = useState("");
-  const [confirmTest, setConfirmTest] = useState(false);
-  const [refresh, setRefresh] = useState(0);
-  const path = `/seasons/${encodeURIComponent(seasonId)}/roster-images`;
-  useEffect(() => {
-    let active = true;
-    setData(null);
-    setTag("");
-    setUrl("");
-    setError("");
-    setLoaded(false);
-    if (!version) return;
-    void Promise.all([
-      api<Data>(path),
-      api<{ channels: AnnouncementChannel[] }>("/announcement-channels"),
-    ])
-      .then(([result, choices]) => {
-        if (active) {
-          setData(result);
-          setTag(result.clans[0]?.tag || "");
-          setChannels(choices.channels);
-        }
-      })
-      .catch((e) => {
-        if (active) setError(e.message);
-      });
-    return () => {
-      active = false;
-    };
-  }, [seasonId, version, refresh]);
-  const clan = data?.clans.find((c) => c.tag === tag);
-  function changed() {
-    setLoaded(false);
-    setNonce("");
-    setUrl("");
-    setError("");
+  const canSend = useDashboardPermission("cwl_send");
+  const [data, setData] = useState<ImageData | null>(null),
+    [channels, setChannels] = useState<AnnouncementChannel[]>([]);
+  const [saved, setSaved] = useState<ImageChannel[]>([]),
+    [chosen, setChosen] = useState<Record<Pool, string>>({
+      main: "",
+      lazy: "",
+    });
+  const [error, setError] = useState(""),
+    [progress, setProgress] = useState(""),
+    [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<{
+    jobs: ImageJob[];
+    text: string;
+  } | null>(null);
+  const [singleTest, setSingleTest] = useState(false);
+  const active = useRef(0),
+    running = useRef(false),
+    permission = useRef(canSend);
+  permission.current = canSend;
+  async function reload(generation = active.current) {
+    const result = await api<ImageData>(
+      `/seasons/${seasonId}/roster-image-posts`,
+    );
+    if (active.current === generation) setData(result);
   }
-  const imageUrl = (page: number) =>
-    `/api/cwl${path}/${encodeURIComponent(tag)}.png?version=${data?.version}&page=${page}`;
-  async function send() {
-    if (!clan || !data || !channel || busy) return;
-    setConfirmTest(false);
+  useEffect(() => {
+    const generation = ++active.current;
+    running.current = false;
+    setBusy(false);
+    setData(null);
+    setConfirm(null);
+    setError("");
+    setProgress("");
+    void reload(generation).catch((e) => {
+      if (active.current === generation) setError(e.message);
+    });
+    if (canSend)
+      void Promise.all([
+        api<{ channels: ImageChannel[] }>("/roster-image-channels"),
+        api<{ channels: AnnouncementChannel[] }>("/announcement-channels"),
+      ])
+        .then(([config, choices]) => {
+          if (active.current !== generation) return;
+          setSaved(config.channels);
+          setChannels(choices.channels);
+          setChosen({
+            main:
+              config.channels.find((c) => c.pool === "main")?.channel_id || "",
+            lazy:
+              config.channels.find((c) => c.pool === "lazy")?.channel_id || "",
+          });
+        })
+        .catch((e) => {
+          if (active.current === generation) setError(e.message);
+        });
+    return () => {
+      active.current++;
+    };
+  }, [seasonId, version, canSend]);
+  async function save(pool: Pool) {
+    if (!canSend || running.current) return;
+    running.current = true;
     setBusy(true);
     setError("");
-    setUrl("");
-    const id =
-      nonce ||
-      Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) =>
-        b.toString(16).padStart(2, "0"),
-      ).join("");
-    setNonce(id);
+    const generation = active.current;
     try {
-      const result = await api<{ url: string }>(
-        `${path}/${encodeURIComponent(tag)}/test`,
-        "POST",
-        { version: data.version, channel_id: channel, request_id: id },
-      );
-      setUrl(result.url);
+      const row = await api<ImageChannel>("/roster-image-channels", "PUT", {
+        pool,
+        channel_id: chosen[pool],
+      });
+      if (generation === active.current)
+        setSaved((old) => [...old.filter((c) => c.pool !== pool), row]);
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Could not send test. Check Discord before retrying.",
-      );
+      if (generation === active.current) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (generation === active.current) {
+        running.current = false;
+        setBusy(false);
+      }
     }
   }
-  const pictures = clan ? (
-    <RosterPictures
-      clan={clan}
-      tag={tag}
-      version={data?.version}
-      imageUrl={imageUrl}
-      onLoad={() => setLoaded(true)}
-      onError={() => {
-        setLoaded(false);
-        setError("Image unavailable. Refresh this section.");
-      }}
-    />
-  ) : null;
+  async function start() {
+    if (!permission.current || running.current || !confirm || !data?.published)
+      return;
+    const jobs = confirm.jobs,
+      generation = active.current;
+    running.current = true;
+    setBusy(true);
+    setConfirm(null);
+    setError("");
+    try {
+      await runImageJobs(seasonId, jobs, {
+        active: () => generation === active.current && permission.current,
+        progress: (t) => {
+          if (generation === active.current) setProgress(t);
+        },
+        completed: () => reload(generation),
+      });
+    } catch (e) {
+      if (generation === active.current) {
+        setError((e as Error).message);
+        await reload(generation).catch(() => {});
+      }
+    } finally {
+      if (generation === active.current) {
+        running.current = false;
+        setBusy(false);
+      }
+    }
+  }
+  function open(jobs: ImageJob[], text: string) {
+    if (canSend && !running.current && jobs.length) setConfirm({ jobs, text });
+  }
   return (
-    <section className="clan-roster-images roster-ui">
-      <div className="card-heading">
-        <h2>Clan roster images</h2>
-        <Button
-          icon={RefreshCw}
-          disabled={!canManage || busy}
-          onClick={() => setRefresh((n) => n + 1)}
-        >
-          Refresh images
-        </Button>
-      </div>
-      <p>Choose a clan, preview its finalized roster, then send a test.</p>
-      {!version ? (
-        <p>Finalize a roster first.</p>
+    <section className="roster-image-posting roster-ui">
+      <h2>Clan roster images</h2>
+      {error && <p role="alert">{error}</p>}
+      {progress && <p role="status">{progress}</p>}
+      {!data ? (
+        <p>Loading image status…</p>
+      ) : !data.published ? (
+        <p>
+          {data.last_publication?.withdrawn_at
+            ? hiddenPublicationStatus({
+                ...data.last_publication,
+                withdrawn_at: data.last_publication.withdrawn_at || null,
+                joining_instructions:
+                  data.last_publication.joining_instructions || "",
+              })
+            : "Publish the roster first"}{" "}
+          ·{" "}
+          <a href={`/cwl/publish?season=${seasonId}&step=review`}>
+            Finalize roster ›
+          </a>
+        </p>
       ) : (
         <>
-          <label>
-            Clan
-            <select
-              value={tag}
-              disabled={!canManage || busy || !data}
-              onChange={(e) => {
-                setTag(e.target.value);
-                changed();
-              }}
-            >
-              {!data && <option>Loading…</option>}
-              {(["main", "lazy"] as const).map((pool) => (
-                <optgroup
-                  label={pool === "main" ? "Main CWL" : "Lazy CWL"}
-                  key={pool}
-                >
-                  {data?.clans
-                    .filter((c) => c.pool === pool)
-                    .map((c) => (
-                      <option key={c.tag} value={c.tag}>
-                        {c.name} · {c.count} players
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-          {clan && (
-            <>
-              <p className="small">
-                Finalized version {data?.version} · {clan.pages} image
-                {clan.pages === 1 ? "" : "s"}. Draft changes are not included.
-              </p>
-              <details>
-                <summary>Image preview</summary>
-                <div className="clan-roster-pictures">{pictures}</div>
-                <Button icon={Eye} onClick={() => setExpanded(true)}>
-                  Expand preview
-                </Button>
-              </details>
-              {expanded && (
-                <AnnouncementPreviewDialog
-                  title={clan.name}
-                  onClose={() => setExpanded(false)}
-                >
-                  {pictures}
-                </AnnouncementPreviewDialog>
+          {(["main", "lazy"] as Pool[]).map((pool) => {
+            const config = saved.find((c) => c.pool === pool),
+              status = imagePoolStatus(data, pool);
+            const jobs = imageJobs(
+              data,
+              pool,
+              config?.channel_id || "",
+              status.failedOnly,
+            );
+            const clans = data.clans.filter((c) => c.pool === pool);
+            const rows = [
+              ...clans,
+              ...data.posts
+                .filter(
+                  (p) =>
+                    p.pool === pool && !clans.some((c) => c.tag === p.clan_tag),
+                )
+                .map((p) => ({
+                  tag: p.clan_tag,
+                  name: p.clan_tag,
+                  pool,
+                  pages: 0,
+                  count: 0,
+                })),
+            ];
+            return (
+              <section className="image-pool" key={pool}>
+                <h3>{pool === "main" ? "Main CWL" : "Lazy CWL"}</h3>
+                {canSend && (
+                  <>
+                    <ChannelCombobox
+                      label="Image channel"
+                      channels={channels}
+                      value={chosen[pool]}
+                      disabled={busy}
+                      onChange={(value) =>
+                        setChosen((old) => ({ ...old, [pool]: value }))
+                      }
+                    />
+                    <Button
+                      disabled={
+                        busy ||
+                        !chosen[pool] ||
+                        chosen[pool] === config?.channel_id
+                      }
+                      onClick={() => void save(pool)}
+                    >
+                      Save channel
+                    </Button>
+                    <p className="image-muted">
+                      {config
+                        ? `#${config.channel_name} · used every season until changed`
+                        : "Choose a channel before posting."}
+                    </p>
+                  </>
+                )}
+                <p role="status">{status.label}</p>
+                {canSend && status.action && (
+                  <Button
+                    variant="primary"
+                    disabled={
+                      busy || !jobs.length || jobs.some((j) => !j.channel)
+                    }
+                    onClick={() =>
+                      open(jobs, imageConfirm(jobs, config?.channel_name || ""))
+                    }
+                  >
+                    {status.action}
+                  </Button>
+                )}
+                <details>
+                  <summary>Clans · {rows.length}</summary>
+                  <ul className="image-clan-list">
+                    {rows.map((clan) => {
+                      const post = data.posts.find(
+                        (p) => p.pool === pool && p.clan_tag === clan.tag,
+                      );
+                      const uncertain = post?.status === "uncertain";
+                      return (
+                        <li key={clan.tag}>
+                          <strong>{clan.name}</strong>
+                          <span>{post?.status || "Not posted"}</span>
+                          {post?.error && <p>{post.error}</p>}
+                          {post?.message_id && (
+                            <a
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              href={`https://discord.com/channels/644963518025826315/${post.channel_id}/${post.message_id}`}
+                            >
+                              View in Discord ↗
+                            </a>
+                          )}
+                          {canSend &&
+                            post?.status === "failed" &&
+                            post.error === "Message was deleted in Discord" &&
+                            clan.pages > 0 && (
+                              <Button
+                                disabled={busy || !config?.channel_id}
+                                onClick={() =>
+                                  open(
+                                    [
+                                      {
+                                        clan,
+                                        operation: "post",
+                                        channel: config!.channel_id,
+                                        version: data.published!.version,
+                                      },
+                                    ],
+                                    imageConfirm(
+                                      [
+                                        {
+                                          clan,
+                                          operation: "post",
+                                          channel: config!.channel_id,
+                                          version: data.published!.version,
+                                        },
+                                      ],
+                                      config!.channel_name,
+                                    ),
+                                  )
+                                }
+                              >
+                                Post again
+                              </Button>
+                            )}
+                          {canSend && uncertain && (
+                            <Button
+                              disabled={busy}
+                              onClick={() =>
+                                open(
+                                  [
+                                    {
+                                      clan,
+                                      operation: post.operation,
+                                      channel:
+                                        post.operation === "post"
+                                          ? config?.channel_id || ""
+                                          : post.channel_id,
+                                      version:
+                                        post.target_version ||
+                                        data.published!.version,
+                                    },
+                                  ],
+                                  post.operation === "post"
+                                    ? "This can create a duplicate message if the first one did post."
+                                    : "Retry the edit on the same message? This won't create a new message.",
+                                )
+                              }
+                            >
+                              {post.operation === "post"
+                                ? "Post again anyway"
+                                : "Retry edit"}
+                            </Button>
+                          )}
+                          {canSend && clan.pages > 0 && (
+                            <ImagePreview
+                              season={seasonId}
+                              version={data.published!.version}
+                              clan={clan}
+                            />
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </details>
+              </section>
+            );
+          })}
+          {canSend && (
+            <details onToggle={(e) => setSingleTest(e.currentTarget.open)}>
+              <summary>Single-clan test</summary>
+              {singleTest && (
+                <SingleClanRosterTest
+                  seasonId={seasonId}
+                  version={data.published.version}
+                  disabled={busy}
+                  acquire={() => {
+                    if (running.current) return null;
+                    const generation = active.current;
+                    running.current = true;
+                    setBusy(true);
+                    return () => {
+                      if (generation !== active.current) return;
+                      running.current = false;
+                      setBusy(false);
+                    };
+                  }}
+                />
               )}
-              <ChannelCombobox
-                label="Test channel"
-                channels={channels}
-                value={channel}
-                disabled={!canManage || busy}
-                onChange={(value) => {
-                  setChannel(value);
-                  setNonce("");
-                  setUrl("");
-                }}
-              />
-              <p className="small">
-                Sends only this clan. No pings. Does not mark announcements as
-                sent.
-              </p>
-              <Button
-                icon={Send}
-                variant="primary"
-                disabled={!canManage || busy || !channel || !loaded || !!url}
-                onClick={() => setConfirmTest(true)}
-              >
-                {busy ? "Sending…" : "Send test image"}
-              </Button>
-              {url && (
-                <p role="status">
-                  Test sent.{" "}
-                  <a href={url} target="_blank" rel="noopener noreferrer">
-                    View in Discord ↗
-                  </a>
-                </p>
-              )}
-            </>
-          )}
-          {data && !data.clans.length && (
-            <p>No assigned clans in the finalized roster.</p>
+            </details>
           )}
         </>
       )}
-      {error && <p role="alert">{error}</p>}
-      {confirmTest && clan && (
+      {confirm && (
         <ConfirmDialog
-          heading="Send test image"
-          text={`Send only ${clan.name} (${clan.pages} image${clan.pages === 1 ? "" : "s"}) to #${channels.find((c) => c.id === channel)?.name || channel}? No pings.`}
+          heading="Post roster images"
+          text={confirm.text}
+          confirmLabel="Confirm"
           disabled={busy}
-          onCancel={() => setConfirmTest(false)}
-          onConfirm={() => void send()}
-        />
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => void start()}
+        >
+          <ul>
+            {confirm.jobs.map((j) => (
+              <li key={`${j.clan.pool}:${j.clan.tag}`}>
+                {j.clan.name} · #
+                {channels.find((c) => c.id === j.channel)?.name || j.channel}
+              </li>
+            ))}
+          </ul>
+        </ConfirmDialog>
       )}
     </section>
   );
 }
-
-function RosterPictures({
-  clan,
-  tag,
+function ImagePages({
+  season,
   version,
-  imageUrl,
-  onLoad,
-  onError,
+  clan,
 }: {
-  clan: Clan;
-  tag: string;
-  version?: number;
-  imageUrl: (page: number) => string;
-  onLoad: () => void;
-  onError: () => void;
+  season: string;
+  version: number;
+  clan: { name: string; tag: string; pages: number };
 }) {
   return (
     <>
-      {Array.from({ length: clan.pages }, (_, i) => (
-        <div key={`${tag}:${version}:${i}`}>
-          <img
-            src={imageUrl(i + 1)}
-            alt={`${clan.name} finalized roster, page ${i + 1}`}
-            className="clan-roster-image"
-            onLoad={onLoad}
-            onError={onError}
-          />
-          <a
-            className="button"
-            href={imageUrl(i + 1)}
-            download={`roster-${tag.slice(1)}-${i + 1}.png`}
-          >
-            Download{clan.pages > 1 ? ` page ${i + 1}` : " image"}
-          </a>
-        </div>
-      ))}
+      {Array.from({ length: clan.pages }, (_, i) => {
+        const src = `/api/cwl/seasons/${season}/roster-images/${encodeURIComponent(clan.tag)}.png?version=${version}&page=${i + 1}`;
+        return (
+          <div key={i}>
+            <img
+              loading="lazy"
+              src={src}
+              alt={`${clan.name} roster page ${i + 1}`}
+            />
+            <a href={src} download>
+              Download page {i + 1}
+            </a>
+          </div>
+        );
+      })}
     </>
+  );
+}
+
+function ImagePreview(props: Parameters<typeof ImagePages>[0]) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>Preview + Download</summary>
+      {open && <ImagePages {...props} />}
+    </details>
   );
 }
