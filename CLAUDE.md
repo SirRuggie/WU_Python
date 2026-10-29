@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current signup-card frontend: `/home/ruggie/.local/share/wu-dashboard/releases/539853ec37b62ad67a5157a8c10234688fc28af9/`
+  - Current signup-polish frontend: `/home/ruggie/.local/share/wu-dashboard/releases/ef90834282142b1d924a9f24077d39f9b95105a4/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,14 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend — Signup card + tour refinements (2026-10-29):** `539853ec37b62ad67a5157a8c10234688fc28af9`, tag `signup-card-1`, PR #42.
+- **Current frontend — Member signup polish (2026-10-29):** `ef90834282142b1d924a9f24077d39f9b95105a4`, tag `signup-polish-1`, PR #44. Prior release docs merged through PR #43.
+  - Release `/home/ruggie/.local/share/wu-dashboard/releases/ef90834282142b1d924a9f24077d39f9b95105a4/`. Backend unchanged at `8e0ee01`, PID 1961058; no restarts.
+  - Rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 539853ec37b62ad67a5157a8c10234688fc28af9`. Restore shared `assets/tour/SOURCES.md` from that release if rolling back provenance too. No database restore.
+  - Verified backup `.local/signup-polish-backup-20261029T175358Z/dashboard.sqlite3`: 1,204,224 bytes, integrity OK, all 57 table counts matched. Main 21/18/18 and Lazy 114/92/73 unchanged (signups/assigned/locks), publications and protected records identical. Transient OAuth/session table activity is excluded only from activation equality, not backup verification.
+  - Public `index-CcecPS0C.js`, SHA256 `d98a05b60ffca4c414f91fe7dac4c5de9de7527d1f574bdcda3289fc413d86ca`; index and 45 assets matched the manifest. Config 200, anonymous seasons 401, clean journal.
+  - 804 frontend tests, TypeScript/build and full isolated layout passed. No backend source changes; prior backend suite 4,799 passed, 21 skipped. Claude smoke PASSED (handoff 30): 360px signup copy/art, icons, account menu, no overflow, GET only. Evidence `/tmp/wu-signup-polish-release/`.
+
+- **Previous frontend — Signup card + tour refinements (2026-10-29):** `539853ec37b62ad67a5157a8c10234688fc28af9`, tag `signup-card-1`, PR #42.
   - Release `/home/ruggie/.local/share/wu-dashboard/releases/539853ec37b62ad67a5157a8c10234688fc28af9/`. Backend unchanged at `8e0ee01`, PID 1961058; no services restarted.
   - Frontend-only rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 8e0ee01337db50da8f2f289d257449c46440a440`. No backend restart or database restore.
   - Backup `.local/signup-card-backup-20261029T163441Z/dashboard.sqlite3`: 1,204,224 bytes, integrity OK, all 57 table counts matched. Main 21/18/18 and Lazy 114/92/73 unchanged (signups/assigned/locks), including publication and protected records.
