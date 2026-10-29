@@ -65,7 +65,10 @@ it("shows assigned clan, current location and spoken age", () => {
     [{ ...record, current_clan_tag: null, current_clan_name: null }, "No clan"],
   ] as const) {
     const row = card(location).children[2];
-    expect(visibleText(row)).toBe(`Assigned clan→ ${label} · 2m ago`);
+    expect(visibleText(row)).toBe(`Assigned clan ${label} · 2m ago`);
+    expect(
+      row.querySelector('.player-location-pin[aria-label="Now in"]'),
+    ).not.toBeNull();
     expect(describedText(row)).toBe(
       `Assigned clan: Assigned clan. Now in ${label === "No clan" ? "no clan" : label}, checked 2 minutes ago.`,
     );

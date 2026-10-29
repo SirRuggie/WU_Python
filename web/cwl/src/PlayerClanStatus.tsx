@@ -1,4 +1,5 @@
 import { comparisonAge, sameLocationClan } from "./comparisonLocation";
+import { MapPin } from "lucide-react";
 
 type Location = {
   current_clan_tag?: string | null;
@@ -45,7 +46,7 @@ export function playerClanStatus(
     ? `· ${checking ? "Checking…" : "location not checked yet"}`
     : inClan
       ? `In clan · ${age}`
-      : `→ ${current} · ${age}`;
+      : `Now in ${current === "in no clan" ? "no clan" : current} · ${age}`;
   const description =
     `Assigned clan: ${name}.` +
     (!currentClanKnown
@@ -70,11 +71,13 @@ export default function PlayerClanStatus({
   className = "",
   id,
   showAssigned = true,
+  currentOnly = false,
 }: {
   status: ReturnType<typeof playerClanStatus>;
   className?: string;
   id?: string;
   showAssigned?: boolean;
+  currentOnly?: boolean;
 }) {
   return (
     <span id={id} className={`player-clan-status ${className}`}>
@@ -84,18 +87,24 @@ export default function PlayerClanStatus({
         aria-hidden="true"
       >
         {showAssigned && <strong>{status.name}</strong>}
-        {status.inClan && <span className="player-in-clan-pill">In clan</span>}
+        {status.inClan && !currentOnly && (
+          <span className="player-in-clan-pill">In clan</span>
+        )}
         <span className="roster-player-current" title={status.suffix}>
           {!status.currentClanKnown ? (
             status.suffix
-          ) : status.inClan ? (
+          ) : status.inClan && !currentOnly ? (
             `· ${status.age}`
           ) : (
             <>
-              →{" "}
+              <MapPin
+                className="player-location-pin"
+                size={14}
+                aria-label="Now in"
+              />{" "}
               <span
                 className={
-                  status.assigned
+                  status.assigned && !status.inClan
                     ? "player-current-clan is-elsewhere"
                     : "player-current-clan"
                 }
