@@ -24,3 +24,10 @@
 .confirm-dialog-actions button {
   min-height: 44px;
 }
+
+.confirm-dialog-actions .confirm-danger {
+  border: 1px solid #ef9a9a;
+  background: #452626;
+  color: #ffe0e0;
+  -webkit-text-fill-color: currentColor;
+}

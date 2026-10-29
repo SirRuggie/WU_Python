@@ -1,108 +1,467 @@
-.compare-workspace { min-width: 0; max-width: 100%; margin-top: 12px; }
-.compare-workspace .compare-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.compare-header h2 { margin: 0 0 3px; }
-.compare-header p { margin: 0; color: #b9c0ca; font-size: 13px; }
-.compare-header > button { flex: 0 0 auto; min-height: 44px; }
-
-.compare-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; padding: 11px; border: 1px solid #38383f; border-radius: 10px; background: #1b1c21; }
-.compare-toolbar .filter-picker { flex: 1 1 165px; min-width: min(165px, 100%); max-width: none; }
-.compare-toolbar > label { flex: 1 1 190px; margin: 0; min-width: 0; font-size: 12px; }
-.compare-toolbar > label select { width: 100%; min-height: 44px; }
-.compare-toolbar > button { flex: 0 0 auto; min-height: 44px; }
-.compare-workspace .compare-toolbar-note {
-  margin: 8px 0 12px;
-  color: #b9c0ca;
-  font-size: 12px;
+/* Compare shares roster tokens and primitives; desktop scrollbars stay visible. */
+.compare-workspace {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 12px;
 }
-.compare-toolbar-note details { margin-top: 2px; }
-.compare-toolbar-note summary {
-  display: inline-flex;
+.compare-workspace .compare-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.compare-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.compare-header small {
+  color: #b9c0ca;
+}
+.compare-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+.compare-toolbar > button {
+  min-width: 0;
+}
+.compare-toolbar-note {
+  color: #c2c5cd;
+  font-size: 12px;
+  background: transparent;
+  padding: 0;
+}
+.compare-navigation {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+.compare-navigation .roster-menu {
+  width: 240px;
+}
+.compare-pan-frame {
+  position: relative;
+}
+.compare-pan-frame.has-left::before,
+.compare-pan-frame.has-right::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 16px;
+  width: 25px;
+  z-index: 2;
+  pointer-events: none;
+}
+.compare-pan-frame.has-left::before {
+  left: 0;
+  background: linear-gradient(to right, #111113ee, transparent);
+}
+.compare-pan-frame.has-right::after {
+  right: 0;
+  background: linear-gradient(to left, #111113ee, transparent);
+}
+.compare-workspace .compare-pan {
+  display: grid;
+  gap: 10px;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  padding-bottom: 12px;
+  scrollbar-color: #8e8e96 #202024;
+  scrollbar-width: auto;
+}
+.compare-pan:focus-visible {
+  outline: 2px solid white;
+}
+.compare-side {
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--compare-column-height);
+  border: 1px solid #45464d;
+  border-radius: 14px;
+  background: #1b1c20;
+  scroll-snap-align: start;
+}
+.compare-player-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+.compare-player-list > p {
+  padding: 10px;
+}
+.compare-mobile-rail,
+.compare-mobile-navigation {
+  display: none;
+}
+.compare-picker-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.compare-picker-list label {
+  display: flex;
+  gap: 10px;
   align-items: center;
   min-height: 44px;
-  color: #bdd4f3;
-  cursor: pointer;
+  padding: 8px;
+  border: 1px solid #45464d;
+  border-radius: 14px;
 }
-.compare-toolbar-note summary::before {
-  content: "▸";
-  margin-right: 6px;
+.compare-picker-list input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
-.compare-toolbar-note details[open] summary::before { content: "▾"; }
-.compare-toolbar-note details p { margin: 0 0 6px; }
+.compare-picker-list small {
+  display: block;
+  color: #b9c0ca;
+}
+.compare-picked-order {
+  padding: 0;
+  list-style: none;
+}
+.compare-picked-order li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #45464d;
+  padding: 8px 0;
+}
+.compare-picked-order li > div {
+  display: flex;
+  flex-shrink: 0;
+}
 
-.compare-picker { margin: 10px 0; padding: 12px; border: 1px solid #515d6a; border-radius: 10px; background: #1b2229; }
-.compare-picker > label { display: block; max-width: 380px; }
-.compare-picker input[type="search"] { width: 100%; min-width: 0; }
-.compare-picker > p { margin: 6px 0 10px; color: #bcc5d0; font-size: 12px; }
-.compare-picker-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr)); gap: 6px; max-height: 290px; overflow: auto; }
-.compare-picker-list label { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; padding: 6px 9px; border: 1px solid #3d4650; border-radius: 7px; background: #20252b; }
-.compare-picker-list input { width: 20px; height: 20px; flex: 0 0 auto; }
-.compare-picker-list span { min-width: 0; overflow-wrap: anywhere; }
-.compare-picker-list small { display: block; font-size: 11px; color: #bfc8d3; }
-.compare-picker-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.compare-picker-actions button { min-height: 44px; }
-
-.compare-arrange { margin: 10px 0; border: 1px solid #38383f; border-radius: 9px; background: #1a1b1f; }
-.compare-arrange summary, .compare-column-change summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 9px 12px; }
-.compare-arrange > label { display: block; max-width: 310px; padding: 6px 12px 10px; }
-.compare-arrange > label select { width: 100%; min-height: 44px; }
-.compare-arrange ol { margin: 0; padding: 0 12px 12px; list-style: none; }
-.compare-arrange li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; border-top: 1px solid #38383f; }
-.compare-arrange li > span { min-width: 0; overflow-wrap: anywhere; }
-.compare-arrange li > div { display: flex; gap: 5px; flex: 0 0 auto; }
-.compare-arrange li button { min-width: 44px; min-height: 44px; padding: 5px 8px; }
-
-.compare-navigation { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin: 12px 0 8px; }
-.compare-desktop-jump { display: block; width: min(300px, 100%); margin: 0; }
-.compare-desktop-jump select { width: 100%; min-height: 44px; }
-.compare-desktop-hint { color: #b9c0ca; font-size: 12px; }
-.compare-mobile-focus { display: none; }
-.compare-workspace .compare-pan { display: grid; align-items: start; gap: 10px; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding-bottom: 10px; scrollbar-color: #7a9bc6 #202024; }
-.compare-workspace .compare-pan:focus-visible { outline: 3px solid #8fbaff; outline-offset: 2px; }
-.compare-workspace .compare-side { min-width: 0; padding: 0; overflow: hidden; scroll-snap-align: start; border: 1px solid #38383f; border-radius: 10px; background: #1b1c20; }
-.compare-workspace .compare-clan-summary { display: block; min-height: 0; margin: 0; padding: 11px; border-bottom: 1px solid #38383f; background: #24252b; }
-.compare-clan-summary h3 { margin: 0 0 2px; font-size: 15px; overflow-wrap: anywhere; }
-.compare-workspace .compare-clan-summary small { padding: 0; background: none; font-size: 11px; color: #bfc8d3; overflow-wrap: anywhere; }
-.compare-clan-stats { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
-.compare-clan-stats span { padding: 4px 7px; border-radius: 5px; background: #302817; color: #e7d19a; font-size: 11px; }
-.compare-column-change { border-bottom: 1px solid #38383f; }
-.compare-column-change summary { font-size: 12px; color: #bdd4f3; }
-.compare-column-change select { box-sizing: border-box; width: calc(100% - 20px); min-height: 44px; margin: 0 10px 10px; }
-.compare-workspace .compare-player-list { display: block; max-height: 520px; overflow-y: auto; }
-.compare-player-list > p { padding: 10px; }
-.compare-workspace .compare-account { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px; border: 0; border-bottom: 1px solid #38383f; border-radius: 0; background: transparent; }
-.compare-workspace .compare-account:last-child { border-bottom: 0; }
-.compare-workspace .compare-account-arrived { background: #2b4b38; box-shadow: inset 3px 0 #90ee90; }
-.compare-workspace .compare-account-missing { background: #3c2425; box-shadow: inset 3px 0 #d58d90; }
-.compare-player-info { min-width: 0; overflow-wrap: anywhere; }
-.compare-player-info strong { display: block; font-size: 13px; }
-.compare-player-info small { display: block; color: #c7c9cf; font-size: 11px; }
-.compare-player-info > span { display: block; margin-top: 2px; font-size: 11px; color: #c9d2db; }
-.compare-account-arrived .compare-player-info > span { color: #b8eed4; }
-.compare-account-missing .compare-player-info > span { color: #ffbdc0; }
-.compare-account .compare-details, .compare-account .discord-contact { min-height: 44px; margin: 0; padding: 7px; font-size: 11px; }
-.compare-account .compare-details { border: 0; background: transparent; color: #bdd4f3; text-decoration: underline; text-underline-offset: 3px; }
-.compare-account .compare-details:hover { background: #ffffff10; }
-.compare-account .discord-contact { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; border: 0; background: transparent; }
-.compare-account > small { grid-column: 2 / -1; font-size: 10px; }
-
+/* Compare-only hierarchy. Existing roster tokens own surfaces and status colors. */
+.compare-workspace {
+  --compare-text-secondary: #d1d3d9;
+  color: var(--roster-text);
+}
+.compare-workspace .compare-clan-summary {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  flex-shrink: 0;
+  margin: 0;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 14px;
+  background: var(--roster-surface-raised);
+  color: var(--roster-text);
+}
+.compare-clan-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.compare-workspace .compare-clan-top strong {
+  font-size: 15px;
+  line-height: 17px;
+  font-weight: 700;
+  flex-basis: auto;
+  color: var(--roster-text);
+}
+.compare-clan-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.compare-clan-top > strong:last-of-type {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.compare-clan-top > .roster-player-menu {
+  flex: 0 0 44px;
+  height: 44px;
+}
+.compare-clan-metrics {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 5px;
+}
+.compare-workspace .compare-clan-summary small {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+}
+.compare-workspace .compare-total {
+  flex-basis: auto;
+  font-size: 14px;
+  line-height: 16px;
+  font-weight: 700;
+  color: var(--roster-text);
+  font-variant-numeric: tabular-nums;
+}
+.compare-clan-metrics small + small::before {
+  content: "· ";
+}
+.compare-workspace .compare-tally {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 6px;
+}
+.compare-workspace .compare-tally .compare-count-arrived {
+  color: var(--roster-success);
+}
+.compare-workspace .compare-tally .compare-count-missing {
+  color: var(--roster-danger);
+}
+.compare-workspace .compare-tally .compare-count-checking {
+  color: var(--roster-text-muted);
+}
+.compare-workspace .compare-tally .compare-count-outside {
+  color: var(--roster-warning);
+}
+.compare-clan-summary .roster-ui-progress {
+  margin-top: auto;
+}
+.compare-workspace .compare-player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: none;
+  padding: 4px;
+}
+.compare-player-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px 4px;
+}
+.compare-tag {
+  display: inline-flex;
+  padding: 0 4px;
+  border: 1px solid var(--roster-border);
+  border-radius: 999px;
+  background: var(--roster-surface);
+  color: var(--roster-text-muted);
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 400;
+}
+.compare-tag.is-danger {
+  color: var(--roster-danger);
+  border-color: var(--roster-danger);
+}
+.compare-tag.is-warning {
+  color: var(--roster-warning);
+  border-color: var(--roster-warning);
+}
+.compare-publish-note {
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compare-workspace .roster-player-menu {
+  padding: 0;
+}
+.compare-workspace .roster-action-trigger {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+}
+.compare-workspace
+  .roster-ui-progress.has-room
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-success);
+}
+.compare-workspace
+  .roster-ui-progress.is-full
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-warning);
+}
+.compare-workspace
+  .roster-ui-progress.is-over
+  .roster-ui-progress-track
+  > span {
+  background: var(--roster-danger);
+}
 @media (max-width: 720px) {
-  .compare-workspace.card { padding: 12px; }
-  .compare-header { align-items: start; flex-wrap: wrap; }
-  .compare-header > button { width: 100%; }
-  .compare-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .compare-toolbar .filter-picker { min-width: 0; }
-  .compare-toolbar > label { grid-column: 1 / -1; }
-  .compare-toolbar > button { min-width: 0; }
-  .compare-desktop-jump, .compare-desktop-hint { display: none; }
-  .compare-mobile-focus { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: end; gap: 7px; width: 100%; }
-  .compare-mobile-focus button { min-width: 44px; min-height: 44px; padding: 5px; }
-  .compare-mobile-focus label { min-width: 0; margin: 0; font-size: 12px; }
-  .compare-mobile-focus select { width: 100%; min-height: 44px; }
-  .compare-workspace .compare-pan { grid-template-columns: minmax(0, 1fr) !important; overflow-x: hidden; }
-  .compare-workspace .compare-side { display: none; }
-  .compare-workspace .compare-side.mobile-current { display: block; }
+  .compare-workspace.card {
+    padding: 8px;
+  }
+  .compare-header h2 {
+    font-size: 17px;
+  }
+  .compare-header > button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .compare-toolbar {
+    gap: 5px;
+  }
+  .compare-toolbar > button {
+    padding: 6px 8px;
+    font-size: 12px;
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .compare-toolbar .roster-ui-icon {
+    width: 16px;
+    flex-shrink: 0;
+  }
+  .compare-mobile-rail {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  }
+  .compare-mobile-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .compare-workspace button.compare-mobile-card {
+    display: block;
+    white-space: normal;
+    flex: 0 0 87%;
+    min-width: 0;
+    padding: 0;
+    border: 1px solid var(--roster-border);
+    border-radius: 14px;
+    background: var(--roster-surface-raised);
+    color: var(--roster-text);
+    scroll-snap-align: start;
+    text-align: left;
+  }
+  .compare-workspace button.compare-mobile-card:hover {
+    border-color: #85868c;
+  }
+  .compare-workspace button.compare-mobile-card.is-active {
+    box-shadow: none;
+    outline: none;
+    border-color: var(--roster-gold);
+    background: var(--roster-surface-raised);
+    color: var(--roster-text);
+  }
+  .compare-workspace button.compare-mobile-card:focus-visible {
+    border-color: transparent;
+    outline: 2px solid white;
+    outline-offset: -3px;
+  }
+  .compare-mobile-card .compare-clan-summary {
+    height: 100%;
+    background: transparent;
+    padding: 6px;
+    gap: 2px;
+  }
+  .compare-mobile-navigation {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin: 2px 0;
+    padding-right: 46px;
+  }
+  .compare-mobile-navigation span {
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+  }
+  .compare-navigation,
+  .compare-pan-frame::before,
+  .compare-pan-frame::after {
+    display: none;
+  }
+  .compare-workspace .compare-pan {
+    display: block;
+    overflow: visible;
+    padding: 0;
+  }
+  .compare-side {
+    display: none;
+    max-height: none;
+    border: 0;
+    background: transparent;
+    position: relative;
+  }
+  .compare-side.mobile-current {
+    display: block;
+  }
+  .compare-side > .compare-clan-summary {
+    padding: 0;
+    background: transparent;
+    gap: 0;
+  }
+  .compare-side > .compare-clan-summary > * {
+    display: none;
+  }
+  .compare-side > .compare-clan-summary > .compare-clan-top {
+    display: block;
+    position: absolute;
+    right: 0;
+    top: -48px;
+  }
+  .compare-side > .compare-clan-summary > .compare-clan-top > strong {
+    display: none;
+  }
+  .compare-player-list {
+    overflow: visible;
+    max-height: none;
+    touch-action: pan-y;
+  }
 }
-@media (max-width: 370px) {
-  .compare-toolbar { grid-template-columns: minmax(0, 1fr); }
-  .compare-toolbar > label, .compare-toolbar > button { grid-column: 1; }
+
+/* Override inherited shell pressed-button text fill only within this rail. */
+.compare-workspace button.compare-mobile-card[aria-pressed],
+.compare-workspace button.compare-mobile-card[aria-pressed] * {
+  -webkit-text-fill-color: currentColor;
+}
+
+.compare-tally-separator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.compare-rail-subtitle {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--roster-text-muted);
+}
+
+.compare-mobile-navigation .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }

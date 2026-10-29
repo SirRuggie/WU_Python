@@ -52,6 +52,13 @@ describe("dashboard browser history", () => {
       "/api/cwl/auth/discord?view=access",
     );
   });
+  it("ignores same-index overlay history entries without invoking the dirty-route guard", () => {
+    const f = fixture();
+    f.controller.write({ view: "roster", season: "12" }, true);
+    const allow = () => { throw Error("A same-route overlay must not prompt"); };
+    expect(f.controller.pop({ wuDashboardIndex: 1, wuActionPanel: "assign" }, allow)).toBe(false);
+    expect(f.current().url).toContain("roster");
+  });
   it("records visits, updates season in place, and accepts Back and Forward", () => {
     const f = fixture();
     f.controller.write({ view: "tickets", season: "12" }, true);

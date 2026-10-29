@@ -2,6 +2,7 @@ import type { Pool } from './api'
 export type RosterAccount = {
   signed_up_at?: string | null;
   outside_family_and_hosts?: boolean;
+  current_clan_checked_at?: string;
   current_clan_tag?: string | null; current_clan_name?: string | null; current_clan_status?: 'current' | 'stale' | 'unavailable';
   auto_placement_reason?: string | null; auto_placement_note?: string | null;
   tag: string; user_id: string; pool: Pool; player_name: string; town_hall: number | null;
@@ -9,7 +10,7 @@ export type RosterAccount = {
   clan_weight_managed?: boolean;
   initial_manual_weight?: number | null; manual_weight: number | null; effective_weight: number | null; assigned_clan_tag: string | null; kept: boolean
 }
-export type RosterClan = { cwl_league?: string | null; cwl_league_stale?: boolean; tag: string; name: string; archived: boolean; pool: Pool | null; capacity: number | null; effective_capacity: number; min_weight: number | null; max_weight: number | null; lower_league: boolean | null; assigned_count: number }
+export type RosterClan = { cwl_league?: string | null; cwl_league_stale?: boolean; tag: string; name: string; archived: boolean; pool: Pool | null; capacity: number | null; effective_capacity: number; min_weight: number | null; max_weight: number | null; assigned_count: number }
 export type RosterUndo = { id: number; label: string; revision: number }
 export type RosterSnapshot = { metadata_updating?: boolean; revision: number; accounts: RosterAccount[]; clans: RosterClan[]; undo: RosterUndo | null }
 export type AutoPreview = { revision: number; placements: { tag: string; assigned_clan_tag: string }[]; unassigned: { tag: string; reason: string }[] }
@@ -53,6 +54,7 @@ export function mergeRosterMetadata(current: RosterSnapshot, incoming: RosterSna
       const live = accounts.get(account.tag);
       return live ? { ...account, current_clan_tag: live.current_clan_tag,
         current_clan_name: live.current_clan_name, current_clan_status: live.current_clan_status,
+        current_clan_checked_at: live.current_clan_checked_at,
         outside_family_and_hosts: live.outside_family_and_hosts } : account;
     }),
     clans: current.clans.map(clan => {

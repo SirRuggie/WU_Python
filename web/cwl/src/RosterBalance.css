@@ -1,0 +1,92 @@
+.roster-balance-panel {
+  display: grid;
+  gap: 12px;
+}
+.roster-balance-panel p {
+  margin: 0;
+}
+.roster-balance-panel fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.roster-balance-panel legend {
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+.roster-balance-panel small {
+  color: #bdc1ca;
+}
+.roster-plan-clan {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 4px;
+  border-bottom: 1px solid #ffffff20;
+  cursor: pointer;
+}
+.roster-plan-clan span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.roster-plan-clan small {
+  display: block;
+  margin-top: 4px;
+}
+.roster-plan-clan input,
+.roster-plan-lock input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.roster-plan-lock {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+}
+.roster-plan-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.roster-plan-totals > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #ffffff26;
+  border-radius: 10px;
+}
+.roster-balance-panel ul {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+}
+.roster-balance-panel li {
+  padding: 8px 0;
+  border-bottom: 1px solid #ffffff20;
+  overflow-wrap: anywhere;
+}
+.roster-balance-panel li span,
+.roster-balance-panel li small {
+  display: block;
+}
+.roster-balance-panel summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.roster-plan-pools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.roster-balance-panel button {
+  min-height: 44px;
+}
+.roster-plan-pools [aria-pressed="true"] {
+  border-color: #edc64d;
+  color: #edc64d;
+}

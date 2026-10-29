@@ -1,0 +1,7 @@
+import {expect,it} from 'vitest'
+import {planPresentation,publishedMoveCount,rosterWeightSummary} from './rosterPlanPresentation'
+import type {RosterAccount, RosterClan} from './roster'
+const accounts=[{tag:'#A',assigned_clan_tag:'#X',effective_weight:100},{tag:'#B',assigned_clan_tag:'#X',effective_weight:null},{tag:'#C',assigned_clan_tag:'#Y',effective_weight:200}] as RosterAccount[]
+it('averages known weights only and leaves all-missing average unknown',()=>{expect(rosterWeightSummary(accounts.slice(0,2))).toEqual({count:2,weighed:1,average:100});expect(rosterWeightSummary([accounts[1]]).average).toBeNull()})
+it('separates unchanged from skipped and reports source and destination totals',()=>{const result=planPresentation(accounts,[{tag:'#X'},{tag:'#Y'}] as RosterClan[],{revision:2,placements:[{tag:'#A',assigned_clan_tag:'#Y'}],unassigned:[{tag:'#B',reason:'missing_weight'}]},['#A','#B','#C'],['#Y']);expect(result.unchanged.map(a=>a.tag)).toEqual(['#C']);expect(result.clans[0].after).toEqual({count:1,weighed:0,average:null});expect(result.clans[1].after.average).toBe(150)})
+it('counts published destination changes rather than any selected published player',()=>{expect(publishedMoveCount({revision:1,placements:[{tag:'#A',assigned_clan_tag:'#X'},{tag:'#B',assigned_clan_tag:'#Y'},{tag:'#C',assigned_clan_tag:'#Y'}],unassigned:[]},[{tag:'#A',assigned_clan_tag:'#X'},{tag:'#B',assigned_clan_tag:'#X'},{tag:'#C',assigned_clan_tag:null}])).toBe(1)})

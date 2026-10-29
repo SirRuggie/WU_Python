@@ -1,1 +1,160 @@
-.weight-queue{margin-top:18px}.weight-queue>p{line-height:1.6}.weight-queue-tools{display:flex;align-items:end;gap:16px;flex-wrap:wrap;margin:18px 0}.weight-queue-tools label{flex:1;min-width:180px}.weight-queue-row{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:16px;align-items:center;padding:16px 0;border-top:1px solid #393942}.weight-queue-identity{display:flex;align-items:center;gap:12px;min-width:0}.weight-queue-identity>div{min-width:0;overflow-wrap:anywhere}.weight-queue-identity small{display:block;color:#bdc7d4;font-size:12px;margin-top:5px}.weight-queue-row .inline-reason{grid-column:1/-1}.weight-queue nav{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:18px}@media(max-width:650px){.weight-queue-row{grid-template-columns:minmax(0,1fr) auto;gap:12px}.weight-queue-identity{grid-column:1/-1}.weight-queue .card-heading{align-items:start;gap:10px}.weight-queue h2{font-size:21px}.weight-queue-tools>button{width:100%}}
+.weight-queue {
+  margin-top: 18px;
+  color: var(--roster-text);
+}
+.weight-queue .weight-queue-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.weight-queue .weight-queue-heading h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.3;
+}
+.weight-queue-heading .roster-ui-button {
+  padding: 0 12px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.weight-queue-search {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 400;
+}
+.weight-queue-search input {
+  width: 100%;
+  min-height: 44px;
+}
+.weight-queue .weight-queue-help,
+.weight-queue .weight-queue-meta,
+.weight-queue .compact-weight-feedback,
+.weight-queue .weight-queue-managed {
+  color: var(--roster-text-muted);
+  -webkit-text-fill-color: currentColor;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+.weight-queue-help {
+  margin: 4px 0;
+}
+.weight-queue-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 390px);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--roster-border);
+}
+.weight-queue-identity {
+  min-width: 0;
+}
+.weight-queue-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.weight-queue-name .town-hall-icon {
+  width: 20px;
+  height: 20px;
+}
+.weight-queue-name .town-hall-fallback,
+.weight-queue-name .town-hall-icon {
+  flex-shrink: 0;
+}
+.shell .weight-queue-name button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-height: 24px;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  line-height: 19px;
+  font-weight: 700;
+  color: var(--roster-text);
+  -webkit-text-fill-color: currentColor;
+}
+.weight-queue-meta {
+  overflow-wrap: anywhere;
+}
+.compact-weight-controls {
+  display: grid;
+  grid-template-columns: minmax(65px, 1fr) auto auto;
+  gap: 6px;
+}
+.compact-weight-controls input {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 16px;
+}
+.compact-weight-controls .roster-ui-button {
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.compact-weight-units {
+  display: flex;
+  gap: 2px;
+}
+.shell .compact-weight-units button {
+  min-width: 44px;
+  color: var(--roster-text-muted);
+  -webkit-text-fill-color: currentColor;
+}
+.shell .compact-weight-units button[aria-pressed="true"] {
+  color: var(--roster-gold);
+  border-color: var(--roster-gold);
+  background: rgba(237, 198, 77, 0.12);
+}
+.compact-weight-feedback:empty {
+  display: none;
+}
+.compact-weight-feedback:not(:empty) {
+  margin-top: 4px;
+}
+.weight-queue .compact-weight-feedback.is-error {
+  color: var(--roster-danger);
+}
+.weight-queue-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 12px;
+}
+@media (max-width: 650px) {
+  .weight-queue-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+/* Override the roster-wide button height only for the compact name link. */
+.roster-workspace.roster-ui .weight-queue .weight-queue-name button {
+  min-height: 24px !important;
+  display: block;
+  text-align: left;
+}
+@media (max-width: 650px) {
+  .roster-workspace .card.weight-queue {
+    padding: 12px;
+  }
+  .weight-queue .weight-queue-heading h2 {
+    font-size: 16px;
+  }
+  .weight-queue-search input {
+    margin: 0;
+  }
+}

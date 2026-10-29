@@ -1,0 +1,21 @@
+.seasons-page .season-hosting-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.seasons-page .season-hosting-note button {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-height: 44px;
+}
+.seasons-page .staff-row {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.seasons-page .staff-row .roster-ui-status {
+  max-width: 100%;
+  white-space: normal;
+  border-radius: var(--roster-radius-card);
+}

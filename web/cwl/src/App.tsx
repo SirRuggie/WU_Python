@@ -1,3 +1,5 @@
+import CwlStepStrip from "./CwlStepStrip"
+import type { PublicationDraft } from "./publication"
 import { clearJourneyState } from './journeyState'
 import { loadAccountDisplay, mergeAccountProgress } from './accountDisplay'
 import { DashboardPermissions } from './DashboardPermissions'
@@ -12,8 +14,6 @@ import AccountLinkHelp from './AccountLinkHelp'
 import DashboardIcon from './DashboardIcon'
 import { strikePermissions } from './strikePermissions'
 import {isManagementArea, managementAreas} from './managementAreas'
-import { FilterPicker, leagueValue, matchesLeague } from './ClanFilters'
-import { sortClans, clanSortOptions, type ClanSort } from './clanSort'
 import SidebarNavigation, { navigationSection, navigationLabel, visibleNavigationSections, type DashboardView } from './SidebarNavigation'
 import { loginPath } from './memberLinks'
 import { DashboardHistory, dashboardTarget, seasonViews, activityContext } from './dashboardHistory'
@@ -28,12 +28,13 @@ import { useMobileNavigation } from './useMobileNavigation'
 import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
 import { lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { api, ApiError, setCsrfToken, type Account, type Clan, type Pool, type Season, type Session, type Signup } from './api'
+import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
 // Each destination loads only when opened. Keep shell, auth, and signup form helpers eager.
+import StaffDetailsHost from "./StaffDetailsHost"
 const WeightTrial = lazy(() => import('./weightTrial/WeightTrial'))
-const MemberSeasonSettings = lazy(() => import('./MemberSeasonSettings'))
+const SeasonsPage = lazy(() => import('./SeasonsPage'))
 const WarsWorkspace = lazy(() => import('./activity/WarsWorkspace'))
 const EventsWorkspace = lazy(() => import('./activity/EventsWorkspace'))
 const DashboardSearch = lazy(() => import('./DashboardSearch'))
@@ -71,18 +72,19 @@ function App() {
   const [authState, setAuthState] = useState<'loading' | 'signed-out' | 'error' | 'ready'>('loading')
   const [authError, setAuthError] = useState(() => new URLSearchParams(window.location.search).get('signin_error') === 'discord' ? 'Discord sign-in did not finish. Please try again.' : '')
   const [fixtureMode, setFixtureMode] = useState(false)
+  const [entryAccount, setEntryAccount] = useState(() => new URLSearchParams(window.location.search).get("account"))
   const [entryTarget] = useState(() => dashboardTarget(window.location.search, window.location.pathname))
   const [publicationDirty, setPublicationDirty] = useState(false)
   const [publicationBusy, setPublicationBusy] = useState(false)
   const [publicationStep, setPublicationStep] = useState<'review' | 'announce'>(entryTarget.step || 'review')
+  const [rosterVisit, setRosterVisit] = useState(0)
+  const [flowPublication, setFlowPublication] = useState<{season: string; draft: PublicationDraft} | null>(null)
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
   const [view, setView] = useState<View>(entryTarget.view)
   useEffect(() => {
-    document.title = `${navigationLabel(view)} · Warriors United`
-  }, [view])
+    document.title = `${navigationLabel(view, publicationStep)} · Warriors United`
+  }, [view, publicationStep])
   const [rosterBusy, setRosterBusy] = useState(false)
-  const [declarationDirty, setDeclarationDirty] = useState(false)
-  const [declarationBusy, setDeclarationBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const { drawerRef, triggerRef, mobile } = useMobileNavigation(menuOpen, () => setMenuOpen(false), Boolean(session))
@@ -100,7 +102,6 @@ function App() {
   const [signups, setSignups] = useState<Signup[]>([])
   const dashboardPrefill = useRef(false)
   const signupRequest = useRef(0)
-  const staffRequest = useRef(0)
   const currentSeason = useRef('')
   currentSeason.current = seasonId
   const [signupStep, setSignupStep] = useState<1 | 2>(1)
@@ -124,25 +125,6 @@ function App() {
   const selectionHeadingRef = useRef<HTMLHeadingElement>(null)
   const registeredHeadingRef = useRef<HTMLHeadingElement>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
-  const [clans, setClans] = useState<Clan[]>([])
-  const [approved, setApproved] = useState<Clan[]>([])
-  const [approvedCheckedAt, setApprovedCheckedAt] = useState('')
-  const [approvedSource, setApprovedSource] = useState('')
-  const [approvedError, setApprovedError] = useState('')
-  const [staffError, setStaffError] = useState('')
-  const [staffLoading, setStaffLoading] = useState(false)
-  const [newSeasonLabel, setNewSeasonLabel] = useState('')
-  const [newClanTag, setNewClanTag] = useState('')
-  const [newClanPool, setNewClanPool] = useState<Pool | ''>('')
-  const [staffSection, setStaffSection] = useState<'season' | 'hosting' | 'family'>('hosting')
-  const [staffSearch, setStaffSearch] = useState('')
-  const [clanLeagues,setClanLeagues] = useState<string[]>([])
-  const [clanSort, setClanSort] = useState<ClanSort>('name')
-  const [hostStatus, setHostStatus] = useState('active')
-  const [staffPage, setStaffPage] = useState(0)
-  useEffect(() => { setStaffPage(0) }, [staffSearch, hostStatus, staffSection, seasonId, clanSort, clanLeagues])
-
-
   const loadAuth = useCallback(async () => {
     setAuthState('loading')
     try {
@@ -263,34 +245,6 @@ function App() {
     return () => { signupRequest.current += 1 }
   }, [session?.user.id, seasonId, view, loadSignup])
 
-  const loadStaff = useCallback(async () => {
-    if (!session?.can_edit) return
-    const requestId = ++staffRequest.current
-    setStaffLoading(true)
-    const requests = await Promise.allSettled([
-      api<{ clans: Clan[] }>('/clans'),
-      api<{ source: string; status: string; checked_at: string; clans: Clan[] }>('/approved-clans'),
-    ])
-    if (requestId !== staffRequest.current || currentSeason.current !== seasonId) return
-    if (requests[0].status === 'fulfilled') setClans(requests[0].value.clans)
-    if (requests[1].status === 'fulfilled') {
-      setApproved(requests[1].value.clans)
-      setApprovedSource(requests[1].value.source)
-      setApprovedCheckedAt(requests[1].value.checked_at)
-      setApprovedError('')
-    } else {
-      setApproved([])
-      setApprovedSource('')
-      setApprovedCheckedAt('')
-      setApprovedError(message(requests[1].reason))
-    }
-    const otherFailure = [requests[0]].find(result => result.status === 'rejected') as PromiseRejectedResult | undefined
-    setStaffError(otherFailure ? message(otherFailure.reason) : '')
-    setStaffLoading(false)
-  }, [session?.can_edit, seasonId])
-  useEffect(() => { if (view === 'staff') void loadStaff() }, [view, loadStaff])
-
-
   useEffect(() => {
     if (view !== 'signup' || signupPanel !== 'register' || completion) return
     stepHeadingRef.current?.focus({ preventScroll: true })
@@ -333,15 +287,13 @@ function App() {
     return () => window.removeEventListener('beforeunload', protect)
   }, [view, signupDirty, pending])
   const canLeave = () => {
-    if (view === 'declaration' && declarationBusy) return false
-    if (view === 'declaration' && declarationDirty) return window.confirm('Discard unsaved account changes?')
-    if (view === 'roster' && rosterBusy) return false
+    if (['roster', 'staff'].includes(view) && rosterBusy) return false
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
     if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
     if (view === 'publication' && publicationBusy) return false
-    if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving announcement changes?')
+    if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving publication or announcement changes?')
     if ((isManagementArea(view) || ['manage','text-commands','clan-management','weight-trial','moderation','member-activity'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
     if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
     return true
@@ -392,6 +344,15 @@ function App() {
     navigation.current?.write({view: 'publication', season: seasonId, step}, true)
     setPublicationStep(step)
     acceptRoute('publication')
+  }
+  const navigateSidebar = (next: View) => {
+    if (next !== 'roster') { changeView(next); return }
+    if (navigation.current?.pending || !canLeave() || allowedView('roster') !== 'roster') return
+    try { sessionStorage.setItem(`wu-roster-${staffSeasonId}-mode`, JSON.stringify('assign')) } catch { /* Optional preference. */ }
+    setRosterReadiness('all')
+    setRosterVisit(value => value + 1)
+    if (view !== 'roster') navigation.current?.write({view: 'roster', season: staffSeasonId}, true)
+    acceptRoute('roster')
   }
   const changeSignupPanel = (panel: 'register'|'saved') => {
     if (navigation.current?.pending || pending || (panel !== signupPanel && !canLeave())) return
@@ -535,16 +496,7 @@ function App() {
       setPending(false)
     }
   }
-  const staffAction = (action: () => Promise<unknown>, success: string) => void run(action, success, async () => { await Promise.all([loadStaff(), loadSeasons()]) })
-
   if (authState === 'loading') return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
-  const staffMatches = (...values: (string | undefined | null)[]) => values.some(value => value?.toLowerCase().includes(staffSearch.trim().toLowerCase()))
-  const visibleHosts = sortClans(clans.filter(clan => (hostStatus === 'all' || clan.archived === (hostStatus === 'archived')) && staffMatches(clan.name, clan.tag) && matchesLeague(clan.cwl_league,clanLeagues)), clanSort)
-  const visibleFamily = sortClans(approved.filter(clan => staffMatches(clan.name, clan.tag) && matchesLeague(clan.cwl_league,clanLeagues)), clanSort)
-  const staffCount = staffSection === 'hosting' ? visibleHosts.length : staffSection === 'family' ? visibleFamily.length : 0
-  const staffLastPage = Math.max(0, Math.ceil(staffCount / 8) - 1)
-  const currentStaffPage = Math.min(staffPage, staffLastPage)
-  const staffPageSlice = <T,>(items: T[]) => items.slice(currentStaffPage * 8, (currentStaffPage + 1) * 8)
   const retrySignupRead = () => {
     if (signupPanel === 'saved' && savedSignupDirty && !window.confirm('Refresh CWL data and discard pending pool changes?')) return
     setSavedSignupsLoaded(false)
@@ -559,7 +511,7 @@ function App() {
     <a className="skip-to-content" href="#dashboard-main" inert={mobile && menuOpen}>Skip to content</a>
     <aside ref={drawerRef} id="dashboard-navigation" className={`sidebar ${menuOpen ? 'open' : ''}`} inert={mobile && !menuOpen} role={mobile && menuOpen ? 'dialog' : undefined} aria-modal={mobile && menuOpen ? true : undefined} aria-label={mobile && menuOpen ? 'Navigation' : undefined} tabIndex={-1}>
       <div className="brand-wrap"><Brand /><button className="menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button></div>
-      <SidebarNavigation key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={changeView} />
+      <SidebarNavigation key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={navigateSidebar} publicationStep={publicationStep} onPublication={openPublication} />
       <div className="sidebar-foot">
         <div className="sidebar-account">
           <AccountIdentity user={session.user} />
@@ -571,24 +523,27 @@ function App() {
     {menuOpen && <button className="scrim" tabIndex={-1} aria-hidden="true" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     <div className="workspace" inert={mobile && menuOpen}>
-      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'CWL roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? 'CWL roster' : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons & clans' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
-      <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view)}>
+      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image Gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? 'CWL signups' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration readiness check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div><AccountIdentity user={session.user} /></header>
+      <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
+        {["roster", "publication", "declaration"].includes(view) && (
+          <StaffDetailsHost
+            key={`${view}:${seasonId}`}
+            archived={season?.status === "archived"}
+            initialAccount={view === entryTarget.view && seasonId === entryTarget.season ? entryAccount : null}
+            onInitialConsumed={() => setEntryAccount(null)}
+          />
+        )}
         <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
         {seasonError && view !== 'signup' && view !== 'home' && <div className="notice error" role="alert">Could not load CWL seasons: {seasonError}<button disabled={seasonsLoading} onClick={() => void loadSeasons()}>Retry seasons</button></div>}
         {fixtureMode && <div className="fixture-banner" role="status">Local fixture data · Development only</div>}
         {(view === 'signup' || view === 'assignments') && <div className="member-nav-tabs" role="group" aria-label="Member sections"><button className={view === 'signup' ? 'active' : ''} aria-pressed={view === 'signup'} onClick={() => changeView('signup', '', undefined, 'saved')}>My signups</button><button className={view === 'assignments' ? 'active' : ''} aria-pressed={view === 'assignments'} onClick={() => changeView('assignments')}>My clan assignments</button></div>}
-        {session.can_edit && ['roster','publication'].includes(view) && allowedView('publication') === 'publication' && (
-          <div className="cwl-workspace-nav">
-            <nav className="cwl-roster-tabs" aria-label="Roster sections">
-              {allowedView('roster') === 'roster' && <button className={view === 'roster' ? 'active' : ''} aria-current={view === 'roster' ? 'page' : undefined} onClick={() => changeView('roster')}>Roster</button>}
-              {allowedView('publication') === 'publication' && <>
-                <button className={view === 'publication' && publicationStep === 'review' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'review' ? 'page' : undefined} onClick={() => openPublication('review')}>Finalize roster</button>
-                <button className={view === 'publication' && publicationStep === 'announce' ? 'active' : ''} aria-current={view === 'publication' && publicationStep === 'announce' ? 'page' : undefined} onClick={() => openPublication('announce')}>Announcements</button>
-              </>}
-            </nav>
-
-          </div>
-        )}
+        {session.can_edit && ['roster', 'publication'].includes(view) && <CwlStepStrip
+          step={view === 'roster' ? 'build' : publicationStep}
+          draft={flowPublication?.season === seasonId ? flowPublication.draft : null}
+          onBuild={() => changeView('roster')}
+          onFinalize={() => openPublication('review')}
+          onAnnounce={() => openPublication('announce')}
+        />}
         {session.can_edit && ['participation','bonuses','exports'].includes(view) &&
           (['participation','bonuses','exports'] as const).filter(target => allowedView(target) === target).length > 1 && (
           <nav className="cwl-result-nav" aria-label="Results sections">
@@ -684,24 +639,128 @@ function App() {
         </>}
         {view === 'assignments' && <MemberAssignments onSignup={() => { setSignupPanel('register'); changeView('signup') }} seasonId={seasonId} seasons={seasons} />}
         {view === 'exports' && session.can_edit && <ExportWorkspace seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'declaration' && session.can_edit && <><div className="page-head"><div><p className="eyebrow">CWL</p><h1>Declaration readiness check</h1></div><label>Season<select value={seasonId} disabled={declarationBusy} onChange={e=>{if (canLeave()) setSeasonId(e.target.value)}}>{seasons.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>{seasonId && <ArrivalCheck key={seasonId} seasonId={seasonId} onDirty={setDeclarationDirty} onBusy={setDeclarationBusy}/>}</>}
-        {view === 'publication' && session.can_edit && <PublicationWorkspace onBusy={setPublicationBusy} onDirty={setPublicationDirty} step={publicationStep} onStepChange={setPublicationStep} onFix={filter => { setRosterReadiness(filter); changeView('roster') }} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { if (!publicationBusy && (!publicationDirty || window.confirm('Discard unsaved announcement changes?'))) setSeasonId(id) }} />}
+        {
+          view === "declaration" && session.can_edit && (
+            <>
+              <div className="page-head">
+                <div>
+                  <p className="eyebrow">CWL</p>
+                  <h1>Declaration readiness check</h1>
+                </div>
+                <label>
+                  Season
+                  <select
+                    value={seasonId}
+                    onChange={(e) => {
+                      if (canLeave()) {
+                        if (e.target.value !== seasonId)
+                          navigation.current?.write(
+                            { view: "declaration", season: e.target.value },
+                            false,
+                          );
+                        setSeasonId(e.target.value);
+                      }
+                    }}
+                  >
+                    {seasons.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {seasonId && (
+                <ArrivalCheck
+                  key={seasonId}
+                  seasonId={seasonId}
+                />
+              )}
+            </>
+          )
+        }
+        {
+          view === "publication" && session.can_edit && (
+            <PublicationWorkspace
+              onDeclaration={() => changeView("declaration")}
+              onPublication={(draft) => setFlowPublication({ season: seasonId, draft })}
+              onBusy={setPublicationBusy}
+              onDirty={setPublicationDirty}
+              step={publicationStep}
+              onStepChange={setPublicationStep}
+              onFix={(filter) => {
+                setRosterReadiness(filter);
+                changeView("roster");
+              }}
+              seasonId={seasonId}
+              seasons={seasons}
+              onSeasonChange={(id) => {
+                if (
+                  !publicationBusy &&
+                  (!publicationDirty ||
+                    window.confirm(
+                      "Discard unsaved publication or announcement changes?",
+                    ))
+                ) {
+                  if (id !== seasonId)
+                    navigation.current?.write(
+                      { view: "publication", season: id, step: publicationStep },
+                      false,
+                    );
+                  setSeasonId(id);
+                }
+              }}
+            />
+          )
+        }
         {view === 'participation' && session.can_edit && <ParticipationWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
         {view === 'bonuses' && session.can_edit && <BonusWorkspace onDirty={setCwlDirty} seasonId={seasonId} seasons={seasons} onSeasonChange={setSeasonId} />}
-        {view === 'roster' && session.can_edit && <RosterWorkspace onBusy={setRosterBusy} onSeasonRefresh={loadSeasons} onDirty={setCwlDirty} key={seasonId} initialReadiness={rosterReadiness} onReviewPublication={allowedView('publication') === 'publication' ? () => { setPublicationStep('review'); changeView('publication') } : undefined} seasonId={seasonId} seasons={seasons} onSeasonChange={id => { setSeasonId(id); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }} />}
-        {view === 'staff' && session.can_edit && <div className="staff-workspace"><div className="page-head"><div><p className="eyebrow">Staff tools</p><h1>Seasons & clans</h1><p>Choose a section to manage this season or its clans.</p></div><label className="season-choice">Season<select value={seasonId} onChange={event => { if (!canLeave()) return; setAccounts([]); setSignups([]); setSeasonId(event.target.value); setPool(null); setSignupPanel('register'); setDrafts({ main: {}, lazy: {} }); setReview(false); setCompletion(null) }}><option value="">Select season</option>{seasons.map(item => <option key={item.id} value={String(item.id)}>{item.label}</option>)}</select></label></div>{staffError && <div className="notice error" role="alert">{staffError}<button onClick={() => void loadStaff()}>Retry</button></div>}{staffLoading && <p>Loading clan directory…</p>}
-          <div className="staff-section-menu" role="group" aria-label="Seasons and clans sections">
-            {([['hosting', 'Hosting clans', clans.filter(clan => !clan.archived).length], ['season', 'Season settings', null], ['family', 'Family clans', approved.length]] as const).map(([key, label, count]) => <button key={key} aria-pressed={staffSection === key} onClick={() => { setStaffSection(key); setStaffSearch(''); setStaffPage(0) }}>{label}{count !== null && <span>{count}</span>}</button>)}
-          </div>
-          {staffSection !== 'season' && <div className="staff-section-tools"><label>Search {'clans'}<input value={staffSearch} onChange={event => setStaffSearch(event.target.value)} placeholder={'Clan name or tag'} /></label>{(staffSection === 'hosting' || staffSection === 'family') && <label>Sort clans<select value={clanSort} onChange={event=>setClanSort(event.target.value as ClanSort)}>{clanSortOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>}{staffSection === 'hosting' && <label>Show<select value={hostStatus} onChange={event => setHostStatus(event.target.value)}><option value="active">Active clans</option><option value="archived">Archived clans</option><option value="all">All clans</option></select></label>}</div>}
-          {(staffSection==='hosting'||staffSection==='family')&&<div className="clan-filter-bar"><FilterPicker label="CWL leagues" options={[...new Set(sortClans(staffSection==='hosting'?clans:approved,'league_desc').map(clan=>leagueValue(clan.cwl_league)))]} selected={clanLeagues} onChange={setClanLeagues}/><button onClick={()=>{setClanLeagues([]);setStaffSearch('');setHostStatus('active')}}>Clear filters</button><small>{staffCount} clans match</small></div>}
-          <div className="staff-section-content"><section className="card" hidden={staffSection !== 'season'}><h2>Season settings</h2><MemberSeasonSettings selected={season} active={seasons.find(item => item.id === memberSeason.season_id)} busy={pending} onShow={() => staffAction(() => api('/member-season', 'PUT', {season_id: season?.id, revision: memberSeason.revision}), 'Member season updated.')} onHide={() => staffAction(() => api('/member-season', 'PUT', {season_id: null, revision: memberSeason.revision}), 'CWL season hidden from members.')} />{season && <div className="staff-row"><div><strong>{season.label}</strong><small>{season.signup_open ? 'Members can sign up' : 'Signups closed'}</small></div><button disabled={pending} onClick={() => staffAction(() => api(`/seasons/${encodeURIComponent(season.id)}`, 'PATCH', { signup_open: !season.signup_open }), season.signup_open ? 'Signups closed.' : 'Signups opened.')}>{season.signup_open ? 'Close signups' : 'Open signups'}</button></div>}<details className="staff-create-season"><summary>Create another season</summary><form onSubmit={event => { event.preventDefault(); if (!newSeasonLabel.trim()) return; staffAction(() => api('/seasons', 'POST', { label: newSeasonLabel.trim(), signup_open: false }), 'Season created.'); setNewSeasonLabel('') }}><label>New season label<input value={newSeasonLabel} onChange={event => setNewSeasonLabel(event.target.value)} placeholder="November 2026" required /></label><button className="primary" disabled={pending}>Create season</button></form></details></section>
-          <section className="card" hidden={staffSection !== 'family'}><div className="card-heading"><h2>Family clans</h2><button disabled={staffLoading} onClick={() => void loadStaff()}>Refresh</button></div><p className="small">Accounts outside these family clans are marked for staff review. They can still sign up.</p>{approvedError ? <div className="notice error" role="alert">{approvedError}</div> : <p className="small">{approvedSource === 'bot_mongo' ? 'Synced with Discord' : approvedSource === 'fixture' ? 'Demo data' : 'Loading source…'}{approvedCheckedAt ? ` · Checked ${new Date(approvedCheckedAt).toLocaleString()}` : ''}</p>}{!approvedError && approved.length === 0 && !staffLoading && <p className="small">No family clans found.</p>}{staffPageSlice(visibleFamily).map(clan => <div className="staff-row" key={clan.tag}><div><strong>{clan.name}</strong><small>CWL: {clan.cwl_league || 'League unavailable'}{clan.cwl_league_stale && clan.cwl_league ? ' · last known' : ''}</small><small>{clan.tag}</small></div></div>)}</section>
-          <section className="card" hidden={staffSection !== 'hosting'}><h2>Hosting clan directory</h2><p className="small">Add a clan and choose its default: Main or Lazy. Season settings can differ. Set weight ranges and capacity in Roster builder → Edit clan ranges. Archiving stops new placements and keeps history.</p><form className="inline-form" onSubmit={event => { event.preventDefault(); if (!newClanTag.trim() || !newClanPool) return; staffAction(() => api('/clans', 'POST', { tag: newClanTag.trim(), pool: newClanPool }), 'Hosting clan added.'); setNewClanTag('') }}><label>Clan tag<input value={newClanTag} onChange={event => setNewClanTag(event.target.value)} placeholder="#CLANTAG" required /></label><label>CWL pool<select required value={newClanPool} onChange={event => setNewClanPool(event.target.value as Pool)}><option value="">Choose Main or Lazy</option><option value="main">Main Clan CWL</option><option value="lazy">Lazy CWL</option></select></label><button className="primary" disabled={pending}>Add clan</button></form>{staffPageSlice(visibleHosts).map(clan => <div className="staff-row" key={clan.tag}><div><strong>{clan.name}</strong><small>CWL: {clan.cwl_league || 'League unavailable'}{clan.cwl_league_stale && clan.cwl_league ? ' · last known' : ''}</small><small>{clan.tag} · {clan.archived ? 'Archived' : 'Active'}</small></div><label>Default CWL pool<select aria-label={`Default CWL pool for ${clan.name}`} value={clan.pool || ''} disabled={pending} onChange={event => staffAction(() => api(`/clans/${tagPath(clan.tag)}`, 'PATCH', { pool: event.target.value }), 'Hosting clan pool saved. Existing season overrides are preserved.')}><option value="" disabled>Not set</option><option value="main">Main Clan CWL</option><option value="lazy">Lazy CWL</option></select></label><button disabled={pending} onClick={() => staffAction(() => api(`/clans/${tagPath(clan.tag)}`, 'PATCH', { archived: !clan.archived }), clan.archived ? 'Clan restored.' : 'Clan archived.')}>{clan.archived ? 'Restore' : 'Archive'}</button></div>)}</section>
-
-          </div>
-{staffSection !== 'season' && <div className="staff-page-controls"><p role="status">{staffCount ? `${currentStaffPage * 8 + 1}–${Math.min((currentStaffPage + 1) * 8, staffCount)} of ${staffCount}` : 'No matching results.'}</p>{staffCount > 8 && <div><button disabled={currentStaffPage === 0} onClick={() => setStaffPage(currentStaffPage - 1)}>Previous</button><span>Page {currentStaffPage + 1} of {staffLastPage + 1}</span><button disabled={currentStaffPage >= staffLastPage} onClick={() => setStaffPage(currentStaffPage + 1)}>Next</button></div>}</div>}
-        </div>}
+        {view === "roster" && session.can_edit && (
+          <RosterWorkspace
+            onPublication={draft => setFlowPublication({season: seasonId, draft})}
+            onClanWeights={() => changeView("weight-trial")}
+            onFamilyClans={() => changeView("clan-management")}
+            onBusy={setRosterBusy}
+            onSeasonRefresh={loadSeasons}
+            onDirty={setCwlDirty}
+            key={`${seasonId}:${rosterVisit}`}
+            initialReadiness={rosterReadiness}
+            onReviewPublication={
+              allowedView("publication") === "publication"
+                ? () => {
+                    setPublicationStep("review");
+                    changeView("publication");
+                  }
+                : undefined
+            }
+            seasonId={seasonId}
+            seasons={seasons}
+            onSeasonChange={(id) => {
+              if (id !== seasonId) navigation.current?.write({ view: "roster", season: id }, false)
+              setSeasonId(id);
+              setPool(null);
+              setSignupPanel("register");
+              setDrafts({ main: {}, lazy: {} });
+              setReview(false);
+              setCompletion(null);
+            }}
+          />
+        )}
+        {view === 'staff' && session.can_edit && <SeasonsPage
+          key={session.user.id}
+          userId={session.user.id}
+          seasonId={seasonId}
+          seasons={seasons}
+          memberSeason={memberSeason}
+          onRefresh={loadSeasons}
+          onBusy={setRosterBusy}
+          onSeasonChange={id => { if (canLeave()) setSeasonId(id) }}
+          onClans={() => {
+            if (!canLeave() || allowedView('roster') !== 'roster') return
+            try { sessionStorage.setItem(`wu-roster-${staffSeasonId}-mode`, JSON.stringify('rules')) } catch { /* Optional preference. */ }
+            changeView('roster')
+          }}
+        />}
         {session.access_warning && <div className="notice error" role="alert">{session.access_warning}</div>}
         {view === 'issues' && session.is_owner && <DashboardIssues />}
         {view === 'access' && session.is_owner && <AccessSettings onDirty={setCwlDirty} />}

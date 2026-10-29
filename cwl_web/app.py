@@ -126,7 +126,10 @@ def _require(request, level="member"):
         _fail(403, "Owner access required")
     if level == "editor" and not _editor(request, session):
         _fail(403, "Dashboard access required")
-    if level == "editor" and not _owner(session) and request.method not in ("GET", "HEAD", "OPTIONS"):
+    if level == "editor" and not _owner(session) and (
+        request.method not in ("GET", "HEAD", "OPTIONS")
+        or request.match_info.handler.__name__ == "lookup_clan"
+    ):
         from .cwl_permissions import mutation_permission
         required = mutation_permission(request)
         if required is None or required not in request_scopes(request, session['user_id']):
@@ -456,22 +459,46 @@ async def create_season(request):
     opened = _body_bool(body, "signup_open")
     try:
         with _store(request).tx() as db:
-            cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
+            source = db.execute("SELECT MAX(season_id) FROM lineup").fetchone()[0]
+            try:
+                cursor = db.execute("INSERT INTO seasons(label,signup_open) VALUES (?,?)", (label, int(opened)))
+            except sqlite3.IntegrityError:
+                _fail(409, "Season already exists")
             row = _season(db, cursor.lastrowid)
+            copied = 0
+            if source is not None:
+                copied = db.execute(
+                    "INSERT INTO lineup(season_id,tag) SELECT ?,l.tag FROM lineup l "
+                    "JOIN clans c ON c.tag=l.tag WHERE l.season_id=? AND c.archived=0",
+                    (row['id'], source),
+                ).rowcount
+                db.execute(
+                    "INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight) "
+                    "SELECT ?,r.tag,r.pool,r.capacity,r.min_weight,r.max_weight FROM lineup_rules r "
+                    "JOIN lineup l ON l.tag=r.tag AND l.season_id=? WHERE r.season_id=?",
+                    (row['id'], row['id'], source),
+                )
             if db.execute('SELECT COUNT(*) FROM seasons').fetchone()[0] == 1:
                 db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1 AND season_id IS NULL', (row['id'],))
-    except sqlite3.IntegrityError:
-        _fail(409, "Season already exists")
-    return web.json_response(_season_dict(row), status=201)
+    except sqlite3.Error as error:
+        logging.getLogger("cwl.seasons").error(
+            "Hosting clan copy failed (%s): %s", type(error).__name__, str(error)
+        )
+        return web.json_response({"error": "Couldn't copy hosting clans; nothing was created."}, status=500)
+    return web.json_response({**_season_dict(row), "copied_clan_count": copied}, status=201)
 
 
 async def update_season(request):
     session = _require(request, "editor")
     body = await _json(request)
-    if not set(body) <= {"label", "signup_open", "status"} or not body:
+    if not set(body) <= {"label", "signup_open", "status", "expected_signup_open"} or not body:
         _fail(400, "Invalid season update")
+    if "expected_signup_open" in body and type(body["expected_signup_open"]) is not bool:
+        _fail(400, "expected_signup_open must be a boolean")
     with _store(request).tx() as db:
         row = _season(db, _sid(request))
+        if "expected_signup_open" in body and bool(row["signup_open"]) != body["expected_signup_open"]:
+            _fail(409, "Signups were changed by someone else. Refresh and try again.")
         label = str(body.get("label", row["label"])).strip()
         if not 3 <= len(label) <= 80:
             _fail(400, "Invalid season label")
@@ -494,6 +521,21 @@ async def clans(request):
     _require(request, "editor")
     rows = _store(request).rows("SELECT * FROM clans ORDER BY name")
     return web.json_response({"clans": await enrich_clan_metadata(request, [{**r, "archived": bool(r["archived"])} for r in rows])})
+
+
+async def lookup_clan(request):
+    _require(request, "editor")
+    try:
+        value = tag(request.query.get("tag"))
+    except ValueError:
+        _fail(400, "Invalid clan tag")
+    try:
+        clan = await request.app["providers"].clan(value)
+    except ProviderUnavailable as exc:
+        if getattr(exc, "status_code", None) == 404:
+            _fail(404, "Clan not found")
+        raise
+    return web.json_response({"tag": clan["tag"], "name": clan["name"]})
 
 
 async def create_clan(request):
@@ -937,7 +979,7 @@ def _roster_rows(db, sid):
 
 def _rule_rows(db, sid):
     rows = db.execute(
-        "SELECT c.tag,c.name,c.archived,COALESCE(r.pool,c.pool) AS pool,r.capacity,r.min_weight,r.max_weight,r.lower_league,"
+        "SELECT c.tag,c.name,c.archived,COALESCE(r.pool,c.pool) AS pool,r.capacity,r.min_weight,r.max_weight,"
         "(SELECT COUNT(*) FROM roster_entries e WHERE e.season_id=? "
         "AND e.assigned_clan_tag=c.tag) AS assigned_count "
         "FROM clans c LEFT JOIN lineup_rules r ON r.season_id=? AND r.tag=c.tag "
@@ -948,7 +990,6 @@ def _rule_rows(db, sid):
     result = []
     for raw in rows:
         row = dict(raw)
-        row["lower_league"] = None if row["lower_league"] is None else bool(row["lower_league"])
         row["archived"] = bool(row["archived"])
         row["effective_capacity"] = row["capacity"] if row["capacity"] is not None else 50
         result.append(row)
@@ -1038,7 +1079,7 @@ async def arrival_check(request):
 async def update_lineup_rules(request):
     session = _require(request, "editor")
     body = await _json(request)
-    allowed = {"revision", "pool", "capacity", "min_weight", "max_weight", "lower_league"}
+    allowed = {"revision", "pool", "capacity", "min_weight", "max_weight"}
     if not set(body) <= allowed or not (set(body) - {"revision"}):
         _fail(400, "Invalid hosting rule update")
     try:
@@ -1055,9 +1096,9 @@ async def update_lineup_rules(request):
         if clan is None or clan["archived"]:
             _fail(404, "Active hosting clan not found")
         db.execute("INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)", (sid, clan_tag))
-        before_row = db.execute("SELECT * FROM lineup_rules WHERE season_id=? AND tag=?", (sid, clan_tag)).fetchone()
-        before = dict(before_row) if before_row else {"pool": None, "capacity": None, "min_weight": None, "max_weight": None, "lower_league": None}
-        rule = {field: body.get(field, before[field]) for field in ("pool", "capacity", "min_weight", "max_weight", "lower_league")}
+        before_row = db.execute("SELECT pool,capacity,min_weight,max_weight FROM lineup_rules WHERE season_id=? AND tag=?", (sid, clan_tag)).fetchone()
+        before = dict(before_row) if before_row else {"pool": None, "capacity": None, "min_weight": None, "max_weight": None}
+        rule = {field: body.get(field, before[field]) for field in ("pool", "capacity", "min_weight", "max_weight")}
         if rule["pool"] not in (None, "main", "lazy"):
             _fail(400, "Invalid pool rule")
         if type(rule["capacity"]) is not int and rule["capacity"] is not None or rule["capacity"] not in (None, 15, 30):
@@ -1068,17 +1109,11 @@ async def update_lineup_rules(request):
                 _fail(400, "Invalid weight range")
         if rule["min_weight"] is not None and rule["max_weight"] is not None and rule["min_weight"] >= rule["max_weight"]:
             _fail(400, "Maximum weight must exceed minimum")
-        if rule["lower_league"] is not None and type(rule["lower_league"]) is not bool:
-            _fail(400, "Lower league rule must be yes, no, or unset")
-        assigned = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?", (sid, clan_tag)).fetchone()["n"]
-        if assigned > (rule["capacity"] if rule["capacity"] is not None else 50):
-            _fail(409, "Capacity is below the current roster size")
-        db.execute("INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight,lower_league) "
-                   "VALUES (?,?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET "
+        db.execute("INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight) "
+                   "VALUES (?,?,?,?,?,?) ON CONFLICT(season_id,tag) DO UPDATE SET "
                    "pool=excluded.pool,capacity=excluded.capacity,min_weight=excluded.min_weight,"
-                   "max_weight=excluded.max_weight,lower_league=excluded.lower_league",
-                   (sid, clan_tag, rule["pool"], rule["capacity"], rule["min_weight"], rule["max_weight"],
-                    None if rule["lower_league"] is None else int(rule["lower_league"])))
+                   "max_weight=excluded.max_weight",
+                   (sid, clan_tag, rule["pool"], rule["capacity"], rule["min_weight"], rule["max_weight"]))
         revision = _bump(db, sid)
         _audit(db, sid, clan_tag, session["user_id"], "hosting_rules", before, rule)
     return web.json_response({"revision": revision})
@@ -1591,8 +1626,17 @@ async def publication_preview(request):
         clans = _rule_rows(db, sid)
         assigned = sum(account["assigned_clan_tag"] is not None for account in accounts)
         latest = _latest_publication(db, sid)
+        last_publication = db.execute(
+            "SELECT version,published_at,withdrawn_at,joining_instructions FROM roster_publications "
+            "WHERE season_id=? ORDER BY version DESC LIMIT 1", (sid,),
+        ).fetchone()
+        next_version = db.execute(
+            "SELECT COALESCE(MAX(version),0)+1 FROM roster_publications WHERE season_id=?", (sid,),
+        ).fetchone()[0]
         revision = _revision(db, sid)
         result = {
+            "last_publication": dict(last_publication) if last_publication is not None else None,
+            "next_version": next_version,
             "draft_revision": revision,
             "draft_changed": _publication_changed(db, sid, latest),
             "preview": {
@@ -1816,7 +1860,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes = [*discord_member_routes, *staff_signup_change_routes, *weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.put(API + "/member-season", set_member_season), web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
-        web.get(API + "/clans", clans), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
+        web.get(API + "/clans", clans), web.get(API + "/clans/lookup", lookup_clan), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),
         web.get(API + "/seasons/{season_id}/lineup", lineup), web.post(API + "/seasons/{season_id}/lineup", add_lineup), web.delete(API + "/seasons/{season_id}/lineup/{tag}", remove_lineup),
         web.patch(API + "/seasons/{season_id}/lineup/{tag}/rules", update_lineup_rules),
         web.get(API + "/seasons/{season_id}/roster", roster),
@@ -1842,6 +1886,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes.extend(manage_bridge_routes())
     from .roster_images import routes as roster_image_routes
     routes.extend(roster_image_routes())
+    from .roster_image_posts import routes as roster_image_post_routes
+    routes.extend(roster_image_post_routes())
     routes.extend(participation_routes())
     routes.extend(participation_sync_routes())
     routes.extend(bonus_routes())

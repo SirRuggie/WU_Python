@@ -1,0 +1,56 @@
+.roster-ui .roster-sort-trigger {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.roster-sort-trigger > svg {
+  flex: none;
+}
+.roster-sort-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roster-filters-toolbar {
+  flex-wrap: nowrap;
+}
+.roster-filters-toolbar > .roster-ui-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.roster-ui .roster-filters-toolbar > .roster-sort-trigger {
+  flex: 1 1 0;
+  max-width: 100%;
+}
+.compare-toolbar > .roster-sort-trigger {
+  flex: 1 1 auto;
+}
+@media (max-width: 720px) {
+  .roster-filters-toolbar {
+    gap: 5px;
+  }
+  .roster-filters-toolbar > .roster-ui-button {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .roster-filters-toolbar > .roster-sort-trigger {
+    max-width: 100%;
+  }
+  .roster-filters-toolbar > .roster-ui-input input {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Keep the neighboring controls readable while the active sort truncates. */
+.compare-toolbar > .roster-sort-trigger {
+  flex: 1 1 auto;
+}
+.compare-toolbar > button:first-child,
+.compare-toolbar > button:last-child {
+  flex: 0 0 auto;
+}

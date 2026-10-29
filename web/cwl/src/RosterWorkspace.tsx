@@ -1,59 +1,76 @@
 import ConfirmDialog from "./ConfirmDialog";
+import useStaffDetailsPage from "./useStaffDetailsPage";
+import { requestDetailsNavigation } from "./detailsNavigation";
+import { sortClans } from "./clanSort";
+import { comparisonOrder } from "./compare";
+import useLocationNow from "./useLocationNow";
+import ClanSettings from "./ClanSettings";
+import type { ClanRules } from "./clanSettingsModel";
+import { placementMessage } from "./publicationAwareness";
+import { createComparisonMemory } from "./comparisonMemory";
+import SortTrigger from "./rosterUi/SortTrigger";
+import { rosterSortOptions } from "./rosterSortOptions";
+import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
 import RosterBalance from "./RosterBalance";
+import ActionPanel from "./ActionPanel";
 import type { MemberOption } from "./MemberPicker";
 import RosterDiscordIdentity from "./RosterDiscordIdentity";
-import { rosterAccountPages, rosterMemberKey } from "./rosterGrouping";
-import DashboardIcon from "./DashboardIcon";
-import SignupActivity from "./SignupActivity";
+import RosterHeader from "./RosterHeader";
+import RosterAccountCard from "./RosterAccountCard";
+import RosterFilters from "./RosterFilters";
+import RosterClanChips from "./RosterClanChips";
+import { rosterMemberKey } from "./rosterGrouping";
 import useWorkspacePreference from "./useWorkspacePreference";
+import useRosterPreferences from "./useRosterPreferences";
 import useUnsavedWork from "./useUnsavedWork";
-import ClanDestinationOptions from "./ClanDestinationOptions";
+import { Button } from "./rosterUi/primitives";
+import "./rosterUi/rosterRefresh.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
 import RosterPlayerDialog from "./RosterPlayerDialog";
-import RosterSignupActions from "./RosterSignupActions";
+import RosterSignupPanel from "./RosterSignupPanel";
+import RosterAssignPanel from "./RosterAssignPanel";
+import RosterSelectionBar from "./RosterSelectionBar";
+import RosterUndoToast from "./RosterUndoToast";
+import type { RosterUndoState } from "./rosterUndoModel";
+import {
+  reconcileRosterSelection,
+  deriveRosterRelease,
+  orderRosterReleaseAccounts,
+  progressiveRosterReleaseAccounts,
+  toggleAllRosterMatches,
+  type RosterReleasePreferences,
+} from "./rosterReleaseModel";
 import StaffSignupControls from "./StaffSignupControls";
 import { useDashboardPermission } from "./DashboardPermissions";
-import TownHallIcon from "./TownHallIcon";
 import "./RosterWorkspace.css";
-import {
-  FilterPicker,
-  leagueValue,
-  matchesLeague,
-  matchesTownHall,
-} from "./ClanFilters";
-import { sortClans } from "./clanSort";
 import WeightQueue from "./WeightQueue";
-import { readinessAccounts, type ReadinessFilter } from "./readiness";
 import CompareClans from "./CompareClans";
 import {
   Fragment,
   useCallback,
+  useMemo,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
-  type FormEvent,
 } from "react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import {
   assignmentOptions,
   mergeRosterMetadata,
-  filterRosterAccounts,
-  sortRosterAccounts,
-  parseWeightK,
-  weightInputText,
-  weightText,
-  type AutoPreview,
   type RosterClan,
   type RosterSnapshot,
-  type RosterSort,
 } from "./roster";
 
 type Props = {
+  onFamilyClans?: () => void;
+  onPublication?: (draft: import("./publication").PublicationDraft) => void;
+  onClanWeights?: () => void;
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
   onSeasonChange: (id: string) => void;
-  initialReadiness?: ReadinessFilter;
+  initialReadiness?: "all" | "unassigned" | "missing_weight" | "over_capacity";
   onReviewPublication?: () => void;
   onSeasonRefresh?: () => Promise<void>;
   onBusy?: (busy: boolean) => void;
@@ -67,6 +84,9 @@ const encoded = (value: string) => encodeURIComponent(value);
 
 export default function RosterWorkspace({
   seasonId,
+  onClanWeights,
+  onFamilyClans,
+  onPublication,
   seasons,
   onSeasonChange,
   initialReadiness = "all",
@@ -77,81 +97,122 @@ export default function RosterWorkspace({
 }: Props) {
   const canRoster = useDashboardPermission("cwl_roster");
   const canSignups = useDashboardPermission("cwl_signups");
+  const canSettings = useDashboardPermission("cwl_settings");
+  const canPublish = useDashboardPermission("cwl_publish");
+  const comparisonMemory = useMemo(createComparisonMemory, [seasonId]);
   const season = seasons.find((item) => String(item.id) === seasonId);
   const archived = season?.status === "archived";
+  const [detailsOrder, setDetailsOrder] = useState<string[]>([]);
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterSnapshot | null>(null);
+  const [now] = useLocationNow();
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hostingBusy, setHostingBusy] = useState(false);
+  const [compareJump, setCompareJump] = useState(0);
+  const [hasPublication, setHasPublication] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [preview, setPreview] = useState<AutoPreview | null>(null);
+  const [panel, setPanel] = useState<
+    "assign" | "signup" | "balance" | "auto" | null
+  >(null);
+  const [panelTrigger, setPanelTrigger] = useState<HTMLElement | null>(null);
+  const [barHeight, setBarHeight] = useState(0);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const sortTrigger = useRef<HTMLButtonElement>(null);
+  const [undoToast, setUndoToast] = useState<RosterUndoState | null>(null);
+  const undoReceipt = useRef<{
+    id: number;
+    revision: number;
+    label: string;
+  } | null>(null);
+  const mutationPending = useRef(false);
+  const openPanel = (
+    next: "assign" | "signup" | "balance" | "auto",
+    trigger: HTMLElement,
+    tags?: string[],
+  ) => {
+    setPanelTrigger(trigger);
+    setPanelTagsOverride(tags ?? null);
+    setFeedback(null);
+    setPanel(next);
+  };
+  const closePanel = () => {
+    setPanel(null);
+    setPanelTagsOverride(null);
+  };
   const [mode, setMode] = useWorkspacePreference<
     "assign" | "compare" | "rules" | "weights"
   >(`wu-roster-${seasonId}-mode`, "assign");
-  const [page, setPage] = useWorkspacePreference(
-    `wu-roster-${seasonId}-page`,
-    0,
-  );
-  const [manualTag, setManualTag] = useState<string | null>(null);
-  const [manualClan, setManualClan] = useState("");
-  const [ruleTag, setRuleTag] = useWorkspacePreference(
-    `wu-roster-${seasonId}-clan`,
-    "",
-  );
-  const [leagues, setLeagues] = useWorkspacePreference<string[]>(
-    `wu-roster-${seasonId}-leagues`,
-    [],
-  );
-  const [townHalls, setTownHalls] = useWorkspacePreference<string[]>(
-    `wu-roster-${seasonId}-townhalls`,
-    [],
-  );
-  const [search, setSearch] = useWorkspacePreference(
-    `wu-roster-${seasonId}-search`,
-    "",
-  );
-  const [readinessFilter, setReadinessFilter] =
-    useState<ReadinessFilter>(initialReadiness);
+  const [renderCount, setRenderCount] = useState(50);
+  const [releasePreferences, setReleasePreferences] =
+    useRosterPreferences(seasonId);
   const [poolFilter, setPoolFilter] = useCwlPool();
-  const [listPool, setListPool] = useWorkspacePreference<Pool | "all">(
-    `wu-roster-${seasonId}-list-pool`,
-    "all",
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
+  const viewPool =
+    mode === "weights"
+      ? "all"
+      : mode === "assign"
+        ? releasePreferences.pool
+        : poolFilter;
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [panelTagsOverride, setPanelTagsOverride] = useState<string[] | null>(
+    null,
   );
-  const viewPool = mode === "assign" ? listPool : poolFilter;
-  const [assignmentFilter, setAssignmentFilter] = useWorkspacePreference<
-    "all" | "assigned" | "unassigned"
-  >(`wu-roster-${seasonId}-assignment`, "all");
-  const [sort, setSort] = useWorkspacePreference<RosterSort>(
-    `wu-roster-${seasonId}-sort`,
-    "name",
-  );
-  const [groupByDiscord, setGroupByDiscord] = useState(false);
-  const [groupMembers, setGroupMembers] = useState<Record<string, MemberOption>>({});
+  const panelTags = panelTagsOverride ?? selectedTags;
   const [groupNamesLoading, setGroupNamesLoading] = useState(false);
   const [groupNamesError, setGroupNamesError] = useState(false);
   const [groupNamesRetry, setGroupNamesRetry] = useState(0);
+  const groupByDiscord = releasePreferences.grouped;
+  const [groupMembers, setGroupMembers] = useState<
+    Record<string, MemberOption>
+  >({});
+  const appliedInitialReadiness = useRef(false);
+  useEffect(() => {
+    if (appliedInitialReadiness.current) return;
+    appliedInitialReadiness.current = true;
+    if (initialReadiness !== "all") {
+      setMode(
+        initialReadiness === "missing_weight"
+          ? "weights"
+          : initialReadiness === "over_capacity"
+            ? "compare"
+            : "assign",
+      );
+      setReleasePreferences((current) => ({
+        ...current,
+        statuses: initialReadiness === "unassigned" ? ["unassigned"] : [],
+        pool: "all",
+      }));
+    }
+  }, [initialReadiness, setReleasePreferences, setMode]);
   useEffect(() => {
     let active = true;
     setGroupMembers({});
     setGroupNamesError(false);
     setGroupNamesLoading(groupByDiscord);
     if (!groupByDiscord) return;
-    api<{ options: MemberOption[] }>(`/staff-signup-members?season_id=${encoded(seasonId)}`)
-      .then(data => {
-        if (active) setGroupMembers(Object.fromEntries(data.options.map(member => [member.id, member])));
+    api<{ options: MemberOption[] }>(
+      `/staff-signup-members?season_id=${encoded(seasonId)}`,
+    )
+      .then((data) => {
+        if (active)
+          setGroupMembers(
+            Object.fromEntries(
+              data.options.map((member) => [member.id, member]),
+            ),
+          );
       })
-      .catch(() => { if (active) setGroupNamesError(true); })
-      .finally(() => { if (active) setGroupNamesLoading(false); });
-    return () => { active = false; };
+      .catch(() => {
+        if (active) setGroupNamesError(true);
+      })
+      .finally(() => {
+        if (active) setGroupNamesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [groupByDiscord, seasonId, groupNamesRetry]);
-  const [bulkReview, setBulkReview] = useState<{ text: string; clearClan: boolean } | null>(null);
-  const [balanceOpen, setBalanceOpen] = useState(false);
-  const [minWeight, setMinWeight] = useState("");
-  const [maxWeight, setMaxWeight] = useState("");
-  const [hostFilter, setHostFilter] = useState("");
-  const [includeLockedBulk, setIncludeLockedBulk] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [bulkDestination, setBulkDestination] = useState("");
   const [rulesDirty, setRulesDirty] = useState(false);
   const [weightsDirty, setWeightsDirty] = useState(false);
   const [playerDirty, setPlayerDirty] = useState(false);
@@ -159,17 +220,15 @@ export default function RosterWorkspace({
   const [signupBusy, setSignupBusy] = useState(false);
   const [signupReviewOpen, setSignupReviewOpen] = useState(false);
   const [signupOpen, setSignupOpen] = useState(false);
-  const working = busy || signupBusy;
-  const uiLocked = working || signupReviewOpen || signupOpen || balanceOpen || !!bulkReview;
+  const working = busy || signupBusy || hostingBusy;
+  const uiLocked = working || signupReviewOpen || signupOpen || !!panel;
   const dirty =
-    !!bulkReview ||
-    balanceOpen ||
+    !!panel ||
     rulesDirty ||
     weightsDirty ||
     playerDirty ||
     signupDirty ||
     signupReviewOpen ||
-    !!manualTag ||
     selectedTags.length > 0;
   useUnsavedWork(dirty || working, onDirty);
   useEffect(() => {
@@ -179,11 +238,26 @@ export default function RosterWorkspace({
   useEffect(() => {
     if (!canRoster && mode !== "assign") setMode("assign");
   }, [canRoster, mode, setMode]);
+  const [pendingDetailsAction, setPendingDetailsAction] = useState<
+    null | (() => void)
+  >(null);
+  const requestSignupNavigation = (action: () => void) => {
+    requestDetailsNavigation(() => {
+      if (rulesDirty || weightsDirty || signupDirty || selectedTags.length > 0)
+        setPendingDetailsAction(() => action);
+      else action();
+    });
+  };
   const mayLeaveEditor = () =>
     !working &&
     (!dirty || window.confirm("Discard unsaved roster edits and selections?"));
   const listHeading = useRef<HTMLDivElement>(null);
-  const focusListHeading = () => requestAnimationFrame(() => requestAnimationFrame(() => listHeading.current?.focus({ preventScroll: true })));
+  const focusListHeading = () =>
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() =>
+        listHeading.current?.focus({ preventScroll: true }),
+      ),
+    );
   const requestId = useRef(0);
   const [metadataRequest, setMetadataRequest] = useState(0);
   const [metadataNotice, setMetadataNotice] = useState("");
@@ -197,35 +271,41 @@ export default function RosterWorkspace({
       const snapshot = await api<RosterSnapshot>(
         `/seasons/${encoded(seasonId)}/roster?background=1`,
       );
-      if (id !== requestId.current || activeSeason.current !== seasonId) return null;
+      if (id !== requestId.current || activeSeason.current !== seasonId)
+        return null;
       setRoster(snapshot);
+      setRefreshEpoch((value) => value + 1);
       setMetadataNotice("");
       setMetadataRequest(id);
       return snapshot;
     } catch (error) {
       if (id === requestId.current && activeSeason.current === seasonId) {
-        setRoster(current => current ? { ...current, metadata_updating: false } : current);
+        setRoster((current) =>
+          current ? { ...current, metadata_updating: false } : current,
+        );
       }
-      if (id === requestId.current && activeSeason.current === seasonId &&
-          error instanceof ApiError && [401, 403].includes(error.status)) {
+      if (
+        id === requestId.current &&
+        activeSeason.current === seasonId &&
+        error instanceof ApiError &&
+        [401, 403].includes(error.status)
+      ) {
         setRoster(null);
         setSelectedTags([]);
         setEditingTag(null);
-        setManualTag(null);
-        setPreview(null);
+        closePanel();
       }
       throw error;
     }
   }, [seasonId]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     setEditingTag(null);
-    setManualTag(null);
     setRoster(null);
-    setPreview(null);
+    closePanel();
+    setUndoToast(null);
+    undoReceipt.current = null;
     setFeedback(null);
     setSelectedTags([]);
-    setBulkDestination("");
-    setBulkReview(null); setBalanceOpen(false); setIncludeLockedBulk(false); setMinWeight(""); setMaxWeight(""); setHostFilter("");
     if (!seasonId) return;
     let alive = true;
     setLoading(true);
@@ -251,42 +331,109 @@ export default function RosterWorkspace({
     const poll = async () => {
       if (!alive || metadataRequest !== requestId.current) return;
       if (Date.now() >= deadline) {
-        setRoster(current => current ? { ...current, metadata_updating: false } : current);
-        setMetadataNotice("Some live clan details are still unavailable. Refresh roster to check again.");
+        setRoster((current) =>
+          current ? { ...current, metadata_updating: false } : current,
+        );
+        setMetadataNotice(
+          "Some live clan details are still unavailable. Refresh roster to check again.",
+        );
         return;
       }
-      if (document.hidden) { timer = setTimeout(poll, 2000); return; }
+      if (document.hidden) {
+        timer = setTimeout(poll, 2000);
+        return;
+      }
       try {
-        const snapshot = await api<RosterSnapshot>(`/seasons/${encoded(seasonId)}/roster?background=1`);
-        if (!alive || metadataRequest !== requestId.current || activeSeason.current !== seasonId) return;
+        const snapshot = await api<RosterSnapshot>(
+          `/seasons/${encoded(seasonId)}/roster?background=1`,
+        );
+        if (
+          !alive ||
+          metadataRequest !== requestId.current ||
+          activeSeason.current !== seasonId
+        )
+          return;
         if (snapshot.revision !== revision) {
-          setRoster(current => current ? { ...current, metadata_updating: false } : current);
-          setMetadataNotice("The roster changed. Refresh roster to see the latest assignments.");
+          setRoster((current) =>
+            current ? { ...current, metadata_updating: false } : current,
+          );
+          setMetadataNotice(
+            "The roster changed. Refresh roster to see the latest assignments.",
+          );
           return;
         }
-        setRoster(current => current ? mergeRosterMetadata(current, snapshot) : current);
+        setRoster((current) =>
+          current ? mergeRosterMetadata(current, snapshot) : current,
+        );
         if (snapshot.metadata_updating) timer = setTimeout(poll, 2000);
       } catch (error) {
         if (!alive || metadataRequest !== requestId.current) return;
         if (error instanceof ApiError && [401, 403].includes(error.status)) {
-          setRoster(null); setSelectedTags([]); setEditingTag(null); setManualTag(null); setPreview(null);
+          setRoster(null);
+          setSelectedTags([]);
+          setEditingTag(null);
+          closePanel();
           setFeedback({ kind: "error", text: errorText(error) });
         } else {
-          setRoster(current => current ? { ...current, metadata_updating: false } : current);
-          setMetadataNotice("Live clan details could not refresh. Saved assignments are still shown.");
+          setRoster((current) =>
+            current ? { ...current, metadata_updating: false } : current,
+          );
+          setMetadataNotice(
+            "Live clan details could not refresh. Saved assignments are still shown.",
+          );
         }
       }
     };
     timer = setTimeout(poll, 1500);
-    return () => { alive = false; clearTimeout(timer); };
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
     // A fresh saved snapshot starts one bounded, non-overlapping enrichment pass.
     // Metadata updates themselves must not restart its deadline.
   }, [metadataRequest, seasonId]);
 
-  const afterWrite = async (success: string) => {
-    setPreview(null);
+  const previousPermissions = useRef({ canRoster, canSignups });
+  useEffect(() => {
+    const previous = previousPermissions.current;
+    if (
+      (previous.canRoster && !canRoster) ||
+      (previous.canSignups && !canSignups)
+    ) {
+      setSelectedTags([]);
+      closePanel();
+    }
+    previousPermissions.current = { canRoster, canSignups };
+    if (!canRoster && !canSignups) {
+      setSelectedTags([]);
+      closePanel();
+    } else if (roster)
+      setSelectedTags((current) =>
+        reconcileRosterSelection(current, roster.accounts),
+      );
+    if (
+      roster &&
+      undoReceipt.current &&
+      roster.revision !== undoReceipt.current.revision
+    ) {
+      setUndoToast({
+        status: "unavailable",
+        message: "Undo no longer available",
+      });
+    }
+  }, [roster, canRoster, canSignups]);
+
+  const afterWrite = async (success: string, placement = false) => {
+    if (placement) success = placementMessage(success, hasPublication);
     try {
-      await refresh();
+      const latest = await refresh();
+      if (latest?.undo && latest.undo.revision === latest.revision) {
+        undoReceipt.current = latest.undo;
+        setUndoToast({
+          status: "available",
+          label: placementMessage(latest.undo.label, hasPublication),
+        });
+      }
       setFeedback({ kind: "success", text: success });
     } catch (error) {
       setFeedback({
@@ -300,29 +447,25 @@ export default function RosterWorkspace({
       setRoster(null);
       setSelectedTags([]);
       setEditingTag(null);
-      setManualTag(null);
-      setPreview(null);
+      closePanel();
       setFeedback({ kind: "error", text: error.message });
       return;
     }
     if (error instanceof ApiError && error.status === 409) {
-      const hadAccountEditor = !!editingTag || !!manualTag;
-      const hadManualPlacement = !!manualTag;
+      const hadAccountEditor = !!editingTag;
       setEditingTag(null);
-      setManualTag(null);
       try {
         await refresh();
       } catch {
         /* Original conflict remains the useful error. */
       }
-      setPreview(null);
+      closePanel();
       setFeedback({
         kind: "error",
         text: hadAccountEditor
           ? `${error.message} The account editor closed. Reopen it to review the latest saved values.`
           : `${error.message} The roster was refreshed; review it and try again.`,
       });
-      if (hadManualPlacement) focusListHeading();
     } else setFeedback({ kind: "error", text: errorText(error) });
   };
   const edit = async (
@@ -339,7 +482,11 @@ export default function RosterWorkspace({
         revision: roster.revision,
         ...body,
       });
-      if (activeSeason.current === sid) await afterWrite(success);
+      if (activeSeason.current === sid)
+        await afterWrite(
+          success,
+          "assigned_clan_tag" in body || "kept" in body,
+        );
       return true;
     } catch (error) {
       if (activeSeason.current === sid) await fail(error);
@@ -349,7 +496,8 @@ export default function RosterWorkspace({
     }
   };
   const removeSignup = async (tag: string): Promise<boolean> => {
-    if (!canSignups || !roster || !seasonId || working || archived) return false;
+    if (!canSignups || !roster || !seasonId || working || archived)
+      return false;
     const sid = seasonId;
     setBusy(true);
     setFeedback(null);
@@ -373,16 +521,7 @@ export default function RosterWorkspace({
       setBusy(false);
     }
   };
-  const saveRules = async (
-    clan: RosterClan,
-    rules: {
-      pool: Pool;
-      capacity: number;
-      min_weight: number | null;
-      max_weight: number | null;
-      lower_league: boolean | null;
-    },
-  ) => {
+  const saveRules = async (clan: RosterClan, rules: ClanRules) => {
     if (!canRoster || !roster || !seasonId || working || archived) return false;
     const sid = seasonId;
     setBusy(true);
@@ -398,60 +537,7 @@ export default function RosterWorkspace({
       return true;
     } catch (error) {
       if (activeSeason.current === sid) await fail(error);
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-  const previewPlacement = async () => {
-    if (!canRoster || !roster || !seasonId || working || archived) return;
-    const sid = seasonId;
-    setBusy(true);
-    setFeedback(null);
-    setPreview(null);
-    try {
-      const result = await api<AutoPreview>(
-        `/seasons/${encoded(sid)}/roster/auto-preview`,
-        "POST",
-        { revision: roster.revision, pool: poolFilter },
-      );
-      if (activeSeason.current === sid) setPreview(result);
-    } catch (error) {
-      if (activeSeason.current === sid) await fail(error);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const applyPlacement = async () => {
-    if (
-      !preview ||
-      !roster ||
-      !seasonId ||
-      !canRoster ||
-      uiLocked ||
-      archived ||
-      preview.revision !== roster.revision
-    )
-      return;
-    const sid = seasonId;
-    setBusy(true);
-    setFeedback(null);
-    try {
-      const result = await api<{ revision: number; applied: number }>(
-        `/seasons/${encoded(sid)}/roster/auto-apply`,
-        "POST",
-        {
-          revision: preview.revision,
-          pool: poolFilter,
-          placements: preview.placements,
-        },
-      );
-      if (activeSeason.current === sid)
-        await afterWrite(
-          `${result.applied} account${result.applied === 1 ? "" : "s"} placed from the reviewed preview.`,
-        );
-    } catch (error) {
-      if (activeSeason.current === sid) await fail(error);
+      throw new Error(errorText(error));
     } finally {
       setBusy(false);
     }
@@ -486,134 +572,99 @@ export default function RosterWorkspace({
       setBusy(false);
     }
   };
-  const filtered = roster
-    ? sortRosterAccounts(
-        filterRosterAccounts(
-          readinessAccounts(roster.accounts, roster.clans, readinessFilter),
-          search,
-          viewPool,
-          assignmentFilter,
-        ).filter(
-          (account) =>
-            (!hostFilter || account.assigned_clan_tag === hostFilter) &&
-            (!minWeight || (account.effective_weight !== null && account.effective_weight >= Number(minWeight) * 1000)) &&
-            (!maxWeight || (account.effective_weight !== null && account.effective_weight <= Number(maxWeight) * 1000)) &&
-            matchesTownHall(account.town_hall, townHalls) &&
-            (!leagues.length ||
-              (!!account.assigned_clan_tag &&
-                matchesLeague(
-                  roster.clans.find(
-                    (clan) => clan.tag === account.assigned_clan_tag,
-                  )?.cwl_league,
-                  leagues,
-                ))),
-        ),
-        sort,
+  const releaseResult = roster
+    ? deriveRosterRelease(roster.accounts, roster.clans, {
+        ...releasePreferences,
+        pool: viewPool,
+      })
+    : null;
+  const filtered = releaseResult
+    ? orderRosterReleaseAccounts(
+        releaseResult.matches,
+        releasePreferences.sort,
+        groupByDiscord,
       )
     : [];
-  const accountPages = rosterAccountPages(filtered, groupByDiscord);
-  const lastPage = Math.max(0, accountPages.length - 1);
-  const currentPage = Math.min(page, lastPage);
-  const pageAccounts = accountPages[currentPage] || [];
-  const filterKey = JSON.stringify([
-    search,
-    viewPool,
-    assignmentFilter,
-    readinessFilter,
-    leagues,
-    townHalls,
-  ]);
+  const progressive = progressiveRosterReleaseAccounts(
+    filtered,
+    renderCount,
+    groupByDiscord,
+  );
+  const pageAccounts = progressive.visible;
+  const filterKey = JSON.stringify([seasonId, releasePreferences, viewPool]);
   const previousFilter = useRef(filterKey);
   useEffect(() => {
     if (previousFilter.current !== filterKey) {
-      setPage(0);
-      setSelectedTags([]);
-      setManualTag(null);
+      setRenderCount(50);
       previousFilter.current = filterKey;
     }
   }, [filterKey]);
-  const visibleTags = pageAccounts.map((account) => account.tag);
-  const hiddenSelection = selectedTags.filter((tag) => !visibleTags.includes(tag)).length;
-  const staleSelection = selectedTags.filter((tag) => !filtered.some((account) => account.tag === tag)).length;
-  const selectingPageWouldExceedLimit = new Set([...selectedTags, ...visibleTags]).size > 50;
-  const allVisibleSelected =
-    visibleTags.length > 0 &&
-    visibleTags.every((tag) => selectedTags.includes(tag));
+  const matchingTags = filtered.map((account) => account.tag);
+  useStaffDetailsPage({
+    seasonId,
+    openDirect: (tag) => setEditingTag(tag),
+  });
+  const navigationTags = mode === "assign" ? matchingTags : detailsOrder;
+  const hiddenTags = selectedTags.filter(
+    (tag) => !pageAccounts.some((account) => account.tag === tag),
+  );
+  const hiddenSelection = selectedTags.filter(
+    (tag) => !matchingTags.includes(tag),
+  ).length;
+  const unloadedSelection = hiddenTags.length - hiddenSelection;
+  const panelHiddenTags = panelTags.filter(
+    (tag) => !pageAccounts.some((account) => account.tag === tag),
+  );
+  const panelAccounts = panelTags
+    .map((tag) => roster?.accounts.find((account) => account.tag === tag))
+    .filter((account): account is NonNullable<typeof account> => !!account);
+  const allMatchingSelected =
+    matchingTags.length > 0 &&
+    matchingTags.every((tag) => selectedTags.includes(tag));
   const toggleSelected = (tag: string) =>
     setSelectedTags((current) =>
       current.includes(tag)
         ? current.filter((item) => item !== tag)
         : [...current, tag],
     );
-  const bulkAssign = async (clearClan = false, confirmed = false) => {
-    if (!canRoster || !roster || !seasonId || working || archived) return;
-    const sourceTags = clearClan ? roster.accounts.filter(a => a.assigned_clan_tag === hostFilter).map(a => a.tag) : selectedTags;
-    const actionTags = sourceTags.filter(tag => includeLockedBulk || !roster.accounts.find(a => a.tag === tag)?.kept);
-    const destination = clearClan ? "__unassign__" : bulkDestination;
-    if (!actionTags.length) { setFeedback({ kind: "error", text: "No unlocked accounts selected. Enable Include locked placements to move locked accounts." }); return; }
-    if (!clearClan && staleSelection) {
-      setFeedback({
-        kind: "error",
-        text: "The roster changed since selection. Clear selection and choose accounts again.",
-      });
-      return;
-    }
-    if (actionTags.length > 50) {
-      setFeedback({
-        kind: "error",
-        text: "Select up to 50 accounts per bulk assignment.",
-      });
-      return;
-    }
+  const assignSelected = async (
+    destination: string | null,
+  ): Promise<boolean> => {
     if (
-      destination &&
-      destination !== "__unassign__" &&
-      (!selectedPool || !assignmentOptions(roster.clans, selectedPool).some(
-        (clan) => clan.tag === destination,
-      ))
-    ) {
-      setFeedback({ kind: "error", text: "Choose an active hosting clan." });
-      return;
-    }
-    if (!destination) {
-      setFeedback({
-        kind: "error",
-        text: "Choose a hosting clan or Unassign selected.",
-      });
-      return;
-    }
-    const actionSummary = destination === "__unassign__"
-      ? `Unassign ${actionTags.length} account${actionTags.length === 1 ? "" : "s"}${clearClan ? ` from ${clanName(hostFilter)}` : " from the working roster"}?`
-      : `Assign ${actionTags.length} selected account${actionTags.length === 1 ? "" : "s"} to ${clanName(destination)}?`;
-    if (!confirmed) {
-      setBulkReview({ text: `${actionSummary} Signups stay unchanged. ${sourceTags.length - actionTags.length} locked placement(s) excluded. Publish separately when ready.`, clearClan });
-      return;
-    }
-    setBulkReview(null);
+      !canRoster ||
+      !roster ||
+      !seasonId ||
+      working ||
+      archived ||
+      mutationPending.current ||
+      !panelTags.length ||
+      panelTags.length > 50
+    )
+      return false;
     const sid = seasonId;
+    mutationPending.current = true;
     setBusy(true);
     setFeedback(null);
     try {
-      const result = await api<{ revision: number; updated: number }>(
-        `/seasons/${encoded(sid)}/roster/assignments`,
-        "PATCH",
-        {
-          revision: roster.revision,
-          tags: actionTags,
-          include_locked: includeLockedBulk,
-          assigned_clan_tag:
-            destination === "__unassign__" ? null : destination,
-        },
-      );
-      if (activeSeason.current === sid) {
-        setSelectedTags([]);
+      await api(`/seasons/${encoded(sid)}/roster/assignments`, "PATCH", {
+        revision: roster.revision,
+        tags: panelTags,
+        assigned_clan_tag: destination,
+        include_locked: true,
+      });
+      if (activeSeason.current === sid)
         await afterWrite(
-          `${result.updated} account${result.updated === 1 ? "" : "s"} ${destination === "__unassign__" ? "unassigned" : "assigned to " + clanName(destination)}.`,
+          destination
+            ? "Accounts assigned. Placements locked."
+            : "Accounts unassigned. Signups kept.",
+          true,
         );
-      }
-    } catch (error) {
-      if (activeSeason.current === sid) await fail(error);
+      return true;
+    } catch (cause) {
+      if (activeSeason.current === sid) await fail(cause);
+      return false;
     } finally {
+      mutationPending.current = false;
       setBusy(false);
     }
   };
@@ -621,10 +672,22 @@ export default function RosterWorkspace({
     action: Pool | "remove",
     tags: string[],
   ): Promise<boolean> => {
-    if (!canSignups || !roster || !seasonId || working || archived || !tags.length || tags.length > 50) return false;
+    if (
+      !canSignups ||
+      !roster ||
+      !seasonId ||
+      working ||
+      archived ||
+      !tags.length ||
+      tags.length > 50
+    )
+      return false;
     const available = new Set(roster.accounts.map((account) => account.tag));
     if (tags.some((tag) => !available.has(tag))) {
-      setFeedback({ kind: "error", text: "The selection changed. Clear it and choose the accounts again." });
+      setFeedback({
+        kind: "error",
+        text: "The selection changed. Clear it and choose the accounts again.",
+      });
       return false;
     }
     const sid = seasonId;
@@ -638,8 +701,9 @@ export default function RosterWorkspace({
       );
       if (activeSeason.current === sid) {
         const fromBulk = selectedTags.length > 0;
-        setSelectedTags([]);
-        await afterWrite(`${result.count} signup${result.count === 1 ? "" : "s"} ${action === "remove" ? "removed" : `changed to ${action === "main" ? "Main" : "Lazy"} CWL`}. Publish again to update the published roster.`);
+        await afterWrite(
+          `${result.count} signup${result.count === 1 ? "" : "s"} ${action === "remove" ? "removed" : `changed to ${action === "main" ? "Main" : "Lazy"} CWL`}. Publish again to update the published roster.`,
+        );
         if (fromBulk) focusListHeading();
       }
       return true;
@@ -647,7 +711,6 @@ export default function RosterWorkspace({
       if (activeSeason.current === sid) {
         if (error instanceof ApiError && error.status === 409) {
           const fromBulk = selectedTags.length > 0;
-          setSelectedTags([]);
           setEditingTag(null);
           await fail(error);
           if (fromBulk) focusListHeading();
@@ -661,17 +724,34 @@ export default function RosterWorkspace({
     }
   };
   const undoPlacement = async () => {
-    if (!canRoster || !roster?.undo || !seasonId || uiLocked || archived) return;
+    if (
+      !canRoster ||
+      !roster ||
+      !undoReceipt.current ||
+      !seasonId ||
+      uiLocked ||
+      archived ||
+      mutationPending.current
+    )
+      return;
     const sid = seasonId;
+    mutationPending.current = true;
+    setUndoToast({
+      status: "pending",
+      label: placementMessage(undoReceipt.current.label, hasPublication),
+    });
     setBusy(true);
     setFeedback(null);
     try {
       await api(`/seasons/${encoded(sid)}/roster/undo`, "POST", {
         revision: roster.revision,
-        undo_id: roster.undo.id,
+        undo_id: undoReceipt.current.id,
       });
-      if (activeSeason.current === sid)
-        await afterWrite("Last placement change undone.");
+      if (activeSeason.current === sid) {
+        undoReceipt.current = null;
+        setUndoToast(null);
+        await afterWrite("Last placement change undone.", true);
+      }
     } catch (error) {
       if (activeSeason.current === sid) {
         if (!(error instanceof ApiError && error.status === 409)) {
@@ -682,64 +762,230 @@ export default function RosterWorkspace({
           }
         }
         await fail(error);
+        setUndoToast({
+          status: "unavailable",
+          message:
+            error instanceof ApiError && [404, 409].includes(error.status)
+              ? "Undo no longer available"
+              : "Undo could not be confirmed. Refresh the roster before trying again.",
+        });
       }
     } finally {
+      mutationPending.current = false;
       setBusy(false);
     }
   };
-  const poolAccounts =
-    roster?.accounts.filter((account) => viewPool === "all" || account.pool === viewPool) || [];
-  const assigned =
-    poolAccounts.filter((account) => !!account.assigned_clan_tag).length || 0;
-  const missingWeight =
-    poolAccounts.filter((account) => account.effective_weight === null)
-      .length || 0;
-  const activeClans =
-    roster?.clans.filter(
-      (clan) => !clan.archived && (clan.pool === poolFilter || !clan.pool),
-    ) || [];
-  const ruleClan =
-    activeClans.find((clan) => clan.tag === ruleTag) || activeClans[0];
-  const selectedAccounts = selectedTags
-    .map((tag) => roster?.accounts.find((account) => account.tag === tag))
-    .filter((account): account is NonNullable<typeof account> => !!account);
-  const selectedPool = selectedAccounts.length && selectedAccounts.every(account => account.pool === selectedAccounts[0].pool)
-    ? selectedAccounts[0].pool : null;
+  const globalMissingWeight = releaseResult?.globalMissingWeightCount ?? 0;
+
   const clanName = (tag: string | null) =>
     roster?.clans.find((clan) => clan.tag === tag)?.name || tag || "Unassigned";
 
+  useEffect(() => closeRosterActionMenus(), [seasonId, poolFilter, mode]);
+
   return (
-    <div className={`roster-workspace${mode === "assign" ? " roster-workspace-assign" : ""}`}>
-      {bulkReview && <ConfirmDialog heading="Update working assignments?" text={bulkReview.text} confirmLabel="Update assignments"
-        onCancel={() => setBulkReview(null)} onConfirm={() => void bulkAssign(bulkReview.clearClan, true)} />}
-      {balanceOpen && roster && <RosterBalance key={`${seasonId}-${roster.revision}`} roster={roster} seasonId={seasonId} tags={selectedTags}
-        onClose={() => setBalanceOpen(false)} onBusy={setBusy}
-        onSaved={async () => { setSelectedTags([]); await afterWrite("Balance applied. Signups unchanged. Publish when ready."); }} />}
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">Staff roster</p>
-          <h1>CWL roster &amp; signups</h1>
-          <p>Working placements stay private until published.</p>
-        </div>
-        <label className="season-choice">
-          Season
-          <select
-            value={seasonId}
-            disabled={uiLocked}
-            onChange={(event) => {
-              if (mayLeaveEditor()) onSeasonChange(event.target.value);
-            }}
-          >
-            <option value="">Select a season</option>
-            {seasons.map((season) => (
-              <option key={season.id} value={String(season.id)}>
-                {season.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {seasonId && canSignups && <SignupActivity key={seasonId} seasonId={seasonId} />}
+    <div
+      className={`roster-workspace roster-ui${mode === "assign" ? " roster-workspace-assign" : ""}`}
+    >
+      {roster && panel === "assign" && (
+        <RosterAssignPanel
+          roster={roster}
+          selectedAccounts={panelAccounts}
+          hiddenTags={panelHiddenTags}
+          busy={working}
+          trigger={panelTrigger}
+          onClose={closePanel}
+          onAssign={assignSelected}
+        />
+      )}
+      {roster && panel === "signup" && (
+        <RosterSignupPanel
+          accounts={panelAccounts}
+          clans={roster.clans}
+          hiddenTags={panelHiddenTags}
+          busy={working}
+          error={feedback?.kind === "error" ? feedback.text : undefined}
+          trigger={panelTrigger}
+          onClose={closePanel}
+          onApply={bulkChangeSignups}
+          onReviewChange={setSignupReviewOpen}
+        />
+      )}
+      {(panel === "balance" || panel === "auto") && roster && (
+        <RosterBalance
+          roster={roster}
+          seasonId={seasonId}
+          tags={selectedTags}
+          hiddenTags={hiddenTags}
+          trigger={panelTrigger}
+          automatic={panel === "auto"}
+          pool={viewPool}
+          onClose={closePanel}
+          onBusy={setBusy}
+          onPermissionError={(error) => void fail(error)}
+          onSaved={async () => {
+            await afterWrite("Placements applied. Signups unchanged.", true);
+          }}
+        />
+      )}
+      {undoToast && !panel && !editingTag && canRoster && (
+        <RosterUndoToast
+          state={undoToast}
+          bottomOffset={selectedTags.length ? barHeight + 24 : 16}
+          onDismiss={() => setUndoToast(null)}
+          onUndo={() => void undoPlacement()}
+        />
+      )}
+      {mode === "assign" && !archived && (
+        <RosterSelectionBar
+          selectedCount={selectedTags.length}
+          hiddenCount={hiddenSelection}
+          unloadedCount={unloadedSelection}
+          busy={working}
+          canRoster={canRoster}
+          canSignups={canSignups}
+          hidden={!!panel || !!editingTag || filterOpen || sortOpen}
+          onAssign={(trigger) => openPanel("assign", trigger)}
+          onBalance={(trigger) => openPanel("balance", trigger)}
+          onSignup={(trigger) => openPanel("signup", trigger)}
+          onClear={() => setSelectedTags([])}
+          onHeight={setBarHeight}
+        />
+      )}
+      {pendingDetailsAction && (
+        <ConfirmDialog
+          heading="Discard unsaved roster edits?"
+          text="Discard unsaved roster edits and selections?"
+          confirmLabel="Discard"
+          onCancel={() => setPendingDetailsAction(null)}
+          onConfirm={() => {
+            const action = pendingDetailsAction;
+            setPendingDetailsAction(null);
+            action();
+          }}
+        />
+      )}
+      <RosterHeader
+        seasonId={seasonId}
+        seasons={seasons}
+        roster={roster}
+        showAwareness={mode !== "weights"}
+        onPublication={(draft) => {
+          setHasPublication(!!draft.published);
+          onPublication?.(draft);
+        }}
+        pool={viewPool}
+        canRoster={canRoster}
+        canSignups={canSignups}
+        canPublish={canPublish}
+        uiLocked={uiLocked}
+        archived={!!archived}
+        refreshKey={refreshEpoch}
+        activeStatuses={mode === "assign" ? releasePreferences.statuses : []}
+        onSeasonChange={(value) => {
+          if (mayLeaveEditor()) onSeasonChange(value);
+        }}
+        onRefresh={() => {
+          if (mayLeaveEditor())
+            void refresh().catch((error) =>
+              setFeedback({ kind: "error", text: errorText(error) }),
+            );
+        }}
+        onAutoPlace={(trigger) => {
+          if (mode !== "assign") {
+            if (!mayLeaveEditor()) return;
+            setReleasePreferences((current) => ({
+              ...current,
+              pool: viewPool,
+            }));
+            setMode("assign");
+          }
+          openPanel("auto", trigger);
+        }}
+        onFillSignupSpot={(item) => {
+          if (!canRoster || uiLocked) return false;
+          requestSignupNavigation(() => {
+            const pool = item.from_pool === "lazy" ? "lazy" : "main";
+            try {
+              if (item.assigned_clan_tag) {
+                const key = `wu-compare-clans:${seasonId}:${pool}`;
+                const available = sortClans(
+                  assignmentOptions(roster?.clans ?? []).filter(
+                    (clan) => clan.pool === pool,
+                  ),
+                  "name",
+                ).map((clan) => clan.tag);
+                const saved: unknown = JSON.parse(
+                  localStorage.getItem(key) || "null",
+                );
+                const existing = comparisonOrder(saved, available);
+                localStorage.setItem(
+                  key,
+                  JSON.stringify(
+                    comparisonOrder(
+                      [item.assigned_clan_tag, ...existing],
+                      available,
+                    ),
+                  ),
+                );
+              }
+            } catch {}
+            setPoolFilter(pool);
+            setSelectedTags([]);
+            setCompareJump((value) => value + 1);
+            setMode("compare");
+            setEditingTag(null);
+          });
+          return true;
+        }}
+        onSignupDetails={(tag) => {
+          if (uiLocked) return false;
+          requestSignupNavigation(() => {
+            setSelectedTags([]);
+            setFeedback(null);
+            setEditingTag(tag);
+          });
+          return true;
+        }}
+        onFinalize={onReviewPublication}
+        onStatusFilter={(status) => {
+          if (mode !== "assign" && !mayLeaveEditor()) return;
+          setMode("assign");
+          setReleasePreferences((current) => ({
+            ...current,
+            pool: status === "missing_weight" ? "all" : viewPool,
+            search: "",
+            statuses: status === "all" ? [] : [status],
+            minWeight: null,
+            maxWeight: null,
+            townHalls: [],
+            assignedClanTags: [],
+          }));
+        }}
+        signupControls={
+          season &&
+          (canSignups || canSettings) && (
+            <StaffSignupControls
+              key={seasonId}
+              disabled={
+                busy ||
+                selectedTags.length > 0 ||
+                !!editingTag ||
+                rulesDirty ||
+                weightsDirty
+              }
+              onOpenChange={setSignupOpen}
+              season={season}
+              onChanged={async () => {
+                await refresh();
+                await onSeasonRefresh?.();
+              }}
+              onDirty={setSignupDirty}
+              onBusy={setSignupBusy}
+            />
+          )
+        }
+        onAccessError={(error) => void fail(error)}
+      />
       {!seasonId && (
         <div className="card empty">
           <p>Select a season to build its CWL roster.</p>
@@ -752,7 +998,7 @@ export default function RosterWorkspace({
         >
           {feedback.text}
           {feedback.kind === "error" && !roster && (
-            <button
+            <Button
               disabled={loading}
               onClick={() => {
                 setLoading(true);
@@ -765,159 +1011,125 @@ export default function RosterWorkspace({
               }}
             >
               Retry loading roster
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             aria-label="Dismiss message"
             onClick={() => setFeedback(null)}
           >
             ×
-          </button>
+          </Button>
         </div>
       )}
       {loading && <p role="status">Loading roster…</p>}
-      {roster?.metadata_updating && <p className="muted" role="status">Updating live clan details… Saved assignments are ready.</p>}
+      {roster?.metadata_updating && (
+        <p className="muted" role="status">
+          Updating live clan details… Saved assignments are ready.
+        </p>
+      )}
       {metadataNotice && <p role="status">{metadataNotice}</p>}
       {roster && (
         <>
-          {canRoster && <div
-            className="roster-workflow-nav"
-            role="group"
-            aria-label="Roster workspace views"
-          >
-            {(
-              [
-                { id: "assign", label: "Accounts & signups" },
-                { id: "compare", label: "Compare clans" },
-                { id: "rules", label: "Clan settings" },
-                { id: "weights", label: `Weights · ${missingWeight} missing` },
-              ] as const
-            ).map((item) => (
-              <button
-                key={item.id}
-                disabled={uiLocked}
-                aria-pressed={mode === item.id}
-                className={mode === item.id ? "active" : ""}
-                onClick={() => {
-                  if (item.id !== mode && !mayLeaveEditor()) return;
-                  setMode(item.id);
-                  setManualTag(null);
-                  setSelectedTags([]);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>}
-          {mode === "assign" ? (
-            <div className="roster-list-pool-tabs workflow-tabs" role="group" aria-label="Show CWL accounts">
-              {(["all", "main", "lazy"] as const).map((pool) => (
-                <button
-                  type="button"
-                  key={pool}
-                  aria-pressed={listPool === pool}
+          {canRoster && (
+            <div
+              className="roster-workflow-nav"
+              role="group"
+              aria-label="Roster workspace views"
+            >
+              {(
+                [
+                  { id: "assign", label: "Accounts & signups" },
+                  { id: "compare", label: "Compare clans" },
+                  { id: "rules", label: "Clan settings" },
+                  {
+                    id: "weights",
+                    label: `Missing weights · ${globalMissingWeight}`,
+                  },
+                ] as const
+              ).map((item) => (
+                <Button
+                  key={item.id}
                   disabled={uiLocked}
+                  aria-pressed={mode === item.id}
+                  className={mode === item.id ? "active" : ""}
                   onClick={() => {
-                    if (!mayLeaveEditor()) return;
-                    setListPool(pool);
-                    if (pool !== "all") setPoolFilter(pool);
-                    setPreview(null);
-                    setBulkDestination("");
+                    if (item.id !== mode && !mayLeaveEditor()) return;
+                    setMode(item.id);
                     setSelectedTags([]);
-                    setSearch("");
-                    setEditingTag(null);
                   }}
                 >
-                  {pool === "all" ? "All accounts" : pool === "main" ? "Main CWL" : "Lazy CWL"}
-                </button>
+                  {item.label}
+                </Button>
               ))}
             </div>
-          ) : (
+          )}
+          {mode === "assign" ? (
+            <div
+              className="roster-list-pool-tabs workflow-tabs"
+              role="group"
+              aria-label="CWL account pool"
+            >
+              {(["all", "main", "lazy"] as const).map((pool) => (
+                <Button
+                  key={pool}
+                  aria-pressed={releasePreferences.pool === pool}
+                  disabled={uiLocked}
+                  onClick={() =>
+                    setReleasePreferences((current) => ({ ...current, pool }))
+                  }
+                >
+                  {pool === "all"
+                    ? "All accounts"
+                    : pool === "main"
+                      ? "Main CWL"
+                      : "Lazy CWL"}
+                </Button>
+              ))}
+            </div>
+          ) : mode === "weights" ? null : (
             <CwlPoolTabs
               value={poolFilter}
               disabled={uiLocked}
               onChange={(pool) => {
                 if (!mayLeaveEditor()) return;
                 setPoolFilter(pool);
-                setPreview(null);
-                setBulkDestination("");
-                setRuleTag("");
-                setLeagues([]);
-                setTownHalls([]);
-                setSearch("");
+                closePanel();
                 setEditingTag(null);
               }}
             />
           )}
-          {season && canSignups && mode === "assign" && (
-            <StaffSignupControls
+          <div hidden={mode !== "assign"}>
+            <RosterClanChips
               key={seasonId}
-              disabled={busy || selectedTags.length > 0 || !!manualTag || !!editingTag || rulesDirty || weightsDirty}
-              onOpenChange={setSignupOpen}
-              season={season}
-              onChanged={async () => {
-                await refresh();
-                await onSeasonRefresh?.();
-              }}
-              onDirty={setSignupDirty}
-              onBusy={setSignupBusy}
-            />
-          )}
-          {mode === "assign" && (
-            <div className="roster-assign-summary" role="status">
-              <span><strong>{poolAccounts.length}</strong> signed up</span>
-              <span><strong>{assigned}</strong> assigned</span>
-              <span><strong>{poolAccounts.length - assigned}</strong> awaiting placement</span>
-              <span><strong>{missingWeight}</strong> missing weight</span>
-            </div>
-          )}
-          <div className="roster-toolbar">
-            {mode === "assign" && canRoster && viewPool === "all" && (
-              <span>To auto-place unassigned accounts, choose Main or Lazy CWL above.</span>
-            )}
-            <button
+              roster={roster}
+              pool={viewPool}
+              selectedTags={releasePreferences.assignedClanTags}
               disabled={uiLocked}
-              onClick={() => {
-                if (mayLeaveEditor())
-                  void refresh().catch((error) =>
-                    setFeedback({ kind: "error", text: errorText(error) }),
-                  );
-              }}
-            >
-              Refresh roster
-            </button>
-            {canRoster && mode === "assign" && viewPool !== "all" && (
-              <button
-                disabled={uiLocked || archived || !activeClans.length}
-                onClick={() => void previewPlacement()}
-              >
-                Auto-place unassigned…
-              </button>
-            )}
-            {canRoster && onReviewPublication && mode !== "assign" && (
-              <button
-                className="primary"
-                disabled={busy}
-                onClick={onReviewPublication}
-              >
-                Finalize both groups →
-              </button>
-            )}
+              onSelect={(tag) =>
+                setReleasePreferences((current) => ({
+                  ...current,
+                  assignedClanTags: current.assignedClanTags.includes(tag)
+                    ? current.assignedClanTags.filter((item) => item !== tag)
+                    : [...current.assignedClanTags, tag],
+                }))
+              }
+            />
           </div>
+
           {canRoster && mode === "weights" && (
             <WeightQueue
+              onOrderChange={setDetailsOrder}
+              onClanWeights={onClanWeights}
               onDirty={setWeightsDirty}
               onEdit={(tag) => {
                 setFeedback(null);
-                setEditingTag(tag);
+                requestDetailsNavigation(() => setEditingTag(tag));
               }}
               key={seasonId}
-              accounts={poolAccounts}
+              accounts={roster.accounts}
               busy={busy}
               onRefresh={() => void refreshWeights()}
-              onClose={() => {
-                if (mayLeaveEditor()) setMode("assign");
-              }}
+              archived={!!archived}
               onSave={(tag, weight) =>
                 edit(
                   tag,
@@ -927,67 +1139,64 @@ export default function RosterWorkspace({
               }
             />
           )}
-          {canRoster && roster.undo && (
-            <div className="roster-undo card">
-              <div>
-                <strong>Undo last placement change</strong>
-                <small>{roster.undo.label}</small>
-              </div>
-              <button
-                disabled={uiLocked || archived || roster.undo.revision !== roster.revision}
-                onClick={() => void undoPlacement()}
-              >
-                Undo
-              </button>
-            </div>
-          )}
           {canRoster && mode === "rules" && (
-            <section id="clan-range-editor" className="roster-rules card">
-              <div className="card-heading">
-                <h2>Clan ranges & capacity</h2>
-              </div>
-              <p>
-                Set this season’s weight range and capacity. Automatic placement
-                uses these settings. Existing assignments stay unchanged.
-              </p>
-              {ruleClan ? (
-                <>
-                  <label>
-                    Hosting clan
-                    <select
-                      value={ruleClan.tag}
-                      onChange={(event) => {
-                        if (mayLeaveEditor()) setRuleTag(event.target.value);
-                      }}
-                      disabled={busy}
-                    >
-                      {activeClans.map((clan) => (
-                        <option key={clan.tag} value={clan.tag}>
-                          {clan.name} ·{" "}
-                          {clan.cwl_league || "League unavailable"} · {clan.tag}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <RuleForm
-                    onDirty={setRulesDirty}
-                    key={`${seasonId}-${ruleClan.tag}`}
-                    clan={ruleClan}
-                    busy={busy}
-                    onSave={(rules) => saveRules(ruleClan, rules)}
-                  />
-                </>
-              ) : (
-                <p>Add a hosting clan in Seasons & clans first.</p>
-              )}
-            </section>
+            <ClanSettings
+              key={seasonId}
+              onHostingChanged={async () => {
+                if (!(await refresh()))
+                  throw new Error(
+                    "Saved, but the roster could not refresh. Reload before making more changes.",
+                  );
+              }}
+              onHostingBusy={setHostingBusy}
+              onFamily={onFamilyClans}
+              clans={roster.clans}
+              accounts={roster.accounts}
+              pool={poolFilter}
+              busy={busy || hostingBusy}
+              archived={!!archived}
+              onPoolChange={setPoolFilter}
+              onDirty={setRulesDirty}
+              onLeave={mayLeaveEditor}
+              onSave={saveRules}
+            />
           )}
           {editingTag && roster.accounts.some((a) => a.tag === editingTag) && (
             <RosterPlayerDialog
+              onClanWeights={onClanWeights}
+              rosterUi
               onDirty={setPlayerDirty}
-              key={`${seasonId}:${editingTag}`}
+              key={seasonId}
+              previous={
+                navigationTags.indexOf(editingTag) > 0
+                  ? () =>
+                      setEditingTag(
+                        navigationTags[navigationTags.indexOf(editingTag) - 1],
+                      )
+                  : undefined
+              }
+              next={
+                navigationTags.indexOf(editingTag) >= 0 &&
+                navigationTags.indexOf(editingTag) < navigationTags.length - 1
+                  ? () =>
+                      setEditingTag(
+                        navigationTags[navigationTags.indexOf(editingTag) + 1],
+                      )
+                  : undefined
+              }
               account={roster.accounts.find((a) => a.tag === editingTag)!}
               clans={roster.clans}
+              roster={roster}
+              locations={comparisonMemory.records}
+              undo={
+                undoToast && (
+                  <RosterUndoToast
+                    state={undoToast}
+                    onUndo={() => void undoPlacement()}
+                    onDismiss={() => setUndoToast(null)}
+                  />
+                )
+              }
               busy={busy}
               error={feedback?.kind === "error" ? feedback.text : undefined}
               onClose={() => {
@@ -1001,501 +1210,180 @@ export default function RosterWorkspace({
           )}
           {canRoster && mode === "compare" && (
             <CompareClans
-              key={`${seasonId}:${poolFilter}`}
+              onOrderChange={setDetailsOrder}
+              memory={comparisonMemory}
+              refreshKey={refreshEpoch}
+              key={`${seasonId}:${compareJump}`}
               pool={poolFilter}
               seasonId={seasonId}
               roster={roster}
               busy={busy}
               onEdit={(tag) => {
                 setFeedback(null);
-                setEditingTag(tag);
+                requestDetailsNavigation(() => setEditingTag(tag));
               }}
             />
           )}
-          {canRoster && mode === "assign" && preview && (
-            <section
-              className="card roster-preview"
-              aria-labelledby="preview-title"
-            >
-              <div className="card-heading">
-                <h2 id="preview-title">Automatic placement preview</h2>
-                <button onClick={() => setPreview(null)}>Close preview</button>
-              </div>
-              <p>
-                {preview.placements.length} proposed placement
-                {preview.placements.length === 1 ? "" : "s"} ·{" "}
-                {preview.unassigned.length} unresolved. Nothing changes until
-                you apply this preview.
-              </p>
-              <div className="preview-columns">
-                <div>
-                  <h3>Proposed placements</h3>
-                  <div className="preview-scroll">
-                    {preview.placements.length ? (
-                      preview.placements.map((item) => (
-                        <div className="preview-line" key={item.tag}>
-                          <strong>
-                            {roster.accounts.find(
-                              (account) => account.tag === item.tag,
-                            )?.player_name || item.tag}
-                          </strong>
-                          <small>
-                            {item.tag} → {clanName(item.assigned_clan_tag)}
-                          </small>
-                        </div>
-                      ))
-                    ) : (
-                      <p>No accounts can be placed with the current rules.</p>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <h3>Accounts still needing a clan</h3>
-                  <div className="preview-scroll">
-                    {preview.unassigned.length ? (
-                      preview.unassigned.map((item) => (
-                        <div className="preview-line" key={item.tag}>
-                          <strong>
-                            {roster.accounts.find(
-                              (account) => account.tag === item.tag,
-                            )?.player_name || item.tag}
-                          </strong>
-                          <small>
-                            {item.tag} ·{" "}
-                            {roster.accounts.find(
-                              (account) => account.tag === item.tag,
-                            )?.auto_placement_note || reasonText(item.reason)}
-                          </small>
-                        </div>
-                      ))
-                    ) : (
-                      <p>None.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="roster-preview-actions">
-                <button
-                  className="primary"
-                  disabled={
-                    uiLocked || archived ||
-                    !preview.placements.length ||
-                    preview.revision !== roster.revision
-                  }
-                  onClick={() => void applyPlacement()}
-                >
-                  Apply reviewed placements
-                </button>
-              </div>
-            </section>
-          )}
           {mode === "assign" && (
             <>
-              <div className="roster-account-tools">
-              <div className="roster-quick-search">
-                <label>
-                  Find accounts
-                  <input
-                    value={search}
-                    disabled={uiLocked}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Name, tag or Discord ID"
-                  />
-                </label>
-                <label>
-                  Show
-                  <select
-                    value={assignmentFilter}
-                    disabled={uiLocked}
-                    onChange={(event) =>
-                      setAssignmentFilter(
-                        event.target.value as "all" | "assigned" | "unassigned",
-                      )
-                    }
+              <RosterFilters
+                onOpenChange={setFilterOpen}
+                roster={roster}
+                value={releasePreferences}
+                disabled={uiLocked}
+                onChange={(next) =>
+                  setReleasePreferences((current) => ({ ...current, ...next }))
+                }
+              >
+                <SortTrigger
+                  ref={sortTrigger}
+                  disabled={uiLocked || !!editingTag}
+                  label={
+                    rosterSortOptions.find(
+                      ([value]) => value === releasePreferences.sort,
+                    )?.[1] || "Unassigned first"
+                  }
+                  grouped={groupByDiscord}
+                  aria-expanded={sortOpen}
+                  onClick={() => setSortOpen(true)}
+                />
+                {sortOpen && (
+                  <ActionPanel
+                    title="Sort accounts"
+                    trigger={sortTrigger.current}
+                    className="roster-ui"
+                    onClose={() => setSortOpen(false)}
                   >
-                    <option value="all">All accounts</option>
-                    <option value="unassigned">Unassigned</option>
-                    <option value="assigned">Assigned</option>
-                  </select>
-                </label>
-                <label>
-                  Sort
-                  <select
-                    value={sort}
-                    disabled={uiLocked}
-                    onChange={(event) =>
-                      setSort(event.target.value as RosterSort)
-                    }
-                  >
-                    <option value="name">Name A–Z</option>
-                    <option value="town_hall_desc">TH: highest first</option>
-                    <option value="town_hall_asc">TH: lowest first</option>
-                    <option value="weight_desc">Weight: highest first</option>
-                    <option value="weight_asc">Weight: lowest first</option>
-                  </select>
-                </label>
-              </div>
-              <details className="roster-more-filters">
-                <summary>
-                  Filters · Weight, league &amp; grouping{" "}
-                  {readinessFilter !== "all" ||
-                  leagues.length ||
-                  townHalls.length || groupByDiscord || minWeight || maxWeight || hostFilter
-                    ? "· Active"
-                    : ""}
-                </summary>
-                <div className="roster-weight-range">
-                  <label>Minimum weight (k)<input type="number" min="0" step="any" placeholder="174" value={minWeight} disabled={uiLocked} onChange={e => { setMinWeight(e.target.value); setSelectedTags([]); setPage(0); }} /></label>
-                  <label>Maximum weight (k)<input type="number" min="0" step="any" placeholder="Any" value={maxWeight} disabled={uiLocked} onChange={e => { setMaxWeight(e.target.value); setSelectedTags([]); setPage(0); }} /></label>
-                </div>
-                {minWeight && maxWeight && Number(minWeight) > Number(maxWeight) && <p role="alert">Maximum weight must be at least the minimum.</p>}
-                <label>Show accounts currently in<select value={hostFilter} disabled={uiLocked} onChange={e => { setHostFilter(e.target.value); setSelectedTags([]); setPage(0); }}><option value="">All hosting clans</option>{roster.clans.map(c => <option key={c.tag} value={c.tag}>{c.name}</option>)}</select></label>
-                {hostFilter && canRoster && <details><summary>Clan actions</summary>
-                  <label className="roster-group-toggle"><input type="checkbox" checked={includeLockedBulk} disabled={uiLocked} onChange={e => setIncludeLockedBulk(e.target.checked)} />Include locked placements</label>
-                  <button disabled={uiLocked || archived} onClick={() => void bulkAssign(true)}>Clear clan assignments</button>
-                  <small>Clears this clan’s assignments across all filters. Keeps signups.</small>
-                </details>}
-                <label className="roster-group-toggle">
-                  <input type="checkbox" checked={groupByDiscord}
-                    disabled={uiLocked || !!manualTag || !!editingTag}
-                    onChange={(event) => {
-                      setGroupByDiscord(event.target.checked);
-                      setPage(0);
-                    }} />
-                  Group by Discord user
-                </label>
-                <div className="card readiness-filter">
-                  <label>
-                    Readiness check
-                    <select
-                      value={readinessFilter}
-                      disabled={uiLocked}
-                      onChange={(event) => {
-                        setReadinessFilter(
-                          event.target.value as ReadinessFilter,
-                        );
-                        setSelectedTags([]);
-                      }}
-                    >
-                      <option value="all">All accounts</option>
-                      <option value="unassigned">Unassigned accounts</option>
-                      <option value="missing_weight">Missing weights</option>
-                      <option value="over_capacity">Clans over capacity</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="clan-filter-bar">
-                  <FilterPicker
-                    label="League"
-                    disabled={uiLocked}
-                    options={[
-                      ...new Set(
-                        sortClans(roster.clans, "league_desc").map((clan) =>
-                          leagueValue(clan.cwl_league),
-                        ),
-                      ),
-                    ]}
-                    selected={leagues}
-                    onChange={(values) => {
-                      setLeagues(values);
-                      setSelectedTags([]);
-                    }}
-                  />
-                  <FilterPicker
-                    label="Town Halls"
-                    disabled={uiLocked}
-                    options={[
-                      ...new Set(
-                        roster.accounts.map((account) => account.town_hall),
-                      ),
-                    ]
-                      .sort((a, b) => (b ?? -1) - (a ?? -1))
-                      .map((value) =>
-                        value == null ? "Unknown TH" : `TH ${value}`,
-                      )}
-                    selected={townHalls}
-                    onChange={(values) => {
-                      setTownHalls(values);
-                      setSelectedTags([]);
-                    }}
-                  />
-                  <button
-                    disabled={uiLocked}
-                    onClick={() => {
-                      setMinWeight(""); setMaxWeight(""); setHostFilter("");
-                      setGroupByDiscord(false);
-                      setLeagues([]);
-                      setTownHalls([]);
-                      setSearch("");
-                      setAssignmentFilter("all");
-                      setReadinessFilter("all");
-                      setSelectedTags([]);
-                    }}
-                  >
-                    Clear filters
-                  </button>
-                  <small>
-                    {filtered.length} of {poolAccounts.length} accounts shown.
-                    League filters use the assigned clan; unassigned accounts
-                    have no league.
-                  </small>
-                </div>
-              </details>
-              </div>
-              {!selectedTags.length && canRoster && <p className="roster-selection-hint">To balance clans, select accounts below, then choose <strong>Balance across clans</strong>.</p>}
-              <div className="roster-list-heading" ref={listHeading} tabIndex={-1}>
+                    <div className="roster-sort-options">
+                      {rosterSortOptions.map(([value, label]) => (
+                        <Button
+                          key={value}
+                          aria-pressed={releasePreferences.sort === value}
+                          onClick={() => {
+                            setReleasePreferences((current) => ({
+                              ...current,
+                              sort: value as RosterReleasePreferences["sort"],
+                            }));
+                            setSortOpen(false);
+                          }}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                      <label className="roster-group-toggle">
+                        <input
+                          type="checkbox"
+                          checked={groupByDiscord}
+                          disabled={uiLocked || !!editingTag}
+                          onChange={(event) =>
+                            setReleasePreferences((current) => ({
+                              ...current,
+                              grouped: event.target.checked,
+                            }))
+                          }
+                        />
+                        Group by Discord user
+                      </label>
+                    </div>
+                  </ActionPanel>
+                )}
+              </RosterFilters>
+              <div
+                className="roster-list-heading"
+                ref={listHeading}
+                tabIndex={-1}
+              >
                 <label className="roster-select-all">
                   <input
                     type="checkbox"
-                    checked={allVisibleSelected}
-                    disabled={uiLocked || archived || (!canRoster && !canSignups) || !visibleTags.length || (!allVisibleSelected && selectingPageWouldExceedLimit)}
+                    checked={allMatchingSelected}
+                    disabled={
+                      uiLocked ||
+                      archived ||
+                      (!canRoster && !canSignups) ||
+                      !matchingTags.length
+                    }
                     onChange={(event) =>
-                      setSelectedTags(
-                        event.target.checked
-                          ? [
-                              ...new Set([...selectedTags, ...visibleTags]),
-                            ]
-                          : selectedTags.filter(
-                              (tag) => !visibleTags.includes(tag),
-                            ),
+                      setSelectedTags((current) =>
+                        toggleAllRosterMatches(
+                          current,
+                          filtered,
+                          event.target.checked,
+                        ),
                       )
                     }
                   />{" "}
-                  Select all {visibleTags.length} on this page
+                  Select all {matchingTags.length} matching
                 </label>
                 <span>
-                  {selectingPageWouldExceedLimit && !allVisibleSelected
-                    ? "Select up to 50 accounts; clear some before selecting this page."
-                    : `${filtered.length} matching · ${selectedTags.length} selected`}
+                  {`${filtered.length} matching · ${selectedTags.length} selected`}
                 </span>
               </div>
-              {filtered.length > visibleTags.length && filtered.length <= 50 && <button disabled={uiLocked || archived || (!canRoster && !canSignups)} onClick={() => setSelectedTags(filtered.map(a => a.tag))}>Select all {filtered.length} matching accounts</button>}
-              {selectedTags.length > 0 && (
-                <div className="roster-bulk card roster-selection-bar">
-                  <strong>{selectedTags.length}/50 selected{hiddenSelection ? ` · ${hiddenSelection} on other pages` : ""}</strong>
-                  {canRoster && !signupReviewOpen && (
-                    <div className="roster-selection-actions">
-                      <button className="primary"
-                        disabled={working || archived || !!staleSelection || selectedTags.length > 50}
-                        onClick={() => setBalanceOpen(true)}>
-                        Balance across clans…
-                      </button>
-                      <small>Choose multiple clans next, then review the moves.</small>
-                      <details>
-                        <summary>Move to one clan or unassign</summary>
-                        <div className="roster-placement-bulk">
-                          <label>
-                            Move selected accounts to
-                            <select value={bulkDestination} disabled={working || archived}
-                              onChange={(event) => setBulkDestination(event.target.value)}>
-                              <option value="">Choose one clan or unassign</option>
-                              <option value="__unassign__">Unassign selected</option>
-                              {selectedPool && <ClanDestinationOptions clans={roster.clans} pool={selectedPool} />}
-                            </select>
-                          </label>
-                          <button disabled={working || archived || !!staleSelection || selectedTags.length > 50 || !bulkDestination}
-                            onClick={() => void bulkAssign()}>
-                            {bulkDestination === "__unassign__" ? "Review unassign" : "Review move"}
-                          </button>
-                        </div>
-                        {!selectedPool && <small>To move to one clan, select accounts from only Main or only Lazy CWL.</small>}
-                        <label className="roster-group-toggle">
-                          <input type="checkbox" checked={includeLockedBulk} disabled={working}
-                            onChange={e => setIncludeLockedBulk(e.target.checked)} />
-                          Include locked placements for this move
-                        </label>
-                      </details>
-                    </div>
-                  )}
-                  {canSignups && !archived && (
-                    <details className="roster-signup-bulk-disclosure">
-                    <summary>Change or remove signups</summary>
-                    <RosterSignupActions
-                      key={roster.revision}
-                      accounts={selectedAccounts}
-                      clans={roster.clans}
-                      error={feedback?.kind === "error" ? feedback.text : undefined}
-                      busy={working || !!staleSelection || selectedTags.length > 50}
-                      onApply={bulkChangeSignups}
-                      onReviewChange={setSignupReviewOpen}
-                    />
-                    </details>
-                  )}
-                  {staleSelection > 0 && <small role="alert">Roster changed. Clear selection and choose accounts again.</small>}
-                  <button disabled={working || signupReviewOpen} onClick={() => setSelectedTags([])}>Clear selection</button>
-                </div>
-              )}
               {groupByDiscord && groupNamesError && (
-                <p role="status">Discord profiles could not be loaded. Accounts remain grouped by Discord ID.
-                  <button type="button" onClick={() => setGroupNamesRetry(value => value + 1)}>Retry profiles</button>
+                <p role="status">
+                  Discord profiles could not be loaded. Accounts remain grouped
+                  by Discord ID.
+                  <Button
+                    type="button"
+                    onClick={() => setGroupNamesRetry((value) => value + 1)}
+                  >
+                    Retry profiles
+                  </Button>
                 </p>
               )}
               {filtered.length ? (
                 <div className="roster-account-list">
                   {pageAccounts.map((account, index) => (
                     <Fragment key={account.tag}>
-                    {groupByDiscord && (index === 0 || rosterMemberKey(pageAccounts[index - 1]) !== rosterMemberKey(account)) && (
-                      <header className="roster-member-heading">
-                        <RosterDiscordIdentity userId={account.user_id} resolvedMember={groupMembers[account.user_id] || null} resolving={groupNamesLoading} />
-                        <small>{pageAccounts.filter(item => rosterMemberKey(item) === rosterMemberKey(account)).length} accounts shown</small>
-                      </header>
-                    )}
-                    <article
-                      className={`card roster-account ${account.assigned_clan_tag ? "roster-account-assigned" : ""} ${account.outside_family_and_hosts ? "roster-account-outside" : ""} ${selectedTags.includes(account.tag) ? "roster-account-selected" : ""}`}
-                      key={account.tag}
-                    >
-                      <div className="roster-account-head">
-                        <label className="roster-account-select">
-                          <input
-                            type="checkbox"
-                            aria-label={`Select ${account.player_name} for bulk actions`}
-                            checked={selectedTags.includes(account.tag)}
-                            disabled={
-                              uiLocked || archived || (!canRoster && !canSignups) ||
-                              (!selectedTags.includes(account.tag) &&
-                                selectedTags.length >= 50)
-                            }
-                            onChange={() => toggleSelected(account.tag)}
-                          />
-                        </label>
-                        <div>
-                          <h3>
-                            <TownHallIcon level={account.town_hall} />
-                            {account.player_name}
-                          </h3>
-                          <small>
-                            {account.tag} · TH {account.town_hall ?? "—"}{viewPool === "all" ? ` · ${account.pool === "main" ? "Main" : "Lazy"} CWL` : ""}
-                          </small>
-                        </div>
-                      </div>
-                      <div className="roster-row-summary">
-                        <span className="roster-row-weight" aria-label={`Weight: ${weightText(account.effective_weight)}`}>
-                          <small>Weight</small>
-                          <strong>
-                            {weightText(account.effective_weight)}
-                          </strong>
-                        </span>
-                        <div className="roster-row-clans">
-                          <span className="roster-row-host">
-                            <small>Hosting clan</small>
-                            <strong>
-                              {account.kept && (
-                                <span className="roster-placement-lock" role="img" aria-label="Locked placement: auto-place will not move this account" title="Locked placement: auto-place will not move this account">
-                                  <DashboardIcon name="locked" />
-                                </span>
-                              )}
-                              {clanName(account.assigned_clan_tag)}
-                            </strong>
-                          </span>
-                          <span className="roster-current-clan">
-                            <small>
-                              Current clan
-                              {account.current_clan_status === "stale"
-                                ? " · Last checked"
-                                : ""}
-                            </small>
-                            <strong>
-                              {account.current_clan_status === "unavailable" ||
-                              !account.current_clan_status
-                                ? "Unavailable"
-                                : account.current_clan_name ||
-                                  account.current_clan_tag ||
-                                  "No clan"}
-                            </strong>
-                            {account.outside_family_and_hosts && (
-                              <small className="roster-outside-label">Outside family / hosting clans</small>
-                            )}
-                          </span>
-                        </div>
-                        {!account.assigned_clan_tag && (account.kept || account.auto_placement_reason !== "ready") && (
-                          <span className="roster-row-status">
-                            {account.kept ? "Held unassigned · unlock in Details to auto-place" : account.auto_placement_note || "Not assigned"}
-                          </span>
-                        )}
-                      </div>
-                      <div className="roster-placement-help">
-                        {canRoster && <button
-                          disabled={uiLocked || archived}
-                          onClick={() => {
-                            setManualTag(account.tag);
-                            setManualClan(account.assigned_clan_tag || "");
-                            setFeedback(null);
-                          }}
-                        >
-                          {account.assigned_clan_tag
-                            ? "Move →"
-                            : "Assign →"}
-                        </button>}
-                        <button
-                          type="button"
-                          disabled={uiLocked}
-                          aria-label={`Details for ${account.player_name}`}
-                          onClick={() => {
-                            setFeedback(null);
-                            setEditingTag(account.tag);
-                          }}
-                        >
-                          Details
-                        </button>
-                      </div>
-                      {canRoster && manualTag === account.tag && (
-                        <form
-                          className="roster-manual-place"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            if (!manualClan) return;
-                            void edit(
-                              account.tag,
-                              { assigned_clan_tag: manualClan, kept: true },
-                              `${account.player_name} assigned to ${clanName(manualClan)}.`,
-                            ).then((saved) => {
-                              if (saved) setManualTag(null);
-                            });
-                          }}
-                        >
-                          <label>
-                            Place {account.player_name} in
-                            <select
-                              autoFocus
-                              value={manualClan}
-                              disabled={busy}
-                              onChange={(event) =>
-                                setManualClan(event.target.value)
+                      {groupByDiscord &&
+                        (index === 0 ||
+                          rosterMemberKey(pageAccounts[index - 1]) !==
+                            rosterMemberKey(account)) && (
+                          <header className="roster-member-heading">
+                            <RosterDiscordIdentity
+                              userId={account.user_id}
+                              resolvedMember={
+                                groupMembers[account.user_id] || null
                               }
-                            >
-                              <option value="">Choose a hosting clan</option>
-                              <ClanDestinationOptions
-                                clans={roster.clans}
-                                pool={account.pool}
-                                current={account.assigned_clan_tag}
-                              />
-                            </select>
-                          </label>
-                          <p>
-                            {account.pool === "lazy"
-                              ? "Choose a Lazy host with space."
-                              : "Choose an active hosting clan with space."}
-                          </p>
-                          {feedback?.kind === "error" && (
-                            <p role="alert">{feedback.text}</p>
-                          )}
-                          <button
-                            type="submit"
-                            className="primary"
-                            disabled={busy || !manualClan}
-                          >
-                            {busy ? "Saving…" : "Save placement"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => setManualTag(null)}
-                          >
-                            Cancel
-                          </button>
-                        </form>
-                      )}
-                    </article>
+                              resolving={groupNamesLoading}
+                            />
+                            <small>
+                              {
+                                pageAccounts.filter(
+                                  (item) =>
+                                    rosterMemberKey(item) ===
+                                    rosterMemberKey(account),
+                                ).length
+                              }{" "}
+                              accounts shown
+                            </small>
+                          </header>
+                        )}
+                      <RosterAccountCard
+                        now={now}
+                        account={account}
+                        assignedClanName={clanName(account.assigned_clan_tag)}
+                        showPool={viewPool === "all"}
+                        selected={selectedTags.includes(account.tag)}
+                        selectionMode={selectedTags.length > 0}
+                        disabled={uiLocked}
+                        canRoster={canRoster}
+                        canSignups={canSignups}
+                        archived={!!archived}
+                        onToggle={() => toggleSelected(account.tag)}
+                        onDetails={() => {
+                          setFeedback(null);
+                          requestDetailsNavigation(() =>
+                            setEditingTag(account.tag),
+                          );
+                        }}
+                        onAssign={(trigger) =>
+                          openPanel("assign", trigger, [account.tag])
+                        }
+                        onSignup={(trigger) =>
+                          openPanel("signup", trigger, [account.tag])
+                        }
+                      />
                     </Fragment>
                   ))}
                 </div>
@@ -1504,204 +1392,40 @@ export default function RosterWorkspace({
                   <p>No accounts match these filters.</p>
                 </div>
               )}
-              {accountPages.length > 1 && (
-                <nav className="roster-pagination" aria-label="Account pages">
-                  <button
-                    disabled={uiLocked || currentPage === 0}
-                    onClick={() => {
-                      setPage(currentPage - 1);
-                      listHeading.current?.scrollIntoView({ block: "start" });
-                    }}
+              <div className="roster-load-more" aria-live="polite">
+                <span>
+                  Showing {pageAccounts.length} of {filtered.length} matching
+                  accounts
+                </span>
+                {progressive.hasMore && (
+                  <Button
+                    disabled={uiLocked}
+                    onClick={() => setRenderCount(progressive.nextCount)}
                   >
-                    ← Previous
-                  </button>
-                  <span>
-                    Page {currentPage + 1} of {lastPage + 1}
-                  </span>
-                  <button
-                    disabled={uiLocked || currentPage === lastPage}
-                    onClick={() => {
-                      setPage(currentPage + 1);
-                      listHeading.current?.scrollIntoView({ block: "start" });
-                    }}
-                  >
-                    Next →
-                  </button>
-                </nav>
-              )}
+                    Load more
+                  </Button>
+                )}
+              </div>
             </>
           )}
         </>
       )}
-    </div>
-  );
-}
-function reasonText(reason: string) {
-  const labels: Record<string, string> = {
-    kept: "Kept placement",
-    missing_weight: "Missing weight",
-    source_unavailable: "Weight source unavailable",
-    no_eligible_rule: "No matching hosting rule",
-    full: "Matching clans are full",
-  };
-  return labels[reason] || reason.replaceAll("_", " ");
-}
-function RuleForm({
-  clan,
-  busy,
-  onSave,
-  onDirty,
-}: {
-  onDirty: (dirty: boolean) => void;
-  clan: RosterClan;
-  busy: boolean;
-  onSave: (rules: {
-    pool: Pool;
-    capacity: number;
-    min_weight: number | null;
-    max_weight: number | null;
-    lower_league: boolean | null;
-  }) => Promise<boolean>;
-}) {
-  const [pool, setPool] = useState<Pool | "">(clan.pool ?? "");
-  const [capacity, setCapacity] = useState(
-    clan.capacity === null ? "" : String(clan.capacity),
-  );
-  const [minWeight, setMinWeight] = useState(weightInputText(clan.min_weight));
-  const [maxWeight, setMaxWeight] = useState(weightInputText(clan.max_weight));
-  const [error, setError] = useState("");
-  const values = {
-    pool: clan.pool ?? "",
-    capacity: clan.capacity === null ? "" : String(clan.capacity),
-    minWeight: weightInputText(clan.min_weight),
-    maxWeight: weightInputText(clan.max_weight),
-  };
-  const [base, setBase] = useState(values);
-  const changed =
-    pool !== base.pool ||
-    capacity !== base.capacity ||
-    minWeight !== base.minWeight ||
-    maxWeight !== base.maxWeight;
-  const stale = JSON.stringify(base) !== JSON.stringify(values);
-  const useLatest = () => {
-    setPool(clan.pool ?? "");
-    setCapacity(values.capacity);
-    setMinWeight(values.minWeight);
-    setMaxWeight(values.maxWeight);
-    setBase(values);
-  };
-  useEffect(() => {
-    if (!changed && stale) useLatest();
-  }, [clan, changed, stale]);
-  useEffect(() => {
-    onDirty(changed);
-    return () => onDirty(false);
-  }, [changed, onDirty]);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy || stale) return;
-    try {
-      const min = parseWeightK(minWeight);
-      const max = parseWeightK(maxWeight);
-      if (min !== null && max !== null && min >= max)
-        throw new Error("Maximum weight must be greater than minimum weight.");
-      const size = Number(capacity);
-      if (!pool) throw new Error("Choose a signup pool for this hosting clan.");
-      if (capacity === "" || (size !== 15 && size !== 30))
-        throw new Error("Capacity must be 15 or 30.");
-      setError("");
-      if (
-        await onSave({
-          pool,
-          capacity: size,
-          min_weight: min,
-          max_weight: max,
-          lower_league: clan.lower_league,
-        })
-      )
-        setBase({ pool, capacity, minWeight, maxWeight });
-    } catch (error) {
-      setError(errorText(error));
-    }
-  };
-  return (
-    <form className="roster-rule-form" onSubmit={submit}>
-      <fieldset disabled={busy}>
-        <div className="card-heading">
-          <h3>{clan.name}</h3>
-          <span className="badge">
-            {clan.assigned_count}/{clan.capacity ?? "—"} assigned
-          </span>
-        </div>
-        <small>{clan.tag}</small>
-        <div className="rule-fields">
-          <label>
-            Signup pool
-            <select
-              value={pool}
-              onChange={(event) => setPool(event.target.value as Pool)}
-            >
-              <option value="">Not set</option>
-              <option value="main">Main Clan CWL</option>
-              <option value="lazy">Lazy CWL</option>
-            </select>
-          </label>
-          <label>
-            Capacity
-            <select
-              value={capacity}
-              onChange={(event) => setCapacity(event.target.value)}
-            >
-              <option value="">Not set</option>
-              <option value="15">15</option>
-              <option value="30">30</option>
-            </select>
-          </label>
-          <label>
-            Minimum weight (k, included)
-            <input
-              type="number"
-              min="0"
-              step="0.001"
-              value={minWeight}
-              onChange={(event) => setMinWeight(event.target.value)}
-              placeholder="No minimum"
-            />
-          </label>
-          <label>
-            Maximum weight (k, excluded)
-            <input
-              type="number"
-              min="0"
-              step="0.001"
-              value={maxWeight}
-              onChange={(event) => setMaxWeight(event.target.value)}
-              placeholder="No maximum"
-            />
-          </label>
-        </div>
-        <p className="small">
-          Enter weights in thousands: 160 means 160,000. Leave either end blank
-          for no limit. The maximum is excluded, so 160–174 includes 160k up to
-          just below 174k.
-        </p>
-        {error && (
-          <p className="inline-reason" role="alert">
-            {error}
-          </p>
-        )}
-        <button className="primary" disabled={busy || stale || !changed}>
-          Save clan range & rules
+      {canPublish && (
+        <button
+          className="cwl-next-cue"
+          disabled={uiLocked || !onReviewPublication}
+          onClick={onReviewPublication}
+        >
+          Next: Finalize roster ›
         </button>
-        {stale && changed && (
-          <p role="alert">
-            Clan settings changed elsewhere. Your edits are preserved.
-            <button type="button" disabled={busy} onClick={useLatest}>
-              Discard edits and use latest settings
-            </button>
-          </p>
-        )}
-      </fieldset>
-    </form>
+      )}
+      <div
+        className="roster-selection-spacer"
+        style={{
+          height: mode === "assign" && selectedTags.length ? barHeight + 24 : 0,
+        }}
+        aria-hidden="true"
+      />
+    </div>
   );
 }

@@ -4,7 +4,7 @@ import ClanDestinationOptions from './ClanDestinationOptions'
 import type { RosterClan } from './roster'
 const host = (tag: string, pool: RosterClan['pool'], archived = false): RosterClan => ({
   tag, name: tag, pool, archived, capacity: 15, effective_capacity: 15,
-  assigned_count: 0, min_weight: null, max_weight: null, lower_league: null,
+  assigned_count: 0, min_weight: null, max_weight: null,
 })
 const clans = [host('Main host', 'main'), host('Lazy host', 'lazy'), host('Uncategorized', null), host('Archived', 'lazy', true)]
 describe('Lazy hosting destinations', () => {

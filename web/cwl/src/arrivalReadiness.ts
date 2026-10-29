@@ -1,61 +1,40 @@
-export type ArrivalStatus = "arrived" | "missing" | "unknown" | "unassigned";
-
-export type ArrivalAccount = {
-  tag?: string;
+import {
+  comparisonLocation,
+  type ComparisonLocation,
+} from "./comparisonLocation";
+export type ArrivalAccount = ComparisonLocation & {
+  tag: string;
   assigned_clan_tag: string | null;
-  arrival_status: ArrivalStatus;
-  current_clan_checked_at?: string | null;
-  location_updating?: boolean;
-  outside_family?: boolean;
+  assigned_clan_name?: string | null;
 };
-
-const LOCATION_MAX_AGE_MS = 120_000;
-
-/** Keep unassigned rows distinct; stale or in-flight location checks are unknown. */
-export function normalizeArrivalAccount<T extends ArrivalAccount>(
-  account: T,
-  now: number,
-): T {
-  if (account.arrival_status === "unassigned") return account;
-
-  const checkedAt = account.current_clan_checked_at
-    ? Date.parse(account.current_clan_checked_at)
-    : Number.NaN;
-  const stale = !Number.isFinite(checkedAt) || now - checkedAt > LOCATION_MAX_AGE_MS;
-  if (account.location_updating || account.arrival_status === "unknown" || stale) {
-    return {
-      ...account,
-      arrival_status: "unknown",
-      ...(account.outside_family === undefined ? {} : { outside_family: false }),
-    };
-  }
-  return account;
-}
-
-export type ArrivalReadiness = {
-  assignedCount: number;
-  arrivedCount: number;
-  unknownCount: number;
-  ready: boolean;
-};
-
-export function summarizeArrivalReadiness<T extends ArrivalAccount>(
-  accounts: readonly T[],
-  options: { now: number; loading?: boolean; error?: boolean; outdated?: boolean },
-): ArrivalReadiness {
-  const normalized = accounts.map((account) => normalizeArrivalAccount(account, options.now));
-  const assigned = normalized.filter((account) => !!account.assigned_clan_tag);
-  const arrivedCount = assigned.filter((account) => account.arrival_status === "arrived").length;
-  const unknownCount = assigned.filter((account) => account.arrival_status === "unknown").length;
+export function summarizeArrivalReadiness(
+  accounts: readonly ArrivalAccount[],
+  options: { now: number; capacity: number | null },
+) {
+  const assigned = accounts.filter((a) => a.assigned_clan_tag);
+  const arrived = assigned.filter(
+    (a) =>
+      comparisonLocation(
+        a,
+        a.assigned_clan_tag!,
+        options.now,
+        a.assigned_clan_name || undefined,
+      ).state === "arrived",
+  );
+  const freshCount = arrived.filter(
+    (a) => options.now - Date.parse(a.current_clan_checked_at || "") <= 300000,
+  ).length;
+  const capacity =
+    options.capacity === 15 || options.capacity === 30
+      ? options.capacity
+      : null;
   return {
     assignedCount: assigned.length,
-    arrivedCount,
-    unknownCount,
-    ready:
-      assigned.length >= 15 &&
-      arrivedCount === assigned.length &&
-      !options.loading &&
-      !options.error &&
-      !options.outdated,
+    arrivedCount: arrived.length,
+    freshCount,
+    ready: capacity !== null && freshCount >= capacity,
+    refreshToConfirm:
+      capacity !== null && arrived.length >= capacity && freshCount < capacity,
+    needed: capacity === null ? null : Math.max(0, capacity - arrived.length),
   };
 }

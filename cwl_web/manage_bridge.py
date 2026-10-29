@@ -67,6 +67,7 @@ def _delivery(value):
     receipt = value.get('receipt') or {}
     return {
         'status': value.get('status', 'pending'),
+        'publication_version': value.get('publication_version') if type(value.get('publication_version')) is int else None,
         'message_url': value.get('message_url') or receipt.get('message_url'),
         'error': value.get('error') or value.get('failure'),
         'requested_at': value.get('created_at'),

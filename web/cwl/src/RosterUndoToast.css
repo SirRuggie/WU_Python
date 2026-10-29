@@ -1,0 +1,52 @@
+.roster-undo-toast {
+  position: fixed;
+  z-index: 1000;
+  inset: auto 1rem
+    calc(1rem + env(safe-area-inset-bottom) + var(--roster-undo-offset, 0px))
+    auto;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  max-width: min(36rem, calc(100vw - 2rem));
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--roster-gold);
+  border-radius: var(--roster-radius-card);
+  background: var(--roster-surface-raised);
+  color: var(--roster-text);
+  box-shadow: 0 8px 28px #0008;
+}
+
+.roster-undo-toast .roster-ui-status {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.roster-undo-toast .roster-ui-button {
+  flex: none;
+}
+.roster-undo-toast .roster-undo-dismiss {
+  width: 44px;
+  padding: 0;
+}
+.roster-undo-toast.is-error {
+  border-color: var(--roster-danger);
+}
+.roster-undo-toast.is-unavailable {
+  border-color: var(--roster-border);
+}
+
+@media (max-width: 520px) {
+  .roster-undo-toast {
+    inset-inline: 0.75rem;
+    bottom: calc(
+      0.75rem + env(safe-area-inset-bottom) + var(--roster-undo-offset, 0px)
+    );
+    max-width: none;
+    justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roster-undo-toast {
+    scroll-behavior: auto;
+  }
+}

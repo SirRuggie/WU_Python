@@ -54,10 +54,30 @@ export class DashboardHistory {
   write(route: DashboardRoute, push: boolean) {
     if (this.restoring) return;
     if (push) this.index++;
+    const current =
+      typeof window === "undefined"
+        ? null
+        : dashboardTarget(window.location.search, window.location.pathname);
+    const samePage =
+      !push && current?.view === route.view && current?.season === route.season;
+    const url = new URL(dashboardPath(route), "https://dashboard.invalid");
+    const account = samePage
+      ? new URLSearchParams(window.location.search).get("account")
+      : null;
+    if (account) url.searchParams.set("account", account);
+    const state = samePage ? { ...this.history.state } : {};
     this.history[push ? "pushState" : "replaceState"](
-      { wuDashboardIndex: this.index, wuActivity: {view: route.view, filter: route.activityFilter || "", kind: route.activityKind} },
+      {
+        ...state,
+        wuDashboardIndex: this.index,
+        wuActivity: {
+          view: route.view,
+          filter: route.activityFilter || "",
+          kind: route.activityKind,
+        },
+      },
       "",
-      dashboardPath(route),
+      url.pathname + url.search,
     );
   }
   pop(state: unknown, allow: () => boolean): boolean {
@@ -71,6 +91,8 @@ export class DashboardHistory {
       return false;
     }
     if (!Number.isInteger(target)) return false;
+    // Same-index entries are local overlays (for example an action panel), not a dashboard route visit.
+    if (target === this.index) return false;
     if (!allow()) {
       if (this.index !== target) {
         this.restoring = true;

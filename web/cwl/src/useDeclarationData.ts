@@ -1,0 +1,119 @@
+import { useEffect, useRef, useState } from "react";
+import { handleAuthorizationFailure } from "./api";
+import { fetchReadWithRetry } from "./readRetry";
+import { readArrival } from "./locationTransport";
+import { createComparisonChecks } from "./comparisonChecks";
+import {
+  mergeComparisonLocations,
+  type LocationRecords,
+} from "./comparisonLocation";
+import useLocationNow from "./useLocationNow";
+import type { DeclarationArrival, DeclarationData } from "./declarationData";
+
+async function read<T>(url: string, signal: AbortSignal): Promise<T> {
+  const response = await fetchReadWithRetry(url, {
+    credentials: "same-origin",
+    signal,
+  });
+  if (!response.ok) {
+    handleAuthorizationFailure(response.status);
+    throw new Error("Could not read declaration");
+  }
+  return response.json();
+}
+export default function useDeclarationData(season: string) {
+  const [data, setData] = useState<DeclarationData | null>(null);
+  const [records, setRecords] = useState<LocationRecords>({});
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+  const newest = Math.max(
+    ...Object.values(records)
+      .map((r) => Date.parse(r.current_clan_checked_at || ""))
+      .filter(Number.isFinite),
+  );
+  const checkedAt = Number.isFinite(newest) ? newest : undefined;
+  const [now, setNow] = useLocationNow();
+  const runner = useRef<ReturnType<typeof createComparisonChecks> | null>(null);
+  useEffect(() => {
+    setData(null);
+    setRecords({});
+    let hasResults = false;
+    setError("");
+    const path = `/api/cwl/seasons/${encodeURIComponent(season)}`;
+    const checks = createComparisonChecks(
+      async (force, signal) => {
+        try {
+          const [arrival, roster, publication] = await Promise.all([
+            readArrival(
+              season,
+              true,
+              force,
+              signal,
+            ) as Promise<DeclarationArrival>,
+            read<DeclarationData["roster"]>(`${path}/roster`, signal),
+            read<DeclarationData["publication"]>(`${path}/publication`, signal),
+          ]);
+          if (signal.aborted) return false;
+          if (
+            publication.published &&
+            arrival.source === "published" &&
+            publication.published.version !== arrival.version
+          )
+            throw new Error("Publication changed during read");
+          let publishedAccounts: DeclarationData["publishedAccounts"];
+          if (publication.published && arrival.source === "published") {
+            const exported = await read<{
+              rows: NonNullable<DeclarationData["publishedAccounts"]>;
+              summary: { published_version: number };
+            }>(`${path}/export-preview?kind=accounts&basis=published`, signal);
+            if (signal.aborted) return false;
+            if (exported.summary.published_version !== arrival.version)
+              throw new Error("Publication changed during read");
+            publishedAccounts = exported.rows;
+          }
+          setData({ arrival, roster, publication, publishedAccounts });
+          setRecords((previous) =>
+            mergeComparisonLocations(previous, arrival.accounts),
+          );
+          setError("");
+          hasResults ||= arrival.accounts.some((a) =>
+            Number.isFinite(Date.parse(a.current_clan_checked_at || "")),
+          );
+          setNow(Date.now());
+          return !!arrival.updating;
+        } catch (cause) {
+          if (!signal.aborted || signal.reason?.name === "TimeoutError")
+            setError(
+              hasResults
+                ? "Couldn't update · showing last results"
+                : "Couldn't check locations",
+            );
+          throw cause;
+        }
+      },
+      setChecking,
+      -Infinity,
+      () => {},
+      "declaration",
+    );
+    runner.current = checks;
+    const visibility = () =>
+      checks.setActive(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", visibility);
+    visibility();
+    return () => {
+      checks.dispose();
+      runner.current = null;
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [season]);
+  return {
+    data,
+    records,
+    error,
+    checking,
+    checkedAt,
+    now,
+    refresh: () => runner.current?.refresh(),
+  };
+}

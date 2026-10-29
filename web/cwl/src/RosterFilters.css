@@ -1,0 +1,185 @@
+.roster-filters {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.roster-filters-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roster-filters-toolbar > .roster-ui-input {
+  flex: 1 1 260px;
+  min-width: min(100%, 220px);
+}
+
+.roster-filters-toolbar > .roster-ui-button {
+  flex: 0 0 auto;
+}
+
+.roster-filters-active {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.roster-filters-active .roster-ui-chip {
+  max-width: 100%;
+}
+
+.roster-filters-active .roster-ui-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-filters-clear {
+  min-height: 32px;
+  padding: 4px 9px;
+}
+
+.roster-filters-panel .action-panel-content {
+  padding-bottom: 24px;
+}
+
+.roster-filters-fields {
+  display: grid;
+  gap: 18px;
+}
+
+.roster-filters-fields > p {
+  margin: 0;
+  color: var(--roster-text-muted);
+  line-height: 1.45;
+}
+
+.roster-filters-fields fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.roster-filters-fields legend {
+  margin-bottom: 8px;
+  color: var(--roster-text);
+  font-weight: 700;
+}
+
+.roster-filters-fields fieldset > small,
+.roster-filters-fields fieldset > p {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--roster-text-muted);
+}
+
+.roster-filters-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.roster-filters-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--roster-border-subtle);
+  border-radius: var(--roster-radius-control);
+  background: var(--roster-surface-raised);
+  cursor: pointer;
+}
+
+.roster-filters-options label:has(input:checked) {
+  border-color: var(--roster-gold);
+}
+
+.roster-filters-options input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: var(--roster-gold);
+}
+
+.roster-filters-options span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.roster-filters-options label > small:last-child {
+  margin-left: auto;
+  color: var(--roster-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-filters-options span small {
+  display: block;
+  color: var(--roster-text-muted);
+}
+
+.roster-filters-weight {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.roster-filters-clans {
+  margin-top: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.roster-filters-error {
+  color: var(--roster-danger) !important;
+}
+
+.roster-filters-footer {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.roster-filters-footer .roster-ui-button:last-child {
+  margin-left: auto;
+}
+
+@media (max-width: 620px) {
+  .roster-filters-toolbar > .roster-ui-input {
+    flex-basis: 100%;
+  }
+
+  .roster-filters-options {
+    grid-template-columns: 1fr;
+  }
+
+  .roster-filters-th {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .roster-filters-footer .roster-ui-button {
+    flex: 1 1 0;
+  }
+
+  .roster-filters-active {
+    position: relative;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 14px;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+  }
+
+  .roster-filters-active::-webkit-scrollbar {
+    display: none;
+  }
+  .roster-filters-active > * {
+    flex: 0 0 auto;
+  }
+}

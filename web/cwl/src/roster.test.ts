@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { mergeRosterMetadata, assignmentOptions, filterRosterAccounts, parseWeightK, sortRosterAccounts, weightInputText, weightText, type RosterAccount, type RosterClan } from './roster'
 const clans: RosterClan[] = [
-  { tag: '#MAIN', name: 'Main host', archived: false, pool: 'main', capacity: 15, effective_capacity: 15, min_weight: null, max_weight: null, lower_league: null, assigned_count: 0 },
-  { tag: '#LAZY', name: 'Lazy host', archived: false, pool: 'lazy', capacity: 30, effective_capacity: 30, min_weight: null, max_weight: null, lower_league: null, assigned_count: 0 },
-  { tag: '#OLD', name: 'Old host', archived: true, pool: null, capacity: null, effective_capacity: 50, min_weight: null, max_weight: null, lower_league: null, assigned_count: 1 },
+  { tag: '#MAIN', name: 'Main host', archived: false, pool: 'main', capacity: 15, effective_capacity: 15, min_weight: null, max_weight: null, assigned_count: 0 },
+  { tag: '#LAZY', name: 'Lazy host', archived: false, pool: 'lazy', capacity: 30, effective_capacity: 30, min_weight: null, max_weight: null, assigned_count: 0 },
+  { tag: '#OLD', name: 'Old host', archived: true, pool: null, capacity: null, effective_capacity: 50, min_weight: null, max_weight: null, assigned_count: 1 },
 ]
 const accounts: RosterAccount[] = [
   { tag: '#ONE', user_id: '111', pool: 'main', player_name: 'Alpha', town_hall: 16, prefer_crystal_1_or_lower: false, source_weight: 175000, source_status: 'current', source_name: 'Fixture', source_checked_at: null, source_modified_at: null, manual_weight: null, effective_weight: 175000, assigned_clan_tag: null, kept: false },

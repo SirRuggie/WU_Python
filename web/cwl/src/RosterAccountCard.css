@@ -1,0 +1,46 @@
+.roster-workspace .roster-player-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  margin-block: 6px;
+}
+.roster-workspace .roster-player-card.is-selected {
+  outline: 2px solid var(--roster-gold);
+  outline-offset: -2px;
+}
+.roster-player-select {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 44px;
+  margin: 0;
+  cursor: pointer;
+}
+.roster-player-select input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--roster-gold);
+}
+.roster-player-warning,
+.roster-player-note {
+  font-size: 12px;
+  line-height: 16px;
+}
+.roster-player-menu {
+  position: relative;
+}
+.roster-player-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.roster-player-select:focus-within {
+  outline: 2px solid var(--roster-gold);
+  outline-offset: -3px;
+}
+
+.roster-ui .roster-player-body:focus-visible {
+  outline-color: var(--roster-gold);
+}

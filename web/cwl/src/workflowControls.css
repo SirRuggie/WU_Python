@@ -1,5 +1,5 @@
 /* Shared presentation for existing navigation, without changing its semantics. */
-.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) {
+.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) {
   display: flex;
   flex-wrap: wrap;
   gap: 0;
@@ -10,7 +10,7 @@
   border-radius: 0;
   background: transparent;
 }
-.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button {
+.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button {
   min-height: 44px;
   min-width: 0;
   flex: 0 1 auto;
@@ -24,14 +24,14 @@
   -webkit-text-fill-color: currentColor;
   white-space: normal;
 }
-.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:is(.active,[aria-selected="true"],[aria-pressed="true"],[aria-current="page"]) {
+.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:is(.active,[aria-selected="true"],[aria-pressed="true"],[aria-current="page"]) {
   color: #f4cd64;
   border-bottom-color: #e7b338;
   background: #e7b3380b;
   box-shadow: none;
   -webkit-text-fill-color: currentColor;
 }
-.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:focus-visible {
+.shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button:focus-visible {
   outline: 2px solid #f4cd64;
   outline-offset: -3px;
 }
@@ -40,9 +40,8 @@
 .return-status-grid article { padding: 16px; border: 1px solid #46433a; border-radius: 12px; }
 .return-status-grid article > * { display: block; margin: 5px 0; overflow-wrap: anywhere; }
 @media(max-width:600px) {
-  .shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .manage-pool-tabs, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button { padding: 10px 12px; }
+  .shell :is(.todo-tabs, .member-nav-tabs, .signup-panel-tabs, .workflow-tabs, .clan-tabs, .cwl-pool-tabs, .roster-workflow-nav, .bonus-tabs, .cwl-roster-tabs, .cwl-result-nav) > button { padding: 10px 12px; }
 }
-.roster-rule-form > fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 #clan-directory-picker .clan-category-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #clan-directory-picker .clan-category-filters button { padding: 8px; overflow-wrap: anywhere; }
 

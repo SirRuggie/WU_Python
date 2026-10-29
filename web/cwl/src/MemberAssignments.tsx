@@ -1,3 +1,4 @@
+import JoiningInstructionsCard from "./JoiningInstructionsCard";
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Season } from './api'
 import { groupAssignments } from './assignmentGroups'
@@ -51,7 +52,7 @@ export default function MemberAssignments({ seasonId, seasons, onSignup }: Props
     {error && <div className="notice error" role="alert">{error}<button onClick={() => void load()}>Retry</button></div>}
     {loading && <p role="status">Loading current assignments…</p>}
     {data && !loading && !error && <>
-      {data.published?.joining_instructions && <section className="card"><h2>Joining instructions</h2><p style={{whiteSpace:'pre-wrap', overflowWrap:'anywhere'}}>{data.published.joining_instructions}</p></section>}
+      {data.published?.joining_instructions && <JoiningInstructionsCard text={data.published.joining_instructions} />}
       {data.accounts.length > 0 && awaiting > 0 && <div className="card empty"><h2>{data.accounts.length} account{data.accounts.length === 1 ? ' is' : 's are'} signed up</h2><p>{assignedGroups ? 'Some accounts are waiting for the final roster.' : 'The roster is not final yet.'} Check back here for published assignments.</p><button onClick={() => void load()}>Refresh</button></div>}
       {assignedGroups > 0 && <div className="card member-compact-status"><div className="member-status-line"><div><strong>Published clan assignments</strong>{data.published && <p>Version {data.published.version} · Published {new Date(data.published.published_at).toLocaleString()}</p>}</div><button onClick={() => void load()}>Refresh</button></div></div>}
       {data.accounts.length ? <>

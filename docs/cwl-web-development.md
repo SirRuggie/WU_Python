@@ -158,7 +158,7 @@ Manual weight edits use thousands in the interface (174.5 means 174500); backend
 values are total integer weights. Manual assignments accept any season hosting
 clan regardless of signup pool; signup pool remains unchanged. Capacity is enforced.
 Auto-placement previews only unassigned, unkept accounts using configured pool,
-capacity and weight ranges, and the Lazy lower-league answer. Applying verifies
+capacity and weight ranges. Applying verifies
 the revision and recomputes the preview within a transaction. Relevant member
 and staff changes invalidate stale previews. Assigned member withdrawals/pool
 moves require staff to unassign first; hosting clans with assignments cannot
