@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { StrictMode, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -98,11 +99,13 @@ async function render(
   view = "home",
   strict = false,
   blockedByTour = false,
+  startBlocked = false,
 ) {
   const panel = (
     <OwnerPrank
       view={view}
       blockedByTour={blockedByTour}
+      startBlocked={startBlocked}
       replaySignal={replaySignal}
       onSettled={settled}
       onReplayAvailable={replayAvailable}
@@ -355,7 +358,7 @@ it("opens once after StrictMode effect replay with a pending read", async () => 
   expect(settled).toHaveBeenCalledTimes(1);
 });
 
-it("ignores the pending Home read after navigating away", async () => {
+it("keeps the pending read when navigating from Home to Tasks", async () => {
   let resolveRead!: (state: PrankState) => void;
   api.mockImplementationOnce(
     () =>
@@ -368,18 +371,151 @@ it("ignores the pending Home read after navigating away", async () => {
   await act(async () => {
     resolveRead({ ...server });
   });
-  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
-  expect(settled).toHaveBeenCalledTimes(1);
+  expect(document.querySelector(".owner-prank-dialog")).not.toBeNull();
+  expect(settled).not.toHaveBeenCalled();
 });
 
-it("waits for an off-Home manual tour to close before starting on Home", async () => {
+it("starts on Tasks as the first page", async () => {
   await render(0, "todo");
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+});
+
+it("waits for a dirty roster editor and starts when clean", async () => {
+  await render(0, "roster", false, false, true);
+  expect(api).not.toHaveBeenCalled();
+  await render(0, "roster");
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+});
+
+it("waits for a dirty roster editor and starts after navigation", async () => {
+  await render(0, "roster", false, false, true);
+  await render(0, "todo");
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+});
+
+it("defers a pending state read when signup becomes dirty", async () => {
+  let resolveRead!: (state: PrankState) => void;
+  api.mockImplementationOnce(
+    () =>
+      new Promise<PrankState>((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+  await render(0, "signup");
+  await render(0, "signup", false, false, true);
+  await act(async () => {
+    resolveRead({ ...server });
+  });
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  expect(
+    api.mock.calls.some(([, , body]) => body?.event === "prank_opened"),
+  ).toBe(false);
+  await render(0, "signup");
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+});
+
+it("receives the signup draft dirty flag from App", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const prank = app.slice(app.indexOf("<OwnerPrank view="));
+  expect(prank).toMatch(/startBlocked=\{[^}]*signupDirty/);
+});
+
+it("waits for another dialog to close before starting", async () => {
+  const other = document.createElement("dialog");
+  other.setAttribute("open", "");
+  document.body.append(other);
+  await render(0, "todo");
+  expect(api).not.toHaveBeenCalled();
+  await act(async () => {
+    other.remove();
+  });
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+});
+
+it("defers a pending state read when another dialog opens", async () => {
+  let resolveRead!: (state: PrankState) => void;
+  api.mockImplementationOnce(
+    () =>
+      new Promise<PrankState>((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+  await render(0, "todo");
+  const other = document.createElement("dialog");
+  await act(async () => {
+    other.setAttribute("open", "");
+    document.body.append(other);
+  });
+  await act(async () => {
+    resolveRead({ ...server });
+  });
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  expect(
+    api.mock.calls.some(([, , body]) => body?.event === "prank_opened"),
+  ).toBe(false);
+  await act(async () => {
+    other.remove();
+  });
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+  expect(
+    api.mock.calls.filter(([, , body]) => body?.event === "prank_opened"),
+  ).toHaveLength(1);
+});
+
+it("defers opening when another dialog appears during the opening event", async () => {
+  const delegate = api.getMockImplementation()!;
+  let resolveOpen!: (state: PrankState) => void;
+  let held = false;
+  api.mockImplementation((...args) => {
+    if (
+      args[0] === "/prank/event" &&
+      args[2]?.event === "prank_opened" &&
+      !held
+    ) {
+      held = true;
+      return new Promise<PrankState>((resolve) => {
+        resolveOpen = resolve;
+      });
+    }
+    return delegate(...args);
+  });
+  await render(0, "todo");
+  const other = document.createElement("dialog");
+  await act(async () => {
+    other.setAttribute("open", "");
+    document.body.append(other);
+  });
+  await act(async () => {
+    resolveOpen({ ...server });
+  });
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  await act(async () => {
+    other.remove();
+  });
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+});
+
+it("waits for an off-Home manual tour to close before starting", async () => {
   await render(0, "home", false, true);
   expect(
     api.mock.calls.filter(([path]) => path === "/prank/state"),
   ).toHaveLength(0);
   expect(document.querySelector(".owner-prank-dialog")).toBeNull();
-  await render(0, "home", false, false);
+  await render(0, "todo", false, false);
   expect(
     api.mock.calls.filter(([path]) => path === "/prank/state"),
   ).toHaveLength(1);
@@ -409,6 +545,23 @@ it("discards a pending state read when the tour starts", async () => {
   expect(
     api.mock.calls.filter(([, , body]) => body?.event === "prank_opened"),
   ).toHaveLength(1);
+});
+
+it("resumes on a fresh mount after closing early", async () => {
+  await render(0, "todo");
+  await act(async () => {
+    document.querySelector<HTMLButtonElement>(".owner-prank-close")!.click();
+  });
+  await render(0, "home");
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  await act(async () => {
+    root.unmount();
+  });
+  root = createRoot(host);
+  await render(0, "todo");
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
 });
 
 it("uses the saved replay entitlement to start a new run", async () => {

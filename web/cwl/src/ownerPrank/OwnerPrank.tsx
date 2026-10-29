@@ -15,15 +15,24 @@ import "./ownerPrank.css";
 type Props = {
   view: string;
   blockedByTour: boolean;
+  startBlocked: boolean;
   replaySignal: number;
   onSettled: () => void;
   onReplayAvailable: (available: boolean) => void;
   onError: (message: string) => void;
 };
 
+const hasOtherDialog = () =>
+  Boolean(
+    document.querySelector(
+      'dialog[open]:not(.owner-prank-dialog), [role="dialog"][aria-modal="true"]:not(.owner-prank-dialog), [role="alertdialog"][aria-modal="true"]:not(.owner-prank-dialog)',
+    ),
+  );
+
 export default function OwnerPrank({
   view,
   blockedByTour,
+  startBlocked,
   replaySignal,
   onSettled,
   onReplayAvailable,
@@ -33,6 +42,7 @@ export default function OwnerPrank({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [otherDialogOpen, setOtherDialogOpen] = useState(hasOtherDialog);
   const dialog = useRef<HTMLDialogElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const started = useRef(false);
@@ -46,6 +56,19 @@ export default function OwnerPrank({
   openRef.current = open;
   const callbacks = useRef({ onSettled, onReplayAvailable, onError });
   callbacks.current = { onSettled, onReplayAvailable, onError };
+
+  useEffect(() => {
+    const sync = () => setOtherDialogOpen(hasOtherDialog());
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["open", "aria-modal"],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(
     () => () => {
@@ -160,18 +183,10 @@ export default function OwnerPrank({
   };
 
   useEffect(() => {
-    if (blockedByTour) {
+    if (blockedByTour || startBlocked || otherDialogOpen) {
       if (started.current && !openRef.current && !visitClosed.current) {
         generation.current += 1;
         started.current = false;
-      }
-      return;
-    }
-    if (view !== "home") {
-      if (started.current && !openRef.current && !visitClosed.current) {
-        generation.current += 1;
-        visitClosed.current = true;
-        callbacks.current.onSettled();
       }
       return;
     }
@@ -187,12 +202,14 @@ export default function OwnerPrank({
           Boolean(received.can_replay && received.completed_at),
         );
         if (received.completed_at) callbacks.current.onSettled();
-        else void enter(received, token);
+        else if (!blockedByTour && !startBlocked && !hasOtherDialog())
+          void enter(received, token);
+        else started.current = false;
       })
       .catch(() => {
         if (token === generation.current) callbacks.current.onSettled();
       });
-  }, [view, blockedByTour]);
+  }, [view, blockedByTour, startBlocked, otherDialogOpen]);
 
   useEffect(() => {
     if (
