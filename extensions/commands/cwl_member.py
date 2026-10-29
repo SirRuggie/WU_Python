@@ -143,7 +143,7 @@ def _remaining(session: MemberSession) -> list[dict]:
 
 
 def _signup_pages(session: MemberSession) -> int:
-    return max(1, (max(len(_signups(session)), len(_remaining(session))) + PAGE_SIZE - 1) // PAGE_SIZE)
+    return max(1, (len(_signups(session)) + PAGE_SIZE - 1) // PAGE_SIZE)
 
 
 def _saved_text(session: MemberSession) -> str:
@@ -173,7 +173,9 @@ def _saved_text(session: MemberSession) -> str:
         n = len(remaining)
         state = 'not signed up' if _signup_is_open(session) else ("wasn't" if n == 1 else "weren't") + ' signed up · signups are closed'
         lines.append(f"\n{n} account{'s' if n != 1 else ''} {state}")
-        lines.extend(f"• {_safe(row.get('name') or row['tag'], 45)}" for row in remaining[start:start + PAGE_SIZE])
+        lines.extend(f"• {_safe(row.get('name') or row['tag'], 45)}" for row in remaining[:6])
+        if n > 6:
+            lines.append(f"+ {n - 6} more")
     if _signup_pages(session) > 1:
         lines.append(f"Page {session.page + 1} of {_signup_pages(session)}")
     if signed:
