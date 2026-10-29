@@ -2,10 +2,9 @@
 
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
-## Status
+## Status (2026-10-29)
 
-Owner prank released as `owner-prank-1` (`f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PR #46), frontend plus approved isolated backend restart. Claude infrastructure smoke passed; protected counts unchanged, no owner visit/test DM by Codex. Ruggie found the Home-only startup bug when opening the PWA on Tasks; handoff42 authorizes a frontend fix before tour-copy. Release/rollback evidence is in CLAUDE.md.
- (2026-10-29)
+Owner prank frontend fix released as `owner-prank-2` (`567cd2d37acdff6d27be62e42dfe8ceebb9df789`). It starts on the first dashboard page, including Tasks, and defers for dirty editors or open dialogs. Claude's read-only infrastructure smoke passed (handoff 44); Ruggie's owner-experience check is pending, and live DM delivery has not been verified by Codex. Backend remains `owner-prank-1` (`f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PR #46) without restart. Backup integrity and all table counts matched; protected signups/assigned/locks stayed Main 22/18/18 and Lazy 118/92/73. Release and rollback evidence is in CLAUDE.md.
 
 - **Tour/deadline hotfix complete:** `tour-deadline-1`, `8e0ee01337db50da8f2f289d257449c46440a440`, PR #40. Frontend and isolated backend released; bot unchanged. Claude smoke PASSED (handoff 17), Ruggie verified the real-page tour. November uses the stored October campaign close, **Oct 30, 5 PM ET**, with placements by Oct 31, 5 PM ET. Wrong-month defect fixed. 782 frontend / 4,799 backend tests, typecheck/build and layout passed; 24 cleanup cases and seven mutations verified. Backup integrity/57 table counts and protected records unchanged (Main 21/18/18, Lazy 114/92/73). Runtime, public hashes and five-minute timing refresh verified. Next: prompt 11 red signup card and tour refinements, then prompt 10 signup polish; each requires review before release.
 
