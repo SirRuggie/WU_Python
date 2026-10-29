@@ -54,7 +54,7 @@
     grid-template-columns: 44px minmax(0, 1fr) 44px;
   }
 
-  .roster-workspace .roster-player-body {
+  .roster-ui.roster-workspace .player-card > button.roster-player-body {
     display: block;
     padding: 8px 4px;
   }

@@ -40,7 +40,48 @@ assert(Number.isInteger(port) && port >= 8900 && port <= 8999);
         .click();
       await page.locator(".roster-player-card").first().waitFor();
       if (width === 360 || width === 1440) {
-        await page.locator(".signup-activity-line").click();
+        const attentionLines = page.locator(".signup-activity-line");
+        await attentionLines.first().waitFor();
+        assert.equal(
+          await attentionLines.count(),
+          2,
+          "expected separate review and shortage alerts",
+        );
+        const reviewLine = page.locator(
+          ".signup-activity-line:not(.is-danger)",
+        );
+        const shortageLine = page.locator(".signup-activity-line.is-danger");
+        assert.equal(
+          await reviewLine.count(),
+          1,
+          "expected one amber review alert",
+        );
+        assert.equal(
+          await shortageLine.count(),
+          1,
+          "expected one red shortage alert",
+        );
+        const alertOrder = await page.evaluate(() => {
+          const status = document.querySelector(".publication-awareness");
+          const review = document.querySelector(
+            ".signup-activity-line:not(.is-danger)",
+          );
+          const shortage = document.querySelector(
+            ".signup-activity-line.is-danger",
+          );
+          return [status, review, shortage].map(
+            (node) => node?.getBoundingClientRect().top ?? null,
+          );
+        });
+        assert(
+          alertOrder.every((top) => top !== null),
+          "publication and both attention lines must be visible",
+        );
+        assert(
+          alertOrder[0] < alertOrder[1] && alertOrder[1] < alertOrder[2],
+          "expected status, review, then shortage order",
+        );
+        await reviewLine.click();
         await page.locator(".signup-activity-panel").waitFor();
         const buttons = await page
           .locator(".signup-activity-actions .roster-ui-button")
@@ -116,6 +157,134 @@ assert(Number.isInteger(port) && port >= 8900 && port <= 8999);
           .filter({ hasText: "#QG02CY8LG" })
           .first();
         await card.waitFor();
+        if (width >= 900 && mode === "accounts") {
+          const columns = card.locator(".roster-account-columns");
+          await columns.waitFor();
+          const firstRow = await columns.evaluate((row) => {
+            const fields = ["name", "pool", "assigned", "now", "weight"];
+            return Object.fromEntries(
+              fields.map((field) => {
+                const cell = row.querySelector(
+                  `.roster-account-column-${field}`,
+                );
+                return [
+                  field,
+                  {
+                    text: cell?.innerText.trim() || "",
+                    left: cell
+                      ? Math.round(cell.getBoundingClientRect().left)
+                      : null,
+                  },
+                ];
+              }),
+            );
+          });
+          assert.deepEqual(Object.keys(firstRow), [
+            "name",
+            "pool",
+            "assigned",
+            "now",
+            "weight",
+          ]);
+          assert(
+            firstRow.name.text.includes("#QG02CY8LG"),
+            "desktop name column includes the player tag",
+          );
+          assert(
+            firstRow.assigned.text.length > 0,
+            "desktop assigned-clan column is populated",
+          );
+          assert(
+            firstRow.now.text.length > 0,
+            "desktop current-clan column is populated",
+          );
+          assert.equal(
+            await card
+              .locator(".roster-player-body")
+              .evaluate((node) => getComputedStyle(node).display),
+            "block",
+            "desktop account row body must use column layout",
+          );
+          assert.equal(
+            await card
+              .locator(
+                ".roster-player-body > .player-card-top:visible, .roster-player-body > .player-card-meta:visible, .roster-player-body > .player-clan-status:visible",
+              )
+              .count(),
+            0,
+            "phone card lines should be hidden in desktop roster rows",
+          );
+          await page
+            .getByPlaceholder("Name, player tag or Discord ID")
+            .fill("Aurora Champion");
+          const longNameCard = page
+            .locator(".roster-player-card:visible")
+            .filter({ hasText: "Aurora Champion" })
+            .first();
+          await longNameCard.waitFor();
+          assert.equal(
+            await longNameCard
+              .locator(".roster-account-column-name")
+              .innerText()
+              .then((text) => text.includes("Aurora Champion")),
+            true,
+          );
+          assert.match(
+            await longNameCard
+              .locator(".roster-account-column-assigned")
+              .innerText(),
+            /Morning Woods!/,
+          );
+          await page
+            .getByPlaceholder("Name, player tag or Discord ID")
+            .fill("");
+          const alignedColumns = await page
+            .locator(".roster-player-card:visible .roster-account-columns")
+            .evaluateAll((rows) => {
+              const fields = ["name", "pool", "assigned", "now", "weight"];
+              return rows.slice(0, 2).map((row) =>
+                fields.map((field) => {
+                  const cell = row.querySelector(
+                    `.roster-account-column-${field}`,
+                  );
+                  return cell
+                    ? Math.round(cell.getBoundingClientRect().left)
+                    : null;
+                }),
+              );
+            });
+          assert.equal(
+            alignedColumns.length,
+            2,
+            "expected multiple desktop rows for alignment check",
+          );
+          for (let index = 0; index < 5; index++)
+            assert.equal(
+              alignedColumns[0][index],
+              alignedColumns[1][index],
+              `desktop column ${index} does not align`,
+            );
+          if (process.env.WU_LAYOUT_SCREENSHOTS)
+            await card.screenshot({
+              path: `${process.env.WU_LAYOUT_SCREENSHOTS}/desktop-columns-${mode}.jpg`,
+              type: "jpeg",
+              quality: 90,
+            });
+          assert.equal(
+            await page.evaluate(
+              () => document.documentElement.scrollWidth > innerWidth,
+            ),
+            false,
+            "desktop roster page overflows horizontally",
+          );
+          results.push({
+            width,
+            mode,
+            desktopColumns: firstRow,
+            alignedColumns,
+          });
+          continue;
+        }
         const measured = await card.evaluate((element) => {
           const row = element.querySelector(".player-card-meta");
           const body = element.querySelector(".player-card-body");
