@@ -1,45 +1,224 @@
-.arrival-check { margin-top: 12px; }
-.arrival-toolbar, .arrival-overview { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.arrival-toolbar .cwl-pool-tabs { margin: 0; }
-.arrival-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 14px 0; border-bottom: 1px solid #343439; }
-.arrival-controls label { min-width: 0; }
-.arrival-controls select, .arrival-controls input[type="search"] { width: 100%; min-height: 44px; }
-.arrival-search { flex: 1 1 220px; }
-.arrival-controls .arrival-filter { display: flex; align-items: center; gap: 8px; min-height: 44px; }
-.arrival-overview { justify-content: flex-start; padding: 14px 0; font-size: .9rem; }
-.arrival-overview small { color: #b4b7c0; }
-.arrival-clan { margin: 10px 0; border: 1px solid #36363e; border-radius: 10px; overflow: hidden; }
-.arrival-clan-heading { margin: 0; font-size: 1rem; }
-.arrival-clan-heading > button { display: flex; flex-wrap: wrap; align-items: center; width: 100%; min-height: 60px; gap: 8px 14px; padding: 12px; border: 0; border-radius: 0; text-align: left; background: #1c1c20; }
-.arrival-clan-name { flex: 1 1 200px; overflow-wrap: anywhere; }
-.arrival-clan-count, .arrival-clan-state { font-size: .82rem; font-weight: 400; }
-.arrival-clan-state { color: #bdc0c9; }
-.arrival-clan-state.is-ready { color: #a5e4b6; }
-.arrival-ready { border-color: #90ee90; }
-.arrival-minimum { padding: 8px 12px; margin: 0; font-size: .85rem; }
-.arrival-account { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid #46464d; border-left: 3px solid #71717d; background: #232327; }
-.arrival-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.arrival-identity > div { min-width: 0; }
-.arrival-account strong, .arrival-account small { display: block; overflow-wrap: anywhere; }
-.arrival-account small { font-size: .78rem; line-height: 1.5; }
-.arrival-arrived { background: #284634; border-left-color: #90ee90; }
-.arrival-missing { background: #382222; border-left-color: #ce8787; }
-.arrival-missing small { color: #e5c1c1; }
-.arrival-location > strong { font-size: .85rem; }
-.arrival-actions { display: flex; align-items: center; gap: 4px; }
-.arrival-actions .button, .arrival-actions .roster-player-name { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 4px 10px; border: 0; border-radius: 6px; background: transparent; color: #b9d6ff; font-size: .85rem; font-weight: 600; text-decoration: none; }
-.arrival-actions .button:hover, .arrival-actions .roster-player-name:hover { background: #ffffff12; }
-.arrival-help { margin: 16px 0; color: #b9bbc3; font-size: .85rem; }
-.arrival-help summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
-.arrival-check > .notice { align-items: flex-start; flex-wrap: wrap; }
-.arrival-check > .notice > div { flex: 1 1 240px; min-width: 0; }
-.arrival-check > .notice p { margin: 8px 0; }
-.arrival-check > .notice small { display: block; }
-@media (max-width: 600px) {
-  .arrival-controls > label:not(.arrival-filter) { flex: 1 1 100%; }
-  .arrival-account { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; }
-  .arrival-identity { grid-column: 1 / -1; }
-  .arrival-location { min-width: 0; }
-  .arrival-actions { align-self: end; }
-  .arrival-clan-name { flex-basis: 100%; }
+.arrival-check {
+  display: grid;
+  gap: 6px;
+  color: var(--roster-text);
+}
+.arrival-check p {
+  margin: 0;
+}
+.arrival-check .declaration-summary {
+  font-size: 14px;
+  line-height: 20px;
+}
+.arrival-check .declaration-help,
+.declaration-refresh,
+.declaration-copy small {
+  color: var(--roster-text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+.declaration-refresh,
+.declaration-pools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.declaration-pools > button {
+  flex: 1;
+}
+.arrival-check .roster-ui-input {
+  width: 100%;
+}
+.declaration-clan {
+  border: 1px solid var(--roster-border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--roster-surface);
+}
+.declaration-clan h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.arrival-check .declaration-clan-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  width: 100%;
+  min-height: 58px;
+  justify-content: flex-start;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  background: #302327;
+  color: #ffb9bd;
+  -webkit-text-fill-color: currentColor;
+}
+.arrival-check .is-ready .declaration-clan-toggle {
+  background: #1e3025;
+  color: #a3e7bc;
+}
+.declaration-clan-toggle span:first-child {
+  font-weight: 700;
+}
+.declaration-clan-toggle small {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 400;
+}
+.declaration-clan-toggle:focus-visible {
+  outline: 2px solid white;
+  outline-offset: -3px;
+}
+.declaration-clan-content {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+}
+.declaration-settings {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 12px;
+}
+.declaration-copy {
+  display: grid;
+  gap: 4px;
+}
+.declaration-copy button {
+  justify-self: start;
+}
+.declaration-copy textarea {
+  width: 100%;
+  min-height: 64px;
+}
+.roster-ui .declaration-player {
+  padding: 0 10px 8px 12px;
+  color: var(--roster-text);
+}
+.declaration-player-top {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 8px;
+}
+.arrival-check .declaration-player-top > button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--roster-text);
+  -webkit-text-fill-color: currentColor;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: left;
+}
+.declaration-player .town-hall-icon {
+  width: 22px;
+  height: 22px;
+}
+.declaration-player .player-card-meta {
+  display: flex;
+  color: var(--roster-card-text-muted);
+  font-size: 13px;
+  line-height: 16px;
+}
+.declaration-player .player-clan-status {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+.arrival-check .declaration-dm {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--roster-text);
+  font-size: 12px;
+}
+.declaration-player-top small {
+  color: var(--roster-card-text-muted);
+  font-size: 12px;
+}
+.declaration-player .compare-tag {
+  display: inline-flex;
+  margin-top: 4px;
+  padding: 0 7px;
+  border: 1px solid var(--roster-warning);
+  border-radius: 999px;
+  font-size: 12px;
+  color: #ffe4a0;
+}
+.declaration-player.is-match {
+  border-color: var(--roster-gold);
+}
+.arrival-check *,
+.arrival-check button * {
+  -webkit-text-fill-color: currentColor;
+}
+@media (max-width: 767px) {
+  .shell main:has(.arrival-check) {
+    padding: 10px 12px;
+  }
+  .page-head:has(+ .arrival-check) {
+    margin-bottom: 8px;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .page-head:has(+ .arrival-check) h1 {
+    font-size: 20px;
+    line-height: 24px;
+    margin: 0;
+  }
+  .page-head:has(+ .arrival-check) .eyebrow {
+    display: none;
+  }
+  .page-head:has(+ .arrival-check) label {
+    min-width: 118px;
+    font-size: 12px;
+  }
+  .page-head:has(+ .arrival-check) select {
+    min-height: 44px;
+    max-width: 140px;
+  }
+  .declaration-clan-toggle {
+    scroll-margin-top: 75px;
+  }
+}
+
+.arrival-check a {
+  color: var(--roster-gold);
+}
+@media (max-width: 767px) {
+  .arrival-check {
+    gap: 2px;
+  }
+  .arrival-check .declaration-summary {
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .arrival-check .roster-ui-input > label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .page-head:has(+ .arrival-check) {
+    margin-bottom: 4px;
+  }
+  .page-head:has(+ .arrival-check) h1 {
+    font-size: 18px;
+    line-height: 22px;
+  }
 }

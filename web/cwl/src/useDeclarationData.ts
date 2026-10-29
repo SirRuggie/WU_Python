@@ -49,7 +49,24 @@ export default function useDeclarationData(season: string) {
             read<DeclarationData["publication"]>(`${path}/publication`, signal),
           ]);
           if (signal.aborted) return false;
-          setData({ arrival, roster, publication });
+          if (
+            publication.published &&
+            arrival.source === "published" &&
+            publication.published.version !== arrival.version
+          )
+            throw new Error("Publication changed during read");
+          let publishedAccounts: DeclarationData["publishedAccounts"];
+          if (publication.published && arrival.source === "published") {
+            const exported = await read<{
+              rows: NonNullable<DeclarationData["publishedAccounts"]>;
+              summary: { published_version: number };
+            }>(`${path}/export-preview?kind=accounts&basis=published`, signal);
+            if (signal.aborted) return false;
+            if (exported.summary.published_version !== arrival.version)
+              throw new Error("Publication changed during read");
+            publishedAccounts = exported.rows;
+          }
+          setData({ arrival, roster, publication, publishedAccounts });
           setRecords((previous) =>
             mergeComparisonLocations(previous, arrival.accounts),
           );
