@@ -88,6 +88,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   api.mockClear();
   settled.mockClear();
   replayAvailable.mockClear();
@@ -126,6 +127,14 @@ async function press(label: string) {
     button!.click();
   });
 }
+
+const visibleText = () =>
+  document.querySelector(".owner-prank-card")?.textContent;
+const eventCalls = (event: string, card?: number) =>
+  api.mock.calls.filter(
+    ([, , body]) =>
+      body?.event === event && (card === undefined || body.card === card),
+  );
 
 it.each(Array.from({ length: 15 }, (_, index) => index + 1))(
   "renders card %i without a step number or progress indicator",
@@ -189,6 +198,315 @@ it("closes immediately, saves the current card, and stays closed for the visit",
   expect(settled).toHaveBeenCalledTimes(1);
   await render();
   expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+});
+
+it("shows two following cards before the first slow write resolves, then persists in order", async () => {
+  server = { ...server, card: 4, branch: "yes" };
+  const delegate = api.getMockImplementation()!;
+  let resolveFirst!: (state: PrankState) => void;
+  api.mockImplementation((...args) => {
+    if (args[2]?.event === "prank_card_seen" && args[2].card === 5)
+      return new Promise<PrankState>((resolve) => {
+        resolveFirst = resolve;
+      });
+    return delegate(...args);
+  });
+  await render();
+  await press("I can explain");
+  expect(visibleText()).toContain("Trust Me, He Says");
+  await press("Fair point");
+  expect(visibleText()).toContain("Relax, Nothing Broke");
+  expect(eventCalls("prank_card_seen", 6)).toHaveLength(0);
+  await act(async () => {
+    server.card = 5;
+    resolveFirst({ ...server });
+  });
+  expect(eventCalls("prank_card_seen", 6)).toHaveLength(1);
+  expect(server.card).toBe(6);
+});
+
+it("keeps the optimistic card and shows an inline error after a failed write", async () => {
+  server = { ...server, card: 4, branch: "yes" };
+  const delegate = api.getMockImplementation()!;
+  let rejectWrite!: (error: Error) => void;
+  api.mockImplementation((...args) =>
+    args[2]?.event === "prank_card_seen"
+      ? new Promise<PrankState>((_, reject) => {
+          rejectWrite = reject;
+        })
+      : delegate(...args),
+  );
+  await render();
+  await press("I can explain");
+  expect(visibleText()).toContain("Trust Me, He Says");
+  await act(async () => {
+    rejectWrite(new Error("network unavailable"));
+  });
+  expect(visibleText()).toContain("Trust Me, He Says");
+  expect(document.querySelector(".owner-prank-error")?.textContent).toContain(
+    "failed",
+  );
+  await press("Fair point");
+  expect(visibleText()).toContain("Relax, Nothing Broke");
+  expect(document.querySelector(".owner-prank-error")?.textContent).toContain(
+    "failed",
+  );
+  expect(eventCalls("prank_card_seen", 6)).toHaveLength(0);
+});
+
+it("ignores a second tap before the first card rerenders", async () => {
+  await render();
+  const first = [
+    ...document.querySelectorAll<HTMLButtonElement>(".owner-prank-card button"),
+  ].find((button) => button.textContent === "Yes")!;
+  await act(async () => {
+    first.click();
+    first.click();
+  });
+  expect(eventCalls("prank_bait_yes")).toHaveLength(1);
+  expect(eventCalls("prank_card_seen", 2)).toHaveLength(1);
+});
+
+it("preloads later owner-only artwork when the prank opens", async () => {
+  const urls: string[] = [];
+  vi.stubGlobal(
+    "Image",
+    class {
+      set src(value: string) {
+        urls.push(value);
+      }
+    },
+  );
+  await render();
+  expect(urls).toContain("/api/cwl/prank/assets/78096.webp");
+  expect(urls).toContain("/api/cwl/prank/assets/97730.webp");
+  expect(visibleText()).toContain("Remove all signups?");
+});
+
+it("closes while writes are queued after saving the last visible card", async () => {
+  server = { ...server, card: 4, branch: "yes" };
+  const delegate = api.getMockImplementation()!;
+  let resolveFirst!: (state: PrankState) => void;
+  api.mockImplementation((...args) =>
+    args[2]?.event === "prank_card_seen" && args[2].card === 5
+      ? new Promise<PrankState>((resolve) => {
+          resolveFirst = resolve;
+        })
+      : delegate(...args),
+  );
+  await render();
+  await press("I can explain");
+  await press("Fair point");
+  await act(async () => {
+    document.querySelector<HTMLButtonElement>(".owner-prank-close")!.click();
+  });
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  await act(async () => {
+    server.card = 5;
+    resolveFirst({ ...server });
+  });
+  expect(eventCalls("prank_card_seen", 6)).toHaveLength(1);
+  expect(eventCalls("prank_closed_early", 6).length > 0).toBe(true);
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+});
+
+it("does not rewind a visible card when same-run stale state is behind", async () => {
+  server = { ...server, card: 4, branch: "yes" };
+  await render();
+  api.mockImplementationOnce(async () => {
+    throw new ApiError("stale", 409);
+  });
+  await press("I can explain");
+  expect(visibleText()).toContain("Trust Me, He Says");
+  expect(document.querySelector(".owner-prank-error")?.textContent).toContain(
+    "could not be confirmed",
+  );
+  expect(api.mock.calls.at(-1)?.[0]).toBe("/prank/state");
+});
+
+it("drops queued writes when the server reports a different run", async () => {
+  server = { ...server, card: 4, branch: "yes" };
+  const delegate = api.getMockImplementation()!;
+  let rejectFirst!: (error: Error) => void;
+  api.mockImplementation((...args) => {
+    if (args[0] === "/prank/state") return delegate(...args);
+    if (args[2]?.event === "prank_card_seen" && args[2].card === 5)
+      return new Promise<PrankState>((_, reject) => {
+        rejectFirst = reject;
+      });
+    return delegate(...args);
+  });
+  await render();
+  await press("I can explain");
+  await press("Fair point");
+  await act(async () => {
+    server = { ...server, run: 2, card: 1, branch: null };
+    rejectFirst(new ApiError("run changed", 409));
+  });
+  expect(visibleText()).toContain("Remove all signups?");
+  expect(eventCalls("prank_card_seen", 6)).toHaveLength(0);
+});
+
+it("does not retry an uncertain milestone notification", async () => {
+  server = { ...server, card: 9, branch: "yes" };
+  const delegate = api.getMockImplementation()!;
+  api.mockImplementation((...args) =>
+    args[2]?.event === "prank_rickroll_seen"
+      ? Promise.reject(new Error("response lost"))
+      : delegate(...args),
+  );
+  await render();
+  await press("Wait a second");
+  expect(document.querySelector(".owner-prank-rickroll")).not.toBeNull();
+  expect(document.querySelector(".owner-prank-error")?.textContent).toContain(
+    "failed",
+  );
+  expect(eventCalls("prank_rickroll_seen")).toHaveLength(1);
+});
+
+it("starts card two's timer while the bait write is still pending", async () => {
+  const delegate = api.getMockImplementation()!;
+  let resolveBait!: (state: PrankState) => void;
+  api.mockImplementation((...args) =>
+    args[2]?.event === "prank_bait_yes"
+      ? new Promise<PrankState>((resolve) => {
+          resolveBait = resolve;
+        })
+      : delegate(...args),
+  );
+  await render();
+  await press("Yes");
+  expect(visibleText()).toContain("Working...");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+  });
+  expect(visibleText()).toContain("HEY!! WHAT ARE YOU DOING?!");
+  expect(eventCalls("prank_card_seen", 3).length > 0).toBe(false);
+  await act(async () => {
+    server.branch = "yes";
+    resolveBait({ ...server });
+  });
+  expect(server.card).toBe(3);
+});
+
+it("advances card two after two seconds even when the bait write failed", async () => {
+  const delegate = api.getMockImplementation()!;
+  api.mockImplementation((...args) =>
+    args[2]?.event === "prank_bait_yes"
+      ? Promise.reject(new Error("response lost"))
+      : delegate(...args),
+  );
+  await render();
+  await press("Yes");
+  expect(visibleText()).toContain("Working...");
+  expect(document.querySelector(".owner-prank-error")?.textContent).toContain(
+    "failed",
+  );
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+  });
+  expect(visibleText()).toContain("HEY!! WHAT ARE YOU DOING?!");
+  expect(document.querySelector(".owner-prank-error")?.textContent).toContain(
+    "failed",
+  );
+  expect(eventCalls("prank_card_seen", 3)).toHaveLength(0);
+});
+
+it("drops queued writes after unmount", async () => {
+  server = { ...server, card: 4, branch: "yes" };
+  const delegate = api.getMockImplementation()!;
+  let resolveFirst!: (state: PrankState) => void;
+  api.mockImplementation((...args) =>
+    args[2]?.event === "prank_card_seen" && args[2].card === 5
+      ? new Promise<PrankState>((resolve) => {
+          resolveFirst = resolve;
+        })
+      : delegate(...args),
+  );
+  await render();
+  await press("I can explain");
+  await press("Fair point");
+  await act(async () => {
+    root.unmount();
+  });
+  root = createRoot(host);
+  await act(async () => {
+    server.card = 5;
+    resolveFirst({ ...server });
+  });
+  expect(eventCalls("prank_card_seen", 6)).toHaveLength(0);
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+});
+
+it("keeps confirmed completion available for manual replay", async () => {
+  server = { ...server, card: 15, branch: "yes", can_replay: true };
+  await render();
+  await press("Finally Free");
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  await render(1);
+  expect(eventCalls("prank_replay")).toHaveLength(1);
+  expect(visibleText()).toContain("Remove all signups?");
+});
+
+it("allows an explicit completion retry after a lost response", async () => {
+  server = { ...server, card: 15, branch: "yes" };
+  await render();
+  api.mockImplementationOnce(async () => {
+    throw new Error("response lost");
+  });
+  await press("Finally Free");
+  expect(eventCalls("prank_completed")).toHaveLength(1);
+  expect(document.querySelector(".owner-prank-error")?.textContent).toContain(
+    "failed",
+  );
+  await press("Finally Free");
+  expect(eventCalls("prank_completed")).toHaveLength(2);
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+});
+
+it("can advance a replay after closing during a pending completion", async () => {
+  server = { ...server, card: 15, branch: "yes", can_replay: true };
+  const delegate = api.getMockImplementation()!;
+  let resolveCompletion!: (state: PrankState) => void;
+  api.mockImplementation((...args) =>
+    args[2]?.event === "prank_completed"
+      ? new Promise<PrankState>((resolve) => {
+          resolveCompletion = resolve;
+        })
+      : delegate(...args),
+  );
+  await render();
+  const oldRun = server.run;
+  await act(async () => {
+    document
+      .querySelector<HTMLButtonElement>(".owner-prank-card footer button")!
+      .click();
+    document.querySelector<HTMLButtonElement>(".owner-prank-close")!.click();
+  });
+  await act(async () => {
+    server.completed_at = "2026-10-29T00:00:00Z";
+    resolveCompletion({ ...server });
+  });
+  expect(replayAvailable).toHaveBeenCalledWith(true);
+  await render(1);
+  await press("Yes");
+  expect(
+    eventCalls("prank_bait_yes").some(([, , body]) => body?.run === oldRun + 1),
+  ).toBe(true);
+});
+
+it("closes from an unsaved final card without claiming completion", async () => {
+  server = { ...server, card: 14, branch: "yes" };
+  await render();
+  api.mockImplementationOnce(async () => {
+    throw new Error("response lost");
+  });
+  await press("I'm begging");
+  expect(visibleText()).toContain("Well, Look Who Survived.");
+  await press("Finally Free");
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  expect(eventCalls("prank_completed")).toHaveLength(0);
+  expect(onError).toHaveBeenCalledWith(expect.stringContaining("not saved"));
 });
 
 it("advances through the Rickroll and four encores before final completion", async () => {
