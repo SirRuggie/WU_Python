@@ -1,5 +1,11 @@
 # Dashboard backend releases
 
+## Owner prank released — 2026-10-29
+
+`owner-prank-1` (`f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PR #46) is the current isolated backend and frontend. Ruggie explicitly approved its additive state table, owner-only endpoints/private assets, private configuration and dashboard restart. Existing data is preserved; durable notification claims precede background transport and uncertain delivery is never automatically retried. Bot unchanged.
+
+Backup/migration, effective paths/imports, readiness, journal, 97 public hashes and protected counts passed. Main22/18/18 and Lazy116/92/73 unchanged. Claude infrastructure smoke passed; owner experience and live DM delivery not claimed. The PWA Tasks landing-page start bug is a separate frontend fix (handoff42). See CLAUDE.md for complete rollback commands and evidence.
+
 ## Member tour + timing released — 2026-10-29
 
 `member-tour-1` (`16cc79e7db39e3aaadf99c99117994b9103a47e8`) runs from the isolated backend archive and matching frontend; bot is at the same SHA. Background timing refresh fixes the request timeout, with 5.8s refreshes every five minutes. Readiness, journal, public hashes and protected counts passed. Smoke passed with defects: wrong campaign month and phone tour spotlight, tracked in handoff prompt 07; keep live. Backup `.local/member-tour-backup-20261029T122118Z/dashboard.sqlite3`; evidence `/tmp/wu-tour-release/live-proof.json`. Rollback all code layers to `5539cba3c800d91372fd5c6adc62564a758ddff4`, without restoring data.
@@ -12,8 +18,8 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/16cc79e7db39e3aaadf99c99117994b9103a47e8/`, tag `member-tour-1`.
-- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/5539cba3c800d91372fd5c6adc62564a758ddff4/`; paired frontend and bot rollback `5539cba3c800d91372fd5c6adc62564a758ddff4`.
+- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/f95830b5b774ba34b29f4756a1cc9e3747148f1b/`, tag `owner-prank-1`.
+- Rollback backend: `/home/ruggie/.local/share/wu-dashboard/backend/8e0ee01337db50da8f2f289d257449c46440a440/`; paired frontend rollback `ef90834282142b1d924a9f24077d39f9b95105a4`. Bot unchanged; do not restart it.
 - Both are clean `git archive` exports. Current release imports were verified from the isolated directory using the existing virtualenv.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
