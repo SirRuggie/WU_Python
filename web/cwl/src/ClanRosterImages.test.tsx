@@ -122,9 +122,9 @@ it("uncertain edits use explicit same-message confirmation", async () => {
   ];
   state.data.published.version = 2;
   await render();
-  await act(async () => button("Retry edit").click());
+  await act(async () => button("Retry the edit with version 2").click());
   expect(host.textContent).toContain(
-    "Retry the edit on the same message? This won't create a new message.",
+    "Retry the edit on the same message with version 2? This won't create a new message.",
   );
   expect(writes()).toHaveLength(0);
   await act(async () => button("Confirm").click());
@@ -164,3 +164,43 @@ it("permission loss while confirming cancels the send", async () => {
   expect(button("Confirm")).toBeUndefined();
   expect(writes()).toHaveLength(0);
 });
+
+it.each(["post", "update", "drop"])(
+  "uncertain %s recovery targets the new publication after republish",
+  async (operation) => {
+    state.data.posts = [
+      {
+        clan_tag: "#C2Y",
+        pool: "main",
+        channel_id: "123",
+        message_id: operation === "post" ? null : "456",
+        status: "uncertain",
+        posted_version: 1,
+        target_version: 1,
+        operation,
+      },
+    ];
+    await render();
+    state.data.published.version = 2;
+    await act(async () =>
+      root.render(<ClanRosterImages seasonId="1" version={2} />),
+    );
+    expect(host.textContent).toContain("1 needs checking");
+    await act(async () =>
+      button(
+        operation === "post"
+          ? "Post again anyway · version 2"
+          : "Retry the edit with version 2",
+      ).click(),
+    );
+    expect(writes()).toHaveLength(0);
+    expect(host.textContent).toContain(
+      operation === "post"
+        ? "This can create a duplicate message"
+        : "same message with version 2",
+    );
+    await act(async () => button("Confirm").click());
+    expect(writes()[0][2]).toMatchObject({ version: 2 });
+    if (operation !== "post") expect(writes()[0][0]).toContain("/update");
+  },
+);

@@ -249,6 +249,10 @@ export default function ClanRosterImages({
                         (p) => p.pool === pool && p.clan_tag === clan.tag,
                       );
                       const uncertain = post?.status === "uncertain";
+                      const recoveryOperation =
+                        post?.operation === "drop" && clan.pages > 0
+                          ? "update"
+                          : post?.operation;
                       return (
                         <li key={clan.tag}>
                           <strong>{clan.name}</strong>
@@ -304,25 +308,23 @@ export default function ClanRosterImages({
                                   [
                                     {
                                       clan,
-                                      operation: post.operation,
+                                      operation: recoveryOperation!,
                                       channel:
                                         post.operation === "post"
                                           ? config?.channel_id || ""
                                           : post.channel_id,
-                                      version:
-                                        post.target_version ||
-                                        data.published!.version,
+                                      version: data.published!.version,
                                     },
                                   ],
                                   post.operation === "post"
                                     ? "This can create a duplicate message if the first one did post."
-                                    : "Retry the edit on the same message? This won't create a new message.",
+                                    : `Retry the edit on the same message with version ${data.published!.version}? This won't create a new message.`,
                                 )
                               }
                             >
                               {post.operation === "post"
-                                ? "Post again anyway"
-                                : "Retry edit"}
+                                ? `Post again anyway · version ${data.published!.version}`
+                                : `Retry the edit with version ${data.published!.version}`}
                             </Button>
                           )}
                           {canSend && clan.pages > 0 && (

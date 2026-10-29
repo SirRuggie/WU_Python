@@ -32,7 +32,7 @@ class ChannelTransport:
 app['announcement_transport'] = ChannelTransport()
 
 
-async def discord(method, path, **kwargs):
+async def discord(method, path, *, roster_delivery=False, **kwargs):
     if method == 'GET':
         channel = next(c for c in channels if c['id'] == path.split('/')[-1])
         return {**channel, 'guild_id': str(GUILD_ID)}
@@ -53,6 +53,11 @@ async def discord(method, path, **kwargs):
         raise TimeoutError('Fake timeout after send')
     if outcome == '429':
         raise web.HTTPTooManyRequests(text='{"retry_after":0.2}', content_type='application/json')
+    if outcome == '500':
+        if roster_delivery:
+            from cwl_web.server_management import DiscordDeliveryUncertain
+            raise DiscordDeliveryUncertain('Fake Discord 500 after send')
+        raise web.HTTPServiceUnavailable()
     if outcome == '404':
         raise web.HTTPNotFound()
     return {'id': path.split('/')[-1] if method == 'PATCH' else str(555555555555555555 + len(calls))}

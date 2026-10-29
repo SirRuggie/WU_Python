@@ -127,13 +127,17 @@ async def deliver(request):
     if pub['version'] != version:
         raise web.HTTPConflict(text='A newer roster is published. Refresh before posting images.')
     previous = storage.current(sid, pool, clan)
+    if operation == 'post' and previous and previous['message_id'] and previous['status'] != 'dropped':
+        raise web.HTTPConflict(text='This clan already has a message · use Update')
     if previous and previous['status'] in ('posted', 'dropped') and previous['posted_version'] == version:
         if (operation == 'drop') == (previous['status'] == 'dropped'):
             return delivery_response(previous)
     frozen = None
     if previous and previous['status'] == 'uncertain':
         uncertain = storage.receipt(previous['request_id'])
-        if uncertain and uncertain['operation'] != operation:
+        returned_clan = (uncertain and uncertain['operation'] == 'drop' and operation == 'update'
+                         and version > uncertain['target_version'] and clan in groups and groups[clan]['pool'] == pool)
+        if uncertain and uncertain['operation'] != operation and not returned_clan:
             raise web.HTTPConflict(text='Retry the uncertain operation explicitly before changing this message.')
     if previous and previous['status'] in ('uncertain', 'failed') and operation != 'post':
         prior = storage.receipt(previous['request_id'])
@@ -152,8 +156,6 @@ async def deliver(request):
         if not group or group['pool'] != pool:
             raise web.HTTPBadRequest(text='This clan is not in the published pool.')
     if operation == 'post':
-        if previous and previous['message_id'] and previous['status'] == 'posted':
-            raise web.HTTPConflict(text='Update the existing posted message instead.')
         channel_row = next((c for c in storage.channels() if c['pool'] == pool), None)
         if not channel_row:
             raise web.HTTPBadRequest(text='Choose an image channel first.')
@@ -211,8 +213,12 @@ async def deliver(request):
         storage.finish(receipt, 'failed', error='Discord rate limit', retry_after=wait)
         return web.json_response({'retry_after': wait, 'error': 'Discord rate limit'}, status=429)
     except web.HTTPNotFound:
-        return delivery_response(storage.finish(receipt, 'dropped' if operation == 'drop' else 'failed', error='Message was deleted in Discord'))
-    except (DiscordDeliveryUncertain, aiohttp.ClientError, TimeoutError, asyncio.CancelledError):
+        error = 'Channel or message not found in Discord' if operation == 'post' else 'Message was deleted in Discord'
+        return delivery_response(storage.finish(receipt, 'dropped' if operation == 'drop' else 'failed', error=error, clear_message=operation == 'update'))
+    except asyncio.CancelledError:
+        storage.finish(receipt, 'uncertain', error='Check Discord: this clan may have posted')
+        raise
+    except (DiscordDeliveryUncertain, aiohttp.ClientError, TimeoutError):
         return delivery_response(storage.finish(receipt, 'uncertain', error='Check Discord: this clan may have posted'))
     except web.HTTPException as exc:
         return delivery_response(storage.finish(receipt, 'failed', error=exc.text))

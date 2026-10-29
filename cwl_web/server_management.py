@@ -38,7 +38,7 @@ class DiscordDeliveryUncertain(Exception):
 async def discord(request, method, path, *, roster_delivery=False, **kwargs):
     injected = request.app.get('server_management_discord')
     if injected:
-        return await injected(method, path, **kwargs)
+        return await injected(method, path, **({"roster_delivery": True} if roster_delivery else {}), **kwargs)
     token = os.getenv('DISCORD_TOKEN', '').strip()
     if not token:
         raise web.HTTPServiceUnavailable(text='Discord connection is not configured.')

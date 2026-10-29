@@ -101,6 +101,8 @@ class RosterImageStore:
                 db.execute("UPDATE roster_image_posts SET status='uncertain',error='Delivery interrupted; check Discord',updated_at=CURRENT_TIMESTAMP WHERE id=?", (old['id'],))
                 db.execute("UPDATE roster_image_requests SET status='uncertain',error='Delivery interrupted; check Discord',updated_at=CURRENT_TIMESTAMP WHERE request_id=?", (old['request_id'],))
                 return {'status': 'uncertain', 'error': 'Delivery interrupted; check Discord'}, False
+            if operation == 'post' and old and old['message_id'] and old['status'] != 'dropped':
+                raise ImageConflict('This clan already has a message · use Update')
             if old and old['status'] in ('posted', 'dropped') and old['posted_version'] == version:
                 if (operation == 'drop') == (old['status'] == 'dropped'):
                     return dict(old), False
@@ -118,13 +120,13 @@ class RosterImageStore:
                        (sid, pool, clan, channel, message, 'sending', request_id, actor))
             return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()), True
 
-    def finish(self, receipt, status, message=None, error=None, retry_after=None):
+    def finish(self, receipt, status, message=None, error=None, retry_after=None, *, clear_message=False):
         with self.store.tx() as db:
             db.execute('UPDATE roster_image_requests SET status=?,message_id=COALESCE(?,message_id),error=?,retry_after=?,updated_at=CURRENT_TIMESTAMP WHERE request_id=?',
                        (status, message, error, retry_after, receipt['request_id']))
             successful = status in ('posted', 'dropped')
-            db.execute('UPDATE roster_image_posts SET status=?,message_id=COALESCE(?,message_id),error=?,posted_version=CASE WHEN ? THEN ? ELSE posted_version END,posted_at=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE posted_at END,updated_at=CURRENT_TIMESTAMP WHERE request_id=?',
-                       (status, message, error, successful, receipt['target_version'], successful, receipt['request_id']))
+            db.execute('UPDATE roster_image_posts SET status=?,message_id=CASE WHEN ? THEN NULL ELSE COALESCE(?,message_id) END,error=?,posted_version=CASE WHEN ? THEN ? ELSE posted_version END,posted_at=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE posted_at END,updated_at=CURRENT_TIMESTAMP WHERE request_id=?',
+                       (status, clear_message, message, error, successful, receipt['target_version'], successful, receipt['request_id']))
             details = {k: receipt[k] for k in ('pool', 'clan_tag', 'target_version', 'request_id')}
             details.update(status=status, message_id=message or receipt['message_id'], error=error)
             db.execute('INSERT INTO roster_audit(season_id,tag,actor_id,action,after_json) VALUES(?,?,?,?,?)',

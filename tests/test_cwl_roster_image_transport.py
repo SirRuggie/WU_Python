@@ -50,3 +50,20 @@ class ImageTransportTests(unittest.IsolatedAsyncioTestCase):
                 await discord(Request(), 'POST', '/fake')
             with self.assertRaises(DiscordDeliveryUncertain):
                 await discord(Request(), 'POST', '/fake', roster_delivery=True)
+
+    async def test_server_error_opt_in_preserves_default(self):
+        with patch.object(Response, 'status', 502), patch.dict('os.environ', {'DISCORD_TOKEN': 'fake'}), patch('cwl_web.server_management.aiohttp.ClientSession', return_value=Context(Client())):
+            with self.assertRaises(web.HTTPServiceUnavailable):
+                await discord(Request(), 'POST', '/fake')
+            with self.assertRaises(DiscordDeliveryUncertain):
+                await discord(Request(), 'POST', '/fake', roster_delivery=True)
+
+    async def test_injected_transport_receives_opt_in_only(self):
+        from unittest.mock import AsyncMock
+        fake = AsyncMock(return_value={'id': 'fake'})
+        request = Request()
+        request.app = {'server_management_discord': fake}
+        await discord(request, 'POST', '/fake')
+        self.assertNotIn('roster_delivery', fake.call_args.kwargs)
+        await discord(request, 'POST', '/fake', roster_delivery=True)
+        self.assertTrue(fake.call_args.kwargs['roster_delivery'])

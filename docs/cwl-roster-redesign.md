@@ -403,3 +403,7 @@ Implementation checkpoint on `codex/roster-images`, based on Declaration docs `d
 - Test all uses an unsaved test channel and explicit confirmation. Main and Lazy copies use the existing test endpoint, TEST prefix and no mentions; they never become image-post records. Single-clan testing remains available.
 - Without cwl_send the card exposes statuses only. Preview images mount only while their disclosure is open.
 - Backend and schema approved. Release requires an isolated backend directory, restart and readiness gate; development/review use temporary SQLite plus fake Discord only.
+
+Roster images review fix: explicit uncertain recovery always targets the current published version. New-post recovery retains the duplicate warning; update/drop retry PATCHes the same message with newly frozen metadata for the new version. A previously dropped clan returning in a newer publication recovers with update. Pool status includes the number needing checking. Older recovery versions still return 409.
+
+A new POST cannot replace an existing active message, including a failed update. A confirmed update 404 clears only the active message reference (the durable receipt/audit retain the old ID), enabling the approved Post again path. Cancellation records uncertainty then propagates; post 404 describes the missing channel/message, and opt-in 5xx is uncertain. Individually tested replay/acquisition/wrong-action guards protect delivery.

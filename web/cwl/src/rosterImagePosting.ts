@@ -91,10 +91,39 @@ export function imageJobs(
   }
   return jobs;
 }
-export function imagePoolStatus(data: ImageData, pool: Pool) {
+export function imagePoolStatus(
+  data: ImageData,
+  pool: Pool,
+): {
+  label: string;
+  action:
+    | ""
+    | "Retry failed"
+    | "Update posted images"
+    | "Resume"
+    | "Post Main"
+    | "Post Lazy";
+  failedOnly: boolean;
+} {
   const clans = data.clans.filter((c) => c.pool === pool);
   const posts = data.posts.filter((p) => p.pool === pool);
   const failed = posts.filter((p) => p.status === "failed").length;
+  const uncertain = posts.filter((p) => p.status === "uncertain").length;
+  if (uncertain) {
+    const remaining = imagePoolStatus(
+      {
+        ...data,
+        posts: data.posts.filter(
+          (p) => p.pool !== pool || p.status !== "uncertain",
+        ),
+      },
+      pool,
+    );
+    return {
+      ...remaining,
+      label: `${uncertain} needs checking · ${remaining.label}`,
+    };
+  }
   if (failed)
     return {
       label: `${failed} failed · Retry failed`,
