@@ -1,0 +1,46 @@
+.member-signup-summary {
+  margin: 16px 0;
+}
+.member-signup-success,
+.member-signup-empty {
+  padding: 18px;
+  border: 1px solid #3a7962;
+  border-radius: 14px;
+  background: #162c23;
+  color: #f0f5f2;
+}
+.member-signup-empty {
+  background: #1b1d22;
+  border-color: #464a52;
+}
+.member-signup-summary h2 {
+  font-size: 20px;
+  line-height: 1.35;
+  margin: 0 0 10px;
+}
+.member-signup-summary p,
+.member-signup-summary li {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.member-signup-summary ul {
+  padding-left: 20px;
+}
+.member-signup-summary .member-signup-date,
+.member-signup-remaining {
+  color: #bdc7c2;
+}
+.member-signup-summary button {
+  min-height: 44px;
+}
+.member-signup-summary .member-signup-refresh {
+  display: block;
+  background: none;
+  border: none;
+  color: #bdc7c2;
+  font-size: 13px;
+  text-decoration: underline;
+}
+.member-signup-remaining {
+  margin: 12px 4px;
+}

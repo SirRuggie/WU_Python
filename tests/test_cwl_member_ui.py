@@ -56,7 +56,7 @@ def test_select_menu_owns_account_list_and_allows_page_deselection():
 def test_closed_signups_are_read_only_and_without_dead_pagination():
     saved = [{"tag": "#P2Y", "pool": "main", "player_name": "Player"}]
     closed = session("my_signups", season=CLOSED, signups=saved)
-    assert "Player · #P2Y · Main" in member._main_text(closed)
+    assert "Player · Main CWL" in member._main_text(closed)
     assert ids(member._components("panel", closed)) == ["cwl_member_home"]
     home = session("home", season=CLOSED)
     assert member._components("panel", home)[0].components[0].is_disabled

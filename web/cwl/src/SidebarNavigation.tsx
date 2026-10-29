@@ -1,9 +1,9 @@
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export const dashboardViews = ['weight-trial', 'search', 'wars', 'events', 'declaration', 'image-gallery', 'tickets', 'staff-overview', 'clan-management', 'strikes', 'replacements', 'members-settings', 'member-activity', 'moderation', 'applications-settings', 'fwa-settings', 'connections-settings', 'cwl-returns', 'text-commands', 'manage', 'reminders', 'todo', 'home', 'exports', 'signup', 'assignments', 'roster', 'publication', 'participation', 'bonuses', 'staff', 'access', 'issues'] as const
 export type DashboardView = typeof dashboardViews[number]
-type Item = { step?: 'review' | 'announce'; view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
+type Item = { signupPanel?: 'register' | 'saved'; step?: 'review' | 'announce'; view: DashboardView; label: string; icon: DashboardIconName; access?: 'owner'; permissions?: string[] }
 type Section = { id: string; label: string; icon: DashboardIconName; items: Item[]; access?: 'staff' | 'owner' }
 // Add future working features here; permission checks still live on the server.
 const sections: Section[] = [
@@ -17,7 +17,8 @@ const sections: Section[] = [
     { view: 'events', label: 'Events', icon: 'calendar' },
   ] },
   { id: 'my-cwl', label: 'My CWL', icon: 'trophy', items: [
-    { view: 'signup', label: 'CWL signups', icon: 'signup' },
+    { view: 'signup', signupPanel: 'register', label: 'Sign up', icon: 'signup' },
+    { view: 'signup', signupPanel: 'saved', label: 'My signups', icon: 'signup' },
     { view: 'assignments', label: 'My clan assignments', icon: 'shield' },
   ] },
   { id: 'staff-overview', label: 'Staff', icon: 'overview', items: [
@@ -75,35 +76,54 @@ export function navigationSection(view: DashboardView) {
   if (view === 'member-activity') return navigationSection('moderation')
   return sections.find(section => section.items.some(item => item.view === view))?.label
 }
-export default function SidebarNavigation({ userId, view, canEdit, isOwner, permissions = [], onNavigate, publicationStep = "review", onPublication }: {
-  userId: string; view: DashboardView; canEdit: boolean; isOwner: boolean; permissions?: string[]; onNavigate: (view: DashboardView) => void; publicationStep?: "review" | "announce"; onPublication?: (step: "review" | "announce") => void
+export default function SidebarNavigation({ userId, view, canEdit, isOwner, permissions = [], onNavigate, publicationStep = "review", onPublication, signupPanel = 'register', onSignup }: {
+  userId: string; view: DashboardView; canEdit: boolean; isOwner: boolean; permissions?: string[]; onNavigate: (view: DashboardView) => void; publicationStep?: "review" | "announce"; onPublication?: (step: "review" | "announce") => void; signupPanel?: 'register' | 'saved'; onSignup?: (panel: 'register' | 'saved') => void
 }) {
-  const key = `wu-navigation-v2:${userId}`
+  const key = `wu-navigation-v3:${userId}`
+  const cwlToggled = useRef(false)
   const [staffExpanded, setStaffExpanded] = useState(() => {
     const active = sections.find(section => section.items.some(item => item.view === view))
     return !!active && !['my-dashboard', 'activity', 'my-cwl'].includes(active.id)
   })
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(key) || '{}')
-      return Object.fromEntries(sections.map(section => [section.id, typeof saved?.[section.id] === 'boolean' ? saved[section.id] : section.id === 'my-dashboard']))
-    } catch { return { 'my-dashboard': true } }
+      const current = localStorage.getItem(key)
+      const saved = JSON.parse(current || localStorage.getItem(`wu-navigation-v2:${userId}`) || '{}')
+      const carried = Object.fromEntries(
+        Object.entries(saved || {}).filter(([id, value]) =>
+          typeof value === 'boolean' && (id !== 'my-cwl' || current !== null)),
+      ) as Record<string, boolean>
+      cwlToggled.current = typeof carried['my-cwl'] === 'boolean'
+      return {
+        ...carried,
+        ...Object.fromEntries(sections.map(section => [section.id,
+          typeof carried[section.id] === 'boolean'
+            ? carried[section.id] : ['my-dashboard', 'my-cwl'].includes(section.id),
+        ])),
+      }
+    } catch { return { 'my-dashboard': true, 'my-cwl': true } }
   })
   useEffect(() => {
     const active = sections.find(section => section.items.some(item => item.view === view))
     if (active && !['my-dashboard', 'activity', 'my-cwl'].includes(active.id)) setStaffExpanded(true)
     const group = ['participation','bonuses','exports'].includes(view) ? 'cwl-results' : null
     if (group) setExpanded(current => ({...current,[group]:true}))
-    if (active) setExpanded(current => ({ ...current, [active.id]: true }))
+    if (active && active.id !== 'my-cwl') setExpanded(current => ({ ...current, [active.id]: true }))
   }, [view])
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(expanded)) } catch { /* Preferences are optional. */ } }, [expanded, key])
-  const itemActive = (item: Item) => view === item.view && (!item.step || item.step === publicationStep)
-  const itemButton = (item: Item) => <button key={`${item.view}:${item.step || ""}`} aria-current={itemActive(item) ? 'page' : undefined} onClick={() => item.step && onPublication ? onPublication(item.step) : onNavigate(item.view)}><span className="navigation-icon" aria-hidden="true"><DashboardIcon name={item.icon} /></span><span>{item.label}</span></button>
+  useEffect(() => {
+    try {
+      const saved = {...expanded}
+      if (!cwlToggled.current) delete saved['my-cwl']
+      localStorage.setItem(key, JSON.stringify(saved))
+    } catch { /* Preferences are optional. */ }
+  }, [expanded, key])
+  const itemActive = (item: Item) => view === item.view && (!item.step || item.step === publicationStep) && (!item.signupPanel || item.signupPanel === signupPanel)
+  const itemButton = (item: Item) => <button key={`${item.view}:${item.step || item.signupPanel || ""}`} aria-current={itemActive(item) ? 'page' : undefined} onClick={() => item.signupPanel && onSignup ? onSignup(item.signupPanel) : item.step && onPublication ? onPublication(item.step) : onNavigate(item.view)}><span className="navigation-icon" aria-hidden="true"><DashboardIcon name={item.icon} /></span><span>{item.label}</span></button>
   const visible = visibleNavigationSections(canEdit, isOwner, permissions)
   const memberSections = visible.filter(section => ['my-dashboard', 'activity', 'my-cwl'].includes(section.id))
   const staffSections = visible.filter(section => !['my-dashboard', 'activity', 'my-cwl'].includes(section.id))
   const renderSection = (section: Section) => {
-    if (['my-dashboard', 'activity', 'my-cwl', 'staff-overview'].includes(section.id)) {
+    if (['my-dashboard', 'activity', 'staff-overview'].includes(section.id)) {
         return <section className="navigation-section navigation-everyday" key={section.id}>
           {section.id !== 'my-dashboard' && <h2 className="navigation-label">{section.label}</h2>}
           {section.items.map(itemButton)}
@@ -111,7 +131,7 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
       }
       const active = section.items.some(item => item.view === view)
       return <section className={`navigation-section${active ? ' contains-current' : ''}`} key={section.id}>
-        <button className="navigation-toggle" aria-expanded={!!expanded[section.id]} aria-controls={`navigation-${section.id}`} onClick={() => setExpanded(current => ({ ...current, [section.id]: !current[section.id] }))}>
+        <button className="navigation-toggle" aria-expanded={!!expanded[section.id]} aria-controls={`navigation-${section.id}`} onClick={() => { if (section.id === 'my-cwl') cwlToggled.current = true; setExpanded(current => ({ ...current, [section.id]: !current[section.id] })) }}>
           <span className="navigation-icon" aria-hidden="true"><DashboardIcon name={section.icon} /></span><span>{section.label}</span><span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded[section.id] ? "chevronDown" : "chevronRight"} /></span>
         </button>
         <div id={`navigation-${section.id}`} className="navigation-children" hidden={!expanded[section.id]}>{section.id === 'cwl-management' ? <>

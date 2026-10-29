@@ -1,5 +1,9 @@
 # Operator release: Discord CWL member flow
 
+## Pending Member signup flow
+
+This checkpoint requires a separately authorized bot release **and** dashboard backend release. Deploy the read-only deadline/placements fields before the bot that consumes them. The public signup/reminder renderer adds Check my signups, opening an ephemeral response through the existing loopback bridge; no live messages were tested. Current campaign edit-existing-post handlers are retired, so existing posts stay unchanged and the button appears from the next post. Do not restore the retired write path or edit messages automatically.
+
 This operator handoff was prepared while approval review blocked deployment.
 The user subsequently renewed explicit authorization, approval review accepted
 the actions, and release `c81a070` was deployed on 2026-10-25. See the deployment

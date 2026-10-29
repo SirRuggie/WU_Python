@@ -4,6 +4,22 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-28)
 
+- Member signup flow: isolated review on `codex/member-signup`; no deployment. Approved read-only deadline projection and bot button require separate backend and bot releases.
+
+## Decisions — Member signup flow (2026-10-28)
+
+From Luke's feedback; Ruggie approved items 1–5:
+
+1. Home and My clan assignments share a green signup confirmation naming signed accounts and pools. Hidden rosters use unpublished wording. Partial published placements retain their clan sections. Remaining accounts are muted, with signup links only while open.
+2. Approved read-only backend fields: linked campaign deadline and deadline plus 24 elapsed hours, converted to aware UTC ISO strings. Null/unavailable campaign data yields null fields. Five-minute per-season cache; local dates and minute-updated relative time in the browser. No schema or signup writes.
+3. Approved bot change: Check my signups opens a private member panel through the existing loopback bridge. No shared-post edits or signup writes. The supported campaign UI has no active edit-existing-signup-post action; legacy update handlers are retired. Existing posts stay unchanged; the button appears on the next post.
+4. Signup/reminder bodies add “Already signed up? Tap **Check my signups** anytime to see your accounts.” Exactly two buttons, including the website link.
+5. My CWL starts expanded and remembers collapse. Sign up, My signups and My clan assignments have separate sidebar entries and a shared step strip. `/my-signups` and legacy `signupPanel=saved` work. Closed signup navigation remains available.
+
+Member signup review fixes: signup and reminder posts 1–5 carry the same button and optional guidance sentence (skip the sentence when it would exceed the message limit). Navigation migrates other section preferences from `wu-navigation-v2:<user>` to `wu-navigation-v3:<user>`; My CWL defaults open and is saved only after an explicit toggle. Timing uses a single Mongo context per batch, a 1.5-second overall budget, startup-owned cache/lock, and a five-minute cross-season negative cache after outages. Closed published seasons skip the lookup. Discord published/partial confirmation matches the website. Ruggie dropped preselection: “Sign up the other N” still lists accounts with nothing ticked.
+
+## Released batches
+
 - **Roster images released:** `roster-images-1`, `2279c95c3bc62ac74447c4a66a0a924dde45bda4`, PR #35, frontend + isolated backend restart. Additive migration verified on backup copy; all 54 pre-existing counts unchanged after activation, three image tables empty. Main 19/18/18, Lazy 95/92/73. 753 frontend / 4,775 backend passed (21 skipped), M16 killed. Claude read-only 360px smoke PASSED: entry `index-DuQyJREr.js`, backend PID 1639904/cwd, Announcements and image reads verified; zero writes. Hidden November prevented live checks of channel pickers, statuses and Preview; those remain fixture-tested only. Rollback pair: frontend `190313b`, backend `73fe3fa`. Batch complete.
 
 - **Declaration frontend released:** `declaration-1`, `190313b81f4c8373dc08f5a63fca966c6caffab2`, PR #34. Backend remains `73fe3fa` with no restart; rollback frontend `c767b55`. Public `index-B4f6VDw2.js` and 16 hashes verified. Backup `.local/declaration-backup-20261029T003303Z/dashboard.sqlite3`: integrity OK, all 54 tables matched. Main 19/18/18 and Lazy 93/92/73 protected counts/checksums unchanged. 736 frontend tests, TypeScript/build and layout passed. Claude read-only 360px smoke PASSED: hidden version 1 on Oct 15, 7:58 PM, Finalize link, no clan list and no errors; clans verified on preview. Batch complete.
@@ -195,6 +211,8 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
+- Member signup pages already showed the season in both the header and status card, plus the internal Draft status, before this batch (confirmed against `origin/main` / `9b5fad0`). Leave unchanged in this fix; simplify member-only season/status presentation in a later batch.
 
 - Roster images: after Mark as checked, a returning clan gets a new post without a reminder; an accepted original post remains an orphan in Discord.
 - Roster images: duplicate consent is checked in both `roster_image_posts.py` and storage `claim`; either check alone survives M11/M13. Keep both covered.

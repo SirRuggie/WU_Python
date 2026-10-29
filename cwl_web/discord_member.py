@@ -86,6 +86,9 @@ async def dispatch(request):
             result = await member.member_snapshot(
                 store, provider, user_id, include_accounts=include_accounts
             )
+            if result['season']:
+                from .member_timing import season_timing
+                result['season'].update(await season_timing(request, result['season']['id']))
             if "season_id" in body and (result["season"] is None or
                                         result["season"]["id"] != _season_id(body)):
                 raise member.MemberError(409, "The member season changed. Reopen CWL.")

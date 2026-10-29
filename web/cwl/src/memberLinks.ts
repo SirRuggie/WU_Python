@@ -6,7 +6,7 @@ export function savedSignupTarget(search: string, pathname = '/'): boolean {
   const params = new URLSearchParams(search)
   return pathname.replace(/\/$/, '') === '/my-signups' ||
     (pathname === '/' && params.get('view') === 'my-signups') ||
-    ((pathname.replace(/\/$/, '') === '/signup' || (pathname === '/' && ['signup','signups'].includes(params.get('view') || ''))) && params.get('tab') === 'saved')
+    ((pathname.replace(/\/$/, '') === '/signup' || (pathname === '/' && ['signup','signups'].includes(params.get('view') || ''))) && (params.get('tab') === 'saved' || params.get('signupPanel') === 'saved'))
 }
 export function memberTarget(search: string, pathname = '/'): {view: MemberView; season: string; signupPanel?: 'saved'} {
   const params = new URLSearchParams(search)

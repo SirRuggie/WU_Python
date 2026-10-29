@@ -20,6 +20,8 @@ export type Season = {
   label: string;
   status: string;
   signup_open: boolean;
+  signup_deadline?: string | null;
+  placements_by?: string | null;
 };
 export type FamilyClanStatus = "approved" | "outside" | "unknown";
 export type Account = {

@@ -1,3 +1,4 @@
+import MemberSignupStatus, { signupHeading } from "./MemberSignupStatus"
 import { useJourneyState, useJourneyPosition } from './journeyState'
 import { loadAccountDisplay, mergeAccountProgress, type AccountDisplay } from './accountDisplay'
 import { weightText } from './roster'
@@ -26,6 +27,7 @@ export function homeNextStep(complete: boolean, season: Season | undefined, acco
   if (!complete) return { title: 'Checking your CWL status', detail: 'Account and signup details are still loading. Review the latest status below when the check finishes.', destination: null }
   if (!season) return { title: 'Your next CWL starts here', detail: 'Staff will open a season when signups are ready.', destination: null }
   if (!accountCount) return { title: 'Link your accounts to get started', detail: 'Link your Clash accounts in Discord, then refresh this page.', destination: 'help' as const }
+  if (accountCount > unsigned) return { title: signupHeading(accountCount - unsigned, accountCount), detail: "We've got your signup. Your clan will show here once staff finish the roster.", destination: 'assignments' as const }
   if (season.signup_open && season.status === 'draft' && unsigned) return { title: `${unsigned} account${unsigned === 1 ? '' : 's'} to sign up`, detail: 'Choose Main or Lazy for your accounts, then review before saving.', destination: 'signup' as const }
   if (season.signup_open && season.status === 'draft') return { title: 'Your accounts are signed up', detail: 'Your saved signups and clan assignments are ready to review.', destination: 'assignments' as const }
   return { title: 'Review your CWL status', detail: 'Signups are closed. Your saved accounts and clan assignments remain available.', destination: 'assignments' as const }
@@ -148,7 +150,11 @@ export default function DashboardHome(props: Props) {
     <div className="page-head"><div><p className="eyebrow">Your Warriors United home</p><h1>Hey, {session.user.display_name || session.user.username}</h1><p>Your accounts, your clans, and what to do next.</p></div><p className="season-choice">{seasons.find(item => String(item.id) === seasonId)?.label || (seasonError ? 'Season unavailable' : 'No CWL season available')}</p></div>
     <div className="hub-sync"><span role="status"><span className={`status-dot ${!error && !seasonError && data ? 'active' : ''}`} />{cached ? (error || seasonError ? 'Showing saved data · refresh failed' : 'Showing saved data · checking for updates…') : refreshing ? 'Refreshing…' : error || seasonError ? 'Refresh needs attention' : data ? `Updated ${new Date(data.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Loading your accounts…'}</span><div><small>{paused ? 'Auto-refresh paused' : 'Auto-refresh every 30 seconds'}</small><button onClick={() => setPaused(value => !value)} aria-pressed={paused}>{paused ? 'Resume' : 'Pause'}</button><button disabled={refreshing} onClick={refreshDashboard} aria-label="Refresh dashboard">↻ Refresh</button></div></div>
     <AttentionSummary items={attentionItems} urgent={attentionState?.kind === 'error'} />
-    {!attentionState && <section className="hub-next" aria-labelledby="hub-next-title">
+    {!attentionState && complete && data && season ? <MemberSignupStatus
+      signups={data.signups.map(signup => ({ ...signup, assigned_clan_tag: data.assignments.accounts.find(account => account.tag === signup.tag)?.assigned_clan_tag }))}
+      accounts={data.accounts} season={season} published={!!data.assignments.published}
+      onChange={() => onNavigate('saved')} onRemaining={() => onNavigate('signup')}
+    /> : !attentionState && <section className="hub-next" aria-labelledby="hub-next-title">
       <div className="hub-next-symbol" aria-hidden="true"><DashboardIcon name="war"/></div>
       <div className="hub-next-copy">
         <p className="eyebrow">CWL · {season?.label || 'Season coming soon'}</p>

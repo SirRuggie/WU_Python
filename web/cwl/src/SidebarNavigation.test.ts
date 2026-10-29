@@ -3,7 +3,7 @@ import {navigationSection,navigationLabel,visibleNavigationSections} from './Sid
 it('keeps all personal pages together without staff grants',()=>{
  const sections=visibleNavigationSections(false,false)
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL'])
- expect(sections.flatMap(section=>section.items.map(item=>item.view))).toEqual(['home','search','todo','wars','events','signup','assignments'])
+ expect(sections.flatMap(section=>section.items.map(item=>item.view))).toEqual(['home','search','todo','wars','events','signup','signup','assignments'])
 })
 it('keeps CWL work separate from server configuration',()=>{
  const sections=visibleNavigationSections(true,false,['cwl'])
@@ -21,10 +21,10 @@ it('shows owners all groups and every destination once',()=>{
  const sections=visibleNavigationSections(true,true)
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL','Clan management','Tickets','Server tools','Settings'])
  const views = sections.flatMap((section) =>
-   section.items.map((item) => `${item.view}:${item.step || ""}`),
+   section.items.map((item) => `${item.view}:${item.step || item.signupPanel || ""}`),
  );
  expect(new Set(views).size).toBe(views.length)
- expect(views).toHaveLength(32);
+ expect(views).toHaveLength(33);
  expect(sections.find(section=>section.id==='settings')?.items.map(item=>item.view)).toEqual(['image-gallery','connections-settings','issues','access'])
  expect(navigationSection('tickets')).toBe('Tickets')
  expect(navigationSection('applications-settings')).toBe('Server tools')

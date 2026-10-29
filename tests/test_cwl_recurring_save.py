@@ -24,7 +24,7 @@ def test_submitted_content_saves_and_repeats_without_a_save_button(monkeypatch):
         assert "Saved for future posts" in saved["_save_notice"]
         for cycle in ("2030-10", "2030-11", "2031-02", "2032-01"):
             loaded = await cwl_campaign.load_campaign(mongo, 22, cycle)
-            assert loaded["campaign"]["messages"]["signup"]["variants"]["main"]["body"] == "CWL signups are open!"
+            assert loaded["campaign"]["messages"]["signup"]["variants"]["main"]["body"] == "CWL signups are open!\n\n" + cwl_campaign.SIGNUP_CHECK_LINE
             assert loaded["campaign"]["paused"]
     asyncio.run(scenario())
 
@@ -64,13 +64,13 @@ def test_saved_copy_repeats_without_replaying_a_sent_signup(monkeypatch):
         await cwl_campaign.patch_draft(mongo, draft["token"], {"campaign": campaign})
         await ui.save_options(modal_context(), draft["token"] + "|overview", mongo=mongo)
         following = await cwl_campaign.load_campaign(mongo, 22, "2030-11")
-        assert following["campaign"]["messages"]["signup"]["variants"]["main"]["body"] == "Updated CWL copy"
+        assert following["campaign"]["messages"]["signup"]["variants"]["main"]["body"] == "Updated CWL copy\n\n" + cwl_campaign.SIGNUP_CHECK_LINE
         assert await cwl_reminder.send_campaign_message(22, "2030-10", "signup", ["main"]) is False
         assert len(rest.sent) == 1
         await ui.pause(modal_context(), draft["token"], mongo=mongo)
         following = await cwl_campaign.load_campaign(mongo, 22, "2030-11")
         assert following["campaign"]["paused"]
-        assert following["campaign"]["messages"]["signup"]["variants"]["main"]["body"] == "Updated CWL copy"
+        assert following["campaign"]["messages"]["signup"]["variants"]["main"]["body"] == "Updated CWL copy\n\n" + cwl_campaign.SIGNUP_CHECK_LINE
         await ui.pause(modal_context(), draft["token"], mongo=mongo)
         assert not (await cwl_campaign.load_campaign(mongo, 22, "2030-11"))["campaign"]["paused"]
     asyncio.run(scenario())

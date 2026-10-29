@@ -3,6 +3,11 @@
   gap: 6px;
   margin-bottom: 12px;
 }
+.shell .member-step-strip > button {
+  white-space: nowrap;
+  padding: 7px 3px;
+  font-size: 12px;
+}
 .shell .cwl-step-strip > button {
   flex: 1 1 0;
   min-width: 0;
