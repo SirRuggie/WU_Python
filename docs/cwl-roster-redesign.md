@@ -8,6 +8,8 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Decisions — Member signup flow (2026-10-28)
 
+Hotfix review (handoff prompt 01): deadline reads are cache-only. A nonblocking startup task refreshes eligible seasons immediately and every five minutes, with one Mongo context and a 30-second batch timeout. Per-season errors preserve the last good value for six hours; changed bindings and closed published seasons cannot reuse inappropriate dates. Shutdown cancels the task. Each refresh logs counts and elapsed time only. Unsigned-account summaries show six names plus the remaining count on web and Discord; signup actions retain the full count.
+
 From Luke's feedback; Ruggie approved items 1–5:
 
 1. Home and My clan assignments share a green signup confirmation naming signed accounts and pools. Hidden rosters use unpublished wording. Partial published placements retain their clan sections. Remaining accounts are muted, with signup links only while open.
@@ -211,6 +213,8 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
+- Linked-account request cadence predates Member signup: `accountDisplay.ts` already polls every 750 ms while updating (up to 135 seconds), with separate loads for each page visit. Home and Signup retained their original calls; MemberAssignments adds one necessary load for its new remaining-account summary. MemberSignupStatus makes zero fetches, and App's signup load is gated to the signup view, so there is no summary/page duplicate to combine. Consider shared page-transition snapshots separately.
 
 - Member timing: one bad campaign nulls every season in a batch for five minutes; isolate per season (prompt 01).
 - Wire `web/cwl/tests/member-signup.browser.cjs` into `npm run test:layout`; its member-specific checks currently run manually.

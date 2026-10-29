@@ -1,10 +1,72 @@
 """Read-only, five-minute campaign timing projection for member season data."""
 import asyncio
 import time
+import logging
+from contextlib import suppress
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
 from utils.cwl_campaign import load_campaign, signup_deadline
 from .manage_bridge import GUILD_ID, _mongo
+
+LOG = logging.getLogger(__name__)
+REFRESH_SECONDS = 300
+MAX_AGE_SECONDS = 6 * 60 * 60
+
+
+def eligible_bindings(app):
+    with app['store'].tx() as db:
+        return {row['id']: row['cycle'] for row in db.execute(
+            'SELECT s.id,b.cycle FROM seasons s JOIN manage_campaign_bindings b '
+            'ON b.season_id=s.id WHERE s.signup_open OR NOT EXISTS '
+            '(SELECT 1 FROM roster_publications p WHERE p.season_id=s.id AND p.withdrawn_at IS NULL)')}
+
+
+async def refresh(app):
+    """One background Mongo context; failed seasons retain their last good result."""
+    started = time.monotonic()
+    pending = eligible_bindings(app)
+    cache = app['member_timing_cache']
+    refreshed = 0
+    failed = set()
+    completed = set()
+    try:
+        if pending:
+            async with asyncio.timeout(30):
+                async with _mongo(SimpleNamespace(app=app)) as mongo:
+                    for sid, cycle in pending.items():
+                        try:
+                            loaded = await load_campaign(mongo, GUILD_ID, cycle)
+                            campaign = loaded['campaign']
+                            value = utc_timing(signup_deadline(campaign, cycle)) if campaign.get('signup_deadline') is not None else utc_timing(None)
+                            cache[sid] = (time.monotonic(), cycle, value)
+                            refreshed += 1
+                        except Exception:
+                            failed.add(sid)
+                        completed.add(sid)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        failed.update(set(pending) - completed)
+    finally:
+        LOG.info('Member timing refresh: refreshed=%d failures=%d elapsed=%.3fs',
+                 refreshed, len(failed), time.monotonic() - started)
+
+
+async def lifecycle(app):
+    async def worker():
+        while True:
+            await refresh(app)
+            await asyncio.sleep(REFRESH_SECONDS)
+
+    task = asyncio.create_task(worker(), name='member-timing-refresh')
+    app['member_timing_task'] = task
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 def utc_timing(value):
@@ -26,43 +88,10 @@ async def season_timing(request, season_id):
 
 
 async def seasons_timing(request, season_ids):
-    """One bounded Mongo context per batch; an outage is cached across seasons."""
-    empty = {'signup_deadline': None, 'placements_by': None}
-    state = request.app['member_timing_state']
+    """Cache-only reads: no Mongo, waiting on locks, or refresh on request paths."""
     cache = request.app['member_timing_cache']
-    async with state['lock']:
-        now = time.monotonic()
-        pending = {}
-        with request.app['store'].tx() as db:
-            for sid in season_ids:
-                eligible = db.execute('SELECT signup_open OR NOT EXISTS(SELECT 1 FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL) FROM seasons WHERE id=?', (sid, sid)).fetchone()
-                if not eligible or not eligible[0]:
-                    cache[sid] = (now, empty.copy())
-                    continue
-                cached = cache.get(sid)
-                if cached and now - cached[0] < 300:
-                    continue
-                row = db.execute('SELECT cycle FROM manage_campaign_bindings WHERE season_id=?', (sid,)).fetchone()
-                cache[sid] = (now, empty.copy())
-                if row:
-                    pending[sid] = row['cycle']
-        if pending and now >= state['retry_at']:
-            try:
-                async with asyncio.timeout(1.5):
-                    async with _mongo(request) as mongo:
-                        for sid, cycle in pending.items():
-                            loaded = await load_campaign(mongo, GUILD_ID, cycle)
-                            result = empty.copy()
-                            if loaded['campaign'].get('signup_deadline') is not None:
-                                result = utc_timing(signup_deadline(loaded['campaign'], cycle))
-                            cache[sid] = (time.monotonic(), result)
-            except asyncio.CancelledError:
-                for sid in pending:
-                    cache.pop(sid, None)
-                raise
-            except Exception:
-                # Cache failures too; do not create one slow attempt per season.
-                state['retry_at'] = time.monotonic() + 300
-                for sid in pending:
-                    cache[sid] = (time.monotonic(), empty.copy())
-        return [dict(cache[sid][1]) for sid in season_ids]
+    bindings = eligible_bindings(request.app)
+    now = time.monotonic()
+    return [dict(cache[sid][2]) if sid in cache and bindings.get(sid) == cache[sid][1]
+            and now - cache[sid][0] < MAX_AGE_SECONDS else utc_timing(None)
+            for sid in season_ids]

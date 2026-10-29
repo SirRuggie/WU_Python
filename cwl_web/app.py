@@ -1824,7 +1824,6 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app["dev_fixture"] = dev_fixture
     app["dev_identity"] = dev_identity
     app["member_timing_cache"] = {}
-    app["member_timing_state"] = {'lock': asyncio.Lock(), 'retry_at': 0}
     app["participation_sync_locks"] = {}
     app["dashboard_accounts_cache"] = {}
     app["dashboard_accounts_inflight"] = {}
@@ -1834,6 +1833,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app["todo_client_lock"] = asyncio.Lock()
     from .durability import lifecycle as durability_lifecycle
     app.cleanup_ctx.append(durability_lifecycle)
+    from .member_timing import lifecycle as member_timing_lifecycle
+    app.cleanup_ctx.append(member_timing_lifecycle)
     app.cleanup_ctx.append(participation_sync_lifecycle)
     app.cleanup_ctx.append(_dashboard_accounts_lifecycle)
     from .account_display import lifecycle as account_display_lifecycle

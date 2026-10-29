@@ -51,11 +51,13 @@ def test_zero_all_closed_unknown_and_pagination():
     assert 'of 5' not in member._main_text(session)
     session.view = view()
     session.view['accounts'] += [{'tag': f'#P222{i:04}', 'name': f'Player {i}'} for i in range(40)]
-    session.page = 2
-    assert member._signup_pages(session) == 3
-    assert 'Player 39' in member._main_text(session)
-    # A remaining-only page must not contain an empty Discord select menu.
-    assert all(not hasattr(item, 'options') for row in member._components('token', session) for item in row.components)
+    assert member._signup_pages(session) == 1
+    for opened in (True, False):
+        session.view['season']['signup_open'] = opened
+        text = member._main_text(session)
+        assert 'Player 5' in text and 'Player 6' not in text
+        assert '+ 37 more' in text
+        assert 'Player 39' not in text
 
 
 def test_bad_identity_or_service_failure_stays_private():

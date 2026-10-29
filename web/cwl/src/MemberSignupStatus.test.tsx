@@ -85,6 +85,21 @@ const click = async (text: string) => {
   await act(async () => button.click());
 };
 
+it("caps remaining names at six in open and closed states without changing the signup action", async () => {
+  const many = Array.from({ length: 44 }, (_, i) => ({
+    tag: `remaining-${i}`,
+    name: `Reserve ${i + 1}`,
+  }));
+  for (const signup_open of [true, false]) {
+    await render({ accounts: many, season: { ...season, signup_open } });
+    const text = host.querySelector(".member-signup-remaining")!.textContent!;
+    expect(text).toContain("Reserve 6");
+    expect(text).not.toContain("Reserve 7");
+    expect(text).toContain("+ 38 more");
+    expect(text.includes("Sign up the other 44")).toBe(signup_open);
+  }
+});
+
 it("reassures two of five and lists remaining accounts without a warning; navigation is explicit", async () => {
   const callbacks = await render();
   expect(host.textContent).toContain("✓ You're signed up · 2 of 5 accounts");
