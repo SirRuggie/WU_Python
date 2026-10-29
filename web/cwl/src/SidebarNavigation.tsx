@@ -18,19 +18,19 @@ const sections: Section[] = [
   ] },
   { id: 'my-cwl', label: 'My CWL', icon: 'trophy', items: [
     { view: 'signup', signupPanel: 'register', label: 'Sign up', icon: 'signup' },
-    { view: 'signup', signupPanel: 'saved', label: 'My signups', icon: 'signup' },
-    { view: 'assignments', label: 'My clan assignments', icon: 'shield' },
+    { view: 'signup', signupPanel: 'saved', label: 'My signups', icon: 'signedUp' },
+    { view: 'assignments', label: 'My clan assignments', icon: 'castle' },
   ] },
   { id: 'staff-overview', label: 'Staff', icon: 'overview', items: [
     { view: 'staff-overview', label: 'Staff overview', icon: 'overview', permissions: ['cwl','cwl_signups','cwl_roster','cwl_publish','cwl_reminders','cwl_results','cwl_bonuses','cwl_send','cwl_settings','clan_weights','clans','text_commands','recruitment','tickets','member_roles','fwa','server_tools'] },
   ] },
-  { id: 'cwl-management', label: 'CWL', icon: 'trophy', access: 'staff', items: [
-    { view: 'staff', permissions: ['cwl_settings'], label: 'Seasons', icon: 'settings' },
-    { view: 'reminders', permissions: ['cwl_reminders'], label: 'Signup reminders', icon: 'mail' },
+  { id: 'cwl-management', label: 'CWL', icon: 'crown', access: 'staff', items: [
+    { view: 'staff', permissions: ['cwl_settings'], label: 'Seasons', icon: 'seasonSettings' },
+    { view: 'reminders', permissions: ['cwl_reminders'], label: 'Signup reminders', icon: 'bell' },
     { view: 'roster', permissions: ['cwl_roster', 'cwl_signups'], label: 'Build roster', icon: 'roster' },
     { view: 'publication', step: 'review', permissions: ['cwl_publish'], label: 'Finalize roster', icon: 'publish' },
-    { view: 'publication', step: 'announce', permissions: ['cwl_send'], label: 'Announcements', icon: 'mail' },
-    { view: 'declaration', permissions: ['cwl_roster'], label: 'Declaration readiness check', icon: 'tasks' },
+    { view: 'publication', step: 'announce', permissions: ['cwl_send'], label: 'Announcements', icon: 'megaphone' },
+    { view: 'declaration', permissions: ['cwl_roster'], label: 'Declaration readiness check', icon: 'readiness' },
     { view: 'cwl-returns', permissions: ['cwl_reminders'], label: 'Return reminders', icon: 'return' },
     { view: 'participation', permissions: ['cwl_results'], label: 'Results & participation', icon: 'results' },
     { view: 'bonuses', permissions: ['cwl_bonuses', 'cwl_send'], label: 'Bonus medals', icon: 'medal' },

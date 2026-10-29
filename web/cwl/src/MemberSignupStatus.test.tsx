@@ -245,9 +245,9 @@ it("step strip and canonical plus legacy saved URLs keep the same destination", 
     root.render(<MemberStepStrip step="saved" onNavigate={onNavigate} />),
   );
   expect(host.querySelector("[aria-current=step]")?.textContent).toBe(
-    "2 My signups",
+    "My signups",
   );
-  await click("3 My clan");
+  await click("My clan");
   expect(onNavigate).toHaveBeenCalledWith("assignments");
   for (const [path, query] of [
     ["/my-signups", ""],

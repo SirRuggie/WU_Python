@@ -93,6 +93,7 @@ server.stdout.on("data", (chunk) => {
           "member-tour.browser.cjs",
           "member-tour-cleanup.browser.cjs",
           "signup-card.browser.cjs",
+          "signup-polish.browser.cjs",
         ]) {
           const code = await new Promise((resolve) => {
             const child = spawn(

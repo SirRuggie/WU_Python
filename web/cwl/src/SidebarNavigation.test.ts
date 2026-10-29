@@ -1,4 +1,7 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import {expect,it} from 'vitest'
+import DashboardIcon from './DashboardIcon'
 import {navigationSection,navigationLabel,visibleNavigationSections} from './SidebarNavigation'
 it('keeps all personal pages together without staff grants',()=>{
  const sections=visibleNavigationSections(false,false)
@@ -10,6 +13,31 @@ it('keeps CWL work separate from server configuration',()=>{
  expect(sections.map(section=>section.label)).toEqual(['Home','Activity','My CWL','Staff','CWL'])
  expect(sections.find(section=>section.id==='cwl-management')?.items.map(item=>item.view)).toContain('roster')
  expect(navigationSection('cwl-returns')).toBe('CWL')
+})
+it('gives member items and staff CWL destinations distinct icons', () => {
+ const sections = visibleNavigationSections(true, true)
+ const member = sections.filter(section => ['my-dashboard', 'activity', 'my-cwl'].includes(section.id))
+ const cwl = sections.find(section => section.id === 'cwl-management')!
+ const memberItems = member.flatMap(section => section.items)
+ const iconMarkup = (name: typeof memberItems[number]['icon']) => renderToStaticMarkup(createElement(DashboardIcon, {name}))
+ for (const items of [memberItems, cwl.items]) {
+  expect(new Set(items.map(item => item.icon)).size).toBe(items.length)
+  expect(new Set(items.map(item => iconMarkup(item.icon))).size).toBe(items.length)
+ }
+ expect(member.find(section => section.id === 'my-cwl')?.icon).toBe('trophy')
+ expect(memberItems.map(item => item.icon)).not.toContain('trophy')
+ expect(memberItems.filter(item => item.view === 'signup').map(item => item.icon)).toEqual(['signup', 'signedUp'])
+ expect(memberItems.find(item => item.view === 'assignments')?.icon).toBe('castle')
+ expect(cwl.icon).toBe('crown')
+ expect(cwl.items.map(item => item.icon)).not.toContain('crown')
+ expect(cwl.items.slice(0, 6).map(item => [item.label, item.icon])).toEqual([
+  ['Seasons', 'seasonSettings'],
+  ['Signup reminders', 'bell'],
+  ['Build roster', 'roster'],
+  ['Finalize roster', 'publish'],
+  ['Announcements', 'megaphone'],
+  ['Declaration readiness check', 'readiness'],
+ ])
 })
 it('preserves every explicit scope without exposing other tools',()=>{
  for(const [scope,view] of Object.entries({clans:'clan-management',clan_weights:'weight-trial',strikes:'strikes',strikes_add:'strikes',strikes_remove:'strikes',member_roles:'members-settings',recruitment:'applications-settings',tickets:'applications-settings',fwa:'fwa-settings',text_commands:'text-commands',server_tools:'connections-settings'})){

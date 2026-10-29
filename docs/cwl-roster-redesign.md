@@ -225,7 +225,7 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 - Discord partial My signups pages count all signed accounts but list only waiting accounts, allowing empty final pages at 16+ accounts.
 - Consolidate the campaign embed length rule; use a process-owned timing client rather than one per batch; strengthen surviving M3d/M4b mutation gaps.
 
-- Member signup pages already showed the season in both the header and status card, plus the internal Draft status, before this batch (confirmed against `origin/main` / `9b5fad0`). Leave unchanged in this fix; simplify member-only season/status presentation in a later batch.
+- Resolved in Member signup polish: member pages use one local season/status/deadline line and omit the internal Draft chip; staff presentation is unchanged.
 
 - Roster images: after Mark as checked, a returning clan gets a new post without a reminder; an accepted original post remains an orphan in Discord.
 - Roster images: duplicate consent is checked in both `roster_image_posts.py` and storage `claim`; either check alone survives M11/M13. Keep both covered.
@@ -508,3 +508,7 @@ Tour Back restores the original history entry before restoring its URL/draft; th
 ### Signup card release — 2026-10-29
 
 Released `signup-card-1` (`539853e`, PR #42), frontend only. Separate red remaining-account card; zero signups keep the grey card action. Exact approved 13-step tour copy, whole-block highlight, Back history restoration and clean-editor notice clearing verified. Claude smoke passed (handoff 23); 788 frontend tests, build and full layout checks passed. Production counts and protected records unchanged; backend remains `8e0ee01`, no restart. Rollback and backup evidence are in CLAUDE.md. Signup-polish items 1–10 are the next approved batch, not yet implemented by this release.
+
+### Member signup polish — prompt 10 (awaiting review)
+
+Items 1–10 implemented frontend-only: unique member/staff-CWL menu icons; bold current signup step with Fan Kit Villager 52545/52538/52543 art and compact other steps; unnumbered member strip; one local season/deadline line without Draft; Main CWL naming and whole-card pool selection; review Change links retaining eligible selections and listing removed accounts; "your CWL clans" copy; pinned Help menu row and profile/avatar account menu. Internal staff season state is unchanged. No backend, schema, endpoint, bot or signup-save contract changes. The duplicate member season/Draft Later item is resolved by this batch. Release docs for preceding signup-card-1 were merged through PR #43.
