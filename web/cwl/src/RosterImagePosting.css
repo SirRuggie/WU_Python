@@ -1,0 +1,51 @@
+.roster-image-posting {
+  display: grid;
+  gap: 16px;
+}
+.roster-image-posting .image-pool {
+  border: 1px solid var(--roster-border);
+  border-radius: 14px;
+  background: var(--roster-surface);
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+.roster-image-posting h3,
+.roster-image-posting p {
+  margin: 0;
+}
+.roster-image-posting .image-muted {
+  color: var(--roster-text-muted);
+  font-size: 12px;
+}
+.roster-image-posting summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+}
+.roster-image-posting .image-clan-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.roster-image-posting .image-clan-list > li {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--roster-border);
+  border-radius: 14px;
+}
+.roster-image-posting img {
+  max-width: 100%;
+  height: auto;
+}
+.roster-image-posting a {
+  color: var(--roster-gold);
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+}
+.roster-image-posting button {
+  justify-self: start;
+}

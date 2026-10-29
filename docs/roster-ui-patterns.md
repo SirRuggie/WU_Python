@@ -218,3 +218,13 @@ Direct-link Details uses the hosting page’s refresh, busy, open and dirty call
 - Name opens published-snapshot Details, view-only, with Previous/Next following the open clan order. Removed players show the published identity/placement plus “No longer signed up · removed after version N”. No write callbacks are permitted.
 - Copy mentions is an explicit clipboard-only action on an open not-ready clan. List unlinked names and offer selectable text on clipboard failure. Never send automatically.
 - Preserve labels, 44px actions, shared card surfaces, ≥12px text and ≥4.5:1 contrast. Current 360px first-header offset is 402px including the app header and fixture banner; the requested ~250px target is still open for review.
+
+## Roster image posting
+
+Announcements keeps image posting in its existing disclosure. Main and Lazy each show the saved image channel, concise delivery status and applicable Post / Resume / Retry failed / Update action. Per-clan history and previews are collapsed. Reuse ChannelCombobox, Button, ActionPanel and ConfirmDialog; confirmation lists destinations and clans. Progress is live text, not color alone.
+
+Every run is sequential and explicitly confirmed, with one shared synchronous busy guard. Close stops future requests after the current request finishes. Known rate limits wait then continue; uncertain delivery never retries automatically. New-post uncertainty has a duplicate warning; uncertain edits retry the same message with a separate confirmation. Test all has a temporary channel, confirmation and progress/error feedback inside its panel, and never changes saved channels or posted status.
+
+Uncertain image deliveries appear in the pool status as “N needs checking.” Recovery controls name the current publication version; edit confirmations name that version and explicitly promise the same message. An uncertain drop for a clan that has returned becomes an update. Same-version retries reuse frozen metadata; newer-version retries freeze new metadata from the current publication.
+
+For removed clans, an uncertain update offers “Mark as no longer hosting · version N” with a same-message confirmation. An uncertain new post instead asks staff to check Discord and offers “Mark as checked”; its confirmation explains that Discord is not changed. Only “Post again anyway” carries explicit duplicate consent to the server. Checked rows are no longer counted as needing checking; their historical receipts remain available to the audit trail.

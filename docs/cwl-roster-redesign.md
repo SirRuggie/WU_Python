@@ -388,3 +388,26 @@ Validation: 728 frontend tests, TypeScript/build and layout checks; 4,702 backen
 Declaration review fix: title/season share a phone row, readiness help is collapsed behind ⓘ, and DM hit areas do not enlarge card rows. Awaiting placement is neutral and excluded from late totals. First-load failures offer Retry without claiming previous results.
 
 Declaration mobile target accepted in practice by Ruggie/Claude: 384px first header with fixture banner, approximately 335px without, all six Main headers on one screen. The original ~250px target is relaxed; 80px cards (103px with chip), 57×44 DM hit area accepted.
+
+## Decisions — Roster images (2026-10-27/28)
+
+Implementation checkpoint on `codex/roster-images`, based on Declaration docs `dd7b00c`. No merge, tag or deployment; production was verified on Declaration frontend `190313b` and backend `73fe3fa`.
+
+- Global image channel per Main/Lazy pool, explicitly saved and audited; destinations must be text/announcement channels in this server.
+- One durable post per season/pool/clan, tied to the immutable published version. Hidden/never-published rosters cannot post.
+- Confirmation lists every clan and destination. Client runs sequentially, waits only on known 429 responses, stops on the first other error, and stops after the current request when closed. Both pools share a synchronous run guard.
+- Resume selects missing current-version posts; Retry failed selects failed entries only. Failed edits retry the existing message except a confirmed 404, which offers Post again.
+- Update PATCH replaces attachments and retains the clan link. Drop PATCH removes attachments/buttons and says the clan is no longer hosting. Never DELETE.
+- Uncertain NEW posts require the duplicate-warning Post again anyway confirmation. Uncertain UPDATE/DROP requires “Retry the edit on the same message? This won't create a new message.” Retry PATCHes the same message; update 404 offers Post again, drop 404 is treated as dropped.
+- Ruggie approved durable text-only request receipts: operation, season/pool/clan, target version, channel/message IDs, request ID and frozen payload/render metadata. PNGs regenerate from the immutable publication and frozen metadata after restart; no PNG bytes or base64 enter SQLite or audit logs. Regression compares decoded pixels.
+- Test all uses an unsaved test channel and explicit confirmation. Main and Lazy copies use the existing test endpoint, TEST prefix and no mentions; they never become image-post records. Single-clan testing remains available.
+- Without cwl_send the card exposes statuses only. Preview images mount only while their disclosure is open.
+- Backend and schema approved. Release requires an isolated backend directory, restart and readiness gate; development/review use temporary SQLite plus fake Discord only.
+
+Roster images review fix: explicit uncertain recovery always targets the current published version. New-post recovery retains the duplicate warning; update/drop retry PATCHes the same message with newly frozen metadata for the new version. A previously dropped clan returning in a newer publication recovers with update. Pool status includes the number needing checking. Older recovery versions still return 409.
+
+A new POST cannot replace an existing active message, including a failed update. A confirmed update 404 clears only the active message reference (the durable receipt/audit retain the old ID), enabling the approved Post again path. Cancellation records uncertainty then propagates; post 404 describes the missing channel/message, and opt-in 5xx is uncertain. Individually tested replay/acquisition/wrong-action guards protect delivery.
+
+Roster images fix 2: a removed clan's uncertain update recovers as a drop edit on the same message at the current version. A removed clan's uncertain new post has a confirmed “Mark as checked” action: only its local post row becomes `dismissed`, with an audit entry and no Discord call; the original uncertain receipt is retained. A checked row can be posted normally if the clan later returns. Server-side duplicate consent (`confirm_duplicate: true`) is required for a new POST over uncertainty, both before rendering and in the atomic claim; only the explicit duplicate-warning recovery sends it. Known-message protection uses one shared predicate at both boundaries.
+
+The storage owner migrates the existing `roster_image_posts` CHECK constraint to allow `dismissed`, transactionally copying every existing row and preserving IDs, receipts and audit history. No additional permanent table or image bytes are introduced. Initialization is idempotent; migration/reopen integrity and foreign-key checks are covered by isolated tests. Release still requires the already-approved backend/schema rollout, not a frontend-only deployment.
