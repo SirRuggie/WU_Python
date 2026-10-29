@@ -133,7 +133,6 @@ export default function MemberSignupStatus({
           <button onClick={onChange}>Change signups ›</button>
         )}
         {!signups.length &&
-          !remaining.length &&
           (open ? (
             <button onClick={onRemaining}>Sign up for CWL ›</button>
           ) : (
@@ -145,7 +144,7 @@ export default function MemberSignupStatus({
           </button>
         )}
       </section>
-      {open && remaining.length > 0 && (
+      {open && signups.length > 0 && remaining.length > 0 && (
         <section className="member-signup-remaining">
           <h2>
             <TriangleAlert aria-hidden="true" size={22} />

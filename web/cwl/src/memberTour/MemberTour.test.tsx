@@ -382,30 +382,47 @@ it("clears the blocked staff editor explanation as soon as the editor is clean",
 });
 
 it("uses the approved playful tour copy and bolds each navigation tap target", () => {
-  expect(steps.map(({ title }) => title)).toEqual([
-    "Hey Chief! Welcome to Warriors United!",
-    "Start here, Chief!",
-    "Ready to smash some bases?",
-    "Up here, Chief!",
-    "Feeling lazy? Same.",
-    "That one! Pick an account.",
-    "Hmm… did you pick the right ones?",
-    "SMASH that button!",
-    "WOOO! That's all it takes!",
-    "Don't sleep on the job!",
-    "Going crazy wondering if you signed up? 🤪",
-    "Don't give the King a headache!",
-    "Told you it was easy.",
-  ]);
-  expect(
-    steps.filter(({ text }) => text.includes("**")).map(({ text }) => text),
-  ).toEqual([
-    "Tap **Home** — it shows what to do next.",
-    "Tap **Tasks** — your attacks and events live here.",
-    "Tap **Sign up** — this is where you join every month.",
-    "Tap **Lazy CWL** — we'll practice with Lazy.",
-    "Tap **My signups** — every account you signed up is right here.",
-    "Make sure you join the right clan — tap **My clan assignments** to check yours.",
+  expect(steps.map(({ title, text }) => [title, text])).toEqual([
+    [
+      "Hey Chief! Welcome to Warriors United!",
+      "Let's take a minute to show you around.",
+    ],
+    ["Start here, Chief!", "Tap **Home** — it shows what to do next."],
+    [
+      "Ready to smash some bases?",
+      "Tap **Tasks** — your attacks and events live here.",
+    ],
+    [
+      "Up here, Chief!",
+      "Tap **Sign up** — this is where you join every month.",
+    ],
+    ["Feeling lazy? Same.", "Tap **Lazy CWL** — we'll practice with Lazy."],
+    ["That one! Pick an account.", "Tap your account to select it."],
+    [
+      "Hmm… did you pick the right ones?",
+      "Check your accounts before you finish.",
+    ],
+    [
+      "SMASH that button!",
+      "…for real, when you're ready. In the tour we stop here, so nothing's saved.",
+    ],
+    ["WOOO! That's all it takes!", "Practice — nothing saved."],
+    [
+      "Don't sleep on the job!",
+      "Sign up for real every month before signups close.",
+    ],
+    [
+      "Going crazy wondering if you signed up? 🤪",
+      "Tap **My signups** — every account you signed up is right here.",
+    ],
+    [
+      "Don't give the King a headache!",
+      "Make sure you join the right clan — tap **My clan assignments** to check yours.",
+    ],
+    [
+      "Told you it was easy.",
+      "Tap ? anytime to see this again. In Discord, Check my signups works too.",
+    ],
   ]);
 });
 

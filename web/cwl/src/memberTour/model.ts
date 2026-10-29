@@ -99,7 +99,7 @@ export const steps = [
   {
     number: 5,
     title: "That one! Pick an account.",
-    text: "Tap an account to select it.",
+    text: "Tap your account to select it.",
     art: "U13",
     target: "signup-account",
   },
