@@ -499,8 +499,12 @@ alongside the tour frontend; both shipped in tour-deadline-1. Live stored campai
 - Prompt 11: step 5b highlights the entire selectable account card; keep the glove off its text. Apply whole-block targets to all practice steps and restore the approved playful copy.
 - Prompt 11: separate red remaining-signup card below the green confirmation, no account-name list; then prompt 10 signup polish, including Help/account-menu changes.
 
-### Signup card + tour refinements (prompt 11; awaiting review)
+### Signup card + tour refinements (prompt 11; released)
 
 Separate red remaining-account card immediately below the green confirmation on Home and Assignments. No remaining-account names; singular/plural action opens the existing unselected signup flow. Closed/all-signed states have no red card. The red card repeats the signup deadline even when the placement estimate is unavailable; the green card keeps its previous behavior.
 
 Tour Back restores the original history entry before restoring its URL/draft; the previous Home entry and forward stack remain intact. The staff blocked-start notice clears as soon as the editor is clean. Practice highlights the whole pool card, account card and review block, with the glove below their text, and uses the approved playful copy. No backend, signup-write or Discord changes.
+
+### Signup card release — 2026-10-29
+
+Released `signup-card-1` (`539853e`, PR #42), frontend only. Separate red remaining-account card; zero signups keep the grey card action. Exact approved 13-step tour copy, whole-block highlight, Back history restoration and clean-editor notice clearing verified. Claude smoke passed (handoff 23); 788 frontend tests, build and full layout checks passed. Production counts and protected records unchanged; backend remains `8e0ee01`, no restart. Rollback and backup evidence are in CLAUDE.md. Signup-polish items 1–10 are the next approved batch, not yet implemented by this release.

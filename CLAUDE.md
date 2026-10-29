@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current tour/deadline frontend: `/home/ruggie/.local/share/wu-dashboard/releases/8e0ee01337db50da8f2f289d257449c46440a440/`
+  - Current signup-card frontend: `/home/ruggie/.local/share/wu-dashboard/releases/539853ec37b62ad67a5157a8c10234688fc28af9/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,14 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend + backend — Tour/deadline hotfix (2026-10-29):** `8e0ee01337db50da8f2f289d257449c46440a440`, tag `tour-deadline-1`, PR #40.
+- **Current frontend — Signup card + tour refinements (2026-10-29):** `539853ec37b62ad67a5157a8c10234688fc28af9`, tag `signup-card-1`, PR #42.
+  - Release `/home/ruggie/.local/share/wu-dashboard/releases/539853ec37b62ad67a5157a8c10234688fc28af9/`. Backend unchanged at `8e0ee01`, PID 1961058; no services restarted.
+  - Frontend-only rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 8e0ee01337db50da8f2f289d257449c46440a440`. No backend restart or database restore.
+  - Backup `.local/signup-card-backup-20261029T163441Z/dashboard.sqlite3`: 1,204,224 bytes, integrity OK, all 57 table counts matched. Main 21/18/18 and Lazy 114/92/73 unchanged (signups/assigned/locks), including publication and protected records.
+  - Public `index--G6lVqgC.js`, SHA256 `52eff54228f85c7d0c0db4eac26c44ea550c6e2e3c37f2f13636226e7c3426e1`; public index and affected assets matched the manifest. Config 200, anonymous seasons 401, clean journal.
+  - 788 frontend tests, TypeScript/build and isolated layout passed; 78 tour measurements, 24 cleanup scenarios and both required mutations passed. No backend source changed; prior 4,799 backend tests passed. Claude smoke PASSED (handoff 23): red card and dates at 360px, tour copy/replay, no overflow, GET only. Evidence `/tmp/wu-signup-card-release/`.
+
+- **Previous frontend; current backend — Tour/deadline hotfix (2026-10-29):** `8e0ee01337db50da8f2f289d257449c46440a440`, tag `tour-deadline-1`, PR #40.
   - Frontend/backend: `/home/ruggie/.local/share/wu-dashboard/{releases,backend}/8e0ee01337db50da8f2f289d257449c46440a440/`. Bot remains `16cc79e`; no bot restart.
   - Rollback frontend with `/home/ruggie/.local/share/wu-dashboard/switch-release.py 16cc79e7db39e3aaadf99c99117994b9103a47e8`; set only `release.conf` WorkingDirectory to `/home/ruggie/.local/share/wu-dashboard/backend/16cc79e7db39e3aaadf99c99117994b9103a47e8`, then `systemctl --user daemon-reload` and `systemctl --user restart wu-cwl-demo-web.service`. Restore shared `assets/tour/SOURCES.md` from that previous release if rolling back its provenance too. Never restore the DB for a code rollback.
   - Backup `.local/tour-deadline-backup-20261029T151849Z/dashboard.sqlite3`: 1,204,224 bytes, integrity OK, 57 table counts match. Main 21/18/18 and Lazy 114/92/73 unchanged (signups/assigned/locks), along with all protected records.
