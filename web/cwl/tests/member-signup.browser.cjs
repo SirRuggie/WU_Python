@@ -75,7 +75,7 @@ const base = `http://127.0.0.1:${port}`;
         await page
           .getByRole("button", { name: "Sign up 3 more accounts ›", exact: true })
           .click();
-        await page.getByRole("button", { name: /Main Clan CWL/ }).click();
+        await page.getByRole("button", { name: /Main CWL/ }).click();
         await page.locator(".account-select").first().waitFor();
         assert.equal(
           await page.locator(".account-select input:checked").count(),

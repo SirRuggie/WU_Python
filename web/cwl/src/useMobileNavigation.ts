@@ -30,6 +30,12 @@ export function useMobileNavigation(open: boolean, close: () => void, enabled: b
     const keydown = (event: KeyboardEvent) => {
       // Native dialogs own keyboard focus while they are open.
       if (document.querySelector('dialog[open]')) return
+      // AccountMenu's portalled React Aria popover owns Escape and Tab.
+      if (
+        event.defaultPrevented ||
+        (event.target instanceof Element &&
+          event.target.closest('.account-menu-popover'))
+      ) return
       if (event.key === 'Escape') {
         event.preventDefault()
         closeRef.current()

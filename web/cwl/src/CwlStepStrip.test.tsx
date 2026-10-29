@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DashboardPermissions } from "./DashboardPermissions";
-import CwlStepStrip from "./CwlStepStrip";
+import CwlStepStrip, { MemberStepStrip } from "./CwlStepStrip";
 import type { PublicationDraft } from "./publication";
 function markup(
   permissions: string[],
@@ -85,4 +85,19 @@ it("marks withdrawn rosters with placements even when draft_changed is false", (
   });
   expect(html).toContain('aria-label="Unpublished changes"');
   expect(html).not.toContain('aria-label="Published and current"');
+});
+
+it("uses unnumbered member destinations while retaining numbered staff steps", () => {
+  const member = renderToStaticMarkup(
+    <MemberStepStrip step="saved" onNavigate={() => {}} />,
+  );
+  expect(member).toContain('aria-label="My CWL steps"');
+  expect(member).toMatch(
+    />Sign up<\/button>.*aria-current="step"[^>]*>My signups<\/button>.*>My clan<\/button>/,
+  );
+  expect(member).not.toMatch(/>[123] (?:Sign up|My signups|My clan)/);
+  const staff = markup(["cwl"], null);
+  expect(staff).toContain("1 Build");
+  expect(staff).toContain("2 Finalize");
+  expect(staff).toContain("3 Announce");
 });

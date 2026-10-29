@@ -16,9 +16,9 @@ export function MemberStepStrip({
     >
       {(
         [
-          ["register", "1 Sign up"],
-          ["saved", "2 My signups"],
-          ["assignments", "3 My clan"],
+          ["register", "Sign up"],
+          ["saved", "My signups"],
+          ["assignments", "My clan"],
         ] as const
       ).map(([value, label]) => (
         <button

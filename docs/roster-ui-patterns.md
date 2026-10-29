@@ -2,7 +2,7 @@
 
 ## Member signup confirmation
 
-Home and My clan assignments share a green confirmation naming signed accounts and pools. Remaining linked accounts are muted, never an alarm. Closed signups remove mutation-navigation links, not read-only navigation. Partial published assignments retain their clan cards; hidden publications use unpublished wording.
+Home and My clan assignments share a green confirmation naming signed accounts and pools. When some accounts are signed up, remaining linked accounts appear in a separate red card below the green confirmation without account names. Zero signups keep the grey signup action. Closed signups remove mutation-navigation links, not read-only navigation. Partial published assignments retain their clan cards; hidden publications use unpublished wording.
 
 Optional campaign guidance uses local dates and minute-updated relative time, or a muted taking-longer line. Missing guidance never hides saved signups. The member strip reuses the staff pattern: Sign up / My signups / My clan. My CWL starts expanded and remembers collapse.
 
@@ -242,3 +242,9 @@ For removed clans, an uncertain update offers “Mark as no longer hosting · ve
 `MemberTour.tsx` owns dialog focus, restoring the starting location, menu coordination and target geometry. Phone navigation space is measured against the bottom card; cleanup restores its original inline height. `tour.css` scopes all visuals and reduced-motion behavior. Art lives in `public/assets/tour/` because the backend already serves `/assets`; keep the source manifest and 80KB-per-image budget. Test the entire sequence with zero requests and verify phone targets are not covered, in addition to preference and focus tests.
 
 Crop art above alpha 60 and size by height, with aspect-aware text padding; wide art uses a separate top-edge layout. `placement.ts` tries both sides then below/above; never clamp a right-hand position through the target. The layout runner includes every tour step at 360×800, 360×640, 960, 1024, 1280 and 1440 widths, checking real rendered art size, overlap, minimum text size and zero writes. Session invitation state survives reloads in sessionStorage; only automatic skips count toward the localStorage cap.
+
+## Member signup polish (prompt 10)
+
+Member navigation uses unique labelled icons; staff icon changes are limited to the CWL group. Member page pills are unnumbered; the signup wizard alone uses steps 1–3, with one large gold active card and compact inactive captions. U04/U23/U19 artwork appears only on the current step, cropped from owner-supplied assets. One local-time season line replaces member-only Draft and repeated season labels; staff pages retain their statuses.
+
+Pool cards remain full keyboard/touch buttons. Review Change actions preserve eligible selections; switching to Main lists FWA/otherwise ineligible accounts removed from the unsaved selection. No automatic submit. Help is a footer menu row; profile/mobile avatar open a React Aria account menu with a separated Sign out action. The real-page tour retains its non-GET guard and whole-block targets.

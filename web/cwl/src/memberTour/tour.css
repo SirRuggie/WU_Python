@@ -1,9 +1,37 @@
 .tour-launcher {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   min-height: 44px;
   width: 100%;
+  margin: 0;
+  padding: 9px 10px;
+  border-color: transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #d1d1d7;
+  font-size: 13px;
+  font-weight: 580;
+  text-align: left;
+}
+.tour-launcher:hover {
+  background: #252529;
+}
+.tour-launcher:focus-visible {
+  outline: 2px solid #f4cd64;
+  outline-offset: -2px;
+}
+.shell .sidebar-foot > .tour-launcher {
+  margin: 0;
+  border-color: transparent;
+  background: transparent;
+}
+.shell .sidebar-foot > .tour-launcher:hover {
+  background: #252529;
+}
+.shell .sidebar-foot > .tour-launcher:focus-visible {
+  outline-offset: -2px;
 }
 .member-tour {
   position: fixed;

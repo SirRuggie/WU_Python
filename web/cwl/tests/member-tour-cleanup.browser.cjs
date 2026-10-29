@@ -62,7 +62,7 @@ const base = `http://127.0.0.1:${port}`;
         };
         if (scenario.startsWith("prior-")) {
           await navigateSignup();
-          await page.getByRole("button", { name: /Main Clan CWL/ }).click();
+          await page.getByRole("button", { name: /Main CWL/ }).click();
           await page.locator(".account-select input").nth(1).check();
         }
         const priorTags = await page

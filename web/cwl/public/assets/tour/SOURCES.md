@@ -17,3 +17,9 @@ Ruggie supplied these assets from the [Supercell Fan Kit](https://fankit.superce
 | U32.webp | U32.png | https://fankit.supercell.com/ |
 | king.webp | king.webp | https://fankit.supercell.com/ |
 | U14.webp | U14.png | https://fankit.supercell.com/ |
+
+## Signup step artwork
+
+- `U04.webp`: Ruggie-supplied `U04.png` from https://fankit.supercell.com/; alpha >60 cropped, 340px tall WebP, quality85.
+- `U23.webp`: Ruggie-supplied `U23.png` from https://fankit.supercell.com/; alpha >60 cropped, 340px tall WebP, quality85.
+- `U19.webp`: Ruggie-supplied `U19.png` from https://fankit.supercell.com/; alpha >60 cropped, 340px tall WebP, quality85.
