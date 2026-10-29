@@ -1,7 +1,7 @@
 """Staff authorization and HTTP adaptation for roster image delivery."""
 import re
 from aiohttp import web
-from utils.cwl_roster_image_store import RosterImageStore
+from utils.cwl_roster_image_store import RosterImageStore, has_active_image_message
 from .server_management import discord, GUILD_ID
 
 
@@ -68,7 +68,7 @@ def delivery_response(receipt):
     status = receipt['status']
     if receipt.get('retry_after') is not None:
         return web.json_response({'retry_after': receipt['retry_after'], 'error': 'Discord rate limit'}, status=429)
-    code = 200 if status in ('posted', 'dropped') else 409 if status == 'sending' else 503 if status == 'uncertain' else 400
+    code = 200 if status in ('posted', 'dropped', 'dismissed') else 409 if status == 'sending' else 503 if status == 'uncertain' else 400
     return web.json_response({'post': public_receipt(receipt), 'error': receipt.get('error') or ('Another post for this clan is in progress' if status == 'sending' else None)}, status=code)
 
 
@@ -101,7 +101,9 @@ async def deliver(request):
     from utils.cwl_roster_image_store import ImageConflict
     actor = staff(request, send=True)
     body = await _json(request)
-    if set(body) != {'pool', 'version', 'request_id'} or body.get('pool') not in ('main', 'lazy'):
+    if (set(body) - {'confirm_duplicate'} != {'pool', 'version', 'request_id'}
+            or body.get('pool') not in ('main', 'lazy')
+            or ('confirm_duplicate' in body and body['confirm_duplicate'] is not True)):
         raise web.HTTPBadRequest(text='Choose a pool and published version.')
     version, nonce = body['version'], body['request_id']
     if type(version) is not int or version < 1 or not isinstance(nonce, str) or not re.fullmatch(r'[a-f0-9]{24}', nonce):
@@ -112,9 +114,14 @@ async def deliver(request):
     except ValueError:
         raise web.HTTPBadRequest(text='Invalid clan tag.') from None
     operation = request.match_info.get('operation', 'post')
-    if operation not in ('post', 'update', 'drop'):
+    if operation not in ('post', 'update', 'drop', 'dismiss'):
         raise web.HTTPNotFound()
     storage = store(request)
+    if operation == 'dismiss':
+        try:
+            return delivery_response(storage.dismiss(sid, pool, clan, version, actor['user_id']))
+        except ImageConflict as exc:
+            raise web.HTTPConflict(text=str(exc)) from None
     old_request = storage.receipt(nonce)
     if old_request:
         if (old_request['season_id'], old_request['pool'], old_request['clan_tag'], old_request['target_version'], old_request['operation']) != (sid, pool, clan, version, operation):
@@ -127,8 +134,10 @@ async def deliver(request):
     if pub['version'] != version:
         raise web.HTTPConflict(text='A newer roster is published. Refresh before posting images.')
     previous = storage.current(sid, pool, clan)
-    if operation == 'post' and previous and previous['message_id'] and previous['status'] != 'dropped':
+    if operation == 'post' and has_active_image_message(previous):
         raise web.HTTPConflict(text='This clan already has a message · use Update')
+    if operation == 'post' and previous and previous['status'] == 'uncertain' and not body.get('confirm_duplicate'):
+        raise web.HTTPConflict(text='This clan may already have posted · confirm Post again anyway')
     if previous and previous['status'] in ('posted', 'dropped') and previous['posted_version'] == version:
         if (operation == 'drop') == (previous['status'] == 'dropped'):
             return delivery_response(previous)
@@ -137,14 +146,16 @@ async def deliver(request):
         uncertain = storage.receipt(previous['request_id'])
         returned_clan = (uncertain and uncertain['operation'] == 'drop' and operation == 'update'
                          and version > uncertain['target_version'] and clan in groups and groups[clan]['pool'] == pool)
-        if uncertain and uncertain['operation'] != operation and not returned_clan:
+        removed_clan = (uncertain and uncertain['operation'] == 'update' and operation == 'drop'
+                        and version > uncertain['target_version'] and (clan not in groups or groups[clan]['pool'] != pool))
+        if uncertain and uncertain['operation'] != operation and not (returned_clan or removed_clan):
             raise web.HTTPConflict(text='Retry the uncertain operation explicitly before changing this message.')
     if previous and previous['status'] in ('uncertain', 'failed') and operation != 'post':
         prior = storage.receipt(previous['request_id'])
         if prior and prior['operation'] == operation and prior['target_version'] == version:
             frozen = json.loads(prior['payload_json'])
     if operation == 'drop':
-        if clan in groups or not previous or not previous['message_id']:
+        if (clan in groups and groups[clan]['pool'] == pool) or not previous or not previous['message_id']:
             raise web.HTTPConflict(text='Only a previously posted clan no longer hosting can be marked dropped.')
         group = {'name': clan, 'tag': clan, 'pool': pool, 'league': '', 'accounts': []}
         if not frozen:
@@ -184,7 +195,7 @@ async def deliver(request):
             raise web.HTTPBadRequest(text='This roster is too large to send.')
         images = await asyncio.gather(*(asyncio.to_thread(render, {'label': frozen['season_label']}, pub, group, page) for page in range(1, pages + 1)))
     try:
-        receipt, acquired = storage.claim(sid, pool, clan, version, nonce, operation, channel, message_id, frozen, actor['user_id'])
+        receipt, acquired = storage.claim(sid, pool, clan, version, nonce, operation, channel, message_id, frozen, actor['user_id'], confirm_duplicate=body.get('confirm_duplicate', False))
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     if not acquired:

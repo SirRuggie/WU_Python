@@ -9,10 +9,12 @@ export type ImageClan = {
 };
 export type ImagePost = {
   clan_tag: string;
+  clan_name?: string;
   pool: Pool;
   channel_id: string;
   message_id: string | null;
-  status: "sending" | "posted" | "failed" | "uncertain" | "dropped";
+  status:
+    "sending" | "posted" | "failed" | "uncertain" | "dropped" | "dismissed";
   posted_version: number | null;
   target_version?: number;
   posted_at: string | null;
@@ -37,9 +39,10 @@ export type ImageChannel = {
 };
 export type ImageJob = {
   clan: ImageClan;
-  operation: "post" | "update" | "drop" | "test";
+  operation: "post" | "update" | "drop" | "test" | "dismiss";
   channel: string;
   version: number;
+  confirmDuplicate?: boolean;
 };
 export function imageJobs(
   data: ImageData,
@@ -199,7 +202,8 @@ export async function runImageJobs(
       ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   for (let i = 0; i < jobs.length && options.active(); i++) {
     const job = jobs[i];
-    options.progress(`Posting ${i + 1} of ${jobs.length}… ${job.clan.name}`);
+    const verb = job.operation === "dismiss" ? "Checking" : "Posting";
+    options.progress(`${verb} ${i + 1} of ${jobs.length}… ${job.clan.name}`);
     while (options.active()) {
       try {
         const test = job.operation === "test";
@@ -216,11 +220,14 @@ export async function runImageJobs(
                 pool: job.clan.pool,
                 version: job.version,
                 request_id: imageRequestId(),
+                ...(job.operation === "post" && job.confirmDuplicate
+                  ? { confirm_duplicate: true }
+                  : {}),
               },
         );
         if (options.active()) {
           options.progress(
-            `Posting ${i + 1} of ${jobs.length}… ✓ ${job.clan.name}`,
+            `${verb} ${i + 1} of ${jobs.length}… ✓ ${job.clan.name}`,
           );
           await options.completed();
         }

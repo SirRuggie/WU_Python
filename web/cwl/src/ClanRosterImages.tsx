@@ -190,7 +190,7 @@ export default function ClanRosterImages({
                 )
                 .map((p) => ({
                   tag: p.clan_tag,
-                  name: p.clan_tag,
+                  name: p.clan_name || p.clan_tag,
                   pool,
                   pages: 0,
                   count: 0,
@@ -249,15 +249,27 @@ export default function ClanRosterImages({
                         (p) => p.pool === pool && p.clan_tag === clan.tag,
                       );
                       const uncertain = post?.status === "uncertain";
-                      const recoveryOperation =
-                        post?.operation === "drop" && clan.pages > 0
-                          ? "update"
-                          : post?.operation;
+                      const removed = clan.pages === 0;
+                      const dismiss =
+                        uncertain && post.operation === "post" && removed;
+                      const recoveryOperation = dismiss
+                        ? "dismiss"
+                        : post?.operation === "update" && removed
+                          ? "drop"
+                          : post?.operation === "drop" && !removed
+                            ? "update"
+                            : post?.operation;
                       return (
                         <li key={clan.tag}>
                           <strong>{clan.name}</strong>
                           <span>{post?.status || "Not posted"}</span>
                           {post?.error && <p>{post.error}</p>}
+                          {dismiss && (
+                            <p>
+                              Check Discord for {clan.name}'s post. It's no
+                              longer in the roster.
+                            </p>
+                          )}
                           {post?.message_id && (
                             <a
                               target="_blank"
@@ -314,17 +326,29 @@ export default function ClanRosterImages({
                                           ? config?.channel_id || ""
                                           : post.channel_id,
                                       version: data.published!.version,
+                                      confirmDuplicate:
+                                        recoveryOperation === "post",
                                     },
                                   ],
-                                  post.operation === "post"
-                                    ? "This can create a duplicate message if the first one did post."
-                                    : `Retry the edit on the same message with version ${data.published!.version}? This won't create a new message.`,
+                                  dismiss
+                                    ? `Mark ${clan.name}'s post as checked? This only clears our warning and won't change anything in Discord.`
+                                    : recoveryOperation === "drop" &&
+                                        post.operation === "update"
+                                      ? `Edit the existing message to say ${clan.name} is no longer hosting? This won't create a new message.`
+                                      : post.operation === "post"
+                                        ? "This can create a duplicate message if the first one did post."
+                                        : `Retry the edit on the same message with version ${data.published!.version}? This won't create a new message.`,
                                 )
                               }
                             >
-                              {post.operation === "post"
-                                ? `Post again anyway · version ${data.published!.version}`
-                                : `Retry the edit with version ${data.published!.version}`}
+                              {dismiss
+                                ? "Mark as checked"
+                                : recoveryOperation === "drop" &&
+                                    post.operation === "update"
+                                  ? `Mark as no longer hosting · version ${data.published!.version}`
+                                  : post.operation === "post"
+                                    ? `Post again anyway · version ${data.published!.version}`
+                                    : `Retry the edit with version ${data.published!.version}`}
                             </Button>
                           )}
                           {canSend && clan.pages > 0 && (

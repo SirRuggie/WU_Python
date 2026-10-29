@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS roster_image_posts (
  id INTEGER PRIMARY KEY, season_id INTEGER NOT NULL REFERENCES seasons(id),
  pool TEXT NOT NULL CHECK(pool IN ('main','lazy')), clan_tag TEXT NOT NULL,
  channel_id TEXT NOT NULL, message_id TEXT, posted_version INTEGER,
- status TEXT NOT NULL CHECK(status IN ('sending','posted','failed','uncertain','dropped')),
+ status TEXT NOT NULL CHECK(status IN ('sending','posted','failed','uncertain','dropped','dismissed')),
  request_id TEXT NOT NULL, error TEXT, posted_by TEXT NOT NULL,
  posted_at TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  UNIQUE(season_id,pool,clan_tag)
@@ -24,6 +24,31 @@ CREATE TABLE IF NOT EXISTS roster_image_requests (
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
+
+
+def migrate(db):
+    """Extend the existing CHECK constraint without changing saved delivery data."""
+    sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='roster_image_posts'").fetchone()['sql']
+    if "'dismissed'" in sql:
+        return
+    with db:
+        db.execute('SAVEPOINT image_status_migration')
+        try:
+            db.execute(sql.replace('roster_image_posts', 'roster_image_posts_migrate', 1)
+                       .replace("'dropped'", "'dropped','dismissed'"))
+            db.execute('INSERT INTO roster_image_posts_migrate SELECT * FROM roster_image_posts')
+            db.execute('DROP TABLE roster_image_posts')
+            db.execute('ALTER TABLE roster_image_posts_migrate RENAME TO roster_image_posts')
+            db.execute('RELEASE image_status_migration')
+        except Exception:
+            db.execute('ROLLBACK TO image_status_migration')
+            db.execute('RELEASE image_status_migration')
+            raise
+
+
+def has_active_image_message(row):
+    """A new post must never replace a known, non-dropped message."""
+    return bool(row and row['message_id'] and row['status'] != 'dropped')
 
 
 class RosterImageStore:
@@ -51,9 +76,10 @@ class RosterImageStore:
             last = db.execute('SELECT version,published_at,withdrawn_at FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
             published = db.execute('SELECT version,published_at FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
             for row in rows:
-                receipt = db.execute('SELECT operation,target_version FROM roster_image_requests WHERE request_id=?', (row['request_id'],)).fetchone()
+                receipt = db.execute('SELECT operation,target_version,payload_json FROM roster_image_requests WHERE request_id=?', (row['request_id'],)).fetchone()
                 row['operation'] = receipt['operation'] if receipt else 'post'
                 row['target_version'] = receipt['target_version'] if receipt else row['posted_version']
+                row['clan_name'] = json.loads(receipt['payload_json']).get('name', row['clan_tag']) if receipt else row['clan_tag']
             return {'posts': rows, 'published': dict(published) if published else None, 'last_publication': dict(last) if last else None}
 
     def publication(self, sid, version=None):
@@ -79,7 +105,29 @@ class RosterImageStore:
             row = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=? AND clan_tag=?', (sid, pool, clan)).fetchone()
             return dict(row) if row else None
 
-    def claim(self, sid, pool, clan, version, request_id, operation, channel, message, payload, actor):
+    def dismiss(self, sid, pool, clan, version, actor):
+        """Acknowledge a removed clan's unknown new post; never call Discord."""
+        with self.store.tx() as db:
+            latest = db.execute('SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
+            if not latest or latest['version'] != version:
+                raise ImageConflict('A newer roster is published. Refresh before checking images.')
+            clans = {c['tag']: c for c in json.loads(latest['clans_json'])}
+            accounts = db.execute('SELECT pool FROM publication_accounts WHERE publication_id=? AND assigned_clan_tag=?', (latest['id'], clan)).fetchall()
+            if any((clans.get(clan, {}).get('pool') or a['pool']) == pool for a in accounts):
+                raise ImageConflict('This clan is still in the published pool.')
+            row = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=? AND clan_tag=?', (sid, pool, clan)).fetchone()
+            if row and row['status'] == 'dismissed' and not row['message_id']:
+                return dict(row)
+            receipt = db.execute('SELECT operation FROM roster_image_requests WHERE request_id=?', (row['request_id'],)).fetchone() if row else None
+            if not row or row['status'] != 'uncertain' or row['message_id'] or not receipt or receipt['operation'] != 'post':
+                raise ImageConflict('Only an uncertain new post for a removed clan can be marked checked.')
+            db.execute("UPDATE roster_image_posts SET status='dismissed',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?", (row['id'],))
+            updated = dict(db.execute('SELECT * FROM roster_image_posts WHERE id=?', (row['id'],)).fetchone())
+            db.execute('INSERT INTO roster_audit(season_id,tag,actor_id,action,before_json,after_json) VALUES(?,?,?,?,?,?)',
+                       (sid, clan, actor, 'roster_image_dismiss', json.dumps(dict(row)), json.dumps(updated)))
+            return updated
+
+    def claim(self, sid, pool, clan, version, request_id, operation, channel, message, payload, actor, *, confirm_duplicate=False):
         """Atomic durable intent; no external call is made with the transaction held."""
         with self.store.tx() as db:
             prior = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()
@@ -101,8 +149,10 @@ class RosterImageStore:
                 db.execute("UPDATE roster_image_posts SET status='uncertain',error='Delivery interrupted; check Discord',updated_at=CURRENT_TIMESTAMP WHERE id=?", (old['id'],))
                 db.execute("UPDATE roster_image_requests SET status='uncertain',error='Delivery interrupted; check Discord',updated_at=CURRENT_TIMESTAMP WHERE request_id=?", (old['request_id'],))
                 return {'status': 'uncertain', 'error': 'Delivery interrupted; check Discord'}, False
-            if operation == 'post' and old and old['message_id'] and old['status'] != 'dropped':
+            if operation == 'post' and has_active_image_message(old):
                 raise ImageConflict('This clan already has a message · use Update')
+            if operation == 'post' and old and old['status'] == 'uncertain' and not confirm_duplicate:
+                raise ImageConflict('This clan may already have posted · confirm Post again anyway')
             if old and old['status'] in ('posted', 'dropped') and old['posted_version'] == version:
                 if (operation == 'drop') == (old['status'] == 'dropped'):
                     return dict(old), False

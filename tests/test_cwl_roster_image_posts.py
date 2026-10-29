@@ -88,6 +88,11 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.send()).status, 503)
             self.assertEqual(len(self.sent), 1)
             self.body['request_id'] = 'c' * 24
+            response = await self.send()
+            self.assertEqual(response.status, 409)
+            self.assertIn('confirm Post again anyway', (await response.json())['error'])
+            self.assertEqual(len(self.sent), 1)
+            self.body['confirm_duplicate'] = True
             self.assertEqual((await self.send()).status, 200)
             self.assertEqual([s[0] for s in self.sent], ['POST', 'POST'])
 
@@ -242,6 +247,7 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.send()).status, 503)
             await self.republish()
             self.body['request_id'] = 'c' * 24
+            self.body['confirm_duplicate'] = True
             self.mode = None
             self.assertEqual((await self.send()).status, 200)
             self.assertIn('Roster v2', json.loads(self.sent[-1][2]['data']._fields[0][2])['content'])
@@ -347,12 +353,128 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             await self.republish()
             self.mode = 'timeout'
             await self.send('/update')
-            await self.republish(drop=True)
+            await self.republish()
             self.body['request_id'] = 'c' * 24
             self.mode = None
             count = len(self.sent)
             self.assertEqual((await self.send('/drop')).status, 409)
             self.assertEqual(len(self.sent), count)
+
+    async def test_removed_uncertain_update_becomes_drop_same_message(self):
+        await self.setup_post()
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            await self.send()
+            message = self.app['store'].rows('SELECT message_id FROM roster_image_posts')[0]['message_id']
+            await self.republish()
+            self.mode = 'timeout'
+            await self.send('/update')
+            await self.republish(drop=True)
+            self.body['request_id'] = 'c' * 24
+            self.mode = None
+            response = await self.send('/drop')
+            self.assertEqual(response.status, 200)
+            self.assertEqual((await response.json())['post']['status'], 'dropped')
+            self.assertEqual(self.sent[-1][:2], ('PATCH', f'/channels/123456789012345678/messages/{message}'))
+            self.assertIn('no longer hosting · Roster v3', self.sent[-1][2]['json']['content'])
+
+    async def test_removed_uncertain_post_dismiss_is_local_audited_and_idempotent(self):
+        await self.setup_post()
+        self.mode = 'timeout'
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            await self.send()
+        await self.republish(drop=True)
+        self.body['request_id'] = 'c' * 24
+        with patch('cwl_web.roster_image_posts.discord', AsyncMock()) as transport:
+            for _ in range(2):
+                response = await self.send('/dismiss')
+                self.assertEqual(response.status, 200)
+                self.assertEqual((await response.json())['post']['status'], 'dismissed')
+            transport.assert_not_called()
+        with self.app['store'].tx() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM roster_audit WHERE action='roster_image_dismiss'").fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM roster_image_requests').fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT status FROM roster_image_requests').fetchone()[0], 'uncertain')
+        # Checked rows remain auditable after reopening the store.
+        reopened = Store(self.app['store'].path)
+        self.assertEqual(reopened.rows('SELECT status FROM roster_image_posts')[0]['status'], 'dismissed')
+
+    async def test_dismiss_rejects_present_stale_unauthorized_and_known_message(self):
+        await self.setup_post()
+        self.mode = 'timeout'
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            await self.send()
+        with patch('cwl_web.roster_image_posts.discord', AsyncMock()) as transport:
+            self.assertEqual((await self.send('/dismiss')).status, 409)
+            await self.republish(drop=True)
+            self.body['version'] = 1
+            self.assertEqual((await self.send('/dismiss')).status, 409)
+            self.body['version'] = 2
+            self.assertEqual((await self.call('POST', self.path + '/dismiss', self.member, json=self.body)).status, 403)
+            headers = {k: v for k, v in self.owner.items() if k != 'X-CSRF-Token'}
+            self.assertEqual((await self.call('POST', self.path + '/dismiss', headers, json=self.body)).status, 403)
+            with self.app['store'].tx() as db:
+                db.execute("UPDATE roster_image_posts SET message_id='987654321098765432'")
+            self.assertEqual((await self.send('/dismiss')).status, 409)
+            transport.assert_not_called()
+
+    async def test_duplicate_flag_ignored_for_new_row_and_invalid_values_rejected(self):
+        await self.setup_post()
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            for invalid in (False, 'true', 1, None):
+                self.body['confirm_duplicate'] = invalid
+                self.assertEqual((await self.send()).status, 400)
+            self.assertEqual(self.sent, [])
+            self.body['confirm_duplicate'] = True
+            self.assertEqual((await self.send()).status, 200)
+            self.assertEqual(len(self.sent), 1)
+
+    async def test_existing_message_guard_runs_before_claim_M7(self):
+        await self.setup_post()
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            await self.send()
+            await self.republish()
+            self.mode = '429'
+            await self.send('/update')
+            self.body['request_id'] = 'c' * 24
+            with patch('utils.cwl_roster_image_store.RosterImageStore.claim', side_effect=AssertionError('must reject before claim')):
+                self.assertEqual((await self.send()).status, 409)
+
+    async def test_atomic_existing_message_and_duplicate_guards_M10(self):
+        from utils.cwl_roster_image_store import RosterImageStore, ImageConflict
+        await self.setup_post()
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            await self.send()
+        storage = RosterImageStore(self.app['store'])
+        with self.assertRaisesRegex(ImageConflict, 'already has a message'):
+            storage.claim(self.sid, 'main', '#C2Y', 1, 'c' * 24, 'post', '123456789012345678', None, {}, 'owner')
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE roster_image_posts SET status='uncertain', message_id=NULL")
+        with self.assertRaisesRegex(ImageConflict, 'confirm Post again anyway'):
+            storage.claim(self.sid, 'main', '#C2Y', 1, 'd' * 24, 'post', '123456789012345678', None, {}, 'owner')
+
+    async def test_status_migration_preserves_rows_receipts_and_audit(self):
+        from utils.cwl_roster_image_store import SCHEMA
+        await self.setup_post()
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            await self.send()
+        with self.app['store'].tx() as db:
+            before = [dict(r) for r in db.execute('SELECT * FROM roster_image_posts')]
+            receipts = [dict(r) for r in db.execute('SELECT * FROM roster_image_requests')]
+            audits = [dict(r) for r in db.execute('SELECT * FROM roster_audit')]
+            old_sql = SCHEMA.split('CREATE TABLE IF NOT EXISTS roster_image_posts (')[1].split(';')[0]
+            db.execute('ALTER TABLE roster_image_posts RENAME TO saved_posts')
+            db.execute('CREATE TABLE roster_image_posts (' + old_sql.replace(",'dismissed'", ''))
+            db.execute('INSERT INTO roster_image_posts SELECT * FROM saved_posts')
+            db.execute('DROP TABLE saved_posts')
+        for _ in range(2):
+            reopened = Store(self.app['store'].path)
+            self.assertEqual(reopened.rows('SELECT * FROM roster_image_posts'), before)
+            self.assertEqual(reopened.rows('SELECT * FROM roster_image_requests'), receipts)
+            self.assertEqual(reopened.rows('SELECT * FROM roster_audit'), audits)
+        with reopened.tx() as db:
+            self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+            self.assertEqual(list(db.execute('PRAGMA foreign_key_check')), [])
+            db.execute("UPDATE roster_image_posts SET status='dismissed'")
 
     async def test_500_after_send_becomes_uncertain(self):
         await self.setup_post()

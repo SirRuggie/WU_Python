@@ -296,6 +296,8 @@ class Store:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.tx() as db:
             db.executescript(SCHEMA)
+            from utils.cwl_roster_image_store import migrate as migrate_image_status
+            migrate_image_status(db)
             if "signup_clan_type" not in {row[1] for row in db.execute("PRAGMA table_info(signups)")}:
                 db.execute("ALTER TABLE signups ADD COLUMN signup_clan_type TEXT")
             if "withdrawn_at" not in {row[1] for row in db.execute("PRAGMA table_info(roster_publications)")}:

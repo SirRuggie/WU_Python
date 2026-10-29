@@ -30,6 +30,21 @@ const row = (i: number, extra = {}) => ({
   operation: "post" as const,
   ...extra,
 });
+it("checked removed posts leave the needs-checking count and return as ordinary new posts", () => {
+  const d = data();
+  d.clans = d.clans.slice(1);
+  d.posts = [row(0, { status: "dismissed", message_id: null })];
+  expect(imagePoolStatus(d, "lazy").label).not.toContain("needs checking");
+  expect(imageJobs(d, "lazy", "123").some((j) => j.clan.tag === "#C0")).toBe(
+    false,
+  );
+  d.clans = data().clans;
+  expect(imageJobs(d, "lazy", "123")[0]).toMatchObject({
+    operation: "post",
+    clan: { tag: "#C0" },
+  });
+  expect(imageJobs(d, "lazy", "123")[0].confirmDuplicate).toBeUndefined();
+});
 it("states and Resume/Retry only select eligible clans", () => {
   const d = data();
   expect(imagePoolStatus(d, "lazy").label).toBe("Not posted yet");

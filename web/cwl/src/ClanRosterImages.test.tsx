@@ -201,6 +201,64 @@ it.each(["post", "update", "drop"])(
     );
     await act(async () => button("Confirm").click());
     expect(writes()[0][2]).toMatchObject({ version: 2 });
+    if (operation === "post")
+      expect(writes()[0][2]).toHaveProperty("confirm_duplicate", true);
+    else expect(writes()[0][2]).not.toHaveProperty("confirm_duplicate");
     if (operation !== "post") expect(writes()[0][0]).toContain("/update");
   },
 );
+
+it.each(["post", "update"])(
+  "removed uncertain %s has a confirmed recovery",
+  async (operation) => {
+    state.data.posts = [
+      {
+        clan_tag: "#C2Y",
+        clan_name: "Old Clan",
+        pool: "main",
+        channel_id: "123",
+        message_id: operation === "post" ? null : "456",
+        status: "uncertain",
+        posted_version: 1,
+        target_version: 1,
+        operation,
+      },
+    ];
+    state.data.clans = [];
+    state.data.published.version = 2;
+    await render();
+    const label =
+      operation === "post"
+        ? "Mark as checked"
+        : "Mark as no longer hosting · version 2";
+    expect(button("Post again anyway · version 2")).toBeUndefined();
+    if (operation === "post")
+      expect(host.textContent).toContain(
+        "Check Discord for Old Clan's post. It's no longer in the roster.",
+      );
+    await act(async () => button(label).click());
+    expect(writes()).toHaveLength(0);
+    expect(host.textContent).toContain(
+      operation === "post"
+        ? "won't change anything in Discord"
+        : "Edit the existing message to say Old Clan is no longer hosting? This won't create a new message.",
+    );
+    await act(async () => button("Cancel").click());
+    expect(writes()).toHaveLength(0);
+    await act(async () => button(label).click());
+    await act(async () => button("Confirm").click());
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0][0]).toMatch(
+      operation === "post" ? /\/dismiss$/ : /\/drop$/,
+    );
+    expect(writes()[0][2]).toMatchObject({ pool: "main", version: 2 });
+    expect(writes()[0][2]).not.toHaveProperty("confirm_duplicate");
+  },
+);
+
+it("ordinary Post does not assert duplicate consent", async () => {
+  await render();
+  await act(async () => button("Post Main").click());
+  await act(async () => button("Confirm").click());
+  expect(writes()[0][2]).not.toHaveProperty("confirm_duplicate");
+});
