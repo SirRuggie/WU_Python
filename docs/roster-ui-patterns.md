@@ -147,7 +147,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 
 ## CWL flow navigation and season controls
 
-- The CWL sidebar follows the season: Seasons → Signup reminders → Build roster → Finalize roster → Announcements → Declaration readiness check → Return reminders → Results. Other sections are unchanged.
+- The CWL sidebar follows the season: Seasons → Signup reminders → Build roster → Finalize roster → Announcements → Declaration check → Return reminders → Results & participation → Bonus medals → Exports & history. Other staff destinations use flat Clans, Members, Bot and Admin groups, plus direct Staff overview and Moderation links.
 - Use the compact `1 Build · 2 Finalize · 3 Announce` strip with 44px targets, gold for the active step, an amber unpublished-changes indicator, and a check for a current publication. Keep existing routes and independent publish/send permissions.
 - Show the next-step cue at the end of Build, after a successful publication, and after a confirmed announcement delivery (not a queued send). Sidebar entry resets Build to Accounts & signups; in-visit tab choices remain remembered.
 - Seasons and the roster signup controls share one signup-visibility action. Re-read on opening, confirm explicitly, and preserve partial success without automatic retries. An open hidden season uses an amber warning and Fix; Fix only makes that season visible when signups remain open.

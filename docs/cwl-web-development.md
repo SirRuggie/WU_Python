@@ -1147,14 +1147,14 @@ restore-race tests; frontend suite/build; browser fixture restore end-to-end and
 
 ### Navigation groups (2026-10-15)
 
-The sidebar now groups personal pages under My dashboard, staff season work under
-CWL, the family directory/history under Clan management, daily server operations
-under Server tools, and integrations/staff access under Settings. Existing view
-IDs, API authorization, grants, Mongo records and Discord actions are unchanged.
-Empty groups are hidden. Expansion preferences use a new per-user v2 key and the
-active group opens automatically; groups remain keyboard accessible and the
-mobile drawer retains independent scrolling. Activity & recovery is now reached
-through Clan management → Family clans → Activity & recovery.
+The sidebar keeps member Home, Search, Activity and My CWL controls. A STAFF TOOLS
+label precedes direct Staff overview and Moderation links and flat CWL, Clans,
+Members, Bot and owner-only Admin groups. Existing view IDs, API authorization,
+grants, Mongo records and Discord actions are unchanged. Empty groups are hidden.
+Validated explicit expansion preferences use the per-user wu-navigation-v3 key;
+auto-opening the current group is never saved. The tour temporarily opens only
+its target group. The mobile drawer scrolls independently with its footer pinned.
+Activity & recovery is reached through Clans → Family clans → Activity & recovery.
 
 Validation: all 106 frontend checks passed, production build passed, and desktop
 plus 390px phone checks covered group expansion, saved preferences and navigation
