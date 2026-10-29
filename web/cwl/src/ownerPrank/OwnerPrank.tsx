@@ -340,7 +340,6 @@ export default function OwnerPrank({
           <img className="owner-prank-character" src={card.art} alt="" />
         )}
         <div className="owner-prank-copy">
-          <span className="owner-prank-step">{state.card} of ?</span>
           <h2 id="owner-prank-title">{card.title}</h2>
           <p>{card.body}</p>
           {state.card === 3 && (

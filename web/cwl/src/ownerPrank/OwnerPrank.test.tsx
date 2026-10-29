@@ -124,21 +124,37 @@ async function press(label: string) {
   });
 }
 
+it.each(Array.from({ length: 15 }, (_, index) => index + 1))(
+  "renders card %i without a step number or progress indicator",
+  async (card) => {
+    server = { ...server, card, branch: "yes" };
+    await render();
+    const dialog = document.querySelector(".owner-prank-card");
+    expect(dialog).not.toBeNull();
+    expect(
+      dialog?.querySelector(
+        '.owner-prank-step, .tour-step, [role="progressbar"], progress, .progress-pill',
+      ),
+    ).toBeNull();
+    expect(dialog?.textContent).not.toMatch(/\b\d+\s+of\s+(?:\?|\d+)/i);
+  },
+);
+
 it("takes both bait branches through the fake deletion and reassurance without signup writes", async () => {
   await render();
   expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
     "Remove all signups?",
-  );
-  expect(document.querySelector(".owner-prank-step")?.textContent).toBe(
-    "1 of ?",
   );
   expect(settled).not.toHaveBeenCalled();
   await press("No");
   expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
     "Deleted 42/42 signups",
   );
-  expect(document.querySelector(".owner-prank-step")?.textContent).toBe(
-    "2 of ?",
+  expect(
+    document.querySelector(".owner-prank-card .owner-prank-step"),
+  ).toBeNull();
+  expect(document.querySelector(".owner-prank-card")?.textContent).not.toMatch(
+    /\b\d+\s+of\s+(?:\?|\d+)/i,
   );
   expect(server.branch).toBe("no");
   await act(async () => {
@@ -146,9 +162,6 @@ it("takes both bait branches through the fake deletion and reassurance without s
   });
   expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
     "No real signups were deleted.",
-  );
-  expect(document.querySelector(".owner-prank-step")?.textContent).toBe(
-    "3 of ?",
   );
   expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
     "You pressed No",
@@ -264,9 +277,6 @@ it("reads newer progress after another browser advanced two cards", async () => 
 it("closes when another browser completed the run", async () => {
   server = { ...server, card: 15, branch: "no" };
   await render();
-  expect(document.querySelector(".owner-prank-step")?.textContent).toBe(
-    "15 of ?",
-  );
   api.mockImplementationOnce(async () => {
     server = { ...server, completed_at: "2026-10-29T00:00:00Z", run: 2 };
     throw new ApiError("Prank run changed", 409);

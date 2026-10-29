@@ -35,7 +35,6 @@ const assets = fs
             <article class="tour-card owner-prank-card has-art${finalCard ? " farewell" : ""}${wide ? " wide-character" : ""}">
               <img class="owner-prank-character" src="${art}" alt="">
               <div class="owner-prank-copy">
-                <span class="owner-prank-step">${finalCard ? 15 : 9} of ?</span>
                 <h2>The owner prank has a long heading</h2>
                 <p>Next time you see a big scary button, maybe ask Ruggie to supervise you. Just a thought.</p>
                 <footer><button>Continue</button></footer>
