@@ -4,6 +4,8 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-28)
 
+- **Roster images released:** `roster-images-1`, `2279c95c3bc62ac74447c4a66a0a924dde45bda4`, PR #35, frontend + isolated backend restart. Additive migration verified on backup copy; all 54 pre-existing counts unchanged after activation, three image tables empty. Main 19/18/18, Lazy 95/92/73. 753 frontend / 4,775 backend passed (21 skipped), M16 killed. Claude read-only 360px smoke PASSED: entry `index-DuQyJREr.js`, backend PID 1639904/cwd, Announcements and image reads verified; zero writes. Hidden November prevented live checks of channel pickers, statuses and Preview; those remain fixture-tested only. Rollback pair: frontend `190313b`, backend `73fe3fa`. Batch complete.
+
 - **Declaration frontend released:** `declaration-1`, `190313b81f4c8373dc08f5a63fca966c6caffab2`, PR #34. Backend remains `73fe3fa` with no restart; rollback frontend `c767b55`. Public `index-B4f6VDw2.js` and 16 hashes verified. Backup `.local/declaration-backup-20261029T003303Z/dashboard.sqlite3`: integrity OK, all 54 tables matched. Main 19/18/18 and Lazy 93/92/73 protected counts/checksums unchanged. 736 frontend tests, TypeScript/build and layout passed. Claude read-only 360px smoke PASSED: hidden version 1 on Oct 15, 7:58 PM, Finalize link, no clan list and no errors; clans verified on preview. Batch complete.
 
 - **Details frontend released:** `details-1`, `c767b55c010dd0de82416301a2c60057775a3662`, PR #33. Backend unchanged on `73fe3fa` without restart; previous frontend/rollback `73fe3fa`. Public `index-CsYgjk4R.js` and 15 asset hashes verified. Backup `.local/details-backup-20261028T232301Z/dashboard.sqlite3`: integrity OK, all 54 table counts matched. Protected counts and weight checksums identical. 719 tests, TypeScript/build and layout passed. Claude read-only 360px smoke PASSED: open/Next/focus/Back preserve account URLs, direct link opens Ace, clean Save disabled, no errors or writes. Batch complete; the pre-existing season Back mismatch remains in Later.
@@ -193,6 +195,13 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
+- Roster images: after Mark as checked, a returning clan gets a new post without a reminder; an accepted original post remains an orphan in Discord.
+- Roster images: duplicate consent is checked in both `roster_image_posts.py` and storage `claim`; either check alone survives M11/M13. Keep both covered.
+- Roster images: dismiss's “still published” check (any account) and `groups_for` (first account) can drift.
+- Staff must select each pool's image channel before its first post.
+- Investigate whether a reload loop can run uncapped: a Declaration readiness tab left open across the backend restart logged hundreds of repeated auth/me + seasons requests and four 502s; requests stopped after navigating away. Cause not yet established.
+- Hidden roster limitation: the image section only shows the hidden line, so staff cannot pick an image channel until publication.
 
 - Pre-existing roster season-menu history issue: without Details, Back can show
   `season=1` in the URL while the page still displays the newer season.
