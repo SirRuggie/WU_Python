@@ -11,7 +11,7 @@ MODULE_ACTIONS = {
     'manage_reminders': 'cwl_reminders', 'participation': 'cwl_results',
     'participation_sync': 'cwl_results', 'bonuses': 'cwl_bonuses',
     'bonus_raffle': 'cwl_bonuses', 'manage_bridge': 'cwl_send',
-    'roster_images': 'cwl_send', 'announcements': 'cwl_send',
+    'roster_image_posts': 'cwl_send', 'roster_images': 'cwl_send', 'announcements': 'cwl_send',
 }
 
 

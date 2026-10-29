@@ -1,0 +1,132 @@
+"""Storage owner for global image destinations and per-clan delivery receipts."""
+import json
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS roster_image_channels (
+ pool TEXT PRIMARY KEY CHECK(pool IN ('main','lazy')),
+ channel_id TEXT NOT NULL, channel_name TEXT NOT NULL,
+ configured_by TEXT NOT NULL, configured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS roster_image_posts (
+ id INTEGER PRIMARY KEY, season_id INTEGER NOT NULL REFERENCES seasons(id),
+ pool TEXT NOT NULL CHECK(pool IN ('main','lazy')), clan_tag TEXT NOT NULL,
+ channel_id TEXT NOT NULL, message_id TEXT, posted_version INTEGER,
+ status TEXT NOT NULL CHECK(status IN ('sending','posted','failed','uncertain','dropped')),
+ request_id TEXT NOT NULL, error TEXT, posted_by TEXT NOT NULL,
+ posted_at TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(season_id,pool,clan_tag)
+);
+CREATE TABLE IF NOT EXISTS roster_image_requests (
+ request_id TEXT PRIMARY KEY, operation TEXT NOT NULL CHECK(operation IN ('post','update','drop')),
+ season_id INTEGER NOT NULL REFERENCES seasons(id), pool TEXT NOT NULL CHECK(pool IN ('main','lazy')),
+ clan_tag TEXT NOT NULL, target_version INTEGER NOT NULL, channel_id TEXT NOT NULL, message_id TEXT,
+ payload_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT, retry_after REAL, actor_id TEXT NOT NULL,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+
+class RosterImageStore:
+    def __init__(self, store):
+        self.store = store
+
+    def channels(self):
+        with self.store.tx() as db:
+            return [dict(r) for r in db.execute('SELECT * FROM roster_image_channels ORDER BY pool')]
+
+    def configure(self, pool, channel, name, actor):
+        with self.store.tx() as db:
+            old = db.execute('SELECT * FROM roster_image_channels WHERE pool=?', (pool,)).fetchone()
+            db.execute('INSERT INTO roster_image_channels(pool,channel_id,channel_name,configured_by) VALUES(?,?,?,?) '
+                       'ON CONFLICT(pool) DO UPDATE SET channel_id=excluded.channel_id,channel_name=excluded.channel_name,'
+                       'configured_by=excluded.configured_by,configured_at=CURRENT_TIMESTAMP', (pool, channel, name, actor))
+            new = dict(db.execute('SELECT * FROM roster_image_channels WHERE pool=?', (pool,)).fetchone())
+            db.execute('INSERT INTO roster_audit(season_id,actor_id,action,before_json,after_json) VALUES(?,?,?,?,?)',
+                       (0, actor, 'roster_image_channel', json.dumps(dict(old)) if old else None, json.dumps(new)))
+            return new
+
+    def posts(self, sid):
+        with self.store.tx() as db:
+            rows = [dict(r) for r in db.execute('SELECT * FROM roster_image_posts WHERE season_id=? ORDER BY pool,clan_tag', (sid,))]
+            last = db.execute('SELECT version,published_at,withdrawn_at FROM roster_publications WHERE season_id=? ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
+            published = db.execute('SELECT version,published_at FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
+            return {'posts': rows, 'published': dict(published) if published else None, 'last_publication': dict(last) if last else None}
+
+    def publication(self, sid, version=None):
+        """Read immutable publication rows; no draft roster is used for images."""
+        with self.store.tx() as db:
+            season = db.execute('SELECT * FROM seasons WHERE id=?', (sid,)).fetchone()
+            if version is None:
+                pub = db.execute('SELECT * FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
+            else:
+                pub = db.execute('SELECT * FROM roster_publications WHERE season_id=? AND version=?', (sid, version)).fetchone()
+            if not season or not pub:
+                return None
+            accounts = [dict(r) for r in db.execute('SELECT * FROM publication_accounts WHERE publication_id=? ORDER BY town_hall DESC,player_name,tag', (pub['id'],))]
+            return dict(season), dict(pub), accounts
+
+    def receipt(self, request_id):
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()
+            return dict(row) if row else None
+
+    def current(self, sid, pool, clan):
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=? AND clan_tag=?', (sid, pool, clan)).fetchone()
+            return dict(row) if row else None
+
+    def claim(self, sid, pool, clan, version, request_id, operation, channel, message, payload, actor):
+        """Atomic durable intent; no external call is made with the transaction held."""
+        with self.store.tx() as db:
+            prior = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()
+            if prior:
+                if (prior['season_id'], prior['pool'], prior['clan_tag'], prior['target_version'], prior['operation']) != (sid, pool, clan, version, operation):
+                    raise ImageConflict('Request ID belongs to a different action')
+                return dict(prior), False
+            latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
+            if not latest:
+                raise ImageConflict('Publish the roster before posting images')
+            if latest['version'] != version:
+                raise ImageConflict('A newer roster is published. Refresh before posting images.')
+            old = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=? AND clan_tag=?', (sid, pool, clan)).fetchone()
+            if old and old['status'] == 'sending':
+                # A crashed worker must never cause an automatic duplicate delivery.
+                active = db.execute("SELECT status FROM roster_image_requests WHERE request_id=? AND updated_at > datetime('now','-60 seconds')", (old['request_id'],)).fetchone()
+                if active:
+                    raise ImageConflict('Another post for this clan is in progress')
+                db.execute("UPDATE roster_image_posts SET status='uncertain',error='Delivery interrupted; check Discord',updated_at=CURRENT_TIMESTAMP WHERE id=?", (old['id'],))
+                db.execute("UPDATE roster_image_requests SET status='uncertain',error='Delivery interrupted; check Discord',updated_at=CURRENT_TIMESTAMP WHERE request_id=?", (old['request_id'],))
+                return {'status': 'uncertain', 'error': 'Delivery interrupted; check Discord'}, False
+            if old and old['status'] in ('posted', 'dropped') and old['posted_version'] == version:
+                if (operation == 'drop') == (old['status'] == 'dropped'):
+                    return dict(old), False
+            # Recheck the saved destination after asynchronous render/validation.
+            if operation == 'post':
+                selected = db.execute('SELECT channel_id FROM roster_image_channels WHERE pool=?', (pool,)).fetchone()
+                if not selected or selected['channel_id'] != channel:
+                    raise ImageConflict('The image channel changed. Review the destination again.')
+            elif not old or old['message_id'] != message or old['channel_id'] != channel:
+                raise ImageConflict('The posted message changed. Refresh before editing.')
+            db.execute('INSERT INTO roster_image_requests(request_id,operation,season_id,pool,clan_tag,target_version,channel_id,message_id,payload_json,status,actor_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                       (request_id, operation, sid, pool, clan, version, channel, message, json.dumps(payload), 'sending', actor))
+            db.execute('INSERT INTO roster_image_posts(season_id,pool,clan_tag,channel_id,message_id,status,request_id,posted_by) VALUES(?,?,?,?,?,?,?,?) '
+                       'ON CONFLICT(season_id,pool,clan_tag) DO UPDATE SET channel_id=excluded.channel_id,message_id=excluded.message_id,status=excluded.status,request_id=excluded.request_id,error=NULL,posted_by=excluded.posted_by,updated_at=CURRENT_TIMESTAMP',
+                       (sid, pool, clan, channel, message, 'sending', request_id, actor))
+            return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()), True
+
+    def finish(self, receipt, status, message=None, error=None, retry_after=None):
+        with self.store.tx() as db:
+            db.execute('UPDATE roster_image_requests SET status=?,message_id=COALESCE(?,message_id),error=?,retry_after=?,updated_at=CURRENT_TIMESTAMP WHERE request_id=?',
+                       (status, message, error, retry_after, receipt['request_id']))
+            successful = status in ('posted', 'dropped')
+            db.execute('UPDATE roster_image_posts SET status=?,message_id=COALESCE(?,message_id),error=?,posted_version=CASE WHEN ? THEN ? ELSE posted_version END,posted_at=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE posted_at END,updated_at=CURRENT_TIMESTAMP WHERE request_id=?',
+                       (status, message, error, successful, receipt['target_version'], successful, receipt['request_id']))
+            details = {k: receipt[k] for k in ('pool', 'clan_tag', 'target_version', 'request_id')}
+            details.update(status=status, message_id=message or receipt['message_id'], error=error)
+            db.execute('INSERT INTO roster_audit(season_id,tag,actor_id,action,after_json) VALUES(?,?,?,?,?)',
+                       (receipt['season_id'], receipt['clan_tag'], receipt['actor_id'], 'roster_image_' + receipt['operation'], json.dumps(details)))
+            return dict(db.execute('SELECT * FROM roster_image_posts WHERE request_id=?', (receipt['request_id'],)).fetchone())
+
+
+class ImageConflict(Exception):
+    """Durable concurrency or publication conflict; no Discord request permitted."""
