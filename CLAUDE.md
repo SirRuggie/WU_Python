@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current signup-polish frontend: `/home/ruggie/.local/share/wu-dashboard/releases/ef90834282142b1d924a9f24077d39f9b95105a4/`
+  - Current owner-prank frontend: `/home/ruggie/.local/share/wu-dashboard/releases/f95830b5b774ba34b29f4756a1cc9e3747148f1b/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -51,6 +51,25 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Review artifacts must be ONE self-contained HTML file with every screenshot embedded as base64 (no relative/`/tmp` links; he reviews on other devices and in other chats). Viewports: 360×800 and 1440×1000. Include the changed files, test results, before/after counts, and the red-team results.
 - When changing a script: return the full updated script.
 - He reviews on his phone; mobile layout matters as much as desktop.
+
+## Owner prank release — 2026-10-29
+
+- Current frontend and isolated backend: `f95830b5b774ba34b29f4756a1cc9e3747148f1b`, tag `owner-prank-1`, PR #46. Paths `/home/ruggie/.local/share/wu-dashboard/releases/f95830b5b774ba34b29f4756a1cc9e3747148f1b/` and `/home/ruggie/.local/share/wu-dashboard/backend/f95830b5b774ba34b29f4756a1cc9e3747148f1b/`.
+- Rollback frontend `ef90834282142b1d924a9f24077d39f9b95105a4`; rollback backend `8e0ee01337db50da8f2f289d257449c46440a440`. Bot unchanged. Disable `PRANK_ENABLED` in the existing private environment file before code rollback; retain all database data, including the additive `owner_prank_state` table.
+- Backup `.local/owner-prank-backup-20261029T194759Z/dashboard.sqlite3`: 1,204,224 bytes, integrity OK, all original table counts matched; migration dry run adds only the prank state table. Main 22/18/18 and Lazy 116/92/73 signups/assigned/locks unchanged.
+- Public `index-Ca9a-bgn.js` SHA256 `7026dda68d36f6d6168d54154a8f494109688b270c8a0a3eacc575522e09e65d`; 97 public asset hashes verified. Config readiness 200 twice at 4.35/5.46s, active PID 2249061 at activation, correct cwd and clean journal.
+- Claude infrastructure smoke passed (handoff 41): public hashes/cwd, anonymous state and private/public asset denial, journal. No owner session or live DM tested. Ruggie's experience check found the Home-only start bug on the PWA Tasks landing page; frontend correction is tracked by handoff 42. Do not call the experience fully verified.
+- 841 frontend tests, TypeScript/build; accepted 4,807 backend tests with 21 skipped. Evidence `/tmp/wu-owner-prank-release/live-proof.json`.
+
+```bash
+# First set PRANK_ENABLED=false in the existing private .local/cwl-web.env.
+/home/ruggie/.local/share/wu-dashboard/switch-release.py ef90834282142b1d924a9f24077d39f9b95105a4
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/8e0ee01337db50da8f2f289d257449c46440a440\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+systemctl --user daemon-reload
+systemctl --user restart wu-cwl-demo-web.service
+```
+
+Verify readiness, runtime cwd and public hashes after rollback. Never restore a database to roll back code.
 
 ## Standby rollback targets (verified 2026-10-28)
 
