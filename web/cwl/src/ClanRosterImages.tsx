@@ -6,6 +6,7 @@ import ChannelCombobox from "./ChannelCombobox";
 import type { AnnouncementChannel } from "./announcements";
 import ConfirmDialog from "./ConfirmDialog";
 import { hiddenPublicationStatus } from "./publicationStatus";
+import RosterImagesTestPanel from "./RosterImagesTestPanel";
 import SingleClanRosterTest from "./SingleClanRosterTest";
 import {
   imageConfirm,
@@ -41,6 +42,8 @@ export default function ClanRosterImages({
     text: string;
   } | null>(null);
   const [singleTest, setSingleTest] = useState(false);
+  const [testAll, setTestAll] = useState(false);
+  const testActive = useRef(false);
   const active = useRef(0),
     running = useRef(false),
     permission = useRef(canSend);
@@ -57,6 +60,8 @@ export default function ClanRosterImages({
     setBusy(false);
     setData(null);
     setConfirm(null);
+    setTestAll(false);
+    setSingleTest(false);
     setError("");
     setProgress("");
     void reload(generation).catch((e) => {
@@ -118,7 +123,10 @@ export default function ClanRosterImages({
     setError("");
     try {
       await runImageJobs(seasonId, jobs, {
-        active: () => generation === active.current && permission.current,
+        active: () =>
+          generation === active.current &&
+          permission.current &&
+          (jobs[0]?.operation !== "test" || testActive.current),
         progress: (t) => {
           if (generation === active.current) setProgress(t);
         },
@@ -332,6 +340,33 @@ export default function ClanRosterImages({
               </section>
             );
           })}
+          {canSend && (
+            <Button
+              disabled={busy}
+              onClick={() => {
+                testActive.current = true;
+                setTestAll(true);
+              }}
+            >
+              Test all…
+            </Button>
+          )}
+          {canSend && testAll && (
+            <RosterImagesTestPanel
+              data={data}
+              channels={channels}
+              busy={busy}
+              progress={progress}
+              error={error}
+              onClose={() => {
+                testActive.current = false;
+                setTestAll(false);
+                setConfirm(null);
+                void reload().catch((e) => setError(e.message));
+              }}
+              onConfirm={open}
+            />
+          )}
           {canSend && (
             <details onToggle={(e) => setSingleTest(e.currentTarget.open)}>
               <summary>Single-clan test</summary>

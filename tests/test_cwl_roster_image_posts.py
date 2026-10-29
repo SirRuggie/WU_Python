@@ -197,3 +197,32 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
                 db.execute('DELETE FROM roster_publications WHERE season_id=?', (self.sid,))
             self.assertEqual((await self.send()).status, 409)
             self.assertEqual(self.sent, [])
+
+    async def test_test_copies_never_create_post_receipts(self):
+        await self.setup_post()
+        with patch('cwl_web.roster_images.discord', self.fake):
+            response = await self.call('POST', f'/seasons/{self.sid}/roster-images/%23C2Y/test', self.owner,
+                json={'version': 1, 'channel_id': '123456789012345678', 'request_id': 'f' * 24})
+            self.assertEqual(response.status, 200)
+        payload = json.loads(self.sent[0][2]['data']._fields[0][2])
+        self.assertTrue(payload['content'].startswith('TEST ·'))
+        self.assertEqual(payload['allowed_mentions'], {'parse': []})
+        with self.app['store'].tx() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM roster_image_posts').fetchone()[0], 0)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM roster_image_requests').fetchone()[0], 0)
+
+    async def test_uncertain_test_copy_stops_and_does_not_replay(self):
+        from cwl_web.server_management import DiscordDeliveryUncertain
+        await self.setup_post()
+        async def uncertain(request, method, path, **kwargs):
+            if method == 'GET':
+                return await self.fake(request, method, path, **kwargs)
+            self.sent.append((method, path, kwargs))
+            raise DiscordDeliveryUncertain()
+        body = {'version': 1, 'channel_id': '123456789012345678', 'request_id': 'f' * 24}
+        with patch('cwl_web.roster_images.discord', uncertain):
+            first = await self.call('POST', f'/seasons/{self.sid}/roster-images/%23C2Y/test', self.owner, json=body)
+            self.assertEqual(first.status, 503)
+            again = await self.call('POST', f'/seasons/{self.sid}/roster-images/%23C2Y/test', self.owner, json=body)
+            self.assertEqual(again.status, 409)
+        self.assertEqual(len(self.sent), 1)

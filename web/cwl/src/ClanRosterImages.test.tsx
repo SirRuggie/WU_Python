@@ -7,7 +7,20 @@ vi.mock("./DashboardPermissions", () => ({
   useDashboardPermission: () => state.can,
 }));
 vi.mock("./SingleClanRosterTest", () => ({ default: () => null }));
-vi.mock("./ChannelCombobox", () => ({ default: () => null }));
+vi.mock("./ChannelCombobox", () => ({
+  default: ({ label, onChange }: any) => (
+    <button onClick={() => onChange("123")}>{label}</button>
+  ),
+}));
+vi.mock("./ActionPanel", () => ({
+  default: ({ children, footer, onClose }: any) => (
+    <div>
+      {children}
+      {footer}
+      <button onClick={onClose}>Close test</button>
+    </div>
+  ),
+}));
 vi.mock("./ConfirmDialog", () => ({
   default: ({ text, onCancel, onConfirm, children }: any) => (
     <div role="dialog">
@@ -116,4 +129,38 @@ it("uncertain edits use explicit same-message confirmation", async () => {
   expect(writes()).toHaveLength(0);
   await act(async () => button("Confirm").click());
   expect(writes()[0][0]).toContain("/update");
+});
+
+it("Test all asks for a test-only destination and confirmation; it only uses the test endpoint", async () => {
+  state.data.clans.push({
+    tag: "#L2Y",
+    name: "Lazy Clan",
+    pool: "lazy",
+    pages: 1,
+    count: 15,
+  });
+  await render();
+  await act(async () => button("Test all…").click());
+  await act(async () => button("Test channel").click());
+  await act(async () => button("Review test").click());
+  expect(host.textContent).toContain(
+    "Post a TEST copy of every Main and Lazy clan to #rosters? No pings. Nothing is recorded as posted.",
+  );
+  expect(writes()).toHaveLength(0);
+  await act(async () => button("Confirm").click());
+  expect(writes()).toHaveLength(2);
+  expect(
+    writes().every(
+      (c) => c[0].includes("/roster-images/") && c[0].endsWith("/test"),
+    ),
+  ).toBe(true);
+  expect(vi.mocked(api).mock.calls.some((c) => c[1] === "PUT")).toBe(false);
+});
+it("permission loss while confirming cancels the send", async () => {
+  await render();
+  await act(async () => button("Post Main").click());
+  state.can = false;
+  await render();
+  expect(button("Confirm")).toBeUndefined();
+  expect(writes()).toHaveLength(0);
 });

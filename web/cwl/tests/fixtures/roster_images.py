@@ -25,6 +25,9 @@ class ChannelTransport:
     async def list_channels(self):
         return channels
 
+    async def list_roles(self):
+        return []
+
 
 app['announcement_transport'] = ChannelTransport()
 
