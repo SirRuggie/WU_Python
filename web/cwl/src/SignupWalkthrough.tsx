@@ -31,7 +31,7 @@ export default function SignupWalkthrough({
       summary: "Main or Lazy CWL",
       instruction:
         "Choose Main or Lazy CWL. You can choose a different option for each account.",
-      art: "U04",
+      art: "villager-52545",
       available: true,
     },
     {
@@ -39,7 +39,7 @@ export default function SignupWalkthrough({
       title: "Select your accounts",
       summary: `You’re signing up for ${poolLabel} · ${selectedCount} selected`,
       instruction: `Select the accounts you want to sign up for ${poolLabel}.`,
-      art: "U23",
+      art: "villager-52538",
       available: !!pool,
     },
     {
@@ -47,7 +47,7 @@ export default function SignupWalkthrough({
       title: "Check and sign up",
       summary: "Not saved yet",
       instruction: "Check your accounts. Select Sign up below to finish.",
-      art: "U19",
+      art: "villager-52543",
       available: canReview,
     },
   ];

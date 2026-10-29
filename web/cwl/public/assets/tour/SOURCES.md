@@ -20,6 +20,10 @@ Ruggie supplied these assets from the [Supercell Fan Kit](https://fankit.superce
 
 ## Signup step artwork
 
-- `U04.webp`: Ruggie-supplied `U04.png` from https://fankit.supercell.com/; alpha >60 cropped, 340px tall WebP, quality85.
-- `U23.webp`: Ruggie-supplied `U23.png` from https://fankit.supercell.com/; alpha >60 cropped, 340px tall WebP, quality85.
-- `U19.webp`: Ruggie-supplied `U19.png` from https://fankit.supercell.com/; alpha >60 cropped, 340px tall WebP, quality85.
+Original PNGs downloaded from the official detail pages (Download original). Alpha >60 bounds cropped; resized to 340px tall with preserved alpha; WebP quality85. Display remains 96px phone /120px desktop.
+
+| Output | Fan Kit ID | Character / original | Source URL |
+|---|---|---|---|
+| villager-52545.webp | 52545 | Villager_HV_Villager_1.png — Home Village Villager | https://fankit.supercell.com/d/vkEdmkUCngKw/game-assets/show/eyJpZCI6NTI1NDUsInNjb3BlIjoiYXNzZXQ6dmlldyIsInRpbWVzdGFtcCI6IjE3OTMyOTQ1NTQifQ:supercell:Z2hgDw7JwDM3boCi0P3WBwzZydEYJfOXsJd5GTw7fL0 |
+| villager-52538.webp | 52538 | Villager_HV_Villager_4.png — Home Village Villager | https://fankit.supercell.com/d/vkEdmkUCngKw/game-assets/show/eyJpZCI6NTI1MzgsInNjb3BlIjoiYXNzZXQ6dmlldyIsInRpbWVzdGFtcCI6IjE3OTMyOTQ1ODAifQ:supercell:3esFH80vJh1J5zA2onYSA8ShhGbXY0WYJzP2OoodtJA |
+| villager-52543.webp | 52543 | Villager_HV_Villager_15.png — Home Village Villager | https://fankit.supercell.com/d/vkEdmkUCngKw/game-assets/show/eyJpZCI6NTI1NDMsInNjb3BlIjoiYXNzZXQ6dmlldyIsInRpbWVzdGFtcCI6IjE3OTMyOTQ2NDgifQ:supercell:-AACR-ONoE2N2OdBoBT0cIl-HmCgi7ZHdv3ss_q8Fhs |

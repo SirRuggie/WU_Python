@@ -42,7 +42,7 @@ it("shows art and a large title only on the current step, with compact inactive 
       expect(host.querySelectorAll("img")).toHaveLength(1);
       const image = host.querySelector("img")!;
       expect(image.getAttribute("src")).toBe(
-        `/assets/tour/${["U04", "U23", "U19"][stage - 1]}.webp`,
+        `/assets/tour/${["villager-52545", "villager-52538", "villager-52543"][stage - 1]}.webp`,
       );
       expect(image.getAttribute("loading")).toBe("lazy");
       expect(host.querySelector(".current [aria-current=step]")).not.toBeNull();

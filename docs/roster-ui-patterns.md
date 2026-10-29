@@ -245,6 +245,6 @@ Crop art above alpha 60 and size by height, with aspect-aware text padding; wide
 
 ## Member signup polish (prompt 10)
 
-Member navigation uses unique labelled icons; staff icon changes are limited to the CWL group. Member page pills are unnumbered; the signup wizard alone uses steps 1–3, with one large gold active card and compact inactive captions. U04/U23/U19 artwork appears only on the current step, cropped from owner-supplied assets. One local-time season line replaces member-only Draft and repeated season labels; staff pages retain their statuses.
+Member navigation uses unique labelled icons; staff icon changes are limited to the CWL group. Member page pills are unnumbered; the signup wizard alone uses steps 1–3, with one large gold active card and compact inactive captions. Official Fan Kit Villager assets 52545/52538/52543 appear only on the current step, using alpha-cropped 340px WebP files. One local-time season line replaces member-only Draft and repeated season labels; staff pages retain their statuses.
 
 Pool cards remain full keyboard/touch buttons. Review Change actions preserve eligible selections; switching to Main lists FWA/otherwise ineligible accounts removed from the unsaved selection. No automatic submit. Help is a footer menu row; profile/mobile avatar open a React Aria account menu with a separated Sign out action. The real-page tour retains its non-GET guard and whole-block targets.
