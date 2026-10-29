@@ -4,8 +4,8 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`, tag `announcements-1`.
-- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`.
+- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`, tag `roster-images-1`.
+- Rollback: `/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`; paired frontend rollback `190313b81f4c8373dc08f5a63fca966c6caffab2`.
 - Both are clean `git archive` exports. Current release imports were verified from the isolated directory using the existing virtualenv.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
@@ -59,3 +59,15 @@ Ruggie approved one read-only backend extension: `_delivery()` in `cwl_web/manag
 Deployed 2026-10-28 as `announcements-1` (`73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, PR #32), with a clean frontend build, isolated backend archive and approved service restart. Only `release.conf` changed; `frontend-routing.conf` and `storage-guard.conf` remained byte-identical. Imports, MainPID cwd, active service and restart journal passed. Public config returned two consecutive 200s after 5.53 seconds (transient startup 502s before readiness); public entry/feature hashes matched the manifest, and unauthenticated Manage read returned 401. Protected SQLite data, including Manage bindings, matched exactly. No scripted send/test-send/bind/save or Mongo access; normal backend startup retained its existing restore behavior.
 
 Backup: `.local/announcements-backup-20261028T205112Z/dashboard.sqlite3`; integrity OK, all 54 table counts matched. Previous frontend `4404c3672872ebff706519402efa4ee9940d3a60` and backend `61290a4ce2b87611119483d6376b879a675aeb81` remain the rollback pair. Claude's read-only 360px smoke PASSED, relayed by Ruggie: entry `index-Dn86Au-2.js`, backend, hidden status, real channels/roles, Preview and Edit open/close with no unsaved change; zero write requests, no errors, clean journal. Release complete.
+
+## Deployed roster images batch
+
+Released as `roster-images-1` (`2279c95c3bc62ac74447c4a66a0a924dde45bda4`, PR #35). Six imports resolved from the archive; effective absolute paths verified. Only release.conf changed; routing/storage drop-ins preserved. Readiness returned 200 twice at 4.41/5.53 seconds after transient startup 502s. PID 1639904/cwd, journal, public hashes and both anonymous 401s passed. Backup `.local/roster-images-backup-20261029T030832Z/dashboard.sqlite3`, integrity OK; migration dry run preserved all 54 old table counts, as did production activation. Three image tables empty; no scripted Discord calls. Main 19/18/18 and Lazy 95/92/73 unchanged. New tables remain on rollback.
+
+Claude read-only 360px smoke PASSED: Announcements loads, image reads 200, public asset hash/runtime correct, zero writes. Hidden November meant channel pickers, status labels and Preview were not visible or checked live. The Declaration restart request-loop observation and hidden channel-configuration limitation are recorded in the redesign Later list, not claimed fixed.
+
+Ruggie approved the roster-image channel/post schema, per-clan post/update/drop endpoints, opt-in rate-limit metadata, and durable **text-only** request receipts. Release requires a clean tagged backend archive, release.conf WorkingDirectory switch, restart and the usual readiness gate. The implementation checkpoint leaves production on verified Declaration frontend `190313b` and backend `73fe3fa`.
+
+Additive tables: `roster_image_channels`, `roster_image_posts`, `roster_image_requests`. Never store PNG bytes in SQLite/audit logs. Retry rendering uses the immutable publication and frozen metadata. Preserve these tables on code rollback; never restore a database to roll back code. Uncertain posts require a duplicate warning; uncertain edits PATCH the saved message ID. No automatic resend or Discord DELETE.
+
+Use normal backup/integrity/count evidence, retain both rollback targets, then verify public assets, runtime cwd, readiness and protected counts. Fake-Discord tests are not proof of live delivery; no live test send is authorized by the implementation batch.

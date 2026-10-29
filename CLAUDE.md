@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Verified deployment paths (2026-10-27):
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current Declaration frontend: `/home/ruggie/.local/share/wu-dashboard/releases/190313b81f4c8373dc08f5a63fca966c6caffab2/`
+  - Current Roster images frontend: `/home/ruggie/.local/share/wu-dashboard/releases/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`
   - Pre-deploy rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/` (the only rollback snapshot present at verification).
   - Rollback command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py snapshot-20261027T171555Z`
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -54,7 +54,22 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Standby rollback targets (verified 2026-10-28)
 
-- **Current frontend — Declaration:** `190313b81f4c8373dc08f5a63fca966c6caffab2`, tag `declaration-1`, PR #34.
+- **Current frontend + backend — Roster images:** `2279c95c3bc62ac74447c4a66a0a924dde45bda4`, tag `roster-images-1`, PR #35.
+  - Release root `/home/ruggie/.local/share/wu-dashboard`: frontend `releases/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`; backend `backend/2279c95c3bc62ac74447c4a66a0a924dde45bda4/`, PID 1639904 verified.
+  - Previous frontend `190313b81f4c8373dc08f5a63fca966c6caffab2`; previous backend `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`.
+  - Backup `/nvme0n1-disk/Projects/Bot - Warriors United/.local/roster-images-backup-20261029T030832Z/dashboard.sqlite3`: 1,142,784 bytes, integrity OK, all 54 existing table counts matched. Main 19/18/18 and Lazy 95/92/73 signups/assigned/locks unchanged.
+  - The three additive image tables stay on rollback; never restore the DB to roll back code.
+  - Public `index-DuQyJREr.js` and feature hashes matched. 753 frontend tests; 4,775 backend passed, 21 skipped; M16 killed. Claude read-only 360px smoke PASSED: Announcements loads, authenticated image reads 200, anonymous endpoints 401, no writes. November is hidden: channel pickers, statuses and Preview were not visible and were not checked live.
+  - Evidence `/tmp/CWL-roster-images-release-2279c95.html` and `/tmp/wu-roster-images-release/live-proof.json`.
+
+```bash
+/home/ruggie/.local/share/wu-dashboard/switch-release.py 190313b81f4c8373dc08f5a63fca966c6caffab2
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+systemctl --user daemon-reload
+systemctl --user restart wu-cwl-demo-web.service
+```
+
+- **Previous frontend — Declaration:** `190313b81f4c8373dc08f5a63fca966c6caffab2`, tag `declaration-1`, PR #34.
   - Release: `/home/ruggie/.local/share/wu-dashboard/releases/190313b81f4c8373dc08f5a63fca966c6caffab2/`.
   - Previous frontend / rollback: `c767b55c010dd0de82416301a2c60057775a3662`; command: `/home/ruggie/.local/share/wu-dashboard/switch-release.py c767b55c010dd0de82416301a2c60057775a3662`.
   - Backend unchanged: `backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, PID 1366655, no restart.

@@ -1888,6 +1888,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes.extend(manage_bridge_routes())
     from .roster_images import routes as roster_image_routes
     routes.extend(roster_image_routes())
+    from .roster_image_posts import routes as roster_image_post_routes
+    routes.extend(roster_image_post_routes())
     routes.extend(participation_routes())
     routes.extend(participation_sync_routes())
     routes.extend(bonus_routes())

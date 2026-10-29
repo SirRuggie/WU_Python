@@ -72,6 +72,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public retryAfter?: number,
   ) {
     super(message);
   }
@@ -132,6 +133,12 @@ export async function api<T>(
         `Request failed (${response.status}). Try again.`) +
         (data?.issue_reference ? ` Reference: ${data.issue_reference}` : ""),
       response.status,
+      response.status === 429 &&
+        typeof data?.retry_after === "number" &&
+        Number.isFinite(data.retry_after) &&
+        data.retry_after >= 0
+        ? data.retry_after
+        : undefined,
     );
   }
   if (method !== "GET") clearSnapshots();
