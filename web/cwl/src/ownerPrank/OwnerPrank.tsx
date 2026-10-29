@@ -14,6 +14,7 @@ import "./ownerPrank.css";
 
 type Props = {
   view: string;
+  blockedByTour: boolean;
   replaySignal: number;
   onSettled: () => void;
   onReplayAvailable: (available: boolean) => void;
@@ -22,6 +23,7 @@ type Props = {
 
 export default function OwnerPrank({
   view,
+  blockedByTour,
   replaySignal,
   onSettled,
   onReplayAvailable,
@@ -48,6 +50,9 @@ export default function OwnerPrank({
   useEffect(
     () => () => {
       generation.current += 1;
+      // StrictMode remounts effects in development without remounting state.
+      // Let the second setup issue the read that the cleanup invalidated.
+      started.current = false;
     },
     [],
   );
@@ -155,7 +160,22 @@ export default function OwnerPrank({
   };
 
   useEffect(() => {
-    if (view !== "home" || started.current || visitClosed.current) return;
+    if (blockedByTour) {
+      if (started.current && !openRef.current && !visitClosed.current) {
+        generation.current += 1;
+        started.current = false;
+      }
+      return;
+    }
+    if (view !== "home") {
+      if (started.current && !openRef.current && !visitClosed.current) {
+        generation.current += 1;
+        visitClosed.current = true;
+        callbacks.current.onSettled();
+      }
+      return;
+    }
+    if (started.current || visitClosed.current) return;
     started.current = true;
     const token = ++generation.current;
     void api<PrankState>("/prank/state")
@@ -169,16 +189,10 @@ export default function OwnerPrank({
         if (received.completed_at) callbacks.current.onSettled();
         else void enter(received, token);
       })
-      .catch((error) => {
-        if (token === generation.current) {
-          if (!(error instanceof ApiError && error.status === 404))
-            callbacks.current.onError(
-              "The prank could not load. Refresh this page to try again.",
-            );
-          callbacks.current.onSettled();
-        }
+      .catch(() => {
+        if (token === generation.current) callbacks.current.onSettled();
       });
-  }, [view]);
+  }, [view, blockedByTour]);
 
   useEffect(() => {
     if (
@@ -312,7 +326,7 @@ export default function OwnerPrank({
       }}
     >
       <article
-        className={`tour-card owner-prank-card${card.art ? " has-art" : ""}${state.card <= 2 ? " plain" : ""}${state.card === 3 ? " jump" : ""}${state.card === 15 ? " farewell" : ""}`}
+        className={`tour-card owner-prank-card${card.art ? " has-art" : ""}${state.card === 10 || state.card === 13 ? " wide-character" : ""}${state.card <= 2 ? " plain" : ""}${state.card === 3 ? " jump" : ""}${state.card === 15 ? " farewell" : ""}`}
       >
         <button
           type="button"
@@ -326,9 +340,7 @@ export default function OwnerPrank({
           <img className="owner-prank-character" src={card.art} alt="" />
         )}
         <div className="owner-prank-copy">
-          {state.card > 2 && (
-            <span className="owner-prank-step">{state.card} of 15</span>
-          )}
+          <span className="owner-prank-step">{state.card} of ?</span>
           <h2 id="owner-prank-title">{card.title}</h2>
           <p>{card.body}</p>
           {state.card === 3 && (

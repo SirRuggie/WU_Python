@@ -18,6 +18,9 @@ it("uses the selected bait branch and live signup count", () => {
   expect(cardFor(3, "no", 42).body).toContain("pressed No");
   expect(cardFor(2, "yes", 42).body).toBe("Deleted 42/42 signups");
   expect(cardFor(6, "no", 42).body).toContain("All 42 signups are safe");
+  expect(cardFor(14, "no", 42).body).toBe(
+    "Next time you see a big scary button, maybe ask Ruggie to supervise you. Just a thought.",
+  );
 });
 
 it("maps only specified visible milestone cards and uses Tenor", () => {

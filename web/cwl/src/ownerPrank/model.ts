@@ -94,14 +94,14 @@ export function cardFor(number: number, branch: Branch, count: number): Card {
         title: "A Promise From Your Troops",
         body: "No abandoning your base. No disappearing mid-war. No pretending we don't know you when things go wrong.",
         buttons: ["That's touching"],
-        art: asset("97730"),
+        art: asset("52519"),
       };
     case 9:
       return {
         title: "Sound Familiar Yet?",
         body: "We'd stand beside you through every bad attack, awkward decision, and suspicious button click. Forever loyal, Chief.",
         buttons: ["Wait a second"],
-        art: asset("97730"),
+        art: asset("145450"),
       };
     case 10:
       return {
@@ -115,7 +115,7 @@ export function cardFor(number: number, branch: Branch, count: number): Card {
         title: "LOL. You Thought.",
         body: "Did you REALLY think one little dismiss button was going to save you from Ruggie?",
         buttons: ["Let me out"],
-        art: asset("102809"),
+        art: asset("134729"),
       };
     case 12:
       return {
@@ -134,9 +134,9 @@ export function cardFor(number: number, branch: Branch, count: number): Card {
     case 14:
       return {
         title: "One Last Thing, Chief...",
-        body: "Next time you see a big scary admin button, maybe ask Ruggie to supervise you. Just a thought.",
+        body: "Next time you see a big scary button, maybe ask Ruggie to supervise you. Just a thought.",
         buttons: ["I'm begging"],
-        art: asset("102845"),
+        art: asset("160043"),
       };
     case 15:
       return {

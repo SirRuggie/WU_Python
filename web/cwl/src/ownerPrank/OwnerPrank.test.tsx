@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { StrictMode, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import OwnerPrank from "./OwnerPrank";
@@ -63,6 +63,7 @@ beforeEach(() => {
           branch: null,
           completed_at: null,
           run: 2,
+          can_replay: false,
         };
       return { ...server };
     },
@@ -92,17 +93,24 @@ afterEach(() => {
   onError.mockClear();
 });
 
-async function render(replaySignal = 0) {
+async function render(
+  replaySignal = 0,
+  view = "home",
+  strict = false,
+  blockedByTour = false,
+) {
+  const panel = (
+    <OwnerPrank
+      view={view}
+      blockedByTour={blockedByTour}
+      replaySignal={replaySignal}
+      onSettled={settled}
+      onReplayAvailable={replayAvailable}
+      onError={onError}
+    />
+  );
   await act(async () => {
-    root.render(
-      <OwnerPrank
-        view="home"
-        replaySignal={replaySignal}
-        onSettled={settled}
-        onReplayAvailable={replayAvailable}
-        onError={onError}
-      />,
-    );
+    root.render(strict ? <StrictMode>{panel}</StrictMode> : panel);
   });
 }
 
@@ -121,13 +129,17 @@ it("takes both bait branches through the fake deletion and reassurance without s
   expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
     "Remove all signups?",
   );
-  expect(document.querySelector(".owner-prank-step")).toBeNull();
+  expect(document.querySelector(".owner-prank-step")?.textContent).toBe(
+    "1 of ?",
+  );
   expect(settled).not.toHaveBeenCalled();
   await press("No");
   expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
     "Deleted 42/42 signups",
   );
-  expect(document.querySelector(".owner-prank-step")).toBeNull();
+  expect(document.querySelector(".owner-prank-step")?.textContent).toBe(
+    "2 of ?",
+  );
   expect(server.branch).toBe("no");
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 2100));
@@ -136,7 +148,7 @@ it("takes both bait branches through the fake deletion and reassurance without s
     "No real signups were deleted.",
   );
   expect(document.querySelector(".owner-prank-step")?.textContent).toBe(
-    "3 of 15",
+    "3 of ?",
   );
   expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
     "You pressed No",
@@ -252,6 +264,9 @@ it("reads newer progress after another browser advanced two cards", async () => 
 it("closes when another browser completed the run", async () => {
   server = { ...server, card: 15, branch: "no" };
   await render();
+  expect(document.querySelector(".owner-prank-step")?.textContent).toBe(
+    "15 of ?",
+  );
   api.mockImplementationOnce(async () => {
     server = { ...server, completed_at: "2026-10-29T00:00:00Z", run: 2 };
     throw new ApiError("Prank run changed", 409);
@@ -271,4 +286,155 @@ it("silently releases the tour when prank state is unavailable with 404", async 
   expect(document.querySelector(".owner-prank-dialog")).toBeNull();
   expect(settled).toHaveBeenCalledTimes(1);
   expect(onError).not.toHaveBeenCalled();
+});
+
+it("silently releases the tour when the prank state read fails", async () => {
+  api.mockImplementationOnce(async () => {
+    throw new Error("network unavailable");
+  });
+  await render();
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  expect(settled).toHaveBeenCalledTimes(1);
+  expect(onError).not.toHaveBeenCalled();
+});
+
+it("resumes saved card 2 directly at the Wizard", async () => {
+  server = { ...server, card: 2, branch: "yes" };
+  await render();
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "HEY!! WHAT ARE YOU DOING?!",
+  );
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "No real signups were deleted.",
+  );
+  expect(
+    api.mock.calls.some(
+      ([, , body]) => body?.event === "prank_card_seen" && body.card === 3,
+    ),
+  ).toBe(true);
+  expect(
+    api.mock.calls.some(
+      ([, , body]) => body?.event === "prank_jumpscare_seen" && body.card === 3,
+    ),
+  ).toBe(true);
+});
+
+it("opens once after StrictMode effect replay with a pending read", async () => {
+  let resolveRead!: (state: PrankState) => void;
+  const pendingRead = new Promise<PrankState>((resolve) => {
+    resolveRead = resolve;
+  });
+  const delegate = api.getMockImplementation()!;
+  api.mockImplementation((...args) =>
+    args[0] === "/prank/state" ? pendingRead : delegate(...args),
+  );
+  await render(0, "home", true);
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  await act(async () => {
+    resolveRead({ ...server });
+  });
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+  expect(
+    api.mock.calls.filter(([, , body]) => body?.event === "prank_opened"),
+  ).toHaveLength(1);
+  await act(async () => {
+    document.querySelector<HTMLButtonElement>(".owner-prank-close")!.click();
+  });
+  expect(settled).toHaveBeenCalledTimes(1);
+});
+
+it("ignores the pending Home read after navigating away", async () => {
+  let resolveRead!: (state: PrankState) => void;
+  api.mockImplementationOnce(
+    () =>
+      new Promise<PrankState>((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+  await render();
+  await render(0, "todo");
+  await act(async () => {
+    resolveRead({ ...server });
+  });
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  expect(settled).toHaveBeenCalledTimes(1);
+});
+
+it("waits for an off-Home manual tour to close before starting on Home", async () => {
+  await render(0, "todo");
+  await render(0, "home", false, true);
+  expect(
+    api.mock.calls.filter(([path]) => path === "/prank/state"),
+  ).toHaveLength(0);
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  await render(0, "home", false, false);
+  expect(
+    api.mock.calls.filter(([path]) => path === "/prank/state"),
+  ).toHaveLength(1);
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+});
+
+it("discards a pending state read when the tour starts", async () => {
+  let resolveRead!: (state: PrankState) => void;
+  api.mockImplementationOnce(
+    () =>
+      new Promise<PrankState>((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+  await render();
+  await render(0, "home", false, true);
+  await act(async () => {
+    resolveRead({ ...server });
+  });
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  await render(0, "home", false, false);
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+  expect(
+    api.mock.calls.filter(([, , body]) => body?.event === "prank_opened"),
+  ).toHaveLength(1);
+});
+
+it("uses the saved replay entitlement to start a new run", async () => {
+  server = {
+    ...server,
+    card: 15,
+    branch: "yes",
+    completed_at: "2026-10-29T00:00:00Z",
+    can_replay: true,
+  };
+  await render();
+  expect(replayAvailable).toHaveBeenCalledWith(true);
+  await render(1);
+  expect(document.querySelector(".owner-prank-card")?.textContent).toContain(
+    "Remove all signups?",
+  );
+  expect(
+    api.mock.calls.some(
+      ([, , body]) =>
+        body?.event === "prank_replay" && body.card === 15 && body.run === 1,
+    ),
+  ).toBe(true);
+  expect(replayAvailable).toHaveBeenCalledWith(false);
+});
+
+it("Escape closes the prank early and saves its card", async () => {
+  await render();
+  await act(async () => {
+    document
+      .querySelector<HTMLDialogElement>(".owner-prank-dialog")!
+      .dispatchEvent(new Event("cancel", { cancelable: true }));
+  });
+  expect(document.querySelector(".owner-prank-dialog")).toBeNull();
+  expect(
+    api.mock.calls.some(
+      ([, , body]) => body?.event === "prank_closed_early" && body.card === 1,
+    ),
+  ).toBe(true);
 });

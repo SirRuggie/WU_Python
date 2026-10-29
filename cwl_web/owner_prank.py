@@ -1,8 +1,10 @@
 """Owner-only HTTP adapter for the dashboard Easter egg."""
 
+import asyncio
 import logging
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 from aiohttp import web
 
@@ -17,6 +19,7 @@ ASSET_NAMES = frozenset({
     '78096.webp', '97730.webp', '102860.webp',
     '97711.webp', '160053.webp', '102809.webp', '102888.webp',
     '102845.webp', 'final-aq.webp',
+    '52519.webp', '145450.webp', '134729.webp', '160043.webp',
 })
 TITLES = (
     '', 'Remove all signups?', 'Working...', 'HEY!! WHAT ARE YOU DOING?!',
@@ -38,6 +41,33 @@ MESSAGES = {
     'prank_completed': '👑 Chief survived the entire prank. The Queen finally released him. Warriors United lives another day.',
 }
 LOG = logging.getLogger(__name__)
+TASKS_KEY = 'owner_prank_delivery_tasks'
+
+
+async def lifecycle(app):
+    """Own in-flight DM tasks and cancel them cleanly on app shutdown."""
+    app[TASKS_KEY] = set()
+    yield
+    tasks = tuple(app[TASKS_KEY])
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _send_claimed_dm(app, recipient_id, message):
+    # The durable claim is already committed. A failed or cancelled send is never retried.
+    context = SimpleNamespace(app=app)
+    try:
+        channel = await discord(context, 'POST', '/users/@me/channels',
+                                json={'recipient_id': recipient_id})
+        await discord(context, 'POST', f"/channels/{channel['id']}/messages",
+                      json={'content': message, 'allowed_mentions': {'parse': []}})
+    except asyncio.CancelledError:
+        LOG.warning('Owner prank milestone delivery cancelled after durable claim')
+        raise
+    except Exception:
+        LOG.exception('Owner prank milestone delivery failed after durable claim')
 
 
 def _config():
@@ -100,18 +130,15 @@ async def event(request):
     except InvalidEvent as exc:
         raise web.HTTPBadRequest(text=str(exc)) from None
     if claimed:
+        title = TITLES[body['card']].rstrip('.…?')
         message = (f"🚪 Chief escaped early at card {body['card']}: "
-                   f"{TITLES[body['card']]}. He couldn't handle the full Ruggie experience."
+                   f"{title}. He couldn't handle the full Ruggie experience."
                    if claimed == 'prank_closed_early' else MESSAGES[claimed])
         if user_id == config[0]:
             message = '[TEST] ' + message
-        try:
-            channel = await discord(request, 'POST', '/users/@me/channels',
-                                    json={'recipient_id': config[0]})
-            await discord(request, 'POST', f"/channels/{channel['id']}/messages",
-                          json={'content': message, 'allowed_mentions': {'parse': []}})
-        except Exception:
-            LOG.exception('Owner prank milestone delivery failed after durable claim')
+        task = asyncio.create_task(_send_claimed_dm(request.app, config[0], message))
+        request.app[TASKS_KEY].add(task)
+        task.add_done_callback(request.app[TASKS_KEY].discard)
     return _response(updated, store, user_id, config)
 
 

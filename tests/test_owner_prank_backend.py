@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import os
+import re
 import secrets
 import tempfile
 import time
@@ -36,6 +37,7 @@ class OwnerPrankTests(unittest.IsolatedAsyncioTestCase):
         self.app = create_app(db_path=str(Path(self.tmp.name) / 'prank.sqlite'), secure_cookies=False)
         self.client = TestClient(TestServer(self.app))
         await self.client.start_server()
+        self.client_closed = False
         self.headers = {uid: self.auth(uid) for uid in (NOTIFY, TARGET, STAFF)}
         self.messages = []
         self.fail_delivery = False
@@ -66,7 +68,8 @@ class OwnerPrankTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         self.transport.stop()
-        await self.client.close()
+        if not self.client_closed:
+            await self.client.close()
         self.owners.stop()
         self.config.stop()
         self.tmp.cleanup()
@@ -89,6 +92,10 @@ class OwnerPrankTests(unittest.IsolatedAsyncioTestCase):
         if branch is not None:
             body['branch'] = branch
         return await self.call('POST', '/event', uid, body=body)
+
+    async def delivery_idle(self):
+        while self.app[owner_prank.TASKS_KEY]:
+            await asyncio.gather(*tuple(self.app[owner_prank.TASKS_KEY]))
 
     async def test_guard_config_csrf_assets_and_readonly_count(self):
         state = await self.call('GET', '/state')
@@ -139,6 +146,7 @@ class OwnerPrankTests(unittest.IsolatedAsyncioTestCase):
             if milestone:
                 self.assertEqual((await self.post(milestone, card)).status, 200)
                 self.assertEqual((await self.post(milestone, card)).status, 200)
+        await self.delivery_idle()
         self.assertEqual(len(self.messages), 10)
         self.assertEqual((await self.post('prank_replay', 15)).status, 400)
         self.assertEqual((await self.call('GET', '/state')).status, 200)
@@ -154,11 +162,13 @@ class OwnerPrankTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await replay.json())['run'], 2)
         self.assertEqual((await self.post('prank_opened', 1, uid=NOTIFY)).status, 409)
         self.assertEqual((await self.post('prank_opened', 1, run=2, uid=NOTIFY)).status, 200)
+        await self.delivery_idle()
         self.assertEqual(sum(message.startswith('[TEST] 😈') for message in self.messages), 2)
 
     async def test_claim_survives_delivery_failure_and_concurrent_duplicate(self):
         self.fail_delivery = True
         self.assertEqual((await self.post('prank_opened', 1)).status, 200)
+        await self.delivery_idle()
         self.fail_delivery = False
         results = await asyncio.gather(*[self.post('prank_opened', 1) for _ in range(4)])
         self.assertTrue(all(result.status == 200 for result in results))
@@ -166,6 +176,7 @@ class OwnerPrankTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(read(self.app['store'], TARGET)['notified'].split('prank_opened')) - 1, 1)
         results = await asyncio.gather(*[self.post('prank_bait_yes', 1) for _ in range(8)])
         self.assertTrue(all(result.status == 200 for result in results))
+        await self.delivery_idle()
         self.assertEqual(len(self.messages), 1)
         reopened = Store(self.app['store'].path)
         self.assertEqual(read(reopened, TARGET)['branch'], 'yes')
@@ -189,3 +200,57 @@ class OwnerPrankTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, 400)
         self.assertEqual(self.app['store'].rows('SELECT * FROM owner_prank_state'), [])
         self.assertEqual(self.messages, [])
+
+    async def test_hanging_discord_does_not_hold_post_and_shutdown_cancels(self):
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+        release = asyncio.Event()
+
+        async def hanging_discord(request, method, path, **kwargs):
+            started.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+            return {'id': 'fixture-dm'}
+
+        with patch.object(owner_prank, 'discord', hanging_discord):
+            response = await asyncio.wait_for(self.post('prank_opened', 1), timeout=0.5)
+            self.assertEqual(response.status, 200)
+            await asyncio.wait_for(started.wait(), timeout=0.5)
+            self.assertEqual(len(self.app[owner_prank.TASKS_KEY]), 1)
+            self.assertIn('prank_opened', read(self.app['store'], TARGET)['notified'])
+            await asyncio.wait_for(self.client.close(), timeout=0.5)
+            self.client_closed = True
+            await asyncio.wait_for(cancelled.wait(), timeout=0.5)
+        self.assertEqual(self.messages, [])
+
+    async def test_early_close_title_punctuation(self):
+        for card, title in ((1, 'Remove all signups'), (2, 'Working'),
+                            (3, 'HEY!! WHAT ARE YOU DOING?!'), (11, 'LOL. You Thought'),
+                            (14, 'One Last Thing, Chief'), (15, 'Well, Look Who Survived')):
+            with self.app['store'].tx() as db:
+                db.execute('INSERT INTO owner_prank_state(user_id,card,branch) VALUES (?,?,?) '
+                           'ON CONFLICT(user_id) DO UPDATE SET card=excluded.card, '
+                           'branch=excluded.branch',
+                           (TARGET, card, 'yes' if card >= 2 else None))
+            self.assertEqual((await self.post('prank_closed_early', card)).status, 200)
+            await self.delivery_idle()
+            self.assertIn(f'at card {card}: {title}. He couldn\'t', self.messages[-1])
+
+    def test_python_titles_match_frontend_model(self):
+        model = Path(__file__).resolve().parents[1] / 'web/cwl/src/ownerPrank/model.ts'
+        titles = re.findall(r'^\s*title:\s*"([^"]+)",', model.read_text(), re.MULTILINE)
+        self.assertEqual(len(titles), 16)
+        self.assertEqual(titles[2], titles[3])  # Card 3 has Yes and No variants.
+        self.assertEqual(tuple(titles[:2] + titles[3:]), owner_prank.TITLES[1:])
+
+    def test_frontend_art_matches_owner_only_allowlist_and_files(self):
+        model = Path(__file__).resolve().parents[1] / 'web/cwl/src/ownerPrank/model.ts'
+        references = re.findall(r'\bart:\s*asset\("([^"]+)"\)', model.read_text())
+        self.assertEqual(len(references), 14)  # Both card 3 branches reference the Wizard.
+        used_files = {f'{name}.webp' for name in references}
+        shipped_files = {path.name for path in owner_prank.ASSETS.glob('*.webp')}
+        self.assertEqual(used_files, owner_prank.ASSET_NAMES)
+        self.assertEqual(shipped_files, used_files)

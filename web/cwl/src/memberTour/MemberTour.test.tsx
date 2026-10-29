@@ -127,12 +127,15 @@ it("waits for the owner prank before inviting the member tour", async () => {
   await render("home", "open", false, false);
   expect(document.querySelector(".member-tour")).not.toBeNull();
 });
-it("queues manual Help & tour while the prank owns the dialog", async () => {
+it("disables manual Help & tour while the prank owns the dialog", async () => {
   await render("home", "open", false, true);
+  expect(
+    document.querySelector<HTMLButtonElement>(".tour-launcher")?.disabled,
+  ).toBe(true);
   await click(".tour-launcher");
   expect(document.querySelector(".member-tour")).toBeNull();
   expect(document.querySelector(".tour-launcher")?.textContent).toContain(
-    "Tour queued",
+    "Help & tour",
   );
   await render("home", "open", false, false);
   expect(document.querySelectorAll(".member-tour")).toHaveLength(1);

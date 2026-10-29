@@ -34,6 +34,7 @@ import { useMobileNavigation } from './useMobileNavigation'
 import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import OwnerPrankBoundary from './ownerPrank/OwnerPrankBoundary'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
@@ -659,7 +660,7 @@ function App() {
       <SidebarNavigation tourExpanded={tourActive} key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={navigateSidebar} publicationStep={publicationStep} onPublication={openPublication} signupPanel={signupPanel} onSignup={panel => changeView("signup", "", undefined, panel)} />
       <div className="sidebar-foot">
         <MemberTour key={session.user.id} view={view} menuOpen={menuOpen} onMenu={setMenuOpen} onActive={tourSession} onNavigate={tourNavigate}
-          inviteBlocked={session.is_owner && prankReadyUser !== session.user.id}
+          inviteBlocked={view === 'home' && session.is_owner && prankReadyUser !== session.user.id}
           startBlocked={pending || signupBusy.current || rosterBusy || manageDirty || cwlDirty || publicationBusy || publicationDirty || reminderDirty || savedSignupDirty}
           signupState={dataError || accountError ? 'error' : seasonsLoading || !season || loadingData ? 'loading' : !season.signup_open ? 'closed' : !accounts.length ? 'empty' : !visibleAccounts.length ? 'all-signed' : 'open'} />
         <AccountMenu user={session.user} onSignOut={signOut} variant="profile" disabled={pending}
@@ -916,9 +917,11 @@ function App() {
       </main>
     </div>
 
-    {session.is_owner && <Suspense fallback={null}><OwnerPrank key={session.user.id} view={view} replaySignal={prankReplaySignal}
-      onSettled={() => setPrankReadyUser(session.user.id)} onReplayAvailable={setPrankReplayAvailable}
-      onError={text => setNotice({kind: 'error', text})} /></Suspense>}
+    {session.is_owner && <OwnerPrankBoundary key={session.user.id} onFailure={() => setPrankReadyUser(session.user.id)}>
+      <Suspense fallback={null}><OwnerPrank view={view} blockedByTour={tourActive} replaySignal={prankReplaySignal}
+        onSettled={() => setPrankReadyUser(session.user.id)} onReplayAvailable={setPrankReplayAvailable}
+        onError={text => setNotice({kind: 'error', text})} /></Suspense>
+    </OwnerPrankBoundary>}
   </div></DashboardPermissions.Provider>
 }
 function Brand() { return <div className="brand"><img className="emblem discord-server-icon" src={serverIconUrl} alt="Warriors United server icon" width={39} height={39} /><span><strong>WARRIORS UNITED</strong><small>SERVER DASHBOARD</small></span></div> }

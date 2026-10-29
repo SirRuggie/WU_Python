@@ -18,7 +18,8 @@
 }
 
 .owner-prank-card {
-  --art-width: 0px;
+  --art-height: 160px;
+  --art-space: 180px;
   position: absolute;
   left: 50%;
   top: 50%;
@@ -33,8 +34,12 @@
 }
 
 .owner-prank-card.has-art {
-  --art-width: 125px;
-  padding-left: calc(var(--art-width) + 20px);
+  padding-left: var(--art-space);
+}
+
+.owner-prank-card.wide-character {
+  --art-height: 205px;
+  --art-space: 225px;
 }
 
 .owner-prank-card.jump {
@@ -48,15 +53,26 @@
     0 0 30px #f0a9ca40;
 }
 
+.owner-prank-card.has-art.farewell {
+  --art-height: 280px;
+  padding: 165px 20px 18px;
+}
+
 .owner-prank-character {
   position: absolute;
-  left: 5px;
-  bottom: 10px;
-  width: var(--art-width);
-  height: 170px;
+  left: -10px;
+  top: -35px;
+  width: auto;
+  height: var(--art-height);
+  max-width: var(--art-height);
   object-fit: contain;
-  object-position: bottom;
+  object-position: top;
   pointer-events: none;
+}
+
+.owner-prank-card.farewell .owner-prank-character {
+  left: 8px;
+  top: -125px;
 }
 
 .owner-prank-step {
@@ -155,11 +171,22 @@
     animation: owner-prank-mobile-enter 160ms ease-out;
   }
   .owner-prank-card.has-art {
-    --art-width: 105px;
-    padding-left: 120px;
+    --art-height: 140px;
+    padding: 125px 16px 18px;
+  }
+  .owner-prank-card.has-art.wide-character {
+    --art-height: 180px;
+    padding-top: 165px;
   }
   .owner-prank-character {
-    height: 150px;
+    top: -25px;
+  }
+  .owner-prank-card.has-art.farewell {
+    --art-height: 220px;
+    padding: 125px 16px 18px;
+  }
+  .owner-prank-card.farewell .owner-prank-character {
+    top: -105px;
   }
   .owner-prank-card p {
     font-size: 13px;
@@ -173,13 +200,6 @@
 }
 
 @media (max-width: 380px) {
-  .owner-prank-card.has-art {
-    --art-width: 75px;
-    padding-left: 87px;
-  }
-  .owner-prank-character {
-    height: 120px;
-  }
   .owner-prank-card {
     padding-right: 12px;
   }
