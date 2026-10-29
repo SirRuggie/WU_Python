@@ -1,4 +1,5 @@
 import CwlStepStrip, { MemberStepStrip } from "./CwlStepStrip"
+import MemberTour from "./memberTour/MemberTour"
 import type { PublicationDraft } from "./publication"
 import { clearJourneyState } from './journeyState'
 import { loadAccountDisplay, mergeAccountProgress } from './accountDisplay'
@@ -84,6 +85,7 @@ function App() {
   const [rosterBusy, setRosterBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [tourActive, setTourActive] = useState(false)
   const { drawerRef, triggerRef, mobile } = useMobileNavigation(menuOpen, () => setMenuOpen(false), Boolean(session))
   const [seasons, setSeasons] = useState<Season[]>([])
   const [staffSeasonId, setSeasonId] = useState(entryTarget.season)
@@ -507,12 +509,13 @@ function App() {
 
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
-  return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className="shell">
+  return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className={`shell${tourActive ? ' tour-active' : ''}`}>
     <a className="skip-to-content" href="#dashboard-main" inert={mobile && menuOpen}>Skip to content</a>
     <aside ref={drawerRef} id="dashboard-navigation" className={`sidebar ${menuOpen ? 'open' : ''}`} inert={mobile && !menuOpen} role={mobile && menuOpen ? 'dialog' : undefined} aria-modal={mobile && menuOpen ? true : undefined} aria-label={mobile && menuOpen ? 'Navigation' : undefined} tabIndex={-1}>
       <div className="brand-wrap"><Brand /><button className="menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button></div>
-      <SidebarNavigation key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={navigateSidebar} publicationStep={publicationStep} onPublication={openPublication} signupPanel={signupPanel} onSignup={panel => changeView("signup", "", undefined, panel)} />
+      <SidebarNavigation tourExpanded={tourActive} key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={navigateSidebar} publicationStep={publicationStep} onPublication={openPublication} signupPanel={signupPanel} onSignup={panel => changeView("signup", "", undefined, panel)} />
       <div className="sidebar-foot">
+        <MemberTour view={view} menuOpen={menuOpen} onMenu={setMenuOpen} onActive={setTourActive} />
         <div className="sidebar-account">
           <AccountIdentity user={session.user} />
           <small>@{session.user.username}</small>

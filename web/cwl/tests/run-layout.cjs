@@ -53,8 +53,20 @@ server.stdout.on("data", (chunk) => {
     { stdio: "inherit", env: process.env },
   );
   test.on("exit", (code) => {
-    process.exitCode = code || 0;
-    server.kill();
+    if (code) {
+      process.exitCode = code;
+      server.kill();
+      return;
+    }
+    const tour = spawn(
+      process.execPath,
+      [path.join(__dirname, "member-tour.browser.cjs"), String(port)],
+      { stdio: "inherit", env: process.env },
+    );
+    tour.on("exit", (tourCode) => {
+      process.exitCode = tourCode || 0;
+      server.kill();
+    });
   });
 });
 server.on("exit", (code) => {
