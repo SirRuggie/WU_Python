@@ -11,7 +11,10 @@ type Signed = {
 type Linked = { tag: string; name: string };
 export function relativeMinutes(at: number, now: number) {
   const minutes = Math.max(1, Math.ceil((at - now) / 60000));
-  if (minutes >= 1440) return `in ${Math.ceil(minutes / 1440)} days`;
+  if (minutes >= 1440) {
+    const days = Math.round(minutes / 1440);
+    return `in ${days} day${days === 1 ? "" : "s"}`;
+  }
   if (minutes >= 60) return `in ${Math.ceil(minutes / 60)} h`;
   return `in ${minutes} min`;
 }
@@ -119,6 +122,13 @@ export default function MemberSignupStatus({
         {open && signups.length > 0 && (
           <button onClick={onChange}>Change signups ›</button>
         )}
+        {!signups.length &&
+          !remaining.length &&
+          (open ? (
+            <button onClick={onRemaining}>Sign up for CWL ›</button>
+          ) : (
+            <p>Signups are closed.</p>
+          ))}
         {onRefresh && (
           <button className="member-signup-refresh" onClick={onRefresh}>
             Refresh

@@ -158,10 +158,16 @@ def _saved_text(session: MemberSession) -> str:
     else:
         heading = f"✓ You're signed up · {len(signed)} account{'s' if len(signed) != 1 else ''}"
     lines = ["## My signups", heading]
+    published = bool(session.view.get('published'))
+    assignments = {row['tag']: row for row in session.view.get('assignments') or []}
+    waiting = [row for row in signed if not assignments.get(row['tag'], {}).get('assigned_clan_tag')]
+    partial = published and 0 < len(waiting) < len(signed)
+    if partial:
+        lines[1] = "✓ You're signed up · waiting for your clan"
     if signed:
-        lines.append("We've got your signup. Your clan will show here once staff finish the roster.")
+        lines.append("Your published clan assignments are ready to view." if published and not waiting else "We've got your signup. Your clan will show here once staff finish the roster.")
     start = session.page * PAGE_SIZE
-    lines.extend(f"• {_safe(row.get('player_name') or row['tag'], 45)} · {'Main' if row.get('pool') == 'main' else 'Lazy'} CWL" for row in signed[start:start + PAGE_SIZE])
+    lines.extend(f"• {_safe(row.get('player_name') or row['tag'], 45)} · {'Main' if row.get('pool') == 'main' else 'Lazy'} CWL" for row in (waiting if partial else signed)[start:start + PAGE_SIZE])
     lines.extend(timing_lines(season, bool(session.view.get('published'))))
     if remaining:
         n = len(remaining)

@@ -432,8 +432,8 @@ async def seasons(request):
     rows = _store(request).rows("SELECT * FROM seasons ORDER BY id DESC")
     if not _editor(request, session):
         rows = [row for row in rows if row['id'] == selection['season_id']]
-    from .member_timing import season_timing
-    timing = await asyncio.gather(*(season_timing(request, row['id']) for row in rows))
+    from .member_timing import seasons_timing
+    timing = await seasons_timing(request, [row['id'] for row in rows])
     return web.json_response({"seasons": [_season_dict(row) | dates for row, dates in zip(rows, timing)], "member_season": selection})
 
 
@@ -1823,6 +1823,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app["after_login"] = after_login
     app["dev_fixture"] = dev_fixture
     app["dev_identity"] = dev_identity
+    app["member_timing_cache"] = {}
+    app["member_timing_state"] = {'lock': asyncio.Lock(), 'retry_at': 0}
     app["participation_sync_locks"] = {}
     app["dashboard_accounts_cache"] = {}
     app["dashboard_accounts_inflight"] = {}

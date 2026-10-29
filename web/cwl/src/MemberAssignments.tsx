@@ -62,7 +62,7 @@ export default function MemberAssignments({ seasonId, seasons, onSignup, onChang
     {loading && <p role="status">Loading current assignments…</p>}
     {data && !loading && !error && <>
       {data.published?.joining_instructions && <JoiningInstructionsCard text={data.published.joining_instructions} />}
-      <MemberSignupStatus signups={data.accounts} accounts={linked} season={season} published={!!data.published} onChange={onChange || (() => { window.location.href = '/my-signups' })} onRemaining={onSignup || (() => { window.location.href = '/signup' })} onRefresh={() => void load()} />
+      <MemberSignupStatus signups={data.accounts} accounts={linked} season={season} published={!!data.published} onChange={onChange || (() => { window.location.href = '/my-signups' })} onRemaining={onSignup || (() => { window.location.href = '/signup' })} onRefresh={assignedGroups > 0 ? undefined : () => void load()} />
       {assignedGroups > 0 && <div className="card member-compact-status"><div className="member-status-line"><div><strong>Published clan assignments</strong>{data.published && <p>Version {data.published.version} · Published {new Date(data.published.published_at).toLocaleString()}</p>}</div><button onClick={() => void load()}>Refresh</button></div></div>}
       {data.accounts.length ? <>
         <p className="member-assignment-count">{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {assignedGroups} hosting clan{assignedGroups === 1 ? '' : 's'}{awaiting ? ` · ${awaiting} awaiting placement` : ''}</p>

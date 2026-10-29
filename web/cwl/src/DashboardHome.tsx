@@ -153,7 +153,7 @@ export default function DashboardHome(props: Props) {
     {!attentionState && complete && data && season ? <MemberSignupStatus
       signups={data.signups.map(signup => ({ ...signup, assigned_clan_tag: data.assignments.accounts.find(account => account.tag === signup.tag)?.assigned_clan_tag }))}
       accounts={data.accounts} season={season} published={!!data.assignments.published}
-      onChange={() => onNavigate('saved')} onRemaining={() => onNavigate('signup')} onRefresh={refreshDashboard}
+      onChange={() => onNavigate('saved')} onRemaining={() => onNavigate('signup')}
     /> : !attentionState && <section className="hub-next" aria-labelledby="hub-next-title">
       <div className="hub-next-symbol" aria-hidden="true"><DashboardIcon name="war"/></div>
       <div className="hub-next-copy">

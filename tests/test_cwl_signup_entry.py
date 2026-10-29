@@ -4,6 +4,28 @@ from utils import cwl_campaign
 from cwl_web.app import login_destination
 
 
+def test_near_limit_body_keeps_button_without_overflowing():
+    import asyncio
+    from tests.test_cwl_dashboard_integration import MemoryMongo
+    async def run():
+        for size in (3780, 3850):
+            campaign = cwl_campaign.default_campaign()
+            item = campaign['messages']['signup']['variants']['main']
+            item.update(title='CWL signup information for this season', role_ids=[123456789012345678], body='x' * size)
+            original = item['body']
+            mongo = MemoryMongo()
+            key = cwl_campaign.defaults_id(22)
+            mongo.bot_config.documents[key] = {'_id': key, 'campaign': campaign}
+            loaded = (await cwl_campaign.load_campaign(mongo, 22, '2030-10'))['campaign']
+            saved = loaded['messages']['signup']['variants']['main']
+            cwl_campaign.validate_campaign(loaded)
+            assert saved['body'].startswith(original)
+            assert saved['buttons'][1]['custom_id'] == cwl_campaign.SIGNUP_CHECK_ID
+            if size == 3850:
+                assert saved['body'] == original
+    asyncio.run(run())
+
+
 def test_signup_entry_upgrades_existing_templates_without_mutating_custom_content():
     campaign = cwl_campaign.default_campaign()
     campaign['messages']['signup']['variants']['main']['body'] = cwl_campaign.LEGACY_SIGNUP_MAIN

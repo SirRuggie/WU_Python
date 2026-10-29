@@ -81,9 +81,6 @@ function App() {
   const [flowPublication, setFlowPublication] = useState<{season: string; draft: PublicationDraft} | null>(null)
   const [rosterReadiness, setRosterReadiness] = useState<ReadinessFilter>('all')
   const [view, setView] = useState<View>(entryTarget.view)
-  useEffect(() => {
-    document.title = `${navigationLabel(view, publicationStep)} · Warriors United`
-  }, [view, publicationStep])
   const [rosterBusy, setRosterBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -98,6 +95,9 @@ function App() {
   const [signupPage, setSignupPage] = useState(0)
   useEffect(() => { setSignupPage(0) }, [signupSearch, pool, seasonId])
   const [signupPanel, setSignupPanel] = useState<'register' | 'saved'>(entryTarget.signupPanel || 'register')
+  useEffect(() => {
+    document.title = `${view === 'signup' && signupPanel === 'saved' ? 'My signups' : navigationLabel(view, publicationStep)} · Warriors United`
+  }, [view, publicationStep, signupPanel])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [signups, setSignups] = useState<Signup[]>([])
   const dashboardPrefill = useRef(false)
@@ -581,7 +581,7 @@ function App() {
           setPool(nextPool); setSignupPanel('register'); setSignupStep(2); setReview(false); setCompletion(null); changeView('signup')
         }} />}
         {view === 'signup' && <>
-          <div className="page-head"><div><p className="eyebrow">Member signup</p><h1>{signupPanel === 'saved' ? 'My signups' : 'Sign up'}</h1><p>{activeCompletion ? "Your season signup is saved." : season && !season.signup_open ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will choose their CWL clans."}</p></div><p className="season-choice">{season?.label || (seasonError ? 'Season unavailable' : 'No CWL season available')}</p></div>
+          <div className="page-head"><div><p className="eyebrow">Member signup</p><h1>{signupPanel === 'saved' ? 'My signups' : 'Sign up'}</h1><p>{signupPanel === 'saved' ? 'Your saved CWL signups for this season.' : activeCompletion ? "Your season signup is saved." : season && !season.signup_open ? "View your saved signups and CWL clans." : "Sign up your accounts for CWL. Staff will choose their CWL clans."}</p></div><p className="season-choice">{season?.label || (seasonError ? 'Season unavailable' : 'No CWL season available')}</p></div>
           {(seasonError || (!activeCompletion && (dataError || accountError))) && <AttentionSummary urgent items={[
             ...(seasonError ? [{ title: 'CWL season availability could not be checked', detail: 'The season list may be out of date. Retry before choosing a season.', technicalDetail: seasonError, action: { label: 'Retry seasons', onClick: () => void loadSeasons(), disabled: seasonsLoading } }] : []),
             ...(!activeCompletion && dataError ? [{ title: accountError ? 'Signup and account data could not be checked' : 'Saved CWL signups could not be checked', detail: accountError ? 'Saved signups and linked accounts remain unavailable until this check succeeds.' : 'Signup and saved-account changes remain unavailable until this check succeeds.', technicalDetail: [dataError, accountError].filter(Boolean).join(' · '), action: { label: 'Retry CWL data', onClick: retrySignupRead, disabled: loadingData || pending } }] : !activeCompletion && accountError ? [{ title: 'Linked accounts are unavailable', detail: 'Account selections and pool changes are paused until links can be checked.', technicalDetail: accountError, action: { label: 'Retry CWL data', onClick: retrySignupRead, disabled: loadingData || pending } }] : []),

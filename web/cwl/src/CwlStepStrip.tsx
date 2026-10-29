@@ -10,7 +10,10 @@ export function MemberStepStrip({
   onNavigate: (step: "register" | "saved" | "assignments") => void;
 }) {
   return (
-    <nav className="cwl-step-strip roster-ui" aria-label="My CWL steps">
+    <nav
+      className="cwl-step-strip member-step-strip roster-ui"
+      aria-label="My CWL steps"
+    >
       {(
         [
           ["register", "1 Sign up"],

@@ -137,7 +137,12 @@ def normalize_signup_entry(campaign: dict) -> dict:
             if replacement and legacy in item.get("body", ""):
                 item["body"] = item["body"].replace(legacy, replacement)
             if SIGNUP_CHECK_LINE not in item.get("body", ""):
-                item["body"] = item.get("body", "").rstrip() + "\n\n" + SIGNUP_CHECK_LINE
+                proposed = item.get("body", "").rstrip() + "\n\n" + SIGNUP_CHECK_LINE
+                overhead = len(" ".join(f"<@&{role}>" for role in item.get("role_ids", []))) + len(item.get("title", "")) + 3 + len(SIGNUP_HELP_LINE)
+                if "{signup_deadline}" in proposed:
+                    overhead += 32
+                if len(proposed) + overhead <= 4000:
+                    item["body"] = proposed
     return result
 
 

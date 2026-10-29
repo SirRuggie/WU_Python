@@ -2,7 +2,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import MemberSignupStatus, { memberDateLines } from "./MemberSignupStatus";
+import MemberSignupStatus, {
+  memberDateLines,
+  relativeMinutes,
+} from "./MemberSignupStatus";
 import SidebarNavigation from "./SidebarNavigation";
 import { MemberStepStrip } from "./CwlStepStrip";
 import { memberTarget, loginPath } from "./memberLinks";
@@ -12,6 +15,23 @@ const accounts = ["Aurora", "Ace", "Birch", "Cedar", "Dawn"].map((name, i) => ({
   name,
   tag: `#P2Y2Y2Y${i}`,
 }));
+it("rounds relative days without pluralizing one day", () => {
+  expect(relativeMinutes(1440 * 60000, 0)).toBe("in 1 day");
+  expect(relativeMinutes(1441 * 60000, 0)).toBe("in 1 day");
+  expect(relativeMinutes(2880 * 60000, 0)).toBe("in 2 days");
+  expect(relativeMinutes(40 * 60000, 0)).toBe("in 40 min");
+});
+it("keeps signup navigation when empty and account links are unavailable", async () => {
+  await render({ signups: [], accounts: null });
+  expect(host.textContent).toContain("Sign up for CWL ›");
+  await render({
+    signups: [],
+    accounts: null,
+    season: { ...season, signup_open: false },
+  });
+  expect(host.textContent).toContain("Signups are closed.");
+  expect(host.textContent).not.toContain("Sign up for CWL ›");
+});
 const signups = accounts.slice(0, 2).map((a, i) => ({
   tag: a.tag,
   player_name: a.name,
@@ -139,10 +159,14 @@ it("local dates, minute-only countdown, late and null guidance", async () => {
   expect(host.textContent).toContain("in 39 min");
 });
 it("sidebar is ordered, expanded initially and remembers collapse even on a member page", async () => {
+  localStorage.setItem(
+    "wu-navigation-v2:member",
+    JSON.stringify({ "my-dashboard": true, "my-cwl": false, clans: true }),
+  );
   const onSignup = vi.fn();
   const props = {
     userId: "member",
-    view: "signup" as const,
+    view: "home" as const,
     canEdit: false,
     isOwner: false,
     onNavigate: vi.fn(),
@@ -152,6 +176,9 @@ it("sidebar is ordered, expanded initially and remembers collapse even on a memb
   await act(async () => root.render(<SidebarNavigation {...props} />));
   const nav = host.querySelector("#navigation-my-cwl")!;
   expect(nav.hasAttribute("hidden")).toBe(false);
+  const stored = JSON.parse(localStorage.getItem("wu-navigation-v3:member")!);
+  expect(stored.clans).toBe(true);
+  expect(stored["my-cwl"]).toBeUndefined();
   expect([...nav.querySelectorAll("button")].map((b) => b.textContent)).toEqual(
     ["Sign up", "My signups", "My clan assignments"],
   );

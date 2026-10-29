@@ -1,5 +1,8 @@
 """Optional campaign guidance never writes or prevents reading member seasons."""
 import unittest
+import asyncio
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -38,6 +41,46 @@ class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
     auth = foundation.WebFoundationTests.auth
     call = foundation.WebFoundationTests.call
     season = foundation.WebFoundationTests.season
+
+    async def test_outage_is_one_bounded_attempt_per_window_across_seasons(self):
+        sid = await self.season()
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO seasons(id,label,status,signup_open) VALUES(99,'Other','draft',1)")
+            for n in (sid, 99):
+                db.execute('INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES(?,?)', (n, '2026-10' if n == sid else '2026-11'))
+        opened = []
+        @asynccontextmanager
+        async def mongo(request):
+            opened.append(1)
+            yield object()
+        async def slow(*args):
+            await asyncio.sleep(10)
+        with patch('cwl_web.member_timing._mongo', mongo), patch('cwl_web.member_timing.load_campaign', side_effect=slow):
+            start = time.monotonic()
+            response = await self.call('GET', '/seasons', self.owner)
+            self.assertEqual(response.status, 200)
+            self.assertLess(time.monotonic() - start, 1.9)
+            self.assertTrue(all(s['placements_by'] is None for s in (await response.json())['seasons']))
+            await self.call('GET', '/seasons', self.owner)
+            self.assertEqual(len(opened), 1)
+            self.app['member_timing_cache'].clear()
+            await self.call('GET', '/seasons', self.owner)
+            self.assertEqual(len(opened), 1)
+            self.app['member_timing_state']['retry_at'] = 0
+            self.app['member_timing_cache'].clear()
+            await self.call('GET', '/seasons', self.owner)
+            self.assertEqual(len(opened), 2)
+
+    async def test_closed_published_season_does_not_read_campaign(self):
+        sid = await self.season()
+        with self.app['store'].tx() as db:
+            db.execute('UPDATE seasons SET signup_open=0 WHERE id=?', (sid,))
+            db.execute("INSERT INTO roster_publications(season_id,version,revision,published_by,published_at,joining_instructions,assigned_count,unassigned_count,clans_json) VALUES(?,1,0,'test','2026-01-01','',0,0,'[]')", (sid,))
+            db.execute('INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES(?,?)', (sid, '2026-10'))
+        with patch('cwl_web.member_timing._mongo') as mongo:
+            response = await self.call('GET', '/seasons', self.owner)
+            self.assertIsNone((await response.json())['seasons'][0]['signup_deadline'])
+            mongo.assert_not_called()
 
     async def test_linked_timezone_cache_expiry_and_no_writes(self):
         sid = await self.season()

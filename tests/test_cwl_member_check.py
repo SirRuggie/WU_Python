@@ -76,3 +76,31 @@ def test_discord_timing_uses_localized_timestamps_and_past_due_text():
     assert timing_lines(season, now=datetime(2026, 11, 1, tzinfo=timezone.utc)) == ['Taking a little longer than usual · check back soon']
     assert timing_lines({}) == []
     assert timing_lines(season, published=True) == []
+
+
+def test_published_and_partly_placed_match_web_wording():
+    session = member.MemberSession(123, member.WARRIORS_UNITED_GUILD_ID, 0, view=view(), screen='my_signups')
+    session.view['published'] = {'version': 1}
+    session.view['assignments'] = [{**row, 'assigned_clan_tag': '#P222222Y'} for row in session.view['signups']]
+    assert 'Your published clan assignments are ready to view.' in member._main_text(session)
+    session.view['assignments'] = session.view['assignments'][:1]
+    text = member._main_text(session)
+    assert "You're signed up · waiting for your clan" in text
+    assert 'Ace · Lazy CWL' in text and 'Aurora · Main CWL' not in text
+
+
+def test_custom_id_never_selects_another_user():
+    async def run():
+        from utils import cwl_member_client
+        for action in ('open', '999', 'open:999'):
+            ctx = Context(user_id=123)
+            with patch.object(cwl_member_client, 'request', new=AsyncMock(return_value=view())) as bridge:
+                await member.check_signups(ctx, action)
+                if action == 'open':
+                    assert bridge.call_count == 1
+                    assert bridge.call_args.kwargs['user_id'] == 123
+                else:
+                    bridge.assert_not_called()
+            assert ctx.followups[0][1]['flags'] & hikari.MessageFlag.EPHEMERAL
+            assert not ctx.interaction.edits
+    asyncio.run(run())
