@@ -509,6 +509,8 @@ Tour Back restores the original history entry before restoring its URL/draft; th
 
 Released `signup-card-1` (`539853e`, PR #42), frontend only. Separate red remaining-account card; zero signups keep the grey card action. Exact approved 13-step tour copy, whole-block highlight, Back history restoration and clean-editor notice clearing verified. Claude smoke passed (handoff 23); 788 frontend tests, build and full layout checks passed. Production counts and protected records unchanged; backend remains `8e0ee01`, no restart. Rollback and backup evidence are in CLAUDE.md. Signup-polish items 1–10 are the next approved batch, not yet implemented by this release.
 
-### Member signup polish — prompt 10 (awaiting review)
+### Member signup polish — released 2026-10-29
 
 Items 1–10 implemented frontend-only: unique member/staff-CWL menu icons; bold current signup step with Fan Kit Villager 52545/52538/52543 art and compact other steps; unnumbered member strip; one local season/deadline line without Draft; Main CWL naming and whole-card pool selection; review Change links retaining eligible selections and listing removed accounts; "your CWL clans" copy; pinned Help menu row and profile/avatar account menu. Internal staff season state is unchanged. No backend, schema, endpoint, bot or signup-save contract changes. The duplicate member season/Draft Later item is resolved by this batch. Release docs for preceding signup-card-1 were merged through PR #43.
+
+Released `signup-polish-1` (`ef90834`, PR #44), frontend only. Claude smoke passed (handoff 30): 360px signup steps, approved Villager art, copy, unique menu icons and account menu; GET only, no overflow. 804 frontend tests, TypeScript/build and isolated layout passed. Protected counts unchanged; backend `8e0ee01` unchanged with no restarts. Backup, public hashes and rollback targets are in CLAUDE.md.
