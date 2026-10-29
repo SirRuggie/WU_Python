@@ -124,6 +124,14 @@ async def scenario(request):
         db.execute('UPDATE member_season SET season_id=? WHERE id=1', (sid,))
     return web.Response(text='Isolated scenario selected. Reload the dashboard.')
 
+async def reset_signups(request):
+    # Fixture-only cleanup of the explicitly submitted post-tour test account.
+    with app['store'].tx() as db:
+        db.execute('DELETE FROM roster_entries WHERE season_id=1 AND tag=?', (tags[2],))
+        db.execute('DELETE FROM signups WHERE season_id=1 AND tag=?', (tags[2],))
+    return web.json_response({'current': counts()})
+
+app.router.add_get('/qa/reset-signups', reset_signups)
 app.router.add_get('/qa/state', state)
 app.router.add_get('/qa/member', member)
 app.router.add_get('/qa/scenario', scenario)

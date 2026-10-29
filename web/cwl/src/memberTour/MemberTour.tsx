@@ -68,25 +68,31 @@ export default function MemberTour({
     },
     [],
   );
+  const [startError, setStartError] = useState("");
   const [shake, setShake] = useState(0);
   const current = steps[step];
   const closed = step >= 3 && step <= 7 && signupState === "closed";
   const empty = step >= 5 && step <= 7 && signupState === "empty";
   const allSigned = step >= 5 && step <= 7 && signupState === "all-signed";
-  const targetId = closed
-    ? "signup-closed"
-    : empty
-      ? "signup-missing"
-      : allSigned
-        ? ""
-        : current.target;
-  const text = closed
-    ? "Signups are closed right now — next month, this is where you'll sign up."
-    : empty
-      ? "Link your Clash account here first."
-      : allSigned
-        ? "All your accounts are already signed up — nice!"
-        : current.text;
+  const failed = step >= 3 && step <= 7 && signupState === "error";
+  const targetId = failed
+    ? ""
+    : closed
+      ? "signup-closed"
+      : empty
+        ? "signup-missing"
+        : allSigned
+          ? ""
+          : current.target;
+  const text = failed
+    ? "We couldn't load your accounts — you can still finish the tour."
+    : closed
+      ? "Signups are closed right now — next month, this is where you'll sign up."
+      : empty
+        ? "Link your Clash account here first."
+        : allSigned
+          ? "All your accounts are already signed up — nice!"
+          : current.text;
   const sidebarStep = [
     "home",
     "todo",
@@ -96,7 +102,11 @@ export default function MemberTour({
   ].includes(targetId);
 
   const start = (manual = false) => {
-    if (callbacks.current.onActive(true) === false) return;
+    if (callbacks.current.onActive(true) === false) {
+      setStartError("Save or discard your changes first.");
+      return;
+    }
+    setStartError("");
     replay.current = manual;
     dismissedSession.current = true;
     rememberSession();
@@ -115,21 +125,34 @@ export default function MemberTour({
     } else dismissedSession.current = true;
     if (reason === "finish" || dontShow)
       savePreference({ ...readPreference(), dismissed: true });
-    callbacks.current.onActive(false);
-    setOpen(false);
-    onMenuRef.current(initial.current.menu);
-    window.requestAnimationFrame(() => {
-      window.scrollTo(0, initial.current.scroll);
-      initial.current.focus?.focus();
-    });
+    try {
+      callbacks.current.onActive(false);
+    } finally {
+      openRef.current = false;
+      setOpen(false);
+      onMenuRef.current(initial.current.menu);
+      window.requestAnimationFrame(() => {
+        window.scrollTo(0, initial.current.scroll);
+        initial.current.focus?.focus();
+      });
+    }
   };
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    const back = () => {
+      if (openRef.current) closeRef.current("exit");
+    };
+    window.addEventListener("wu-tour-back", back);
+    return () => window.removeEventListener("wu-tour-back", back);
+  }, []);
   const advance = (targetTap = false) => {
     if (step === 7 && targetTap && !closed && !empty && !allSigned) {
       setShake((value) => value + 1);
       return;
     }
     if (step >= 3 && step <= 7 && signupState === "loading") return;
-    if (closed || empty) {
+    if (closed || empty || failed) {
       setStep(9);
       return;
     }
@@ -291,6 +314,7 @@ export default function MemberTour({
       >
         <CircleHelp size={20} aria-hidden="true" /> Help &amp; tour
       </button>
+      {startError && <p role="status">{startError}</p>}
       {open &&
         createPortal(
           <dialog

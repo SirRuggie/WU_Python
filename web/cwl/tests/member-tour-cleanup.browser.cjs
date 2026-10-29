@@ -14,12 +14,18 @@ const base = `http://127.0.0.1:${port}`;
       for (const scenario of [
         "exit",
         "finish",
-        "prior-draft",
+        "prior-exit",
+        "prior-escape",
+        "prior-skip",
+        "prior-finish",
+        "prior-back",
         "closed",
+        "error",
         "empty",
         "all-signed",
         "staff",
       ]) {
+        await fetch(base + "/qa/reset-signups");
         await fetch(
           base + "/qa/scenario?season=" + (scenario === "closed" ? 2 : 1),
         );
@@ -35,16 +41,34 @@ const base = `http://127.0.0.1:${port}`;
         await page.route("**/*", (r) =>
           new URL(r.request().url()).origin === base ? r.continue() : r.abort(),
         );
+        if (scenario === "error")
+          await page.route("**/api/cwl/linked-accounts?*", (r) =>
+            r.fulfill({
+              status: 503,
+              contentType: "application/json",
+              body: JSON.stringify({ error: "Fixture account read failed" }),
+            }),
+          );
         await page.goto(base + "/");
         await page
           .getByRole("button", { name: "Open local test session" })
           .click();
         await page.locator(".tour-close").click();
-        if (scenario === "prior-draft") {
-          await page.goto(base + "/signup");
-          await page.locator('[data-tour-target="signup-pool"]').click();
-          await page.locator('[data-tour-target="signup-account"]').check();
+        const navigateSignup = async () => {
+          await page
+            .locator('.sidebar [data-tour-target="register"]')
+            .evaluate((el) => el.click());
+          await page.waitForTimeout(250);
+        };
+        if (scenario.startsWith("prior-")) {
+          await navigateSignup();
+          await page.getByRole("button", { name: /Main Clan CWL/ }).click();
+          await page.locator(".account-select input").nth(1).check();
         }
+        const priorTags = await page
+          .locator(".account-select:has(input:checked) small")
+          .allTextContents();
+        const initialHistory = await page.evaluate(() => history.length);
         const initialPath = new URL(page.url()).pathname;
         const storage = () =>
           page.evaluate(() => ({
@@ -72,11 +96,13 @@ const base = `http://127.0.0.1:${port}`;
         for (
           let i = 0;
           i <
-          (scenario === "closed"
-            ? 3
-            : scenario === "empty" || scenario === "all-signed"
-              ? 5
-              : 6);
+          (scenario === "prior-skip"
+            ? 0
+            : ["closed", "error"].includes(scenario)
+              ? 3
+              : scenario === "empty" || scenario === "all-signed"
+                ? 5
+                : 6);
           i++
         ) {
           await page.locator(".tour-next").click();
@@ -88,6 +114,13 @@ const base = `http://127.0.0.1:${port}`;
             await page.locator(".tour-copy").innerText(),
             /Signups are closed right now/,
           );
+        if (scenario === "error") {
+          assert.match(
+            await page.locator(".tour-copy").innerText(),
+            /We couldn't load your accounts/,
+          );
+          assert.equal(await page.locator(".tour-next").isEnabled(), true);
+        }
         if (scenario === "empty")
           assert.match(
             await page.locator(".tour-copy").innerText(),
@@ -98,24 +131,37 @@ const base = `http://127.0.0.1:${port}`;
             await page.locator(".tour-copy").innerText(),
             /All your accounts are already signed up/,
           );
-        if (scenario === "finish" || scenario === "staff") {
+        if (["finish", "staff", "prior-finish"].includes(scenario)) {
           for (let i = 6; i < 13; i++) {
             await page.locator(".tour-next").click();
             await page.waitForTimeout(250);
           }
-        } else await page.locator(".tour-close").click();
+        } else if (scenario === "prior-escape")
+          await page.keyboard.press("Escape");
+        else if (scenario === "prior-skip")
+          await page.getByRole("button", { name: /Skip/ }).click();
+        else if (scenario === "prior-back") await page.goBack();
+        else await page.locator(".tour-close").click();
         await page.waitForTimeout(500);
-        assert.equal(new URL(page.url()).pathname, initialPath);
+        assert.equal(new URL(page.url()).pathname, initialPath, scenario);
         assert.deepEqual(await storage(), before);
-        if (scenario === "prior-draft") {
-          assert.equal(
+        assert.equal(await page.evaluate(() => history.length), initialHistory);
+        if (scenario.startsWith("prior-")) {
+          await navigateSignup();
+          assert.deepEqual(
             await page
-              .locator('[data-tour-target="signup-account"]')
-              .isChecked(),
-            true,
+              .locator(".account-select:has(input:checked) small")
+              .allTextContents(),
+            priorTags,
+          );
+          assert.match(
+            await page
+              .locator(".signup-flow .section-heading .eyebrow")
+              .innerText(),
+            /Main/i,
           );
         } else if (["exit", "finish"].includes(scenario)) {
-          await page.goto(base + "/signup");
+          await navigateSignup();
           await page.locator('[data-tour-target="signup-pool"]').click();
           assert.equal(
             await page.locator(".account-select input:checked").count(),
@@ -123,12 +169,39 @@ const base = `http://127.0.0.1:${port}`;
           );
         }
         assert.deepEqual(writes, []);
-        results.push({ width, scenario, pass: true });
+        let submitted = 0;
+        if (["exit", "finish"].includes(scenario)) {
+          await page.locator(".account-select input").first().check();
+          await page.locator('[data-tour-target="signup-review"]').click();
+          const response = page.waitForResponse(
+            (r) =>
+              r.request().method() === "POST" &&
+              /\/seasons\/1\/signups$/.test(r.url()),
+          );
+          await page.locator('[data-tour-target="signup-confirm"]').click();
+          assert.equal((await response).status(), 200);
+          assert.equal(writes.length, 1);
+          assert.match(writes[0], /POST .*\/seasons\/1\/signups$/);
+          submitted = 1;
+        }
+        results.push({
+          width,
+          scenario,
+          pass: true,
+          fixtureSignupPosts: submitted,
+        });
         await page.close();
       }
     }
     console.log(JSON.stringify(results));
   } finally {
+    await fetch(base + "/qa/reset-signups");
+    const state = await (await fetch(base + "/qa/state")).json();
+    assert.deepEqual(
+      state.current,
+      state.baseline,
+      "fixture signups, assignments and locks restored after four explicit signup POSTs",
+    );
     await fetch(base + "/qa/scenario?season=1");
     await fetch(base + "/qa/member?member=1");
     await browser.close();

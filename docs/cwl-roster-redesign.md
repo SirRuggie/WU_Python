@@ -470,7 +470,11 @@ Claude noted the policy asks for it where Supercell art is used.
 The tour follows real Home, Tasks, Sign up, My signups and Assignments pages.
 Practice drives only the form's existing React pool/account/review state. Sign up
 is inert, and the API boundary rejects non-GET calls while the tour is open.
-Exit restores the original page and signup draft; navigation and Tasks preference
+Exit restores the original page and signup draft in a finally-protected session.
+Tour page moves replace history; Back closes the tour and restores the draft.
+Only the target sidebar section is temporarily expanded. Account-load failures
+remain visible and allow continuing; dirty staff editors show an explanation.
+Navigation and Tasks preference
 persistence are paused. Normal display-cache refreshes after returning to a page
 are not signup drafts. Phone targets follow drawer transitions and remain above
 the tour card. U35/U13/U18/U15 replace the mock practice art and controls.
@@ -482,6 +486,7 @@ current/following signup cycles and its legacy close is month-end minus two days
 `web/cwl/src/announcementMonth.ts` derives that selection from the CWL season
 label. Member timing therefore loads the preceding signup cycle: November CWL
 uses October, January uses December of the prior year. A missing earlier campaign
-returns null rather than a synthesized default. Eligibility, refresh interval,
+uses the bot's merged guild defaults for that signup month (prompt 08); unavailable
+Mongo retains the existing last-good/null cache behavior. Eligibility, refresh interval,
 timeout and last-good cache rules are unchanged. This requires a backend release
 alongside the tour frontend; no deployment is included in this branch.

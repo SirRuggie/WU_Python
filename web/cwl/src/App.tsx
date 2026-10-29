@@ -324,7 +324,7 @@ function App() {
   const changeView = (next: View, filter = '', kind?: 'war'|'cwl', panel: 'register'|'saved' = 'register') => {
     if (navigation.current?.pending || ((next !== view || (next === 'signup' && panel !== signupPanel)) && !canLeave())) return
     const destination = allowedView(next)
-    if (destination !== view || (destination === 'signup' && signupPanel !== panel)) navigation.current?.write({ view: destination, activityFilter: filter, activityKind: kind, ...(destination === 'signup' ? {signupPanel: panel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, true)
+    if (destination !== view || (destination === 'signup' && signupPanel !== panel)) navigation.current?.write({ view: destination, activityFilter: filter, activityKind: kind, ...(destination === 'signup' ? {signupPanel: panel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, !isTourReadOnly())
     setActivityVisit(window.history.state?.wuDashboardIndex || 0)
     if (destination === 'signup') setSignupPanel(panel)
     setActivitySearch(filter)
@@ -370,6 +370,7 @@ function App() {
     navigation.current = controller
     const pop = (event: PopStateEvent) => {
       if (!controller.pop(event.state, () => navigationState.current.canLeave())) return
+      if (isTourReadOnly()) { window.dispatchEvent(new Event('wu-tour-back')); return }
       const route = dashboardTarget(window.location.search, window.location.pathname)
       const target = {...route, ...activityContext(event.state, route.view)}
       setActivityVisit(event.state?.wuDashboardIndex || 0)
@@ -458,7 +459,12 @@ function App() {
         savedSignupDirty
       )
         return false;
+      const originalRoute = dashboardTarget(
+        window.location.search,
+        window.location.pathname,
+      );
       tourRestore.current = () => {
+        navigation.current?.write(originalRoute, false);
         if (view === "signup") dashboardPrefill.current = true;
         changeView(view, activitySearch, activityKind, signupPanel);
         setSeasonId(staffSeasonId);
@@ -480,9 +486,13 @@ function App() {
       setSignupSearch("");
       setSignupPage(0);
     } else {
-      tourRestore.current?.();
-      tourRestore.current = null;
-      setTourReadOnly(false);
+      try {
+        tourRestore.current?.();
+      } finally {
+        tourRestore.current = null;
+        setTourReadOnly(false);
+        setTourActive(false);
+      }
     }
     setTourActive(active);
     return true;
@@ -584,7 +594,7 @@ function App() {
       <SidebarNavigation tourExpanded={tourActive} key={session.user.id} userId={session.user.id} view={view} canEdit={session.can_edit} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} onNavigate={navigateSidebar} publicationStep={publicationStep} onPublication={openPublication} signupPanel={signupPanel} onSignup={panel => changeView("signup", "", undefined, panel)} />
       <div className="sidebar-foot">
         <MemberTour view={view} menuOpen={menuOpen} onMenu={setMenuOpen} onActive={tourSession} onNavigate={tourNavigate}
-          signupState={seasonsLoading || !season || loadingData || !!dataError || !!accountError ? 'loading' : !season.signup_open ? 'closed' : !accounts.length ? 'empty' : !visibleAccounts.length ? 'all-signed' : 'open'} />
+          signupState={dataError || accountError ? 'error' : seasonsLoading || !season || loadingData ? 'loading' : !season.signup_open ? 'closed' : !accounts.length ? 'empty' : !visibleAccounts.length ? 'all-signed' : 'open'} />
         <div className="sidebar-account">
           <AccountIdentity user={session.user} />
           <small>@{session.user.username}</small>

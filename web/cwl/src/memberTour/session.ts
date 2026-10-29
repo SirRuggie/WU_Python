@@ -12,6 +12,7 @@ export function assertTourRead(method: string) {
 }
 export type TourPage = "home" | "todo" | "register" | "saved" | "assignments";
 export type SignupTourState =
+  | "error"
   | "loading"
   | "open"
   | "closed"

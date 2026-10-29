@@ -247,12 +247,26 @@ class MemberTimingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(load.call_args.args[2], earlier)
                 self.assertEqual((await self.read(sid))['signup_deadline'], expected)
 
-    async def test_missing_previous_campaign_clears_deadline_without_synthesized_defaults(self):
+    async def test_missing_previous_campaign_uses_guild_defaults_and_row_overrides(self):
+        from test_cwl_dashboard_integration import MemoryMongo
+        from utils.cwl_campaign import default_campaign, defaults_id, cycle_id
         sid = await self.setup_bound()
+        mongo = MemoryMongo()
+        campaign = default_campaign()
+        campaign['timezone'] = 'America/New_York'
+        campaign['signup_deadline'] = {'month_end_offset_days': 2, 'hour': 17}
+        mongo.bot_config.documents[defaults_id(timing.GUILD_ID)] = {
+            '_id': defaults_id(timing.GUILD_ID), 'campaign': campaign}
+
         @asynccontextmanager
-        async def missing(request):
-            yield SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value=None)))
-        with patch.object(timing, '_mongo', missing), patch.object(timing, 'load_campaign') as load:
+        async def source(request):
+            yield mongo
+
+        with patch.object(timing, '_mongo', source):
             await timing.refresh(self.app)
-            self.assertEqual(await self.read(sid), timing.utc_timing(None))
-            load.assert_not_called()
+            self.assertEqual((await self.read(sid))['signup_deadline'], '2026-09-28T21:00:00+00:00')
+            row = dict(campaign, signup_deadline={'month_end_offset_days': 1, 'hour': 12})
+            key = cycle_id(timing.GUILD_ID, '2026-09')
+            mongo.bot_config.documents[key] = {'_id': key, 'campaign': row}
+            await timing.refresh(self.app)
+            self.assertEqual((await self.read(sid))['signup_deadline'], '2026-09-29T16:00:00+00:00')

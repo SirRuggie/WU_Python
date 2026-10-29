@@ -6,7 +6,7 @@ from contextlib import suppress
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
-from utils.cwl_campaign import load_campaign, signup_deadline, cycle_id
+from utils.cwl_campaign import load_campaign, signup_deadline
 from .manage_bridge import GUILD_ID, _mongo
 
 LOG = logging.getLogger(__name__)
@@ -51,10 +51,9 @@ async def refresh(app):
                         try:
                             async with asyncio.timeout(SEASON_TIMEOUT_SECONDS):
                                 earlier = signup_cycle(cycle)
-                                # load_campaign synthesizes defaults for absent cycles;
-                                # do not invent a member deadline without the campaign.
-                                row = await mongo.bot_config.find_one({'_id': cycle_id(GUILD_ID, earlier)})
-                                loaded = await load_campaign(mongo, GUILD_ID, earlier) if row else None
+                                # Use the same merged monthly defaults as the bot,
+                                # even before a cycle-specific row has been saved.
+                                loaded = await load_campaign(mongo, GUILD_ID, earlier)
                             campaign = loaded['campaign'] if loaded else {}
                             value = utc_timing(signup_deadline(campaign, earlier)) if campaign.get('signup_deadline') is not None else utc_timing(None)
                             cache[sid] = (time.monotonic(), cycle, value)
