@@ -4,6 +4,7 @@ import {
   imageConfirm,
   imageJobs,
   imagePoolStatus,
+  imageRowStatus,
   runImageJobs,
   type ImageData,
 } from "./rosterImagePosting";
@@ -55,7 +56,7 @@ it("states and Resume/Retry only select eligible clans", () => {
     "#C5",
   ]);
   d.posts.push(row(4, { status: "failed" }));
-  expect(imagePoolStatus(d, "lazy").label).toBe("1 failed · Retry failed");
+  expect(imagePoolStatus(d, "lazy").label).toBe("1 failed to post");
   expect(imageJobs(d, "lazy", "123", true).map((j) => j.clan.tag)).toEqual([
     "#C4",
   ]);
@@ -63,6 +64,9 @@ it("states and Resume/Retry only select eligible clans", () => {
   expect(imagePoolStatus(d, "lazy").label).toContain("for version 1 · 6 clans");
   d.published!.version = 2;
   expect(imagePoolStatus(d, "lazy").action).toBe("Update posted images");
+  expect(imagePoolStatus(d, "lazy").label).toBe(
+    "Version 2 published · 6 images show an older version",
+  );
   d.clans = d.clans.slice(1);
   const jobs = imageJobs(d, "lazy", "123");
   expect(jobs.at(-1)?.operation).toBe("drop");
@@ -75,6 +79,29 @@ it("states and Resume/Retry only select eligible clans", () => {
   );
   d.published = null;
   expect(imageJobs(d, "lazy", "123")).toEqual([]);
+});
+it("uses plain row status labels and preserves the uncertain prefix", () => {
+  expect(
+    [undefined, "posted", "dropped", "failed", "uncertain"].map((status) =>
+      imageRowStatus(status as Parameters<typeof imageRowStatus>[0]),
+    ),
+  ).toEqual([
+    "Not posted",
+    "Posted",
+    "No longer hosting",
+    "Failed",
+    "Needs checking",
+  ]);
+  const d = data();
+  d.published!.version = 3;
+  d.posts = [
+    row(0),
+    row(1, { status: "uncertain" }),
+    row(2, { posted_version: 3 }),
+  ];
+  expect(imagePoolStatus(d, "lazy").label).toBe(
+    "1 needs checking · Version 3 published · 1 images show an older version",
+  );
 });
 it("runs sequentially, waits for 429, then resumes with a new known-safe request id", async () => {
   const send = vi

@@ -79,6 +79,25 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload['allowed_mentions'], {'parse': []})
         self.assertTrue(payload['enforce_nonce'])
 
+    async def test_pool_move_drops_old_message_and_posts_in_new_pool(self):
+        await self.setup_post()
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            self.assertEqual((await self.send()).status, 200)
+            with self.app['store'].tx() as db:
+                db.execute("UPDATE signups SET pool='lazy' WHERE season_id=?", (self.sid,))
+                db.execute("UPDATE lineup_rules SET pool='lazy' WHERE season_id=?", (self.sid,))
+                db.execute("INSERT INTO roster_image_channels(pool,channel_id,channel_name,configured_by) VALUES('lazy','222222222222222222','lazy-rosters','owner')")
+            await self.republish()
+            self.assertEqual((await self.send('/drop')).status, 200)
+            self.assertEqual(self.sent[-1][0:2], ('PATCH', '/channels/123456789012345678/messages/987654321098765432'))
+            self.body = self.body | {'pool': 'lazy', 'request_id': 'c' * 24}
+            self.assertEqual((await self.send()).status, 200)
+            self.assertEqual(self.sent[-1][0:2], ('POST', '/channels/222222222222222222/messages'))
+            self.assertEqual([item[0] for item in self.sent], ['POST', 'PATCH', 'POST'])
+        rows = self.app['store'].rows('SELECT pool,status,message_id FROM roster_image_posts ORDER BY pool')
+        self.assertEqual([(row['pool'], row['status']) for row in rows], [('lazy', 'posted'), ('main', 'dropped')])
+        self.assertEqual(rows[1]['message_id'], '987654321098765432')
+
     async def test_uncertain_new_post_requires_new_request_and_can_post_again(self):
         await self.setup_post()
         with patch('cwl_web.roster_image_posts.discord', self.fake):

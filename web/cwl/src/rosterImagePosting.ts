@@ -32,6 +32,18 @@ export type ImageData = {
     joining_instructions?: string;
   } | null;
 };
+
+export function imageRowStatus(status?: ImagePost["status"]): string {
+  const labels = {
+    posted: "Posted",
+    dropped: "No longer hosting",
+    failed: "Failed",
+    uncertain: "Needs checking",
+    sending: "Posting…",
+    dismissed: "Checked",
+  };
+  return status ? labels[status] : "Not posted";
+}
 export type ImageChannel = {
   pool: Pool;
   channel_id: string;
@@ -129,18 +141,17 @@ export function imagePoolStatus(
   }
   if (failed)
     return {
-      label: `${failed} failed · Retry failed`,
+      label: `${failed} failed to post`,
       action: "Retry failed",
       failedOnly: true,
     };
-  if (
-    posts.some(
-      (p) =>
-        p.status === "posted" && p.posted_version !== data.published?.version,
-    )
-  )
+  const outdated = posts.filter(
+    (p) =>
+      p.status === "posted" && p.posted_version !== data.published?.version,
+  ).length;
+  if (outdated)
     return {
-      label: `Version ${data.published?.version} published · Update posted images`,
+      label: `Version ${data.published?.version} published · ${outdated} images show an older version`,
       action: "Update posted images",
       failedOnly: false,
     };

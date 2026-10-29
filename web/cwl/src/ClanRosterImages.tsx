@@ -12,6 +12,7 @@ import {
   imageConfirm,
   imageJobs,
   imagePoolStatus,
+  imageRowStatus,
   runImageJobs,
   type ImageChannel,
   type ImageData,
@@ -262,7 +263,7 @@ export default function ClanRosterImages({
                       return (
                         <li key={clan.tag}>
                           <strong>{clan.name}</strong>
-                          <span>{post?.status || "Not posted"}</span>
+                          <span>{imageRowStatus(post?.status)}</span>
                           {post?.error && <p>{post.error}</p>}
                           {dismiss && (
                             <p>
