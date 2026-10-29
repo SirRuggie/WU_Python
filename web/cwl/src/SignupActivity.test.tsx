@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignupActivity from "./SignupActivity";
 import {
   signupActivitySummary,
+  signupShortage,
   signupActivityIntro,
   type SignupChange,
 } from "./signupActivityModel";
@@ -225,7 +226,7 @@ it("load failure shows Retry, loading shows nothing, and hidden polling pauses",
   expect(host.textContent).toContain("Couldn't check signup changes");
   api.mockResolvedValue({ items: [item()] });
   await click("Retry");
-  expect(host.textContent).toContain("1 assigned player withdrew");
+  expect(host.textContent).toContain("1 signup change to review");
   vi.useFakeTimers();
   Object.defineProperty(document, "hidden", {
     configurable: true,
@@ -326,6 +327,47 @@ it("counts distinct below-war-size clans and leads with the vacancy", () => {
       [clan(15), { ...clan(30), tag: "#OTHER" }],
     ).text,
   ).toBe("2 clans below war size · 3 changes");
+});
+it("shows amber changes before the worst shortage and opens their existing destinations", async () => {
+  api.mockResolvedValue({
+    items: [item(), { ...item(2), assigned_clan_tag: "#OTHER" }],
+  });
+  await act(async () =>
+    root.render(
+      <SignupActivity
+        seasonId="1"
+        roster={
+          {
+            revision: 1,
+            undo: null,
+            accounts: [],
+            clans: [
+              clan(15, 11),
+              { ...clan(30, 10), tag: "#OTHER", name: "Lazy 123" },
+            ],
+          } as RosterSnapshot
+        }
+        canCompare
+        onFill={fill}
+        onDetails={details}
+      />,
+    ),
+  );
+  const lines = [
+    ...host.querySelectorAll<HTMLButtonElement>(".signup-activity-line"),
+  ];
+  expect(lines).toHaveLength(2);
+  expect(lines[0].textContent).toContain("2 signup changes to review");
+  expect(lines[1].textContent).toContain(
+    "Lazy 123 · 10 / 30 players · +1 more",
+  );
+  await act(async () => lines[1].click());
+  expect(fill).toHaveBeenCalledWith(
+    expect.objectContaining({ assigned_clan_tag: "#OTHER" }),
+  );
+  await act(async () => lines[0].click());
+  expect(document.querySelector("dialog.signup-activity-panel")).toBeTruthy();
+  expect(signupShortage([], [clan(15)])).toBeNull();
 });
 it("a late poll cannot resurrect an item reviewed while the read was in flight", async () => {
   vi.useFakeTimers();

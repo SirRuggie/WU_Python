@@ -22,15 +22,11 @@
   gap: 8px;
   min-width: 0;
 }
-.roster-header-draft-pill,
 .roster-header-finalize {
   box-sizing: border-box;
   height: 36px;
   min-height: 36px;
   white-space: nowrap;
-}
-.roster-header-draft-pill {
-  padding-block: 0;
 }
 .roster-header-finalize {
   padding-block: 0;
@@ -128,11 +124,6 @@
     width: 100%;
     flex-wrap: nowrap;
   }
-  .roster-header-draft-pill {
-    max-width: min(42vw, 210px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .roster-header-publication {
     align-items: end;
   }
@@ -155,18 +146,6 @@
   .roster-header-working::-webkit-scrollbar {
     display: none;
   }
-  .roster-header-working::after {
-    position: sticky;
-    z-index: 2;
-    right: 0;
-    align-self: stretch;
-    flex: 0 0 12px;
-    width: 12px;
-    margin-left: -12px;
-    background: linear-gradient(90deg, transparent, var(--roster-surface) 90%);
-    content: "";
-    pointer-events: none;
-  }
   .roster-header-working > .roster-ui-button,
   .roster-header-unplaced > .roster-ui-button {
     flex: 0 0 auto;
@@ -175,7 +154,7 @@
     display: contents;
   }
 }
-/* Keep publication, Finalize and More together at phone widths. */
+/* Keep Finalize and More beside the season selector at phone widths. */
 .roster-workspace.roster-ui .roster-header-finalize {
   position: relative;
   isolation: isolate;
@@ -199,13 +178,6 @@
     justify-content: flex-start;
     gap: 6px;
   }
-  .roster-header-draft-pill {
-    flex: 1;
-    max-width: none;
-    min-width: 0;
-    font-size: 11px;
-    padding-inline: 6px;
-  }
   .roster-workspace.roster-ui .roster-header-finalize {
     flex: none;
     padding-inline: 10px;
@@ -223,14 +195,13 @@
   }
 }
 
-.roster-header-status-short,
 .roster-header-season-short {
   display: none;
 }
 
 @media (max-width: 650px) {
   .roster-header {
-    grid-template-columns: 90px minmax(0, 1fr) auto auto;
+    grid-template-columns: 90px minmax(0, 1fr) auto;
     column-gap: 4px;
   }
   .roster-header-title-row,
@@ -298,33 +269,12 @@
     white-space: nowrap;
     pointer-events: none;
   }
-  .roster-header-draft-pill {
-    grid-column: 2;
-    grid-row: 2;
-    justify-self: stretch;
-    align-self: center;
-    max-width: none;
-    min-width: 0;
-    height: 36px;
-    min-height: 36px;
-  }
-  .roster-header-status-full {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-  .roster-header-status-short {
-    display: inline;
-  }
   .roster-header-finalize {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 2;
   }
   .roster-header-more {
-    grid-column: 4;
+    grid-column: 3;
     grid-row: 2;
   }
   .roster-header-publication > .roster-ui-button,
@@ -336,4 +286,33 @@
 .roster-header .roster-header-signups {
   grid-column: 1 / -1;
   min-width: 0;
+}
+.roster-capacity-alert {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px 8px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-left: 4px solid var(--roster-warning);
+  border-radius: 14px;
+  background: #28241c;
+  color: #f5d27b;
+  font-size: 12px;
+}
+.roster-capacity-alert span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roster-capacity-alert button {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }

@@ -9,6 +9,7 @@ import { publicationDate } from "./publicationStatus";
 import {
   signupActivityIntro,
   signupActivitySummary,
+  signupShortage,
   signupPoolName,
   type SignupChange,
 } from "./signupActivityModel";
@@ -38,6 +39,8 @@ export default function SignupActivity({
   const [confirm, setConfirm] = useState<SignupChange[] | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const summary = signupActivitySummary(activity.items, roster?.clans ?? []);
+  const shortage = signupShortage(activity.items, roster?.clans ?? []);
+  const count = activity.items.length === 100 ? "100+" : activity.items.length;
   useEffect(() => {
     if (!activity.items.length && activity.busy === null) {
       setOpen(false);
@@ -54,17 +57,31 @@ export default function SignupActivity({
         </div>
       ) : (
         activity.items.length > 0 && (
-          <button
-            ref={trigger}
-            title={summary.text}
-            className={`signup-activity-line${summary.danger ? " is-danger" : ""}`}
-            disabled={disabled}
-            onClick={() => setOpen(true)}
-          >
-            <TriangleAlert size={16} aria-hidden="true" />
-            <span>{summary.text}</span>
-            <ChevronRight size={16} aria-hidden="true" />
-          </button>
+          <>
+            <button
+              ref={trigger}
+              className="signup-activity-line"
+              disabled={disabled}
+              onClick={() => setOpen(true)}
+            >
+              <span aria-hidden="true">🔁</span>
+              <span>
+                {count} signup change{activity.items.length === 1 ? "" : "s"} to
+                review · Review ›
+              </span>
+            </button>
+            {shortage && (
+              <button
+                className="signup-activity-line is-danger"
+                disabled={disabled || !canCompare}
+                onClick={() => onFill(shortage.item)}
+              >
+                <TriangleAlert size={16} aria-hidden="true" />
+                <span>{shortage.text}</span>
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            )}
+          </>
         )
       )}
       {open && (

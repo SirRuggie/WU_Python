@@ -149,7 +149,10 @@ export default function RosterClanChips({
                   summary.capacity === null
                     ? `${summary.assignedCount} assigned`
                     : `${summary.assignedCount} of ${summary.capacity} assigned`;
-                const totalLabel = totalRosterWeight(summary.totalWeight);
+                const totalLabel =
+                  summary.totalWeight === null
+                    ? "Total: no weights yet"
+                    : totalRosterWeight(summary.totalWeight);
                 const weighedLabel = summary.missingWeightCount
                   ? `, ${summary.knownWeightCount} of ${summary.assignedCount} weighed`
                   : "";

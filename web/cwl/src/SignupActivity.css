@@ -11,10 +11,12 @@
   gap: 6px;
   min-height: 44px;
   max-width: 100%;
-  padding: 4px 0;
-  border: 0;
-  background: transparent;
-  color: var(--roster-warning);
+  padding: 4px 10px;
+  border: 1px solid #79633d;
+  border-left: 4px solid #ffb85c;
+  border-radius: 14px;
+  background: #30251b;
+  color: #ffca85;
   -webkit-text-fill-color: currentColor;
   font-size: 13px;
   text-align: left;
@@ -30,6 +32,13 @@
 }
 .roster-ui .signup-activity-line.is-danger {
   color: #ffb3ba;
+  border-color: #aa636d;
+  border-left-color: #e98585;
+  background: #302124;
+}
+.signup-activity {
+  display: grid;
+  gap: 6px;
 }
 .signup-activity-load-error {
   color: var(--roster-text-muted);

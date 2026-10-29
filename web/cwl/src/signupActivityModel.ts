@@ -13,6 +13,28 @@ export type SignupChange = {
 };
 export const signupPoolName = (pool: string | null) =>
   pool === "lazy" ? "Lazy CWL" : "Main CWL";
+export function signupShortage(items: SignupChange[], clans: RosterClan[]) {
+  const affected = new Set(items.map((item) => item.assigned_clan_tag));
+  const below = clans.filter(
+    (clan) =>
+      affected.has(clan.tag) &&
+      !clan.archived &&
+      (clan.capacity === 15 || clan.capacity === 30) &&
+      clan.assigned_count < clan.capacity,
+  );
+  below.sort(
+    (a, b) =>
+      b.capacity! - b.assigned_count - (a.capacity! - a.assigned_count) ||
+      a.name.localeCompare(b.name),
+  );
+  const worst = below[0];
+  return worst
+    ? {
+        text: `${worst.name} · ${worst.assigned_count} / ${worst.capacity} players${below.length > 1 ? ` · +${below.length - 1} more` : ""}`,
+        item: items.find((item) => item.assigned_clan_tag === worst.tag)!,
+      }
+    : null;
+}
 export function signupActivitySummary(
   items: SignupChange[],
   clans: RosterClan[],

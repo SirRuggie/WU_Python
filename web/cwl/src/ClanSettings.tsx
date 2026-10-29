@@ -24,6 +24,8 @@ import "./RosterClanChips.css";
 import "./ClanSettings.css";
 
 type Props = {
+  focusClanTag?: string | null;
+  focusClanRequest?: number;
   onHostingChanged?: () => Promise<void>;
   onHostingBusy?: (busy: boolean) => void;
   onFamily?: () => void;
@@ -54,13 +56,16 @@ export default function ClanSettings(props: Props) {
     setTag(null);
   }, [props.pool]);
   useEffect(() => {
+    if (props.focusClanTag) setHighlight(props.focusClanTag);
+  }, [props.focusClanTag, props.focusClanRequest]);
+  useEffect(() => {
     if (!highlight) return;
     const row = Array.from(
       list.current?.querySelectorAll<HTMLButtonElement>("[data-clan]") || [],
     ).find((item) => item.dataset.clan === highlight);
     row?.scrollIntoView({ block: "nearest", behavior: "auto" });
     row?.focus({ preventScroll: true });
-  }, [highlight, props.pool]);
+  }, [highlight, props.pool, props.focusClanRequest]);
   const close = () => {
     if (!props.onLeave()) return false;
     setTag(null);

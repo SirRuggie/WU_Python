@@ -42,6 +42,8 @@ import {
 } from "./rosterReleaseModel";
 import StaffSignupControls from "./StaffSignupControls";
 import { useDashboardPermission } from "./DashboardPermissions";
+import { useHorizontalFades } from "./useHorizontalFades";
+import "./horizontalFades.css";
 import "./RosterWorkspace.css";
 import WeightQueue from "./WeightQueue";
 import CompareClans from "./CompareClans";
@@ -148,6 +150,9 @@ export default function RosterWorkspace({
   const [releasePreferences, setReleasePreferences] =
     useRosterPreferences(seasonId);
   const [poolFilter, setPoolFilter] = useCwlPool();
+  const [focusClanTag, setFocusClanTag] = useState<string | null>(null);
+  const [focusClanRequest, setFocusClanRequest] = useState(0);
+  const tabFades = useHorizontalFades<HTMLDivElement>();
   const [refreshEpoch, setRefreshEpoch] = useState(0);
   const viewPool =
     mode === "weights"
@@ -947,6 +952,15 @@ export default function RosterWorkspace({
           return true;
         }}
         onFinalize={onReviewPublication}
+        onCapacitySettings={(tag) => {
+          if (uiLocked || !mayLeaveEditor()) return;
+          const clan = roster?.clans.find((item) => item.tag === tag);
+          if (!clan) return;
+          setPoolFilter(clan.pool || "main");
+          setFocusClanTag(tag);
+          setFocusClanRequest((value) => value + 1);
+          setMode("rules");
+        }}
         onStatusFilter={(status) => {
           if (mode !== "assign" && !mayLeaveEditor()) return;
           setMode("assign");
@@ -1032,7 +1046,10 @@ export default function RosterWorkspace({
         <>
           {canRoster && (
             <div
-              className="roster-workflow-nav"
+              ref={tabFades.ref}
+              className="roster-workflow-nav has-horizontal-fades"
+              data-fade-left={tabFades.left}
+              data-fade-right={tabFades.right}
               role="group"
               aria-label="Roster workspace views"
             >
@@ -1142,6 +1159,8 @@ export default function RosterWorkspace({
           {canRoster && mode === "rules" && (
             <ClanSettings
               key={seasonId}
+              focusClanTag={focusClanTag}
+              focusClanRequest={focusClanRequest}
               onHostingChanged={async () => {
                 if (!(await refresh()))
                   throw new Error(

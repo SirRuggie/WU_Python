@@ -1,36 +1,40 @@
 .publication-awareness {
   grid-column: 1 / -1;
   min-width: 0;
+  min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  justify-content: space-between;
-  margin: 12px 0;
-  padding: 12px 14px;
+  gap: 8px;
+  margin: 0;
+  padding: 0 10px;
   border: 1px solid #79633d;
-  border-left: 4px solid var(--roster-warning);
+  border-left: 4px solid var(--roster-gold);
   border-radius: 14px;
-  background: #28241c;
+  background: var(--roster-card);
   color: #d1d3d9;
-  font-size: 13px;
+  font-size: 12px;
 }
-.publication-awareness strong,
+.publication-awareness-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .publication-change-list h3,
 .publication-change-list li strong {
   color: #f5f4f0;
   font-size: 15px;
   font-weight: 700;
 }
-.publication-awareness p {
-  margin: 4px 0 0;
-}
-.publication-awareness-date {
-  color: #b9bbc4;
-  font-size: 12px;
-}
 .publication-awareness button {
   flex-shrink: 0;
   min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f5d27b;
+  white-space: nowrap;
+  cursor: pointer;
 }
 .publication-change-list {
   margin: 14px 0;
@@ -56,14 +60,6 @@
 .publication-change-list li strong::after {
   content: ":";
 }
-@media (max-width: 720px) {
-  .publication-awareness {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 6px;
-  }
-}
-
 .publication-change-caveat {
   color: #b9bbc4;
   font-size: 12px;

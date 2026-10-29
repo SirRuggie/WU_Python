@@ -111,8 +111,8 @@ it("retains banner on refetch, scopes it to roster tabs and labels only placemen
     await act(async () => b.click());
   };
   const banner = () => host.querySelector(".publication-awareness");
-  expect(banner()?.textContent).toMatch(
-    /Published Oct 27, \d{1,2}:\d{2} [AP]M/,
+  expect(banner()?.textContent).toContain(
+    "Members see v1 Oct 27 · Draft changes unpublished",
   );
   expect(banner()?.textContent).not.toMatch(/:\d{2}:\d{2}/);
   for (const tab of ["Compare clans", "Clan settings", "Accounts & signups"]) {
@@ -125,7 +125,9 @@ it("retains banner on refetch, scopes it to roster tabs and labels only placemen
   await click("Test assign");
   pending = true;
   await click("Test apply assignment");
-  expect(banner()?.textContent).toContain("Members still see roster version 1");
+  expect(banner()?.textContent).toContain(
+    "Members see v1 Oct 27 · Draft changes unpublished",
+  );
   expect(host.querySelector(".notice.success")?.textContent).toContain(
     "Draft only, not published",
   );
@@ -149,7 +151,9 @@ it("retains banner on refetch, scopes it to roster tabs and labels only placemen
   published = { ...published, draft_changed: false };
   await click("Test assign");
   await click("Test apply assignment");
-  expect(banner()).toBeNull();
+  expect(banner()?.textContent).toContain(
+    "Published · v1 · Oct 27 · Members can see it",
+  );
   act(() => root.unmount());
   host.remove();
   api.mockReset();

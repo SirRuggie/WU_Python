@@ -2,7 +2,6 @@ import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import PublicationAwarenessBanner from "./PublicationAwarenessBanner";
 import { placementMessage, publicationChanges } from "./publicationAwareness";
-import { publicationDate } from "./publicationStatus";
 import type { PublicationDraft } from "./publication";
 const account = (
   tag: string,
@@ -59,8 +58,9 @@ it("shows exact first-publish wording and permission based review actions", () =
         onReview={review ? () => {} : undefined}
       />,
     );
-    expect(markup).toContain("members can&#x27;t see placements yet");
+    expect(markup).toContain("Draft · not published yet");
     expect(markup).toContain(label);
+    if (review) expect(markup).toContain("Review ›");
   }
 });
 it("placement wording is explicit before and after first publish", () => {
@@ -86,8 +86,34 @@ it("shows the Finalize hidden wording for a withdrawn publication", () => {
       onReview={() => {}}
     />,
   );
-  expect(html).toContain(
-    `Hidden from members · last published version 1 on ${publicationDate(lastPublication.published_at)}`,
-  );
+  expect(html).toContain("Hidden from members · v1 Oct 15");
   expect(html).not.toContain("Draft ·");
+});
+it("shows current published status and honest unpublished changes", () => {
+  const published = {
+    version: 3,
+    published_at: "2026-10-28T12:00:00Z",
+  } as PublicationDraft["published"];
+  const current = renderToStaticMarkup(
+    <PublicationAwarenessBanner
+      published={published}
+      changed={false}
+      canPublish
+      onReview={() => {}}
+    />,
+  );
+  expect(current).toContain("Published · v3 · Oct 28 · Members can see it");
+  expect(current).not.toContain("Review ›");
+  const changed = renderToStaticMarkup(
+    <PublicationAwarenessBanner
+      published={published}
+      changed
+      canPublish
+      onReview={() => {}}
+    />,
+  );
+  expect(changed).toContain(
+    "Members see v3 Oct 28 · Draft changes unpublished",
+  );
+  expect(changed).toContain("Review ›");
 });

@@ -42,6 +42,8 @@ function render(
   seasonId = "1",
   seasonLabel = "June",
   activeStatuses: string[] = [],
+  testRoster = roster,
+  onCapacitySettings?: (tag: string) => void,
 ) {
   return renderToStaticMarkup(
     <RosterHeader
@@ -51,7 +53,8 @@ function render(
       seasons={[
         { id: 1, label: seasonLabel, status: "active", signup_open: true },
       ]}
-      roster={roster}
+      roster={testRoster}
+      onCapacitySettings={onCapacitySettings}
       activeStatuses={activeStatuses}
       pool={pool}
       canRoster
@@ -70,6 +73,47 @@ function render(
 }
 
 describe("roster header counts", () => {
+  it("uses the status line without duplicate Draft pills", () => {
+    const html = render("all");
+    expect(html).toContain("Checking publication…");
+    expect(html).not.toContain("roster-header-draft-pill");
+  });
+  it("shows one top capacity warning per unconfigured hosting clan with a settings action", () => {
+    const testRoster = {
+      ...roster,
+      clans: [
+        {
+          tag: "#ONE",
+          name: "Funnies",
+          pool: "main",
+          capacity: null,
+          archived: false,
+        },
+        {
+          tag: "#TWO",
+          name: "Ready",
+          pool: "main",
+          capacity: 15,
+          archived: false,
+        },
+        {
+          tag: "#THREE",
+          name: "Old",
+          pool: "lazy",
+          capacity: null,
+          archived: true,
+        },
+      ],
+    } as RosterSnapshot;
+    const html = render("all", "1", "June", [], testRoster, () => {});
+    expect(html).toContain("Funnies has no capacity set");
+    expect(html).toContain("Set in Clan settings ›");
+    expect(html).not.toContain("Ready has no capacity set");
+    expect(html).not.toContain("Old has no capacity set");
+    expect(html.indexOf("signup-activity")).toBeLessThan(
+      html.indexOf("roster-capacity-alert"),
+    );
+  });
   it("does not duplicate the workflow Finalize action", () => {
     expect(render("all")).not.toContain("Finalize →");
   });

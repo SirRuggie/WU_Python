@@ -1,7 +1,11 @@
-import { publicationDate, hiddenPublicationStatus } from "./publicationStatus";
 import type { PublicationDraft, PublicationMeta } from "./publication";
 import { publicationReviewLabel } from "./publicationAwareness";
 import "./publicationAwareness.css";
+const shortDate = (value: string) =>
+  new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 export default function PublicationAwarenessBanner({
   published,
   lastPublication = null,
@@ -17,37 +21,34 @@ export default function PublicationAwarenessBanner({
   onReview?: () => void;
   disabled?: boolean;
 }) {
-  if (published && !changed) return null;
   const label = publicationReviewLabel(canPublish, !!onReview);
+  const status = published
+    ? changed
+      ? `Members see v${published.version} ${shortDate(published.published_at)} · Draft changes unpublished`
+      : `Published · v${published.version} · ${shortDate(published.published_at)} · Members can see it`
+    : lastPublication?.withdrawn_at
+      ? `Hidden from members · v${lastPublication.version} ${shortDate(lastPublication.published_at)}`
+      : "Draft · not published yet";
   return (
     <aside
       className="publication-awareness"
       aria-label="Placement publication status"
     >
-      <div>
-        <strong>
-          {published
-            ? `Members still see roster version ${published.version}`
-            : lastPublication?.withdrawn_at
-              ? hiddenPublicationStatus(lastPublication)
-              : "Draft · members can't see placements yet"}
-        </strong>
-        {published && (
-          <p>
-            <span className="publication-awareness-date">
-              Published {publicationDate(published.published_at)}.
-            </span>{" "}
-            Placement changes made since then are draft only.
-          </p>
-        )}
-      </div>
-      {label ? (
-        <button type="button" onClick={onReview} disabled={disabled}>
-          {label}
-        </button>
-      ) : (
-        <p>Ask a staff member with publish access.</p>
-      )}
+      <span className="publication-awareness-status">{status}</span>
+      {changed || !published ? (
+        label ? (
+          <button
+            type="button"
+            onClick={onReview}
+            disabled={disabled}
+            aria-label={label}
+          >
+            Review ›
+          </button>
+        ) : (
+          <span>Ask a staff member with publish access.</span>
+        )
+      ) : null}
     </aside>
   );
 }
