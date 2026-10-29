@@ -234,3 +234,9 @@ Every run is sequential and explicitly confirmed, with one shared synchronous bu
 Uncertain image deliveries appear in the pool status as “N needs checking.” Recovery controls name the current publication version; edit confirmations name that version and explicitly promise the same message. An uncertain drop for a clan that has returned becomes an update. Same-version retries reuse frozen metadata; newer-version retries freeze new metadata from the current publication.
 
 For removed clans, an uncertain update offers “Mark as no longer hosting · version N” with a same-message confirmation. An uncertain new post instead asks staff to check Discord and offers “Mark as checked”; its confirmation explains that Discord is not changed. Only “Post again anyway” carries explicit duplicate consent to the server. Checked rows are no longer counted as needing checking; their historical receipts remain available to the audit trail.
+
+## Member tour / spotlight
+
+`memberTour/model.ts` owns numbered steps, exact copy, artwork and browser preferences. Add a step there and a matching `data-tour-target` on the existing UI; practice targets belong only in `Practice.tsx`. Never import API mutation helpers into the tour. A transparent modal overlays the measured target so a tap advances without invoking the underlying action. The sidebar remains inert to real navigation while touring.
+
+`MemberTour.tsx` owns dialog focus, restoring the starting location, menu coordination and target geometry. Phone navigation space is measured against the bottom card; cleanup restores its original inline height. `tour.css` scopes all visuals and reduced-motion behavior. Art lives in `public/assets/tour/` because the backend already serves `/assets`; keep the source manifest and 80KB-per-image budget. Test the entire sequence with zero requests and verify phone targets are not covered, in addition to preference and focus tests.
