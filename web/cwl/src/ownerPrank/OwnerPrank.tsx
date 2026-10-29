@@ -49,7 +49,12 @@ export default function OwnerPrank({
   const visitClosed = useRef(false);
   const generation = useRef(0);
   const latestConfirmed = useRef<PrankState | null>(null);
-  const inFlight = useRef<Promise<PrankState> | null>(null);
+  const preloadedArt = useRef<HTMLImageElement[]>([]);
+  const progression = useRef<Promise<void>>(Promise.resolve());
+  const progressionHalted = useRef(false);
+  const progressionUncertain = useRef(false);
+  const closing = useRef(false);
+  const lastQueued = useRef<{ run: number; card: number } | null>(null);
   const stateRef = useRef<PrankState | null>(null);
   stateRef.current = state;
   const openRef = useRef(open);
@@ -86,50 +91,32 @@ export default function OwnerPrank({
     card = current.card,
     branch?: "yes" | "no",
   ) => {
-    const request = api<PrankState>("/prank/event", "POST", {
+    return api<PrankState>("/prank/event", "POST", {
       event,
       card,
       run: current.run,
       ...(branch ? { branch } : {}),
+    }).then((received) => {
+      latestConfirmed.current = received;
+      return received;
     });
-    inFlight.current = request;
-    return request
-      .then((received) => {
-        latestConfirmed.current = received;
-        return received;
-      })
-      .finally(() => {
-        if (inFlight.current === request) inFlight.current = null;
-      });
   };
 
-  const reconcileStale = async (
-    error: unknown,
-    token: number,
-    previous: PrankState,
-  ) => {
-    if (!(
-      error instanceof ApiError &&
-      (error.status === 400 || error.status === 409)
-    ))
+  const reconcileStale = async (error: unknown, token: number) => {
+    if (
+      !(
+        error instanceof ApiError &&
+        (error.status === 400 || error.status === 409)
+      )
+    )
       return false;
     try {
       const fresh = await api<PrankState>("/prank/state");
       if (token !== generation.current) return true;
-      if (
-        fresh.card === previous.card &&
-        fresh.branch === previous.branch &&
-        fresh.run === previous.run &&
-        !fresh.completed_at
-      ) {
-        callbacks.current.onError(
-          "Prank progress could not be reconciled. Refresh this page to continue.",
-        );
-        finishVisible();
-        return true;
-      }
       latestConfirmed.current = fresh;
-      setState(fresh);
+      const visible = stateRef.current;
+      if (!visible || fresh.run !== visible.run || fresh.card >= visible.card)
+        setState(fresh);
       callbacks.current.onReplayAvailable(
         Boolean(fresh.can_replay && fresh.completed_at),
       );
@@ -140,7 +127,9 @@ export default function OwnerPrank({
           setOpen(true);
         }
         setError(
-          "Prank progress changed in another session. Continue from this card.",
+          fresh.run === visible?.run && fresh.card < visible.card
+            ? "Prank progress could not be confirmed. Close or refresh this page to continue."
+            : "Prank progress changed in another session. Continue from this card.",
         );
       }
     } catch {
@@ -173,7 +162,7 @@ export default function OwnerPrank({
       setOpen(true);
     } catch (error) {
       if (token !== generation.current) return;
-      if (await reconcileStale(error, token, next)) return;
+      if (await reconcileStale(error, token)) return;
       // A failed milestone cannot imply a completed run. Keep the last confirmed card.
       setState(next);
       previousFocus.current = document.activeElement as HTMLElement;
@@ -224,6 +213,11 @@ export default function OwnerPrank({
     void post("prank_replay", stateRef.current, 15)
       .then((received) => {
         if (token !== generation.current) return;
+        closing.current = false;
+        progressionHalted.current = false;
+        progressionUncertain.current = false;
+        lastQueued.current = null;
+        progression.current = Promise.resolve();
         visitClosed.current = false;
         callbacks.current.onReplayAvailable(false);
         void enter(received, token);
@@ -249,12 +243,33 @@ export default function OwnerPrank({
   }, [open]);
 
   useEffect(() => {
-    if (!open || state?.card !== 2 || busy || error) return;
+    if (!open) return;
+    const urls = new Set<string>();
+    for (let number = 3; number <= 15; number += 1) {
+      const art = cardFor(
+        number,
+        state?.branch || "yes",
+        state?.signup_count || 0,
+      ).art;
+      if (art) urls.add(art);
+    }
+    preloadedArt.current = [...urls].map((url) => {
+      const image = new Image();
+      image.src = url;
+      return image;
+    });
+    return () => {
+      preloadedArt.current = [];
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || state?.card !== 2) return;
     const timer = window.setTimeout(() => void advance(), 2000);
     return () => window.clearTimeout(timer);
-    // Card 2's timer starts when its confirmed server state appears.
+    // Card 2's timer starts when the card becomes visible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, state?.card, busy, error]);
+  }, [open, state?.card]);
 
   const finishVisible = () => {
     generation.current += 1;
@@ -267,67 +282,129 @@ export default function OwnerPrank({
   };
 
   const closeEarly = () => {
-    const current = stateRef.current;
-    if (!openRef.current) return;
-    const pending = inFlight.current;
-    finishVisible();
-    if (current && !current.completed_at) {
-      void (async () => {
-        if (pending) await pending.catch(() => {});
-        const confirmed = latestConfirmed.current || current;
-        if (!confirmed.completed_at)
-          await post("prank_closed_early", confirmed).catch(() => {});
-      })();
-    }
+    if (!openRef.current || closing.current) return;
+    closing.current = true;
+    visitClosed.current = true;
+    setOpen(false);
+    setBusy(false);
+    setError("");
+    callbacks.current.onSettled();
+    window.requestAnimationFrame(() => previousFocus.current?.focus());
+    void (async () => {
+      await progression.current;
+      generation.current += 1;
+      let confirmed = latestConfirmed.current;
+      if (progressionUncertain.current) {
+        try {
+          confirmed = await api<PrankState>("/prank/state");
+        } catch {
+          return;
+        }
+      }
+      if (confirmed && !confirmed.completed_at)
+        await post("prank_closed_early", confirmed).catch(() => {});
+    })();
   };
 
-  const advance = async (choice?: "yes" | "no") => {
+  const advance = (choice?: "yes" | "no") => {
     const current = stateRef.current;
-    if (!current || busy || !openRef.current) return;
+    if (!current || busy || !openRef.current || closing.current) return;
+    if (
+      lastQueued.current?.run === current.run &&
+      current.card <= lastQueued.current.card &&
+      !(current.card === 15 && error && !busy)
+    )
+      return;
     if (current.card === 1 && current.branch && choice !== current.branch)
       return;
+    lastQueued.current = { run: current.run, card: current.card };
     const token = generation.current;
-    setBusy(true);
-    setError("");
-    let next = current;
-    try {
-      if (current.card === 15) {
-        next = await post("prank_completed", next);
-        if (token !== generation.current) return;
-        setState(next);
-        callbacks.current.onReplayAvailable(
-          Boolean(next.can_replay && next.completed_at),
-        );
-        finishVisible();
+    const confirmed = latestConfirmed.current;
+    if (
+      current.card === 15 &&
+      progressionHalted.current &&
+      confirmed?.card !== 15
+    ) {
+      closeEarly();
+      callbacks.current.onError(
+        "Prank progress was not saved. Refresh this page to resume from the saved card.",
+      );
+      return;
+    }
+    if (
+      progressionHalted.current &&
+      confirmed?.run === current.run &&
+      confirmed.card >= current.card
+    )
+      progressionHalted.current = false;
+    if (!progressionHalted.current) setError("");
+    if (current.card < 15) {
+      // Paint the next card now; the ordered POSTs below remain the authority.
+      setState({
+        ...current,
+        card: current.card + 1,
+        branch: choice || current.branch,
+      });
+    }
+    if (current.card === 15 && !progressionHalted.current) setBusy(true);
+    progression.current = progression.current.then(async () => {
+      if (token !== generation.current || progressionHalted.current) {
+        if (current.card === 15 && token === generation.current) setBusy(false);
         return;
       }
-      if (current.card === 1 && choice && !current.branch) {
-        next = await post(
-          choice === "yes" ? "prank_bait_yes" : "prank_bait_no",
-          next,
-          1,
-          choice,
-        );
+      let next = latestConfirmed.current;
+      if (!next || next.run !== current.run) return;
+      try {
+        if (current.card === 15) {
+          next = await post("prank_completed", next);
+          if (token !== generation.current) return;
+          setState(next);
+          callbacks.current.onReplayAvailable(
+            Boolean(next.can_replay && next.completed_at),
+          );
+          if (next.completed_at && !closing.current) finishVisible();
+          return;
+        }
+        const target = current.card + 1;
+        if (
+          next.card < target &&
+          current.card === 1 &&
+          choice &&
+          !next.branch
+        ) {
+          next = await post(
+            choice === "yes" ? "prank_bait_yes" : "prank_bait_no",
+            next,
+            1,
+            choice,
+          );
+          if (token !== generation.current) return;
+        }
+        if (next.card < target) {
+          if (next.card !== target - 1) throw new Error("Progression gap");
+          next = await post("prank_card_seen", next, target);
+          if (token !== generation.current) return;
+          const event = milestone(target);
+          if (event && next.card === target) next = await post(event, next);
+        }
         if (token !== generation.current) return;
-        setState(next);
-      }
-      if (token !== generation.current) return;
-      next = await post("prank_card_seen", next, current.card + 1);
-      if (token !== generation.current) return;
-      setState(next);
-      const event = milestone(next.card);
-      if (event) next = await post(event, next);
-      if (token !== generation.current) return;
-      setState(next);
-    } catch (error) {
-      if (token === generation.current) {
-        if (await reconcileStale(error, token, next)) return;
-        setState(next);
+        const visible = stateRef.current;
+        if (
+          !closing.current &&
+          (!visible || next.run !== visible.run || next.card > visible.card)
+        )
+          setState(next);
+      } catch (error) {
+        progressionHalted.current = true;
+        progressionUncertain.current = true;
+        if (token !== generation.current) return;
+        if (closing.current) return;
+        if (await reconcileStale(error, token)) return;
         setError("A prank update failed. Continue or close this card.");
+      } finally {
+        if (current.card === 15 && token === generation.current) setBusy(false);
       }
-    } finally {
-      if (token === generation.current) setBusy(false);
-    }
+    });
   };
 
   if (!open || !state || state.card < 1 || state.card > 15) return null;
