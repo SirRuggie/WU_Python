@@ -143,6 +143,46 @@ const base = `http://127.0.0.1:${port}`;
             );
         }
         if (step >= 4 && step <= 7) {
+          if ([360, 1440].includes(width) && step === 6) {
+            const buttons = await page
+              .locator(".signup-review-heading button")
+              .evaluateAll((items) =>
+                items.map((button) => ({
+                  visible: button.textContent.trim(),
+                  accessible: button.getAttribute("aria-label"),
+                  height: button.getBoundingClientRect().height,
+                  overflow: button.scrollWidth > button.clientWidth,
+                })),
+              );
+            assert.deepEqual(
+              buttons.map(({ visible, accessible }) => [visible, accessible]),
+              [
+                ["Change CWL", "Change CWL"],
+                ["Change accounts", "Change accounts"],
+              ],
+            );
+            assert(
+              buttons.every(({ height, overflow }) => height >= 44 && !overflow),
+            );
+          }
+          if ([360, 1440].includes(width) && step === 7) {
+            const paragraphs = await page
+              .locator(".tour-copy > p")
+              .evaluateAll((items) =>
+                items.slice(1).map((item) => ({
+                  text: item.textContent,
+                  top: item.getBoundingClientRect().top,
+                  bottom: item.getBoundingClientRect().bottom,
+                  bold: item.querySelector("strong")?.textContent,
+                })),
+              );
+            assert.deepEqual(paragraphs.map(({ text }) => text), [
+              "When you are ready, tap Sign up.",
+              "This is only practice. Nothing is saved now.",
+            ]);
+            assert.equal(paragraphs[0].bold, "Sign up");
+            assert(paragraphs[1].top >= paragraphs[0].bottom);
+          }
           const expected = [
             ".pool-choice-grid button[data-tour-target]",
             ".account-card[data-tour-target]",

@@ -101,11 +101,13 @@ export default function MemberTour({
         : allSigned
           ? "All your accounts are already signed up — nice!"
           : current.text;
-  const copy = text
-    .split(/\*\*(.*?)\*\*/g)
-    .map((part, index) =>
-      index % 2 === 1 ? <strong key={index}>{part}</strong> : part,
-    );
+  const copy = text.split("\n").map((line) =>
+    line
+      .split(/\*\*(.*?)\*\*/g)
+      .map((part, index) =>
+        index % 2 === 1 ? <strong key={index}>{part}</strong> : part,
+      ),
+  );
   const sidebarStep = [
     "home",
     "todo",
@@ -428,9 +430,14 @@ export default function MemberTour({
                 <h2 id="tour-title" tabIndex={-1}>
                   {current.title}
                 </h2>
-                <p key={shake} className={shake ? "tour-shake" : undefined}>
-                  {copy}
-                </p>
+                {copy.map((line, index) => (
+                  <p
+                    key={`${shake}-${index}`}
+                    className={shake ? "tour-shake" : undefined}
+                  >
+                    {line}
+                  </p>
+                ))}
                 {step === 0 && (
                   <label className="tour-remember">
                     <input

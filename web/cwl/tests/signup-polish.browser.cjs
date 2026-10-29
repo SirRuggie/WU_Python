@@ -123,7 +123,7 @@ const base = `http://127.0.0.1:${port}`;
       );
       await page.locator(".submit-bar .primary").click();
       await page
-        .getByRole("button", { name: "Change CWL pool", exact: true })
+        .getByRole("button", { name: "Change CWL", exact: true })
         .click();
       await page.locator('[data-tour-target="signup-pool"]').click();
       await page.locator(".signup-review").waitFor();

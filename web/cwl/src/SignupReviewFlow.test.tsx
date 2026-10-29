@@ -127,6 +127,17 @@ it("review Change links retain eligible accounts and clear the removal notice af
     );
     await click(".signup-action-buttons .primary");
     expect(reviewNames()).toEqual(["Normal fixture", "FWA fixture"]);
+    const changeButtons = [
+      ...host.querySelectorAll<HTMLButtonElement>(".signup-review-heading button"),
+    ];
+    expect(changeButtons.map((button) => button.textContent?.trim())).toEqual([
+      "Change CWL",
+      "Change accounts",
+    ]);
+    expect(changeButtons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Change CWL",
+      "Change accounts",
+    ]);
 
     await click('[aria-label="Change accounts"]');
     expect(checked("Normal fixture")).toBe(true);
@@ -134,11 +145,11 @@ it("review Change links retain eligible accounts and clear the removal notice af
     await click(".signup-action-buttons .primary");
     expect(reviewNames()).toEqual(["Normal fixture", "FWA fixture"]);
 
-    await click('[aria-label="Change CWL pool"]');
+    await click('[aria-label="Change CWL"]');
     await choosePool("Lazy CWL");
     expect(reviewNames()).toEqual(["Normal fixture", "FWA fixture"]);
 
-    await click('[aria-label="Change CWL pool"]');
+    await click('[aria-label="Change CWL"]');
     await choosePool("Main CWL");
     expect(reviewNames()).toEqual(["Normal fixture"]);
     expect(host.querySelector('[role="status"]')?.textContent).toContain(

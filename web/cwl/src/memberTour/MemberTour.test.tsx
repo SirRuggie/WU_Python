@@ -179,6 +179,12 @@ it("walks every step, target advances, phone menu closes for practice, finishes 
     if (i === 9) expect(document.querySelector(".tour-practice")).toBeNull();
     expect(document.querySelector(".tour-policy")).toBeNull();
     if (i === 7) {
+      const paragraphs = [...document.querySelectorAll(".tour-copy > p")];
+      expect(paragraphs.slice(1).map((paragraph) => paragraph.textContent)).toEqual([
+        "When you are ready, tap Sign up.",
+        "This is only practice. Nothing is saved now.",
+      ]);
+      expect(paragraphs[1].querySelector("strong")?.textContent).toBe("Sign up");
       await click(".tour-spotlight");
       expect(document.querySelector(".tour-shake")).not.toBeNull();
       expect(control).not.toHaveBeenCalledWith("signup-confirm");
@@ -433,8 +439,8 @@ it("uses the approved playful tour copy and bolds each navigation tap target", (
       "Check your accounts before you finish.",
     ],
     [
-      "SMASH that button!",
-      "…for real, when you're ready. In the tour we stop here, so nothing's saved.",
+      "This button signs you up",
+      "When you are ready, tap **Sign up**.\nThis is only practice. Nothing is saved now.",
     ],
     ["WOOO! That's all it takes!", "Practice — nothing saved."],
     [

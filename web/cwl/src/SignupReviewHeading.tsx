@@ -16,11 +16,11 @@ export default function SignupReviewHeading({
         <h3>{poolLabel}</h3>
         <button
           type="button"
-          aria-label="Change CWL pool"
+          aria-label="Change CWL"
           disabled={busy}
           onClick={() => onChange(1)}
         >
-          Change
+          Change CWL
         </button>
       </div>
       <div className="signup-review-heading">
@@ -34,7 +34,7 @@ export default function SignupReviewHeading({
           disabled={busy}
           onClick={() => onChange(2)}
         >
-          Change
+          Change accounts
         </button>
       </div>
     </>
