@@ -432,7 +432,9 @@ async def seasons(request):
     rows = _store(request).rows("SELECT * FROM seasons ORDER BY id DESC")
     if not _editor(request, session):
         rows = [row for row in rows if row['id'] == selection['season_id']]
-    return web.json_response({"seasons": [_season_dict(row) for row in rows], "member_season": selection})
+    from .member_timing import season_timing
+    timing = await asyncio.gather(*(season_timing(request, row['id']) for row in rows))
+    return web.json_response({"seasons": [_season_dict(row) | dates for row, dates in zip(rows, timing)], "member_season": selection})
 
 
 async def set_member_season(request):

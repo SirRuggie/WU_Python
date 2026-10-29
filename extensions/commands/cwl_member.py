@@ -16,6 +16,8 @@ import lightbulb
 from extensions.components import register_action
 from utils.constants import GOLDENROD_ACCENT, WARRIORS_UNITED_GUILD_ID
 from utils.cwl_signup_policy import main_signup_error
+from utils.cwl_member_summary import timing_lines
+from utils.dashboard_urls import SIGNUP_URL
 
 
 PAGE_SIZE = 15
@@ -133,6 +135,46 @@ def _signups(session: MemberSession) -> list[dict]:
     return [row for row in rows if isinstance(row, dict) and row.get("tag")]
 
 
+def _remaining(session: MemberSession) -> list[dict]:
+    if session.view.get("accounts_status") != "ok":
+        return []
+    signed = {row["tag"] for row in _signups(session)}
+    return [row for row in _accounts(session) if row["tag"] not in signed]
+
+
+def _signup_pages(session: MemberSession) -> int:
+    return max(1, (max(len(_signups(session)), len(_remaining(session))) + PAGE_SIZE - 1) // PAGE_SIZE)
+
+
+def _saved_text(session: MemberSession) -> str:
+    signed, remaining = _signups(session), _remaining(session)
+    season = session.view.get("season") or {}
+    if not signed:
+        heading = "You haven't signed up any accounts yet."
+    elif session.view.get("accounts_status") == "ok":
+        total = len({row['tag'] for row in _accounts(session) + signed})
+        count = f"all {total} account{'s' if total != 1 else ''}" if total == len(signed) else f"{len(signed)} of {total} accounts"
+        heading = f"✓ You're signed up · {count}"
+    else:
+        heading = f"✓ You're signed up · {len(signed)} account{'s' if len(signed) != 1 else ''}"
+    lines = ["## My signups", heading]
+    if signed:
+        lines.append("We've got your signup. Your clan will show here once staff finish the roster.")
+    start = session.page * PAGE_SIZE
+    lines.extend(f"• {_safe(row.get('player_name') or row['tag'], 45)} · {'Main' if row.get('pool') == 'main' else 'Lazy'} CWL" for row in signed[start:start + PAGE_SIZE])
+    lines.extend(timing_lines(season, bool(session.view.get('published'))))
+    if remaining:
+        n = len(remaining)
+        state = 'not signed up' if _signup_is_open(session) else ("wasn't" if n == 1 else "weren't") + ' signed up · signups are closed'
+        lines.append(f"\n{n} account{'s' if n != 1 else ''} {state}")
+        lines.extend(f"• {_safe(row.get('name') or row['tag'], 45)}" for row in remaining[start:start + PAGE_SIZE])
+    if _signup_pages(session) > 1:
+        lines.append(f"Page {session.page + 1} of {_signup_pages(session)}")
+    if signed:
+        lines.append("Choose an account to change its pool or withdraw." if _signup_is_open(session) else "Signups are closed; saved accounts are view only.")
+    return '\n'.join(lines)
+
+
 def _published_assignments(session: MemberSession) -> list[dict]:
     if not session.view.get("published"):
         return []
@@ -227,20 +269,7 @@ def _main_text(session: MemberSession) -> str:
         season = _safe((session.view.get("season") or {}).get("label") or "CWL season", 45)
         return f"## Review {('Main' if session.pool == 'main' else 'Lazy')} signup · {season} · {len(selected)} account(s){page_label}\n{listing}\n\nConfirm to save.{note}"
     if session.screen == "my_signups":
-        rows = _signups(session)
-        if not rows:
-            return "## My signups\nYou have no saved signups for this CWL season."
-        pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
-        page_label = f" · Page {session.page + 1} of {pages}" if pages > 1 else ""
-        action = "Choose an account to change its pool or withdraw." if _signup_is_open(session) else "Signups are closed; saved accounts are view only."
-        if _signup_is_open(session):
-            return f"## My signups · {len(rows)} account(s){page_label}\n{action}"
-        visible = rows[session.page * PAGE_SIZE:(session.page + 1) * PAGE_SIZE]
-        listing = "\n".join(
-            f"• {_safe(row.get('player_name') or row['tag'], 50)} · {_safe(row['tag'], 20)} · {'Main' if row.get('pool') == 'main' else 'Lazy'}"
-            for row in visible
-        )
-        return f"## My signups · {len(rows)} account(s){page_label}\n{action}\n{listing}"
+        return _saved_text(session)
     if session.screen == "signup_action":
         row = next((row for row in _signups(session) if row.get("tag") == session.pending_tag), {})
         pool = "Main" if row.get("pool") == "main" else "Lazy"
@@ -372,12 +401,15 @@ def _components(token: str, session: MemberSession) -> list:
     if session.screen == "my_signups":
         rows = []
         signups = _signups(session)
-        if signups and _signup_is_open(session):
+        visible = signups[session.page * PAGE_SIZE:(session.page + 1) * PAGE_SIZE]
+        if visible and _signup_is_open(session):
             menu = c.TextSelectMenuBuilder(custom_id=_id("signup_pick", token, version), placeholder="Choose a saved signup", min_values=1, max_values=1)
             for row in signups[session.page * PAGE_SIZE:(session.page + 1) * PAGE_SIZE]:
                 menu.add_option(_clip(f"{_safe(row.get('player_name') or row['tag'], 45)} · {_safe(row['tag'], 18)} · {row['pool'].title()}", 100), str(row["tag"]))
             rows.append(c.MessageActionRowBuilder().add_component(menu))
-        pages = max(1, (len(signups) + PAGE_SIZE - 1) // PAGE_SIZE)
+        pages = _signup_pages(session)
+        if not signups or (_remaining(session) and _signup_is_open(session)):
+            rows.append(c.MessageActionRowBuilder().add_link_button(SIGNUP_URL, label="Sign up for CWL"))
         rows.append(_row((hikari.ButtonStyle.SECONDARY, _id("home", token, version), "Back", False)))
         if pages > 1:
             rows.append(_row(
@@ -560,6 +592,27 @@ async def start(ctx, action_id: str, **_):
         )
 
 
+@register_action("cwl_member_check", no_return=True, preload_state=False)
+async def check_signups(ctx, action_id: str, **_):
+    """The shared post is never edited: reply with a private follow-up."""
+    try:
+        if action_id != "open":
+            raise ValueError("Open Check my signups from the signup post.")
+        token, session = _new_session(ctx)
+        async with session.lock:
+            await _refresh(session, session.user_id, session.guild_id, include_accounts=True)
+            session.screen = "my_signups"
+            session.version += 1
+            components = _panel(_main_text(session), _components(token, session))
+    except ValueError as exc:
+        components = _panel(str(exc), [])
+    except Exception:
+        components = _panel("CWL is temporarily unavailable. Your signups have not been changed. Try again shortly.", [])
+    await ctx.respond(components=components,
+                      flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.EPHEMERAL,
+                      user_mentions=False, role_mentions=False, mentions_everyone=False)
+
+
 async def _handle(ctx, action_id: str, action: str) -> None:
     try:
         token, session, _ = _session_from(action_id, ctx)
@@ -652,7 +705,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
             elif session.screen == "review":
                 maximum = max(0, (len(session.selected) - 1) // 10)
             else:
-                maximum = max(0, (len(_signups(session)) - 1) // PAGE_SIZE) if session.screen == "my_signups" else max(0, (len(_eligible_accounts(session)) - 1) // PAGE_SIZE)
+                maximum = _signup_pages(session) - 1 if session.screen == "my_signups" else max(0, (len(_eligible_accounts(session)) - 1) // PAGE_SIZE)
             session.page = min(maximum, session.page + 1)
         elif action == "review":
             if session.selected:
@@ -709,7 +762,7 @@ async def _handle(ctx, action_id: str, action: str) -> None:
                 session.screen = "home"
         elif action == "my_signups":
             try:
-                await _refresh(session, user_id, guild_id, include_accounts=False)
+                await _refresh(session, user_id, guild_id, include_accounts=True)
                 session.page = 0
                 session.screen = "my_signups"
             except Exception:

@@ -15,9 +15,9 @@ def test_signup_entry_upgrades_existing_templates_without_mutating_custom_conten
     for key, message in upgraded['messages'].items():
         if key == 'signup' or key.startswith('reminder:'):
             for variant in message['variants'].values():
-                assert variant['buttons'] == [{'label': 'Sign up for CWL', 'url': cwl_campaign.SIGNUP_URL}]
+                assert variant['buttons'] == [{'label': 'Sign up for CWL', 'url': cwl_campaign.SIGNUP_URL}, {'label': 'Check my signups', 'custom_id': cwl_campaign.SIGNUP_CHECK_ID}]
     assert 'two signup forms' not in upgraded['messages']['signup']['variants']['main']['body']
-    assert upgraded['messages']['reminder:1']['variants']['lazy']['body'] == 'Family-specific instructions'
+    assert upgraded['messages']['reminder:1']['variants']['lazy']['body'] == 'Family-specific instructions\n\n' + cwl_campaign.SIGNUP_CHECK_LINE
     assert upgraded['messages']['roster'] == original['messages']['roster']
     assert upgraded['messages']['signup']['schedule'] == original['messages']['signup']['schedule']
     assert cwl_campaign.normalize_signup_entry(upgraded) == upgraded
@@ -70,7 +70,9 @@ def test_signup_help_footer_covers_both_pools_and_all_reminders_only():
                 assert children[-2]['type'] == 14
                 assert children[-2]['divider'] is True
                 assert children[-3]['type'] == 1
-                assert len(children[-3]['components']) == 1
+                assert len(children[-3]['components']) == 2
                 assert children[-3]['components'][0]['url'] == cwl_campaign.SIGNUP_URL
+                assert children[-3]['components'][1]['custom_id'] == cwl_campaign.SIGNUP_CHECK_ID
+                assert str(built).count(cwl_campaign.SIGNUP_CHECK_LINE) == 1
             assert 'cwl signup' not in str(built)
     assert campaign == original

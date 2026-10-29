@@ -20,6 +20,7 @@ from pymongo.errors import DuplicateKeyError
 from hikari.impl import (
     ContainerComponentBuilder as Container,
     LinkButtonBuilder as LinkButton,
+    InteractiveButtonBuilder as InteractiveButton,
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
     MessageActionRowBuilder as ActionRow,
@@ -38,6 +39,8 @@ AUDIENCES = ("main", "lazy")
 MESSAGE_ORDER = ("signup", "reminder:1", "reminder:2", "reminder:3", "reminder:4", "reminder:5", "roster")
 HISTORY_LIMIT = 100
 SIGNUP_HELP_LINE = "-# Having trouble with the dashboard? Ping staff—we can help."
+SIGNUP_CHECK_ID = "cwl_member_check:open"
+SIGNUP_CHECK_LINE = "Already signed up? Tap **Check my signups** anytime to see your accounts."
 _CYCLE_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _SKIP_OCCURRENCE = object()
 
@@ -96,8 +99,9 @@ LEGACY_SIGNUP_LAZY = (
 
 
 def signup_buttons() -> list[dict]:
-    """One member entry point, preserved through the existing Discord login flow."""
-    return [{"label": "Sign up for CWL", "url": SIGNUP_URL}]
+    """Website signup plus a private, read-only saved-signup check."""
+    return [{"label": "Sign up for CWL", "url": SIGNUP_URL},
+            {"label": "Check my signups", "custom_id": SIGNUP_CHECK_ID}]
 
 
 LEGACY_ROSTER_URLS = (
@@ -132,6 +136,8 @@ def normalize_signup_entry(campaign: dict) -> dict:
             replacement = defaults["messages"]["signup"]["variants"].get(pool, {}).get("body")
             if replacement and legacy in item.get("body", ""):
                 item["body"] = item["body"].replace(legacy, replacement)
+            if SIGNUP_CHECK_LINE not in item.get("body", ""):
+                item["body"] = item.get("body", "").rstrip() + "\n\n" + SIGNUP_CHECK_LINE
     return result
 
 
@@ -505,6 +511,8 @@ def validate_campaign(campaign: dict) -> None:
             for button in buttons:
                 if not isinstance(button, dict):
                     raise ValueError(f"{message_id}/{variant} button is invalid")
+                if button == {"label": "Check my signups", "custom_id": SIGNUP_CHECK_ID} and (message_id == "signup" or message_id.startswith("reminder:")):
+                    continue
                 label, url = str(button.get("label", "")).strip(), str(button.get("url", ""))
                 if not label or len(label) > 80 or len(url) > 512 or not _safe_url(url):
                     raise ValueError(f"{message_id}/{variant} button is invalid")
@@ -554,6 +562,9 @@ async def render_message(config: dict, message_id: str, variant: str, preview: b
         children.append(Media(items=[MediaItem(media=item["media_url"])]))
     buttons = []
     for button in item.get("buttons", []):
+        if button.get("custom_id") == SIGNUP_CHECK_ID:
+            buttons.append(InteractiveButton(style=hikari.ButtonStyle.SECONDARY, custom_id=SIGNUP_CHECK_ID, label="Check my signups"))
+            continue
         kwargs = {"url": button["url"], "label": button["label"]}
         if button.get("emoji"):
             kwargs["emoji"] = button["emoji"]

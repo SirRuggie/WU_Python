@@ -2,6 +2,12 @@ import { useDashboardPermission } from "./DashboardPermissions";
 import type { PublicationDraft } from "./publication";
 import "./CwlStepStrip.css";
 
+export function MemberStepStrip({ step, onNavigate }: { step: "register" | "saved" | "assignments"; onNavigate: (step: "register" | "saved" | "assignments") => void }) {
+  return <nav className="cwl-step-strip roster-ui" aria-label="My CWL steps">
+    {([['register', '1 Sign up'], ['saved', '2 My signups'], ['assignments', '3 My clan']] as const).map(([value, label]) => <button key={value} aria-current={step === value ? 'step' : undefined} onClick={() => onNavigate(value)}>{label}</button>)}
+  </nav>;
+}
+
 export default function CwlStepStrip({
   step,
   draft,

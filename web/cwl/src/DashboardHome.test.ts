@@ -10,11 +10,11 @@ describe('Home next step', () => {
     expect(homeNextStep(false, season(true), 1, 1, 'saved')).toMatchObject({ title: 'Checking saved CWL status', destination: null })
   })
 
-  it('directs fresh unsigned accounts to signup review', () => {
+  it('reassures partially signed members with the same counts as assignments', () => {
     expect(homeNextStep(true, season(true), 3, 2)).toMatchObject({
-      title: '2 accounts to sign up',
-      destination: 'signup',
-      detail: 'Choose Main or Lazy for your accounts, then review before saving.',
+      title: "✓ You're signed up · 1 of 3 accounts",
+      destination: 'assignments',
+      detail: "We've got your signup. Your clan will show here once staff finish the roster.",
     })
   })
 
