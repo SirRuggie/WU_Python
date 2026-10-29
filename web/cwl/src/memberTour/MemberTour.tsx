@@ -1,7 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { createPortal } from "react-dom";
 import { CircleHelp, Sparkles, X } from "lucide-react";
 import {
+  artAspect,
+  invitedThisSession,
+  rememberSession,
   policyNotice,
   policyUrl,
   readPreference,
@@ -12,6 +21,7 @@ import {
 } from "./model";
 import Practice from "./Practice";
 import Glove from "./Glove";
+import { placeCard, type Box } from "./placement";
 import "./tour.css";
 
 type Props = {
@@ -20,7 +30,7 @@ type Props = {
   onMenu: (open: boolean) => void;
   onActive: (active: boolean) => void;
 };
-type Box = { top: number; left: number; width: number; height: number };
+
 export default function MemberTour({
   view,
   menuOpen,
@@ -34,7 +44,11 @@ export default function MemberTour({
   const dialog = useRef<HTMLDialogElement>(null);
   const card = useRef<HTMLElement>(null);
   const dismissedSession = useRef(false);
-  const skippedVisit = useRef(false);
+  const replay = useRef(false);
+  const [position, setPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
   const initial = useRef({
     menu: false,
     scroll: 0,
@@ -45,7 +59,10 @@ export default function MemberTour({
   const current = steps[step];
   const sidebarStep = !!current.target && !current.target.startsWith("demo-");
 
-  const start = () => {
+  const start = (manual = false) => {
+    replay.current = manual;
+    dismissedSession.current = true;
+    rememberSession();
     initial.current = {
       menu: menuOpen,
       scroll: window.scrollY,
@@ -57,8 +74,7 @@ export default function MemberTour({
   };
   const close = (reason: "exit" | "skip" | "finish") => {
     if (reason === "skip") {
-      savePreference(skipPreference(readPreference()));
-      skippedVisit.current = true;
+      if (!replay.current) savePreference(skipPreference(readPreference()));
     } else dismissedSession.current = true;
     if (reason === "finish" || dontShow)
       savePreference({ ...readPreference(), dismissed: true });
@@ -73,14 +89,11 @@ export default function MemberTour({
     step === steps.length - 1 ? close("finish") : setStep(step + 1);
 
   useEffect(() => {
-    if (view !== "home") {
-      skippedVisit.current = false;
-      return;
-    }
+    if (view !== "home") return;
     if (
       !open &&
       !dismissedSession.current &&
-      !skippedVisit.current &&
+      !invitedThisSession() &&
       shouldInvite(readPreference())
     )
       start();
@@ -93,9 +106,13 @@ export default function MemberTour({
   }, [open, onActive]);
   useEffect(() => {
     if (!open) return;
-    onMenuRef.current(
-      sidebarStep && window.matchMedia("(max-width: 900px)").matches,
-    );
+    const sync = () =>
+      onMenuRef.current(
+        sidebarStep && window.matchMedia("(max-width: 900px)").matches,
+      );
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
   }, [open, sidebarStep, step]);
   useLayoutEffect(() => {
     if (!open) return;
@@ -106,6 +123,7 @@ export default function MemberTour({
   useLayoutEffect(() => {
     if (!open) return;
     setBox(null);
+    setPosition(null);
     const nav = document.querySelector<HTMLElement>(".sidebar nav");
     const originalNavHeight = nav?.style.maxHeight ?? "";
     const update = () => {
@@ -119,6 +137,13 @@ export default function MemberTour({
         return;
       }
       const rect = target.getBoundingClientRect();
+      if (window.innerWidth > 900 && card.current)
+        setPosition(
+          placeCard(rect, card.current.getBoundingClientRect(), {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          }),
+        );
       setBox({
         top: rect.top,
         left: rect.left,
@@ -155,7 +180,11 @@ export default function MemberTour({
 
   return (
     <>
-      <button type="button" className="tour-launcher" onClick={start}>
+      <button
+        type="button"
+        className="tour-launcher"
+        onClick={() => start(true)}
+      >
         <CircleHelp size={20} aria-hidden="true" /> Help &amp; tour
       </button>
       {open &&
@@ -209,20 +238,12 @@ export default function MemberTour({
             )}
             <section
               ref={card}
-              className="tour-card"
+              className={`tour-card${artAspect[current.art] > 1.3 ? " wide-art" : ""}`}
               style={
-                box && window.innerWidth > 900
-                  ? {
-                      left: Math.min(
-                        box.left + box.width + 24,
-                        window.innerWidth - 490,
-                      ),
-                      top: Math.min(
-                        Math.max(180, box.top),
-                        window.innerHeight - 310,
-                      ),
-                    }
-                  : undefined
+                {
+                  "--art-aspect": artAspect[current.art],
+                  ...(box && window.innerWidth > 900 ? position : {}),
+                } as CSSProperties
               }
             >
               <img
@@ -299,14 +320,16 @@ export default function MemberTour({
                     />
                   ))}
                 </span>
-                <button
-                  type="button"
-                  className="tour-back"
-                  disabled={step === 0}
-                  onClick={() => setStep(step - 1)}
-                >
-                  Back
-                </button>
+                {step > 0 && (
+                  <button
+                    type="button"
+                    className="tour-back"
+                    disabled={step === 0}
+                    onClick={() => setStep(step - 1)}
+                  >
+                    Back
+                  </button>
+                )}
                 <button type="button" className="tour-next" onClick={advance}>
                   {step === 0
                     ? "Start tour"

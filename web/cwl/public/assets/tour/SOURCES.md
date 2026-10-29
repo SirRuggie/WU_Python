@@ -1,6 +1,6 @@
 # Tour artwork
 
-Ruggie supplied these assets from the [Supercell Fan Kit](https://fankit.supercell.com/). Individual download URLs were not provided; the supplied filenames identify the assets. Alpha bounds cropped, 340px tall WebP with alpha.
+Ruggie supplied these assets from the [Supercell Fan Kit](https://fankit.supercell.com/). Individual download URLs were not provided; the supplied filenames identify the assets. Alpha >60 bounds cropped, 340px tall WebP with alpha.
 
 | Output | Supplied source | Source URL |
 |---|---|---|

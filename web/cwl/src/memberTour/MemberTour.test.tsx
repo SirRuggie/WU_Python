@@ -18,6 +18,7 @@ const menu = vi.fn(),
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear();
+  sessionStorage.clear();
   vi.stubGlobal(
     "fetch",
     vi.fn().mockRejectedValue(new Error("Tour must not fetch")),
@@ -88,6 +89,10 @@ async function click(selector: string) {
 }
 it("walks every step, target advances, phone menu closes for practice, finishes without any request", async () => {
   await render();
+  expect(document.querySelector(".tour-back")).toBeNull();
+  expect(document.querySelector(".tour-policy")?.textContent).toContain(
+    "This material is unofficial",
+  );
   for (let i = 0; i < steps.length; i++) {
     expect(document.querySelector("#tour-title")?.textContent).toBe(
       steps[i].title,
@@ -134,6 +139,8 @@ it("skips only three visits, not three renders, and does not invite away from Ho
     expect(document.querySelector("dialog")).toBeNull();
     expect(readPreference().skips).toBe(i);
     await render("todo");
+    await act(async () => root.render(<div />));
+    sessionStorage.clear(); // A genuinely new browser session, not in-app navigation.
   }
   await render();
   expect(document.querySelector("dialog")).toBeNull();
@@ -162,6 +169,36 @@ it("X exits without persistent dismissal but does not auto-reopen in the same se
   await render();
   expect(document.querySelector("dialog")).toBeNull();
   expect(readPreference().dismissed).toBe(false);
+  await act(async () => root.render(<div />));
+  await render(); // sessionStorage survives a page reload/remount.
+  expect(document.querySelector("dialog")).toBeNull();
+});
+
+it("in-app navigation and manual replays do not consume a skip", async () => {
+  await render();
+  await click(".tour-skip");
+  await render("todo");
+  await render();
+  expect(document.querySelector("dialog")).toBeNull();
+  await click(".tour-launcher");
+  await click(".tour-skip");
+  expect(readPreference().skips).toBe(1);
+});
+
+it("crossing the phone breakpoint re-syncs the menu mid-step", async () => {
+  await render();
+  await click(".tour-next");
+  expect(menu).toHaveBeenLastCalledWith(true);
+  vi.mocked(window.matchMedia).mockReturnValue({
+    matches: false,
+  } as MediaQueryList);
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(menu).toHaveBeenLastCalledWith(false);
+  vi.mocked(window.matchMedia).mockReturnValue({
+    matches: true,
+  } as MediaQueryList);
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(menu).toHaveBeenLastCalledWith(true);
 });
 it("focus enters the card and wraps in both directions; dim clicks do nothing", async () => {
   await render();

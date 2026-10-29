@@ -132,7 +132,7 @@ export default function SidebarNavigation({ userId, view, canEdit, isOwner, perm
       const active = section.items.some(item => item.view === view)
       return <section className={`navigation-section${active ? ' contains-current' : ''}`} key={section.id}>
         <button className="navigation-toggle" aria-expanded={!!expanded[section.id] || (tourExpanded && section.id === 'my-cwl')} aria-controls={`navigation-${section.id}`} onClick={() => { if (section.id === 'my-cwl') cwlToggled.current = true; setExpanded(current => ({ ...current, [section.id]: !current[section.id] })) }}>
-          <span className="navigation-icon" aria-hidden="true"><DashboardIcon name={section.icon} /></span><span>{section.label}</span><span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded[section.id] ? "chevronDown" : "chevronRight"} /></span>
+          <span className="navigation-icon" aria-hidden="true"><DashboardIcon name={section.icon} /></span><span>{section.label}</span><span className="navigation-chevron" aria-hidden="true"><DashboardIcon name={expanded[section.id] || (tourExpanded && section.id === 'my-cwl') ? "chevronDown" : "chevronRight"} /></span>
         </button>
         <div id={`navigation-${section.id}`} className="navigation-children" hidden={!expanded[section.id] && !(tourExpanded && section.id === 'my-cwl')}>{section.id === 'cwl-management' ? <>
           {section.items.filter(item => !['participation','bonuses','exports'].includes(item.view)).map(itemButton)}

@@ -1,4 +1,31 @@
 export const TOUR_KEY = "wu-member-tour-v1";
+export const SESSION_KEY = "wu-member-tour-session-v1";
+export function invitedThisSession() {
+  try {
+    return sessionStorage.getItem(SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+export function rememberSession() {
+  try {
+    sessionStorage.setItem(SESSION_KEY, "1");
+  } catch {
+    /* Optional memory. */
+  }
+}
+export const artAspect: Record<string, number> = {
+  U33: 2818 / 2835,
+  U31: 1816 / 3020,
+  U24: 1791 / 1944,
+  U09: 881 / 1222,
+  U10: 739 / 1195,
+  U34: 1224 / 2051,
+  U01: 3251 / 1433,
+  U32: 1063 / 2083,
+  king: 278 / 319,
+  U14: 1814 / 3408,
+};
 export type Preference = { skips: number; dismissed: boolean };
 export function readPreference(): Preference {
   try {
@@ -90,7 +117,7 @@ export const steps = [
   {
     number: 5,
     title: "You're in!",
-    text: "You're in! (practice — nothing saved)",
+    text: "Practice — nothing saved.",
     art: "U34",
     target: "",
   },
