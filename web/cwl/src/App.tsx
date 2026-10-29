@@ -85,8 +85,6 @@ function App() {
     document.title = `${navigationLabel(view, publicationStep)} · Warriors United`
   }, [view, publicationStep])
   const [rosterBusy, setRosterBusy] = useState(false)
-  const [declarationDirty, setDeclarationDirty] = useState(false)
-  const [declarationBusy, setDeclarationBusy] = useState(false)
   const [reminderDirty, setReminderDirty] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const { drawerRef, triggerRef, mobile } = useMobileNavigation(menuOpen, () => setMenuOpen(false), Boolean(session))
@@ -289,8 +287,6 @@ function App() {
     return () => window.removeEventListener('beforeunload', protect)
   }, [view, signupDirty, pending])
   const canLeave = () => {
-    if (view === 'declaration' && declarationBusy) return false
-    if (view === 'declaration' && declarationDirty) return window.confirm('Discard unsaved account changes?')
     if (['roster', 'staff'].includes(view) && rosterBusy) return false
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
@@ -655,7 +651,6 @@ function App() {
                   Season
                   <select
                     value={seasonId}
-                    disabled={declarationBusy}
                     onChange={(e) => {
                       if (canLeave()) {
                         if (e.target.value !== seasonId)
@@ -679,8 +674,6 @@ function App() {
                 <ArrivalCheck
                   key={seasonId}
                   seasonId={seasonId}
-                  onDirty={setDeclarationDirty}
-                  onBusy={setDeclarationBusy}
                 />
               )}
             </>

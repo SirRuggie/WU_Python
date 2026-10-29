@@ -9,6 +9,7 @@ export function createComparisonChecks(
   busy: (value: boolean) => void,
   initialLast = -Infinity,
   onCompleted: (time: number) => void = () => {},
+  followups: boolean | "declaration" = true,
 ) {
   let active = false;
   let disposed = false;
@@ -17,6 +18,9 @@ export function createComparisonChecks(
   let generation = 0;
   let pending = false;
   let queuedRefresh = false;
+  let firstRead = true;
+  let followupUntil = 0;
+  let awaitingResults = false;
   let controller: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const cancel = () => {
@@ -34,6 +38,10 @@ export function createComparisonChecks(
     if (!active || disposed || pending) return;
     clearTimeout(timer);
     if (!followup) started = Date.now();
+    if (followups === "declaration" && (firstRead || force)) {
+      followupUntil = Date.now() + 60_000;
+    }
+    firstRead = false;
     const id = generation;
     const request = new AbortController();
     controller = request;
@@ -66,6 +74,7 @@ export function createComparisonChecks(
       last = Date.now();
       onCompleted(last);
     }
+    awaitingResults = completed && updating;
     if (!active) {
       busy(false);
       return;
@@ -77,8 +86,11 @@ export function createComparisonChecks(
     }
     const needsFollowup = updating || (!completed && !Number.isFinite(last));
     if (
-      needsFollowup &&
-      Date.now() - started + COMPARISON_FOLLOWUP < COMPARISON_CYCLE_LIMIT
+      followups === "declaration"
+        ? awaitingResults && Date.now() + COMPARISON_FOLLOWUP < followupUntil
+        : followups &&
+          needsFollowup &&
+          Date.now() - started + COMPARISON_FOLLOWUP < COMPARISON_CYCLE_LIMIT
     ) {
       schedule(COMPARISON_FOLLOWUP, true);
     } else {
@@ -98,7 +110,13 @@ export function createComparisonChecks(
       else if (queuedRefresh) {
         queuedRefresh = false;
         void run(true);
-      } else if (Date.now() - last >= COMPARISON_INTERVAL) void run(false);
+      } else if (
+        followups === "declaration" &&
+        awaitingResults &&
+        Date.now() + COMPARISON_FOLLOWUP < followupUntil
+      )
+        schedule(COMPARISON_FOLLOWUP, true);
+      else if (Date.now() - last >= COMPARISON_INTERVAL) void run(false);
       else schedule(last + COMPARISON_INTERVAL - Date.now());
     },
     refresh() {

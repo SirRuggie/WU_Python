@@ -134,3 +134,46 @@ it("reloads after 409 so a retry uses the new revision", async () => {
     kept: true,
   });
 });
+
+it("Declaration uses published snapshots for removed players and blocks every write callback", async () => {
+  const published = {
+    ...snapshot(),
+    accounts: [
+      { tag: "#REMOVED", player_name: "Ace" },
+      { tag: "#NEXT", player_name: "Blaze" },
+    ],
+  };
+  const setRequest = vi.fn();
+  await act(async () =>
+    root.render(
+      <StaffDetailsPanel
+        request={{
+          seasonId: "1",
+          tag: "#REMOVED",
+          viewOnly: "declaration",
+          order: ["#REMOVED", "#NEXT"],
+          publishedSnapshot: {
+            roster: published as any,
+            version: 3,
+            signupTags: [],
+          },
+        }}
+        setRequest={setRequest}
+      />,
+    ),
+  );
+  expect(api).not.toHaveBeenCalled();
+  expect(spy.props.account.player_name).toBe("Ace");
+  expect(spy.props.publicationNote).toBe(
+    "No longer signed up · removed after version 3",
+  );
+  expect(spy.props.viewOnly).toBe("declaration");
+  await act(async () => {
+    await spy.props.onSave({ kept: true });
+    await spy.props.onRemove();
+    await spy.props.onPoolChange("lazy");
+  });
+  expect(api).not.toHaveBeenCalled();
+  spy.props.next();
+  expect(setRequest.mock.calls[0][0].tag).toBe("#NEXT");
+});

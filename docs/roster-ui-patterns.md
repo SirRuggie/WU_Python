@@ -209,3 +209,12 @@ image may extend beyond the name line box; only the name text clips/ellipsizes.
 - Register the lightweight shared Details request host eagerly in staff CWL views. Keep panel UI and roster CSS lazy to preserve the base/primitive cascade. Retain the latest open request while the chunk loads; mount one panel once loaded. Re-run `test:layout` when changing that boundary.
 
 Direct-link Details uses the hosting page’s refresh, busy, open and dirty callbacks. Preserve account and panel history during same-page access refreshes; clear them on season/page changes. Finalize and Add signup use the shared confirmed pool switch.
+
+## Declaration readiness check
+
+- Collapsed clan sections are green Ready or red Not ready, with in-clan count, war size and stale-confirmation text. Phones allow one open group; desktop allows several. Keep late players visible even when an overfilled clan is ready.
+- Compare and Declaration share the location transport/scheduler and compact player-card pieces. Declaration's variant has inline TH + a name button, DM only on red, TH/tag metadata, and the shared one-line clan status. No weight or menu. Before the first location result the card is red; old results retain their color and age. Outside family never applies to a clanless player.
+- Ready requires at least the configured 15/30 players in the assigned clan, checked within five minutes. Unknown war size links to Clan settings and cannot be ready. Unassigned players have an Awaiting placement section.
+- Name opens published-snapshot Details, view-only, with Previous/Next following the open clan order. Removed players show the published identity/placement plus “No longer signed up · removed after version N”. No write callbacks are permitted.
+- Copy mentions is an explicit clipboard-only action on an open not-ready clan. List unlinked names and offer selectable text on clipboard failure. Never send automatically.
+- Preserve labels, 44px actions, shared card surfaces, ≥12px text and ≥4.5:1 contrast. Current 360px first-header offset is 402px including the app header and fixture banner; the requested ~250px target is still open for review.

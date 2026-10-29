@@ -30,6 +30,12 @@ export default function StaffDetailsPanel({
   const pending = useRef(false);
   useEffect(() => {
     if (!request) return;
+    if (request.viewOnly === "declaration" && request.publishedSnapshot) {
+      setSnapshot(request.publishedSnapshot.roster);
+      setBusy(false);
+      setError("");
+      return;
+    }
     const id = ++generation.current;
     setBusy(true);
     setError("");
@@ -56,7 +62,7 @@ export default function StaffDetailsPanel({
     return () => {
       generation.current++;
     };
-  }, [request?.seasonId]);
+  }, [request?.seasonId, request?.publishedSnapshot]);
   useEffect(() => {
     request?.onBusy?.(busy);
     return () => request?.onBusy?.(false);
@@ -66,7 +72,8 @@ export default function StaffDetailsPanel({
     body: Record<string, unknown> = {},
     pool?: Pool,
   ) {
-    if (!request || !snapshot || busy || pending.current) return false;
+    if (!request || request.viewOnly || !snapshot || busy || pending.current)
+      return false;
     const id = generation.current;
     pending.current = true;
     setBusy(true);
@@ -194,6 +201,13 @@ export default function StaffDetailsPanel({
           account={account}
           archived={archived || request.archived}
           viewOnly={request.viewOnly}
+          publicationNote={
+            request.viewOnly === "declaration" &&
+            request.publishedSnapshot &&
+            !request.publishedSnapshot.signupTags.includes(request.tag)
+              ? `No longer signed up · removed after version ${request.publishedSnapshot.version}`
+              : undefined
+          }
           clans={snapshot.clans}
           roster={snapshot}
           undo={

@@ -1,80 +1,62 @@
-import { describe, expect, it } from "vitest";
-import {
-  normalizeArrivalAccount,
-  summarizeArrivalReadiness,
-  type ArrivalAccount,
-} from "./arrivalReadiness";
-
-const now = Date.parse("2026-10-22T12:00:00Z");
-const checkedAt = new Date(now).toISOString();
-
-function assigned(tag: string, overrides: Partial<ArrivalAccount> = {}): ArrivalAccount {
-  return {
-    tag,
+import { expect, it } from "vitest";
+import { summarizeArrivalReadiness } from "./arrivalReadiness";
+const now = Date.parse("2026-10-28T12:00:00Z");
+const players = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    tag: `#${i}`,
     assigned_clan_tag: "#HOST",
-    arrival_status: "arrived",
-    current_clan_checked_at: checkedAt,
-    ...overrides,
-  };
-}
-
-describe("arrival readiness", () => {
-  it("normalizes missing, invalid, stale, and in-flight checks to unknown", () => {
-    const cases = [
-      assigned("#MISSING", { current_clan_checked_at: undefined }),
-      assigned("#INVALID", { current_clan_checked_at: "not a date" }),
-      assigned("#STALE", { current_clan_checked_at: new Date(now - 120_001).toISOString() }),
-      assigned("#UPDATING", { location_updating: true }),
+    current_clan_tag: "#HOST",
+    current_clan_name: "Host",
+    current_clan_checked_at: new Date(now).toISOString(),
+  }));
+it.each([15, 30])(
+  "requires %i fresh arrivals, not every assigned player",
+  (capacity) => {
+    expect(
+      summarizeArrivalReadiness(players(capacity - 1), { now, capacity }).ready,
+    ).toBe(false);
+    const accounts = [
+      ...players(capacity),
+      { ...players(1)[0], tag: "#LATE", current_clan_tag: "#ELSE" },
     ];
-    expect(cases.map((account) => normalizeArrivalAccount(account, now).arrival_status)).toEqual([
-      "unknown", "unknown", "unknown", "unknown",
-    ]);
-  });
-
-  it("preserves unassigned status even without a location check", () => {
-    const account = assigned("#UNASSIGNED", {
-      assigned_clan_tag: null,
-      arrival_status: "unassigned",
-      current_clan_checked_at: undefined,
-      outside_family: true,
-    });
-    expect(normalizeArrivalAccount(account, now)).toEqual(account);
-  });
-
-  it("is ready only with at least 15 assigned accounts all confirmed arrived", () => {
-    const fifteen = Array.from({ length: 15 }, (_, index) => assigned(`#P${index}`));
-    expect(summarizeArrivalReadiness(fifteen.slice(0, 14), { now }).ready).toBe(false);
-    expect(summarizeArrivalReadiness(fifteen, { now })).toMatchObject({
-      assignedCount: 15,
-      arrivedCount: 15,
-      unknownCount: 0,
+    expect(
+      summarizeArrivalReadiness(accounts, { now, capacity }),
+    ).toMatchObject({
       ready: true,
+      arrivedCount: capacity,
+      assignedCount: capacity + 1,
     });
-    expect(summarizeArrivalReadiness([
-      ...fifteen.slice(0, 14),
-      assigned("#WAITING", { arrival_status: "unknown" }),
-    ], { now }).ready).toBe(false);
-    expect(summarizeArrivalReadiness([
-      ...fifteen.slice(0, 14),
-      assigned("#MISSING", { arrival_status: "missing" }),
-    ], { now }).ready).toBe(false);
+  },
+);
+it("null war size is never ready", () =>
+  expect(
+    summarizeArrivalReadiness(players(50), { now, capacity: null }).ready,
+  ).toBe(false));
+it("keeps old arrival counts but requests confirmation only when fresh arrivals are insufficient", () => {
+  const accounts = players(16);
+  accounts[0].current_clan_checked_at = new Date(now - 300001).toISOString();
+  expect(summarizeArrivalReadiness(accounts, { now, capacity: 15 }).ready).toBe(
+    true,
+  );
+  accounts[1].current_clan_checked_at = new Date(now - 300001).toISOString();
+  expect(
+    summarizeArrivalReadiness(accounts, { now, capacity: 15 }),
+  ).toMatchObject({
+    ready: false,
+    refreshToConfirm: true,
+    arrivedCount: 16,
+    freshCount: 14,
   });
-
-  it.each([
-    ["loading", { loading: true }],
-    ["an error", { error: true }],
-    ["an outdated publication", { outdated: true }],
-  ])("is not ready during %s", (_label, blocker) => {
-    const fifteen = Array.from({ length: 15 }, (_, index) => assigned(`#P${index}`));
-    expect(summarizeArrivalReadiness(fifteen, { now, ...blocker }).ready).toBe(false);
-  });
-
-  it("ignores unassigned accounts when counting readiness", () => {
-    const assignedAccounts = Array.from({ length: 15 }, (_, index) => assigned(`#P${index}`));
-    const unassigned = assigned("#UNASSIGNED", {
-      assigned_clan_tag: null,
-      arrival_status: "unassigned",
-    });
-    expect(summarizeArrivalReadiness([...assignedAccounts, unassigned], { now }).ready).toBe(true);
-  });
+});
+it("ignores unassigned and unchecked accounts", () => {
+  expect(
+    summarizeArrivalReadiness(
+      [
+        ...players(14),
+        { ...players(1)[0], assigned_clan_tag: null },
+        { ...players(1)[0], current_clan_checked_at: undefined },
+      ],
+      { now, capacity: 15 },
+    ).ready,
+  ).toBe(false);
 });
