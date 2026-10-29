@@ -152,6 +152,7 @@ export default function RosterWorkspace({
   const [poolFilter, setPoolFilter] = useCwlPool();
   const [focusClanTag, setFocusClanTag] = useState<string | null>(null);
   const [focusClanRequest, setFocusClanRequest] = useState(0);
+  useEffect(() => setFocusClanTag(null), [seasonId]);
   const tabFades = useHorizontalFades<HTMLDivElement>();
   const [refreshEpoch, setRefreshEpoch] = useState(0);
   const viewPool =
@@ -873,7 +874,6 @@ export default function RosterWorkspace({
         seasonId={seasonId}
         seasons={seasons}
         roster={roster}
-        showAwareness={mode !== "weights"}
         onPublication={(draft) => {
           setHasPublication(!!draft.published);
           onPublication?.(draft);
@@ -1161,6 +1161,7 @@ export default function RosterWorkspace({
               key={seasonId}
               focusClanTag={focusClanTag}
               focusClanRequest={focusClanRequest}
+              onFocusHandled={() => setFocusClanTag(null)}
               onHostingChanged={async () => {
                 if (!(await refresh()))
                   throw new Error(

@@ -116,7 +116,9 @@ describe("roster account card", () => {
     });
     expect(html).toContain("Now in Old clan · 2h 0m ago");
     expect(html).not.toContain("location not checked yet");
-    expect(html).toContain('aria-label="Now in"');
+    expect(html).toContain(
+      'role="note" aria-label="Assigned clan: Not assigned. Now in Old clan',
+    );
     expect(html).not.toContain("→");
   });
   it("removes only the capacity note from cards", () => {
@@ -364,8 +366,8 @@ it.each([360, 899, 900, 1440])(
     expect(
       columns
         .querySelector(".roster-account-column-now .player-location-pin")
-        ?.getAttribute("aria-label"),
-    ).toBe("Now in");
+        ?.getAttribute("aria-hidden"),
+    ).toBe("true");
     expect(
       card.querySelector(".roster-account-column-name")?.textContent,
     ).toContain("#PLAYER · TH18");
@@ -396,7 +398,7 @@ it("keeps an in-clan desktop location green with a pin and clan name", () => {
   });
   const now = host.querySelector(".roster-account-column-now")!;
   expect(
-    now.querySelector('.player-location-pin[aria-label="Now in"]'),
+    now.querySelector('.player-location-pin[aria-hidden="true"]'),
   ).not.toBeNull();
   expect(now.querySelector(".player-current-clan")?.textContent).toBe("Home");
   expect(now.querySelector(".player-current-clan.is-elsewhere")).toBeNull();

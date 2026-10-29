@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export function horizontalFadeState(
   element: Pick<HTMLElement, "scrollLeft" | "scrollWidth" | "clientWidth">,
@@ -10,10 +10,10 @@ export function horizontalFadeState(
 }
 
 export function useHorizontalFades<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
+  const [element, setElement] = useState<T | null>(null);
+  const ref = useCallback((node: T | null) => setElement(node), []);
   const [edges, setEdges] = useState({ left: false, right: false });
   useEffect(() => {
-    const element = ref.current;
     if (!element) return;
     const update = () => {
       const next = horizontalFadeState(element);
@@ -27,12 +27,34 @@ export function useHorizontalFades<T extends HTMLElement>() {
     element.addEventListener("scroll", update, { passive: true });
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    const observed = new Set<Element>();
+    const observeChildren = () => {
+      for (const child of element.children) {
+        if (!observed.has(child)) {
+          observer?.observe(child);
+          observed.add(child);
+        }
+      }
+    };
     observer?.observe(element);
-    for (const child of element.children) observer?.observe(child);
+    observeChildren();
+    const mutations =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(() => {
+            observeChildren();
+            update();
+          });
+    mutations?.observe(element, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
     return () => {
       element.removeEventListener("scroll", update);
       observer?.disconnect();
+      mutations?.disconnect();
     };
-  });
+  }, [element]);
   return { ref, ...edges };
 }

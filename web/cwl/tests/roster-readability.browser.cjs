@@ -14,6 +14,7 @@ const origin = `http://127.0.0.1:${port}`;
 const screenshotDir = process.env.WU_LAYOUT_SCREENSHOTS;
 const errors = [];
 const expectedResponses = [];
+const passes = [];
 
 async function fixtureState() {
   const response = await fetch(`${origin}/qa/state`);
@@ -130,6 +131,7 @@ async function checkFades(page, selector) {
       !initial.mask || initial.mask === "none",
       `${selector}: mask shown without overflow`,
     );
+    passes.push(`${selector}: no overflow, no fades`);
     return;
   }
   assert.equal(
@@ -149,7 +151,12 @@ async function checkFades(page, selector) {
   await strip.evaluate((node) => {
     node.scrollLeft = node.scrollWidth;
   });
-  await page.waitForTimeout(50);
+  await page.waitForFunction((selector) => {
+    const node = document.querySelector(selector);
+    return (
+      node?.dataset.fadeLeft === "true" && node.dataset.fadeRight === "false"
+    );
+  }, selector);
   const end = await measure();
   assert.equal(
     end.fadeLeft,
@@ -157,6 +164,7 @@ async function checkFades(page, selector) {
     `${selector}: left overflow fade missing at end`,
   );
   assert.equal(end.fadeRight, false, `${selector}: right fade shown at end`);
+  passes.push(`${selector}: overflow fades track both edges`);
   await strip.evaluate((node) => {
     node.scrollLeft = 0;
   });
@@ -316,9 +324,20 @@ async function checkFades(page, selector) {
     await phoneList.waitFor();
     const firstLocatedCard = phone
       .locator(".roster-player-card")
-      .filter({ has: phone.locator(".player-location-pin") })
+      .filter({
+        has: phone.locator(
+          ".roster-player-body > .player-clan-status .player-location-pin",
+        ),
+      })
       .first();
     await firstLocatedCard.waitFor();
+    assert(
+      (await firstLocatedCard
+        .getByRole("note", { name: /Now in .+/ })
+        .count()) > 0,
+      "current clan has no accessible Now in description",
+    );
+    passes.push("current clan has an accessible Now in name");
     await firstLocatedCard.scrollIntoViewIfNeeded();
     if (screenshotDir)
       await phone.screenshot({
@@ -356,6 +375,33 @@ async function checkFades(page, selector) {
     const selectedClan = phone.locator(".clan-settings-row.is-selected");
     await selectedClan.waitFor();
     assert.match(await selectedClan.innerText(), /Funnies/);
+    await phone
+      .getByRole("button", { name: "Accounts & signups", exact: true })
+      .click();
+    await phone.locator(".roster-player-card").first().waitFor();
+    const settingsTab = phone.getByRole("button", {
+      name: "Clan settings",
+      exact: true,
+    });
+    await settingsTab.click();
+    await phone.locator(".clan-settings-row").first().waitFor();
+    assert.equal(
+      await phone.locator(".clan-settings-row.is-selected").count(),
+      0,
+      "capacity focus request replayed when returning to the tab",
+    );
+    assert(
+      await settingsTab.evaluate((node) => document.activeElement === node),
+      "returning to Clan settings moved focus into the list",
+    );
+    passes.push("capacity focus consumed once; tab return preserves focus");
+    await phone.getByRole("button", { name: /Missing weights/ }).click();
+    await phone.locator(".publication-awareness").waitFor();
+    assert.match(
+      await phone.locator(".publication-awareness").innerText(),
+      /Hidden from members/,
+    );
+    passes.push("Missing weights retains the slim publication state");
 
     const amberLine = phone.locator(".signup-activity-line").first();
     const amber = await amberLine.evaluate((node) => {
@@ -387,6 +433,78 @@ async function checkFades(page, selector) {
       assert(contrastRatio >= 4.5, "amber line contrast is below 4.5:1");
     }
 
+    passes.push("amber alert: >=44px target, >=12px text, >=4.5 contrast");
+    await phone
+      .getByRole("button", { name: "Accounts & signups", exact: true })
+      .click();
+    await phone.locator(".roster-player-card").first().waitFor();
+    const seasonRow = await phone
+      .locator(".roster-header-publication")
+      .evaluate((node) => {
+        const button = node.querySelector("button");
+        const r = button.getBoundingClientRect();
+        return {
+          width: r.width,
+          height: r.height,
+          left: r.left,
+          right: r.right,
+          standaloneFinalizeCount: document.querySelectorAll(
+            ".roster-header-finalize",
+          ).length,
+        };
+      });
+    assert(
+      seasonRow.width < 160 && seasonRow.right <= 360,
+      "phone season control stretched",
+    );
+    await phone.evaluate(() =>
+      window.scrollTo({ top: 0, behavior: "instant" }),
+    );
+    if (screenshotDir)
+      await phone.screenshot({
+        path: `${screenshotDir}/phone-season-row.png`,
+        fullPage: false,
+      });
+    passes.push(
+      "phone season control remains compact after Draft field removal",
+    );
+    await phone
+      .getByRole("button", { name: "Compare clans", exact: true })
+      .click();
+    await phone
+      .getByRole("note", { name: /Now in .+/ })
+      .first()
+      .waitFor();
+    const cdp = await phone.context().newCDPSession(phone);
+    const { nodes: accessibilityNodes } = await cdp.send(
+      "Accessibility.getFullAXTree",
+    );
+    const describedCards = accessibilityNodes.filter(
+      (node) =>
+        node.role?.value === "button" &&
+        /Details for/.test(node.name?.value || "") &&
+        /Now in/.test(node.description?.value || ""),
+    );
+    assert(
+      describedCards.length > 0,
+      "Compare Details has no computed location description",
+    );
+    for (const node of describedCards)
+      assert.equal((node.description.value.match(/Now in/g) || []).length, 1);
+    const locationNotes = accessibilityNodes.filter(
+      (node) =>
+        node.role?.value === "note" && /Now in/.test(node.name?.value || ""),
+    );
+    assert(locationNotes.length > 0, "Chrome exposes no location notes");
+    assert(
+      locationNotes.every((node) => node.childIds.length === 0),
+      "Location notes contain duplicate spoken text children",
+    );
+    const accessibleDescription = describedCards[0].description.value;
+    await cdp.detach();
+    passes.push(
+      "Chrome AX: Compare location described once; named notes have no duplicate text children",
+    );
     const desktop = await openRoster(browser, 1440, 1000);
     assert.equal(
       await desktop.evaluate(
@@ -395,6 +513,8 @@ async function checkFades(page, selector) {
       false,
       "desktop page overflows horizontally",
     );
+    await checkFades(desktop, ".roster-header-working");
+    await checkFades(desktop, ".roster-workflow-nav");
     const columns = desktop.locator(".roster-account-columns").first();
     await columns.waitFor();
     const visibleColumns = await columns.evaluate(
@@ -464,6 +584,7 @@ async function checkFades(page, selector) {
         fullPage: false,
       });
 
+    passes.push("1440px account columns align; phone columns stay hidden");
     await desktop.close();
     const after = await fixtureState();
     assert.equal(after.current.account_count, countsBefore.account_count);
@@ -515,6 +636,10 @@ async function checkFades(page, selector) {
       JSON.stringify(
         {
           ok: true,
+          passCount: passes.length,
+          passes,
+          seasonRow,
+          accessibleDescription,
           widthChecks: [360, 1440],
           statusStates: [draftText, hiddenText, publishedText],
           seasonCountsBeforeAfter: {

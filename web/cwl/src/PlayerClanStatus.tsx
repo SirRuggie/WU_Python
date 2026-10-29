@@ -100,7 +100,7 @@ export default function PlayerClanStatus({
               <MapPin
                 className="player-location-pin"
                 size={14}
-                aria-label="Now in"
+                aria-hidden="true"
               />{" "}
               <span
                 className={
@@ -116,7 +116,7 @@ export default function PlayerClanStatus({
           )}
         </span>
       </span>
-      <span className="sr-only">{status.description}</span>
+      <span className="sr-only" role="note" aria-label={status.description} />
     </span>
   );
 }

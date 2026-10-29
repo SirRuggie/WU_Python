@@ -26,7 +26,7 @@ it("uses the shared Now in pin for declaration locations", () => {
     />,
   );
   expect(html).toContain(
-    'class="lucide lucide-map-pin player-location-pin" aria-label="Now in"',
+    'class="lucide lucide-map-pin player-location-pin" aria-hidden="true"',
   );
   expect(html).not.toContain("→");
 });

@@ -8,7 +8,7 @@ import type { RosterSnapshot } from "./roster";
 import { publicationDate } from "./publicationStatus";
 import {
   signupActivityIntro,
-  signupActivitySummary,
+  signupChangeLabel,
   signupShortage,
   signupPoolName,
   type SignupChange,
@@ -38,9 +38,7 @@ export default function SignupActivity({
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<SignupChange[] | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const summary = signupActivitySummary(activity.items, roster?.clans ?? []);
   const shortage = signupShortage(activity.items, roster?.clans ?? []);
-  const count = activity.items.length === 100 ? "100+" : activity.items.length;
   useEffect(() => {
     if (!activity.items.length && activity.busy === null) {
       setOpen(false);
@@ -65,10 +63,7 @@ export default function SignupActivity({
               onClick={() => setOpen(true)}
             >
               <span aria-hidden="true">🔁</span>
-              <span>
-                {count} signup change{activity.items.length === 1 ? "" : "s"} to
-                review · Review ›
-              </span>
+              <span>{signupChangeLabel(activity.items)}</span>
             </button>
             {shortage && (
               <button
@@ -88,7 +83,7 @@ export default function SignupActivity({
         <ActionPanel
           title="Signup changes"
           variant="side"
-          className={`roster-ui signup-activity-panel${summary.danger ? " is-danger" : ""}`}
+          className={`roster-ui signup-activity-panel${shortage ? " is-danger" : ""}`}
           trigger={trigger.current}
           busy={busy || !!confirm}
           onClose={() => setOpen(false)}

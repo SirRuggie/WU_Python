@@ -115,7 +115,7 @@ it("uses the shared Now in pin for a checked location", async () => {
   });
   expect(
     document.querySelector(
-      '.player-clan-status .player-location-pin[aria-label="Now in"]',
+      '.player-clan-status .player-location-pin[aria-hidden="true"]',
     ),
   ).not.toBeNull();
   expect(

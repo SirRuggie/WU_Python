@@ -203,6 +203,8 @@ The Build header keeps its season and signup controls. One slim gold-accent stat
 
 The summary-chip and main-tab rows stay one line and show a soft fade only at edges with more content to scroll into view. Clan cards with no known weights say `Total: no weights yet`; other totals keep their existing format. This is frontend presentation only: saves, Undo, publication, signup review, permissions and endpoints retain their behavior.
 
+The card's capacity-note suppression matches the current server reason string from `cwl_web/placement_status.py:17`; keep the match in sync if that server copy changes.
+
 ## Announcements
 
 - Main CWL and Lazy CWL use two compact pool cards. Show destination and named roles; use IDs only when lookups fail, with Retry. Preview opens the Discord preview dialog; Edit opens ActionPanel with Close initially focused.

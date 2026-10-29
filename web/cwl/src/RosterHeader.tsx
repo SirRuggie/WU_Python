@@ -59,7 +59,6 @@ type Props = {
   onFinalize?: () => void;
   onStatusFilter: (status: StatusFilter) => void;
   onAccessError: (error: ApiError) => void;
-  showAwareness?: boolean;
   onPublication?: (draft: PublicationDraft) => void;
   onCapacitySettings?: (tag: string) => void;
 };
@@ -85,7 +84,6 @@ export default function RosterHeader({
   signupControls,
   onFillSignupSpot,
   onSignupDetails,
-  showAwareness = true,
   onPublication,
   onCapacitySettings,
 }: Props) {
@@ -266,8 +264,7 @@ export default function RosterHeader({
       {signupControls && (
         <div className="roster-header-signups">{signupControls}</div>
       )}
-      {showAwareness &&
-        seasonId &&
+      {seasonId &&
         (publication?.seasonId === seasonId && publication.draft ? (
           <PublicationAwarenessBanner
             published={publication.draft.published}

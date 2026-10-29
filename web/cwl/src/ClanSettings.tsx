@@ -26,6 +26,7 @@ import "./ClanSettings.css";
 type Props = {
   focusClanTag?: string | null;
   focusClanRequest?: number;
+  onFocusHandled?: () => void;
   onHostingChanged?: () => Promise<void>;
   onHostingBusy?: (busy: boolean) => void;
   onFamily?: () => void;
@@ -65,6 +66,7 @@ export default function ClanSettings(props: Props) {
     ).find((item) => item.dataset.clan === highlight);
     row?.scrollIntoView({ block: "nearest", behavior: "auto" });
     row?.focus({ preventScroll: true });
+    if (row && highlight === props.focusClanTag) props.onFocusHandled?.();
   }, [highlight, props.pool, props.focusClanRequest]);
   const close = () => {
     if (!props.onLeave()) return false;
