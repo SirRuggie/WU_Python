@@ -164,16 +164,6 @@
   height: 20px;
   accent-color: #fac775;
 }
-.tour-card .tour-policy {
-  margin-left: calc(-1 * var(--art-width));
-  margin-top: 8px;
-  font-size: 12px;
-  color: #d4cebf;
-}
-.tour-policy a {
-  color: #fac775;
-  overflow-wrap: anywhere;
-}
 .member-tour .tour-spotlight {
   position: fixed;
   z-index: 3;
@@ -212,76 +202,6 @@
 }
 .tour-glove i:nth-child(2) {
   animation-delay: 0.2s;
-}
-.tour-practice {
-  position: fixed;
-  z-index: 2;
-  top: 100px;
-  left: max(270px, calc(50% - 260px));
-  width: 430px;
-  padding: 20px;
-  border-radius: 14px;
-  background: #19191d;
-  color: #f5f5f5;
-  border: 1px solid #666;
-}
-.tour-practice h2 {
-  font-size: 23px;
-  margin: 12px 0;
-}
-.tour-practice.is-saved {
-  background: #18372b;
-  border-color: #68d7b0;
-}
-.tour-practice-badge {
-  display: block;
-  color: #fac775;
-  font-size: 12px;
-}
-.tour-practice button {
-  margin: 5px 0;
-}
-.tour-demo-account {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-}
-.tour-demo-account img {
-  width: 28px;
-  height: 28px;
-}
-.tour-demo-account span:last-child {
-  margin-left: auto;
-}
-.tour-pools {
-  display: flex;
-  gap: 8px;
-}
-.member-tour .tour-real-submit {
-  display: block;
-  font-size: 12px;
-  min-height: 44px;
-  opacity: 1;
-  color: #c5c5c5;
-  border-color: #666;
-  background: #272727;
-}
-.tour-mini {
-  padding: 8px;
-  border-radius: 10px;
-  border: 1px solid #7d775f;
-  margin: 8px 0;
-}
-.tour-mini strong,
-.tour-mini small {
-  display: block;
-  font-size: 12px;
-  color: #fff3d6;
-}
-.tour-mini small {
-  color: #d4cebf;
-  margin-bottom: 5px;
 }
 .tour-confetti {
   position: fixed;
@@ -373,13 +293,6 @@
   .tour-card p {
     font-size: 13px;
   }
-  .tour-practice {
-    top: 75px;
-    left: 12px;
-    right: 12px;
-    width: auto;
-    padding: 14px;
-  }
   .shell.tour-active .sidebar nav {
     max-height: calc(100dvh - 390px);
     overflow-y: auto;
@@ -424,5 +337,25 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+.tour-shake {
+  animation: tour-shake 250ms ease-in-out;
+}
+@keyframes tour-shake {
+  25%,
+  75% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+}
+
+/* Make room to scroll real page controls above the phone tour card. */
+@media (max-width: 900px) {
+  .shell.tour-active .workspace main {
+    padding-bottom: 520px;
   }
 }

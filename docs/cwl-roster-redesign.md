@@ -461,3 +461,27 @@ The storage owner migrates the existing `roster_image_posts` CHECK constraint to
 
 - Below roughly 450px viewport height, placement.ts can place Next off-screen; spotlight tap/Escape still work.
 - Test gaps recorded at release: no art-height cap, no text/art overlap assertion, and no chevron assertion.
+
+### Tour/deadline hotfix (prompt 07; review pending, not released)
+
+Ruggie removed the Fan Content Policy notice from the tour on 2026-10-29;
+Claude noted the policy asks for it where Supercell art is used.
+
+The tour follows real Home, Tasks, Sign up, My signups and Assignments pages.
+Practice drives only the form's existing React pool/account/review state. Sign up
+is inert, and the API boundary rejects non-GET calls while the tour is open.
+Exit restores the original page and signup draft; navigation and Tasks preference
+persistence are paused. Normal display-cache refreshes after returning to a page
+are not signup drafts. Phone targets follow drawer transitions and remain above
+the tour card. U35/U13/U18/U15 replace the mock practice art and controls.
+
+Campaign timing research: `utils/cwl_campaign.py` `signup_deadline` resolves the
+campaign's literal cycle month; `extensions/tasks/cwl_reminder.py` schedules the
+current/following signup cycles and its legacy close is month-end minus two days.
+`cwl_web/manage_bridge.py` stores the selected binding verbatim, while
+`web/cwl/src/announcementMonth.ts` derives that selection from the CWL season
+label. Member timing therefore loads the preceding signup cycle: November CWL
+uses October, January uses December of the prior year. A missing earlier campaign
+returns null rather than a synthesized default. Eligibility, refresh interval,
+timeout and last-good cache rules are unchanged. This requires a backend release
+alongside the tour frontend; no deployment is included in this branch.

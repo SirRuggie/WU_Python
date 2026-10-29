@@ -6,7 +6,7 @@ from contextlib import suppress
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
-from utils.cwl_campaign import load_campaign, signup_deadline
+from utils.cwl_campaign import load_campaign, signup_deadline, cycle_id
 from .manage_bridge import GUILD_ID, _mongo
 
 LOG = logging.getLogger(__name__)
@@ -28,6 +28,12 @@ def eligible_bindings(app):
             'AND (b.cycle IN (?,?) OR s.id=(SELECT season_id FROM member_season WHERE id=1))', cycles)}
 
 
+def signup_cycle(bound_cycle):
+    """The dashboard binds the CWL month; campaigns collect the month before."""
+    year, month = map(int, bound_cycle.split("-"))
+    return f"{year - (month == 1):04d}-{12 if month == 1 else month - 1:02d}"
+
+
 async def refresh(app):
     """One background Mongo context; failed seasons retain their last good result."""
     started = time.monotonic()
@@ -44,9 +50,13 @@ async def refresh(app):
                     for sid, cycle in pending.items():
                         try:
                             async with asyncio.timeout(SEASON_TIMEOUT_SECONDS):
-                                loaded = await load_campaign(mongo, GUILD_ID, cycle)
-                            campaign = loaded['campaign']
-                            value = utc_timing(signup_deadline(campaign, cycle)) if campaign.get('signup_deadline') is not None else utc_timing(None)
+                                earlier = signup_cycle(cycle)
+                                # load_campaign synthesizes defaults for absent cycles;
+                                # do not invent a member deadline without the campaign.
+                                row = await mongo.bot_config.find_one({'_id': cycle_id(GUILD_ID, earlier)})
+                                loaded = await load_campaign(mongo, GUILD_ID, earlier) if row else None
+                            campaign = loaded['campaign'] if loaded else {}
+                            value = utc_timing(signup_deadline(campaign, earlier)) if campaign.get('signup_deadline') is not None else utc_timing(None)
                             cache[sid] = (time.monotonic(), cycle, value)
                             refreshed += 1
                         except Exception:

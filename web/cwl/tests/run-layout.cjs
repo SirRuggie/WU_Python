@@ -58,15 +58,63 @@ server.stdout.on("data", (chunk) => {
       server.kill();
       return;
     }
-    const tour = spawn(
-      process.execPath,
-      [path.join(__dirname, "member-tour.browser.cjs"), String(port)],
-      { stdio: "inherit", env: process.env },
+    const tourPort = 8976;
+    const tourServer = spawn(
+      python,
+      [
+        "-I",
+        path.join(__dirname, "fixtures/tour_deadline.py"),
+        path.join(root, "web/cwl/dist"),
+        String(tourPort),
+      ],
+      {
+        env: { PATH: process.env.PATH, HOME: temp, WU_FIXTURE_BACKEND: root },
+        stdio: ["ignore", "ignore", "inherit"],
+      },
     );
-    tour.on("exit", (tourCode) => {
-      process.exitCode = tourCode || 0;
-      server.kill();
-    });
+    const runTour = async () => {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        let ready = false;
+        for (let i = 0; i < 100; i++) {
+          if (tourServer.exitCode !== null)
+            throw new Error("Tour fixture exited before readiness");
+          try {
+            ready = (await fetch(`http://127.0.0.1:${tourPort}/api/cwl/config`))
+              .ok;
+          } catch {
+            /* starting */
+          }
+          if (ready) break;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        if (!ready) throw new Error("Tour fixture startup timed out");
+        for (const script of [
+          "member-tour.browser.cjs",
+          "member-tour-cleanup.browser.cjs",
+        ]) {
+          const code = await new Promise((resolve) => {
+            const child = spawn(
+              process.execPath,
+              [path.join(__dirname, script), String(tourPort)],
+              { stdio: "inherit", env: process.env },
+            );
+            child.on("exit", resolve);
+          });
+          if (code) {
+            process.exitCode = code;
+            break;
+          }
+        }
+      } catch (error) {
+        console.error(error);
+        process.exitCode = 1;
+      } finally {
+        tourServer.kill();
+        server.kill();
+      }
+    };
+    void runTour();
   });
 });
 server.on("exit", (code) => {

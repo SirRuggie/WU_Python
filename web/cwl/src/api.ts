@@ -1,3 +1,4 @@
+import { assertTourRead, isTourReadOnly } from "./memberTour/session";
 import { fetchReadWithRetry } from "./readRetry";
 import { clearSnapshots } from "./snapshotCache";
 export type Pool = "main" | "lazy";
@@ -92,6 +93,7 @@ export async function api<T>(
   method = "GET",
   body?: unknown,
 ): Promise<T> {
+  assertTourRead(method);
   let response: Response;
   try {
     response = await fetchReadWithRetry(`/api/cwl${path}`, {
@@ -146,6 +148,7 @@ export async function api<T>(
 }
 
 export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  assertTourRead("POST");
   const response = await fetchReadWithRetry(`/api/cwl${path}`, {
     method: "POST",
     credentials: "same-origin",
@@ -170,7 +173,7 @@ let lastBrowserReport = 0;
 export async function reportBrowserIssue(
   kind: "browser_error" | "unhandled_promise" | "network_error",
 ) {
-  if (!csrfToken || Date.now() - lastBrowserReport < 60000) return;
+  if (isTourReadOnly() || !csrfToken || Date.now() - lastBrowserReport < 60000) return;
   lastBrowserReport = Date.now();
   try {
     const response = await fetch("/api/cwl/issues/browser", {

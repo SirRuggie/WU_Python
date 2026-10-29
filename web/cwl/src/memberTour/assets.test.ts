@@ -11,7 +11,7 @@ it("ships every step's local WebP within its budget and records provenance", () 
   }
   const source = readFileSync("public/assets/tour/SOURCES.md", "utf8");
   expect(source).toContain("Ruggie supplied");
-  expect(source).toContain("https://supercell.com/en/fan-content-policy/");
+  expect(source).toContain("https://fankit.supercell.com/");
 });
 
 it("uses fade-only reduced motion, hides confetti and keeps 44px controls", () => {

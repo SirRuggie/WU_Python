@@ -79,3 +79,8 @@ Ruggie approved the roster-image channel/post schema, per-clan post/update/drop 
 Additive tables: `roster_image_channels`, `roster_image_posts`, `roster_image_requests`. Never store PNG bytes in SQLite/audit logs. Retry rendering uses the immutable publication and frozen metadata. Preserve these tables on code rollback; never restore a database to roll back code. Uncertain posts require a duplicate warning; uncertain edits PATCH the saved message ID. No automatic resend or Discord DELETE.
 
 Use normal backup/integrity/count evidence, retain both rollback targets, then verify public assets, runtime cwd, readiness and protected counts. Fake-Discord tests are not proof of live delivery; no live test send is authorized by the implementation batch.
+
+Prompt 07 tour/deadline hotfix (not yet released): member timing reads the existing
+campaign one month before the CWL binding. No schema or write-path change. Deploy
+its backend from an isolated tagged release only after approval; current runtime
+remains member-tour-1 / 16cc79e.
