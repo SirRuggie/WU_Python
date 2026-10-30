@@ -211,6 +211,49 @@ identifies a possible failure path, **not the proven cause of the three historic
 production 503s**; no production tracing or requests were performed for this
 follow-up. The client uses its existing initials fallback on an empty image.
 
+## Avatar concurrency follow-up (prompt 36, review pending)
+
+The dashboard now owns one lazy Mongo client per application and closes it at
+application cleanup. Injected fixture clients remain externally owned. Each
+request still performs authorization, including negative avatar-cache hits;
+permissions and image bytes are not cached. The missing-avatar cache still holds
+only confirmed absence, and database outages remain uncached 503 responses.
+Underlying HTTP failure causes are recorded as exception class names only, never
+connection strings or exception messages. Failed images retain initials with no
+automatic retry (therefore no retry storm).
+
+An isolated 12-request fixture reproduces the old per-request-pool fan-out under
+a constrained connection budget. All requests succeed with the shared pool;
+restoring the old client allocation kills the concurrency test. This demonstrates
+the allocation defect, not proof that Mongo rather than Discord caused the three
+historical production failures: those logs discarded the underlying cause. The
+new exception-class diagnostics are needed to confirm any remaining live failure.
+No live API load test or Discord delivery is claimed.
+
+Legacy member-activity URLs canonicalize to Moderation and retain its existing
+permission gate. A category or row with no effective destination says “Not
+posting — no channel set”; stored enabled flags, routing and save payloads are
+unchanged. Tests cover the message alongside checked switches and no settings
+writes.
+
+UI validation uses `tests/avatar-polish.browser.cjs <fixture-port>` against the
+isolated moderation fixture. It follows the legacy URL through the local test
+session, verifies the canonical Moderation URL at 360×800 and 1440×1000, supplies
+an empty-channel settings response without saving it, and checks for overflow
+and browser errors. The category switch wraps its status at narrow widths.
+
+
+### Moderation history identity read cache
+
+Only GET history and GET event avatar share Discord identity results for 30 seconds,
+keyed by signed-in user, bounded to 128 LRU entries. Concurrent reads share one
+in-flight fetch; failures are not cached. A cancelled reader does not cancel the
+shared fetch; logout removes the user's entry, including an in-flight one.
+Authorization and current dashboard grants are checked for every request. Discord
+role/ownership changes can take up to 30 seconds to affect these two read endpoints.
+Every write and all other endpoints obtain fresh Discord identity. Mongo pooling,
+confirmed-missing-avatar caching and zero automatic image retries remain unchanged.
+The historical production 503 cause is still an inference, not proven.
 
 ## Moderation polish release closure — 2026-10-30
 
@@ -240,3 +283,33 @@ logs recorded no underlying exception class, so the cause is not proven. Prompt
 36 tracks concurrency, class-only diagnostics and two display follow-ups; this
 release closure does not claim those 503s are fixed or that real Discord test
 messages were sent.
+
+## Avatar 503 release — October 30
+
+`avatar-503-1` is live at `44a37083f8fa5cb19df79873b9f6a412cceccd21`.
+The dashboard frontend and backend use immutable release directories for that
+revision; the bot stayed at `fb46bd388af287ea30f6296407853ff40105e39b`
+without a restart. Public `index-DtTrE87U.js` SHA-256 is
+`d22d3ac2c274700968a641dfe2047b7310646585c81cac692561230130dfeed4`.
+
+Integrated checks passed: 5,002 backend tests (21 skipped, 162 subtests), 1,043
+frontend tests, TypeScript and build. Isolated 360px/1440px checks covered avatar
+loading, legacy redirect, denied access and disabled test sending without a
+channel. Activation required two consecutive public config 200 responses, active
+service with the expected cwd, public asset hashes, anonymous denials and a clean
+current journal.
+
+The private backup is retained at `.local/avatar-503-1-backup-20261030T211645Z`;
+SQLite SHA-256 `4d781f50bf0d75e85929a0ceeca9f9241c72f85295e2d0bbd3414e669e1b2158`.
+Pre/post protected counts and digests matched: 155 signups, four publications,
+seven saved lineups, 3,558 active strikes. All twelve checked Mongo collection
+counts and moderation settings matched. No database restore or live message was
+performed. Previous frontend/backend assets at `fb46bd3` remain available for
+code-only rollback; the guarded local coordinator is `/tmp/wu-avatar-release/run.py`.
+
+Claude's read-only production smoke passed: runtime and public hash matched,
+`/server/member-activity` redirected to `/server/moderation`, and 22 of 22 parallel
+no-store avatar reads returned 200. No backend 503 or traceback appeared in the
+checked journal; nothing was saved or sent. Deployment tooling needed a recursive
+manifest finalizer for nested shared assets; this was a staging-tool issue, not an
+application or production check failure.

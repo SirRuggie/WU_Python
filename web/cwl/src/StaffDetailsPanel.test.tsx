@@ -177,3 +177,36 @@ it("Declaration uses published snapshots for removed players and blocks every wr
   spy.props.next();
   expect(setRequest.mock.calls[0][0].tag).toBe("#NEXT");
 });
+
+it("keeps a conflicting weight editor mounted until explicit Reload and uses the fresh revision", async () => {
+  await render();
+  const panel = host.firstElementChild;
+  vi.mocked(api).mockClear();
+  vi.mocked(api).mockImplementation(async (_path, method) => {
+    if (method) throw new ApiError("Roster changed", 409);
+    return snapshot(9) as never;
+  });
+  await act(async () => {
+    expect(
+      await spy.props.onSave({ manual_weight: 179000, weight_revision: 2 }),
+    ).toBe(false);
+  });
+  expect(host.firstElementChild).toBe(panel);
+  expect(host.textContent).toContain("Changed by someone else · Reload");
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(changed).not.toHaveBeenCalled();
+  await act(async () => {
+    await spy.props.onReload();
+  });
+  expect(host.firstElementChild).toBe(panel);
+  expect(host.textContent).not.toContain("Changed by someone else");
+  vi.mocked(api).mockResolvedValue(snapshot(10));
+  await act(async () => {
+    await spy.props.onSave({ manual_weight: 179000, weight_revision: 3 });
+  });
+  expect(api).toHaveBeenCalledWith("/seasons/1/roster/%23PLAYER", "PATCH", {
+    revision: 9,
+    manual_weight: 179000,
+    weight_revision: 3,
+  });
+});

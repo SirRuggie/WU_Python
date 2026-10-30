@@ -173,7 +173,8 @@ def _export_snapshot(db, season_id: int, kind: str, basis: str, stamp: str) -> d
             "assigned_clan_name", "pool", "recorded_publication_version",
             "roster_changed", "in_latest_publication",
         ]
-        columns = list(meta) + ["roster_basis", "roster_revision", "published_version"] + fields + [
+        export_fields = ["legacy_manual_weight" if field == "manual_weight" and basis == "current" else field for field in fields]
+        columns = list(meta) + ["roster_basis", "roster_revision", "published_version"] + export_fields + [
             "participation_" + key for key in participation_fields
         ] + ["participation_matches_roster", "participation_recorded_pool", "participation_recorded_clan_tag", "participation_recorded_clan_name", "bonus_draft_selected", "bonus_draft_reason", "bonus_confirmed_months", "bonus_record_type"]
         for account in base_rows:
@@ -186,6 +187,7 @@ def _export_snapshot(db, season_id: int, kind: str, basis: str, stamp: str) -> d
                 **{key: account.get(key) for key in fields},
             }
             if basis == "current":
+                row["legacy_manual_weight"] = row.pop("manual_weight")
                 row["assigned_clan_name"] = names.get(account.get("assigned_clan_tag"))
             row.update({"participation_" + key: part.get(key) for key in participation_fields})
             matches_roster = bool(part) and not bool(part.get("roster_changed"))

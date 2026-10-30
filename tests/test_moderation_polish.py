@@ -118,7 +118,11 @@ class AvatarPolish(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(web.HTTPServiceUnavailable) as caught:
                 await api.avatar(self.request)
             self.assertIn('Server settings are unavailable', caught.exception.text)
-            client.close.assert_awaited_once()
+            client.close.assert_not_awaited()
+            self.assertFalse(self.request.app.get('member_avatar_missing'))
+            with self.assertRaises(web.HTTPServiceUnavailable):
+                await api.avatar(self.request)
+            self.assertEqual(self.store.avatar.await_count, 2)
             self.assertFalse(self.request.app.get('member_avatar_missing'))
 
     async def test_saved_image_is_served_and_malformed_id_never_reads_storage(self):

@@ -23,20 +23,28 @@ class WeightTrialTests(unittest.IsolatedAsyncioTestCase):
     async def save(self,changes,actor=None,clan='%23R2Y'):
         return await self.call('PUT','/weight-trial/clans/'+clan,actor or self.owner,json={'changes':changes})
 
-    async def test_roster_override_cannot_replace_official_clan_weight(self):
+    async def test_roster_and_clan_editor_share_weight_revision(self):
         self.roster()
         sid = await foundation.WebFoundationTests.season(self)
         await self.call('POST',f'/seasons/{sid}/signups',self.member,json={
             'pool':'lazy','accounts':[{'tag':'#P2Y','prefer_crystal_1_or_lower':False}]})
         await self.save([{'tag':'#P2Y','weight':149000,'revision':0}])
         roster = await (await self.call('GET',f'/seasons/{sid}/roster',self.owner)).json()
+        account = roster['accounts'][0]
         response = await self.call('PATCH',f'/seasons/{sid}/roster/%23P2Y',self.owner,
-            json={'revision':roster['revision'],'manual_weight':175000})
+            json={'revision':roster['revision'],'manual_weight':175000,'weight_revision':account['weight_revision']})
+        self.assertEqual(response.status,200)
+        latest = await (await self.call('GET',f'/seasons/{sid}/roster',self.owner)).json()
+        self.assertEqual(latest['revision'],roster['revision']+1)
+        self.assertEqual(latest['accounts'][0]['effective_weight'],175000)
+        self.assertEqual(latest['accounts'][0]['weight_revision'],account['weight_revision']+1)
+        response = await self.call('PATCH',f'/seasons/{sid}/roster/%23P2Y',self.owner,
+            json={'revision':latest['revision'],'manual_weight':179000,'weight_revision':account['weight_revision']})
         self.assertEqual(response.status,409)
-        self.assertEqual(roster['accounts'][0]['effective_weight'],149000)
-        self.assertTrue(roster['accounts'][0]['clan_weight_managed'])
+        self.assertIn('Changed by someone else',await response.text())
+        self.assertEqual((await self.save([{'tag':'#P2Y','weight':180000,'revision':account['weight_revision']}])).status,409)
         self.assertEqual((await self.call('PATCH',f'/seasons/{sid}/roster/%23P2Y',self.owner,
-            json={'revision':roster['revision'],'kept':True})).status,200)
+            json={'revision':latest['revision'],'kept':True})).status,200)
 
     async def test_access_validation_atomicity_and_replay(self):
         self.roster()

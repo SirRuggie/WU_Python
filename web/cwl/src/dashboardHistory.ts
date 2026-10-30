@@ -36,7 +36,12 @@ export function dashboardTarget(
     (saved ? "signup" : undefined) ||
     (weightAliases.includes(pathname) ? "weight-trial" : pathView) ||
     (params.get("view") === "signups" ? "signup" : params.get("view"));
-  const value = requested === "manage-signups" ? "roster" : requested;
+  const value =
+    pathname === "/server/member-activity" || requested === "member-activity"
+      ? "moderation"
+      : requested === "manage-signups"
+        ? "roster"
+        : requested;
   return {
     ...(value === "weight-trial"
       ? {

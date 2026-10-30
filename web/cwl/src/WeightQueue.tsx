@@ -1,3 +1,4 @@
+import { useDashboardPermission } from "./DashboardPermissions";
 import { usesClanWeights } from "./clanWeightPolicy";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
@@ -37,6 +38,7 @@ export default function WeightQueue({
   resetToken,
 }: Props) {
   const [search, setSearch] = useState("");
+  const [permissionNotice, setPermissionNotice] = useState(false);
   const [limit, setLimit] = useState(50);
   const [drafts, setDrafts] = useState<Record<string, ManualWeightDraft>>({});
   const [unit, setUnit] = useState<ManualWeightDraft["unit"]>("loot");
@@ -60,6 +62,7 @@ export default function WeightQueue({
   useEffect(() => {
     onOrderChange?.(orderKey ? orderKey.split("|") : []);
   }, [orderKey, onOrderChange]);
+  const canWeight = useDashboardPermission("clan_weights");
   const disabled = busy || saving || archived;
   const dirtyCount = missing.filter(
     (account) => !!drafts[account.tag]?.text.trim(),
@@ -93,7 +96,8 @@ export default function WeightQueue({
   }, [disabled, focusTarget, accounts]);
 
   async function save(account: RosterAccount) {
-    if (disabled || pending.current || usesClanWeights(account)) return;
+    if (disabled || !canWeight || pending.current || usesClanWeights(account))
+      return;
     const state = compactWeightState({
       ...(drafts[account.tag] || emptyDraft),
       unit,
@@ -148,6 +152,12 @@ export default function WeightQueue({
           Refresh weights
         </Button>
       </div>
+      {permissionNotice && (
+        <p role="status">
+          Permission needed: changing weights needs Clan weights access. Ask an
+          owner.
+        </p>
+      )}
       <label className="weight-queue-search">
         <span className="sr-only">Find account</span>
         <input
@@ -234,9 +244,12 @@ export default function WeightQueue({
                         [account.tag]: "",
                       }));
                     }}
-                    disabled={disabled}
+                    disabled={disabled || !canWeight}
                     busy={busy || saving}
-                    onEdit={onEdit}
+                    onEdit={(tag) => {
+                      if (!canWeight) setPermissionNotice(true);
+                      else onEdit(tag);
+                    }}
                     onSave={() => void save(account)}
                     error={errors[account.tag]}
                     inputRef={(node) => {

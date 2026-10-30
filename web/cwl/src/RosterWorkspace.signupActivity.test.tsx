@@ -147,7 +147,7 @@ it.each([
         state.details!("#PLAYER");
       });
       const input = document.querySelector<HTMLInputElement>(
-        ".compact-weight-controls input",
+        '.linked-weight-field input[aria-label^="Loot for"]',
       )!;
       await act(async () => {
         Object.getOwnPropertyDescriptor(
@@ -219,9 +219,9 @@ it.each([
       expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
         "Wait for the save to finish.",
       );
-      expect(document.querySelector(".confirm-dialog")?.textContent).not.toContain(
-        "Discard",
-      );
+      expect(
+        document.querySelector(".confirm-dialog")?.textContent,
+      ).not.toContain("Discard");
     }
     expect(
       state.api.mock.calls.every((call) => !call[1] || call[1] === "GET"),

@@ -1,9 +1,8 @@
-import { usesClanWeights } from "./clanWeightPolicy";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import DetailsFrame from "./DetailsFrame";
 import ClanWeightSource from "./ClanWeightSource";
 import ConfirmDialog from "./ConfirmDialog";
-import CompactWeightField, { compactWeightState } from "./CompactWeightField";
+import LinkedWeightField from "./LinkedWeightField";
 import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
 import useLocationNow from "./useLocationNow";
 import {
@@ -11,7 +10,7 @@ import {
   type LocationRecords,
 } from "./comparisonLocation";
 import "./WeightQueue.css";
-import { parseManualWeight, type ManualWeightDraft } from "./manualWeight";
+import { draftFor, validateDraft, type Draft } from "./weightTrial/model";
 import { useDashboardPermission } from "./DashboardPermissions";
 import useUnsavedWork from "./useUnsavedWork";
 import { Button } from "./rosterUi/primitives";
@@ -39,6 +38,7 @@ type Props = {
   error?: string;
   onClose: () => void;
   onSave: (body: Record<string, unknown>) => Promise<boolean>;
+  onReload?: () => Promise<void>;
   onRemove: () => Promise<boolean>;
   onPoolChange?: (pool: Pool) => Promise<boolean>;
   archived?: boolean;
@@ -46,10 +46,18 @@ type Props = {
   publicationNote?: string;
   rosterUi?: boolean;
 };
-const detailsWeightDraft = (weight: number | null): ManualWeightDraft => ({
-  unit: "loot",
-  text: weight === null ? "" : String(weight / 5),
-});
+const detailsWeightDraft = (account: RosterAccount): Draft =>
+  draftFor({
+    tag: account.tag,
+    name: account.player_name,
+    town_hall: account.town_hall,
+    weight:
+      account.effective_weight !== null && account.effective_weight % 1000 !== 0
+        ? null
+        : account.effective_weight,
+    revision: account.weight_revision ?? 0,
+    storages: account.weight_storages ?? undefined,
+  });
 const fullWeight = (value: number | null) =>
   value === null ? "Missing weight" : value.toLocaleString();
 export const detailsDate = (value?: string | null) =>
@@ -76,6 +84,7 @@ export default function RosterPlayerDialog({
   onClose,
   onSave,
   onRemove,
+  onReload,
   onPoolChange,
   onDirty,
   archived = false,
@@ -95,9 +104,10 @@ export default function RosterPlayerDialog({
       tag,
     })),
   ]);
-  const weightInput = useRef<HTMLInputElement>(null);
   const rosterPermission = useDashboardPermission("cwl_roster");
   const canRoster = rosterPermission && !archived && !viewOnly;
+  const weightPermission = useDashboardPermission("clan_weights");
+  const canWeight = canRoster && weightPermission;
   const signupPermission = useDashboardPermission("cwl_signups");
   const canSignups = signupPermission && !archived && !viewOnly;
   const reason = archived
@@ -109,12 +119,11 @@ export default function RosterPlayerDialog({
         : "";
   const pending = useRef(false);
   const assignTrigger = useRef<HTMLButtonElement>(null);
-  const [weight, setWeight] = useState(
-    detailsWeightDraft(account.manual_weight),
-  );
+  const [weight, setWeight] = useState(detailsWeightDraft(account));
+  const [clearRequested, setClearRequested] = useState(false);
   const baseline = useRef({
     tag: account.tag,
-    draft: detailsWeightDraft(account.manual_weight),
+    draft: detailsWeightDraft(account),
   });
   const [localError, setLocalError] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
@@ -122,14 +131,17 @@ export default function RosterPlayerDialog({
     null,
   );
   const currentHost = clans.find((c) => c.tag === account.assigned_clan_tag);
-  const parsedWeight = compactWeightState(weight);
+  const unusualWeight =
+    account.effective_weight !== null && account.effective_weight % 1000 !== 0;
   const dirty =
-    !usesClanWeights(account) &&
-    (!!parsedWeight.error || parsedWeight.weight !== account.manual_weight);
+    canWeight &&
+    ((clearRequested && unusualWeight && !weight.full && !weight.loot) ||
+      JSON.stringify(weight) !== JSON.stringify(detailsWeightDraft(account)));
   useUnsavedWork(dirty || busy, onDirty);
   useEffect(() => {
+    setClearRequested(false);
     const previous = baseline.current;
-    const draft = detailsWeightDraft(account.manual_weight);
+    const draft = detailsWeightDraft(account);
     setWeight((current) =>
       previous.tag !== account.tag ||
       JSON.stringify(current) === JSON.stringify(previous.draft)
@@ -137,7 +149,7 @@ export default function RosterPlayerDialog({
         : current,
     );
     baseline.current = { tag: account.tag, draft };
-  }, [account.tag, account.manual_weight]);
+  }, [account.tag, account.effective_weight, account.weight_storages]);
   useEffect(() => {
     setLocalError("");
     setAssignOpen(false);
@@ -159,14 +171,28 @@ export default function RosterPlayerDialog({
     }
   }
   async function saveWeight() {
-    if (!canRoster || usesClanWeights(account)) return;
+    if (!canWeight) return;
     try {
-      const value = parseManualWeight(weight);
+      const value = validateDraft(weight);
       if (
-        value === account.manual_weight ||
-        (await run(() => onSave({ manual_weight: value })))
-      )
-        setWeight(detailsWeightDraft(value));
+        !dirty ||
+        (await run(() =>
+          onSave({
+            manual_weight: value.weight,
+            weight_revision: account.weight_revision ?? 0,
+            weight_storages: value.storages,
+          }),
+        ))
+      ) {
+        setClearRequested(false);
+        setWeight(
+          detailsWeightDraft({
+            ...account,
+            effective_weight: value.weight,
+            weight_storages: value.storages,
+          }),
+        );
+      }
     } catch (cause) {
       setLocalError((cause as Error).message);
     }
@@ -293,27 +319,41 @@ export default function RosterPlayerDialog({
         {canRoster && !archived && (
           <section aria-label="Weight">
             <h3>Weight</h3>
-            {usesClanWeights(account) ? (
-              <ClanWeightSource account={account} onNavigate={onClanWeights} />
-            ) : (
+            {!canWeight && (
+              <p>
+                {fullWeight(account.effective_weight)} · View only · Clan
+                weights access required
+              </p>
+            )}
+            {unusualWeight && (
+              <p>
+                Saved weight: {fullWeight(account.effective_weight)}. Saved
+                value isn't a whole thousand. Enter a new one to change it.
+              </p>
+            )}
+            {canWeight && (
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
                   void saveWeight();
                 }}
               >
-                <CompactWeightField
+                <LinkedWeightField
                   value={weight}
                   onChange={setWeight}
                   disabled={busy}
-                  inputRef={weightInput}
                   name={account.player_name}
                   unchanged={!dirty}
-                  allowClear
+                  allowEmptyClear={unusualWeight}
+                  onClear={() => setClearRequested(true)}
                 />
-                <small>Leave blank to use source weight.</small>
               </form>
             )}
+            <ClanWeightSource
+              account={account}
+              onNavigate={onClanWeights}
+              compact
+            />
           </section>
         )}
         <details className="roster-player-source">
@@ -364,6 +404,20 @@ export default function RosterPlayerDialog({
           </section>
         )}
         {(localError || error) && <p role="alert">{localError || error}</p>}
+        {(localError || error)?.includes("Changed by someone else") &&
+          onReload && (
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await onReload();
+                  return true;
+                })
+              }
+            >
+              Reload
+            </Button>
+          )}
         {busy && <p role="status">Saving account changes…</p>}
         <footer>Signed up {detailsDate(account.signed_up_at)}</footer>
         {undo}
