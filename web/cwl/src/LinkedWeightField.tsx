@@ -66,7 +66,10 @@ export default function LinkedWeightField({
         ))}
       </div>
       <small id={id} aria-live="polite">
-        {error || "Loot × storages = full weight. Blank means Not Available."}
+        {error ||
+          (!unchanged && !value.full && !value.loot
+            ? "Will clear on Save"
+            : "Loot × storages = full weight. Blank means Not Available.")}
       </small>
       <div className="linked-weight-actions">
         <Button

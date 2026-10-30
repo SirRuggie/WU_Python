@@ -601,9 +601,22 @@ def _manual_weights():
             legacy = ({row['tag']: row['weight'] for row in db.execute(
                 'SELECT tag,weight FROM player_weights')} if 'player_weights' in tables else {})
             if 'clan_player_weights' not in tables:
-                return legacy
+                return ({row['tag']: row['weight'] for row in db.execute(
+                    'SELECT tag,weight FROM player_weights WHERE weight IS NOT NULL')}
+                    if 'player_weights' in tables else {})
             tags = set(legacy) | {row[0] for row in db.execute('SELECT tag FROM clan_player_weights')}
-            return {tag: row['weight'] for tag, row in effective_weights(db, tags).items()}
+            try:
+                resolved = effective_weights(db, tags)
+            except ValueError:
+                # Isolate corrupt timestamps without losing unrelated saved weights.
+                resolved = {}
+                for tag in sorted(tags):
+                    try:
+                        resolved.update(effective_weights(db, [tag]))
+                    except ValueError:
+                        logging.getLogger(__name__).warning(
+                            'Skipping saved weight with invalid timestamp for %s', tag)
+            return {tag: row['weight'] for tag, row in resolved.items()}
     except (sqlite3.Error, OSError, ValueError):
         return {}
 

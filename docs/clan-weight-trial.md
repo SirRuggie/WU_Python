@@ -255,3 +255,25 @@ at 360 and 1440 covered Save/Clear, conflict/explicit Reload, read-only
 roster-only access and closing a historical 151,500 value without a discard
 prompt. Targets are at least 44px and there is no horizontal overflow. This
 is fixture evidence, not live Discord delivery evidence.
+
+## Linked-weight fault isolation and Clear feedback — October 30
+
+The bot's saved-weight reader isolates an invalid timestamp to its affected player
+and logs that tag. Other valid legacy and linked values, including an intentional
+linked null, remain available. The ordinary bulk read is unchanged; per-player
+resolution runs only after a timestamp error. The affected player's ambiguous
+saved value is omitted rather than guessing which ledger wins. This does not
+change the shared resolver's strict timestamp validation or write any records.
+When the linked table is absent, legacy null rows are excluded again.
+
+An explicitly cleared weight now says `Will clear on Save` in the existing live
+hint. Opening a historical non-thousand value remains clean; Clear alone does not
+write, and the existing Save, revision conflict and authorization controls remain.
+
+Review covered invalid timestamp isolation alongside valid legacy/linked values
+and null semantics, missing-table compatibility, explicit Clear and Save, and
+roster-only access. Isolated 360px and 1440px browser checks verified the status,
+permission notice and no horizontal overflow. The fixture's optional Discord
+member lookup remains unavailable (503); these checks do not establish live
+Discord identity or notification delivery. Full-suite and mutation results are
+recorded with the review handoff, not treated as production deployment evidence.

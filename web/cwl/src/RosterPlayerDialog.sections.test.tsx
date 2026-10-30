@@ -441,7 +441,9 @@ it("roster-only staff can place players but cannot edit linked weights", async (
 
 it("allows clearing a historical fractional-thousand value only after explicit Save", async () => {
   await render({ effective_weight: 151500, weight_revision: 4 });
+  expect(document.body.textContent).not.toContain("Will clear on Save");
   await click("Clear weight");
+  expect(document.body.textContent).toContain("Will clear on Save");
   expect(save).not.toHaveBeenCalled();
   await click("Save");
   expect(save).toHaveBeenLastCalledWith({
