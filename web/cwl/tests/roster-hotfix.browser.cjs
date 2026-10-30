@@ -95,7 +95,13 @@ const shots = process.env.WU_LAYOUT_SCREENSHOTS;
         await input.evaluate(
           (node) => node.closest(".weight-queue-row").textContent,
         ),
-        /= 750 full weight/,
+        /Full weight must end in 000/,
+      );
+      assert(
+        await input
+          .locator("xpath=ancestor::*[contains(@class,'weight-queue-row')]")
+          .getByRole("button", { name: "Save", exact: true })
+          .isDisabled(),
       );
       await units.getByRole("button", { name: "Full", exact: true }).click();
       assert.equal(
