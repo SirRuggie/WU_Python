@@ -1,3 +1,7 @@
+import {
+  clanSections as sections,
+  type ClanRoute,
+} from "./clanManagement/routes";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { api, apiUpload } from "./api";
 import { useClanChoices } from "./useClanChoices";
@@ -13,13 +17,6 @@ import ConfirmDialog from "./ConfirmDialog";
 type Directory = { clans: Clan[]; types: string[]; town_halls: string[] };
 type Choice = { id: string; name: string; avatar_url?: string };
 const path = (tag: string) => "/manage/clans/" + encodeURIComponent(tag);
-const sections = [
-  "Details",
-  "Roles",
-  "Channels",
-  "Artwork",
-  "War reminders",
-] as const;
 function sectionSummary(section: string, clan: Clan, reminder: string): string {
   if (section === "Details") return clan.type || "Clan type not set";
   if (section === "Roles")
@@ -32,11 +29,20 @@ function sectionSummary(section: string, clan: Clan, reminder: string): string {
 }
 export default function ClanManagement({
   onDirty,
+  initialRoute,
+  onWorking,
+  onNavigate,
 }: {
   onDirty: (value: boolean) => void;
+  initialRoute?: ClanRoute;
+  onWorking?: (busy: boolean) => void;
+  onNavigate?: (route: ClanRoute) => void;
 }) {
-  const [view, setView] = useState<"overview" | "clans" | "history">("clans");
+  const [view, setView] = useState<"overview" | "clans" | "history">(
+    initialRoute?.tab || "clans",
+  );
   const reminderEditor = useRef<ReminderEditor | null>(null);
+  const initialClanPending = useRef(initialRoute?.tag);
   const [reminderChanges, setReminderChanges] = useState(0);
   const [reminderSummary, setReminderSummary] = useState("Loading…");
   const [sectionCollapsed, setSectionCollapsed] = useState(false);
@@ -84,7 +90,9 @@ export default function ClanManagement({
     }),
     [saved, setSaved] = useState<Clan | null>(null),
     [draft, setDraft] = useState<Clan | null>(null),
-    [section, setSection] = useState<(typeof sections)[number]>("Details"),
+    [section, setSection] = useState<(typeof sections)[number]>(
+      initialRoute?.section || "Details",
+    ),
     [query, setQuery] = useState(""),
     [newTag, setNewTag] = useState(""),
     [adding, setAdding] = useState(false),
@@ -109,6 +117,16 @@ export default function ClanManagement({
         return;
       setData(result);
       setDirectoryError("");
+      if (initialClanPending.current) {
+        const target = result.clans.find(
+          (clan) => clan.tag === initialClanPending.current,
+        );
+        initialClanPending.current = undefined;
+        if (target) {
+          setSaved(target);
+          setDraft({ ...target });
+        } else setError("This clan is no longer in the family directory.");
+      }
       if (refresh && saved) {
         const current = result.clans.find((c) => c.tag === saved.tag) || null;
         setSaved(current);
@@ -214,6 +232,7 @@ export default function ClanManagement({
     ++editGeneration.current;
     setSectionCollapsed(false);
     setSection("Details");
+    onNavigate?.({ tab: "clans", tag: row?.tag, section: "Details" });
     setSaved(row);
     setDraft(row ? { ...row } : null);
     setNotice("");
@@ -338,6 +357,10 @@ export default function ClanManagement({
     });
   }
   const disabled = busy || reminderBusy || !!statusUrl;
+  useEffect(() => {
+    onWorking?.(disabled);
+    return () => onWorking?.(false);
+  }, [disabled, onWorking]);
 
   async function changeView(next: typeof view) {
     if (disabled || next === view) return;
@@ -346,6 +369,7 @@ export default function ClanManagement({
     if (dirty) setDraft(saved);
     ++editGeneration.current;
     setReminderDirty(false);
+    onNavigate?.({ tab: next });
     setView(next);
     setAdding(false);
   }
@@ -355,6 +379,7 @@ export default function ClanManagement({
     setSaved(clan);
     setDraft({ ...clan });
     setReminderDirty(false);
+    onNavigate?.({ tab: "clans", tag: clan.tag, section: "War reminders" });
     setSection("War reminders");
     setSectionCollapsed(false);
     setView("clans");
@@ -522,6 +547,11 @@ export default function ClanManagement({
                   value={section}
                   disabled={disabled}
                   onChange={(next) => {
+                    onNavigate?.({
+                      tab: "clans",
+                      tag: draft.tag,
+                      section: next,
+                    });
                     setSection(next);
                     setSectionCollapsed(false);
                   }}
@@ -534,6 +564,12 @@ export default function ClanManagement({
                       aria-controls={`clan-panel-${index}`}
                       disabled={disabled}
                       onClick={() => {
+                        if (item !== section)
+                          onNavigate?.({
+                            tab: "clans",
+                            tag: draft.tag,
+                            section: item,
+                          });
                         setSection(item);
                         setSectionCollapsed(
                           section === item && !sectionCollapsed,

@@ -1,3 +1,4 @@
+import type { ClanRoute } from "./clanManagement/routes";
 import SignupReviewHeading from "./SignupReviewHeading"
 import AccountMenu from "./AccountMenu"
 import MemberSeasonLine from "./MemberSeasonLine"
@@ -322,6 +323,10 @@ function App() {
     null | (() => void)
   >(null);
   const weightEditFocus = useRef<HTMLElement | null>(null);
+  const [familyRoute, setFamilyRoute] = useState<ClanRoute | undefined>(entryTarget.familyClan);
+  const [familyWorking, setFamilyWorking] = useState(false);
+  const [familyVisit, setFamilyVisit] = useState(0);
+  const [pendingClanLeave, setPendingClanLeave] = useState<null | (() => void)>(null);
   const [manageDirty, setManageDirty] = useState(false)
   const [strikeWorking, setStrikeWorking] = useState(false)
   const flowMemory = useMemo(
@@ -351,6 +356,8 @@ function App() {
   }, [view, signupDirty, pending, tourActive])
   const canLeave = (action?: () => void) => {
     if (isTourReadOnly()) return true
+    if (view === 'clan-management' && familyWorking) return false
+    if (view === 'clan-management' && manageDirty) { setPendingClanLeave(() => action || (() => {})); return false }
     if (view === 'roster') {
       if (rosterBusy) { setPendingRosterLeave({ action: () => {}, working: true }); return false }
       if (cwlDirty) { setPendingRosterLeave({ action: action || (() => {}), working: false }); return false }
@@ -405,6 +412,10 @@ function App() {
     if (navigation.current?.pending) return
     const proceed = () => {
       const destination = allowedView(next)
+      if (destination === "clan-management" && destination !== view) {
+        setFamilyRoute(undefined);
+        setFamilyVisit(visit => visit + 1);
+      }
       if (destination === "weight-trial")
         setWeightTarget({ player: weights?.player, clan: weights?.clan });
       if (destination !== view || (destination === "signup" && signupPanel !== panel))
@@ -538,6 +549,8 @@ function App() {
         window.location.pathname,
       );
       const target = { ...route, ...activityContext(event.state, route.view) };
+      setFamilyRoute(target.familyClan);
+      setFamilyVisit(visit => visit + 1);
       setActivityVisit(event.state?.wuDashboardIndex || 0);
       setActivitySearch(target.activityFilter || "");
       setActivityKind(target.activityKind);
@@ -569,6 +582,7 @@ function App() {
     navigation.current?.write(
       {
         view: destination,
+        ...(destination === "clan-management" ? { familyClan: familyRoute } : {}),
         ...(destination === "replacements" ? {replacementClan, replacementTag, flowFrom} : destination === "strikes" ? {strikeTag, flowFrom} : {}),
         ...(destination === "weight-trial"
           ? { weightPlayer: weightTarget.player, weightClan: weightTarget.clan }
@@ -581,7 +595,7 @@ function App() {
       },
       false,
     );
-  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, flowFrom, weightTarget])
+  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, flowFrom, weightTarget, familyRoute])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
@@ -814,6 +828,7 @@ function App() {
         }}
       />
     )}
+    {pendingClanLeave && <ConfirmDialog text="Discard unsaved clan changes?" confirmLabel="Discard" onCancel={() => setPendingClanLeave(null)} onConfirm={() => { const action = pendingClanLeave; setPendingClanLeave(null); action(); }} />}
     {pendingWeightLeave && (
       <ConfirmDialog
         heading="Unsaved changes"
@@ -906,7 +921,11 @@ function App() {
         {view === 'image-gallery' && <ImageGallery onDirty={setManageDirty} />}
         {view === 'tickets' && <TicketBrowser />}
         {(view === 'member-activity' || view === 'moderation') && <ModerationWorkspace onDirty={setManageDirty} />}
-        {view === 'clan-management' && <ClanManagement onDirty={setManageDirty} />}
+        {view === 'clan-management' && <ClanManagement key={familyVisit} initialRoute={familyRoute} onWorking={setFamilyWorking} onDirty={setManageDirty} onNavigate={route => {
+          setFamilyRoute(route);
+          navigation.current?.write({view: 'clan-management', season: '', familyClan: route}, true);
+          setActivityVisit(window.history.state?.wuDashboardIndex || 0);
+        }} />}
         {view === "weight-trial" && (
           <div
             onFocusCapture={(event) => {

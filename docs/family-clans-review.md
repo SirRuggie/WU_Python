@@ -91,3 +91,18 @@ batch order after Family clans is31 then19; the current ClashPerk source stays.
 Role increment validation completed: 1,076 frontend tests / 208 files, TypeScript
 and build passed. Restoring the raw leader-ID fallback killed the ClanFields
 render test; restored test passed. Full-batch backend/browser checks remain pending.
+
+## Route checkpoint
+
+Family clan tabs, selected tags and sections now round-trip through dashboard
+paths and the existing DashboardHistory controller. Reload routes serve the SPA
+only for valid clan tags/sections, preserving Strikes and Replacements routes.
+The clan page restores a shared section link after loading its directory. Leaving
+unsaved clan changes through dashboard navigation uses ConfirmDialog; writes in
+progress block navigation. A history replay that produces no popstate does not
+clear the dirty guard (App regression).
+
+Route checks: 26 targeted frontend tests plus the App guard regression passed;
+full frontend 1,079 tests / 209 files passed. Five isolated backend route tests
+with 55 subtests passed. Final real-browser Back/Forward and layout checks remain
+part of the batch completion gate.

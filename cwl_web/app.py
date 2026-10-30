@@ -1987,4 +1987,21 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values()), *(path.lstrip('/') for path in MANAGEMENT_PAGE_PATHS.values())):
             app.router.add_get('/' + path, index_page)
             app.router.add_get('/' + path + '/', index_page)
+        for page in ("reminders", "history"):
+            app.router.add_get("/clans/" + page, index_page)
+            app.router.add_get("/clans/" + page + "/", index_page)
+
+        async def family_clan_page(request):
+            import re
+            if not re.fullmatch(r"#[A-Za-z0-9]{3,15}", request.match_info["clan_tag"]):
+                raise web.HTTPNotFound()
+            if request.match_info.get("section", "details") not in (
+                "details", "roles", "channels", "artwork", "war-reminders"
+            ):
+                raise web.HTTPNotFound()
+            return await index_page(request)
+
+        for suffix in ("", "/"):
+            app.router.add_get("/clans/{clan_tag}" + suffix, family_clan_page)
+            app.router.add_get("/clans/{clan_tag}/{section}" + suffix, family_clan_page)
     return app

@@ -1,3 +1,4 @@
+import { clanRoute, clanPath, type ClanRoute } from "./clanManagement/routes";
 import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 import { cwlPaths } from "./staffLinks";
@@ -9,6 +10,7 @@ const staffPaths: Record<string, string> = {
 };
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
 export type DashboardRoute = {
+  familyClan?: ClanRoute;
   replacementClan?: string;
   replacementTag?: string;
   strikeTag?: string;
@@ -27,12 +29,14 @@ export function dashboardTarget(
   pathname = "/",
 ): DashboardRoute {
   pathname = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
+  const family = clanRoute(pathname);
   const params = new URLSearchParams(search);
   const saved = savedSignupTarget(search, pathname);
   const pathView = Object.entries({ ...memberPaths, ...staffPaths }).find(
     ([, path]) => path !== "/" && path === pathname,
   )?.[0];
   const requested =
+    (family ? "clan-management" : undefined) ||
     (saved ? "signup" : undefined) ||
     (weightAliases.includes(pathname) ? "weight-trial" : pathView) ||
     (params.get("view") === "signups" ? "signup" : params.get("view"));
@@ -43,6 +47,7 @@ export function dashboardTarget(
         ? "roster"
         : requested;
   return {
+    ...(family && pathname !== "/clans" ? { familyClan: family } : {}),
     ...(value === "weight-trial"
       ? {
           weightPlayer: /^#[A-Z0-9]{1,20}$/i.test(params.get("player") || "")
@@ -92,6 +97,8 @@ export const seasonViews = new Set([
   "staff",
 ]);
 export function dashboardPath(route: DashboardRoute) {
+  if (route.view === "clan-management" && route.familyClan)
+    return clanPath(route.familyClan);
   if (route.view === "signup" && route.signupPanel === "saved")
     return "/my-signups";
   if (memberPaths[route.view]) return memberPaths[route.view];

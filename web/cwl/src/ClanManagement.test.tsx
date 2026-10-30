@@ -222,3 +222,36 @@ it("toggles section cards without discarding their edits", async () => {
     "2 unsaved changes",
   );
 });
+
+it("restores a shared clan section link and emits section navigation", async () => {
+  const onNavigate = vi.fn();
+  await act(async () =>
+    root.render(
+      <ClanManagement
+        onDirty={onDirty}
+        initialRoute={{ tab: "clans", tag: "#AAA", section: "Channels" }}
+        onNavigate={onNavigate}
+      />,
+    ),
+  );
+  expect(
+    host.querySelector('[role="tab"][aria-selected="true"]')!.textContent,
+  ).toBe("Channels");
+  expect(host.querySelector(".clan-editor h2")!.textContent).toBe("Test clan");
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((b) => b.textContent === "Roles")!
+      .click(),
+  );
+  expect(onNavigate).toHaveBeenCalledWith({
+    tab: "clans",
+    tag: "#AAA",
+    section: "Roles",
+  });
+  await click("‹ All clans");
+  expect(onNavigate).toHaveBeenLastCalledWith({
+    tab: "clans",
+    tag: undefined,
+    section: "Details",
+  });
+});
