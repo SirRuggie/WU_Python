@@ -10,15 +10,12 @@ from datetime import datetime, timezone
 import aiohttp
 import hikari
 import lightbulb
-from hikari.impl import ContainerComponentBuilder as Container
-from hikari.impl import SectionComponentBuilder as Section
-from hikari.impl import TextDisplayComponentBuilder as Text
-from hikari.impl import ThumbnailComponentBuilder as Thumbnail
-
 from utils.member_events import (
     DEFAULT_CHANNEL_ID, GUILD_ID, MAX_AVATAR_BYTES, MemberEventStore,
     avatar_source, effective_permissions, safe_text,
 )
+from utils.member_event_cards import avatar_filename, build_card, build_forum_message
+from utils.member_event_settings import effective_event
 from utils.mongo import MongoClient
 
 loader = lightbulb.Loader()
@@ -61,61 +58,27 @@ async def download_avatar(url: str | None):
         return None, None
 
 
-def event_lines(row):
-    labels = {"join": "↗ Joined", "leave": "↘ Left", "kick": "⚠ Kicked", "ban": "⛔ Banned"}
-    name = safe_text(row.get("display_name")) or "Unknown member"
-    username = safe_text(row.get("username")) or "unknown"
-    uid = int(row["user_id"])
-    occurred = row["occurred_at"]
-    stamp = int(occurred.replace(tzinfo=occurred.tzinfo or timezone.utc).timestamp())
-    lines = [f"**{labels[row['event_type']]}** · <t:{stamp}:R>", f"**{name}** · @{username}"]
-    joined_at = row.get("joined_at")
-    if isinstance(joined_at, datetime):
-        joined_stamp = int(joined_at.replace(tzinfo=joined_at.tzinfo or timezone.utc).timestamp())
-        label = "Last known join" if row["event_type"] in ("kick", "ban") else "Joined server"
-        lines.append(f"{label}: <t:{joined_stamp}:D> · <t:{joined_stamp}:R>")
+def identity_metadata(bot, user_id: int, member, saved):
+    """Capture best-effort display facts before a member leaves the guild."""
+    created_at = datetime.fromtimestamp(
+        ((int(user_id) >> 22) + 1420070400000) / 1000, tz=timezone.utc,
+    )
+    cache = getattr(bot, "cache", None)
+    guild = cache.get_guild(GUILD_ID) if cache and hasattr(cache, "get_guild") else None
+    count = getattr(guild, "member_count", None)
+    member_count = count if isinstance(count, int) and count >= 0 else None
+    role_ids = getattr(member, "role_ids", None)
+    if role_ids is None:
+        roles = (saved or {}).get("roles")
     else:
-        lines.append("Joined server: date unavailable")
-    if row.get("moderator_id"):
-        lines.append(f"Moderator ID: `{int(row['moderator_id'])}`")
-    if row.get("reason"):
-        lines.append(f"Reason: {safe_text(row['reason'], 500)}")
-    lines.append(f"ID: `{uid}` · [Profile](https://discord.com/users/{uid})")
-    return lines
-
-
-def accent(kind):
-    return {"join": 0x2BA66A, "leave": 0xD34A4A,
-            "kick": 0xE69935, "ban": 0xA8384B}[kind]
-
-
-def avatar_filename(row):
-    if not row.get("avatar"):
-        return None
-    extension = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
-                 "image/webp": "webp"}[row["avatar_type"]]
-    return f"member-avatar.{extension}"
-
-
-def components(row):
-    body = Text(content="\n".join(event_lines(row)))
-    filename = avatar_filename(row)
-    if filename:
-        section = Section(components=[body], accessory=Thumbnail(
-            media=f"attachment://{filename}", description="Saved member avatar"))
-        return [Container(accent_color=accent(row["event_type"]), components=[section])], [
-            hikari.Bytes(row["avatar"], filename, row["avatar_type"])]
-    return [Container(accent_color=accent(row["event_type"]), components=[body])], []
-
-
-def forum_message(row):
-    """Forum starters use documented embed fields; V2 flags are unverified there."""
-    filename = avatar_filename(row)
-    embed = {"description": "\n".join(event_lines(row)),
-             "color": accent(row["event_type"])}
-    if filename:
-        embed["thumbnail"] = {"url": f"attachment://{filename}"}
-    return {"embeds": [embed], "allowed_mentions": {"parse": []}}
+        roles = []
+        for role_id in role_ids:
+            if int(role_id) == GUILD_ID:
+                continue
+            role = cache.get_role(role_id) if cache and hasattr(cache, "get_role") else None
+            roles.append(str(getattr(role, "name", None) or f"Role ID {int(role_id)}")[:80])
+        roles = roles[:30]
+    return created_at, member_count, roles
 
 
 async def post_card(row, *, forum=False):
@@ -129,16 +92,13 @@ async def post_card(row, *, forum=False):
         suffix = f" · {row['user_id']} · {date}"
         name_budget = max(1, 100 - len(label) - len(suffix) - 3)
         title = f"{label} · {safe_text(row['display_name'], name_budget)}{suffix}"
-        payload = {"name": title[:100], "message": forum_message(row)}
+        payload = {"name": title[:100], "message": build_forum_message(row)}
         if row.get("forum_tag_id"):
             payload["applied_tags"] = [str(row["forum_tag_id"])]
         endpoint = f"https://discord.com/api/v10/channels/{channel_id}/threads"
         message = payload["message"]
     else:
-        cards, _ = components(row)
-        payload = {"flags": int(hikari.MessageFlag.IS_COMPONENTS_V2),
-                   "components": [card.build()[0] for card in cards],
-                   "allowed_mentions": {"parse": []}}
+        payload = build_card(row)
         endpoint = f"https://discord.com/api/v10/channels/{channel_id}/messages"
         message = payload
     if filename:
@@ -219,7 +179,7 @@ async def channel_ready(bot, row):
 async def deliver(store: MemberEventStore, bot, row):
     # A settings change cancels unsent rows for old destinations. It never
     # touches a send already claimed or an uncertain Discord receipt.
-    current = (await store.settings())["events"][row["event_type"]]
+    current = effective_event(await store.settings(), row["event_type"])
     if (not current["enabled"] or str(current["channel_id"]) != str(row.get("channel_id"))
             or str(current.get("forum_tag_id")) != str(row.get("forum_tag_id"))):
         await store.skip_queued(row["_id"])
@@ -263,6 +223,7 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
         joined_at = (saved or {}).get("joined_at")
     if kind == "leave" and not isinstance(joined_at, datetime):
         joined_at = await store.latest_joined_at(GUILD_ID, uid, now)
+    account_created_at, member_count, roles = identity_metadata(bot, uid, member, saved)
     episode = (episode_override if episode_override is not None else
                await store.ban_episode(GUILD_ID, uid, banned=True)) if kind == "ban" else None
     pending_audit = (await store.pending_ban_audit(GUILD_ID, uid, now)
@@ -272,7 +233,7 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
         reason = reason or pending_audit.get("reason")
         audit_entry_id = int(pending_audit["_id"].rsplit(":", 1)[1])
     settings = await store.settings()
-    config = settings["events"][kind]
+    config = effective_event(settings, kind)
     enabled = config["enabled"] and bool(config["channel_id"])
     channel_id = int(config["channel_id"]) if enabled else None
     forum_tag_id = int(config["forum_tag_id"]) if enabled and config.get("forum_tag_id") else None
@@ -282,6 +243,8 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
         at=now, joined_at=joined_at, channel_id=channel_id,
         forum_tag_id=forum_tag_id, reason=reason, moderator_id=moderator_id,
         audit_entry_id=audit_entry_id, episode=episode,
+        account_created_at=account_created_at, member_count=member_count,
+        roles=roles,
     )
     if not row:
         return
@@ -320,6 +283,7 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
                 GUILD_ID, uid, now, departure.get("display_name") or str(uid),
                 departure.get("username") or str(uid), departure.get("joined_at"),
                 departure.get("avatar"), departure.get("avatar_type"),
+                roles=departure.get("roles"),
             )
     if kind == "ban":
         # Give a near-simultaneous audit entry a chance to enrich the queued card.
@@ -328,7 +292,8 @@ async def record_identity(kind, guild_id, user_id, mongo, bot, *, user=None, mem
     if ready_row and kind == "leave":
         await store.enrich_recent_kick(GUILD_ID, uid, now, ready_row["display_name"],
                                        ready_row["username"], ready_row.get("joined_at"),
-                                       ready_row.get("avatar"), ready_row.get("avatar_type"))
+                                       ready_row.get("avatar"), ready_row.get("avatar_type"),
+                                       roles=ready_row.get("roles"))
     if ready_row and enabled:
         await deliver(store, bot, ready_row)
 
