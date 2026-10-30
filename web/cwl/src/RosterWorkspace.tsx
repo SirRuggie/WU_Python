@@ -266,12 +266,12 @@ export default function RosterWorkspace({
     if (!canRoster && mode !== "assign") setMode("assign");
   }, [canRoster, mode, setMode]);
   const [pendingLeave, setPendingLeave] = useState<null | { action: () => void; working: boolean }>(null);
-  const requestLeave = (action: () => void) => {
+  const requestLeave = (action: () => void, requiresDiscard = dirty) => {
     if (working) {
       setPendingLeave({ action: () => {}, working: true });
       return false;
     }
-    if (dirty) {
+    if (requiresDiscard) {
       setPendingLeave({ action, working: false });
       return false;
     }
@@ -279,7 +279,12 @@ export default function RosterWorkspace({
     return true;
   };
   const requestSignupNavigation = (action: () => void) => {
-    requestDetailsNavigation(() => requestLeave(action));
+    requestDetailsNavigation(() =>
+      requestLeave(
+        action,
+        rulesDirty || weightsDirty || signupDirty || selectedTags.length > 0,
+      ),
+    );
   };
   const mayLeaveEditor = (action: () => void) => requestLeave(action);
   const listHeading = useRef<HTMLDivElement>(null);

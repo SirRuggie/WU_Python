@@ -277,6 +277,63 @@ server.stdout.on("data", (chunk) => {
             hotfixServer.kill();
           }
         }
+        if (!process.exitCode) {
+          const totalsPort = 8987;
+          await new Promise((resolve, reject) => {
+            const probe = require("node:net").createServer();
+            probe.once("error", reject);
+            probe.listen(totalsPort, "127.0.0.1", () => probe.close(resolve));
+          });
+          const totalsServer = spawn(
+            python,
+            [
+              "-I",
+              path.join(__dirname, "fixtures/weight_totals.py"),
+              path.join(root, "web/cwl/dist"),
+              String(totalsPort),
+            ],
+            {
+              env: {
+                PATH: process.env.PATH,
+                HOME: temp,
+                WU_FIXTURE_BACKEND: root,
+              },
+              stdio: ["ignore", "ignore", "inherit"],
+            },
+          );
+          try {
+            let ready = false;
+            for (let attempt = 0; attempt < 100; attempt++) {
+              if (totalsServer.exitCode !== null)
+                throw new Error("Weight totals fixture exited");
+              try {
+                ready = (
+                  await fetch(`http://127.0.0.1:${totalsPort}/api/cwl/config`)
+                ).ok;
+              } catch {
+                /* Starting isolated fixture. */
+              }
+              if (ready) break;
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+            if (!ready)
+              throw new Error("Weight totals fixture startup timed out");
+            const code = await new Promise((resolve) => {
+              const child = spawn(
+                process.execPath,
+                [
+                  path.join(__dirname, "weight-totals.browser.cjs"),
+                  String(totalsPort),
+                ],
+                { stdio: "inherit", env: process.env },
+              );
+              child.on("exit", resolve);
+            });
+            if (code !== 0) process.exitCode = code || 1;
+          } finally {
+            totalsServer.kill();
+          }
+        }
       } catch (error) {
         console.error(error);
         process.exitCode = 1;

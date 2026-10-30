@@ -84,6 +84,19 @@ it.each([
             source_weight: 125000,
             user_id: "",
           },
+          {
+            tag: "#OTHER",
+            player_name: "Birch",
+            pool: "main",
+            manual_weight: 125000,
+            effective_weight: 125000,
+            assigned_clan_tag: "#P2Y",
+            kept: false,
+            town_hall: 18,
+            source_status: "current",
+            source_weight: 125000,
+            user_id: "",
+          },
         ]
       : [],
     clans: [
@@ -156,6 +169,20 @@ it.each([
       expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
         "Discard the unsaved weight for Amber?",
       );
+      const discard = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".confirm-dialog button"),
+      ).find((button) => button.textContent === "Discard")!;
+      await act(async () => discard.click());
+      expect(document.querySelectorAll(".confirm-dialog")).toHaveLength(0);
+      if (scenario === "details-name") {
+        expect(
+          document.querySelector('dialog[aria-label="Details for Birch"]'),
+        ).not.toBeNull();
+      } else {
+        expect(host.textContent).toContain("Compare destination");
+        expect(document.querySelector(".details-frame")).toBeNull();
+        expect(JSON.parse(localStorage.getItem(key)!)[0]).toBe("#P2Y");
+      }
       expect(
         state.api.mock.calls.every((call) => !call[1] || call[1] === "GET"),
       ).toBe(true);
