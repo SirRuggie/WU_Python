@@ -269,7 +269,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.body['confirm_duplicate'] = True
             self.mode = None
             self.assertEqual((await self.send()).status, 200)
-            self.assertIn('Roster v2', json.loads(self.sent[-1][2]['data']._fields[0][2])['content'])
+            payload = json.loads(self.sent[-1][2]['data']._fields[0][2])
+            self.assertTrue(payload['content'].startswith('**'))
+            self.assertNotIn('Roster v', payload['content'])
+            with self.app['store'].tx() as db:
+                posted = db.execute('SELECT posted_version FROM roster_image_posts WHERE season_id=? AND clan_tag=?', (self.sid, '#C2Y')).fetchone()
+            self.assertEqual(posted['posted_version'], 2)
             self.assertEqual([s[0] for s in self.sent], ['POST', 'POST'])
 
     async def test_uncertain_update_recovers_new_version_same_message(self):
@@ -285,7 +290,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.mode = None
             self.assertEqual((await self.send('/update')).status, 200)
             self.assertEqual(first[:2], self.sent[-1][:2])
-            self.assertIn('Roster v3', json.loads(self.sent[-1][2]['data']._fields[0][2])['content'])
+            payload = json.loads(self.sent[-1][2]['data']._fields[0][2])
+            self.assertTrue(payload['content'].startswith('**'))
+            self.assertNotIn('Roster v', payload['content'])
+            with self.app['store'].tx() as db:
+                posted = db.execute('SELECT posted_version FROM roster_image_posts WHERE season_id=? AND clan_tag=?', (self.sid, '#C2Y')).fetchone()
+            self.assertEqual(posted['posted_version'], 3)
             self.body.update(version=2, request_id='e' * 24)
             self.assertEqual((await self.send('/update')).status, 409)
 
@@ -308,7 +318,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.mode = None
             self.assertEqual((await self.send('/update')).status, 200)
             self.assertEqual(first[:2], self.sent[-1][:2])
-            self.assertIn('Roster v4', json.loads(self.sent[-1][2]['data']._fields[0][2])['content'])
+            payload = json.loads(self.sent[-1][2]['data']._fields[0][2])
+            self.assertTrue(payload['content'].startswith('**'))
+            self.assertNotIn('Roster v', payload['content'])
+            with self.app['store'].tx() as db:
+                posted = db.execute('SELECT posted_version FROM roster_image_posts WHERE season_id=? AND clan_tag=?', (self.sid, '#C2Y')).fetchone()
+            self.assertEqual(posted['posted_version'], 4)
 
     async def test_new_post_over_failed_update_is_rejected(self):
         await self.setup_post()

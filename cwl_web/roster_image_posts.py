@@ -183,10 +183,10 @@ async def deliver(request):
     if frozen is None:
         if operation != 'drop':
             await metadata(request, group)
-        payload = {'content': f"{group['name']} is no longer hosting · Roster v{version}" if operation == 'drop' else f"{group['name']} · {season['label']} · Roster v{version}",
-                   'allowed_mentions': {'parse': []}, 'attachments': [], 'components': []}
-        if operation != 'drop':
-            payload['components'] = [{'type': 1, 'components': [{'type': 2, 'style': 5, 'label': 'Open clan', 'url': f'https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(clan, safe="")}'}]}]
+        from utils.cwl_roster_messages import clan_image_message, clan_name
+        payload = ({'content': f"{clan_name(group['name'])} is no longer hosting · Roster v{version}",
+                    'allowed_mentions': {'parse': []}, 'attachments': [], 'components': []}
+                   if operation == 'drop' else clan_image_message(group['name'], clan))
         frozen = {'payload': payload, 'season_label': season['label'], 'name': group['name'], 'league': group['league']}
     images = []
     if operation != 'drop':
