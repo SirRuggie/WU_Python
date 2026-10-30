@@ -1,21 +1,34 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import ChannelCombobox from "./ChannelCombobox";
-import type { AnnouncementChannel } from "./announcements";
-import "./ModerationSettings.css";
+import ConfirmDialog from "./ConfirmDialog";
+import ModerationCategoryCard from "./ModerationCategoryCard";
+import ModerationDestinationPicker from "./ModerationDestinationPicker";
 import {
-  changedEvents,
-  cloneEvents,
+  changedSettings,
+  cloneSettings,
+  destinationName,
+  effectiveDestination,
   eventTypes,
   hasInvalidDestination,
+  hasInvalidEventDestination,
+  moderationRegistry,
   moderationSettingsError,
   saveModerationSettings,
+  type CategoryConfig,
+  type CategoryKind,
   type Destination,
   type EventConfig,
-  type EventSettings,
   type ModerationKind,
+  type RouteTarget,
+  type SettingsDraft,
   type SettingsResponse,
 } from "./moderationSettingsModel";
+import "./ModerationSettings.css";
+
+type DialogState =
+  | { type: "test"; event: ModerationKind }
+  | { type: "reload" }
+  | null;
 
 export default function ModerationSettings({
   onDirty,
@@ -23,30 +36,18 @@ export default function ModerationSettings({
   onDirty?: (dirty: boolean) => void;
 }) {
   const [saved, setSaved] = useState<SettingsResponse | null>(null);
-  const [draft, setDraft] = useState<EventSettings | null>(null);
+  const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [dialog, setDialog] = useState<DialogState>(null);
   const request = useRef(0);
   const lastChannels = useRef<Destination[] | null>(null);
-  const channels = useMemo<AnnouncementChannel[]>(
-    () =>
-      (saved?.channels || [])
-        .filter((channel) => channel.can_post)
-        .map((channel) => ({
-          id: channel.id,
-          name: channel.name,
-          type:
-            channel.type === "forum"
-              ? 15
-              : channel.type === "forum_post"
-                ? 11
-                : 0,
-        })),
-    [saved?.channels],
-  );
-  const dirty = !!saved && !!draft && changedEvents(saved.events, draft);
+  const channels = saved?.channels || [];
+  const inventoryAvailable = saved?.channels_available !== false;
+  const dirty = !!saved && !!draft && changedSettings(saved, draft);
+
   useEffect(() => {
     onDirty?.(dirty);
   }, [dirty, onDirty]);
@@ -62,16 +63,16 @@ export default function ModerationSettings({
         "/manage/member-events/settings",
       );
       if (request.current !== id) return;
-      const freshInventory =
+      const fresh =
         result.channels_available !== false && Array.isArray(result.channels);
-      if (freshInventory) lastChannels.current = result.channels || [];
+      if (fresh) lastChannels.current = result.channels || [];
       setSaved({
         ...result,
-        channels: freshInventory
+        channels: fresh
           ? result.channels || []
           : lastChannels.current || result.channels || null,
       });
-      setDraft(cloneEvents(result.events));
+      setDraft(cloneSettings(result));
     } catch (cause) {
       if (request.current !== id) return;
       const failure = moderationSettingsError(cause, "read");
@@ -79,10 +80,8 @@ export default function ModerationSettings({
         lastChannels.current = null;
         setSaved(null);
         setDraft(null);
-        setError(failure.message);
-      } else {
-        setError(failure.message);
       }
+      setError(failure.message);
     } finally {
       if (request.current === id) setLoading(false);
     }
@@ -95,21 +94,49 @@ export default function ModerationSettings({
     };
   }, [load]);
 
-  const update = (kind: ModerationKind, values: Partial<EventConfig>) => {
+  const clearFeedback = () => {
+    setError("");
+    setNotice("");
+  };
+  const updateMain = (value: RouteTarget) => {
+    setDraft((current) => (current ? { ...current, main: value } : current));
+    clearFeedback();
+  };
+  const updateCategory = (
+    category: CategoryKind,
+    values: Partial<CategoryConfig>,
+  ) => {
     setDraft((current) =>
       current
         ? {
             ...current,
-            [kind]: { ...current[kind], ...values },
+            categories: {
+              ...current.categories,
+              [category]: { ...current.categories[category], ...values },
+            },
           }
         : current,
     );
-    setError("");
-    setNotice("");
+    clearFeedback();
+  };
+  const updateEvent = (kind: ModerationKind, values: Partial<EventConfig>) => {
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            events: {
+              ...current.events,
+              [kind]: { ...current.events[kind], ...values },
+            },
+          }
+        : current,
+    );
+    clearFeedback();
   };
 
   const resolveDestination = async (
-    kind: ModerationKind,
+    scope: "main" | "category" | "event",
+    key: string,
     channelId: string,
   ) => {
     if (busy) return;
@@ -135,7 +162,12 @@ export default function ModerationSettings({
             }
           : current,
       );
-      update(kind, { channel_id: channel.id, forum_tag_id: null });
+      const target = { channel_id: channel.id, forum_tag_id: null };
+      if (scope === "main") updateMain(target);
+      else if (scope === "category")
+        updateCategory(key as CategoryKind, target);
+      else updateEvent(key as ModerationKind, target);
+      setNotice(`Found #${channel.name}.`);
     } catch (cause) {
       if (request.current !== id) return;
       const failure = moderationSettingsError(cause, "read");
@@ -151,21 +183,17 @@ export default function ModerationSettings({
     }
   };
 
-  const selectedChannel = (channelId: string | null) =>
-    saved?.channels?.find((channel) => channel.id === channelId);
-
   const invalidDestination =
+    !!draft &&
     !!saved &&
     (saved.channels_available === false ||
-      !draft ||
       hasInvalidDestination(draft, saved.channels));
 
   const save = async () => {
     if (!saved || !draft || !dirty || busy || invalidDestination) return;
     const id = ++request.current;
     setBusy(true);
-    setError("");
-    setNotice("");
+    clearFeedback();
     try {
       const result = await saveModerationSettings(saved, draft);
       if (request.current !== id) return;
@@ -174,37 +202,84 @@ export default function ModerationSettings({
         channels: saved.channels,
         channels_available: saved.channels_available,
         warning: saved.warning,
+        preview_cards: saved.preview_cards,
+        forum_preview_cards: saved.forum_preview_cards,
       });
-      setDraft(cloneEvents(result.events));
+      setDraft(cloneSettings(result));
       setNotice("Moderation settings saved.");
     } catch (cause) {
       if (request.current !== id) return;
       const failure = moderationSettingsError(cause, "save");
-      if (failure.stale) {
-        setError(failure.message);
-      } else if (failure.denied) {
+      if (failure.denied) {
         lastChannels.current = null;
         setSaved(null);
         setDraft(null);
-        setError(failure.message);
-      } else {
-        setError(failure.message);
       }
+      setError(failure.message);
     } finally {
       if (request.current === id) setBusy(false);
     }
   };
 
+  const discard = () => {
+    if (!saved || busy) return;
+    setDraft(cloneSettings(saved));
+    clearFeedback();
+  };
+
   const reloadLatest = () => {
+    if (busy || loading) return;
+    if (dirty) setDialog({ type: "reload" });
+    else void load();
+  };
+
+  const startTest = (kind: ModerationKind) => {
+    if (!saved || !draft || dirty || busy) return;
+    const destination = effectiveDestination(saved, kind);
     if (
-      dirty &&
-      !window.confirm(
-        "Discard your unsaved moderation settings and load the latest saved version?",
-      )
+      !saved.events[kind].enabled ||
+      !destination.target?.channel_id ||
+      hasInvalidEventDestination(saved, kind, saved.channels) ||
+      !inventoryAvailable
     )
       return;
-    void load();
+    setDialog({ type: "test", event: kind });
   };
+
+  const sendTest = async (kind: ModerationKind) => {
+    if (!saved || dirty || busy) return;
+    const id = ++request.current;
+    const revision = saved.revision;
+    setDialog(null);
+    setBusy(true);
+    clearFeedback();
+    setNotice("Sending one test log…");
+    try {
+      await api("/manage/member-events/test", "POST", {
+        event_type: kind,
+        revision,
+      });
+      if (request.current !== id) return;
+      setNotice("Test log sent. Check the saved destination in Discord.");
+    } catch (cause) {
+      if (request.current !== id) return;
+      const failure = moderationSettingsError(cause, "test");
+      if (failure.denied) {
+        lastChannels.current = null;
+        setSaved(null);
+        setDraft(null);
+      }
+      setError(failure.message);
+      setNotice("");
+    } finally {
+      if (request.current === id) setBusy(false);
+    }
+  };
+
+  const testDestination =
+    dialog?.type === "test" && saved
+      ? effectiveDestination(saved, dialog.event).target
+      : null;
 
   return (
     <section
@@ -213,10 +288,10 @@ export default function ModerationSettings({
     >
       <header className="moderation-settings-heading">
         <div>
-          <h2 id="moderation-settings-title">Moderation settings</h2>
+          <h2 id="moderation-settings-title">Log settings</h2>
           <p>
-            Choose notice destinations. History is saved even when Discord
-            posting is off. Use a staff-only channel for kick and ban reasons.
+            Choose where member and moderation notices appear. History remains
+            available when posting is off.
           </p>
         </div>
         <button type="button" onClick={reloadLatest} disabled={loading || busy}>
@@ -227,7 +302,7 @@ export default function ModerationSettings({
       {error && (
         <div className="moderation-settings-error" role="alert">
           <p>{error}</p>
-          {error.includes("changed since you loaded them") && (
+          {error.includes("changed since you loaded") && (
             <button
               type="button"
               disabled={loading || busy}
@@ -256,171 +331,124 @@ export default function ModerationSettings({
       {!loading && !saved && !error && (
         <p>No moderation settings are available.</p>
       )}
+
       {saved && draft && (
         <>
-          {(saved.warning || saved.channels_available === false) && (
+          {(saved.warning || !inventoryAvailable) && (
             <p className="moderation-settings-empty" role="status">
               {saved.warning ||
-                "Channel permissions are unavailable. Existing destinations are shown when known; reload before saving."}
+                "Channel inventory is unavailable. Existing destinations are shown when known; reload before saving or testing."}
             </p>
           )}
-          {saved.channels_available !== false &&
-            (saved.channels || []).length === 0 && (
-              <p className="moderation-settings-empty" role="status">
-                No text channels or forums are listed. Try looking up a forum
-                post ID. Check the bot's server permissions and reload settings.
-              </p>
-            )}
-          <div className="moderation-event-settings">
-            {eventTypes.map(({ key, label, explanation }) => {
-              const value = draft[key];
-              const channel = selectedChannel(value.channel_id);
-              const tags =
-                channel?.type === "forum" ? channel.available_tags : [];
-              const selectableTags = tags.filter(
-                (tag) => !tag.moderated || !!channel?.can_manage_threads,
-              );
-              return (
-                <section
-                  className="moderation-event-setting"
-                  key={key}
-                  aria-labelledby={`moderation-${key}-title`}
-                >
-                  <div className="moderation-event-setting-title">
-                    <div>
-                      <h3 id={`moderation-${key}-title`}>{label}</h3>
-                      <p>{explanation}</p>
-                    </div>
-                    <label className="moderation-event-toggle">
-                      <input
-                        type="checkbox"
-                        checked={value.enabled}
-                        disabled={busy}
-                        onChange={(event) =>
-                          update(key, { enabled: event.target.checked })
-                        }
-                      />
-                      Post to Discord
-                    </label>
-                  </div>
-                  <ChannelCombobox
-                    label={`${label} destination`}
-                    channels={channels}
-                    value={value.channel_id || ""}
-                    disabled={
-                      busy || loading || saved.channels_available === false
-                    }
-                    onResolve={(channelId) =>
-                      void resolveDestination(key, channelId)
-                    }
-                    onChange={(channelId) =>
-                      update(key, {
-                        channel_id: channelId || null,
-                        forum_tag_id:
-                          channelId === value.channel_id
-                            ? value.forum_tag_id
-                            : null,
-                      })
-                    }
-                  />
-                  {channel?.type === "forum_post" && (
-                    <p className="small">
-                      Notices will be replies in this existing forum post.
-                    </p>
-                  )}
-                  {channel?.type === "forum" && (
-                    <label className="moderation-forum-tag">
-                      Forum tag{" "}
-                      {channel.requires_tag ? "(required)" : "(optional)"}
-                      <select
-                        value={value.forum_tag_id || ""}
-                        disabled={busy || selectableTags.length === 0}
-                        onChange={(event) =>
-                          update(key, {
-                            forum_tag_id: event.target.value || null,
-                          })
-                        }
-                      >
-                        <option value="">
-                          {channel.requires_tag
-                            ? "Choose a forum tag"
-                            : "No forum tag"}
-                        </option>
-                        {selectableTags.map((tag) => (
-                          <option key={tag.id} value={tag.id}>
-                            {tag.name}
-                          </option>
-                        ))}
-                      </select>
-                      {tags.length === 0 && channel.requires_tag && (
-                        <small>
-                          This forum requires a tag, but none are available.
-                        </small>
-                      )}
-                      {tags.some((tag) => tag.moderated) &&
-                        !channel.can_manage_threads && (
-                          <small>
-                            Moderated forum tags are unavailable because the bot
-                            cannot manage forum threads.
-                          </small>
-                        )}
-                    </label>
-                  )}
-                  {value.enabled &&
-                    (!channel ||
-                      !channel.can_post ||
-                      (channel.type === "forum" &&
-                        channel.requires_tag &&
-                        (!value.forum_tag_id ||
-                          !selectableTags.some(
-                            (tag) => tag.id === value.forum_tag_id,
-                          ))) ||
-                      (channel?.type === "forum" &&
-                        value.forum_tag_id &&
-                        !selectableTags.some(
-                          (tag) => tag.id === value.forum_tag_id,
-                        ))) && (
-                      <p
-                        className="moderation-destination-warning"
-                        role="status"
-                      >
-                        {channel && !channel.can_post
-                          ? "The bot cannot post in this destination. Choose a channel where it can post."
-                          : channel?.type === "forum" && channel.requires_tag
-                            ? "Choose an available forum tag before enabling this notice."
-                            : "Choose an available destination before enabling this notice."}
-                      </p>
-                    )}
-                  {channel?.type === "forum" &&
-                    value.forum_tag_id &&
-                    tags.some(
-                      (tag) => tag.id === value.forum_tag_id && tag.moderated,
-                    ) &&
-                    !channel.can_manage_threads && (
-                      <p
-                        className="moderation-destination-warning"
-                        role="status"
-                      >
-                        This moderated forum tag requires Manage Threads
-                        permission.
-                      </p>
-                    )}
-                </section>
-              );
-            })}
+          {inventoryAvailable && channels.length === 0 && (
+            <p className="moderation-settings-empty" role="status">
+              No text channels or forums are listed. Check bot permissions or
+              look up a forum post ID.
+            </p>
+          )}
+
+          <div className="moderation-main-route">
+            <h3>Main log channel</h3>
+            <p>
+              Categories and events can use this destination unless you choose
+              an override.
+            </p>
+            <ModerationDestinationPicker
+              label="Main log channel"
+              value={draft.main}
+              channels={channels}
+              disabled={busy || loading || !inventoryAvailable}
+              onResolve={(id) => void resolveDestination("main", "", id)}
+              onChange={updateMain}
+            />
           </div>
+
+          <div className="moderation-category-list">
+            {moderationRegistry
+              .filter(
+                (category) =>
+                  category.key === "members" || category.key === "moderation",
+              )
+              .map((category) => (
+                <ModerationCategoryCard
+                  key={category.key}
+                  category={category.key as CategoryKind}
+                  label={category.label}
+                  icon={category.icon}
+                  events={eventTypes.filter(
+                    (event) => event.category === category.key,
+                  )}
+                  draft={draft}
+                  saved={saved}
+                  channels={channels}
+                  busy={busy}
+                  inventoryAvailable={inventoryAvailable}
+                  dirty={dirty}
+                  onCategory={updateCategory}
+                  onEvent={updateEvent}
+                  onResolve={(scope, key, id) =>
+                    void resolveDestination(scope, key, id)
+                  }
+                  onTest={startTest}
+                />
+              ))}
+          </div>
+
+          {invalidDestination && (
+            <p className="moderation-destination-warning" role="status">
+              An enabled notice needs an available destination and any required
+              forum tag before saving.
+            </p>
+          )}
           <div className="moderation-settings-save">
-            <p>{dirty ? "Unsaved moderation settings" : "All changes saved"}</p>
-            <button
-              className="primary"
-              type="button"
-              disabled={!dirty || busy || loading || invalidDestination}
-              onClick={() => void save()}
-            >
-              {busy ? "Saving…" : "Save moderation settings"}
-            </button>
+            <p>
+              <span
+                className={
+                  dirty ? "moderation-dirty-dot" : "moderation-clean-dot"
+                }
+                aria-hidden="true"
+              />
+              {dirty ? "Unsaved changes" : "All changes saved"}
+            </p>
+            <div>
+              <button type="button" onClick={discard} disabled={!dirty || busy}>
+                Discard
+              </button>
+              <button
+                className="primary"
+                type="button"
+                disabled={!dirty || busy || loading || invalidDestination}
+                onClick={() => void save()}
+              >
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            </div>
           </div>
         </>
+      )}
+
+      {dialog?.type === "reload" && (
+        <ConfirmDialog
+          heading="Discard changes?"
+          text="Discard your unsaved moderation settings and load the latest saved version?"
+          confirmLabel="Discard and reload"
+          danger
+          onCancel={() => setDialog(null)}
+          onConfirm={() => {
+            setDialog(null);
+            void load();
+          }}
+        />
+      )}
+      {dialog?.type === "test" && saved && (
+        <ConfirmDialog
+          heading="Send test log"
+          text={`Post a test log to ${destinationName(testDestination, saved.channels)}?`}
+          confirmLabel="Send one test"
+          disabled={busy || dirty}
+          onCancel={() => setDialog(null)}
+          onConfirm={() => void sendTest(dialog.event)}
+        />
       )}
     </section>
   );

@@ -44,3 +44,7 @@
   outline: 3px solid #a6c8ff;
   outline-offset: 3px;
 }
+
+.moderation-workspace .eyebrow {
+  font-size: 12px;
+}
