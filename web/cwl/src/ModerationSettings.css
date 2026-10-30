@@ -81,18 +81,65 @@
 }
 
 .moderation-category-switch {
+  position: relative;
   display: inline-flex;
   min-height: 44px;
   flex: none;
   align-items: center;
   gap: 8px;
   font-weight: 700;
+  cursor: pointer;
 }
 
-.moderation-category-switch input {
-  width: 22px;
-  height: 22px;
-  accent-color: #e8bf4b;
+.moderation-category-switch input,
+.moderation-event-pill input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.moderation-category-track,
+.moderation-event-pill-track {
+  display: inline-block;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex: none;
+  border: 1px solid #9ba9ba;
+  border-radius: 999px;
+  background: #394454;
+}
+
+.moderation-category-track::after,
+.moderation-event-pill-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e8edf4;
+  transition: transform 150ms ease;
+}
+
+.moderation-category-switch input:checked + .moderation-category-track,
+.moderation-event-pill input:checked + .moderation-event-pill-track {
+  border-color: #f0ce6a;
+  background: #a88224;
+}
+
+.moderation-category-switch input:checked + .moderation-category-track::after,
+.moderation-event-pill input:checked + .moderation-event-pill-track::after {
+  transform: translateX(14px);
+  background: #fff5d6;
+}
+
+.moderation-category-switch:focus-within {
+  outline: 3px solid #a6c8ff;
+  outline-offset: 3px;
+  border-radius: 6px;
 }
 
 .moderation-category-routing {
@@ -163,6 +210,7 @@
 }
 
 .moderation-event-pill {
+  position: relative;
   display: inline-flex;
   min-height: 44px;
   width: fit-content;
@@ -178,31 +226,9 @@
   cursor: pointer;
 }
 
-.moderation-event-pill input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.moderation-event-pill-knob {
-  width: 21px;
-  height: 21px;
-  flex: none;
-  border: 2px solid #d6dfe9;
-  border-radius: 50%;
-  background: #394454;
-}
-
 .moderation-event-pill:has(input:checked) {
   border-color: #e8bf4b;
   background: #493b1e;
-}
-
-.moderation-event-pill:has(input:checked) .moderation-event-pill-knob {
-  border-color: #f0ce6a;
-  background: #e8bf4b;
-  box-shadow: inset 0 0 0 4px #493b1e;
 }
 
 .moderation-event-pill:focus-within {
@@ -321,9 +347,21 @@
 }
 
 .moderation-settings-save .primary {
-  border: 1px solid #91bcff;
-  background: #194d9f;
-  color: #fff;
+  border: 1px solid #f8dc8e;
+  background: #f4cd64;
+  color: #241b08;
+  -webkit-text-fill-color: #241b08;
+}
+
+.moderation-settings-save .primary:hover:not(:disabled) {
+  background: #ffdc7b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moderation-category-track::after,
+  .moderation-event-pill-track::after {
+    transition: none;
+  }
 }
 
 @media (max-width: 600px) {

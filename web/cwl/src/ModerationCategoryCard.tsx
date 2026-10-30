@@ -61,7 +61,10 @@ export default function ModerationCategoryCard({
   );
 
   return (
-    <section className="moderation-category-card" aria-labelledby={`moderation-${category}-title`}>
+    <section
+      className="moderation-category-card"
+      aria-labelledby={`moderation-${category}-title`}
+    >
       <header className="moderation-category-head">
         <h3 id={`moderation-${category}-title`}>
           <span aria-hidden="true">{icon}</span> {label}
@@ -76,11 +79,14 @@ export default function ModerationCategoryCard({
             onChange={(event) =>
               onCategory(category, {
                 mode: event.target.checked
-                  ? config.channel_id ? "own" : "main"
+                  ? config.channel_id
+                    ? "own"
+                    : "main"
                   : "off",
               })
             }
           />
+          <span className="moderation-category-track" aria-hidden="true" />
           <span>{active ? "On" : "Off"}</span>
         </label>
       </header>
@@ -122,17 +128,23 @@ export default function ModerationCategoryCard({
           const channel = channels.find(
             (item) => item.id === effective.target?.channel_id,
           );
-          const sourceName = effective.source === "event"
-            ? "its own"
-            : effective.source === "category"
-              ? `${label}'s`
-              : "main's";
-          const hint = effective.source === "off"
-            ? `${label} is off · no log sent`
-            : `Uses ${sourceName} channel · ${destinationName(effective.target, channels)}`;
+          const sourceName =
+            effective.source === "event"
+              ? "its own"
+              : effective.source === "category"
+                ? `${label}'s`
+                : "main's";
+          const hint =
+            effective.source === "off"
+              ? `${label} is off · no log sent`
+              : `Uses ${sourceName} channel · ${destinationName(effective.target, channels)}`;
           const testDisabled =
-            busy || dirty || !value.enabled || effective.source === "off" ||
-            hasInvalidEventDestination(saved, event.key, channels) || !inventoryAvailable;
+            busy ||
+            dirty ||
+            !value.enabled ||
+            effective.source === "off" ||
+            hasInvalidEventDestination(saved, event.key, channels) ||
+            !inventoryAvailable;
           const selectedOverride = channels.find(
             (item) => item.id === value.channel_id,
           );
@@ -158,7 +170,10 @@ export default function ModerationCategoryCard({
                     onEvent(event.key, { enabled: change.target.checked })
                   }
                 />
-                <span aria-hidden="true" className="moderation-event-pill-knob" />
+                <span
+                  aria-hidden="true"
+                  className="moderation-event-pill-track"
+                />
                 <span aria-hidden="true">{event.icon}</span>
                 <span>{event.label}</span>
               </label>
@@ -179,7 +194,9 @@ export default function ModerationCategoryCard({
                     type="button"
                     aria-expanded={openPreview === event.key}
                     onClick={() =>
-                      setOpenPreview(openPreview === event.key ? null : event.key)
+                      setOpenPreview(
+                        openPreview === event.key ? null : event.key,
+                      )
                     }
                   >
                     Preview
@@ -197,7 +214,11 @@ export default function ModerationCategoryCard({
               </div>
               {openPicker === event.key && (
                 <div className="moderation-event-override">
-                  <div className="moderation-override-options" role="group" aria-label={`${event.label} destination mode`}>
+                  <div
+                    className="moderation-override-options"
+                    role="group"
+                    aria-label={`${event.label} destination mode`}
+                  >
                     <button
                       type="button"
                       aria-pressed={!value.channel_id}
@@ -217,8 +238,12 @@ export default function ModerationCategoryCard({
                       disabled={busy}
                       onClick={() => {
                         if (!value.channel_id) {
-                          const inherited = effectiveDestination(draft, event.key).target;
-                          if (inherited?.channel_id) onEvent(event.key, inherited);
+                          const inherited = effectiveDestination(
+                            draft,
+                            event.key,
+                          ).target;
+                          if (inherited?.channel_id)
+                            onEvent(event.key, inherited);
                         }
                       }}
                     >
@@ -241,7 +266,10 @@ export default function ModerationCategoryCard({
               {openPreview === event.key && (
                 <div className="moderation-event-preview">
                   <h4>{event.label} preview</h4>
-                  <ModerationPreviewCard payload={preview} forum={forumPreview} />
+                  <ModerationPreviewCard
+                    payload={preview}
+                    forum={forumPreview}
+                  />
                 </div>
               )}
             </div>
