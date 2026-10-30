@@ -56,6 +56,9 @@ export default function ModerationCategoryCard({
   const [openPreview, setOpenPreview] = useState<ModerationKind | null>(null);
   const config = draft.categories[category];
   const active = config.mode !== "off";
+  const hasChannel = events.some(
+    (event) => effectiveDestination(draft, event.key).target?.channel_id,
+  );
   const previousMode = useRef<"main" | "own">(
     config.mode === "own" ? "own" : "main",
   );
@@ -89,7 +92,13 @@ export default function ModerationCategoryCard({
             }
           />
           <span className="moderation-category-track" aria-hidden="true" />
-          <span>{active ? "On" : "Off"}</span>
+          <span>
+            {!active
+              ? "Off"
+              : hasChannel
+                ? "On"
+                : "Not posting — no channel set"}
+          </span>
         </label>
       </header>
       <div className="moderation-category-routing">
@@ -139,11 +148,14 @@ export default function ModerationCategoryCard({
           const hint =
             effective.source === "off"
               ? `${label} is off · no log sent`
-              : `Uses ${sourceName} channel · ${destinationName(effective.target, channels)}`;
+              : !effective.target?.channel_id
+                ? "Not posting — no channel set"
+                : `Uses ${sourceName} channel · ${destinationName(effective.target, channels)}`;
           const testDisabled =
             busy ||
             dirty ||
             !value.enabled ||
+            !effective.target?.channel_id ||
             effective.source === "off" ||
             hasInvalidEventDestination(saved, event.key, channels) ||
             !inventoryAvailable;
@@ -206,12 +218,21 @@ export default function ModerationCategoryCard({
                   <button
                     type="button"
                     disabled={testDisabled}
-                    title={dirty ? "Save changes first" : undefined}
+                    title={
+                      !effective.target?.channel_id
+                        ? "Choose a channel first"
+                        : dirty
+                          ? "Save changes first"
+                          : undefined
+                    }
                     onClick={() => onTest(event.key)}
                   >
                     Send test
                   </button>
                 </div>
+                {!effective.target?.channel_id && (
+                  <small>Choose a channel first</small>
+                )}
                 {dirty && <small>Save changes first to send a test.</small>}
               </div>
               {openPicker === event.key && (

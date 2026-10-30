@@ -12,23 +12,36 @@ API = '/api/cwl/manage'
 GUILD_ID = 644963518025826315
 
 
+async def mongo_lifecycle(app):
+    """Own one lazy dashboard Mongo pool; close it once during app cleanup."""
+    app['server_management_owned_mongo'] = None
+    try:
+        yield
+    finally:
+        client = app.get('server_management_owned_mongo')
+        if client is not None:
+            await client.close()
+
+
 @asynccontextmanager
 async def mongo(request):
-    injected = request.app.get('server_management_mongo')
-    if injected is not None:
-        yield injected
-        return
-    uri = os.getenv('MONGODB_URI', '').strip()
-    if not uri:
-        raise web.HTTPServiceUnavailable(text='Server settings are not connected.')
     from pymongo.errors import PyMongoError
-    client = MongoClient(uri, serverSelectionTimeoutMS=5000, timeoutMS=15000)
+    client = request.app.get('server_management_mongo')
     try:
+        if client is None:
+            client = request.app.get('server_management_owned_mongo')
+            if client is None:
+                uri = os.getenv('MONGODB_URI', '').strip()
+                if not uri:
+                    raise web.HTTPServiceUnavailable(text='Server settings are not connected.')
+                # Construction has no await: concurrent requests cannot create a
+                # second pool between this lookup and assignment. Permissions
+                # are still checked for each request, never cached with the pool.
+                client = MongoClient(uri, serverSelectionTimeoutMS=5000, timeoutMS=15000)
+                request.app['server_management_owned_mongo'] = client
         yield client
     except PyMongoError as exc:
         raise web.HTTPServiceUnavailable(text='Server settings are unavailable. Try again shortly.') from exc
-    finally:
-        await client.close()
 
 
 class DiscordDeliveryUncertain(Exception):
@@ -67,12 +80,7 @@ async def discord(request, method, path, *, roster_delivery=False, **kwargs):
         raise web.HTTPServiceUnavailable(text='Discord is unavailable. Try again shortly.') from exc
 
 
-async def identity(request):
-    from .app import _require
-    session = _require(request)
-    if 'manage_identity' in request:
-        return request['manage_identity']
-    uid = session['user_id']
+async def _discord_identity(request, uid):
     member, roles, guild = await asyncio.gather(
         discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{uid}'),
         discord(request, 'GET', f'/guilds/{GUILD_ID}/roles'),
@@ -85,8 +93,22 @@ async def identity(request):
     owner = str(guild.get('owner_id')) == uid
     if owner:
         permissions |= 8
-    result = {'user_id': uid, 'role_ids': role_ids, 'permissions': permissions,
+    return {'user_id': uid, 'role_ids': role_ids, 'permissions': permissions,
               'guild_owner': owner, 'member': member, 'roles': roles, 'guild': guild}
+
+
+async def identity(request, *, cached_read=False):
+    from .app import _require
+    from .manage_identity_cache import read
+    session = _require(request)
+    if "manage_identity" in request:
+        return request["manage_identity"]
+    uid = session["user_id"]
+    if cached_read:
+        raw = await read(request.app, uid, lambda: _discord_identity(request, uid))
+    else:
+        raw = await _discord_identity(request, uid)
+    result = dict(raw)  # Per-request scopes must never enter the identity cache.
     from .access_control import request_scopes
     from .app import _store
     result['dashboard'] = True
@@ -128,7 +150,11 @@ async def allowed(actor, section, db, *, write=False):
 
 
 async def require_manage(request, section, *, write=False):
-    actor = await identity(request)
+    from .manage_identity_cache import eligible
+    if not write and section == "roles" and eligible(request):
+        actor = await identity(request, cached_read=True)
+    else:
+        actor = await identity(request)
     async with mongo(request) as db:
         if not await allowed(actor, section, db, write=write):
             raise web.HTTPForbidden(text='You do not have access to this dashboard area. Ask a server owner.')

@@ -613,7 +613,10 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["user"], {"id": "300", "username": "owner_handle", "display_name": "Current owner",
                                            "avatar_url": "https://cdn.discordapp.com/avatars/300/a_0123456789abcdef0123456789abcdef.gif"})
 
+        self.app["moderation_identity_reads"] = {session["user_id"]: object(), "other-user": object()}
         signed_out = await self.call("POST", "/auth/logout", {"Cookie": "cwl_session=" + raw, "X-CSRF-Token": session["csrf"]}, json={})
+        self.assertNotIn(session["user_id"], self.app["moderation_identity_reads"])
+        self.assertIn("other-user", self.app["moderation_identity_reads"])
         self.assertEqual(signed_out.status, 200)
         reused = await self.call("GET", "/auth/me", {"Cookie": "cwl_session=" + raw})
         self.assertEqual(reused.status, 401)

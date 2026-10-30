@@ -1,5 +1,6 @@
 """Loopback-only moderation settings/history fixture; all Discord calls are fake."""
 import json
+import base64
 import hashlib
 import os
 import sys
@@ -110,7 +111,7 @@ for index, (kind, name, reason, moderator) in enumerate([
         "_id": row_id, "event_key": f"sample:{kind}", "guild_id": GUILD_ID,
         "user_id": str(123456789012345678 + index), "event_type": kind,
         "display_name": name, "username": name.lower().replace(" ", "_"),
-        "avatar": None, "avatar_type": None,
+        "avatar": base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1sAAAAASUVORK5CYII="), "avatar_type": "image/png",
         "occurred_at": now - timedelta(hours=index),
         "joined_at": now - timedelta(days=300), "reason": reason,
         "moderator_id": moderator, "delivery_status": "sent",

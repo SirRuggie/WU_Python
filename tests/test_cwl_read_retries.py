@@ -46,13 +46,13 @@ class ReadRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result),2);self.assertEqual(calls.count('#P2Y'),1);self.assertEqual(calls.count('#Q2Y'),2)
 
     async def test_exhausted_marker_reaches_browser(self):
-        from types import SimpleNamespace
+        from aiohttp.test_utils import make_mocked_request
         from cwl_web.app import errors
         from cwl_web.issues import diagnostics
         for attribute in ['read_retries_exhausted','read_retry_blocked']:
             error=ProviderUnavailable('Unavailable');setattr(error,attribute,True)
             async def handler(request):raise error
-            request=SimpleNamespace(path='/api/cwl/linked-accounts',method='GET')
+            request=make_mocked_request('GET','/api/cwl/linked-accounts')
             async def adapted(request):return await errors(request,handler)
             with patch('cwl_web.issues.record',new_callable=AsyncMock,return_value='test-reference'):
                 response=await diagnostics(request,adapted)
