@@ -273,3 +273,29 @@ it("restores the last active mode despite a retained own channel", async () => {
   await act(async () => toggle.click());
   expect(mode.value).toBe("main");
 });
+it("shows the missing effective channel without changing enabled settings", async () => {
+  transport.mockImplementation(async () => ({
+    ...structuredClone(fixture),
+    main: { channel_id: null, forum_tag_id: null },
+  }));
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<ModerationSettings />));
+  await settle();
+  const card = [...host.querySelectorAll(".moderation-category-card")].find(
+    (el) => el.textContent?.includes("Kicks"),
+  )!;
+  expect(
+    card.querySelector(".moderation-category-switch")?.textContent,
+  ).toContain("Not posting — no channel set");
+  expect(card.querySelectorAll(".moderation-event-row")).toHaveLength(2);
+  for (const row of card.querySelectorAll(".moderation-event-row"))
+    expect(row.textContent).toContain("Not posting — no channel set");
+  expect(
+    card.querySelector<HTMLInputElement>('[aria-label="Moderation logging"]')
+      ?.checked,
+  ).toBe(true);
+  expect(
+    transport.mock.calls.filter(([, method]) => method === "PUT"),
+  ).toHaveLength(0);
+});

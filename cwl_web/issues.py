@@ -54,7 +54,7 @@ async def diagnostics(request, handler):
                                  headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
     # Expected session probes and routine validation are not incidents.
     if response.status >= 500 or (request.method not in ('GET', 'HEAD', 'OPTIONS') and response.status >= 400):
-        reference = await record(request, 'service_unavailable' if response.status >= 500 else 'action_rejected', response.status)
+        reference = await record(request, 'service_unavailable' if response.status >= 500 else 'action_rejected', response.status, error_type=request.get('dashboard_error_type'))
         if response.content_type == 'application/json':
             try:
                 data = json.loads(response.text)

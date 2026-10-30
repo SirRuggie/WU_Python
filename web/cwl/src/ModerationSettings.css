@@ -393,3 +393,17 @@
     flex-wrap: wrap;
   }
 }
+
+.moderation-category-head {
+  flex-wrap: wrap;
+}
+
+.moderation-category-switch {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.moderation-category-switch > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

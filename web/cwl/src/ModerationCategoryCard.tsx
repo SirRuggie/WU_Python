@@ -56,6 +56,9 @@ export default function ModerationCategoryCard({
   const [openPreview, setOpenPreview] = useState<ModerationKind | null>(null);
   const config = draft.categories[category];
   const active = config.mode !== "off";
+  const hasChannel = events.some(
+    (event) => effectiveDestination(draft, event.key).target?.channel_id,
+  );
   const previousMode = useRef<"main" | "own">(
     config.mode === "own" ? "own" : "main",
   );
@@ -89,7 +92,13 @@ export default function ModerationCategoryCard({
             }
           />
           <span className="moderation-category-track" aria-hidden="true" />
-          <span>{active ? "On" : "Off"}</span>
+          <span>
+            {!active
+              ? "Off"
+              : hasChannel
+                ? "On"
+                : "Not posting — no channel set"}
+          </span>
         </label>
       </header>
       <div className="moderation-category-routing">
@@ -139,7 +148,9 @@ export default function ModerationCategoryCard({
           const hint =
             effective.source === "off"
               ? `${label} is off · no log sent`
-              : `Uses ${sourceName} channel · ${destinationName(effective.target, channels)}`;
+              : !effective.target?.channel_id
+                ? "Not posting — no channel set"
+                : `Uses ${sourceName} channel · ${destinationName(effective.target, channels)}`;
           const testDisabled =
             busy ||
             dirty ||

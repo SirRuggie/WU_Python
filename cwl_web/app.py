@@ -1807,6 +1807,10 @@ async def errors(request, handler):
         if getattr(exc, "read_retries_exhausted", False) or getattr(exc, "read_retry_blocked", False):
             response.headers["X-Read-Retries-Exhausted"] = "1"
     except web.HTTPException as exc:
+        if exc.status >= 500:
+            # Preserve only the underlying class, never provider text or credentials.
+            cause = exc.__cause__ or exc
+            request["dashboard_error_type"] = type(cause).__name__
         if isinstance(exc, web.HTTPRedirection):
             if request.path.startswith(API):
                 exc.headers["Cache-Control"] = "no-store"
@@ -1835,6 +1839,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     if dev_fixture and dev_identity is None:
         dev_identity = {"id": PERMANENT_OWNER_ID, "username": "Development owner", "guild_owner": False}
     app = web.Application(middlewares=[diagnostics, errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
+    from .server_management import mongo_lifecycle
+    app.cleanup_ctx.append(mongo_lifecycle)
     app["store"] = Store(db_path, durability=durability)
     app["live_access"] = live_access
     if dev_fixture and providers is None:

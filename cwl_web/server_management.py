@@ -12,23 +12,36 @@ API = '/api/cwl/manage'
 GUILD_ID = 644963518025826315
 
 
+async def mongo_lifecycle(app):
+    """Own one lazy dashboard Mongo pool; close it once during app cleanup."""
+    app['server_management_owned_mongo'] = None
+    try:
+        yield
+    finally:
+        client = app.get('server_management_owned_mongo')
+        if client is not None:
+            await client.close()
+
+
 @asynccontextmanager
 async def mongo(request):
-    injected = request.app.get('server_management_mongo')
-    if injected is not None:
-        yield injected
-        return
-    uri = os.getenv('MONGODB_URI', '').strip()
-    if not uri:
-        raise web.HTTPServiceUnavailable(text='Server settings are not connected.')
     from pymongo.errors import PyMongoError
-    client = MongoClient(uri, serverSelectionTimeoutMS=5000, timeoutMS=15000)
+    client = request.app.get('server_management_mongo')
     try:
+        if client is None:
+            client = request.app.get('server_management_owned_mongo')
+            if client is None:
+                uri = os.getenv('MONGODB_URI', '').strip()
+                if not uri:
+                    raise web.HTTPServiceUnavailable(text='Server settings are not connected.')
+                # Construction has no await: concurrent requests cannot create a
+                # second pool between this lookup and assignment. Permissions
+                # are still checked for each request, never cached with the pool.
+                client = MongoClient(uri, serverSelectionTimeoutMS=5000, timeoutMS=15000)
+                request.app['server_management_owned_mongo'] = client
         yield client
     except PyMongoError as exc:
         raise web.HTTPServiceUnavailable(text='Server settings are unavailable. Try again shortly.') from exc
-    finally:
-        await client.close()
 
 
 class DiscordDeliveryUncertain(Exception):
