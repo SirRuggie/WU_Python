@@ -21,7 +21,7 @@ random tag. Existing permission boundaries remain in place.
 
 Legacy manual and clan values are resolved by timezone-aware saved instant;
 equal instants favor the clan ledger. No legacy rows/events are deleted or
-rewritten. The October 30 read-only backup audit found 41 legacy rows and 350
+rewritten. The October 30 read-only backup audit found 42 legacy rows and 350
 clan rows, no missing/naive timestamps, zero overlaps and zero effective-weight
 changes. Repeat this audit from the fresh release backup at activation.
 

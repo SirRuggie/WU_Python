@@ -6,7 +6,7 @@ Prompt 39 reverses the FWA popup link-only rule: roster Details and Clan weights
 share explicit Save/Clear, parsing, history and revision checks. See
 [the weight contract](clan-weight-trial.md). Backend release required for shared
 write handling and the history source column; no production activation yet.
-Read-only backup audit: 41 legacy / 350 clan rows, zero overlaps or changed
+Read-only backup audit: 42 legacy / 350 clan rows, zero overlaps or changed
 values, all timestamps reliable. Source and history rows are retained.
 
 
