@@ -414,3 +414,13 @@ The isolated browser checks cover 360×800 and 1440×1000: import/result copy,
 compact detail controls, row actions, focus return, discard confirmation, errors,
 44px targets, minimum 12px text, contrast and horizontal overflow. No live
 notifications or production writes are part of these checks.
+
+Prompt 41 completes shared singular/plural count labels, including history-only
+records and selected records. On phone account details the tracking box is hidden
+and Players, Status and Add strike share one row; desktop remains unchanged.
+The browser regression requires three complete visible rows and a first row at
+or above 560px at 360×800.
+
+Import counters retain one documented overlap: if another request inserts an
+excluded candidate after preview, it counts as both submitted excluded and an
+observed duplicate. No row is inserted by that excluded selection.

@@ -1043,11 +1043,18 @@
 }
 
 @media (max-width: 480px) {
+  .strikes-player-detail .strikes-tracking {
+    display: none;
+  }
   .strikes-toolbar.strikes-toolbar-player {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
-  .strikes-toolbar-player > button:first-child {
-    grid-column: 1 / -1;
+  .strikes-toolbar.strikes-toolbar-player > label {
+    min-width: 0;
+  }
+  .strikes-toolbar.strikes-toolbar-player > button {
+    padding-inline: 8px;
+    font-size: 13px;
   }
 }

@@ -270,27 +270,28 @@ it.each([
 it.each([1, 2])(
   "shows selected import counts for %s strikes and reports actual duplicate/history outcomes",
   async (count) => {
-    const entries = [...Array(count).fill(true), false].map(
-      (will_strike, i) => ({
-        key: `entry${i}`,
-        player_tag: `#P${i}Y`,
-        player_name: "Aspen",
-        clan_name: "Oak",
-        war_end: "2026-10-01T00:00:00Z",
-        missed_attacks: will_strike ? 2 : 1,
-        will_strike,
-      }),
-    );
+    const entries = [
+      ...Array(count).fill(true),
+      ...Array(count).fill(false),
+    ].map((will_strike, i) => ({
+      key: `entry${i}`,
+      player_tag: `#P${i}Y`,
+      player_name: "Aspen",
+      clan_name: "Oak",
+      war_end: "2026-10-01T00:00:00Z",
+      missed_attacks: will_strike ? 2 : 1,
+      will_strike,
+    }));
     sessionStorage.setItem(
       "wu:strikes:import:1",
       JSON.stringify({
         preview: {
           preview_id: "preview",
           wars_scanned: 3,
-          complete_wars: 3,
-          incomplete_wars: 0,
+          complete_wars: count,
+          incomplete_wars: count,
           entries,
-          coverage: [],
+          coverage: [{ clan_name: "Oak", wars: count, skipped: count }],
         },
         excluded: [],
       }),
@@ -311,7 +312,7 @@ it.each([1, 2])(
     await render(<StrikesWorkspace permissions={[]} isOwner userId="1" />);
     await settle();
     expect(host.textContent).toContain(
-      `Adds ${count} ${count === 1 ? "strike" : "strikes"} to ${count} ${count === 1 ? "account" : "accounts"} · 1 history-only`,
+      `Adds ${count} ${count === 1 ? "strike" : "strikes"} to ${count} ${count === 1 ? "account" : "accounts"} · ${count} history-only ${count === 1 ? "record" : "records"}`,
     );
     const disclosure = [...host.querySelectorAll("details")].find((node) =>
       node
@@ -319,11 +320,30 @@ it.each([1, 2])(
         ?.textContent?.includes("Review selected records"),
     )!;
     expect(disclosure.open).toBe(false);
+    expect(host.textContent).toContain(
+      `${count} complete ${count === 1 ? "war" : "wars"}`,
+    );
+    expect(host.textContent).toContain(
+      `${count} skipped ${count === 1 ? "war" : "wars"}`,
+    );
+    expect(host.querySelector(".strikes-coverage")?.textContent).toContain(
+      `${count} ${count === 1 ? "war" : "wars"}`,
+    );
+    const boxes = [
+      ...host.querySelectorAll<HTMLInputElement>(
+        ".strikes-import-review input[type=checkbox]",
+      ),
+    ];
+    await act(async () => boxes.slice(count).forEach((box) => box.click()));
+    expect(host.textContent).toContain(
+      `${count} ${count === 1 ? "record" : "records"} selected`,
+    );
+
     expect(host.textContent).toContain("ClashKing (import)");
     await click(`Add ${count} ${count === 1 ? "strike" : "strikes"}`);
     expect(transport).toHaveBeenCalledWith("/strikes/import/apply", "POST", {
       preview_id: "preview",
-      excluded_keys: [],
+      excluded_keys: entries.slice(count).map((entry) => entry.key),
     });
     expect(host.textContent).toContain(
       "1 strike added · 1 skipped as duplicate · 1 history-only",
@@ -532,6 +552,53 @@ it.each([1, 6, 7, 8])(
       host.querySelector(".strike-account-action")?.textContent?.trim() || "";
     expect(label).toBe(
       count < 7 ? "" : count === 7 ? "Limit reached (7)" : "Over limit (7)",
+    );
+  },
+);
+
+it.each([1, 3])(
+  "renders %s account, record, and total strike labels",
+  async (count) => {
+    transport.mockImplementation(async (path: string) => {
+      if (path.startsWith("/strikes/accounts"))
+        return {
+          total: count,
+          strike_limit: 7,
+          summary: { over_limit: 0, new_this_week: 0 },
+          clans: [],
+          accounts: [
+            {
+              player_tag: "#P2Y",
+              player_name: "Count player",
+              active_strikes: count,
+              total_strikes: count,
+            },
+          ],
+        };
+      if (path.startsWith("/strikes/overview"))
+        return { total: count, entries: [], clans: [] };
+      return { members: [] };
+    });
+    await render(
+      <StrikesWorkspace
+        permissions={["strikes_remove"]}
+        isOwner={false}
+        userId="1"
+      />,
+    );
+    await settle();
+    expect(host.querySelector(".strikes-list-head")?.textContent).toContain(
+      `${count} ${count === 1 ? "account" : "accounts"}`,
+    );
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>("[data-strike-player]")!.click(),
+    );
+    await settle();
+    expect(host.querySelector(".strikes-list-head")?.textContent).toContain(
+      `${count} ${count === 1 ? "record" : "records"}`,
+    );
+    expect(host.textContent).toContain(
+      `${count} total ${count === 1 ? "strike" : "strikes"}`,
     );
   },
 );

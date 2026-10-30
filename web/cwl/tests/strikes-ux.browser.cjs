@@ -45,6 +45,16 @@ fs.mkdirSync(output, { recursive: true });
             height: e.getBoundingClientRect().height,
           })),
       }));
+      if (width === 360 && name === "detail") {
+        const visibleRows = await p.locator(".strike-compact-row").evaluateAll(
+          (rows) => rows.filter((row) => {
+            const rect = row.getBoundingClientRect();
+            return rect.top >= 0 && rect.bottom <= innerHeight;
+          }).length,
+        );
+        if (m.firstRowY > 560 || visibleRows < 3)
+          throw Error("phone detail must show at least three strike rows");
+      }
       if (m.scrollWidth > width) throw Error("overflow " + name);
       if (m.small.length)
         throw Error("small target " + name + JSON.stringify(m.small));
