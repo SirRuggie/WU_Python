@@ -35,6 +35,7 @@ export type SettingsResponse = SettingsDraft & {
   channels?: Destination[] | null;
   channels_available?: boolean;
   warning?: string | null;
+  preview_names?: Record<string, string>;
   preview_cards?: Partial<Record<ModerationKind, unknown>>;
   forum_preview_cards?: Partial<Record<ModerationKind, unknown>>;
 };

@@ -170,6 +170,10 @@ A save in the narrow interval after the final revision read and before the POST
 could still send a sample to the previously confirmed destination; there is no
 cross-service transaction covering Mongo and Discord.
 
+Historical accepted revision `91c94c3` passed **4,863 backend / 923 frontend**
+tests. Those counts describe that reviewed revision, not the later integrated
+release.
+
 Final integrated verification passed 4,863 backend tests, 21 skipped and 162
 subtests, plus 933 frontend tests, TypeScript/build. Clean final-tag frontend
 checks passed again; the tag differed only in three documentation files from
@@ -180,3 +184,29 @@ Release backups, protected-state comparisons, public hashes and runtime checks
 are recorded in the linked release record. Current-invocation journals were
 clean; the old bot's shutdown CancelledError was excluded from new-process
 readiness. No real Discord Send test has been performed by this release workflow.
+
+
+## Moderation polish follow-up
+
+History resolves unique moderator IDs through the existing Discord member adapter,
+with at most three concurrent requests and a three-second page budget. Names are
+cached per application and guild for 120 seconds (unknown results for 30 seconds),
+with a 256-entry bound. Unknown members remain visibly unknown; IDs are hover
+metadata. Sample previews render member names while retaining the real Discord
+payload used for delivery. Category toggles remember the last active destination
+mode in the current editor session. A fresh page with a saved Off category starts
+with Main because no prior mode is stored in the existing schema.
+
+A revision recheck that cancels a test before posting releases only its own rate
+claim. Sent and uncertain attempts retain the ten-second slot. The cancelled audit
+record remains. Older rate records need no migration; their existing expiry works.
+
+Avatar diagnosis: this endpoint reads archived Mongo bytes; it does not fetch a
+Discord avatar. Confirmed missing/empty/unsupported images now return 204 and are
+negatively cached for 30 seconds, bounded to 128 guild/event keys per application.
+Every request still checks current staff authorization before using the cache.
+Mongo and authorization outages remain genuine 503 responses. A simulated Mongo
+server-selection failure reproduces the actual helper's 503 conversion. This
+identifies a possible failure path, **not the proven cause of the three historical
+production 503s**; no production tracing or requests were performed for this
+follow-up. The client uses its existing initials fallback on an empty image.

@@ -9,11 +9,13 @@ const children = (value: unknown): unknown[] =>
 const text = (value: unknown): string =>
   typeof value === "string" ? value : "";
 
-function discordText(value: string): ReactNode {
+function discordText(value: string, names: Record<string, string>): ReactNode {
   return value.split("\n").map((line, lineIndex) => {
     const heading = line.startsWith("### ");
     const content = heading ? line.slice(4) : line;
-    const parts = content.split(/(\*\*[^*]+\*\*|<@!?\d+>|<t:\d+:[fFR]>)/g);
+    const parts = content.split(
+      /(\*\*[^*]+\*\*|<@!?\d+>|<t:\d+:[fFR]>|ID \d+)/g,
+    );
     const rendered = parts.map((part, index) => {
       if (part.startsWith("**") && part.endsWith("**")) {
         return <strong key={index}>{part.slice(2, -2)}</strong>;
@@ -21,11 +23,22 @@ function discordText(value: string): ReactNode {
       const mention = /^<@!?(\d+)>$/.exec(part);
       if (mention) {
         return (
-          <span key={index} className="moderation-preview-mention">
-            @{mention[1]}
+          <span
+            key={index}
+            className="moderation-preview-mention"
+            title={mention[1]}
+          >
+            {names[mention[1]] || "Unknown member"}
           </span>
         );
       }
+      const identity = /^ID (\d+)$/.exec(part);
+      if (identity)
+        return (
+          <span key={index} title={identity[1]}>
+            Member
+          </span>
+        );
       const stamp = /^<t:(\d+):([fFR])>$/.exec(part);
       if (stamp) {
         const date = new Date(Number(stamp[1]) * 1000);
@@ -75,7 +88,11 @@ function profileButton(component: Json, key: number): ReactNode {
   );
 }
 
-function renderComponent(value: unknown, key: number): ReactNode {
+function renderComponent(
+  value: unknown,
+  key: number,
+  names: Record<string, string>,
+): ReactNode {
   if (!record(value)) return null;
   switch (value.type) {
     case 17: {
@@ -87,14 +104,20 @@ function renderComponent(value: unknown, key: number): ReactNode {
         : undefined;
       return (
         <div className="moderation-preview-container" style={style} key={key}>
-          {children(value.components).map(renderComponent)}
+          {children(value.components).map((item, index) =>
+            renderComponent(item, index, names),
+          )}
         </div>
       );
     }
     case 9:
       return (
         <div className="moderation-preview-section" key={key}>
-          <div>{children(value.components).map(renderComponent)}</div>
+          <div>
+            {children(value.components).map((item, index) =>
+              renderComponent(item, index, names),
+            )}
+          </div>
           <span
             className="moderation-preview-avatar"
             aria-label="Sample member avatar"
@@ -106,7 +129,7 @@ function renderComponent(value: unknown, key: number): ReactNode {
     case 10:
       return (
         <p className="moderation-preview-text" key={key}>
-          {discordText(text(value.content))}
+          {discordText(text(value.content), names)}
         </p>
       );
     case 14:
@@ -114,7 +137,9 @@ function renderComponent(value: unknown, key: number): ReactNode {
     case 1:
       return (
         <div className="moderation-preview-actions" key={key}>
-          {children(value.components).map(renderComponent)}
+          {children(value.components).map((item, index) =>
+            renderComponent(item, index, names),
+          )}
         </div>
       );
     case 2:
@@ -124,7 +149,10 @@ function renderComponent(value: unknown, key: number): ReactNode {
   }
 }
 
-function renderForumEmbed(payload: Json): ReactNode {
+function renderForumEmbed(
+  payload: Json,
+  names: Record<string, string>,
+): ReactNode {
   const embed = children(payload.embeds).find(record);
   if (!embed) return null;
   const accent = Number(embed.color);
@@ -137,7 +165,7 @@ function renderForumEmbed(payload: Json): ReactNode {
     <div className="moderation-preview-container" style={style}>
       <strong className="moderation-preview-title">{text(embed.title)}</strong>
       {typeof embed.description === "string" && (
-        <p>{discordText(embed.description)}</p>
+        <p>{discordText(embed.description, names)}</p>
       )}
       {children(embed.fields)
         .filter(record)
@@ -145,14 +173,16 @@ function renderForumEmbed(payload: Json): ReactNode {
           <p key={index}>
             <strong>{text(field.name)}</strong>
             <br />
-            {discordText(text(field.value))}
+            {discordText(text(field.value), names)}
           </p>
         ))}
       {record(embed.footer) && (
-        <small>{discordText(text(embed.footer.text))}</small>
+        <small>{discordText(text(embed.footer.text), names)}</small>
       )}
       <div className="moderation-preview-actions">
-        {children(payload.components).map(renderComponent)}
+        {children(payload.components).map((item, index) =>
+          renderComponent(item, index, names),
+        )}
       </div>
     </div>
   );
@@ -161,14 +191,18 @@ function renderForumEmbed(payload: Json): ReactNode {
 export default function ModerationPreviewCard({
   payload,
   forum = false,
+  names = {},
 }: {
   payload: unknown;
   forum?: boolean;
+  names?: Record<string, string>;
 }) {
   if (!record(payload)) return <p>Preview unavailable.</p>;
   const display = forum
-    ? renderForumEmbed(payload)
-    : children(payload.components).map(renderComponent);
+    ? renderForumEmbed(payload, names)
+    : children(payload.components).map((item, index) =>
+        renderComponent(item, index, names),
+      );
   return (
     <div
       className="moderation-preview-card"

@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import ModerationDestinationPicker from "./ModerationDestinationPicker";
 import ModerationPreviewCard from "./ModerationPreviewCard";
 import {
@@ -56,6 +56,12 @@ export default function ModerationCategoryCard({
   const [openPreview, setOpenPreview] = useState<ModerationKind | null>(null);
   const config = draft.categories[category];
   const active = config.mode !== "off";
+  const previousMode = useRef<"main" | "own">(
+    config.mode === "own" ? "own" : "main",
+  );
+  useEffect(() => {
+    if (config.mode !== "off") previousMode.current = config.mode;
+  }, [config.mode]);
   const selectedCategoryChannel = channels.find(
     (channel) => channel.id === config.channel_id,
   );
@@ -78,11 +84,7 @@ export default function ModerationCategoryCard({
             disabled={busy}
             onChange={(event) =>
               onCategory(category, {
-                mode: event.target.checked
-                  ? config.channel_id
-                    ? "own"
-                    : "main"
-                  : "off",
+                mode: event.target.checked ? previousMode.current : "off",
               })
             }
           />
@@ -268,6 +270,7 @@ export default function ModerationCategoryCard({
                   <h4>{event.label} preview</h4>
                   <ModerationPreviewCard
                     payload={preview}
+                    names={saved.preview_names}
                     forum={forumPreview}
                   />
                 </div>

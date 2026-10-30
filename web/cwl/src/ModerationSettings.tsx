@@ -202,6 +202,7 @@ export default function ModerationSettings({
         channels: saved.channels,
         channels_available: saved.channels_available,
         warning: saved.warning,
+        preview_names: saved.preview_names,
         preview_cards: saved.preview_cards,
         forum_preview_cards: saved.forum_preview_cards,
       });

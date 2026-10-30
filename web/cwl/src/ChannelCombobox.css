@@ -1,0 +1,22 @@
+/* Keep the keyboard instruction available to aria-describedby on touch devices. */
+.channel-combobox .channel-keyboard-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (pointer: fine) {
+  .channel-combobox .channel-keyboard-hint {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+}

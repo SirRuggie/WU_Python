@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type KeyboardEvent } from "react";
 import type { AnnouncementChannel } from "./announcements";
 import { filterChannels } from "./channelSearch";
+import "./ChannelCombobox.css";
 
 type Props = {
   label: string;
@@ -103,11 +104,7 @@ export default function ChannelCombobox({
           aria-controls={listId}
           aria-activedescendant={activeOption}
           aria-describedby={hintId}
-          placeholder={
-            onResolve
-              ? "Search channel, forum post, or ID"
-              : "Search channel name or ID"
-          }
+          placeholder="Search channels and forum posts"
           value={query}
           disabled={disabled}
           onFocus={() => {
@@ -139,7 +136,9 @@ export default function ChannelCombobox({
         {onResolve
           ? "Search active forum posts and channels, or paste a post ID and choose Look up. "
           : "Type part of a channel name or ID. "}
-        Use arrow keys and Enter to choose; Escape closes results.
+        <span className="channel-keyboard-hint">
+          Use arrow keys and Enter to choose; Escape closes results.
+        </span>
       </small>
       {open && !disabled && (
         <div
