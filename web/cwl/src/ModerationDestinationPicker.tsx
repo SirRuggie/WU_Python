@@ -80,9 +80,7 @@ export default function ModerationDestinationPicker({
           )}
           {tags.some((tag) => tag.moderated) &&
             !selected.can_manage_threads && (
-              <small>
-                Moderated tags require Manage Threads permission.
-              </small>
+              <small>Moderated tags require Manage Threads permission.</small>
             )}
         </label>
       )}

@@ -59,7 +59,9 @@ export default function ModerationSettings({
     setError("");
     setNotice("");
     try {
-      const result = await api<SettingsResponse>("/manage/member-events/settings");
+      const result = await api<SettingsResponse>(
+        "/manage/member-events/settings",
+      );
       if (request.current !== id) return;
       const fresh =
         result.channels_available !== false && Array.isArray(result.channels);
@@ -97,7 +99,7 @@ export default function ModerationSettings({
     setNotice("");
   };
   const updateMain = (value: RouteTarget) => {
-    setDraft((current) => current ? { ...current, main: value } : current);
+    setDraft((current) => (current ? { ...current, main: value } : current));
     clearFeedback();
   };
   const updateCategory = (
@@ -152,7 +154,9 @@ export default function ModerationSettings({
           ? {
               ...current,
               channels: [
-                ...(current.channels || []).filter((item) => item.id !== channel.id),
+                ...(current.channels || []).filter(
+                  (item) => item.id !== channel.id,
+                ),
                 channel,
               ],
             }
@@ -180,7 +184,8 @@ export default function ModerationSettings({
   };
 
   const invalidDestination =
-    !!draft && !!saved &&
+    !!draft &&
+    !!saved &&
     (saved.channels_available === false ||
       hasInvalidDestination(draft, saved.channels));
 
@@ -236,7 +241,8 @@ export default function ModerationSettings({
       !destination.target?.channel_id ||
       hasInvalidEventDestination(saved, kind, saved.channels) ||
       !inventoryAvailable
-    ) return;
+    )
+      return;
     setDialog({ type: "test", event: kind });
   };
 
@@ -276,11 +282,17 @@ export default function ModerationSettings({
       : null;
 
   return (
-    <section className="moderation-settings" aria-labelledby="moderation-settings-title">
+    <section
+      className="moderation-settings"
+      aria-labelledby="moderation-settings-title"
+    >
       <header className="moderation-settings-heading">
         <div>
           <h2 id="moderation-settings-title">Log settings</h2>
-          <p>Choose where member and moderation notices appear. History remains available when posting is off.</p>
+          <p>
+            Choose where member and moderation notices appear. History remains
+            available when posting is off.
+          </p>
         </div>
         <button type="button" onClick={reloadLatest} disabled={loading || busy}>
           Reload settings
@@ -291,20 +303,34 @@ export default function ModerationSettings({
         <div className="moderation-settings-error" role="alert">
           <p>{error}</p>
           {error.includes("changed since you loaded") && (
-            <button type="button" disabled={loading || busy} onClick={reloadLatest}>
+            <button
+              type="button"
+              disabled={loading || busy}
+              onClick={reloadLatest}
+            >
               Discard edits and reload latest
             </button>
           )}
           {!saved && (
-            <button type="button" disabled={loading} onClick={() => void load()}>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void load()}
+            >
               Try again
             </button>
           )}
         </div>
       )}
-      {notice && <p className="moderation-settings-notice" role="status">{notice}</p>}
+      {notice && (
+        <p className="moderation-settings-notice" role="status">
+          {notice}
+        </p>
+      )}
       {loading && <p role="status">Loading moderation settings…</p>}
-      {!loading && !saved && !error && <p>No moderation settings are available.</p>}
+      {!loading && !saved && !error && (
+        <p>No moderation settings are available.</p>
+      )}
 
       {saved && draft && (
         <>
@@ -316,13 +342,17 @@ export default function ModerationSettings({
           )}
           {inventoryAvailable && channels.length === 0 && (
             <p className="moderation-settings-empty" role="status">
-              No text channels or forums are listed. Check bot permissions or look up a forum post ID.
+              No text channels or forums are listed. Check bot permissions or
+              look up a forum post ID.
             </p>
           )}
 
           <div className="moderation-main-route">
             <h3>Main log channel</h3>
-            <p>Categories and events can use this destination unless you choose an override.</p>
+            <p>
+              Categories and events can use this destination unless you choose
+              an override.
+            </p>
             <ModerationDestinationPicker
               label="Main log channel"
               value={draft.main}
@@ -335,14 +365,19 @@ export default function ModerationSettings({
 
           <div className="moderation-category-list">
             {moderationRegistry
-              .filter((category) => category.key === "members" || category.key === "moderation")
+              .filter(
+                (category) =>
+                  category.key === "members" || category.key === "moderation",
+              )
               .map((category) => (
                 <ModerationCategoryCard
                   key={category.key}
                   category={category.key as CategoryKind}
                   label={category.label}
                   icon={category.icon}
-                  events={eventTypes.filter((event) => event.category === category.key)}
+                  events={eventTypes.filter(
+                    (event) => event.category === category.key,
+                  )}
                   draft={draft}
                   saved={saved}
                   channels={channels}
@@ -361,16 +396,24 @@ export default function ModerationSettings({
 
           {invalidDestination && (
             <p className="moderation-destination-warning" role="status">
-              An enabled notice needs an available destination and any required forum tag before saving.
+              An enabled notice needs an available destination and any required
+              forum tag before saving.
             </p>
           )}
           <div className="moderation-settings-save">
             <p>
-              <span className={dirty ? "moderation-dirty-dot" : "moderation-clean-dot"} aria-hidden="true" />
+              <span
+                className={
+                  dirty ? "moderation-dirty-dot" : "moderation-clean-dot"
+                }
+                aria-hidden="true"
+              />
               {dirty ? "Unsaved changes" : "All changes saved"}
             </p>
             <div>
-              <button type="button" onClick={discard} disabled={!dirty || busy}>Discard</button>
+              <button type="button" onClick={discard} disabled={!dirty || busy}>
+                Discard
+              </button>
               <button
                 className="primary"
                 type="button"
