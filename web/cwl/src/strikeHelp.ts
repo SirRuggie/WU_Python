@@ -1,3 +1,4 @@
+import { strikeCountLabel } from "./strikeCountLabel";
 // Prompt 23 will wire the configurable setting into every consumer.
 export const DEFAULT_STRIKE_LIMIT = 4;
 
@@ -45,7 +46,7 @@ export function strikeHelpLines(limit = DEFAULT_STRIKE_LIMIT): HelpPart[][] {
     ],
     [
       { text: "At " },
-      { text: `${threshold} strikes`, strong: true },
+      { text: `${strikeCountLabel(threshold, "strike")}`, strong: true },
       { text: ", leaders may replace you in the clan." },
     ],
   ];
