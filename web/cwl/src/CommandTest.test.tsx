@@ -44,6 +44,12 @@ const draft = {
   blocks: [],
   color: '#ffffff',
   enabled: true,
+  delete_trigger: true,
+  last_delete_error: {
+    at: '2026-10-30T00:00:00Z',
+    channel_id: '123',
+    reason: 'Missing Manage Messages',
+  },
 } as Command
 function elements(
   node: ReactNode,
@@ -101,6 +107,10 @@ it('requires review and rejects duplicate synchronous sends', async () => {
   ;(send.props.onClick as () => void)()
   ;(send.props.onClick as () => void)()
   expect(transport).toHaveBeenCalledTimes(1)
+  expect(transport.mock.calls[0][2].values.delete_trigger).toBe(true)
+  expect(transport.mock.calls[0][2].values).not.toHaveProperty(
+    'last_delete_error',
+  )
   resolve({ url: 'https://discord.com/test' })
   await Promise.resolve()
   await Promise.resolve()

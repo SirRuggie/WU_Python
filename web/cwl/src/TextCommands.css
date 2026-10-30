@@ -8,6 +8,10 @@
   position: sticky;
   top: 90px;
 }
+.command-delete-warning {
+  margin: 8px 0 16px;
+  overflow-wrap: anywhere;
+}
 .text-command-rows {
   display: grid;
   gap: 8px;
@@ -20,6 +24,14 @@
   justify-content: space-between;
   gap: 12px;
   text-align: left;
+}
+.text-command-row-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.text-command-row-info small {
+  overflow-wrap: anywhere;
 }
 
 .text-command-editor fieldset {
