@@ -357,3 +357,22 @@ def test_official_final_honors_one_miss_role_and_leave():
                                             'leave': 'leave'}[case]
             assert (await owner.snapshot(GUILD, final))['status'] == 'finalized'
     asyncio.run(run())
+
+
+def test_saved_final_replays_after_bson_timezone_loss():
+    from bson import BSON
+
+    async def run():
+        owner = tracking()
+        final = normalize(real_war('warEnded'), CLAN)
+        await owner.observe(GUILD, {**final, 'state': 'inWar'},
+                            now=final['end_time'] - timedelta(hours=1))
+        stored_final = BSON(BSON.encode(final)).decode()
+        assert stored_final['end_time'].tzinfo is None
+        store = SimpleNamespace(process_war=AsyncMock(return_value={'deferred_count': 0}))
+        result = await _finish_official_war(owner, store, GUILD, stored_final)
+        assert result == (1, 0, 0, 0)
+        assert (await owner.snapshot(GUILD, stored_final))['status'] == 'finalized'
+        assert await _finish_official_war(owner, store, GUILD, stored_final) == (0, 0, 0, 0)
+        store.process_war.assert_awaited_once()
+    asyncio.run(run())

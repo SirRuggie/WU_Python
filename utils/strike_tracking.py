@@ -60,9 +60,10 @@ class StrikeTracking:
         if existing and existing.get('status') in ('finalized', 'incomplete', 'abandoned'):
             return existing
         active = war['state'] in ('preparation', 'inWar')
+        ended = utc(war['end_time'])
         attempts = (int(existing.get('final_check_attempts') or 0) + 1
-                    if existing and now >= war['end_time'] else 0)
-        next_check = (war['end_time'] + FINAL_GRACE if now < war['end_time'] else
+                    if existing and now >= ended else 0)
+        next_check = (ended + FINAL_GRACE if now < ended else
                       now + timedelta(seconds=min(900, 60 * 2 ** min(attempts, 4))))
         fields = {'guild_id': int(guild_id), 'clan_tag': war['clan_tag'],
                   'war_key': war_key(war), 'war': war, 'end_time': war['end_time'],

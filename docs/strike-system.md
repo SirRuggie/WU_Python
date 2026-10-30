@@ -368,3 +368,27 @@ Evidence is retained in `/tmp/wu-strike-streaks-release/` (`live.json`,
 - After 48 hours but before the next sync, a mover's mark disappears from lists;
   the next sync clears the stored mark. This display interval is accepted.
 - Put departure age inline with the label, such as “Left clan · 6 h ago”.
+
+### Saved-final scan recovery (2026-10-30)
+
+Mongo's default BSON datetime decoder returns naive UTC values. The automatic
+monitor normalizes a saved final's `next_check_at` and `end_time` through the
+existing `utc()` helper before comparing them with an aware current time. This
+applies both to the retry deadline and to the storage owner's next-check/backoff
+calculation. It does not change war eligibility, strike counts, or streak rules.
+
+A clan-level failure now records `War processing failed` on that clan's tracking
+row and proceeds to the next clan. Cancellation still propagates. If the database
+also refuses the tracking write, the failure is logged and the scan still proceeds;
+no healthy result is invented. Diagnostics include the exception class and the
+file/line/function traceback chain, without logging upstream exception bodies,
+credentials, or player payloads.
+
+Regression coverage round-trips deadlines and saved finals through BSON, checks
+future deadlines remain deferred, retries a saved complete final exactly once,
+and proves a broken first clan cannot block a later clan's still-visible ended
+war. The isolated release-backup replay restores Mongo archives locally and uses
+recorded official GET responses with fake roster/strike processing. It demonstrates
+scan recovery, not live Discord delivery or the outcome of live strike processing.
+Any ended war without a captured complete final still follows the existing review
+path; this fix does not automatically import missing historical wars.
