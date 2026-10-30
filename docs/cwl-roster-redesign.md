@@ -4,13 +4,15 @@ Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signe
 
 ## Status (2026-10-29)
 
-`roster-hotfix-1` released at `8c7b5a8c29c6dab65801879cf20226f94e7efc7c` (PR #57), frontend only. The capacity warning is one line for hosting clans with assigned accounts, dirty roster exits use an in-app Discard dialog, and Missing weights uses one top Loot/Full switch. The pool-filter selection regression in the first hotfix candidate was corrected before release. 899 frontend tests, TypeScript/build and isolated layout passed. Public `index-DKL_Envz.js` SHA256 `e077320fdc59a84311fba3c28069e3ea60f7b633fff9999063f8595164165b20` matched; backend `f95830b`/PID 2249061 was unchanged without restart. Backup integrity/counts matched (Main 22/18/18, Lazy 118/89/71); rollback frontend is `30676446e559cab33d108aeb68711e74c8b98a33`. Claude's read-only owner 360px smoke PASSED (handoff 62): one capacity warning, one unit switch, and the dirty-weight Discard path; no application writes or console errors. Detailed evidence and rollback command are in CLAUDE.md.
+`weight-totals-1` released at `4f57d6e73941d3adc3b3223611927081bf794df9` (PR #59), frontend only. Assign and Balance now show totals of known effective weights; Avg TH remains. Empty clans say `Total: no weights yet`, and the duplicate Fill spot / Signup Details dirty dialog is fixed. 901 frontend tests, TypeScript/build and full isolated layout passed. Public `index-5dIAUgQj.js` SHA256 `b3f78cd7daba401cd67513e69fced2d6bf989e8a0b44b9e7f840d28a742d5c12` matched; backend `f95830b`/PID 2249061 stayed unchanged without restart. Backup integrity and counts matched (Main 22/18/18, Lazy 118/89/71); frontend rollback is `8c7b5a8c29c6dab65801879cf20226f94e7efc7c`. Claude's read-only owner 360px smoke PASSED (handoff 65): Assign current total 2,652k and no-weights state, Balance totals and no overflow; GETs only, no console errors. Detailed evidence is in CLAUDE.md.
+
+Previous `roster-hotfix-1` released at `8c7b5a8c29c6dab65801879cf20226f94e7efc7c` (PR #57), frontend only. The capacity warning is one line for hosting clans with assigned accounts, dirty roster exits use an in-app Discard dialog, and Missing weights uses one top Loot/Full switch. The pool-filter selection regression in the first hotfix candidate was corrected before release. 899 frontend tests, TypeScript/build and isolated layout passed. Public `index-DKL_Envz.js` SHA256 `e077320fdc59a84311fba3c28069e3ea60f7b633fff9999063f8595164165b20` matched; backend `f95830b`/PID 2249061 was unchanged without restart. Backup integrity/counts matched (Main 22/18/18, Lazy 118/89/71); rollback frontend is `30676446e559cab33d108aeb68711e74c8b98a33`. Claude's read-only owner 360px smoke PASSED (handoff 62): one capacity warning, one unit switch, and the dirty-weight Discard path; no application writes or console errors. Detailed evidence and rollback command are in CLAUDE.md.
 
 The preceding `roster-readability-1` release at `30676446e559cab33d108aeb68711e74c8b98a33` (PR #56) passed fixture review but **failed its initial real-phone smoke** (handoffs 55–56). Its 23 capacity-warning rows and the pre-existing native weight confirmation trap led directly to this hotfix; the per-row Loot/Full toggles were also replaced. Do not treat the initial readability smoke as passed. Readability backup integrity/counts matched its own release (Main 22/18/18, Lazy 118/92/74); these are deployment-local snapshots and differ from the later hotfix counts. Its public `index-DWX3fCZu.js` and asset hashes matched, with the same backend/PID and no restart. See CLAUDE.md for proof.
 
 Previous `staff-nav-1` released at `95808221f85200c3f51a9a036a6fbb266b2eda57` (PR #54), frontend only. 865 tests, TypeScript/build and full isolated layout passed. Public index-Dd77bclu.js and 47 asset hashes match; backend/PID unchanged without restart; protected counts unchanged (Main22/18/18, Lazy118/92/73). Backup and rollback evidence are in CLAUDE.md. Claude read-only owner smoke PASSED (handoff52): correct flat menu and saved preferences, no dialogs or errors.
 
-Previous `owner-prank-3` released at `ae511de81bde1a2220fa51f604125099a9caecee` (PR #52). Immediate optimistic cards with serialized confirmed writes and private-art preload; uncertain failures never automatically retry notifications. 865 frontend tests, TypeScript/build, and isolated layout passed. Claude infrastructure smoke PASSED (handoff 49); Ruggie will check replay speed separately. Public entry and 47 assets match; backend remains `f95830b`/PID 2249061 without restart. Backup integrity/all 58 table counts and protected records match (Main 22/18/18, Lazy 118/92/73). Frontend rollback: `b200c77d67f525a4a1afed515e2baed34dc31dd2`; evidence in CLAUDE.md. Weight totals (prompt 18) follows the hotfix smoke; moderation prompt 14 still requires direct approval before its backend/bot release.
+Previous `owner-prank-3` released at `ae511de81bde1a2220fa51f604125099a9caecee` (PR #52). Immediate optimistic cards with serialized confirmed writes and private-art preload; uncertain failures never automatically retry notifications. 865 frontend tests, TypeScript/build, and isolated layout passed. Claude infrastructure smoke PASSED (handoff 49); Ruggie will check replay speed separately. Public entry and 47 assets match; backend remains `f95830b`/PID 2249061 without restart. Backup integrity/all 58 table counts and protected records match (Main 22/18/18, Lazy 118/92/73). Frontend rollback: `b200c77d67f525a4a1afed515e2baed34dc31dd2`; evidence in CLAUDE.md. Moderation prompt 14 still requires direct approval before its backend/bot release.
 
 Previous `tour-copy-1` released at `b200c77d67f525a4a1afed515e2baed34dc31dd2` (PR #50). Tour 5d has the requested two-line practice copy, and review actions visibly say “Change CWL” and “Change accounts”. 850 frontend tests, TypeScript/build, and full isolated layout passed; Claude's read-only smoke PASSED (handoff 47). Public entry and affected asset hashes matched. Backend remains `owner-prank-1` (`f95830b5b774ba34b29f4756a1cc9e3747148f1b`) at PID 2249061 without restart. Backup integrity and all 58 table counts matched; protected signups/assigned/locks stayed Main 22/18/18 and Lazy 118/92/73. Frontend rollback is `567cd2d37acdff6d27be62e42dfe8ceebb9df789`. The installed staging helper's nested-assets error was worked around in a scratch copy before production activation; the helper still needs repair. Release evidence and rollback command are in CLAUDE.md.
 
@@ -243,7 +245,7 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 - Roster images: duplicate consent is checked in both `roster_image_posts.py` and storage `claim`; either check alone survives M11/M13. Keep both covered.
 - Roster images: dismiss's “still published” check (any account) and `groups_for` (first account) can drift.
 - Staff must select each pool's image channel before its first post.
-- Investigate whether a reload loop can run uncapped: a Declaration readiness tab left open across the backend restart logged hundreds of repeated auth/me + seasons requests and four 502s; requests stopped after navigating away. Cause not yet established.
+- Investigate whether a reload loop can run uncapped: a Declaration readiness tab left open across the backend restart logged hundreds of repeated auth/me + seasons requests and four 502s; requests stopped after navigating away. Weight-totals-1 owner 360px smoke also logged about 25 back-to-back auth/me + seasons GET pairs, with no writes or console errors. Cause not yet established.
 - Hidden roster limitation: the image section only shows the hidden line, so staff cannot pick an image channel until publication.
 
 - Pre-existing roster season-menu history issue: without Details, Back can show
@@ -252,10 +254,11 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 - Add mutation coverage for clearing roster state on season change; the targeted mutation survived readability review.
 - Unobserve removed horizontal-fade children before the ResizeObserver disconnects.
 - Replace native `window.confirm` across the rest of the app. Roster exits use an in-app dialog, but other existing callers remain outside the hotfix scope.
-- Fill spot / Signup Details can show a second `playerDirty` dialog after roster Discard on desktop; carry-in fix is queued in prompt 18.
 - Details: a successful save followed by a failed reload drops the Undo toast.
 - `RosterWorkspace.tsx` restates the weight dirty rule separately from `dirty`;
   consolidate these rules in a later cleanup.
+- Signup guard tests do not yet pin `signupDirty` or `selectedTags`: removing either still passes those tests.
+- The older layout runner can treat a child process killed by a signal as success (`run-layout.cjs:158,219,275`); make signal exits fail explicitly.
 
 - Announcements review preview shows raw role IDs (`@role 3333…`) instead of role names.
 - Announcements: opening Edit on an empty link marks the pool unsaved at once on HTTPS (by design); revisit if staff find it confusing.
@@ -279,10 +282,6 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
 ## Next stages
 
 - **Compare clans:** decisions confirmed (see above); implementation and review in progress. Board view still deferred.
-
-## Open question
-
-- The Assign panel and Balance preview still show **average** weight; the clan cards now show **total**. Recommendation: Balance preview shows total + average; the Assign panel shows total. Not yet decided by Ruggie.
 
 ## Finalize read metadata (Ruggie-approved backend extension)
 
@@ -555,3 +554,7 @@ The first readability phone smoke failed: 23 per-clan missing-capacity warnings 
 Dirty roster tab, season, rules/Compare pool, sidebar and capacity-link navigation stores the requested action and opens the in-app dialog: `Unsaved changes`, `You have N unsaved weight(s).` when only weight drafts are dirty, otherwise `You have unsaved roster changes.`, with Discard and Keep editing. Keep editing, Escape and backdrop retain drafts and focus; Discard clears them and runs only the requested action. Saves in flight show `Wait for the save to finish.` with OK and refuse navigation. **Accounts & signups All/Main/Lazy pool filters keep selections without a discard prompt**, including hidden selections, as before. Native confirmations elsewhere are deferred to Later.
 
 Missing weights has one `Enter weights as: Loot | Full` control above the queue, default Loot. Rows have only their input and Save; changing the unit reinterprets unsaved text and updates each full-weight hint, never saved weights. Explicit saves, units, conversion and API payloads remain unchanged. The hotfix is frontend only. Claude accepted the corrected pool-filter behavior (handoff61) and the read-only owner 360px release smoke passed (handoff62); the initial readability smoke remains recorded as failed.
+
+## Decisions — Weight totals (approved 2026-10-29)
+
+Ruggie decided that a clan weight is always a total. Assign current/projected and Balance current/preview display the sum of known effective weights, grouped in `k` (for example `4,512.5k`); no known weights displays `Total: no weights yet`. Keep the weighed-count hint when the total is partial and retain `Avg TH`, which measures Town Hall level rather than weight. Balance math, sorting, ties, API payloads and save behavior are unchanged. The frontend-only release also fixed the second `playerDirty` dialog after roster Discard on Fill spot / Signup Details. Claude accepted the fixture review (handoff 63) and the read-only owner 360px release smoke passed (handoff 65).
