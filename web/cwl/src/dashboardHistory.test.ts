@@ -220,3 +220,21 @@ it.each([false, true])(
     expect(f.current().url).toBe("/signup");
   },
 );
+
+it("keeps encoded clan/player weight targets across path roundtrips", () => {
+  const route = {
+    view: "weight-trial" as const,
+    season: "",
+    weightPlayer: "#P2Y",
+    weightClan: "#R2Y",
+  };
+  const path = dashboardPath(route);
+  expect(path).toBe("/clan-weights?player=%23P2Y&clan=%23R2Y");
+  expect(
+    dashboardTarget(path.slice(path.indexOf("?")), "/clan-weights"),
+  ).toEqual(route);
+  expect(
+    dashboardTarget("?player=https://evil.example&clan=bad", "/clan-weights")
+      .weightPlayer,
+  ).toBeUndefined();
+});

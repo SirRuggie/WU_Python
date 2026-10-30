@@ -269,6 +269,7 @@ class LiveProviders:
         if 'teamSize' in body and (type(body['teamSize']) is not int or body['teamSize'] != len(rows)):
             raise ProviderUnavailable('Incomplete war roster size.')
         order = {}
+        names = {}
         for row in rows:
             if not isinstance(row, dict):
                 raise ProviderUnavailable('Invalid war lineup member.')
@@ -277,9 +278,11 @@ class LiveProviders:
             if type(position) is not int or position < 1 or player in order:
                 raise ProviderUnavailable('Invalid war lineup.')
             order[player] = position
+            if isinstance(row.get('name'), str) and row['name'].strip():
+                names[player] = row['name']
         if set(order.values()) != set(range(1, len(rows) + 1)):
             raise ProviderUnavailable('Incomplete war positions.')
-        return {"order": order, "state": body["state"], "end_time": body.get("endTime"),
+        return {"order": order, "names": names, "state": body["state"], "end_time": body.get("endTime"),
                 "opponent": body["opponent"].get("name") if isinstance(body.get("opponent"), dict) else None}
 
     async def weight_war_order(self, value):

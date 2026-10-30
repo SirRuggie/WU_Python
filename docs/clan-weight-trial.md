@@ -163,3 +163,46 @@ Priority tests cover saved values, intentional blanks, cached account overlays,
 external fallback for unmanaged accounts, and rejected roster overrides. Isolated
 desktop/390px UI confirms managed accounts show the authoritative weight and direct
 staff to Clan weights without presenting an ineffective manual override.
+
+## Clan weights workflow (prompt21)
+
+The landing list shows cached current-member progress and last-save dates, with
+missing clans first. Unknown membership is not zero membership; a failed refresh
+retains its previous count with a plain “members checked” timestamp. A bounded background
+worker refreshes roster observations alongside lineup capture. Opening the list
+does not fan out to game roster endpoints.
+
+Inside a clan, All/Missing/Check filters and Next missing keep the measurement task
+focused. A previously saved NULL is intentional Not Available and counts weighed;
+an untouched blank with revision zero remains missing. There is no new Not
+Available control. Loot absence can still block Column F even on a weighed row.
+Phones show Loot beside read-only Full and a storage-count picker; desktop Full
+remains editable. Decimal-k entry scales digit strings exactly (the fractional part
+is padded to three digits), never multiplies a floating-point decimal. Thus
+`32.2k`, `32.20k`, `32,200` and `32200` all mean exactly 32,200. Nonzero digits
+beyond three decimal-k places, fractions of a unit, and out-of-range values are rejected. Invalid
+values remain visible with correction guidance; full weights must end in 000.
+Existing saved values are read unchanged, and unchanged retries do not rewrite
+history. The verified backup snapshot had 350 rows, zero nondivisible weights and
+zero saved NULL values; that is not a claim about current production data.
+
+Find any player searches saved names/tags literally, including departed players.
+Only this explicit saved-player endpoint can update a saved row without current
+FWA membership. It cannot create a row for a never-saved tag. Saves retain original
+saved-clan provenance and atomically update history, revision and draft-season
+invalidation. Unknown current location is shown separately from verified nonfamily
+membership. Build roster links managed and current-FWA accounts to this editor;
+manual override remains blocked for managed rows.
+
+Old captured lineups contain positions without names. New captures optionally
+include names for departed-slot placeholders. Gaps have no controls and never
+count toward missing/weighed. Copy still refuses shifted or incomplete war data.
+The export checklist checks saved/loot/lineup state; matching the actual sheet war,
+storage counts and small-storage adjustment remains a user check.
+
+Local and App navigation use the existing in-app confirmation dialog. Keep editing
+retains drafts; Discard performs the requested navigation once. Encoded player/clan
+links persist through history and validated OAuth return paths. Access and CSRF
+checks remain unchanged. Frontend automated tests cover these interactions;
+independent 50-member narrow/wide browser measurements and release evidence are
+separate gates, not implied by a local test or build.

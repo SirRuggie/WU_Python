@@ -333,3 +333,19 @@ it("keeps Save disabled for an equivalent full-weight value", async () => {
     )?.disabled,
   ).toBe(true);
 });
+
+it("routes an FWA member without a saved weight to Clan weights consistently", async () => {
+  await render(
+    {
+      clan_weight_managed: false,
+      current_fwa_clan_tag: "#FWA",
+      effective_weight: null,
+      manual_weight: null,
+    },
+    ["cwl_roster", "clan_weights"],
+  );
+  const section = document.querySelector('[aria-label="Weight"]')!;
+  expect(section.textContent).toContain("Set in Clan weights ›");
+  expect(section.querySelector("input")).toBeNull();
+  expect(save).not.toHaveBeenCalled();
+});

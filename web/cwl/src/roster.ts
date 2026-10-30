@@ -1,3 +1,4 @@
+import { retainFwaMembership } from "./clanWeightPolicy";
 import type { Pool } from './api'
 export type RosterAccount = {
   signed_up_at?: string | null;
@@ -8,6 +9,11 @@ export type RosterAccount = {
   tag: string; user_id: string; pool: Pool; player_name: string; town_hall: number | null;
   prefer_crystal_1_or_lower: boolean; source_weight: number | null; source_status: 'missing' | 'current' | 'unavailable'; source_name: string | null; source_checked_at: string | null; source_modified_at: string | null;
   clan_weight_managed?: boolean;
+  clan_weight_clan_tag?: string | null;
+  clan_weight_clan_name?: string | null;
+  clan_weight_saved_at?: string | null;
+  current_fwa_clan_tag?: string | null;
+  current_fwa_status?: string;
   initial_manual_weight?: number | null; manual_weight: number | null; effective_weight: number | null; assigned_clan_tag: string | null; kept: boolean
 }
 export type RosterClan = { cwl_league?: string | null; cwl_league_stale?: boolean; tag: string; name: string; archived: boolean; pool: Pool | null; capacity: number | null; effective_capacity: number; min_weight: number | null; max_weight: number | null; assigned_count: number }
@@ -52,7 +58,7 @@ export function mergeRosterMetadata(current: RosterSnapshot, incoming: RosterSna
     ...current, metadata_updating: incoming.metadata_updating,
     accounts: current.accounts.map(account => {
       const live = accounts.get(account.tag);
-      return live ? { ...account, current_clan_tag: live.current_clan_tag,
+      return live ? { ...account, ...retainFwaMembership(account, live), current_clan_tag: live.current_clan_tag,
         current_clan_name: live.current_clan_name, current_clan_status: live.current_clan_status,
         current_clan_checked_at: live.current_clan_checked_at,
         outside_family_and_hosts: live.outside_family_and_hosts } : account;
@@ -62,4 +68,12 @@ export function mergeRosterMetadata(current: RosterSnapshot, incoming: RosterSna
       return live ? { ...clan, cwl_league: live.cwl_league, cwl_league_stale: live.cwl_league_stale } : clan;
     }),
   };
+}
+
+// Call only within the same season; the workspace clears snapshots on season change.
+export function retainRosterFwa(current: RosterSnapshot | null, incoming: RosterSnapshot): RosterSnapshot {
+  const previous = new Map(current?.accounts.map(account => [account.tag, account]));
+  return { ...incoming, accounts: incoming.accounts.map(account => ({
+    ...account, ...retainFwaMembership(previous.get(account.tag), account),
+  })) };
 }

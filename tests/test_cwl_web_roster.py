@@ -121,6 +121,8 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["accounts"][0]["tag"], "#Q2Y")
         self.assertEqual(data["accounts"][0]["current_clan_status"], "unavailable")
         self.assertFalse(data["accounts"][0]["outside_family_and_hosts"])
+        self.assertIsNone(data["accounts"][0]["current_fwa_clan_tag"])
+        self.assertEqual(data["accounts"][0]["current_fwa_status"], "unavailable")
         await self.call("GET", path, self.owner)
         self.assertEqual(len(self.app["roster_location_jobs"]), 1)
         self.assertEqual(len(self.app["clan_league_jobs"]), 1)

@@ -37,7 +37,7 @@
 .weight-trial-columns,
 .weight-trial-row {
   display: grid;
-  grid-template-columns: 40px minmax(120px, 1fr) 80px 110px 120px;
+  grid-template-columns: 40px minmax(120px, 1fr) 64px 110px 120px;
   gap: 12px;
   align-items: center;
   padding: 7px 10px;
@@ -69,7 +69,7 @@
 }
 .weight-trial-player small {
   display: block;
-  font-size: 0.72rem;
+  font-size: 12px;
 }
 .weight-trial-row input {
   width: 100%;
@@ -148,40 +148,9 @@
   grid-column: 1 / -1;
   color: #ffb5ae;
 }
-@media (max-width: 800px) {
-  .weight-trial-columns {
-    display: none;
-  }
-  .weight-trial-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    padding: 12px 0;
-    gap: 8px;
-  }
-  .weight-trial-position {
-    grid-column: 1;
-  }
-  .weight-trial-player {
-    grid-column: 2 / 4;
-  }
-  .weight-trial-field > span {
-    display: block;
-    font-size: 0.75rem;
-    margin-bottom: 4px;
-  }
-  .weight-trial-save {
-    flex-wrap: wrap;
-  }
-}
 .weight-trial-row input {
   scroll-margin-block: 120px 190px;
 }
-@media (max-width: 800px) {
-  .weight-trial-player strong {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-}
-
 .weight-trial-row-warning {
   grid-column: 1 / -1;
   color: #ffb5ae;
@@ -194,4 +163,158 @@
 .weight-trial-row.has-weight-issue {
   background: #d94c4524;
   box-shadow: inset 3px 0 #ef7770;
+}
+
+.weight-saved-search {
+  margin-block: 20px;
+}
+.weight-saved-search form {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.weight-saved-player {
+  padding: 12px 0;
+  border-bottom: 1px solid #45454d;
+}
+.weight-trial-storages {
+  margin: 0;
+  min-width: 0;
+}
+.weight-trial-storages select {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px;
+}
+.weight-trial-phone-full {
+  display: none;
+}
+.weight-trial-gap {
+  padding: 14px 10px;
+  color: #b6bfcb;
+  border-bottom: 1px dashed #45454d;
+  font-size: 0.85rem;
+}
+.weight-trial-filters {
+  margin-block: 12px;
+}
+.weight-trial-filters button {
+  min-height: 44px;
+  margin: 0 6px 6px 0;
+}
+.weight-trial-filters button[aria-pressed="true"] {
+  border-color: #f3ca56;
+  color: #f3ca56;
+}
+.weight-trial-save .weight-keyboard-hint {
+  display: none;
+}
+@media (pointer: fine) {
+  .weight-trial-save .weight-keyboard-hint {
+    display: block;
+  }
+}
+@media (max-width: 800px) {
+  .weight-trial-columns {
+    display: none;
+  }
+  .weight-trial-save {
+    flex-wrap: wrap;
+  }
+  .weight-trial-position {
+    grid-column: 1;
+  }
+  .weight-trial-row {
+    grid-template-columns: 24px minmax(0, 1fr) 60px;
+    gap: 3px 8px;
+    padding: 4px 0;
+    min-height: 100px;
+  }
+  .weight-trial-player {
+    grid-column: 2;
+  }
+  .weight-trial-player strong {
+    white-space: nowrap;
+  }
+  .weight-trial-player small {
+    font-size: 12px;
+  }
+  .weight-trial-storages {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .weight-trial-loot {
+    grid-column: 1 / 3;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .weight-trial-loot > span {
+    display: inline;
+    margin: 0;
+    font-size: 12px;
+  }
+  .weight-trial-full {
+    display: none;
+  }
+  .weight-trial-phone-full {
+    display: block;
+    grid-column: 3;
+    font-size: 12px;
+  }
+  .weight-trial-phone-full strong {
+    display: block;
+    font-size: 14px;
+  }
+  .weight-trial-row .town-hall-icon {
+    max-height: 30px;
+  }
+}
+
+/* This lazy feature must not depend on another page's accessibility styles. */
+.weight-trial .weight-trial-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.weight-trial .eyebrow,
+.weight-trial .town-hall-fallback {
+  font-size: 12px;
+}
+.weight-trial a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #f4cd64;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.weight-trial a:focus-visible,
+.weight-trial summary:focus-visible {
+  outline: 2px solid #f4cd64;
+  outline-offset: 3px;
+}
+.weight-trial summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+}
+/* The editor bounds its sticky bar before the export controls that follow it. */
+.weight-trial-editor {
+  min-width: 0;
+}
+.weight-trial-export {
+  scroll-margin-block: 24px;
+}
+
+.weight-trial-row input,
+.weight-trial-row select {
+  margin: 0;
 }

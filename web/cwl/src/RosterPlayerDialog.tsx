@@ -1,3 +1,4 @@
+import { usesClanWeights } from "./clanWeightPolicy";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import DetailsFrame from "./DetailsFrame";
 import ClanWeightSource from "./ClanWeightSource";
@@ -27,7 +28,7 @@ import "./RosterPlayerDialog.css";
 type Props = {
   previous?: () => void;
   next?: () => void;
-  onClanWeights?: () => void;
+  onClanWeights?: (player?: string, clan?: string) => void;
   onDirty?: (dirty: boolean) => void;
   account: RosterAccount;
   clans: RosterClan[];
@@ -123,7 +124,8 @@ export default function RosterPlayerDialog({
   const currentHost = clans.find((c) => c.tag === account.assigned_clan_tag);
   const parsedWeight = compactWeightState(weight);
   const dirty =
-    !!parsedWeight.error || parsedWeight.weight !== account.manual_weight;
+    !usesClanWeights(account) &&
+    (!!parsedWeight.error || parsedWeight.weight !== account.manual_weight);
   useUnsavedWork(dirty || busy, onDirty);
   useEffect(() => {
     const previous = baseline.current;
@@ -157,7 +159,7 @@ export default function RosterPlayerDialog({
     }
   }
   async function saveWeight() {
-    if (!canRoster || account.clan_weight_managed) return;
+    if (!canRoster || usesClanWeights(account)) return;
     try {
       const value = parseManualWeight(weight);
       if (
@@ -291,8 +293,8 @@ export default function RosterPlayerDialog({
         {canRoster && !archived && (
           <section aria-label="Weight">
             <h3>Weight</h3>
-            {account.clan_weight_managed ? (
-              <ClanWeightSource onNavigate={onClanWeights} />
+            {usesClanWeights(account) ? (
+              <ClanWeightSource account={account} onNavigate={onClanWeights} />
             ) : (
               <form
                 onSubmit={(event) => {

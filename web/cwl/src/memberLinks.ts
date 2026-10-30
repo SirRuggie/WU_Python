@@ -29,6 +29,12 @@ export function loginPath(search: string, retry: boolean, pathname = '/'): strin
   const incoming = new URLSearchParams(search)
   if (staffView && /^\d{1,18}$/.test(incoming.get('season') || '')) params.set('season', incoming.get('season')!)
   if (staffView === 'publication' && ['review','announce'].includes(incoming.get('step') || '')) params.set('step', incoming.get('step')!)
+  if (weightPage) {
+    for (const key of ["player", "clan"]) {
+      const value = incoming.get(key);
+      if (value && /^#[A-Z0-9]{1,20}$/i.test(value)) params.set(key, value);
+    }
+  }
   if (target.season) params.set('season', target.season)
   if (retry) params.set('retry','1')
   return `/api/cwl/auth/discord?${params}`

@@ -140,3 +140,91 @@ def test_legacy_ledger_migrates_in_place_without_losing_data(ledger):
         assert not db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('clan_weight_trial','clan_weight_trial_history')").fetchall()
         assert _roster_rows(db, 1)[0]['effective_weight'] == 149000
     Store(store.path)  # Repeated startup is safe.
+
+
+def test_saved_player_change_invalidates_season_and_preserves_provenance(ledger):
+    store, weights = ledger
+    save(weights, 149000)
+    before = store.rows('SELECT revision FROM roster_meta WHERE season_id=1')[0]['revision']
+    changed = weights.save_existing('#P2Y', {'weight': 150000, 'revision': 1}, '2', 'Editor')
+    assert changed['last_clan_tag'] == '#R2Y'
+    assert changed['player_name'] == 'Player'
+    assert store.rows('SELECT revision FROM roster_meta WHERE season_id=1')[0]['revision'] == before + 1
+    history = store.rows('SELECT * FROM clan_player_weight_history ORDER BY id DESC')[0]
+    assert history['actor_id'] == '2' and history['actor_name'] == 'Editor'
+    assert history['clan_tag'] == '#R2Y'
+    weights.save_existing('#P2Y', {'weight': 150000, 'revision': 1}, '2')
+    assert store.rows('SELECT revision FROM roster_meta WHERE season_id=1')[0]['revision'] == before + 1
+    with store.tx() as db:
+        db.execute("CREATE TRIGGER fail_revision BEFORE UPDATE ON roster_meta BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        weights.save_existing('#P2Y', {'weight': 151000, 'revision': 2}, '2')
+    assert weights.all()[0]['weight'] == 150000
+    assert len(store.rows('SELECT * FROM clan_player_weight_history')) == 2
+
+
+def test_saved_player_never_creates_unknown_row(ledger):
+    _, weights = ledger
+    from utils.clan_weight_store import WeightConflict
+    with pytest.raises(WeightConflict):
+        weights.save_existing('#Q2Y', {'weight': 150000, 'revision': 0}, '1')
+    assert weights.all() == []
+
+
+def test_optional_lineup_names_and_saved_source_link_metadata(ledger):
+    store, weights = ledger
+    item = {**lineup(), 'names': {'#P2Y': 'Named player'}}
+    weights.remember_lineup('#R2Y', item)
+    assert weights.saved_lineup('#R2Y')['names'] == item['names']
+    save(weights, 149000)
+    with store.tx() as db:
+        rows = _roster_rows(db, 1)
+    assert rows[0]['clan_weight_clan_tag'] == '#R2Y'
+    assert rows[0]['clan_weight_clan_name'] == 'Family'
+    assert rows[0]['clan_weight_saved_at']
+
+
+def test_concurrent_saved_player_edits_have_one_winner(ledger):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from utils.clan_weight_store import WeightConflict
+    _, weights = ledger
+    save(weights, 149000)
+    barrier = Barrier(2)
+    def update(value):
+        barrier.wait()
+        try:
+            weights.save_existing('#P2Y', {'weight': value, 'revision': 1}, '1')
+            return 'saved'
+        except WeightConflict:
+            return 'conflict'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(update, [150000, 151000]))
+    assert sorted(results) == ['conflict', 'saved']
+    assert weights.all()[0]['revision'] == 2
+
+
+def test_saved_search_is_unicode_case_insensitive_and_literal(ledger):
+    _, weights = ledger
+    save(weights, 149000)
+    with weights.connect() as db:
+        db.execute("UPDATE clan_player_weights SET player_name='Änne Straße%_'")
+    for query in ('Änne', 'änne', 'STRASSE', 'straße', '%_'):
+        assert weights.search(query)['total'] == 1
+    assert weights.search('strasse_')['total'] == 0
+
+
+def test_weight_login_target_keeps_only_validated_player_and_clan():
+    from cwl_web.app import login_destination
+    from urllib.parse import parse_qs, urlsplit
+    target = login_destination({'view': 'weight-trial', 'player': '#P2Y', 'clan': '#R2Y'})
+    assert parse_qs(urlsplit(target).query) == {'player': ['#P2Y'], 'clan': ['#R2Y']}
+    assert login_destination({'view': 'weight-trial', 'player': '//evil.example', 'clan': 'bad\n'}) == '/clan-weights'
+
+
+def test_saved_weight_login_cookie_retains_validated_target():
+    from types import SimpleNamespace
+    from cwl_web.app import saved_login_destination, RETURN_COOKIE
+    assert saved_login_destination(SimpleNamespace(cookies={RETURN_COOKIE: '/clan-weights?player=%23P2Y&clan=%23R2Y'})) == '/clan-weights?player=%23P2Y&clan=%23R2Y'
+    assert saved_login_destination(SimpleNamespace(cookies={RETURN_COOKIE: '/clan-weights?player=https://evil.example&clan=%23R2Y'})) == '/clan-weights?clan=%23R2Y'
