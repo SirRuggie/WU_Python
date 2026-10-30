@@ -323,7 +323,10 @@ def test_source_failure_backoff_and_final_payload_survive_new_prep():
 def test_official_final_honors_one_miss_role_and_leave():
     async def run():
         for case in ('one_miss', 'role', 'leave'):
+            from test_strike_streaks import Collection
             mongo = Mongo()
+            mongo.strike_profiles = Collection()
+            mongo.strike_records = Collection()
             mongo.strike_war_snapshots = Rows()
             owner = StrikeTracking(mongo)
             async def links(tags):

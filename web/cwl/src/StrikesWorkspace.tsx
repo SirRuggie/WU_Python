@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from './api'
 import { strikePermissions } from './strikePermissions'
 import StrikeTrackingStatus from './StrikeTrackingStatus'
+import StrikeHelp from './StrikeHelp'
+import StrikeStreak, { type StrikeStreakState } from './StrikeStreak'
 import {
   detailQuery,
   importEmptyText,
@@ -55,7 +57,12 @@ type Entry = {
   reason?: string | null
   removed_reason?: string | null
 }
-type Overview = { entries: Entry[]; clans: Clan[]; total: number }
+type Overview = {
+  entries: Entry[]
+  clans: Clan[]
+  total: number
+  streak?: StrikeStreakState | null
+}
 type StrikeAccount = {
   player_tag: string
   player_name: string
@@ -246,6 +253,10 @@ export default function StrikesWorkspace({
     clans: [],
     total: 0,
   })
+  const [accountStreak, setAccountStreak] = useState<{
+    tag: string
+    streak?: StrikeStreakState | null
+  } | null>(null)
   const [accountOverview, setAccountOverview] = useState<AccountOverview>({
     accounts: [],
     clans: [],
@@ -318,7 +329,14 @@ export default function StrikesWorkspace({
         selectedWar?.war_key,
       )
       const data = await api<Overview>(`/strikes/overview?${params}`)
-      if (request === historyRequest.current) setOverview(data)
+      if (request === historyRequest.current) {
+        setOverview(data)
+        setAccountStreak(
+          selectedAccount
+            ? { tag: selectedAccount.player_tag, streak: data.streak }
+            : null,
+        )
+      }
     } catch (err) {
       if (request === historyRequest.current) setError(errorText(err))
     } finally {
@@ -674,6 +692,7 @@ export default function StrikesWorkspace({
           <p className="eyebrow">Family clans</p>
           <h1>Strikes</h1>
           <p>Review active strikes, account history, and approved leave.</p>
+          <StrikeHelp />
         </div>
       </div>
       <div className="strikes-tabs" role="group" aria-label="Strike sections">
@@ -926,6 +945,14 @@ export default function StrikesWorkspace({
                     ? `${selectedAccount.clan_is_current === false ? 'Last known' : 'Current'}: ${selectedAccount.current_clan_name}`
                     : 'No clan'}{' '}
                   · {selectedAccount.active_strikes} active strikes
+                  <StrikeStreak
+                    loading={loading}
+                    streak={
+                      !error && accountStreak?.tag === selectedAccount.player_tag
+                        ? accountStreak.streak
+                        : null
+                    }
+                  />
                 </div>
               )}
               <div className="strikes-list-head">

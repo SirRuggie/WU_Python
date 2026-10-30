@@ -12,6 +12,50 @@ Implemented for the Warriors United Discord bot and its existing dashboard. This
 - Active strikes expire 60 days after the war ended, or after a manual strike was added. Expired and removed records remain available.
 - No automatic punishment.
 
+## Streaks and departure grace — prompt 25 implementation
+
+For newly finalized official-API captures, a played war means the account was
+in an ended regular-war lineup and used both attacks. Every second consecutive
+played war (2 and 4) clears the oldest active strike. At six played wars, all
+active strikes clear and the streak resets to zero. Missing one or both attacks
+breaks the streak; missing both still gives one strike. Not being in the lineup,
+approved leave, exempt roles, CWL and incomplete final captures neither build nor
+break the streak. Historical imports and previously finalized wars do not
+retroactively build streaks.
+
+Clearing retains the ledger record as removed, with system attribution and
+`Cleared by streak (2 wars played)` or `Reset by streak (6 wars played)` as the
+reason. The existing 60-day expiry remains: expiry or streak clearing can end an
+active strike. Storage and finalization must preserve idempotence across retries
+and restarts; the integrated backend review records that evidence separately.
+
+The account detail shows its current streak and next milestone independently of
+paginated or filtered history. Loading and unavailable streak data remain
+distinct from a confirmed zero. Late responses for a previous account cannot
+replace the current account's streak.
+
+The top-of-page **How strikes work** button opens the shared ActionPanel, including
+phone sheet layout, Close, Escape, Back and focus behavior. Canonical help wording
+lives in `web/cwl/src/strikeHelp.ts`; `StrikeHelpText` and its plain-text helper
+share it for future member-card/DM consumers. Body text is 16px and the Close
+target is at least 44px. The current shared help default is **4 strikes**; prompt
+23 will add the configurable setting and wire its value into the help. This
+batch does not add a settings editor or automated replacement.
+
+A confirmed departed account remains in Replacements during its 48-hour grace
+period with an explicit **Left clan** label and its last-seen clan/time. A stale
+roster alone is not labeled as a confirmed departure. After more than 48 hours
+out of that clan, it no longer appears and its priority is cleared with
+`Left clan (48h)`; strike history remains. A return during grace keeps the mark.
+After cleanup, a returning account appears only if it qualifies again.
+
+Frontend validation covers exact help copy and limit substitution, panel
+Close/Escape/Back, streak milestones and unavailable data, late account responses,
+and confirmed-departure versus stale-roster rendering. Changes add no client-side
+writes. Narrow/wide browser screenshots, integrated backend failure-mode tests,
+mutation checks and release verification remain integration gates; these unit
+checks are not live delivery or a full assistive-technology audit.
+
 ## Staff workflow
 
 The **Strikes** dashboard has History, Leave, Exempt roles, and Import wars tabs. **Replacements** is a child page beneath Strikes in the sidebar.
