@@ -6,9 +6,10 @@ import { readFileSync } from "node:fs";
 import WeightQueue from "./WeightQueue";
 import type { RosterAccount } from "./roster";
 
+let allowWeight = true;
 vi.mock("./DashboardPermissions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./DashboardPermissions")>()),
-  useDashboardPermission: () => true,
+  useDashboardPermission: () => allowWeight,
 }));
 const accounts = Array.from(
   { length: 65 },
@@ -60,6 +61,7 @@ async function render(
   return props;
 }
 beforeEach(() => {
+  allowWeight = true;
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   host = document.createElement("div");
   document.body.append(host);
@@ -407,4 +409,17 @@ it("rejects a non-thousand value inline before submit", async () => {
     ),
   );
   expect(props.onSave).not.toHaveBeenCalled();
+});
+
+it("keeps roster-only queue read-only and shows permission notice instead of opening an editor", async () => {
+  allowWeight = false;
+  const props = await render();
+  expect(input().disabled).toBe(true);
+  await click(button("Player 0"));
+  expect(props.onEdit).not.toHaveBeenCalled();
+  expect(props.onSave).not.toHaveBeenCalled();
+  expect(host.textContent).toContain(
+    "Permission needed: changing weights needs Clan weights access. Ask an owner.",
+  );
+  expect(button("Refresh weights").disabled).toBe(false);
 });

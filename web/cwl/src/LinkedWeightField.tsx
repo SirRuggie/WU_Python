@@ -8,12 +8,16 @@ export default function LinkedWeightField({
   disabled,
   unchanged,
   name,
+  allowEmptyClear = false,
+  onClear,
 }: {
   value: Draft;
   onChange: (value: Draft) => void;
   disabled: boolean;
   unchanged: boolean;
   name: string;
+  allowEmptyClear?: boolean;
+  onClear?: () => void;
 }) {
   const id = useId();
   let error = "";
@@ -66,8 +70,13 @@ export default function LinkedWeightField({
       </small>
       <div className="linked-weight-actions">
         <Button
-          disabled={disabled || (!value.full && !value.loot)}
-          onClick={() => onChange({ ...value, full: "", loot: "" })}
+          disabled={
+            disabled || (!value.full && !value.loot && !allowEmptyClear)
+          }
+          onClick={() => {
+            onChange({ ...value, full: "", loot: "" });
+            onClear?.();
+          }}
         >
           Clear weight
         </Button>
