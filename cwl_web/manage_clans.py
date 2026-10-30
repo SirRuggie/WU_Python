@@ -39,23 +39,23 @@ async def choices(request):
     channels=await discord(request,'GET',f'/guilds/{GUILD_ID}/channels')
     active=await discord(request,'GET',f'/guilds/{GUILD_ID}/threads/active')
     channels += active.get('threads',[])
-    return web.json_response({'roles':[{'id':str(r['id']),'name':r['name']} for r in actor['roles'] if str(r['id'])!=str(GUILD_ID)],'channels':[{'id':str(c['id']),'name':c['name'],'type':c['type']} for c in channels if c['type'] in (0,5,10,11,12)]})
+    return web.json_response({'roles':[{'id':str(r['id']),'name':r['name'],'managed':bool(r.get('managed')),'position':r.get('position',0),'color':r.get('color',0)} for r in sorted(actor['roles'],key=lambda role:role.get('position',0),reverse=True) if str(r['id'])!=str(GUILD_ID)],'channels':[{'id':str(c['id']),'name':c['name'],'type':c['type']} for c in channels if c['type'] in (0,5,10,11,12)]})
 
 async def members(request):
     await require_manage(request,'clans')
-    from .manage_roles import searchable_members
+    from .manage_roles import searchable_members, member_option
     query=request.query.get('q','').strip().casefold()[:80]
     rows=await searchable_members(request)
     result=[]
     for row in rows:
         user=row['user'];name=row.get('nick') or user.get('global_name') or user['username']
-        if not query or query in ' '.join(str(v or '') for v in (name,user.get('username'),user['id'])).casefold():result.append({'id':str(user['id']),'name':name})
+        if not query or query in ' '.join(str(v or '') for v in (name,user.get('username'),user['id'])).casefold():result.append({'id':str(user['id']),'name':name,'avatar_url':member_option(row)['avatar_url']})
     selected=request.query.get('selected','')
     shown=result[:50]
     if selected and re.fullmatch(r'\d{15,22}',selected) and not any(m['id']==selected for m in shown):
         existing=next((r for r in rows if str(r['user']['id'])==selected),None)
         if existing:
-            user=existing['user'];shown.append({'id':selected,'name':existing.get('nick') or user.get('global_name') or user['username']})
+            user=existing['user'];shown.append({'id':selected,'name':existing.get('nick') or user.get('global_name') or user['username'],'avatar_url':member_option(existing)['avatar_url']})
     return web.json_response({'members':shown,'more':len(result)>50})
 
 from utils.clan_dashboard_history import audit, collection as history_collection

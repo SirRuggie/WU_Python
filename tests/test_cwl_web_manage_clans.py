@@ -62,3 +62,28 @@ def test_denied_before_database(setup,monkeypatch):
     req,rows,_=setup;monkeypatch.setattr(api,'require_manage',AsyncMock(side_effect=web.HTTPForbidden()))
     with pytest.raises(web.HTTPForbidden):asyncio.run(api.save(req))
     req.json.assert_not_awaited()
+
+def test_choices_preserve_role_metadata_and_server_order(setup, monkeypatch):
+    import json
+    req, _, _ = setup
+    monkeypatch.setattr(api, 'require_manage', AsyncMock(return_value={'roles': [
+        {'id': '1', 'name': 'Low', 'position': 1, 'color': 0},
+        {'id': '2', 'name': 'Bot role', 'position': 4, 'managed': True},
+        {'id': '3', 'name': 'Captain', 'position': 3, 'color': 123},
+    ]}))
+    monkeypatch.setattr(api, 'discord', AsyncMock(side_effect=[[], {'threads': []}]))
+    roles = json.loads(asyncio.run(api.choices(req)).text)['roles']
+    assert [role['id'] for role in roles] == ['2', '3', '1']
+    assert roles[0]['managed'] is True
+    assert roles[1]['color'] == 123
+
+def test_selected_leader_keeps_name_and_avatar_outside_search(setup, monkeypatch):
+    import json
+    from cwl_web import manage_roles
+    req, _, _ = setup
+    req.query = {'q': 'other', 'selected': '123456789012345678'}
+    monkeypatch.setattr(manage_roles, 'searchable_members', AsyncMock(return_value=[
+        {'user': {'id': '123456789012345678', 'username': 'captain', 'avatar': 'abcd'}, 'nick': 'Captain'},
+    ]))
+    members = json.loads(asyncio.run(api.members(req)).text)['members']
+    assert members == [{'id': '123456789012345678', 'name': 'Captain', 'avatar_url': 'https://cdn.discordapp.com/avatars/123456789012345678/abcd.png?size=64'}]

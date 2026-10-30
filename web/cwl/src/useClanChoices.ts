@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import type { AnnouncementChannel } from "./announcements";
 
-type Choice = { id: string; name: string };
+import type { RoleChoice as Choice } from "./RolePicker";
 type Choices = {
   roles: Choice[];
   channels: AnnouncementChannel[];

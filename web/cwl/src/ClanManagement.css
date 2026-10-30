@@ -316,3 +316,20 @@
     transition: none !important;
   }
 }
+
+.clan-leader-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.clan-leader-identity img {
+  border-radius: 50%;
+}
+/* Only the focused channel picker shows its keyboard tip; all remain described. */
+.clan-management .channel-combobox:not(:focus-within) .channel-keyboard-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

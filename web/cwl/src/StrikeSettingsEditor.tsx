@@ -2,13 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
 
-export type StrikeRole = {
-  id: string;
-  name: string;
-  managed?: boolean;
-  position?: number;
-  color?: number;
-};
+import RolePicker, { type RoleChoice } from "./RolePicker";
+export type StrikeRole = RoleChoice;
 export type StrikeSettings = {
   revision: number;
   strike_limit: number;
@@ -40,7 +35,6 @@ export default function StrikeSettingsEditor({
   const [opponents, setOpponents] = useState(
     (settings.no_attack_opponents ?? []).join("\n"),
   );
-  const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -69,12 +63,6 @@ export default function StrikeSettingsEditor({
     onDirty(dirty);
     return () => onDirty(false);
   }, [dirty, onDirty]);
-  const available = settings.roles.filter(
-    (role) =>
-      !role.managed &&
-      !roles.some((selected) => selected.id === role.id) &&
-      role.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-  );
   async function save() {
     if (
       writing.current ||
@@ -235,42 +223,17 @@ export default function StrikeSettingsEditor({
           </div>
         ))}
       </div>
-      <label>
-        Find exempt role
-        <input
-          type="search"
-          value={query}
-          disabled={busy}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search role names"
-        />
-      </label>
-      <div className="strikes-role-options" aria-label="Available exempt roles">
-        {available.map((role) => (
-          <button
-            key={role.id}
-            title={role.id}
-            disabled={busy}
-            onClick={() => {
-              setRoles((current) => [...current, role]);
-              setSaved(false);
-            }}
-          >
-            <span
-              className="strike-role-color"
-              aria-hidden="true"
-              style={{
-                backgroundColor: role.color
-                  ? `#${role.color.toString(16).padStart(6, "0")}`
-                  : "#aeb9c7",
-              }}
-            />
-            {role.name}
-            <span aria-hidden="true">＋</span>
-          </button>
-        ))}
-        {!available.length && <p>No matching roles available.</p>}
-      </div>
+      <RolePicker
+        roles={settings.roles}
+        selected={roles.map((role) => role.id)}
+        disabled={busy}
+        label="Find exempt role"
+        optionsLabel="Available exempt roles"
+        onChoose={(role) => {
+          setRoles((current) => [...current, role]);
+          setSaved(false);
+        }}
+      />
       <div className="strikes-inline">
         <button
           className="primary"

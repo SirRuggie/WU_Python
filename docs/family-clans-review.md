@@ -76,3 +76,18 @@ READY declaration.
 
 Additional copy: `Latest scheduled outcome` → `Last reminder`; the old separate
 `Save reminders` control is replaced by the shared `Save` in the clan editor.
+
+Role controls now share the Strike settings searchable picker, preserving server
+order and color metadata while excluding managed roles from new selections.
+Existing selected roles remain visible, including unavailable roles. Clan leaders
+show their name and avatar; an unavailable leader no longer prints the raw ID.
+The existing public member-option helper provides avatar URLs. Backend role and
+selected-member regressions pass (8 clan API tests); 32 focused frontend tests
+cover the shared picker, clan fields, combined editor and choice loading.
+
+Claude entry148 cancels the Clan Games ClashKing switch per Ruggie. Remaining
+batch order after Family clans is31 then19; the current ClashPerk source stays.
+
+Role increment validation completed: 1,076 frontend tests / 208 files, TypeScript
+and build passed. Restoring the raw leader-ID fallback killed the ClanFields
+render test; restored test passed. Full-batch backend/browser checks remain pending.

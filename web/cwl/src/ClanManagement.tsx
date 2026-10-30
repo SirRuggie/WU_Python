@@ -11,7 +11,7 @@ import ClanHistory from "./ClanHistory";
 import WarReminders, { type ReminderEditor } from "./WarReminders";
 import ConfirmDialog from "./ConfirmDialog";
 type Directory = { clans: Clan[]; types: string[]; town_halls: string[] };
-type Choice = { id: string; name: string };
+type Choice = { id: string; name: string; avatar_url?: string };
 const path = (tag: string) => "/manage/clans/" + encodeURIComponent(tag);
 const sections = [
   "Details",
