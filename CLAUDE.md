@@ -29,7 +29,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Deploy procedure: back up and verify the DB → record live counts per season/pool (signups, assigned, locks, publication version) → build from a clean checkout of a tagged commit into `releases/<sha>/` → atomic symlink switch → read-only smoke test → counts must match exactly. Rollback = point the symlink back at the previous release.
 - Frontend-only unless Ruggie explicitly approves backend, schema, endpoint or policy changes. If a fix seems to need one, stop and ask.
 - No UI path may write signups, assignments, locks, weights or publications without an explicit user action through the existing endpoints and their revision checks.
-- The workspace is shared with a concurrent moderation task. Never format or edit its files (`ChannelCombobox.tsx`, `ModerationSettings.tsx`, `moderationSettingsModel.ts`, and the rest of the moderation work). Run Prettier only on files you changed.
+- The former moderation-file protection is retired: landed via PR #36; retired 2026-10-29 with Ruggie’s approval. The four preserved workspace files were verified byte-identical to origin/main before restoring them to workspace HEAD. Run Prettier only on files you changed.
 
 ## Red-team checklist (every change, before commit; report how each item was verified)
 1. List every changed file; confirm the scope.

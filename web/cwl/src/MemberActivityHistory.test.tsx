@@ -135,3 +135,15 @@ it('ignores a stale response after a newer filter read starts', async () => {
   expect(hook.states[0]).toEqual([{ ...fixture, id: 'new-event', display_name: 'New Result' }])
   expect(hook.states[7]).toBe('')
 })
+
+it('shows kick and ban reasons and moderators in the compact history card', () => {
+  hook.states[0] = [
+    { ...fixture, id: 'kick-1', event_type: 'kick', reason: 'Spam <script>', moderator_id: '987654321' },
+    { ...fixture, id: 'ban-1', event_type: 'ban', reason: null, moderator_id: null },
+  ]
+  const html = render()
+  expect(html).toContain('Kicked')
+  expect(html).toContain('Banned')
+  expect(html).toContain('by @987654321 · “Spam &lt;script&gt;”')
+  expect(html).toContain('by an unknown moderator · “No reason given”')
+})

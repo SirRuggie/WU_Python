@@ -138,18 +138,48 @@
 .member-activity-list {
   margin: 12px 0 0;
   padding: 0;
-  border-top: 1px solid #424b58;
+  display: grid;
+  gap: 10px;
   list-style: none;
 }
 
 .member-activity-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px 190px auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 16px;
-  min-height: 54px;
-  padding: 12px 10px;
-  border-bottom: 1px solid #424b58;
+  gap: 8px 16px;
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 1px solid #495563;
+  border-left: 4px solid #9ba9b9;
+  border-radius: 10px;
+  background: #1c2028;
+}
+
+.member-activity-row.is-join {
+  border-left-color: #2ba66a;
+}
+
+.member-activity-row.is-leave {
+  border-left-color: #d34a4a;
+}
+
+.member-activity-row.is-kick {
+  border-left-color: #e69935;
+}
+
+.member-activity-row.is-ban {
+  border-left-color: #a8384b;
+}
+
+.member-activity-moderation {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  margin: 0;
+  color: #d7e0ea;
+  font-size: .85rem;
+  overflow-wrap: anywhere;
 }
 
 .member-activity-identity {
@@ -203,17 +233,22 @@
   color: #85dda0;
 }
 
-.member-activity-kind.leave,
-.member-activity-kind.kick {
+.member-activity-kind.leave {
   color: #ff9299;
 }
 
+.member-activity-kind.kick {
+  color: #ffbd77;
+}
+
 .member-activity-kind.ban {
-  color: #ff9f6e;
+  color: #ff9299;
 }
 
 .member-activity-meta {
   display: grid;
+  grid-column: 3;
+  grid-row: 1;
   gap: 3px;
 }
 
@@ -232,6 +267,8 @@
 }
 
 .member-activity-details {
+  grid-column: 4;
+  grid-row: 1;
   min-width: 78px;
 }
 
@@ -280,10 +317,19 @@
     grid-row: 1;
   }
 
-  .member-activity-meta,
+  .member-activity-moderation {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .member-activity-meta {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
   .member-activity-details {
     grid-column: 1 / -1;
-    padding-left: 54px;
+    grid-row: 4;
   }
 
   .member-activity-heading {
@@ -327,17 +373,12 @@
   }
 
   .member-activity-row {
-    padding: 12px 4px;
+    padding: 12px 10px;
   }
 
   .member-activity-identity img,
   .member-activity-avatar {
     width: 38px;
     height: 38px;
-  }
-
-  .member-activity-meta,
-  .member-activity-details {
-    padding-left: 50px;
   }
 }
