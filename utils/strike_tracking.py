@@ -4,10 +4,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import uuid
 
-from utils.strike_store import tag, utc
+from pymongo.errors import DuplicateKeyError
+
+from utils.strike_store import tag, utc, war_key
 
 RECENT = timedelta(minutes=25)
 ERROR_LIMIT = 5
+WAR_STALE = timedelta(days=3)
+FINAL_GRACE = timedelta(seconds=60)
 
 
 def safe_error(error: Exception | str) -> str:
@@ -15,7 +19,8 @@ def safe_error(error: Exception | str) -> str:
     if isinstance(error, str):
         return error if error in {'War source unavailable', 'Clan roster unavailable',
                                   'Account links unavailable', 'War processing failed',
-                                  'Incomplete war data', 'Unresolved accounts'} else 'Tracking check failed'
+                                  'Incomplete war data', 'Unresolved accounts',
+                                  'War log private'} else 'Tracking check failed'
     name = type(error).__name__
     if name in {'ClientError', 'ClientConnectorError', 'ClientResponseError', 'TimeoutError'}:
         return 'War source unavailable'
@@ -32,6 +37,127 @@ class StrikeTracking:
     def key(guild_id: int, clan_tag: str) -> str:
         return f'{int(guild_id)}:{tag(clan_tag)}'
 
+    @staticmethod
+    def snapshot_key(guild_id: int, war: dict) -> str:
+        return f'{int(guild_id)}:{war_key(war)}'
+
+    async def snapshot(self, guild_id: int, war: dict):
+        return await self.mongo.strike_war_snapshots.find_one(
+            {'_id': self.snapshot_key(guild_id, war)})
+
+    async def ensure_indexes(self):
+        await self.mongo.strike_war_snapshots.create_index(
+            [('guild_id', 1), ('clan_tag', 1), ('end_time', -1)],
+            name='strike_official_clan_wars')
+        await self.mongo.strike_war_snapshots.create_index(
+            [('status', 1), ('next_check_at', 1)], name='strike_official_due')
+
+    async def observe(self, guild_id: int, war: dict, *, now=None):
+        """Persist an official observation before any strike processing."""
+        now = utc(now or datetime.now(timezone.utc))
+        key = self.snapshot_key(guild_id, war)
+        existing = await self.mongo.strike_war_snapshots.find_one({'_id': key})
+        if existing and existing.get('status') in ('finalized', 'incomplete'):
+            return existing
+        active = war['state'] in ('preparation', 'inWar')
+        attempts = (int(existing.get('final_check_attempts') or 0) + 1
+                    if existing and now >= war['end_time'] else 0)
+        next_check = (war['end_time'] + FINAL_GRACE if now < war['end_time'] else
+                      now + timedelta(seconds=min(900, 60 * 2 ** min(attempts, 4))))
+        fields = {'guild_id': int(guild_id), 'clan_tag': war['clan_tag'],
+                  'war_key': war_key(war), 'war': war, 'end_time': war['end_time'],
+                  'updated_at': now, 'status': 'observing',
+                  'next_check_at': next_check,
+                  'final_check_attempts': attempts}
+        if existing is None:
+            try:
+                await self.mongo.strike_war_snapshots.insert_one(
+                    {'_id': key, 'first_seen_at': now, 'seen_active': active, **fields})
+            except DuplicateKeyError:
+                pass
+        else:
+            await self.mongo.strike_war_snapshots.update_one(
+                {'_id': key, 'status': 'observing'},
+                {'$set': {**fields, 'seen_active': bool(existing.get('seen_active')) or active}})
+        return await self.mongo.strike_war_snapshots.find_one({'_id': key})
+
+    async def finalized(self, guild_id: int, war: dict, *, now=None):
+        now = utc(now or datetime.now(timezone.utc))
+        await self.mongo.strike_war_snapshots.update_one(
+            {'_id': self.snapshot_key(guild_id, war), 'status': 'observing'},
+            {'$set': {'war': war, 'status': 'finalized', 'finalized_at': now,
+                      'next_check_at': None, 'updated_at': now}})
+
+    async def incomplete(self, guild_id: int, war: dict, reason: str, *, now=None):
+        now = utc(now or datetime.now(timezone.utc))
+        await self.mongo.strike_war_snapshots.update_one(
+            {'_id': self.snapshot_key(guild_id, war), 'status': 'observing'},
+            {'$set': {'war': war, 'status': 'incomplete', 'incomplete_at': now,
+                      'incomplete_reason': reason, 'next_check_at': None,
+                      'updated_at': now}})
+
+    async def abandon_older(self, guild_id: int, clan_tag: str, current_keys=(), *, now=None):
+        now = utc(now or datetime.now(timezone.utc))
+        rows = await self.mongo.strike_war_snapshots.find(
+            {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
+             'status': 'observing'}).to_list(length=None)
+        count = 0
+        for row in rows:
+            if (row['_id'] not in current_keys and utc(row['end_time']) <= now
+                    and (row['war'].get('state') != 'warEnded'
+                         or not row['war'].get('complete'))):
+                await self.incomplete(guild_id, row['war'],
+                                      'War ended before final check: review in Find war', now=now)
+                count += 1
+        return count
+
+    async def defer_due(self, guild_id: int, clan_tag: str, *, now=None):
+        """Back off source failures without losing the durable final deadline."""
+        now = utc(now or datetime.now(timezone.utc))
+        rows = await self.mongo.strike_war_snapshots.find(
+            {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
+             'status': 'observing'}).to_list(length=None)
+        for row in rows:
+            due = row.get('next_check_at')
+            if due is None or utc(due) > now:
+                continue
+            attempts = int(row.get('final_check_attempts') or 0) + 1
+            await self.mongo.strike_war_snapshots.update_one(
+                {'_id': row['_id'], 'status': 'observing'},
+                {'$set': {'next_check_at': now + timedelta(
+                    seconds=min(900, 60 * 2 ** min(attempts, 4))),
+                          'final_check_attempts': attempts}})
+
+    async def pending_finals(self, guild_id: int, clan_tag: str):
+        rows = await self.mongo.strike_war_snapshots.find(
+            {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
+             'status': 'observing'}).to_list(length=None)
+        return [row for row in rows if row['war'].get('state') == 'warEnded'
+                and row.get('seen_active')]
+
+    async def due_clans(self, guild_id: int, *, now=None):
+        now = utc(now or datetime.now(timezone.utc))
+        rows = await self.mongo.strike_war_snapshots.find(
+            {'guild_id': int(guild_id), 'status': 'observing',
+             'next_check_at': {'$lte': now}}, {'clan_tag': 1}).to_list(length=None)
+        return {row['clan_tag'] for row in rows}
+
+    async def incomplete_wars(self, guild_id: int, *, clan_tag=None):
+        query = {'guild_id': int(guild_id), 'status': 'incomplete'}
+        if clan_tag:
+            query['clan_tag'] = tag(clan_tag)
+        rows = await self.mongo.strike_war_snapshots.find(query).to_list(length=None)
+        return [{'war_key': row['war_key'], 'clan_tag': row['clan_tag'],
+                 'clan_name': row['war'].get('clan_name'),
+                 'opponent_tag': row['war'].get('opponent_tag'),
+                 'opponent_name': row['war'].get('opponent_name'),
+                 'war_end': row['end_time'], 'war_type': row['war'].get('type'),
+                 'missed_accounts': 0, 'strikes': 0, 'one_missed': 0,
+                 'cwl_missed': 0, 'incomplete': True,
+                 'review_message': row.get('incomplete_reason') or
+                    'War ended before final check: review in Find war',
+                 'source_label': 'Clash API'} for row in rows]
+
     async def begin(self, guild_id: int, clan_tag: str):
         now = datetime.now(timezone.utc)
         token = uuid.uuid4().hex
@@ -44,22 +170,26 @@ class StrikeTracking:
 
     async def finish(self, guild_id: int, clan_tag: str, *, started_at: str,
                      regular_wars=0, cwl_wars=0, deferred_accounts=0,
-                     skipped_wars=0, error: str | None = None):
+                     skipped_wars=0, error: str | None = None,
+                     current_war_state='unknown', private=False):
         now = datetime.now(timezone.utc)
-        partial = bool(error or deferred_accounts or skipped_wars)
+        partial = bool(error or deferred_accounts or skipped_wars or private or
+                       current_war_state == 'unknown')
         status = 'needs_review' if partial else 'healthy'
         update = {'last_checked_at': now, 'last_scan_status': status,
                   'completed_scan_token': started_at,
                   'regular_wars': regular_wars, 'cwl_wars': cwl_wars,
                   'deferred_accounts': deferred_accounts, 'skipped_wars': skipped_wars,
+                  'current_war_state': 'private' if private else current_war_state,
                   'error': safe_error(error) if error else ('Unresolved accounts' if deferred_accounts else
-                           'Incomplete war data' if skipped_wars else None)}
+                           'Incomplete war data' if skipped_wars else
+                           'War log private' if private else None)}
         if not partial:
             update['last_success_at'] = now
         key = self.key(guild_id, clan_tag)
         # The token keeps an older overlapping attempt from replacing a newer check.
         previous = await self.mongo.strike_tracking.find_one({'_id': key}, {'error_history': 1}) or {}
-        if partial:
+        if partial and update['error']:
             history = list(previous.get('error_history') or [])[-(ERROR_LIMIT - 1):]
             history.append({'at': now, 'error': update['error']})
             update['error_history'] = history
@@ -90,6 +220,11 @@ class StrikeTracking:
         now = datetime.now(timezone.utc)
         saved = await self.mongo.strike_tracking.find({'guild_id': guild_id}).to_list(length=None)
         indexed = {row.get('clan_tag'): row for row in saved}
+        snapshots = getattr(self.mongo, 'strike_war_snapshots', None)
+        incomplete = (await snapshots.find(
+            {'guild_id': guild_id, 'status': 'incomplete'},
+            {'clan_tag': 1}).to_list(length=None)) if snapshots is not None else []
+        incomplete_tags = {row['clan_tag'] for row in incomplete}
         result = []
         for clan in clans:
             clan_tag = tag(clan['tag'])
@@ -99,18 +234,26 @@ class StrikeTracking:
             started = item.get('last_started_at')
             unfinished = bool(item.get('scan_token') and
                               item.get('scan_token') != item.get('completed_scan_token'))
-            failed = item.get('last_scan_status') in {'needs_review', 'failed'}
-            status = ('needs_review' if failed else
-                      'delayed' if unfinished or not success or now - utc(success) > RECENT else 'healthy')
+            state = item.get('current_war_state') or 'unknown'
             latest = await self.mongo.strike_records.find_one(
                 {'guild_id': guild_id, 'clan_tag': clan_tag,
                  'source': {'$in': ['war', 'cwl']}},
                 {'occurred_at': 1}, sort=[('occurred_at', -1)])
+            recorded = latest.get('occurred_at') if latest else None
+            stale = bool(recorded and now - utc(recorded) > WAR_STALE
+                         and state in ('preparation', 'inWar', 'warEnded'))
+            check_stale = not checked or now - utc(checked) > RECENT
+            status = ('private' if state == 'private' else
+                      'error' if item.get('error') and item.get('error') != 'War log private' else
+                      'behind' if unfinished or check_stale or state == 'unknown' or
+                        clan_tag in incomplete_tags or stale or
+                        (state != 'notInWar' and not recorded) else 'healthy')
             result.append({'clan_tag': clan_tag, 'clan_name': clan.get('name') or clan_tag,
                            'status': status, 'last_started_at': started,
+                           'current_war_state': state,
                            'last_checked_at': checked,
                            'last_success_at': success,
-                           'latest_recorded_war_at': latest.get('occurred_at') if latest else None,
+                           'latest_recorded_war_at': recorded,
                            'regular_wars': item.get('regular_wars', 0),
                            'cwl_wars': item.get('cwl_wars', 0),
                            'deferred_accounts': item.get('deferred_accounts', 0),

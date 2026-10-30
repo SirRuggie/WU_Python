@@ -442,6 +442,8 @@ class StrikeService:
                 'opponent_name': {'$first': '$opponent_name'},
                 'war_end': {'$first': '$occurred_at'},
                 'war_type': {'$first': '$war_type'},
+                'capture_source': {'$first': '$capture_source'},
+                'import_id': {'$first': '$import_id'},
                 'missed_accounts': {'$sum': {'$cond': [{'$gt': ['$missed_attacks', 0]}, 1, 0]}},
                 'strikes': {'$sum': {'$cond': [{'$eq': ['$kind', 'strike']}, 1, 0]}},
                 'one_missed': {'$sum': {'$cond': [{'$and': [
@@ -461,7 +463,11 @@ class StrikeService:
                 row.get('opponent_name'), utc(row['war_end']).date().isoformat()
             )).casefold()]
         return [{'war_key': row['_id'], **{key: value for key, value in row.items() if key != '_id'},
-                 'war_type': row.get('war_type') or 'regular'} for row in rows]
+                 'war_type': row.get('war_type') or 'regular',
+                 'source_label': ('Clash API' if row.get('capture_source') == 'clash_api' else
+                                  'ClashKing (import)' if row.get('import_id') or
+                                    row.get('capture_source') == 'clashking_import' else
+                                  'ClashKing (legacy)')} for row in rows]
 
     async def set_replacement_preference(self, guild_id: int, player_tag: str,
                                          priority: str, note: str, actor_id: int,
@@ -656,6 +662,8 @@ class StrikeService:
                     raise ValueError('Outside the 60-day import window.')
                 rows = await self._war_rows(guild_id, war, owner_cache=owner_cache,
                                             leave_cache=leave_cache, deferred=report['deferred_accounts'])
+                for row in rows:
+                    row['capture_source'] = 'clashking_import'
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
                 report['skipped'].append({'war': str(war.get('clan_tag', '?')), 'reason': str(error)})
                 continue
@@ -687,6 +695,8 @@ class StrikeService:
                 if stamp(war['end_time']) < now - timedelta(days=IMPORT_DAYS):
                     raise ValueError('Outside the 60-day import window.')
                 rows = await self._cwl_rows(guild_id, war, owner_cache=cwl_owner_cache)
+                for row in rows:
+                    row['capture_source'] = 'clashking_import'
             except (ValueError, RuntimeError, KeyError, TypeError) as error:
                 report['skipped'].append({'war': str(war.get('clan_tag', '?')),
                                           'reason': str(error), 'war_type': 'cwl'})
@@ -768,6 +778,7 @@ class StrikeService:
                          'opponent_tag': tag(war['opponent_tag']),
                          'opponent_name': war.get('opponent_name'),
                          'war_key': key, 'kind': kind, 'source': 'war',
+                         'capture_source': 'clash_api',
                          'reason': 'Both attacks missed' if missed == 2 else ('One attack missed' if missed else 'Both attacks used'),
                          'missed_attacks': missed, 'exemption': exemption,
                          'occurred_at': ended, 'expires_at': ended + timedelta(days=STRIKE_DAYS)})
@@ -816,6 +827,7 @@ class StrikeService:
                          'opponent_name': war.get('opponent_name'),
                          'war_key': key, 'war_type': 'cwl', 'war_tag': tag(war['war_tag']),
                          'kind': 'cwl', 'source': 'cwl',
+                         'capture_source': 'clash_api',
                          'reason': 'CWL attack missed' if used == 0 else 'CWL attack used',
                          'attacks_used': used, 'attacks_per_member': 1,
                          'missed_attacks': 1 - used, 'occurred_at': ended})
@@ -899,6 +911,7 @@ class StrikeService:
                     row['exemption'] = 'preview_exempt' if original == 'exempt' else None
                 row['created_by'] = int(actor_id)
                 row['import_id'] = str(preview_id)
+                row['capture_source'] = 'clashking_import'
                 try:
                     await self.mongo.strike_records.insert_one(row)
                     results['applied'] += 1
@@ -922,6 +935,7 @@ class StrikeService:
                     continue
                 row['created_by'] = int(actor_id)
                 row['import_id'] = str(preview_id)
+                row['capture_source'] = 'clashking_import'
                 try:
                     await self.mongo.strike_records.insert_one(row)
                     results['applied'] += 1

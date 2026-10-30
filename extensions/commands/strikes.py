@@ -15,12 +15,13 @@ import lightbulb
 from hikari.impl import ContainerComponentBuilder as Container, TextDisplayComponentBuilder as Text
 
 from extensions.components import register_action
-from utils import recruit_links, strike_wars
+from utils import recruit_links
 from utils.component_state import get_state, insert_state, update_state
 from utils.constants import WARRIORS_UNITED_GUILD_ID
 from utils.mongo import MongoClient
 from utils.strike_store import STRIKE_DAYS, StrikeService, tag
 from utils.strike_tracking import StrikeTracking
+from utils.strike_official import normalize as normalize_official_war
 from utils.replacement_filters import parse_weight, compact_weight
 from cwl_web.providers import LiveProviders, ProviderUnavailable
 
@@ -647,20 +648,86 @@ async def _warm_weight_cache(mongo):
     except Exception:
         pass
 
+
+async def _finish_official_war(tracking, store, guild_id, war):
+    """Only a previously observed, complete official final may write records."""
+    prior = await tracking.snapshot(guild_id, war)
+    if prior is None:
+        # The current endpoint may still show a war that ended before this
+        # monitor was deployed. Do not report or backfill that historical gap.
+        return 0, 0, 0, 0
+    snapshot = await tracking.observe(guild_id, war)
+    if snapshot.get('status') in ('finalized', 'incomplete'):
+        return 0, 0, 0, 0
+    if not snapshot.get('seen_active'):
+        # An already-ended war first seen at startup belongs to the old gap.
+        # It cannot be established that we captured its active state.
+        return 0, 0, 0, 0
+    if not war['complete']:
+        # A final response can briefly lack a full roster; the persisted final
+        # remains due for another official fetch before the next war replaces it.
+        return 0, 0, 0, 1
+    if war['type'] == 'regular' and war['attacks_per_member'] == 2:
+        result = await store.process_war(guild_id, war)
+        deferred = result.get('deferred_count', 0)
+        if deferred:
+            return 0, 0, deferred, 0
+        await tracking.finalized(guild_id, war)
+        return 1, 0, 0, 0
+    if war['type'] == 'cwl' and war['attacks_per_member'] == 1:
+        await store.process_cwl_war(guild_id, war)
+        await tracking.finalized(guild_id, war)
+        return 0, 1, 0, 0
+    # Friendly and other non-two-attack wars are retained as observations only.
+    await tracking.finalized(guild_id, war)
+    return 0, 0, 0, 0
+
+
+async def _league_observations(client, clan_tag, cache):
+    """Read the bounded current league group; only previously active wars can post."""
+    try:
+        group = await client.get_league_group(clan_tag)
+    except coc.NotFound:
+        return []
+    rounds = getattr(group, 'rounds', None) or []
+    # Later rounds are often placeholders even while a middle round is live.
+    tags = list(dict.fromkeys(value for round_tags in rounds
+                              for value in round_tags if value and value != '#0'))[:64]
+    observations = []
+    for war_tag in tags:
+        if war_tag not in cache:
+            cache[war_tag] = await client.get_league_war(war_tag)
+        war = cache[war_tag]
+        if war is None:
+            raise ValueError('Official CWL war response is unavailable.')
+        sides = (getattr(war, 'clan', None), getattr(war, 'opponent', None))
+        if not any(side is not None and getattr(side, 'tag', None) == clan_tag
+                   for side in sides):
+            continue  # A different pair in the same league round.
+        item = normalize_official_war(war, clan_tag)
+        if item and item['type'] == 'cwl':
+            observations.append(item)
+    return observations
+
 async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.Client,
                     *, clan_tags: set[str] | None = None):
     store = service(mongo, bot)
     tracking = StrikeTracking(mongo)
     await store.ensure_indexes()
-    activation = await store.monitor_activation(WARRIORS_UNITED_GUILD_ID)
+    await tracking.ensure_indexes()
     clans = await mongo.clans.find({'tag': {'$type': 'string'}}, {'tag': 1}).to_list(length=None)
+    league_cache = {}
+    checked = finalized_total = 0
     for clan in clans:
         clan_tag = tag(clan['tag'])
         if clan_tags is not None and clan_tag not in clan_tags:
             continue
         started = await tracking.begin(WARRIORS_UNITED_GUILD_ID, clan_tag)
         regular_count = cwl_count = deferred_count = skipped_count = 0
+        attempted_finals = set()
         problem = None
+        current_state = 'unknown'
+        private = False
         try:
             try:
                 current = await coc_client.get_clan(clan_tag)
@@ -673,49 +740,97 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
             except Exception:
                 problem = 'Clan roster unavailable'
                 print(f'[strikes] roster refresh deferred for {clan_tag}')
+            current_keys = set()
+            regular_ok = league_ok = False
             try:
-                # Baseline prevents an automatic historical backfill. Retry remains bounded.
-                age_days = min(60, max(1, math.ceil((datetime.now(timezone.utc) - activation).total_seconds() / 86400) + 1))
-                report = await strike_wars.fetch_history_report(clan_tag, days=age_days)
-                for skipped in report.get('skipped', []):
-                    try:
-                        raw_end = strike_wars._date(skipped['end_time'])
-                    except (ValueError, KeyError, TypeError):
-                        skipped_count += 1
+                current = await coc_client.get_clan_war(clan_tag)
+                observed = normalize_official_war(current, clan_tag) if current is not None else None
+                if current is None:
+                    raise ValueError('Current war response is unavailable.')
+                current_state = observed['state'] if observed else 'notInWar'
+                regular_ok = True
+                if observed:
+                    current_keys.add(tracking.snapshot_key(WARRIORS_UNITED_GUILD_ID, observed))
+                    if observed['state'] == 'warEnded':
+                        attempted_finals.add(tracking.snapshot_key(WARRIORS_UNITED_GUILD_ID, observed))
+                        r, c, d, s = await _finish_official_war(
+                            tracking, store, WARRIORS_UNITED_GUILD_ID, observed)
+                        regular_count += r
+                        cwl_count += c
+                        deferred_count += d
+                        skipped_count += s
                     else:
-                        if raw_end >= activation:
-                            skipped_count += 1
-                for wars, process, kind in ((report['wars'], store.process_war, 'regular'),
-                                            (report.get('cwl_wars', []), store.process_cwl_war, 'cwl')):
-                    for war in wars:
-                        if war['end_time'] < activation:
-                            continue
-                        try:
-                            result = await process(WARRIORS_UNITED_GUILD_ID, war)
-                            if kind == 'regular':
-                                regular_count += 1
-                                deferred_count += result.get('deferred_count', 0)
-                            else:
-                                cwl_count += 1
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception:
-                            problem = 'War processing failed'
-                            print(f'[strikes] war deferred for {clan_tag}')
+                        await tracking.observe(WARRIORS_UNITED_GUILD_ID, observed)
+            except coc.PrivateWarLog:
+                private = True
+                current_state = 'private'
             except asyncio.CancelledError:
                 raise
             except Exception:
-                problem = 'War source unavailable'
-                print(f'[strikes] scan deferred for {clan_tag}')
+                problem = 'War processing failed' if regular_ok else 'War source unavailable'
+                print(f'[strikes] official war check deferred for {clan_tag}')
+            try:
+                league_wars = await _league_observations(coc_client, clan_tag, league_cache)
+                league_ok = True
+                for observed in league_wars:
+                    current_keys.add(tracking.snapshot_key(WARRIORS_UNITED_GUILD_ID, observed))
+                    if observed['state'] == 'warEnded':
+                        attempted_finals.add(tracking.snapshot_key(WARRIORS_UNITED_GUILD_ID, observed))
+                        r, c, d, s = await _finish_official_war(
+                            tracking, store, WARRIORS_UNITED_GUILD_ID, observed)
+                        regular_count += r
+                        cwl_count += c
+                        deferred_count += d
+                        skipped_count += s
+                    else:
+                        await tracking.observe(WARRIORS_UNITED_GUILD_ID, observed)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                problem = problem or ('War processing failed' if league_ok else 'War source unavailable')
+                print(f'[strikes] official CWL check deferred for {clan_tag}')
+            if regular_ok and league_ok:
+                skipped_count += await tracking.abandon_older(
+                    WARRIORS_UNITED_GUILD_ID, clan_tag, current_keys)
+            # A final payload survives a restart or a subsequent prep war when
+            # link/role resolution was unavailable on its first processing pass.
+            for saved in await tracking.pending_finals(WARRIORS_UNITED_GUILD_ID, clan_tag):
+                if saved['_id'] in attempted_finals:
+                    continue
+                due_at = saved.get('next_check_at')
+                if due_at is not None and due_at > datetime.now(timezone.utc):
+                    continue
+                try:
+                    r, c, d, s = await _finish_official_war(
+                        tracking, store, WARRIORS_UNITED_GUILD_ID, saved['war'])
+                    regular_count += r
+                    cwl_count += c
+                    deferred_count += d
+                    skipped_count += s
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    problem = 'War processing failed'
+            if not regular_ok or not league_ok:
+                await tracking.defer_due(WARRIORS_UNITED_GUILD_ID, clan_tag)
             await tracking.finish(WARRIORS_UNITED_GUILD_ID, clan_tag, started_at=started,
                                   regular_wars=regular_count, cwl_wars=cwl_count,
                                   deferred_accounts=deferred_count, skipped_wars=skipped_count,
-                                  error=problem)
+                                  error=problem, current_war_state=current_state,
+                                  private=private)
+            checked += 1
+            finalized_total += regular_count + cwl_count
         except asyncio.CancelledError:
             # A cancelled attempt must never mark this clan healthy.
             raise
     if clan_tags is None:
         await _warm_weight_cache(mongo)
+    if checked:
+        rows = await tracking.rows(WARRIORS_UNITED_GUILD_ID,
+                                   [clan for clan in clans if clan_tags is None or
+                                    tag(clan['tag']) in clan_tags])
+        behind = sum(row['status'] != 'healthy' for row in rows)
+        print(f'[strikes] pass: {checked} clans, {finalized_total} wars finalized, {behind} behind')
 
 
 async def loop(mongo, bot, coc_client):
@@ -732,8 +847,9 @@ async def loop(mongo, bot, coc_client):
                 next_full = time.monotonic() + POLL_SECONDS
             else:
                 pending = await tracking.pending(WARRIORS_UNITED_GUILD_ID)
-                if pending:
-                    wanted = {row['clan_tag'] for row in pending}
+                due = await tracking.due_clans(WARRIORS_UNITED_GUILD_ID)
+                if pending or due:
+                    wanted = {row['clan_tag'] for row in pending} | due
                     await scan_once(mongo, bot, coc_client, clan_tags=wanted)
                     for row in pending:
                         await tracking.consume_retry(WARRIORS_UNITED_GUILD_ID,

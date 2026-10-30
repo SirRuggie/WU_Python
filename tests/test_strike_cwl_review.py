@@ -85,8 +85,6 @@ def test_cwl_zero_strikes_and_retry_idempotency_even_with_conflicted_owner():
         assert all(item.get('expires_at') is None for item in saved.values())
         assert all(status_of(item) == 'recorded' for item in saved.values())
     asyncio.run(run())
-
-
 def test_cwl_link_provider_failure_is_unknown_never_unlinked_or_strike():
     import asyncio
 
@@ -125,6 +123,7 @@ def test_cwl_import_requires_preview_approval_and_stays_view_only_on_retry():
         assert first['cwl_wars'] == 1 and first['cwl_records'] == 2
         assert first['cwl_missed'] == 1
         assert {item['kind'] for item in first['items']} == {'cwl'}
+        assert {item['capture_source'] for item in first['items']} == {'clashking_import'}
         ids = {item['player_tag']: item['_id'] for item in first['items']}
         imported = await service.apply_import(123, first['preview_id'], 789,
                                               excluded_keys=[ids[PLAYER_ONE]])
@@ -166,54 +165,3 @@ def test_cwl_apply_does_not_add_unapproved_new_roster_member():
         assert applied['applied'] == 2 and applied['strikes'] == 0
         assert {item['player_tag'] for item in db.strike_records.rows.values()} == {PLAYER_ZERO, PLAYER_ONE}
     asyncio.run(run())
-
-
-def test_monitor_regular_failure_does_not_starve_cwl(monkeypatch):
-    import asyncio
-    from types import SimpleNamespace
-    from unittest.mock import AsyncMock
-
-    from extensions.commands import strikes
-
-    activation = datetime.now(timezone.utc) - timedelta(days=1)
-    regular = {'type': 'regular', 'end_time': activation + timedelta(hours=1)}
-    cwl = {'type': 'cwl', 'end_time': activation + timedelta(hours=2)}
-    store = SimpleNamespace(ensure_indexes=AsyncMock(), monitor_activation=AsyncMock(return_value=activation),
-                            sync_roster=AsyncMock(), process_war=AsyncMock(side_effect=RuntimeError('links down')),
-                            process_cwl_war=AsyncMock(return_value={"records": 0}))
-    cursor = SimpleNamespace(to_list=AsyncMock(return_value=[{'tag': CLAN}]))
-    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: cursor),
-                            strike_tracking=SimpleNamespace(update_one=AsyncMock(),
-                                find_one=AsyncMock(return_value={"error_history": []})))
-    coc_client = SimpleNamespace(get_clan=AsyncMock(return_value=SimpleNamespace(members=[])))
-    monkeypatch.setattr(strikes, 'service', lambda *_: store)
-    monkeypatch.setattr(strikes.strike_wars, 'fetch_history_report', AsyncMock(return_value={
-        'wars': [regular], 'cwl_wars': [cwl]}))
-    monkeypatch.setattr(strikes, '_warm_weight_cache', AsyncMock())
-    asyncio.run(strikes.scan_once(mongo, object(), coc_client))
-    store.process_cwl_war.assert_awaited_once_with(strikes.WARRIORS_UNITED_GUILD_ID, cwl)
-
-
-def test_monitor_cancellation_is_not_swallowed(monkeypatch):
-    import asyncio
-    from types import SimpleNamespace
-    from unittest.mock import AsyncMock
-
-    from extensions.commands import strikes
-
-    activation = datetime.now(timezone.utc) - timedelta(days=1)
-    regular = {'type': 'regular', 'end_time': activation + timedelta(hours=1)}
-    store = SimpleNamespace(ensure_indexes=AsyncMock(), monitor_activation=AsyncMock(return_value=activation),
-                            sync_roster=AsyncMock(), process_war=AsyncMock(side_effect=asyncio.CancelledError),
-                            process_cwl_war=AsyncMock(return_value={"records": 0}))
-    cursor = SimpleNamespace(to_list=AsyncMock(return_value=[{'tag': CLAN}]))
-    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: cursor),
-                            strike_tracking=SimpleNamespace(update_one=AsyncMock(),
-                                find_one=AsyncMock(return_value={"error_history": []})))
-    coc_client = SimpleNamespace(get_clan=AsyncMock(return_value=SimpleNamespace(members=[])))
-    monkeypatch.setattr(strikes, 'service', lambda *_: store)
-    monkeypatch.setattr(strikes.strike_wars, 'fetch_history_report', AsyncMock(return_value={
-        'wars': [regular], 'cwl_wars': []}))
-    monkeypatch.setattr(strikes, '_warm_weight_cache', AsyncMock())
-    with pytest.raises(asyncio.CancelledError):
-        asyncio.run(strikes.scan_once(mongo, object(), coc_client))

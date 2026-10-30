@@ -62,7 +62,8 @@ def test_failure_updates_checked_time_preserves_good_time_and_sanitizes_errors()
         mongo = SimpleNamespace(strike_tracking=MemoryCollection(), strike_records=MemoryCollection())
         tracking = StrikeTracking(mongo)
         first = await tracking.begin(GUILD, CLAN)
-        await tracking.finish(GUILD, CLAN, started_at=first, regular_wars=1)
+        await tracking.finish(GUILD, CLAN, started_at=first, regular_wars=1,
+                              current_war_state='notInWar')
         saved = mongo.strike_tracking.rows[tracking.key(GUILD, CLAN)]
         good = saved['last_success_at']
         checked = saved['last_checked_at']
@@ -76,7 +77,7 @@ def test_failure_updates_checked_time_preserves_good_time_and_sanitizes_errors()
         assert failed['error'] == 'Tracking check failed'
         assert 'SECRET' not in str(failed)
         rows = await tracking.rows(GUILD, [{'tag': CLAN, 'name': 'Our clan'}])
-        assert rows[0]['status'] == 'needs_review'
+        assert rows[0]['status'] == 'error'
         assert rows[0]['last_success_at'] == good
         assert rows[0]['last_checked_at'] == failed['last_checked_at']
     asyncio.run(run())
@@ -91,7 +92,8 @@ def test_stale_scan_token_cannot_overwrite_newer_check():
         await tracking.finish(GUILD, CLAN, started_at=stale, error='War source unavailable')
         row = mongo.strike_tracking.rows[tracking.key(GUILD, CLAN)]
         assert row.get('last_checked_at') is None
-        await tracking.finish(GUILD, CLAN, started_at=current, regular_wars=2)
+        await tracking.finish(GUILD, CLAN, started_at=current, regular_wars=2,
+                              current_war_state='notInWar')
         assert row['last_scan_status'] == 'healthy'
         assert row['regular_wars'] == 2
     asyncio.run(run())
@@ -124,7 +126,7 @@ def test_latest_recorded_war_uses_record_time_not_latest_check():
                 'clan_tag': CLAN, 'source': 'cwl', 'occurred_at': recorded}}))
         tracking = StrikeTracking(mongo)
         token = await tracking.begin(GUILD, CLAN)
-        await tracking.finish(GUILD, CLAN, started_at=token)
+        await tracking.finish(GUILD, CLAN, started_at=token, current_war_state='notInWar')
         row = (await tracking.rows(GUILD, [{'tag': CLAN}]))[0]
         assert row['latest_recorded_war_at'] == recorded
         assert row['last_checked_at'] > recorded
@@ -141,13 +143,13 @@ def test_unfinished_new_scan_cannot_look_healthy_after_restart_or_cancel():
         mongo = SimpleNamespace(strike_tracking=MemoryCollection(), strike_records=MemoryCollection())
         tracking = StrikeTracking(mongo)
         first = await tracking.begin(GUILD, CLAN)
-        await tracking.finish(GUILD, CLAN, started_at=first)
+        await tracking.finish(GUILD, CLAN, started_at=first, current_war_state='notInWar')
         healthy = (await tracking.rows(GUILD, [{'tag': CLAN}]))[0]
         assert healthy['status'] == 'healthy'
         good = healthy['last_success_at']
         await tracking.begin(GUILD, CLAN)
         # Simulate process exit or task cancellation before finish().
         unfinished = (await tracking.rows(GUILD, [{'tag': CLAN}]))[0]
-        assert unfinished['status'] == 'delayed'
+        assert unfinished['status'] == 'behind'
         assert unfinished['last_success_at'] == good
     asyncio.run(run())

@@ -1,0 +1,193 @@
+"""Official current-war snapshots are durable and fail closed without a final."""
+import asyncio
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import coc
+from pymongo.errors import DuplicateKeyError
+
+from extensions.commands.strikes import _finish_official_war, _league_observations
+from utils.strike_official import normalize
+from utils.strike_tracking import StrikeTracking
+
+GUILD = 123
+CLAN = '#2UVGQU9'
+OPPONENT = '#8GG8'
+PLAYER = '#PC9YGL0JL'
+
+
+class Rows:
+    def __init__(self):
+        self.rows = {}
+
+    @staticmethod
+    def matches(row, query):
+        for field, expected in query.items():
+            value = row.get(field)
+            if isinstance(expected, dict):
+                if '$lte' in expected and (value is None or value > expected['$lte']):
+                    return False
+                if '$ne' in expected and value == expected['$ne']:
+                    return False
+            elif value != expected:
+                return False
+        return True
+
+    async def create_index(self, *args, **kwargs):
+        return None
+
+    async def find_one(self, query, projection=None, sort=None):
+        found = [row for row in self.rows.values() if self.matches(row, query)]
+        if sort:
+            found.sort(key=lambda row: row[sort[0][0]], reverse=sort[0][1] < 0)
+        return deepcopy(found[0]) if found else None
+
+    async def insert_one(self, row):
+        if row['_id'] in self.rows:
+            raise DuplicateKeyError('duplicate')
+        self.rows[row['_id']] = deepcopy(row)
+
+    async def update_one(self, query, update, upsert=False):
+        row = self.rows.get(query['_id'])
+        if row is None and upsert:
+            row = {'_id': query['_id'], **deepcopy(update.get('$setOnInsert', {}))}
+            self.rows[query['_id']] = row
+        if row is None or not self.matches(row, query):
+            return SimpleNamespace(matched_count=0)
+        row.update(deepcopy(update.get('$set', {})))
+        return SimpleNamespace(matched_count=1)
+
+    def find(self, query, projection=None):
+        found = [deepcopy(row) for row in self.rows.values() if self.matches(row, query)]
+        async def listed(length=None):
+            return found[:length] if length else found
+        return SimpleNamespace(to_list=listed)
+
+
+def tracking():
+    mongo = SimpleNamespace(strike_war_snapshots=Rows(), strike_tracking=Rows(),
+                            strike_records=Rows())
+    return StrikeTracking(mongo)
+
+
+def real_war(state, *, end=None, hits=0, kind='random'):
+    """Pass actual official response JSON through installed coc.ClanWar."""
+    end = end or datetime.now(timezone.utc) - timedelta(minutes=2)
+    fmt = lambda value: value.strftime('%Y%m%dT%H%M%S.000Z')
+    attacks = [{'attackerTag': PLAYER, 'defenderTag': OPPONENT, 'stars': 2,
+                'destructionPercentage': 75, 'order': 1, 'duration': 120}][:hits]
+    def side(clan_tag, member_tag, member_attacks):
+        return {'tag': clan_tag, 'name': clan_tag, 'clanLevel': 20,
+                'attacks': len(member_attacks), 'stars': 0,
+                'destructionPercentage': 0,
+                'members': [{'tag': member_tag, 'name': 'Player', 'townhallLevel': 17,
+                             'mapPosition': 1, 'opponentAttacks': 0,
+                             'bestOpponentAttack': {}, 'attacks': member_attacks}]}
+    raw = {'state': state, 'teamSize': 1, 'attacksPerMember': 2,
+           'preparationStartTime': fmt(end - timedelta(days=2)),
+           'startTime': fmt(end - timedelta(days=1)), 'endTime': fmt(end),
+           'clan': side(CLAN, PLAYER, attacks),
+           'opponent': side(OPPONENT, OPPONENT, [])}
+    if kind == 'cwl':
+        raw['tag'] = '#2UVGQU9'
+        raw['attacksPerMember'] = 1
+    return coc.ClanWar(data=raw, client=SimpleNamespace(raw_attribute=True), clan_tag=CLAN)
+
+
+def test_real_coc_model_normalizes_public_attack_details_and_enum():
+    war = normalize(real_war('inWar', hits=1), CLAN)
+    assert war['state'] == 'inWar' and war['type'] == 'regular'
+    assert war['members'][0]['town_hall'] == 17
+    assert war['members'][0]['map_position'] == 1
+    assert war['members'][0]['attacks'] == 1
+    assert war['members'][0]['attack_details'][0]['stars'] == 2
+    assert war['complete'] is True
+
+
+def test_aggregate_mismatch_or_missing_start_cannot_finalize():
+    for kind in ('random', 'cwl'):
+        war = real_war('warEnded', hits=0, kind=kind)
+        war.clan.attacks_used = 1
+        assert normalize(war, CLAN)['complete'] is False
+    war = real_war('warEnded')
+    war.start_time = None
+    try:
+        normalize(war, CLAN)
+    except ValueError as error:
+        assert 'timing' in str(error)
+    else:
+        raise AssertionError('missing start must fail closed')
+
+
+def test_cwl_middle_round_is_observed_despite_later_placeholders():
+    async def run():
+        war = real_war('inWar', kind='cwl')
+        client = SimpleNamespace(
+            get_league_group=AsyncMock(return_value=SimpleNamespace(
+                rounds=[['#WAR1']] + [['#0'] for _ in range(6)])),
+            get_league_war=AsyncMock(return_value=war))
+        observed = await _league_observations(client, CLAN, {})
+        assert len(observed) == 1 and observed[0]['state'] == 'inWar'
+        client.get_league_war.assert_awaited_once_with('#WAR1')
+    asyncio.run(run())
+
+
+def test_active_then_final_once_across_restart_and_same_ledger_key():
+    async def run():
+        owner = tracking()
+        active = normalize(real_war('inWar'), CLAN)
+        final = normalize(real_war('warEnded', end=active['end_time']), CLAN)
+        saved = await owner.observe(GUILD, active, now=active['end_time'] - timedelta(minutes=5))
+        assert saved['next_check_at'] == active['end_time'] + timedelta(seconds=60)
+        assert await owner.due_clans(GUILD, now=active['end_time']) == set()
+        assert await owner.due_clans(GUILD, now=active['end_time'] + timedelta(seconds=61)) == {CLAN}
+        restarted = StrikeTracking(owner.mongo)
+        store = SimpleNamespace(process_war=AsyncMock(return_value={'deferred_count': 0}))
+        result = await _finish_official_war(restarted, store, GUILD, final)
+        assert result == (1, 0, 0, 0)
+        assert store.process_war.await_count == 1
+        assert await _finish_official_war(restarted, store, GUILD, final) == (0, 0, 0, 0)
+        assert store.process_war.await_count == 1
+        assert (await restarted.snapshot(GUILD, final))['status'] == 'finalized'
+    asyncio.run(run())
+
+
+def test_no_active_capture_or_missing_final_makes_zero_strikes_and_review_row():
+    async def run():
+        owner = tracking()
+        final = normalize(real_war('warEnded'), CLAN)
+        store = SimpleNamespace(process_war=AsyncMock())
+        assert await _finish_official_war(owner, store, GUILD, final) == (0, 0, 0, 0)
+        assert await owner.snapshot(GUILD, final) is None
+        active = normalize(real_war('inWar', end=final['end_time']), CLAN)
+        await owner.observe(GUILD, active)
+        next_war = {**active, 'end_time': active['end_time'] + timedelta(days=2)}
+        assert await owner.abandon_older(GUILD, CLAN,
+                {owner.snapshot_key(GUILD, next_war)}, now=active['end_time'] + timedelta(minutes=1)) == 1
+        incomplete = await owner.incomplete_wars(GUILD)
+        assert len(incomplete) == 1 and incomplete[0]['strikes'] == 0
+        assert 'review in Find war' in incomplete[0]['review_message']
+        store.process_war.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_source_failure_backoff_and_final_payload_survive_new_prep():
+    async def run():
+        owner = tracking()
+        active = normalize(real_war('inWar'), CLAN)
+        await owner.observe(GUILD, active, now=active['end_time'] - timedelta(minutes=5))
+        due = active['end_time'] + timedelta(seconds=61)
+        await owner.defer_due(GUILD, CLAN, now=due)
+        row = await owner.snapshot(GUILD, active)
+        assert row['next_check_at'] >= due + timedelta(seconds=60)
+        final = normalize(real_war('warEnded', end=active['end_time']), CLAN)
+        await owner.observe(GUILD, final)
+        next_war = {**active, 'end_time': active['end_time'] + timedelta(days=2)}
+        await owner.abandon_older(GUILD, CLAN,
+                                  {owner.snapshot_key(GUILD, next_war)},
+                                  now=active['end_time'] + timedelta(minutes=2))
+        assert (await owner.snapshot(GUILD, final))['status'] == 'observing'
+        assert len(await owner.pending_finals(GUILD, CLAN)) == 1
+    asyncio.run(run())
