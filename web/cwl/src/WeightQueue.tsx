@@ -11,6 +11,8 @@ type Props = {
   onOrderChange?: (tags: string[]) => void;
   onClanWeights?: () => void;
   onDirty?: (dirty: boolean) => void;
+  onDirtyCount?: (count: number) => void;
+  resetToken?: number;
   accounts: RosterAccount[];
   busy: boolean;
   archived?: boolean;
@@ -30,10 +32,14 @@ export default function WeightQueue({
   onSave,
   onRefresh,
   onDirty,
+  onDirtyCount,
+  resetToken,
 }: Props) {
   const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(50);
   const [drafts, setDrafts] = useState<Record<string, ManualWeightDraft>>({});
+  const [unit, setUnit] = useState<ManualWeightDraft["unit"]>("loot");
+  const previousResetToken = useRef(resetToken);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const pending = useRef(false);
@@ -54,7 +60,10 @@ export default function WeightQueue({
     onOrderChange?.(orderKey ? orderKey.split("|") : []);
   }, [orderKey, onOrderChange]);
   const disabled = busy || saving || archived;
-  const dirty = missing.some((account) => !!drafts[account.tag]?.text);
+  const dirtyCount = missing.filter(
+    (account) => !!drafts[account.tag]?.text.trim(),
+  ).length;
+  const dirty = dirtyCount > 0;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -63,8 +72,19 @@ export default function WeightQueue({
   }, []);
   useEffect(() => {
     onDirty?.(dirty);
-    return () => onDirty?.(false);
-  }, [dirty, onDirty]);
+    onDirtyCount?.(dirtyCount);
+    return () => {
+      onDirty?.(false);
+      onDirtyCount?.(0);
+    };
+  }, [dirty, dirtyCount, onDirty, onDirtyCount]);
+  useEffect(() => {
+    if (previousResetToken.current === resetToken) return;
+    previousResetToken.current = resetToken;
+    setDrafts({});
+    setErrors({});
+    setFocusTarget(null);
+  }, [resetToken]);
   useEffect(() => {
     if (disabled || focusTarget === null) return;
     (inputs.current.get(focusTarget) || searchInput.current)?.focus();
@@ -73,7 +93,10 @@ export default function WeightQueue({
 
   async function save(account: RosterAccount) {
     if (disabled || pending.current || account.clan_weight_managed) return;
-    const state = compactWeightState(drafts[account.tag] || emptyDraft);
+    const state = compactWeightState({
+      ...(drafts[account.tag] || emptyDraft),
+      unit,
+    });
     if (state.weight === null || state.error) return;
     const index = matching.findIndex((item) => item.tag === account.tag);
     const next = [
@@ -137,6 +160,27 @@ export default function WeightQueue({
           placeholder="Name or player tag"
         />
       </label>
+      {!!missing.length && (
+        <div
+          className="weight-queue-unit-picker"
+          role="group"
+          aria-label="Enter weights as"
+        >
+          <span>Enter weights as:</span>
+          <div className="weight-queue-unit-buttons">
+            {(["loot", "full"] as const).map((option) => (
+              <Button
+                key={option}
+                aria-pressed={unit === option}
+                disabled={disabled}
+                onClick={() => setUnit(option)}
+              >
+                {option === "loot" ? "Loot" : "Full"}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="weight-queue-help">
         Saving doesn't move anyone. Refresh keeps manual weights.
       </div>
@@ -162,7 +206,7 @@ export default function WeightQueue({
               key={account.tag}
               account={account}
               onClanWeights={onClanWeights}
-              value={drafts[account.tag] || emptyDraft}
+              value={{ ...(drafts[account.tag] || emptyDraft), unit }}
               onChange={(value) => {
                 setDrafts((current) => ({ ...current, [account.tag]: value }));
                 setErrors((current) => ({ ...current, [account.tag]: "" }));

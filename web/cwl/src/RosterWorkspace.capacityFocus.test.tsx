@@ -19,13 +19,30 @@ it("consumes capacity-link focus so a later ordinary Clan settings visit does no
   const scrollIntoView = vi
     .spyOn(HTMLElement.prototype, "scrollIntoView")
     .mockImplementation(() => {});
+  const account = {
+    tag: "#PLAYER",
+    user_id: "1",
+    player_name: "Assigned player",
+    pool: "main",
+    town_hall: 16,
+    prefer_crystal_1_or_lower: false,
+    source_weight: 120000,
+    source_status: "current",
+    source_name: "game",
+    source_checked_at: null,
+    source_modified_at: null,
+    manual_weight: null,
+    effective_weight: 120000,
+    assigned_clan_tag: "#FUN",
+    kept: false,
+  };
   const clan = {
     tag: "#FUN",
     name: "Funnies",
     pool: "main",
     capacity: null,
     effective_capacity: 0,
-    assigned_count: 0,
+    assigned_count: 1,
     min_weight: null,
     max_weight: null,
     archived: false,
@@ -39,16 +56,16 @@ it("consumes capacity-link focus so a later ordinary Clan settings visit does no
           last_publication: null,
           next_version: 1,
           preview: {
-            accounts: [],
+            accounts: [account],
             clans: [clan],
-            assigned_count: 0,
+            assigned_count: 1,
             unassigned_count: 0,
           },
         }
       : {
           revision: 1,
           undo: null,
-          accounts: [],
+          accounts: [account],
           clans: [clan],
           metadata_updating: false,
         },

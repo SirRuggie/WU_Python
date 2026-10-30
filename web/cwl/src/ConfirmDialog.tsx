@@ -9,6 +9,10 @@ export default function ConfirmDialog({
   confirmLabel = "Confirm",
   disabled = false,
   danger = false,
+  cancelLabel = "Cancel",
+  hideCancel = false,
+  cancelOnBackdrop = false,
+  returnFocus,
   children,
 }: {
   text: string;
@@ -16,6 +20,10 @@ export default function ConfirmDialog({
   confirmLabel?: string;
   disabled?: boolean;
   danger?: boolean;
+  cancelLabel?: string;
+  hideCancel?: boolean;
+  cancelOnBackdrop?: boolean;
+  returnFocus?: () => HTMLElement | null;
   children?: ReactNode;
   onCancel: () => void;
   onConfirm: () => void;
@@ -30,8 +38,10 @@ export default function ConfirmDialog({
     modal.showModal();
     return () => {
       modal.close();
-      if (opener instanceof HTMLElement && opener.isConnected)
-        opener.focus({ preventScroll: true });
+      const requested = returnFocus?.();
+      const target = requested?.isConnected ? requested : opener;
+      if (target instanceof HTMLElement && target.isConnected)
+        target.focus({ preventScroll: true });
     };
   }, []);
   return createPortal(
@@ -40,11 +50,19 @@ export default function ConfirmDialog({
       className="confirm-dialog"
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
-        const controls = Array.from(dialog.current!.querySelectorAll<HTMLElement>(
-          'button, a[href], input, select, textarea, summary, [tabindex]',
-        )).filter(element => element.tabIndex >= 0 && !element.matches(':disabled')
-          && element.getClientRects().length > 0 && !element.closest('[hidden], [inert]'));
-        const first = controls[0], last = controls[controls.length - 1];
+        const controls = Array.from(
+          dialog.current!.querySelectorAll<HTMLElement>(
+            "button, a[href], input, select, textarea, summary, [tabindex]",
+          ),
+        ).filter(
+          (element) =>
+            element.tabIndex >= 0 &&
+            !element.matches(":disabled") &&
+            element.getClientRects().length > 0 &&
+            !element.closest("[hidden], [inert]"),
+        );
+        const first = controls[0],
+          last = controls[controls.length - 1];
         if (!first || !last) return;
         if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
@@ -56,6 +74,9 @@ export default function ConfirmDialog({
       }}
       aria-labelledby={title}
       aria-describedby={description}
+      onClick={(event) => {
+        if (cancelOnBackdrop && event.target === dialog.current) onCancel();
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onCancel();
@@ -65,10 +86,13 @@ export default function ConfirmDialog({
       <p id={description}>{text}</p>
       {children}
       <div className="confirm-dialog-actions">
-        <button autoFocus onClick={onCancel}>
-          Cancel
-        </button>
+        {!hideCancel && (
+          <button autoFocus onClick={onCancel}>
+            {cancelLabel}
+          </button>
+        )}
         <button
+          autoFocus={hideCancel}
           className={danger ? "confirm-danger" : "primary"}
           disabled={disabled}
           onClick={() => {

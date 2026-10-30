@@ -97,12 +97,18 @@ it("rules saves use the real workspace path and never label the toast draft; err
     expect(document.querySelector("dialog")?.textContent).toContain(
       "Only this save failed.",
     );
-    window.confirm = vi.fn().mockReturnValue(true);
+    const nativeConfirm = vi.fn().mockReturnValue(true);
+    window.confirm = nativeConfirm;
     await act(async () =>
       document
         .querySelector<HTMLButtonElement>('[aria-label="Close panel"]')!
         .click(),
     );
+    expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
+      "You have unsaved roster changes.",
+    );
+    expect(nativeConfirm).not.toHaveBeenCalled();
+    await act(async () => button("Discard").click());
     await act(async () => button("Amber Knights").click());
     expect(document.querySelector("dialog")?.textContent).not.toContain(
       "Only this save failed.",

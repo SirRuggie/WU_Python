@@ -35,6 +35,7 @@ import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import OwnerPrankBoundary from './ownerPrank/OwnerPrankBoundary'
+import ConfirmDialog from './ConfirmDialog'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
 import { unsignedAccounts, reconcileNewSignupDraft, clearSubmittedDraft, selectedEntries, submittedSummary, type Draft } from './signup'
 
@@ -314,6 +315,10 @@ function App() {
   const [savedSignupDirty, setSavedSignupDirty] = useState(false)
   const [manageDirty, setManageDirty] = useState(false)
   const [cwlDirty, setCwlDirty] = useState(false)
+  const [rosterDirtySummary, setRosterDirtySummary] = useState({ weightCount: 0, onlyWeights: false })
+  const [pendingRosterLeave, setPendingRosterLeave] = useState<null | { action: () => void; working: boolean }>(null)
+  const replayRosterHistoryTarget = useRef<number | null>(null)
+  const rosterEditFocus = useRef<HTMLElement | null>(null)
   const navigation = useRef<DashboardHistory | null>(null)
   const signupDirty = Object.values(drafts).some(draft => Object.keys(draft).length > 0)
   useEffect(() => {
@@ -322,12 +327,16 @@ function App() {
     window.addEventListener('beforeunload', protect)
     return () => window.removeEventListener('beforeunload', protect)
   }, [view, signupDirty, pending, tourActive])
-  const canLeave = () => {
+  const canLeave = (action?: () => void) => {
     if (isTourReadOnly()) return true
-    if (['roster', 'staff'].includes(view) && rosterBusy) return false
+    if (view === 'roster') {
+      if (rosterBusy) { setPendingRosterLeave({ action: () => {}, working: true }); return false }
+      if (cwlDirty) { setPendingRosterLeave({ action: action || (() => {}), working: false }); return false }
+    }
+    if (view === 'staff' && rosterBusy) return false
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
-    if (['roster', 'participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
+    if (['participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
     if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
     if (view === 'publication' && publicationBusy) return false
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving publication or announcement changes?')
@@ -355,14 +364,18 @@ function App() {
   }, [session?.user.id])
   const [activityVisit, setActivityVisit] = useState<number>(() => window.history.state?.wuDashboardIndex || 0)
   const changeView = (next: View, filter = '', kind?: 'war'|'cwl', panel: 'register'|'saved' = 'register') => {
-    if (navigation.current?.pending || ((next !== view || (next === 'signup' && panel !== signupPanel)) && !canLeave())) return
-    const destination = allowedView(next)
-    if (destination !== view || (destination === 'signup' && signupPanel !== panel)) navigation.current?.write({ view: destination, activityFilter: filter, activityKind: kind, ...(destination === 'signup' ? {signupPanel: panel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, !isTourReadOnly())
-    setActivityVisit(window.history.state?.wuDashboardIndex || 0)
-    if (destination === 'signup') setSignupPanel(panel)
-    setActivitySearch(filter)
-    setActivityKind(kind)
-    acceptRoute(destination)
+    if (navigation.current?.pending) return
+    const proceed = () => {
+      const destination = allowedView(next)
+      if (destination !== view || (destination === 'signup' && signupPanel !== panel)) navigation.current?.write({ view: destination, activityFilter: filter, activityKind: kind, ...(destination === 'signup' ? {signupPanel: panel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, !isTourReadOnly())
+      setActivityVisit(window.history.state?.wuDashboardIndex || 0)
+      if (destination === 'signup') setSignupPanel(panel)
+      setActivitySearch(filter)
+      setActivityKind(kind)
+      acceptRoute(destination)
+    }
+    if ((next !== view || (next === 'signup' && panel !== signupPanel)) && !canLeave(proceed)) return
+    proceed()
   }
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -377,19 +390,28 @@ function App() {
   })
   const openPublication = (step: 'review' | 'announce') => {
     if (navigation.current?.pending || (view === 'publication' && publicationStep === step)) return
-    if (!canLeave()) return
-    navigation.current?.write({view: 'publication', season: seasonId, step}, true)
-    setPublicationStep(step)
-    acceptRoute('publication')
+    const proceed = () => {
+      navigation.current?.write({view: 'publication', season: seasonId, step}, true)
+      setActivityVisit(window.history.state?.wuDashboardIndex || 0)
+      setPublicationStep(step)
+      acceptRoute('publication')
+    }
+    if (!canLeave(proceed)) return
+    proceed()
   }
   const navigateSidebar = (next: View) => {
     if (next !== 'roster') { changeView(next); return }
-    if (navigation.current?.pending || !canLeave() || allowedView('roster') !== 'roster') return
-    try { sessionStorage.setItem(`wu-roster-${staffSeasonId}-mode`, JSON.stringify('assign')) } catch { /* Optional preference. */ }
-    setRosterReadiness('all')
-    setRosterVisit(value => value + 1)
-    if (view !== 'roster') navigation.current?.write({view: 'roster', season: staffSeasonId}, true)
-    acceptRoute('roster')
+    if (navigation.current?.pending || allowedView('roster') !== 'roster') return
+    const proceed = () => {
+      try { sessionStorage.setItem(`wu-roster-${staffSeasonId}-mode`, JSON.stringify('assign')) } catch { /* Optional preference. */ }
+      setRosterReadiness('all')
+      setRosterVisit(value => value + 1)
+      if (view !== 'roster') navigation.current?.write({view: 'roster', season: staffSeasonId}, true)
+      setActivityVisit(window.history.state?.wuDashboardIndex || 0)
+      acceptRoute('roster')
+    }
+    if (!canLeave(proceed)) return
+    proceed()
   }
   const changeSignupPanel = (panel: 'register'|'saved') => {
     if (navigation.current?.pending || pending || (panel !== signupPanel && !canLeave())) return
@@ -397,8 +419,8 @@ function App() {
     setSignupPanel(panel); setReview(false); setCompletion(null)
   }
   const tourBackPending = useRef(false);
-  const navigationState = useRef({ canLeave, allowedView });
-  navigationState.current = { canLeave, allowedView };
+  const navigationState = useRef({ canLeave, allowedView, currentIndex: activityVisit });
+  navigationState.current = { canLeave, allowedView, currentIndex: activityVisit };
   useEffect(() => {
     const controller = new DashboardHistory(window.history);
     navigation.current = controller;
@@ -411,8 +433,31 @@ function App() {
         if (!controller.pending) window.dispatchEvent(new Event("wu-tour-back"));
         return;
       }
+      const targetIndex = (event.state as { wuDashboardIndex?: number } | null)?.wuDashboardIndex;
+      const previousIndex = navigationState.current.currentIndex;
+      const replay = () => {
+        if (!Number.isInteger(targetIndex)) return;
+        const delta = targetIndex! - previousIndex;
+        const resume = () => {
+          if (controller.pending) { window.setTimeout(resume, 0); return; }
+          replayRosterHistoryTarget.current = targetIndex!;
+          window.history.go(delta);
+          window.setTimeout(() => {
+            if (replayRosterHistoryTarget.current === targetIndex)
+              replayRosterHistoryTarget.current = null;
+          }, 2000);
+        };
+        resume();
+      };
       if (
-        !controller.pop(event.state, () => navigationState.current.canLeave())
+        !controller.pop(event.state, () => {
+          if (replayRosterHistoryTarget.current === targetIndex) {
+            replayRosterHistoryTarget.current = null;
+            return true;
+          }
+          replayRosterHistoryTarget.current = null;
+          return navigationState.current.canLeave(replay);
+        })
       ) {
         if (tourBackPending.current && !controller.pending) {
           tourBackPending.current = false;
@@ -457,8 +502,7 @@ function App() {
     finally { setPending(false) }
   }
   const signOut = () => {
-    if (!canLeave()) return
-    void run(
+    const proceed = () => void run(
       async () => api('/auth/logout', 'POST', { push_id: await stopPushOnSignout() }),
       'Signed out.',
       async () => {
@@ -474,6 +518,8 @@ function App() {
         setAuthState('signed-out')
       },
     )
+    if (!canLeave(proceed)) return
+    proceed()
   }
   const submit = async () => {
     if (isTourReadOnly()) return
@@ -654,6 +700,28 @@ function App() {
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
   return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className={`shell${tourActive ? ' tour-active' : ''}`}>
+    {pendingRosterLeave && <ConfirmDialog
+      key={pendingRosterLeave.working ? 'working' : 'dirty'}
+      heading={pendingRosterLeave.working ? 'Save in progress' : 'Unsaved changes'}
+      text={pendingRosterLeave.working ? 'Wait for the save to finish.' : rosterDirtySummary.onlyWeights ? `You have ${rosterDirtySummary.weightCount} unsaved weight${rosterDirtySummary.weightCount === 1 ? '' : 's'}.` : 'You have unsaved roster changes.'}
+      confirmLabel={pendingRosterLeave.working ? 'OK' : 'Discard'}
+      cancelLabel="Keep editing"
+      hideCancel={pendingRosterLeave.working}
+      cancelOnBackdrop
+      returnFocus={() => rosterEditFocus.current}
+      danger={!pendingRosterLeave.working}
+      onCancel={() => setPendingRosterLeave(null)}
+      onConfirm={() => {
+        const { action, working: wasWorking } = pendingRosterLeave;
+        setPendingRosterLeave(null);
+        if (wasWorking) return;
+        if (rosterBusy) {
+          setPendingRosterLeave({ action: () => {}, working: true });
+          return;
+        }
+        action();
+      }}
+    />}
     <a className="skip-to-content" href="#dashboard-main" inert={mobile && menuOpen}>Skip to content</a>
     <aside ref={drawerRef} id="dashboard-navigation" className={`sidebar ${menuOpen ? 'open' : ''}`} inert={mobile && !menuOpen} role={mobile && menuOpen ? 'dialog' : undefined} aria-modal={mobile && menuOpen ? true : undefined} aria-label={mobile && menuOpen ? 'Navigation' : undefined} tabIndex={-1}>
       <div className="brand-wrap"><Brand /><button className="menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button></div>
@@ -870,6 +938,8 @@ function App() {
             onClanWeights={() => changeView("weight-trial")}
             onFamilyClans={() => changeView("clan-management")}
             onBusy={setRosterBusy}
+            onDirtySummary={setRosterDirtySummary}
+            onEditFocus={element => { rosterEditFocus.current = element }}
             onSeasonRefresh={loadSeasons}
             onDirty={setCwlDirty}
             key={`${seasonId}:${rosterVisit}`}

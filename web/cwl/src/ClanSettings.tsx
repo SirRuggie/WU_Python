@@ -37,7 +37,7 @@ type Props = {
   archived: boolean;
   onPoolChange: (pool: Pool) => void;
   onDirty: (dirty: boolean) => void;
-  onLeave: () => boolean;
+  onLeave: (action: () => void) => boolean;
   onSave: (clan: RosterClan, rules: ClanRules) => Promise<boolean>;
 };
 
@@ -69,7 +69,7 @@ export default function ClanSettings(props: Props) {
     if (row && highlight === props.focusClanTag) props.onFocusHandled?.();
   }, [highlight, props.pool, props.focusClanRequest]);
   const close = () => {
-    if (!props.onLeave()) return false;
+    if (!props.onLeave(() => setTag(null))) return false;
     setTag(null);
     return true;
   };

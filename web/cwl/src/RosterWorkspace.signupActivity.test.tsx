@@ -186,8 +186,16 @@ it.each([
     expect(confirm).not.toHaveBeenCalled();
     if (scenario === "dirty")
       expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
-        "Discard unsaved roster edits",
+        "You have unsaved roster changes.",
       );
+    if (scenario === "busy") {
+      expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
+        "Wait for the save to finish.",
+      );
+      expect(document.querySelector(".confirm-dialog")?.textContent).not.toContain(
+        "Discard",
+      );
+    }
     expect(
       state.api.mock.calls.every((call) => !call[1] || call[1] === "GET"),
     ).toBe(true);

@@ -68,6 +68,7 @@ export default function WeightQueueRow({
           inputRef={inputRef}
           name={account.player_name}
           error={error}
+          showUnitToggle={false}
         />
       )}
     </form>
