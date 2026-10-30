@@ -241,6 +241,46 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
             json={'revision':data['revision'],'assigned_clan_tag':'#C2Y','kept':True})
         self.assertEqual(response.status,200,await response.text())
 
+    async def test_auto_preview_weight_range_has_inclusive_endpoints(self):
+        await self.signup('lazy', '#G2Y')
+        await self.host('#C2Y', 'lazy')
+        path = f'/seasons/{self.sid}/lineup/%23C2Y/rules'
+        response = await self.call('PATCH', path, self.owner,
+                                   json={'revision': await self.revision(),
+                                         'min_weight': 172000, 'max_weight': 179000})
+        self.assertEqual(response.status, 200)
+        response = await self.call('PATCH', path, self.owner,
+                                   json={'revision': await self.revision(),
+                                         'min_weight': 179000, 'max_weight': 179000})
+        self.assertEqual(response.status, 400)  # It must still be a range.
+        for weight, inside in ((171999, False), (172000, True),
+                               (179000, True), (179001, False), (None, False)):
+            with self.subTest(weight=weight):
+                with self.app['store'].tx() as db:
+                    db.execute("INSERT INTO roster_entries(season_id,tag,source_weight,source_status) "
+                               "VALUES (?, '#G2Y', ?, 'current') "
+                               "ON CONFLICT(season_id,tag) DO UPDATE SET "
+                               "source_weight=excluded.source_weight,source_status='current'",
+                               (self.sid, weight))
+                roster = await (await self.call('GET',
+                    f'/seasons/{self.sid}/roster', self.owner)).json()
+                account = next(item for item in roster['accounts'] if item['tag'] == '#G2Y')
+                self.assertEqual(account['auto_placement_reason'],
+                                 'ready' if inside else
+                                 'missing_weight' if weight is None else 'no_eligible_rule')
+                preview = await (await self.call('POST',
+                    f'/seasons/{self.sid}/roster/auto-preview', self.owner,
+                    json={'revision': roster['revision'], 'pool': 'lazy'})).json()
+                self.assertEqual(preview['placements'],
+                                 [{'tag': '#G2Y', 'assigned_clan_tag': '#C2Y'}]
+                                 if inside else [])
+                if not inside:
+                    self.assertEqual(preview['unassigned'], [{'tag': '#G2Y',
+                        'reason': 'missing_weight' if weight is None else 'no_eligible_rule'}])
+                self.assertIsNone(self.app['store'].one(
+                    "SELECT assigned_clan_tag FROM roster_entries "
+                    "WHERE season_id=? AND tag='#G2Y'", (self.sid,))['assigned_clan_tag'])
+
     async def test_staff_only_roster_and_manual_cross_pool_override(self):
         await self.signup("lazy", "#Q2Y", True)
         await self.host("#C2Y", "main")

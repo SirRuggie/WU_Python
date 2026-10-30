@@ -167,6 +167,7 @@ export default function ClanSettings(props: Props) {
           onArchiveChanged={props.onHostingChanged}
           onArchiveBusy={props.onHostingBusy}
           clan={clan}
+          clans={props.clans}
           accounts={props.accounts || []}
           busy={props.busy}
           archived={props.archived}
@@ -192,6 +193,7 @@ export function ClanSettingsEditor({
   onArchiveChanged,
   onArchiveBusy,
   clan,
+  clans = [],
   accounts = [],
   busy,
   archived,
@@ -203,6 +205,7 @@ export function ClanSettingsEditor({
   onArchiveChanged?: () => Promise<void>;
   onArchiveBusy?: (busy: boolean) => void;
   clan: RosterClan;
+  clans?: RosterClan[];
   accounts?: RosterAccount[];
   busy: boolean;
   archived: boolean;
@@ -238,6 +241,21 @@ export function ClanSettingsEditor({
   }, [changed, onDirty]);
   const min = settingsWeight(draft.min),
     max = settingsWeight(draft.max);
+  const sharedBoundary =
+    draft.pool && !min.error && !max.error
+      ? clans.find(
+          (other) =>
+            other.tag !== clan.tag &&
+            !other.archived &&
+            other.pool === draft.pool &&
+            ((max.value !== null && other.min_weight === max.value) ||
+              (min.value !== null && other.max_weight === min.value)),
+        )
+      : null;
+  const sharedWeight =
+    sharedBoundary && max.value === sharedBoundary.min_weight
+      ? max.value
+      : min.value;
   const rangeError =
     !min.error &&
     !max.error &&
@@ -440,8 +458,15 @@ export function ClanSettingsEditor({
               </p>
               {min.value !== null && max.value !== null && (
                 <small>
-                  Includes {compactRosterWeight(min.value)}, up to just under{" "}
+                  Includes {compactRosterWeight(min.value)} to{" "}
                   {compactRosterWeight(max.value)}.
+                </small>
+              )}
+              {sharedBoundary && sharedWeight !== null && (
+                <small>
+                  {" "}
+                  {compactRosterWeight(sharedWeight)} fits both {clan.name} and{" "}
+                  {sharedBoundary.name}.
                 </small>
               )}
             </div>

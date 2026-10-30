@@ -39,7 +39,7 @@ def balance_accounts(accounts, clans, selected_tags, destination_tags, include_l
             eligible = [c for c in hosts.values() if not c['archived'] and c['pool'] == a['pool']
                         and c['capacity'] in (15, 30)
                         and (c['min_weight'] is None or weight >= c['min_weight'])
-                        and (c['max_weight'] is None or weight < c['max_weight'])]
+                        and (c['max_weight'] is None or weight <= c['max_weight'])]
             available = [c for c in eligible if trial_counts[c['tag']] < c['capacity']]
             if not available:
                 failed.append({'tag': a['tag'], 'reason': 'full' if eligible else 'no_eligible_rule'})

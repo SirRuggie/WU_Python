@@ -85,7 +85,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Touch targets ≥44×44 (WCAG 2.5.8 AA minimum is 24px; Apple 44pt, Material 48dp).
 - No horizontal page overflow at 320, 360 and 1440px.
 - Horizontal rows: hidden scrollbar + edge fade + scroll-snap.
-- List: render 50 + Load more. Never paginate selection.
+- List: render 50 + Load more. Never paginate selection. Select 15 / Select 30 replace selection with the first unlocked matching accounts in displayed order; All N appears only when N ≤ 50. Keep Clear visible when selected. Enforce the 50 cap on every selection path, counting hidden selections; quick-pick targets stay at least 44px on one mobile row.
 - Numbers: `172k`, `174.5k`. Clan card totals use grouping (`Total 2,579k`). Full values only in Details.
 - No instructional paragraphs to explain a flow. If a flow needs instructions, redesign the flow.
 - Labels: Assign / Unassign, Assigned clan, Pool (Main/Lazy), "Not in assigned clan".
@@ -101,6 +101,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 ## Compare clans
 
 - Clan header uses the clan capacity card style (no stat chips).
+- Default player sort is Weight: high to low, reset on pool changes; unknown weights sort last in stable name order. Other sort choices remain unchanged.
 - Card colors: green = in this clan, red = not in this clan (an exception to "green = assigned", at staff request).
 - Tags are outlined with a dark fill and never color-only.
 - Card body opens Details; the shared `⋯` menu holds DM + Details.
@@ -117,7 +118,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - Overview rows reuse the roster clan capacity card style, grouped by pool; Needs a pool appears in both tabs.
 - Tap a row to edit in ActionPanel; Close gets initial focus and dirty/stale protections remain. Explicit Save is the only write boundary.
 - Weight inputs use a k suffix, digits and one decimal point, up to 0.001k precision. Zero is an inline error; blank means no limit.
-- Live range preview uses Compare's formatter: min–max, min+, under max, Any weight; min inclusive, max exclusive.
+- Live range preview uses Compare's formatter: min–max, min+, up to max, Any weight; minimum and maximum inclusive (Ruggie, 2026-10-30). Same-pool shared endpoints show a non-blocking “179k fits both Clan A and Clan B.” note.
 - Changed ranges show a known-weight-only impact disclosure. Over-full war sizes show a red +N over count, with no reassignment.
 - Archived seasons use text values and no Save. Settings-save feedback is never labelled draft-only.
 - Phone Compare rail commits selection after scroll settles and keeps arrows/taps/player swipes synchronized. League, tag and optional range live on the phone rail card; desktop headers stay unchanged.

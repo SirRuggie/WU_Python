@@ -28,7 +28,7 @@ it("shares all four Compare range wordings and capacity states", () => {
     "150k+",
   );
   expect(comparisonWeightRange({ min_weight: null, max_weight: 170000 })).toBe(
-    "under 170k",
+    "up to 170k",
   );
   expect(
     comparisonWeightRange({ min_weight: null, max_weight: null }) ||
@@ -39,8 +39,8 @@ it("shares all four Compare range wordings and capacity states", () => {
   expect(capacityState(14, 15)).toBe("room");
   expect(capacityState(14, null)).toBe("room");
 });
-it("counts only assigned, known weights outside inclusive min and exclusive max", () => {
-  const accounts = [149999, 150000, 169999, 170000, null].map(
+it("counts only assigned, known weights outside inclusive min and max", () => {
+  const accounts = [149999, 150000, 169999, 170000, 170001, null].map(
     (effective_weight, index) => ({
       tag: String(index),
       assigned_clan_tag: "A",
@@ -54,7 +54,7 @@ it("counts only assigned, known weights outside inclusive min and exclusive max"
   } as RosterAccount);
   expect(rangeImpact(accounts, "A", 150000, 170000).map((a) => a.tag)).toEqual([
     "0",
-    "3",
+    "4",
   ]);
   expect(rangeImpact(accounts, "A", null, null)).toEqual([]);
 });
