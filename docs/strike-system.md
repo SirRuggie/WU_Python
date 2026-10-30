@@ -1,6 +1,16 @@
 # Account strikes
 
-Implemented for the Warriors United Discord bot and its existing dashboard. This document describes the new system; `botghost-strike-sentinel-investigation.md` describes the old BotGhost reference.
+## No-war-strikes-1 — released October 30, 2026
+
+Tag `no-war-strikes-1` at `73eda11a1e883b711bc40494f023b4d87efd5a6b` is live across
+bot/backend/frontend; Claude smoke 131 passed. The exact-tag NO WAR rule is neutral
+for streaks. The reviewed correction retained all records and soft-revoked exactly
+50 strikes (3,608 → 3,558), with two neutral miss relabels and no unrelated changes.
+See [the backend release record](dashboard-backend-releases.md) for evidence and
+code-only rollback. The strike-scan-1 incident closed at smoke 128.
+
+Later: Find war should separate active/removed counts and label No-attack war;
+bound pending private/deferred-clan staff retries and consume removed-clan retries.
 
 ## Rules
 
