@@ -65,6 +65,10 @@ if (out) fs.mkdirSync(out, { recursive: true });
       const first = await p.locator(".replacement-top h2").boundingBox();
       const recruit = await p.locator(".replacement-match h2").boundingBox();
       assert(first.y < 800 && recruit.y < 800);
+      if (width === 1440) {
+        assert(Math.abs(first.y - recruit.y) < 8, "Recruit box must sit beside Top 10");
+        assert(first.x > recruit.x);
+      }
       await snap("top");
       await p.getByLabel("Show 1–2 strikes too").check();
       await p

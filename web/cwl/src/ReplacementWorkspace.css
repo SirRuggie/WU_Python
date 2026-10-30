@@ -327,14 +327,7 @@
 }
 
 .replacement-match {
-  grid-column: 1 / -1;
   border-top: 1px solid #383838;
-}
-.replacement-match summary {
-  cursor: pointer;
-  min-height: 44px;
-  padding: 12px 0;
-  color: #b9c5d5;
 }
 .replacement-match form {
   max-width: 600px;
