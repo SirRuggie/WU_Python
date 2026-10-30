@@ -29,6 +29,17 @@ beforeEach(() => {
   vi.mocked(api).mockResolvedValue({
     candidates: [row],
     clans: [{ tag: "#R2Y", name: "Family" }],
+    groups: [
+      {
+        clan_tag: "#R2Y",
+        clan_name: "Family",
+        listed: 1,
+        at_three: 1,
+        chopping_block: 0,
+      },
+    ],
+    top: [row],
+    total: 1,
   });
 });
 afterEach(async () => {
@@ -42,6 +53,11 @@ const button = (text: string) =>
 async function render() {
   await act(async () =>
     root.render(<ReplacementWorkspace permissions={[]} isOwner />),
+  );
+  await act(async () =>
+    (
+      host.querySelector(".replacement-group-summary") as HTMLButtonElement
+    ).click(),
   );
 }
 async function click(text: string) {
@@ -105,4 +121,31 @@ it("clears with its displayed revision through an in-app confirmation", async ()
     { revision: 7 },
   );
   vi.unstubAllGlobals();
+});
+
+it("starts collapsed with Top 10 and requests the fixed threshold, TH and sort filters", async () => {
+  await act(async () =>
+    root.render(<ReplacementWorkspace permissions={[]} isOwner />),
+  );
+  expect(host.textContent).toContain("Top 10 across all clans");
+  expect(host.textContent).toContain("Got a recruit? Enter their weight");
+  expect(
+    host
+      .querySelector(".replacement-group-summary")
+      ?.getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(host.querySelectorAll(".replacement-row")).toHaveLength(0);
+  const check = host.querySelector(
+    'input[type="checkbox"]',
+  ) as HTMLInputElement;
+  await act(async () => check.click());
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain("include_low=true");
+  const select = [...host.querySelectorAll("select")].find((n) =>
+    n.textContent?.includes("Most strikes"),
+  )!;
+  await act(async () => {
+    select.value = "strikes";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain("sort=strikes");
 });
