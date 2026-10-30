@@ -12,6 +12,7 @@ type Event = {
   can_restore: boolean;
   present: boolean;
   display?: Record<string, string>;
+  reminder_snapshot?: { field: string; value: string }[];
   changes?: { field: string; before: string; after: string }[];
 };
 type History = { events: Event[]; more: boolean };
@@ -144,8 +145,8 @@ export default function ClanHistory({
         </label>
       </div>
       <p className="small">
-        This list shows settings from before each change. For reminder sends,
-        open War reminders and expand Delivery history.
+        Confirmed changes show what changed; older entries show saved settings.
+        For reminder sends, open War reminders and expand Delivery history.
       </p>
       {error && (
         <p className="notice error" role="alert">
@@ -215,6 +216,12 @@ export default function ClanHistory({
                           </dd>
                         </div>
                       ))}
+                    {event.reminder_snapshot?.map((setting) => (
+                      <div key={`reminder-${setting.field}`}>
+                        <dt>{setting.field}</dt>
+                        <dd>{setting.value}</dd>
+                      </div>
+                    ))}
                   </dl>
                 </details>
                 {event.can_restore ? (

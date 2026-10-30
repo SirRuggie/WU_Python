@@ -127,3 +127,50 @@ def test_history_unknown_actor_and_non_utc_time_are_honest(setup):
     item = json.loads(asyncio.run(api.history(req)).body)['events'][0]
     assert item['actor'] == 'Staff member (name unavailable)'
     assert item['at'] == '2026-10-30T10:00:00+00:00'
+
+
+def test_reminder_snapshot_preserves_off_and_empty_values_without_live_inference():
+    clan = {'reminder_settings': {
+        'enabled': False, 'channel_id': 123456789012345678,
+        'minutes': [], 'audience': 'zero', 'war_started': False,
+        'version': 12, 'unrelated': 'private',
+    }}
+    assert api.reminder_snapshot(clan) == [
+        {'field': 'Reminders', 'value': 'Off'},
+        {'field': 'Reminder channel', 'value': 'Name not recorded'},
+        {'field': 'Reminder times', 'value': 'None'},
+        {'field': 'Remind who', 'value': 'Players with no attacks used'},
+        {'field': 'War-start message', 'value': 'Off'},
+    ]
+    assert api.reminder_snapshot({}) == []
+    assert api.reminder_snapshot({'reminder_settings': None}) == []
+
+
+def test_confirmed_change_uses_frozen_names():
+    row = {'confirmed': True, 'changes': [{
+        'field': 'leader_role_id', 'before': 123, 'after': 456,
+        'display': {'before': 'Old leaders', 'after': 'New leaders'},
+    }]}
+    assert api.public_changes(row) == [
+        {'field': 'Leader role', 'before': 'Old leaders', 'after': 'New leaders'}
+    ]
+
+
+def test_change_names_uses_server_roles_and_honest_unavailable_fallback(monkeypatch):
+    from cwl_web import manage_clans
+    lookup = AsyncMock(side_effect=[
+        {'user': {'username': 'Old member'}, 'nick': 'Old leader'},
+        {'user': {'global_name': 'New leader'}},
+        {'name': 'Foreign channel', 'guild_id': 'other'},
+        RuntimeError('Discord unavailable'),
+    ])
+    monkeypatch.setattr(manage_clans, 'discord', lookup)
+    result = asyncio.run(manage_clans.change_names(None,
+        {'roles': [{'id': '11', 'name': 'Leaders'}]},
+        {'leader_role_id': 11, 'leader_id': 12, 'chat_channel_id': 14},
+        {'leader_role_id': 0, 'leader_id': 13, 'chat_channel_id': 15}))
+    assert result == {
+        'leader_role_id': {'before': 'Leaders', 'after': 'Not set'},
+        'leader_id': {'before': 'Old leader', 'after': 'New leader'},
+        'chat_channel_id': {'before': 'Name not recorded', 'after': 'Name not recorded'},
+    }

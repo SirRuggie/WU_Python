@@ -74,6 +74,39 @@ async def add(request):
         if result.upserted_id:await audit(db,actor,'add',await db.clans.find_one({'tag':clan_tag}))
     return await listing(request)
 
+async def change_names(request, actor, before, after):
+    """Freeze available Discord labels without making a metadata outage block a save."""
+    names = {}
+    cache = {}
+    roles = {str(role['id']): role.get('name') for role in actor.get('roles', [])}
+    for field, value in after.items():
+        if field not in IDS or before.get(field) == value:
+            continue
+        labels = {}
+        for side, identity in (('before', before.get(field)), ('after', value)):
+            if not identity:
+                labels[side] = 'Not set'
+                continue
+            if field.endswith('role_id'):
+                label = roles.get(str(identity))
+            else:
+                path = (f'/guilds/{GUILD_ID}/members/{identity}' if field == 'leader_id'
+                        else f'/channels/{identity}')
+                if path not in cache:
+                    try:
+                        cache[path] = await discord(request, 'GET', path)
+                    except Exception:
+                        cache[path] = {}
+                data = cache[path]
+                if field == 'leader_id':
+                    user = data.get('user') or {}
+                    label = data.get('nick') or user.get('global_name') or user.get('username')
+                else:
+                    label = data.get('name') if str(data.get('guild_id')) == str(GUILD_ID) else None
+            labels[side] = label or 'Name not recorded'
+        names[field] = labels
+    return names
+
 async def save(request):
     actor=await require_manage(request,'clans',write=True);body=await request.json()
     values=body.get('values') if isinstance(body,dict) else None
@@ -106,10 +139,11 @@ async def save(request):
             else:
                 channel=await discord(request,'GET',f'/channels/{value}')
                 if str(channel.get('guild_id'))!=str(GUILD_ID) or channel.get('type') not in ((10,11,12) if key=='thread_id' else (0,5)):raise web.HTTPBadRequest(text='Choose a channel in this server.')
+        names = await change_names(request, actor, row, changes)
         event_id=await audit(db,actor,'before_edit',row)
         result=await db.clans.update_one(match(row),{'$set':changes})
         if not result.matched_count:raise web.HTTPConflict(text='Clan changed. Reload before saving.')
-        await finish_change(db,event_id,{key:row.get(key) for key in changes},changes)
+        await finish_change(db,event_id,{key:row.get(key) for key in changes},changes,names=names)
         latest=await db.clans.find_one({'tag':row['tag']})
         if not latest:raise web.HTTPConflict(text='Clan was removed. Refresh the list.')
         result=public(latest)

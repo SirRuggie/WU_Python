@@ -28,7 +28,7 @@ async def native_snapshot(db, ctx, action, tag):
     await audit(db, {'user_id': str(user.id), 'name': getattr(user, 'display_name', None) or getattr(user, 'username', ''), 'source': 'Discord'}, action, row)
     return row
 
-async def finish_change(db, event_id, before, after):
+async def finish_change(db, event_id, before, after, *, names=None):
     """Attach a confirmed diff only after the setting's compare-and-set succeeds.
 
     The before-image remains durable if this secondary write is unavailable.
@@ -36,7 +36,8 @@ async def finish_change(db, event_id, before, after):
     """
     import logging
     changes = [
-        {'field': key, 'before': before.get(key), 'after': after.get(key)}
+        {'field': key, 'before': before.get(key), 'after': after.get(key),
+         **({'display': names[key]} if names and key in names else {})}
         for key in sorted(set(before) | set(after))
         if before.get(key) != after.get(key)
     ]

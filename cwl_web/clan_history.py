@@ -40,9 +40,20 @@ def public_changes(row):
     if not row.get('confirmed'):
         return []
     return [{'field': FIELD_LABELS[item['field']],
-             'before': history_value(item['field'], item.get('before')),
-             'after': history_value(item['field'], item.get('after'))}
+             'before': item.get('display', {}).get('before') or history_value(item['field'], item.get('before')),
+             'after': item.get('display', {}).get('after') or history_value(item['field'], item.get('after'))}
             for item in row.get('changes', []) if item.get('field') in FIELD_LABELS]
+
+def reminder_snapshot(clan):
+    """Expose only the recorded reminder values, never inferred current settings."""
+    settings = clan.get('reminder_settings')
+    if not isinstance(settings, dict):
+        return []
+    return [
+        {'field': FIELD_LABELS[field], 'value': history_value(field, settings[field])}
+        for field in ('enabled', 'channel_id', 'minutes', 'audience', 'war_started')
+        if field in settings
+    ]
 
 async def history(request):
     await require_manage(request, 'clans')
@@ -75,6 +86,7 @@ async def history(request):
                 'at':(date if date.tzinfo else date.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat() if date else None,'actor':row.get('actor_name') or 'Staff member (name unavailable)',
                 'source':row.get('source','Dashboard'),'clan':public(clan),
                 'changes':public_changes(row),
+                'reminder_snapshot':reminder_snapshot(clan),
                 'can_restore':row['action']=='before_remove' and clan['tag'] not in present and latest.get(clan['tag'])==row['_id'],
                 'present':clan['tag'] in present})
     return web.json_response({'events':events,'more':len(rows)>15})

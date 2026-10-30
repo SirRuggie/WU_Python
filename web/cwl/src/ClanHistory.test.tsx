@@ -95,3 +95,20 @@ it("does not expose raw historical member or role IDs when names were not record
   expect(host.textContent).not.toContain("987654321098765432");
   expect(host.textContent).toContain("Name not recorded");
 });
+
+it("shows saved reminder values even when disabled or empty", async () => {
+  await render([
+    {
+      ...event,
+      reminder_snapshot: [
+        { field: "Reminders", value: "Off" },
+        { field: "Reminder times", value: "None" },
+        { field: "Remind who", value: "Players with no attacks used" },
+      ],
+    } as typeof event,
+  ]);
+  const values = host.querySelector(".clan-history-values")!;
+  expect(values.textContent).toContain("RemindersOff");
+  expect(values.textContent).toContain("Reminder timesNone");
+  expect(values.textContent).toContain("Players with no attacks used");
+});
