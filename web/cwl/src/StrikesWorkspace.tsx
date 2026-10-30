@@ -46,6 +46,7 @@ type Entry = {
   war_end?: string | null
   kind: 'strike' | 'miss' | 'completed' | 'cwl'
   source: 'war' | 'manual' | 'cwl'
+  source_label?: string | null
   war_type?: 'regular' | 'cwl'
   attacks_used?: number | null
   attacks_per_member?: number | null
@@ -84,6 +85,9 @@ type War = {
   one_missed: number
   war_type?: 'regular' | 'cwl'
   cwl_missed?: number
+  source_label?: string | null
+  incomplete?: boolean
+  review_message?: string | null
 }
 type Settings = {
   excluded_roles: { id: string; name: string }[]
@@ -870,7 +874,8 @@ export default function StrikesWorkspace({
               <div className="strikes-selected-war">
                 <span>
                   {warMatchup(selectedWar.clan_name, selectedWar.opponent_name)}{' '}
-                  · {dateText(selectedWar.war_end)} · All records
+                  · {dateText(selectedWar.war_end)} · {selectedWar.source_label || 'Source unavailable'}
+                  {selectedWar.incomplete ? ' · Incomplete · No automatic strikes' : ' · All records'}
                 </span>
                 <button onClick={clearWar}>Clear war</button>
               </div>
@@ -901,7 +906,10 @@ export default function StrikesWorkspace({
                         {warMatchup(war.clan_name, war.opponent_name)}
                       </strong>
                       <span>
-                        {dateText(war.war_end)} · {warSummary(war)}
+                        {dateText(war.war_end)} · {war.source_label || 'Source unavailable'} ·{' '}
+                        {war.incomplete
+                          ? `${war.review_message || 'War ended before final check: review in Find war'} · No automatic strikes`
+                          : warSummary(war)}
                       </span>
                     </button>
                   ))}
@@ -981,6 +989,7 @@ export default function StrikesWorkspace({
                           </strong>
                         </span>
                         <span>{dateText(item.war_end)}</span>
+                        {item.source_label && <span>{item.source_label}</span>}
                         {isCwlRecord(item) && (
                           <span className="strikes-cwl-context">
                             CWL · No strikes
