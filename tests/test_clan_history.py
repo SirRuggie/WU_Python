@@ -83,18 +83,16 @@ def test_history_restricts_guild_and_never_restores_active_clan(setup):
     assert item['at'].endswith('+00:00')
     assert h.find_one.await_args.args[0]['guild_id']==api.GUILD_ID
 
-def test_native_remove_preserves_emoji_and_snapshot(setup):
+def test_native_remove_is_read_only(setup):
     from extensions.commands.clan.dashboard import update_clan_info as native
     req,db,h,event=setup
-    db.clans.find_one.return_value={**event['clan'],'emoji':'<:clan:123456789012345678>'}
-    db.clans.delete_one=AsyncMock(return_value=NS(deleted_count=1))
-    rest=NS(delete_application_emoji=AsyncMock())
-    ctx=NS(user=NS(id=456,display_name='Leader'))
-    result=asyncio.run(native.on_remove_clan_field.__wrapped__._func(ctx=ctx,action_id='confirm_#P0LYQ',mongo=db,bot=NS(rest=rest)))
-    assert result
-    rest.delete_application_emoji.assert_not_awaited()
-    assert h.insert_one.await_args.args[0]['action']=='before_remove'
-    assert h.insert_one.await_args.args[0]['clan']['emoji']=='<:clan:123456789012345678>'
+    db.clans.find_one.return_value=event['clan']
+    db.clans.delete_one=AsyncMock()
+    ctx=NS(member=NS(get_roles=lambda: [NS(id=993015846442127420)]), respond=AsyncMock())
+    asyncio.run(native.on_remove_clan_field.__wrapped__._func(ctx=ctx,action_id='confirm_#P0LYQ',mongo=db))
+    db.clans.delete_one.assert_not_awaited()
+    h.insert_one.assert_not_awaited()
+    assert 'Dashboard → Family clans → History' in ctx.respond.await_args.args[0]
 
 def test_restore_unknown_snapshot_and_failed_index_do_not_write(setup,monkeypatch):
     req,db,h,event=setup;h.find_one.return_value=None
@@ -103,3 +101,29 @@ def test_restore_unknown_snapshot_and_failed_index_do_not_write(setup,monkeypatc
     monkeypatch.setattr(api,'ensure_clan_tag_index',AsyncMock(return_value=False))
     with pytest.raises(web.HTTPServiceUnavailable):asyncio.run(api.restore(req))
     db.clans.insert_one.assert_not_awaited()
+
+def test_public_changes_only_confirmed_and_no_raw_ids():
+    row = {'changes': [{'field': 'type', 'before': 'FWA', 'after': 'CWL'}]}
+    assert api.public_changes(row) == []
+    row['confirmed'] = True
+    assert api.public_changes(row) == [{'field': 'Clan type', 'before': 'FWA', 'after': 'CWL'}]
+    row['changes'] = [{'field': 'leader_id', 'before': 123456789012345678, 'after': 987654321098765432}]
+    assert api.public_changes(row)[0]['before'] == 'Name not recorded'
+
+def test_history_unknown_actor_and_non_utc_time_are_honest(setup):
+    from datetime import timedelta
+    req, db, h, event = setup
+    event['at'] = datetime(2026, 10, 30, 12, tzinfo=timezone(timedelta(hours=2)))
+    class Cursor:
+        def sort(self, *a): return self
+        def skip(self, *a): return self
+        def limit(self, *a): return self
+        async def to_list(self, **kw): return [event]
+    h.find = lambda query: Cursor()
+    class Live:
+        async def to_list(self, **kw): return []
+    db.clans.find = lambda *a: Live()
+    req.query = {'kind': 'reminders'}
+    item = json.loads(asyncio.run(api.history(req)).body)['events'][0]
+    assert item['actor'] == 'Staff member (name unavailable)'
+    assert item['at'] == '2026-10-30T10:00:00+00:00'

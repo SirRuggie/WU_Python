@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ClanManagement from "./ClanManagement";
-import { api } from "./api";
+import { api, apiUpload } from "./api";
 vi.mock("./api", () => ({ api: vi.fn(), apiUpload: vi.fn() }));
 vi.mock("./clanManagement/ReminderOverview", () => ({ default: () => null }));
 vi.mock("./ClanHistory", () => ({ default: () => null }));
@@ -255,3 +255,32 @@ it("restores a shared clan section link and emits section navigation", async () 
     section: "Details",
   });
 });
+
+it.each([
+  ["text/plain", 12],
+  ["image/png", 10 * 1024 * 1024 + 1],
+])(
+  "rejects unsupported or oversized artwork before uploading (%s)",
+  async (type, size) => {
+    await open();
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+        .find((button) => button.textContent === "Artwork")!
+        .click(),
+    );
+    const file = new File(["sample"], "sample.png", { type });
+    Object.defineProperty(file, "size", { value: size });
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [file],
+    });
+    await act(async () =>
+      input.dispatchEvent(new Event("change", { bubbles: true })),
+    );
+    expect(apiUpload).not.toHaveBeenCalled();
+    expect(host.textContent).toContain(
+      "Choose PNG, JPG, GIF or WEBP up to 10 MB.",
+    );
+  },
+);

@@ -19,7 +19,7 @@ class Rows:
 @pytest.fixture
 def setup(monkeypatch):
     rows=Rows({'_id':'clan1','tag':'#P0LYQ','name':'Warriors','type':'FWA','emoji':'','role_id':123456789012345678})
-    history=NS(insert_one=AsyncMock())
+    history=NS(insert_one=AsyncMock(),update_one=AsyncMock(return_value=NS(matched_count=1)))
     db=NS(clans=rows,bot_config=NS(database=NS(get_collection=lambda *a,**kw:history)))
     @asynccontextmanager
     async def mongo(request):yield db
@@ -87,3 +87,26 @@ def test_selected_leader_keeps_name_and_avatar_outside_search(setup, monkeypatch
     ]))
     members = json.loads(asyncio.run(api.members(req)).text)['members']
     assert members == [{'id': '123456789012345678', 'name': 'Captain', 'avatar_url': 'https://cdn.discordapp.com/avatars/123456789012345678/abcd.png?size=64'}]
+
+def test_success_records_only_confirmed_changed_fields(setup):
+    req, rows, history = setup
+    asyncio.run(api.save(req))
+    assert history.update_one.await_args.args[1]['$set'] == {
+        'changes': [{'field': 'type', 'before': 'FWA', 'after': 'Tactical'}],
+        'confirmed': True,
+    }
+
+def test_losing_cas_does_not_claim_history_change(setup):
+    req, rows, history = setup
+    rows.update_one = AsyncMock(return_value=NS(matched_count=0))
+    with pytest.raises(web.HTTPConflict):
+        asyncio.run(api.save(req))
+    history.update_one.assert_not_awaited()
+
+def test_history_completion_outage_keeps_before_image_and_successful_save(setup):
+    req, rows, history = setup
+    history.update_one.side_effect = RuntimeError('history unavailable')
+    result = asyncio.run(api.save(req))
+    assert result.status == 200
+    assert rows.row['type'] == 'Tactical'
+    assert history.insert_one.await_args.args[0]['clan']['type'] == 'FWA'

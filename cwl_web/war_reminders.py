@@ -97,7 +97,7 @@ async def save(request):
         if body.get('revision') != revision(before):
             raise web.HTTPConflict(text='Reminders changed. Reload before saving.')
         try:
-            await store.save_settings(row['tag'], before, config, actor['user_id'])
+            await store.save_settings(row['tag'], before, config, actor['user_id'], history_context=(row, actor))
         except SettingsConflict:
             raise web.HTTPConflict(text='Reminders changed. Reload before saving.') from None
     return await read(request)

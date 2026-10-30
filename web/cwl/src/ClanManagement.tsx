@@ -342,6 +342,16 @@ export default function ClanManagement({
   }
   async function upload(slot: string, file?: File) {
     if (!saved || !draft) return;
+    if (
+      file &&
+      (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(
+        file.type,
+      ) ||
+        file.size > 10 * 1024 * 1024)
+    ) {
+      setError("Choose PNG, JPG, GIF or WEBP up to 10 MB.");
+      return;
+    }
     await run(async () => {
       const endpoint =
         path(saved.tag) +

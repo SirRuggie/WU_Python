@@ -96,11 +96,16 @@ def clear_pending_and_maps():
     ("fwa", "war:th16_new", "war", "th16_new"),
     ("fwa", "active:th16", "active", "th16"),
 ])
-def test_open_handlers_bind_all_four_supported_targets(kind, action_id, slot, key):
+def test_open_handlers_bind_fwa_targets_and_retire_clan_targets(kind, action_id, slot, key):
     async def run():
         mongo = mongo_for(kind, slot, key)
         ctx = Ctx(click_interaction())
         await uploads._open(ctx, action_id, mongo, kind)
+        if kind == "clan":
+            assert ctx.modal is None
+            assert not uploads._PENDING
+            assert "Edit this on the dashboard" in ctx.responses[0][0][0]
+            return
         assert ctx.modal["custom_id"].startswith("dashboard_image_submit:")
         token = ctx.modal["custom_id"].split(":", 1)[1]
         pending = uploads._PENDING[token][1]
@@ -145,6 +150,11 @@ def test_submit_saves_only_selected_field_after_ack_and_updates_fwa_map(monkeypa
 
         monkeypatch.setattr(uploads.asyncio, "to_thread", download)
         await uploads.dashboard_image_submit.__wrapped__._func(ctx=ctx, action_id="token", mongo=mongo, media=media)
+        if kind == "clan":
+            assert not mongo.clans.writes
+            media.upload_bytes.assert_not_awaited()
+            assert "Clan editing moved" in str(ctx.interaction.edit_initial_response.await_args)
+            return
         assert order == ["ack", "download"]
         collection = mongo.clans if kind == "clan" else mongo.fwa_data
         query, update, kwargs = collection.writes[-1]
@@ -183,8 +193,8 @@ def test_submit_rejects_wrong_bound_editor_or_source_without_write(monkeypatch, 
 
 def test_expired_invalid_or_unprivileged_submissions_do_not_write(monkeypatch):
     async def run():
-        mongo = mongo_for("clan", "logo", "#ABC")
-        target = uploads.UploadTarget("clan", "logo", "#ABC", "old", 1, 2, 3, 4, "Clan Name", "clan-id")
+        mongo = mongo_for("fwa", "war", "th16")
+        target = uploads.UploadTarget("fwa", "war", "th16", "old", 1, 2, 3, 4)
         media = SimpleNamespace(upload_bytes=AsyncMock())
         monkeypatch.setattr(uploads, "pop_file_upload", lambda *args: {"size": 11 * 1024 * 1024, "url": "https://cdn.discordapp.com/attachments/1/2/a.png"})
         # Expiry consumes the stale token without any database call.
@@ -278,16 +288,16 @@ def test_pending_cache_is_bounded_and_each_token_is_one_shot():
 
 def test_two_open_modals_keep_their_target_and_old_value_independent():
     async def run():
-        mongo = mongo_for("clan", "logo", "#ABC")
-        mongo.clans.document["banner"] = "https://old.example/banner.png"
+        mongo = mongo_for("fwa", "war", "th16")
+        mongo.fwa_data.document["active_base_images"]["th16"] = "https://old.example/banner.png"
         ctx = Ctx(click_interaction())
-        await uploads._open(ctx, "logo:#ABC", mongo, "clan")
+        await uploads._open(ctx, "war:th16", mongo, "fwa")
         first = ctx.modal["custom_id"].split(":", 1)[1]
-        await uploads._open(ctx, "banner:#ABC", mongo, "clan")
+        await uploads._open(ctx, "active:th16", mongo, "fwa")
         second = ctx.modal["custom_id"].split(":", 1)[1]
         assert first != second
-        assert uploads._PENDING[first][1].slot == "logo"
+        assert uploads._PENDING[first][1].slot == "war"
         assert uploads._PENDING[first][1].old_value == "https://old.example/image.png"
-        assert uploads._PENDING[second][1].slot == "banner"
+        assert uploads._PENDING[second][1].slot == "active"
         assert uploads._PENDING[second][1].old_value == "https://old.example/banner.png"
     asyncio.run(run())

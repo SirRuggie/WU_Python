@@ -58,7 +58,7 @@ async def members(request):
             user=existing['user'];shown.append({'id':selected,'name':existing.get('nick') or user.get('global_name') or user['username'],'avatar_url':member_option(existing)['avatar_url']})
     return web.json_response({'members':shown,'more':len(result)>50})
 
-from utils.clan_dashboard_history import audit, collection as history_collection
+from utils.clan_dashboard_history import audit, finish_change, collection as history_collection
 
 async def add(request):
     actor=await require_manage(request,'clans',write=True);body=await request.json()
@@ -106,9 +106,10 @@ async def save(request):
             else:
                 channel=await discord(request,'GET',f'/channels/{value}')
                 if str(channel.get('guild_id'))!=str(GUILD_ID) or channel.get('type') not in ((10,11,12) if key=='thread_id' else (0,5)):raise web.HTTPBadRequest(text='Choose a channel in this server.')
-        await audit(db,actor,'before_edit',row)
+        event_id=await audit(db,actor,'before_edit',row)
         result=await db.clans.update_one(match(row),{'$set':changes})
         if not result.matched_count:raise web.HTTPConflict(text='Clan changed. Reload before saving.')
+        await finish_change(db,event_id,{key:row.get(key) for key in changes},changes)
         latest=await db.clans.find_one({'tag':row['tag']})
         if not latest:raise web.HTTPConflict(text='Clan was removed. Refresh the list.')
         result=public(latest)

@@ -58,7 +58,15 @@ class WarReminderStore:
     async def enabled_settings(self):
         return await self.settings.find({'enabled': True}).to_list(length=None)
 
-    async def save_settings(self, tag, before, values, actor):
+    async def save_settings(self, tag, before, values, actor, *, history_context=None):
+        event_id = None
+        if history_context is not None:
+            from utils.clan_dashboard_history import audit
+            from utils.war_reminders import settings
+            clan, identity = history_context
+            previous = settings(before)
+            event_id = await audit(self.db, identity, 'reminders',
+                                   {**clan, 'reminder_settings': previous})
         query = {'_id': tag, 'version': before.get('version') if before else {'$exists': False}}
         update = {'$set': {**values, 'updated_by': actor, 'updated_at': datetime.now(timezone.utc)}, '$inc': {'version': 1}}
         try:
@@ -67,6 +75,10 @@ class WarReminderStore:
             raise SettingsConflict from exc
         if not result.matched_count and not result.upserted_id:
             raise SettingsConflict
+        if event_id:
+            from utils.clan_dashboard_history import finish_change
+            await finish_change(self.db, event_id,
+                                {key: previous.get(key) for key in values}, values)
 
     async def recent_deliveries(self, tag, limit=15):
         return await self.deliveries.find({'clan_tag': tag}, {'_id': 0}).sort('at', -1).limit(limit).to_list(length=limit)
