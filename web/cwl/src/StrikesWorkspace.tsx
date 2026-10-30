@@ -227,8 +227,10 @@ function savedImport(userId: string): ImportDraft {
     return { job: null, preview: null, excluded: [] };
   }
 }
+const reviewCount = (count: number) =>
+  `${count} ${count === 1 ? "needs" : "need"} review`;
 const importResultText = (result: ImportResult) =>
-  `${strikeCountLabel(result.added_strikes ?? result.strikes, "strike")} added · ${result.duplicates ?? (Array.isArray(result.skipped) ? result.skipped.length : result.skipped)} skipped as duplicate · ${result.history_only ?? result.applied - result.strikes} history-only${result.excluded ? ` · ${result.excluded} excluded` : ""}${(result.deferred_count ?? result.deferred_accounts?.length ?? 0) > 0 ? ` · ${result.deferred_count ?? result.deferred_accounts?.length} need review` : ""}.`;
+  `${strikeCountLabel(result.added_strikes ?? result.strikes, "strike")} added · ${result.duplicates ?? (Array.isArray(result.skipped) ? result.skipped.length : result.skipped)} skipped as duplicate · ${result.history_only ?? result.applied - result.strikes} history-only${result.excluded ? ` · ${result.excluded} excluded` : ""}${(result.deferred_count ?? result.deferred_accounts?.length ?? 0) > 0 ? ` · ${reviewCount(result.deferred_count ?? result.deferred_accounts?.length ?? 0)}` : ""}.`;
 
 export default function StrikesWorkspace({
   permissions,
@@ -1112,9 +1114,11 @@ export default function StrikesWorkspace({
                     )}{" "}
                     · {dateText(selectedWar.war_end)} ·{" "}
                     {selectedWar.source_label || "Source unavailable"}
-                    {selectedWar.no_attack ? " · ⊖ No-attack war (no strike)" : selectedWar.incomplete
-                      ? " · Incomplete · No automatic strikes"
-                      : " · All records"}
+                    {selectedWar.no_attack
+                      ? " · ⊖ No-attack war (no strike)"
+                      : selectedWar.incomplete
+                        ? " · Incomplete · No automatic strikes"
+                        : " · All records"}
                   </span>
                   <button onClick={clearWar}>Clear war</button>
                 </div>
@@ -1767,7 +1771,7 @@ export default function StrikesWorkspace({
                   ClashKing (import) ·{" "}
                   {strikeCountLabel(preview.complete_wars, "complete war")} ·{" "}
                   {strikeCountLabel(preview.incomplete_wars, "skipped war")} ·{" "}
-                  {deferredCount} need review
+                  {reviewCount(deferredCount)}
                 </p>
                 <details className="card strikes-coverage">
                   <summary>Coverage by clan</summary>
@@ -1777,7 +1781,7 @@ export default function StrikesWorkspace({
                       <span>
                         {item.error
                           ? "Unavailable"
-                          : `${strikeCountLabel(item.wars, "war")}${item.skipped || item.processing_skipped_wars ? ` · ${strikeCountLabel((item.skipped || 0) + (item.processing_skipped_wars || 0), "skipped war")}` : ""}${item.deferred_accounts ? ` · ${item.deferred_accounts} need review` : ""} · ${dateText(item.earliest)} to ${dateText(item.latest)}`}
+                          : `${strikeCountLabel(item.wars, "war")}${item.skipped || item.processing_skipped_wars ? ` · ${strikeCountLabel((item.skipped || 0) + (item.processing_skipped_wars || 0), "skipped war")}` : ""}${item.deferred_accounts ? ` · ${reviewCount(item.deferred_accounts)}` : ""} · ${dateText(item.earliest)} to ${dateText(item.latest)}`}
                       </span>
                     </div>
                   ))}

@@ -69,11 +69,17 @@ const input = async (selector: string, value: string) => {
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
+const countText = (element: Element | null) => {
+  const walker = document.createTreeWalker(element!, NodeFilter.SHOW_TEXT);
+  const parts: string[] = [];
+  while (walker.nextNode()) parts.push(walker.currentNode.textContent || "");
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+};
 const settings: StrikeSettings = {
   revision: 8,
   strike_limit: 7,
   no_attack_opponents: ["#2CYVV92R"],
-  no_attack_names: {"#2CYVV92R": "NO WAR"},
+  no_attack_names: { "#2CYVV92R": "NO WAR" },
   leaves: [],
   excluded_roles: [{ id: "9", name: "Old integration", managed: true }],
   roles: [
@@ -139,8 +145,16 @@ it("preserves server role order, hides only managed additions, and retains a con
 });
 it("uses its successful revision receipt for the next save without a racing settings read", async () => {
   transport
-    .mockResolvedValueOnce({ revision: 9, strike_limit: 10, no_attack_opponents: ["#2CYVV92R"] })
-    .mockResolvedValueOnce({ revision: 10, strike_limit: 11, no_attack_opponents: ["#2CYVV92R"] });
+    .mockResolvedValueOnce({
+      revision: 9,
+      strike_limit: 10,
+      no_attack_opponents: ["#2CYVV92R"],
+    })
+    .mockResolvedValueOnce({
+      revision: 10,
+      strike_limit: 11,
+      no_attack_opponents: ["#2CYVV92R"],
+    });
   await render(<SettingsFixture />);
   await input('input[type="number"]', "10");
   await click("Save settings");
@@ -293,8 +307,9 @@ it.each([1, 2])(
           wars_scanned: 3,
           complete_wars: count,
           incomplete_wars: count,
+          deferred_count: count,
           entries,
-          coverage: [{ clan_name: "Oak", wars: count, skipped: count }],
+          coverage: [{ clan_name: "Oak", wars: count, skipped: count, deferred_accounts: count }],
         },
         excluded: [],
       }),
@@ -304,6 +319,7 @@ it.each([1, 2])(
       if (path === "/strikes/import/apply")
         return {
           added_strikes: 1,
+          deferred_count: count,
           duplicates: 1,
           history_only: 1,
           applied: 2,
@@ -314,23 +330,32 @@ it.each([1, 2])(
     });
     await render(<StrikesWorkspace permissions={[]} isOwner userId="1" />);
     await settle();
-    expect(host.textContent).toContain(
-      `Adds ${count} ${count === 1 ? "strike" : "strikes"} to ${count} ${count === 1 ? "account" : "accounts"} · ${count} history-only ${count === 1 ? "record" : "records"}`,
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" +
+          `Adds ${count} ${count === 1 ? "strike" : "strikes"} to ${count} ${count === 1 ? "account" : "accounts"} · ${count} history-only ${count === 1 ? "record" : "records"}` +
+          "\\b",
+      ),
     );
+    expect(countText(host)).toMatch(new RegExp(`\\b${count} ${count === 1 ? "needs" : "need"} review\\b`));
     const disclosure = [...host.querySelectorAll("details")].find((node) =>
       node
         .querySelector("summary")
         ?.textContent?.includes("Review selected records"),
     )!;
     expect(disclosure.open).toBe(false);
-    expect(host.textContent).toContain(
-      `${count} complete ${count === 1 ? "war" : "wars"}`,
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" + `${count} complete ${count === 1 ? "war" : "wars"}` + "\\b",
+      ),
     );
-    expect(host.textContent).toContain(
-      `${count} skipped ${count === 1 ? "war" : "wars"}`,
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" + `${count} skipped ${count === 1 ? "war" : "wars"}` + "\\b",
+      ),
     );
-    expect(host.querySelector(".strikes-coverage")?.textContent).toContain(
-      `${count} ${count === 1 ? "war" : "wars"}`,
+    expect(countText(host.querySelector(".strikes-coverage"))).toMatch(
+      new RegExp("\\b" + `${count} ${count === 1 ? "war" : "wars"}` + "\\b"),
     );
     const boxes = [
       ...host.querySelectorAll<HTMLInputElement>(
@@ -338,8 +363,12 @@ it.each([1, 2])(
       ),
     ];
     await act(async () => boxes.slice(count).forEach((box) => box.click()));
-    expect(host.textContent).toContain(
-      `${count} ${count === 1 ? "record" : "records"} selected`,
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" +
+          `${count} ${count === 1 ? "record" : "records"} selected` +
+          "\\b",
+      ),
     );
 
     expect(host.textContent).toContain("ClashKing (import)");
@@ -525,14 +554,22 @@ it("preserves no-attack opponent edits on conflict and submits tags with the sam
   transport.mockRejectedValueOnce(new ApiError("Conflict", 409));
   await render(<SettingsFixture />);
   expect(host.textContent).toContain("NO WAR · #2CYVV92R");
-  expect(host.textContent).toContain("Wars against these clans never give strikes.");
+  expect(host.textContent).toContain(
+    "Wars against these clans never give strikes.",
+  );
   const field = host.querySelector("textarea")!;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, "#2CYVV92R\n#P2Y");
-    field.dispatchEvent(new Event("input", {bubbles:true}));
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(field, "#2CYVV92R\n#P2Y");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await click("Save settings");
-  expect(transport.mock.calls[0][2]).toMatchObject({revision:8, no_attack_opponents:["#2CYVV92R", "#P2Y"]});
+  expect(transport.mock.calls[0][2]).toMatchObject({
+    revision: 8,
+    no_attack_opponents: ["#2CYVV92R", "#P2Y"],
+  });
   expect(field.value).toBe("#2CYVV92R\n#P2Y");
   expect(host.textContent).toContain("Changed by someone else · Reload");
 });
@@ -605,18 +642,24 @@ it.each([1, 3])(
       />,
     );
     await settle();
-    expect(host.querySelector(".strikes-list-head")?.textContent).toContain(
-      `${count} ${count === 1 ? "account" : "accounts"}`,
+    expect(countText(host.querySelector(".strikes-list-head"))).toMatch(
+      new RegExp(
+        "\\b" + `${count} ${count === 1 ? "account" : "accounts"}` + "\\b",
+      ),
     );
     await act(async () =>
       host.querySelector<HTMLButtonElement>("[data-strike-player]")!.click(),
     );
     await settle();
-    expect(host.querySelector(".strikes-list-head")?.textContent).toContain(
-      `${count} ${count === 1 ? "record" : "records"}`,
+    expect(countText(host.querySelector(".strikes-list-head"))).toMatch(
+      new RegExp(
+        "\\b" + `${count} ${count === 1 ? "record" : "records"}` + "\\b",
+      ),
     );
-    expect(host.textContent).toContain(
-      `${count} total ${count === 1 ? "strike" : "strikes"}`,
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" + `${count} total ${count === 1 ? "strike" : "strikes"}` + "\\b",
+      ),
     );
   },
 );

@@ -179,9 +179,9 @@ class StrikeTracking:
                     'War ended before final check: review in Find war',
                  'source_label': 'Clash API'} for row in rows]
 
-    async def begin(self, guild_id: int, clan_tag: str):
+    async def begin(self, guild_id: int, clan_tag: str, *, token=None):
         now = datetime.now(timezone.utc)
-        token = uuid.uuid4().hex
+        token = token or uuid.uuid4().hex
         await self.mongo.strike_tracking.update_one(
             {'_id': self.key(guild_id, clan_tag)},
             {'$set': {'guild_id': guild_id, 'clan_tag': tag(clan_tag),
@@ -189,11 +189,13 @@ class StrikeTracking:
              '$setOnInsert': {'error_history': []}}, upsert=True)
         return token
 
-    async def failed_begin(self, guild_id: int, clan_tag: str, attempted_at):
+    async def failed_begin(self, guild_id: int, clan_tag: str, attempted_at, *, token=None):
         """Record startup failure without replacing a newer overlapping scan."""
         key = self.key(guild_id, clan_tag)
         previous = await self.mongo.strike_tracking.find_one({'_id': key})
-        if previous and previous.get('last_started_at') and utc(previous['last_started_at']) > utc(attempted_at):
+        if (previous and previous.get('scan_token') != token
+                and previous.get('last_started_at')
+                and utc(previous['last_started_at']) > utc(attempted_at)):
             return
         changes = {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
                    'last_checked_at': datetime.now(timezone.utc),

@@ -47,10 +47,11 @@ fs.mkdirSync(output, { recursive: true });
       }));
       if (width === 360 && name === "detail") {
         const visibleRows = await p.locator(".strike-compact-row").evaluateAll(
-          (rows) => rows.filter((row) => {
-            const rect = row.getBoundingClientRect();
-            return rect.top >= 0 && rect.bottom <= innerHeight;
-          }).length,
+          (rows) =>
+            rows.filter((row) => {
+              const rect = row.getBoundingClientRect();
+              return rect.top >= 0 && rect.bottom <= innerHeight;
+            }).length,
         );
         if (m.firstRowY > 560 || visibleRows < 3)
           throw Error("phone detail must show at least three strike rows");
@@ -133,11 +134,12 @@ fs.mkdirSync(output, { recursive: true });
     await snap("list");
     await p.getByRole("button", { name: /CastleFox/ }).click();
     await p.locator(".strike-compact-row").first().waitFor();
+    await p.getByText("No-attack war (no strike)", { exact: false }).waitFor();
     await snap("detail");
     await p.getByRole("button", { name: "Next", exact: true }).click();
-    await p.getByText("26–28 of 28").waitFor();
+    await p.getByText("26–29 of 29").waitFor();
     await p.waitForFunction(
-      () => document.querySelectorAll(".strike-compact-row").length === 3,
+      () => document.querySelectorAll(".strike-compact-row").length === 4,
     );
     await p.getByRole("button", { name: "Add strike", exact: true }).click();
     await p

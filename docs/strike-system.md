@@ -424,3 +424,37 @@ or above 560px at 360×800.
 Import counters retain one documented overlap: if another request inserts an
 excluded candidate after preview, it counts as both submitted excluded and an
 observed duplicate. No row is inserted by that excluded selection.
+
+## No-attack opponents and reviewed correction (prompt 40)
+
+The shared strike settings default to opponent tag `#2CYVV92R` (NO WAR). Staff
+can replace the list in Settings using the same revision check as the strike
+limit and exempt roles. An explicit empty list disables this rule. Regular
+scanner finals and ClashKing previews/imports use the same tag comparison;
+clan display names never decide eligibility. Neutral rows remain in history and
+Find war, with no strike and no streak event. Missing account links or Discord
+roles cannot turn a neutral war into a strike or block recording it.
+
+Scanner failures defer due work and queued staff retries for two minutes; failed
+requests are retained, while successful scans consume only their matching
+request timestamp. A failed begin records a safe error without overwriting a
+newer scan token. Cancellation still propagates.
+
+`StrikeService.no_attack_correction` is dry-run unless supplied its reviewed
+fingerprint. Its fixed two war keys are in `utils/strike_no_attack.py`. The
+review lists every target row and fingerprints all unrelated rows. Apply stops
+on stale input or evidence of affected streak receipts/watermarks before any
+write. It soft-revokes unremoved strikes and relabels one-missed rows as neutral,
+with actor `Ruggie (approved 2026-10-30)` and reason `No-attack war (NO WAR)`.
+No physical deletion or automatic historical backfill occurs. Re-running a
+completed plan is a no-op. If a partial apply fails, review a fresh remaining
+plan; do not automatically replay the old plan.
+
+Release requires Claude acceptance, fresh verified backup, scanner stopped for
+the correction, exactly the reviewed 50 strike revokes plus two neutral rows,
+account-by-account active-count reconciliation and unchanged unrelated row
+hashes. Affected streak state must be proven neutral or reviewed explicitly.
+The correction has only been rehearsed against an isolated backup database;
+production correction and release are pending. Runtime rollback restores old
+bot/backend/frontend assets, never silently restores the database or reverses
+approved audit removals.

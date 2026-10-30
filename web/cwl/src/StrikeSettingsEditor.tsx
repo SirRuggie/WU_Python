@@ -37,7 +37,9 @@ export default function StrikeSettingsEditor({
 }) {
   const [roles, setRoles] = useState(settings.excluded_roles);
   const [limit, setLimit] = useState(String(settings.strike_limit));
-  const [opponents, setOpponents] = useState((settings.no_attack_opponents ?? []).join("\n"));
+  const [opponents, setOpponents] = useState(
+    (settings.no_attack_opponents ?? []).join("\n"),
+  );
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
@@ -87,16 +89,17 @@ export default function StrikeSettingsEditor({
     setError("");
     setSaved(false);
     try {
-      const receipt = await api<{ revision: number; strike_limit: number; no_attack_opponents: string[]; no_attack_names: Record<string,string> }>(
-        "/strikes/settings/roles",
-        "PUT",
-        {
-          revision: settings.revision,
-          role_ids: roles.map((role) => role.id),
-          strike_limit: Number(limit),
-          no_attack_opponents: opponents.split(/[\s,]+/).filter(Boolean),
-        },
-      );
+      const receipt = await api<{
+        revision: number;
+        strike_limit: number;
+        no_attack_opponents: string[];
+        no_attack_names: Record<string, string>;
+      }>("/strikes/settings/roles", "PUT", {
+        revision: settings.revision,
+        role_ids: roles.map((role) => role.id),
+        strike_limit: Number(limit),
+        no_attack_opponents: opponents.split(/[\s,]+/).filter(Boolean),
+      });
       if (!active.current) return;
       // Adopt only this write's receipt, never a fresh read paired with an old draft.
       onSaved({
@@ -190,14 +193,24 @@ export default function StrikeSettingsEditor({
       <h3>No-attack opponents</h3>
       <p>Wars against these clans never give strikes.</p>
       {[...new Set(opponents.split(/[\s,]+/).filter(Boolean))].map((value) => (
-        <p key={value}>{settings.no_attack_names?.[value.toUpperCase()] || (value.toUpperCase() === "#2CYVV92R" ? "NO WAR" : "Name unavailable")} · {value}</p>
+        <p key={value}>
+          {settings.no_attack_names?.[value.toUpperCase()] ||
+            (value.toUpperCase() === "#2CYVV92R"
+              ? "NO WAR"
+              : "Name unavailable")}{" "}
+          · {value}
+        </p>
       ))}
       <label>
         Opponent clan tags (one per line)
-        <textarea value={opponents} disabled={busy} onChange={(event) => {
-          setOpponents(event.target.value);
-          setSaved(false);
-        }} />
+        <textarea
+          value={opponents}
+          disabled={busy}
+          onChange={(event) => {
+            setOpponents(event.target.value);
+            setSaved(false);
+          }}
+        />
       </label>
       <h3>Exempt roles</h3>
       <p>Members with these roles do not receive automatic war strikes.</p>

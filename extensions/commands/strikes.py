@@ -766,13 +766,14 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
             continue
         started = None
         attempted_at = datetime.now(timezone.utc)
+        attempt_token = uuid.uuid4().hex
         regular_count = cwl_count = deferred_count = skipped_count = 0
         attempted_finals = set()
         problem = None
         current_state = 'unknown'
         private = False
         try:
-            started = await tracking.begin(WARRIORS_UNITED_GUILD_ID, clan_tag)
+            started = await tracking.begin(WARRIORS_UNITED_GUILD_ID, clan_tag, token=attempt_token)
             try:
                 roster_observed_at = datetime.now(timezone.utc)
                 current = await coc_client.get_clan(clan_tag)
@@ -895,7 +896,7 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                     _log_scan_failure(tracking_error, clan_tag=clan_tag)
             try:
                 if started is None:
-                    await tracking.failed_begin(WARRIORS_UNITED_GUILD_ID, clan_tag, attempted_at)
+                    await tracking.failed_begin(WARRIORS_UNITED_GUILD_ID, clan_tag, attempted_at, token=attempt_token)
                 await tracking.defer_due(WARRIORS_UNITED_GUILD_ID, clan_tag)
             except asyncio.CancelledError:
                 raise

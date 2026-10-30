@@ -1140,7 +1140,7 @@ class StrikeService:
                 kind = 'no_attack'
             rows.append({'_id': row_id,
                          'guild_id': int(guild_id), 'player_tag': player,
-                         'member_id': owner, 'link_status': 'linked' if owner is not None else 'unlinked',
+                         'member_id': owner, 'link_status': 'unknown' if no_attack else ('linked' if owner is not None else 'unlinked'),
                          'player_name': member.get('name') or player,
                          'clan_tag': clan, 'clan_name': war.get('clan_name'),
                          'opponent_tag': tag(war['opponent_tag']),
