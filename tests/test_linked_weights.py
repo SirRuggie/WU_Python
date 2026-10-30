@@ -124,6 +124,7 @@ def test_bot_preserves_legacy_weights_when_linked_table_is_absent(tmp_path, monk
     with sqlite3.connect(path) as db:
         db.execute('CREATE TABLE player_weights(tag TEXT, weight INTEGER)')
         db.execute("INSERT INTO player_weights VALUES('#P2Y',150000)")
+        db.execute("INSERT INTO player_weights VALUES('#P8Y',NULL)")
     monkeypatch.setenv('CWL_WEB_DB_PATH', str(path))
     assert strikes._manual_weights() == {'#P2Y': 150000}
 
@@ -136,3 +137,19 @@ def test_bot_invalid_timestamp_is_unavailable_instead_of_crashing(linked, monkey
         db.execute("UPDATE player_weights SET updated_at='invalid'")
     monkeypatch.setenv('CWL_WEB_DB_PATH', str(store.path))
     assert strikes._manual_weights() == {}
+
+
+def test_bot_bad_timestamp_keeps_other_saved_weights(linked, monkeypatch, caplog):
+    from extensions.commands import strikes
+    store, _ = linked
+    with store.tx() as db:
+        record(db, '#P2Y', 160000, 1, 'staff', recorded_at='invalid')
+        record(db, '#P8Y', 170000, 1, 'staff', recorded_at='2026-01-01T00:00:00Z')
+        record(db, '#P9Y', None, 1, 'staff', recorded_at='2026-01-01T00:00:00Z')
+        db.execute("""INSERT INTO clan_player_weights
+            (tag,weight,revision,player_name,last_clan_tag,last_clan_name,updated_at,actor_id)
+            VALUES('#P0Y',180000,1,'Valid linked','#R2Y','Family',
+                   '2026-01-01T00:00:00Z','staff')""")
+    monkeypatch.setenv('CWL_WEB_DB_PATH', str(store.path))
+    assert strikes._manual_weights() == {'#P8Y': 170000, '#P9Y': None, '#P0Y': 180000}
+    assert 'Skipping saved weight with invalid timestamp for #P2Y' in caplog.text
