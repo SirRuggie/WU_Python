@@ -69,7 +69,7 @@ class Ledger:
 
 
 async def permit(request, section, *, write=False):
-    assert section == 'strikes'
+    assert section == ('strikes_read' if request.method == 'GET' else 'strikes')
     assert write is (request.method != 'GET')
 
 
@@ -130,9 +130,9 @@ def test_unregistered_clan_and_departed_member_rejected_before_writes():
     assert 'left this clan' in error.value.text
 
 
-def test_roster_route_requires_manage_scope_before_reading_provider():
+def test_roster_route_requires_view_scope_before_reading_provider():
     async def deny(request, section, *, write=False):
-        assert section == 'strikes' and not write
+        assert section == 'strikes_read' and not write
         raise web.HTTPForbidden()
     async def run():
         with patch.object(strikes.shared, 'require_manage', deny):
