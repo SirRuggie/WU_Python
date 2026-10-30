@@ -1,5 +1,35 @@
 # Dashboard frontend releases
 
+## Moderation-logs-1 — October 30, 2026
+
+Latest verified frontend: `c494022e924994435496c3e4f0722eb781460380`, tag
+`moderation-logs-1`, [PR #68](https://github.com/SirRuggie/WU_Python/pull/68).
+Bot first, then backend readiness, then frontend switch: all three layers reached
+this revision. Claude read-only smoke 98 passed at 360px; no Send test was used.
+The prior back-to-top release below is now the retained frontend rollback target.
+
+The public index SHA256 was
+`fed368901df9253bceb08651ebb303c72b4029fd86eb3093aeda42b559de195e`.
+Entry `index-D5Y54of8.js`:
+`9758d884cdd8b31f72f7eb764827e07ff4e8418d908765ee796d6636e83a2f8a`.
+Owning moderation/history bundle `ModerationWorkspace-Bd-OU08t.js`:
+`13731dd4da39867082c733c089b067c9f183bd2ebd8cbbc805857ed57dcfaca8`;
+CSS `ModerationWorkspace-9PLgs2ZU.css`:
+`3fdb28e45923aa80dba4d9b5a20faa11f7ba0301b0dba250082be6196e9e3d51`.
+The public index and 34 selected assets matched; MemberActivityHistory is bundled in
+ModerationWorkspace, not a standalone chunk. Clean tagged checks passed 933
+frontend tests, TypeScript and build; 120 frontend files were staged, including
+nested tour assets via the reviewed recursive finalizer.
+
+Backups, exact four-event routing parity, protected data, runtime checks and
+[durable guarded rollback commands](dashboard-backend-releases.md#guarded-moderation-rollback)
+are recorded with the backend release. Rollback targets are frontend a803108,
+backend 23235cc and bot b517afd; restore/verify old frontend and backend before
+old bot. A staff save using inheritance requires renewed routing review before
+bot downgrade. Never restore data. Claude observed three of eight avatar reads
+returning 503 with initials fallback; prompt 33 item 6 remains open.
+
+
 ## Back-to-top-1 — October 30, 2026
 
 Frontend at the 08:30 smoke checkpoint: `back-to-top-1`, PR #65,
