@@ -66,7 +66,7 @@ export default function CompareClans({
   const [leagues, setLeagues] = useState<string[]>([]),
     [townHalls, setTownHalls] = useState<string[]>([]);
   const [clans, setClans] = useState<string[]>([]),
-    [sort, setSort] = useState<RosterSort>("town_hall_desc");
+    [sort, setSort] = useState<RosterSort>("weight_desc");
   const [focusedClan, setFocusedClan] = useState("");
   const [panel, setPanel] = useState<"filters" | "clans" | "sort" | null>(null);
   const [replacing, setReplacing] = useState<string>();
@@ -75,6 +75,7 @@ export default function CompareClans({
     [edges, setEdges] = useState({ left: false, right: false });
   const [columnHeight, setColumnHeight] = useState(500);
   const loadedPreference = useRef<string | null>(null),
+    previousPool = useRef(pool),
     scroller = useRef<HTMLDivElement>(null),
     rail = useRef<HTMLDivElement>(null);
   const swiped = useRef(false);
@@ -133,9 +134,11 @@ export default function CompareClans({
   }, [seasonId, pool, activeTags]);
   // Pool switches reset view controls without discarding per-tag location records.
   useEffect(() => {
+    if (previousPool.current === pool) return;
+    previousPool.current = pool;
     setLeagues([]);
     setTownHalls([]);
-    setSort("town_hall_desc");
+    setSort("weight_desc");
     setFocusedClan("");
     setPanel(null);
   }, [pool]);

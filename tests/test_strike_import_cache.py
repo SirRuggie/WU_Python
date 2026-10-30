@@ -81,6 +81,7 @@ def test_preview_reuses_links_but_apply_checks_links_again():
         preview = await service.preview_import(123, [first, second], actor_id=789)
         assert len(calls) == 1
         assert preview['strikes'] == 2
+        assert {row['capture_source'] for row in preview['items']} == {'clashking_import'}
         result = await service.apply_import(123, preview['preview_id'], 789)
         assert len(calls) == 2
         assert result['strikes'] == 2

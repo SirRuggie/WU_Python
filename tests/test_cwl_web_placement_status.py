@@ -6,7 +6,8 @@ class PlacementStatusTests(unittest.TestCase):
         account={'pool':'lazy','prefer_crystal_1_or_lower':False,'effective_weight':159000}
         clan={'archived':False,'pool':'lazy','capacity':15,'min_weight':160000,'max_weight':174000}
         self.assertIn('159k',explain(account,[clan],'no_eligible_rule'))
-        self.assertIn('160k–under 174k',explain(account,[clan],'no_eligible_rule'))
+        self.assertIn('160k–174k',explain(account,[clan],'no_eligible_rule'))
+        self.assertNotIn('under',explain(account,[clan],'no_eligible_rule'))
         self.assertIn('capacity',explain(account,[clan|{'capacity':None}],'no_eligible_rule'))
         self.assertIn('signup pool',explain(account,[],'no_eligible_rule'))
         self.assertIn('place manually',explain(account,[clan],'missing_weight'))

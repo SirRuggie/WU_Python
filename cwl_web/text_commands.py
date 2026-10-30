@@ -1,4 +1,5 @@
 """Owner-granted text command editor with optimistic updates."""
+import re
 from datetime import datetime, timezone
 from uuid import uuid4
 from aiohttp import web
@@ -8,7 +9,27 @@ from .server_management import API, mongo, require_manage
 
 
 def public(row):
-    return {**{key:row.get(key,'') for key in ('command','text','title','description','image_url')},'enabled':row.get('enabled',True),'color':row.get('color','#e2b332'),'allow_pings':row.get('allow_pings',False),'choose_recipient':row.get('choose_recipient',False),'recipient_ping':row.get('recipient_ping',False),'blocks':row.get('blocks',legacy_blocks(row)),'revision':row['revision']}
+    error = row.get('last_delete_error')
+    if not isinstance(error, dict) or not all(isinstance(error.get(key), str)
+                                               for key in ('at', 'channel_id', 'reason')) \
+            or not re.fullmatch(r'[0-9]{1,22}', error['channel_id']):
+        error = None
+    else:
+        error = {'at': error['at'][:40], 'channel_id': error['channel_id'],
+                 'reason': error['reason'][:96]}
+    return {
+        **{key: row.get(key, '') for key in
+           ('command', 'text', 'title', 'description', 'image_url')},
+        'enabled': row.get('enabled', True),
+        'color': row.get('color', '#e2b332'),
+        'allow_pings': row.get('allow_pings', False),
+        'choose_recipient': row.get('choose_recipient', False),
+        'recipient_ping': row.get('recipient_ping', False),
+        'delete_trigger': row.get('delete_trigger', True),
+        'last_delete_error': error,
+        'blocks': row.get('blocks', legacy_blocks(row)),
+        'revision': row['revision'],
+    }
 
 
 async def listing(request):
@@ -32,6 +53,7 @@ async def save(request):
     revision = uuid4().hex
     now = datetime.now(timezone.utc)
     row = {**values, 'guild_id': GUILD_ID, 'revision': revision, 'updated_at': now, 'updated_by': actor['user_id']}
+    before = None
     async with mongo(request) as db:
         from utils.text_command_files import load_files
         from utils.text_command_actions import actions
@@ -63,13 +85,15 @@ async def save(request):
                 raise web.HTTPConflict(text='This command changed or was deleted. Reload before saving.')
             from .change_history import begin, finish
             history_id = await begin(db, API+'/text-commands/'+name, actor,
-                                     {key:value for key,value in public(before).items() if key!='revision'},
+                                     {key:value for key,value in public(before).items()
+                                      if key not in ('revision', 'last_delete_error')},
                                      getattr(request,'history_action','edit'))
             result = await target.update_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']}, {'$set': row})
             if not result.matched_count:
                 raise web.HTTPConflict(text='This command changed or was deleted. Reload before saving.')
             await finish(db, history_id, values)
-    return web.json_response(public(row), status=201 if request.method == 'POST' else 200)
+    return web.json_response(public({**(before or {}), **row}),
+                             status=201 if request.method == 'POST' else 200)
 
 
 async def delete(request):

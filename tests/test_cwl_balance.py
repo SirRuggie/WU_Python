@@ -47,6 +47,21 @@ def test_locks_missing_and_unavailable_are_unchanged():
     assert plan == [{'tag': '0', 'assigned_clan_tag': '1'}]
 
 
+def test_weight_range_includes_both_boundaries_and_excludes_missing():
+    clan = hosts()[0]
+    clan.update(min_weight=172000, max_weight=179000)
+    for weight, inside in ((171999, False), (172000, True),
+                           (179000, True), (179001, False), (None, False)):
+        plan, skipped = balance_accounts([account(1, weight)], [clan], ['1'], ['0'])
+        if inside:
+            assert plan == [{'tag': '1', 'assigned_clan_tag': '0'}]
+            assert skipped == []
+        else:
+            assert plan == []
+            assert skipped == [{'tag': '1', 'reason':
+                                'missing_weight' if weight is None else 'no_eligible_rule'}]
+
+
 def test_pool_range_and_failed_accounts_preserve_slots():
     accounts = [account(i, host='0') for i in range(15)] + [account(20, 100000, '1')]
     clans = hosts()

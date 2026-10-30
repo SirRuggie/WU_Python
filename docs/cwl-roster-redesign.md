@@ -106,6 +106,7 @@ Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`,
   - "Include N locked" re-previews the WHOLE original selection, with an "Exclude locked" toggle.
 - **Not in assigned clan:** Release 4's roster tag and filter, and any DM reminders, compare the current in-game clan to the **published** assignment only, using location data checked within 2 minutes; otherwise "Location unknown". **Exception — Compare clans** keeps red/green against the **draft** column (staff request), shows the published context on the card ("Moved since publish · members still see X", "Not published yet"), always shows the last known location with its age (never "Location unknown"; "Checking…" only before the first result), and re-checks every 5 minutes while visible.
 - **Weight editing** in Details keeps an explicit Save (validated; affects saved weights beyond this season).
+- **Weight ranges:** minimum and maximum inclusive (Ruggie, 2026-10-30): “maximum and minimum should INCLUDE those, not excluded.” Known 179,000 is inside 172,000–179,000; missing weights remain excluded. Validation still requires minimum < maximum. A shared maximum/minimum boundary within a pool produces a non-blocking Clan settings note, never a save block. This supersedes the earlier exclusive-maximum decision.
 
 - **Publish awareness:** while unpublished changes exist, every roster tab shows "Members still see roster version N (published …). Placement changes made since then are draft only." Placement-edit toasts say "Draft only, not published". Finalize lists the placement changes publishing will make. Signup changes are live and never labelled draft. Publishing always requires explicit confirmation.
 
@@ -137,9 +138,9 @@ Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`,
    - Per-option counts, `Show N accounts`, Reset. OR within a section, AND across sections.
    - Active filters show as removable chips with Clear all. Stats, clan cards and the panel all share one filter state.
 8. **List and selection:**
-   - Renders 50, then Load more. Select-all selects ALL matching accounts (including ones not yet rendered).
+   - Renders 50, then Load more. Prompt 32 replaces select-all with Select 15 / Select 30: replace selection with the first unlocked matching accounts in the current filter/search/sort order, including rows not yet rendered. All N appears only for at most 50 matching accounts; Clear appears when selected.
    - Selection persists across filter changes (`N selected · X hidden by filters · Y not shown yet`). Actions list hidden selections.
-   - Server limit of 50 per action: actions are disabled with "Max 50 per action · Narrow your selection to 50 or fewer".
+   - The 50-per-action cap is enforced while selecting. A 51st selection is rejected with “50 is the most per action”; quick picks with fewer available accounts announce “Only N unlocked accounts match”. Hidden selections still count toward the cap.
 9. **Sort:** default "Unassigned first" (then weight high → low). Also Weight, Name, TH, Assigned clan, Signup time, and a Group by Discord user toggle. Persisted in localStorage (validated, try/catch).
 10. **Auto-place** is a stat chip (and in `⋯`), not a main button. Same preview flow; asks Main or Lazy on the All tab.
 
@@ -152,7 +153,7 @@ Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`,
 3. Clan tallies count all assigned accounts, ignoring TH filters: in clan, elsewhere, checking when nonzero, and amber outside family when nonzero.
 4. Opening, season and pool changes use cache; only Refresh locations forces a lookup. Errors retain results with one quiet toolbar note.
 5. Town Hall options come only from accounts assigned to the current pool's hosting clans; retain selected zero-match options, high-to-low order and Unknown TH.
-6. Show configured weight ranges and an amber Outside weight range tag (minimum inclusive, maximum exclusive); exclude missing weights from range checks.
+6. Show configured weight ranges and an amber Outside weight range tag (minimum and maximum inclusive (Ruggie, 2026-10-30)); exclude missing weights from range checks.
 7. Red/green compares last-known location to the draft column in both pools. Fetch published context on open and roster refresh/revision change, not the timer; show Moved since publish or Not published yet where applicable.
 8. Phones use page scrolling; desktop column height follows the viewport instead of a fixed 520px limit.
 9. Compact Filters / Sort / Refresh-age toolbar; reuse ActionPanel and roster filter pieces with counts. Choose clans includes search, max-10 selection and ordering. Phones use swipeable clan cards, selected players and fallback arrows; column replacement moves to the header menu.
@@ -163,7 +164,7 @@ Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`,
 14. Card body opens the existing Details modal; extract the roster menu without behavior changes. Compare offers only DM ↗ and Details; Escape restores focus and targets remain at least 44px.
 
 15. Replace all roster and Compare ⋯ action menus with a shared React Aria popover: only one open, closing on outside tap, Escape, action selection, focus out, tab/pool/season changes and detached phone scrolling. Preserve items, permissions and Discord link behavior.
-16. Accounts & signups and Compare Sort triggers show the ArrowDownWideNarrow icon and active option label, retaining “ · Grouped” where applicable. Accessible labels name the active sort and grouping. Labels stay single-line with ellipsis; toolbars fit 320, 360 and 1440 px. Options, persistence and sort panels stay unchanged.
+16. Compare defaults to Weight: high to low, including on pool changes (Ruggie, 2026-10-30); known weights descend and missing weights come last in stable name order. Explicit choices persist until the pool changes. Accounts & signups and Compare Sort triggers show the ArrowDownWideNarrow icon and active option label, retaining “ · Grouped” where applicable. Accessible labels name the active sort and grouping. Labels stay single-line with ellipsis; toolbars fit 320, 360 and 1440 px. Options, persistence and sort panels stay unchanged.
 
 Compare stays read-only; Details and DM only.
 
@@ -186,11 +187,11 @@ C4 publish awareness: reuse the header publication response for a persistent pla
 3. CWL war size is 15v15 or 30v30. Over-full counts show red +N over, full bars amber, room neutral. **B1, Ruggie-approved:** remove the capacity-below-assigned 409; existing assignments never move when rules save.
 4. No Not set menu option. Incomplete clans start both fields empty and require pool + war size before Set up clan.
 5. Minimum/Maximum weight inputs use an inline k suffix, digits and one decimal point, with 0.001k precision. Values must be above zero; blank means no limit. Zero disables Save with the approved inline explanation.
-6. Live range preview shares Compare wording; minimum inclusive, maximum exclusive. No instructional paragraphs.
+6. Live range preview shares Compare wording; minimum and maximum inclusive (Ruggie, 2026-10-30). No instructional paragraphs.
 7. Clan name/count 15px bold; values 14–15px regular; supporting labels 12px muted. Check color and text-fill. Gold identifies selection/active state.
 8. Archived settings remain visible as read-only text with no Save.
 9. **B2, Ruggie-approved:** remove lower_league from application reads, responses, validation, writes and the frontend type. Requests containing it are rejected as unknown fields. Keep the database column and existing values untouched; no migration.
-10. Changed settings show a live, expandable outside-range impact list (known weights only, inclusive min/exclusive max) and over-capacity count. Save changes rules only and its toast is not labelled Draft only.
+10. Changed settings show a live, expandable outside-range impact list (known weights only, minimum and maximum inclusive (Ruggie, 2026-10-30)) and over-capacity count. Save changes rules only and its toast is not labelled Draft only.
 
 Compare additions X1/X2: phone rail selection follows the snapped card only after scrolling settles, with reverse synchronization for arrows/taps/player swipes, reduced-motion support and a polite clan announcement. League/tag/range appears on each phone card; the duplicate subtitle below navigation is removed. No additional location requests.
 
@@ -558,3 +559,7 @@ Missing weights has one `Enter weights as: Loot | Full` control above the queue,
 ## Decisions — Weight totals (approved 2026-10-29)
 
 Ruggie decided that a clan weight is always a total. Assign current/projected and Balance current/preview display the sum of known effective weights, grouped in `k` (for example `4,512.5k`); no known weights displays `Total: no weights yet`. Keep the weighed-count hint when the total is partial and retain `Avg TH`, which measures Town Hall level rather than weight. Balance math, sorting, ties, API payloads and save behavior are unchanged. The frontend-only release also fixed the second `playerDirty` dialog after roster Discard on Fill spot / Signup Details. Claude accepted the fixture review (handoff 63) and the read-only owner 360px release smoke passed (handoff 65).
+
+## Weight range and quick selection — prompt 32 (implementation, not released)
+
+Both endpoints of a configured range are inclusive throughout status, impact, eligibility and automatic planning. Wording uses “Range: 172k–179k” and “Includes 172k to 179k.” No assignments or locks are changed by evaluation. Compare defaults to descending weight; quick picks and the selection cap follow the updated contracts above. Frontend and backend release are required after review.

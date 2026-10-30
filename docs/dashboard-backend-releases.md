@@ -1,8 +1,65 @@
 # Dashboard backend releases
 
+## Strike-tracking-2 — October 30, 2026
+
+`strike-tracking-2` (`6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`, PR #61)
+is the current frontend, isolated backend, and bot revision. The backend runs
+from `backend/6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`; the frontend
+`current` symlink points to the matching release, and the bot is at the same
+clean main SHA. The old frontend/backend/bot rollback targets are respectively
+`4f57d6e73941d3adc3b3223611927081bf794df9`,
+`f95830b5b774ba34b29f4756a1cc9e3747148f1b`, and
+`16cc79e7db39e3aaadf99c99117994b9103a47e8`.
+
+The clean tagged build and isolated backend imports passed; public index and
+32 selected asset hashes matched the staged manifest. Backend readiness reached
+two consecutive 200s; anonymous tracking returned 401. The bot journal recorded
+`[strikes] pass: 25 clans, 0 wars finalized, 13 behind`. Authenticated read-only
+tracking showed 12 On track / 13 Behind / 0 private / 0 error, and Claude's
+360px smoke passed. Durable verified backups are in
+`.local/strike-tracking-2-backup-20261030T035630Z/` (SQLite and protected Mongo).
+Protected SQLite rows and the Mongo strike ledger/settings/leaves matched before
+and after; six profile policy records were unchanged. Ten war snapshots were
+created by normal monitoring. No import previews were active at the release
+gate, so zero were modified; no gap backfill or live test messages ran.
+The frontend staging helper's nested-asset defect remains a [Later item](strike-system.md#later--non-blocking-review-items).
+Detailed release evidence is in `/tmp/wu-strike-tracking-release/LIVE.md`.
+
+Rollback is a code-only operation. Verify the bot is still on clean `main` at
+the release SHA before resetting it; keep the backups and all database changes.
+The retained release coordinator performs these checks and verifies old public
+hashes/readiness:
+
+```bash
+'/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python' /tmp/wu-strike-tracking-release/release.py rollback
+```
+
+If that scratch coordinator is unavailable, use the retained artifacts with
+the same guard and steps:
+
+```bash
+(
+set -eu
+test "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot rev-parse HEAD)" = 6a2f8d735d1ee6e5ea912be10d3bba75a143ce09
+test "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot branch --show-current)" = main
+test -z "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot status --porcelain)"
+test -d /home/ruggie/.local/share/wu-dashboard/releases/4f57d6e73941d3adc3b3223611927081bf794df9
+test -d /home/ruggie/.local/share/wu-dashboard/backend/f95830b5b774ba34b29f4756a1cc9e3747148f1b
+/home/ruggie/.local/share/wu-dashboard/switch-release.py 4f57d6e73941d3adc3b3223611927081bf794df9
+printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/f95830b5b774ba34b29f4756a1cc9e3747148f1b\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
+systemctl --user daemon-reload
+systemctl --user restart wu-cwl-demo-web.service
+sudo -n -u botrunner git -C /home/botrunner/wu-bot reset --hard 16cc79e7db39e3aaadf99c99117994b9103a47e8
+sudo -n systemctl restart wu-bot.service
+)
+```
+
+Recheck dashboard readiness, runtime cwd, bot startup, and old public asset
+hashes. Do not restore either database during code rollback.
+
 ## Owner prank released — 2026-10-29
 
-`owner-prank-1` (`f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PR #46) is the current isolated backend and frontend. Ruggie explicitly approved its additive state table, owner-only endpoints/private assets, private configuration and dashboard restart. Existing data is preserved; durable notification claims precede background transport and uncertain delivery is never automatically retried. Bot unchanged.
+`owner-prank-1` (`f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PR #46) was the previous isolated backend. Ruggie explicitly approved its additive state table, owner-only endpoints/private assets, private configuration and dashboard restart. Existing data is preserved; durable notification claims precede background transport and uncertain delivery is never automatically retried. Bot was unchanged by that release.
 
 Backup/migration, effective paths/imports, readiness, journal, 97 public hashes and protected counts passed. Main22/18/18 and Lazy116/92/73 unchanged. Claude infrastructure smoke passed; owner experience and live DM delivery not claimed. The PWA Tasks landing-page start bug is a separate frontend fix (handoff42). See CLAUDE.md for complete rollback commands and evidence.
 
@@ -18,8 +75,8 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/f95830b5b774ba34b29f4756a1cc9e3747148f1b/`, tag `owner-prank-1`.
-- Rollback backend: `/home/ruggie/.local/share/wu-dashboard/backend/8e0ee01337db50da8f2f289d257449c46440a440/`; paired frontend rollback `ef90834282142b1d924a9f24077d39f9b95105a4`. Bot unchanged; do not restart it.
+- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/6a2f8d735d1ee6e5ea912be10d3bba75a143ce09/`, tag `strike-tracking-2`.
+- Current rollback backend: `/home/ruggie/.local/share/wu-dashboard/backend/f95830b5b774ba34b29f4756a1cc9e3747148f1b/`; paired frontend and bot targets are listed above.
 - Both are clean `git archive` exports. Current release imports were verified from the isolated directory using the existing virtualenv.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
@@ -42,13 +99,9 @@ Prove `/proc/<MainPID>/cwd`, active service and clean restart journal. Verify pu
 
 Triggers include startup/journal failure, wrong cwd or public hashes, failed smoke, or protected-data mismatch. Do not overwrite data to resolve a count mismatch; investigate legitimate concurrent edits separately.
 
-```bash
-/home/ruggie/.local/share/wu-dashboard/switch-release.py 4404c3672872ebff706519402efa4ee9940d3a60
-printf '[Service]\nWorkingDirectory=/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81\n' > /home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d/release.conf
-systemctl --user daemon-reload
-systemctl --user restart wu-cwl-demo-web.service
-readlink /proc/$(systemctl --user show -p MainPID --value wu-cwl-demo-web.service)/cwd
-```
+Use the current three-layer rollback commands in
+[Strike-tracking-2](#strike-tracking-2--october-30-2026); older release-specific
+targets below remain historical.
 
 Re-check service health, cwd, public hashes, protected counts and rules after rollback. A full rollback switches both code layers, not just the frontend. Existing tabs need a reload.
 

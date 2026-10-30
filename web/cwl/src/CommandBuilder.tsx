@@ -9,7 +9,12 @@ import type {PreviewPart} from './DiscordMessagePreview'
 export type MediaItem={url:string;description:string;spoiler?:boolean}
 export type Accessory={type:'thumbnail';url:string;description:string;spoiler?:boolean}|{type:'button';url:string;label:string}
 export type Block={name?:string}&({type:'text';text:string}|{type:'image';url:string;description:string}|{type:'separator';divider:boolean;spacing:1|2}|{type:'buttons';buttons:{label:string;url:string}[]}|{type:'gallery';items:MediaItem[]}|{type:'section';texts:string[];accessory:Accessory}|{type:'container';color:string;spoiler?:boolean;blocks:Block[]}|({type:'file';spoiler?:boolean}&FileInfo)|{type:'actions';buttons:ActionItem[]}|{type:'select';placeholder:string;options:ActionItem[]})
-export type Command={command:string;enabled:boolean;text:string;title:string;description:string;image_url:string;color:string;blocks?:Block[];allow_pings?:boolean;choose_recipient?:boolean;recipient_ping?:boolean;revision?:string}
+export type Command = {
+ command:string; enabled:boolean; text:string; title:string; description:string
+ image_url:string; color:string; blocks?:Block[]; allow_pings?:boolean
+ choose_recipient?:boolean; recipient_ping?:boolean; delete_trigger?:boolean
+ last_delete_error?:{at:string;channel_id:string;reason:string}|null; revision?:string
+}
 export function commandBlocks(value:Command):Block[]{return value.blocks??[...(value.title?[{type:'text' as const,text:'## '+value.title}]:[]),...(value.description?[{type:'text' as const,text:value.description}]:[]),...(value.image_url?[{type:'image' as const,url:value.image_url,description:'Reply image'}]:[])]}
 export function hasRoleActions(blocks:Block[]):boolean{return blocks.some(block=>block.type==='container'?hasRoleActions(block.blocks):(block.type==='actions'?block.buttons:block.type==='select'?block.options:[]).some(item=>item.action.kind==='add_role'||item.action.kind==='remove_role'))}
 export function blockTextLength(block:Block):number{return block.type==='text'?block.text.length:block.type==='section'?block.texts.join('').length:block.type==='container'?block.blocks.reduce((sum,b)=>sum+blockTextLength(b),0):0}

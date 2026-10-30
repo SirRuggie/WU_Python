@@ -19,6 +19,8 @@ def raw_war(end, *, attacks=None):
         member['attacks'] = attacks
     return {'state': 'warEnded', 'teamSize': 1, 'attacksPerMember': 2,
             'endTime': end.strftime('%Y%m%dT%H%M%S.000Z'),
+            'startTime': (end - timedelta(days=1)).strftime('%Y%m%dT%H%M%S.000Z'),
+            'preparationStartTime': (end - timedelta(days=1, hours=23)).strftime('%Y%m%dT%H%M%S.000Z'),
             'clan': {'tag': '#2UVGQU9', 'members': [member], 'attacks': len(attacks or [])},
             'opponent': {'tag': '#8GG8', 'members': [{'tag': '#8GG82'}]}}
 

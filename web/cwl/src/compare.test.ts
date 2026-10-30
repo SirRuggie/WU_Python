@@ -6,6 +6,14 @@ const accounts = [basic('#A', '#ONE', 16, 175000), basic('#B', '#ONE', null, nul
 describe('clan comparison', () => {
   it('summarizes occupancy, average TH and total known weight within each clan', () => { expect(clanSummary(accounts, '#ONE')).toEqual({ count: 3, knownTownHalls: 2, averageTownHall: 15, knownWeights: 2, totalWeight: 340000 }); expect(clanSummary(accounts, '#EMPTY').totalWeight).toBeNull() })
   it('sorts each clan without moving missing numeric values to the top', () => { expect(compareClanAccounts(accounts, '#ONE', 'town_hall_desc').map(item => item.tag)).toEqual(['#A', '#C', '#B']); expect(compareClanAccounts(accounts, '#ONE', 'weight_asc').map(item => item.tag)).toEqual(['#C', '#A', '#B']) })
+  it('keeps unknown weights last by player name on the default descending weight order', () => {
+    const rows = [
+      ...accounts.map((row) => row.tag === '#B' ? { ...row, player_name: 'Middle' } : row),
+      { ...basic('#E', '#ONE', 17, null), player_name: 'Zulu' },
+      { ...basic('#F', '#ONE', 13, null), player_name: 'Able' },
+    ]
+    expect(compareClanAccounts(rows, '#ONE', 'weight_desc').map(item => item.tag)).toEqual(['#A', '#C', '#F', '#B', '#E'])
+  })
 })
 
 it('preserves chosen order and empty choices; removes archived clans without filling unwanted columns',()=>{

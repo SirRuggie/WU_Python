@@ -22,9 +22,9 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Deployment paths verified through 2026-10-29:
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current weight-totals-1 frontend: `/home/ruggie/.local/share/wu-dashboard/releases/4f57d6e73941d3adc3b3223611927081bf794df9/`
+  - Current strike-tracking-2 frontend: `/home/ruggie/.local/share/wu-dashboard/releases/6a2f8d735d1ee6e5ea912be10d3bba75a143ce09/`; backend and bot use the same revision.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
-  - Current frontend rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 8c7b5a8c29c6dab65801879cf20226f94e7efc7c`
+  - Current rollback: follow the [three-layer guarded procedure](docs/dashboard-backend-releases.md#strike-tracking-2--october-30-2026) to restore frontend `4f57d6e73941d3adc3b3223611927081bf794df9`, backend `f95830b5b774ba34b29f4756a1cc9e3747148f1b`, and bot `16cc79e7db39e3aaadf99c99117994b9103a47e8`; never restore the databases for code rollback.
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
 - Deploy procedure: back up and verify the DB → record live counts per season/pool (signups, assigned, locks, publication version) → build from a clean checkout of a tagged commit into `releases/<sha>/` → atomic symlink switch → read-only smoke test → counts must match exactly. Rollback = point the symlink back at the previous release.
 - Frontend-only unless Ruggie explicitly approves backend, schema, endpoint or policy changes. If a fix seems to need one, stop and ask.
@@ -52,9 +52,13 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - When changing a script: return the full updated script.
 - He reviews on his phone; mobile layout matters as much as desktop.
 
+## Strike-tracking release — 2026-10-30
+
+- Current frontend/backend/bot: `strike-tracking-2`, `6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`, PR #61. Claude read-only smoke PASSED; the official bot pass checked 25 clans, and Tracking showed 12 On track / 13 Behind, 0 private / 0 error. Public entry and feature hashes, backend readiness/cwd, protected data and durable backups passed. No historical gap backfill or live test messages. See `docs/strike-system.md` and `docs/dashboard-backend-releases.md` for policy, rollback and Later items.
+
 ## Weight totals release — 2026-10-29
 
-- Current frontend: `weight-totals-1`, `4f57d6e73941d3adc3b3223611927081bf794df9`, PR #59. Assign and Balance display known-weight totals instead of weight averages; `Avg TH` remains. Empty clans say `Total: no weights yet`. Fill spot / Signup Details no longer opens a second dirty dialog after roster Discard. The accepted branch passed 901 frontend tests, TypeScript/build and full isolated layout. Claude's read-only owner 360px smoke PASSED (handoff 65): Assign showed `Current total 2,652k` and the no-weights state; Balance showed totals without horizontal overflow or weight Avg labels. Only GETs appeared, with no console errors.
+- Previous frontend: `weight-totals-1`, `4f57d6e73941d3adc3b3223611927081bf794df9`, PR #59. Assign and Balance display known-weight totals instead of weight averages; `Avg TH` remains. Empty clans say `Total: no weights yet`. Fill spot / Signup Details no longer opens a second dirty dialog after roster Discard. The accepted branch passed 901 frontend tests, TypeScript/build and full isolated layout. Claude's read-only owner 360px smoke PASSED (handoff 65): Assign showed `Current total 2,652k` and the no-weights state; Balance showed totals without horizontal overflow or weight Avg labels. Only GETs appeared, with no console errors.
 - Public `index-5dIAUgQj.js` SHA256 `b3f78cd7daba401cd67513e69fced2d6bf989e8a0b44b9e7f840d28a742d5c12` matched the release. Backend remained `f95830b5b774ba34b29f4756a1cc9e3747148f1b`, PID 2249061, without restart. Config returned 200 and anonymous access 401. Protected signups/assigned/locks matched before and after: Main 22/18/18, Lazy 118/89/71. Backup `.local/weight-totals-1-backup-20261030T012727Z/dashboard.sqlite3`: 1,232,896 bytes, SHA256 `4a86e9aa42e477d87267e1bb9e77df8f6297bc3c6f02eac0ccb503f7a13bdeee`, integrity OK and all table counts matched. Evidence `/tmp/wu-weight-totals-release/`. Frontend rollback: `/home/ruggie/.local/share/wu-dashboard/switch-release.py 8c7b5a8c29c6dab65801879cf20226f94e7efc7c`.
 
 ## Roster hotfix release — 2026-10-29
@@ -129,7 +133,7 @@ Verify readiness, runtime cwd and public hashes after rollback. Never restore a 
   - Public `index--G6lVqgC.js`, SHA256 `52eff54228f85c7d0c0db4eac26c44ea550c6e2e3c37f2f13636226e7c3426e1`; public index and affected assets matched the manifest. Config 200, anonymous seasons 401, clean journal.
   - 788 frontend tests, TypeScript/build and isolated layout passed; 78 tour measurements, 24 cleanup scenarios and both required mutations passed. No backend source changed; prior 4,799 backend tests passed. Claude smoke PASSED (handoff 23): red card and dates at 360px, tour copy/replay, no overflow, GET only. Evidence `/tmp/wu-signup-card-release/`.
 
-- **Previous frontend; current backend — Tour/deadline hotfix (2026-10-29):** `8e0ee01337db50da8f2f289d257449c46440a440`, tag `tour-deadline-1`, PR #40.
+- **Previous frontend/backend — Tour/deadline hotfix (2026-10-29):** `8e0ee01337db50da8f2f289d257449c46440a440`, tag `tour-deadline-1`, PR #40.
   - Frontend/backend: `/home/ruggie/.local/share/wu-dashboard/{releases,backend}/8e0ee01337db50da8f2f289d257449c46440a440/`. Bot remains `16cc79e`; no bot restart.
   - Rollback frontend with `/home/ruggie/.local/share/wu-dashboard/switch-release.py 16cc79e7db39e3aaadf99c99117994b9103a47e8`; set only `release.conf` WorkingDirectory to `/home/ruggie/.local/share/wu-dashboard/backend/16cc79e7db39e3aaadf99c99117994b9103a47e8`, then `systemctl --user daemon-reload` and `systemctl --user restart wu-cwl-demo-web.service`. Restore shared `assets/tour/SOURCES.md` from that previous release if rolling back its provenance too. Never restore the DB for a code rollback.
   - Backup `.local/tour-deadline-backup-20261029T151849Z/dashboard.sqlite3`: 1,204,224 bytes, integrity OK, 57 table counts match. Main 21/18/18 and Lazy 114/92/73 unchanged (signups/assigned/locks), along with all protected records.
@@ -185,7 +189,7 @@ systemctl --user restart wu-cwl-demo-web.service
   - Evidence: `/tmp/wu-details-release/live-proof.json`.
 
 
-- **Previous frontend / current backend — Announcements:** `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, tag `announcements-1`, PR #32.
+- **Previous frontend/backend — Announcements:** `73fe3fa92d8d0d89491be6e350c130b9d375aaaf`, tag `announcements-1`, PR #32.
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`.
   - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/73fe3fa92d8d0d89491be6e350c130b9d375aaaf/`; approved isolated restart, PID 1366655 at verification.
   - Previous frontend / rollback: `4404c3672872ebff706519402efa4ee9940d3a60`; previous backend / rollback: `61290a4ce2b87611119483d6376b879a675aeb81`.
@@ -235,7 +239,7 @@ readlink /proc/$(systemctl --user show -p MainPID --value wu-cwl-demo-web.servic
   - Evidence: `/tmp/wu-player-card-2-release/live-proof.json`; 631 frontend tests and clean tagged TypeScript/build passed.
 
 
-- **Previous CWL flow frontend / current backend:** `61290a4ce2b87611119483d6376b879a675aeb81`, tag `cwl-flow-1`, PRs #27 (`3631408`) and #28 (`61290a4`).
+- **Previous CWL flow frontend/backend:** `61290a4ce2b87611119483d6376b879a675aeb81`, tag `cwl-flow-1`, PRs #27 (`3631408`) and #28 (`61290a4`).
   - Frontend: `/home/ruggie/.local/share/wu-dashboard/releases/61290a4ce2b87611119483d6376b879a675aeb81/`.
   - Backend: `/home/ruggie/.local/share/wu-dashboard/backend/61290a4ce2b87611119483d6376b879a675aeb81/`.
   - Previous frontend + backend: `1a8b035461ec46fba60f6ed4808111d3c67d87cf` (`finalize-1`).

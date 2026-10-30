@@ -59,7 +59,8 @@ def test_failure_preserves_success_and_never_persists_exception_body():
     async def run():
         tracking, collection = service()
         token = await tracking.begin(1, '#P2Y')
-        await tracking.finish(1, '#P2Y', started_at=token, regular_wars=2)
+        await tracking.finish(1, '#P2Y', started_at=token, regular_wars=2,
+                              current_war_state='notInWar')
         first = collection.rows[tracking.key(1, '#P2Y')]['last_success_at']
         token = await tracking.begin(1, '#P2Y')
         await tracking.finish(1, '#P2Y', started_at=token,
@@ -68,7 +69,7 @@ def test_failure_preserves_success_and_never_persists_exception_body():
         assert row['last_success_at'] == first
         assert row['error'] == 'Tracking check failed'
         assert len(row['error_history']) == 1
-        assert (await tracking.rows(1, [{'tag': '#P2Y', 'name': 'Clan'}]))[0]['status'] == 'needs_review'
+        assert (await tracking.rows(1, [{'tag': '#P2Y', 'name': 'Clan'}]))[0]['status'] == 'error'
     asyncio.run(run())
 
 
@@ -76,13 +77,13 @@ def test_unfinished_or_stale_check_cannot_be_healthy():
     async def run():
         tracking, collection = service()
         first = await tracking.begin(1, '#P2Y')
-        await tracking.finish(1, '#P2Y', started_at=first)
+        await tracking.finish(1, '#P2Y', started_at=first, current_war_state='notInWar')
         second = await tracking.begin(1, '#P2Y')
         rows = await tracking.rows(1, [{'tag': '#P2Y'}])
-        assert rows[0]['status'] == 'delayed'
+        assert rows[0]['status'] == 'behind'
         await tracking.finish(1, '#P2Y', started_at=first, error='Tracking check failed')
         assert collection.rows[tracking.key(1, '#P2Y')]['completed_scan_token'] == first
-        await tracking.finish(1, '#P2Y', started_at=second)
+        await tracking.finish(1, '#P2Y', started_at=second, current_war_state='notInWar')
         assert (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]['status'] == 'healthy'
     asyncio.run(run())
 
@@ -113,7 +114,7 @@ def test_history_capped_and_previously_recorded_war_read_from_ledger():
         row = (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]
         assert row['latest_recorded_war_at'] == end
         assert len(row['error_history']) == 5
-        assert row['status'] == 'needs_review'
+        assert row['status'] == 'behind'
     asyncio.run(run())
 
 

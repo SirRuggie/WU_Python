@@ -19,6 +19,7 @@ export { commandPreview } from './CommandBuilder'
 const blank = (): Command => ({
   command: '!',
   enabled: true,
+  delete_trigger: true,
   text: '',
   title: '',
   description: '',
@@ -29,6 +30,12 @@ const blank = (): Command => ({
   choose_recipient: false,
   recipient_ping: false,
 })
+const normalizeCommand = (row: Command): Command => ({
+  ...row,
+  delete_trigger: row.delete_trigger ?? true,
+})
+const deleteWarning = (error: NonNullable<Command['last_delete_error']>) =>
+  `Last time the bot could not delete the trigger message in #${error.channel_id} (it needs Manage Messages there).`
 export default function TextCommands({
   onDirty,
 }: {
@@ -92,7 +99,7 @@ export default function TextCommands({
     try {
       const data = await api<{ commands: Command[] }>('/manage/text-commands')
       if (turn !== sequence.current) return
-      setRows(data.commands)
+      setRows(data.commands.map(normalizeCommand))
       setError('')
     } catch (e) {
       if (turn !== sequence.current) return
@@ -130,8 +137,9 @@ export default function TextCommands({
     if (busy || loading || mutation.current) return
     if (dirty && !window.confirm('Leave without saving your changes?')) return
     if (!rolesLoaded.current) void loadRoles()
-    setSaved(row)
-    setDraft(row ? { ...row } : blank())
+    const selected = row ? normalizeCommand(row) : null
+    setSaved(selected)
+    setDraft(selected ? { ...selected } : blank())
     setError('')
     setNotice('')
     setPane('edit')
@@ -149,6 +157,7 @@ export default function TextCommands({
     setError('')
     try {
       const { revision, ...values } = draft
+      delete values.last_delete_error
       const result = await api<Command>(
         '/manage/text-commands' +
           (saved ? '/' + encodeURIComponent(saved.command) : ''),
@@ -158,11 +167,11 @@ export default function TextCommands({
       setRows((current) =>
         [
           ...current.filter((row) => row.command !== result.command),
-          result,
+          normalizeCommand(result),
         ].sort((a, b) => a.command.localeCompare(b.command)),
       )
-      setSaved(result)
-      setDraft(result)
+      setSaved(normalizeCommand(result))
+      setDraft(normalizeCommand(result))
       setConflict(false)
       setNotice(
         result.enabled
@@ -308,7 +317,12 @@ export default function TextCommands({
                     aria-pressed={saved?.command === row.command}
                     onClick={() => choose(row)}
                   >
-                    <strong>{row.command}</strong>
+                    <span className="text-command-row-info">
+                      <strong>{row.command}</strong>
+                      {row.last_delete_error && (
+                        <small>{deleteWarning(row.last_delete_error)}</small>
+                      )}
+                    </span>
                     <span>{row.enabled ? 'On' : 'Off'}</span>
                   </button>
                 ))}
@@ -334,6 +348,11 @@ export default function TextCommands({
                 ← Commands
               </button>
             </div>
+            {draft.last_delete_error && (
+              <p className="notice error command-delete-warning" role="alert">
+                {deleteWarning(draft.last_delete_error)}
+              </p>
+            )}
             <div
               className="text-command-tabs"
               role="group"
@@ -388,6 +407,16 @@ export default function TextCommands({
                       onChange={(e) => change('enabled', e.target.checked)}
                     />
                     Enabled in Discord
+                  </label>
+                  <label className="text-command-enable">
+                    <input
+                      type="checkbox"
+                      checked={draft.delete_trigger ?? true}
+                      onChange={(e) =>
+                        change('delete_trigger', e.target.checked)
+                      }
+                    />
+                    Delete the trigger message
                   </label>
                   <MentionText
                     key={draft.command}
@@ -599,18 +628,19 @@ export default function TextCommands({
                   image_url: 'Card image',
                   color: 'Card color',
                   enabled: 'Enabled',
+                  delete_trigger: 'Delete the trigger message',
                 }}
                 onRestored={async () => {
                   const data = await api<{ commands: Command[] }>(
                     '/manage/text-commands',
                   )
-                  setRows(data.commands)
+                  setRows(data.commands.map(normalizeCommand))
                   const row =
                     data.commands.find(
                       (item) => item.command === saved.command,
                     ) || null
-                  setSaved(row)
-                  setDraft(row)
+                  setSaved(row ? normalizeCommand(row) : null)
+                  setDraft(row ? normalizeCommand(row) : null)
                 }}
               />
             )}
