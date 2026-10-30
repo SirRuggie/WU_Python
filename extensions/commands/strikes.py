@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import math
+import logging
+import traceback
 import uuid
 import os
 import sqlite3
@@ -19,7 +21,7 @@ from utils import recruit_links
 from utils.component_state import get_state, insert_state, update_state
 from utils.constants import WARRIORS_UNITED_GUILD_ID
 from utils.mongo import MongoClient
-from utils.strike_store import STRIKE_DAYS, StrikeService, tag
+from utils.strike_store import STRIKE_DAYS, StrikeService, tag, utc
 from utils.strike_tracking import StrikeTracking
 from utils.strike_official import normalize as normalize_official_war
 from utils.replacement_filters import parse_weight, compact_weight
@@ -728,6 +730,19 @@ async def _league_observations(client, clan_tag, cache, ended_cache=None):
             observations.append(item)
     return observations
 
+def _log_scan_failure(error, *, clan_tag=None):
+    """Keep diagnostic locations, never upstream exception text or credentials."""
+    frames = traceback.extract_tb(error.__traceback__)
+    locations = ' -> '.join(
+        f'{os.path.basename(frame.filename)}:{frame.lineno} ({frame.name})'
+        for frame in frames
+    )
+    logging.getLogger(__name__).error(
+        '[strikes] scan deferred%s: %s at %s',
+        f' for {clan_tag}' if clan_tag else '', type(error).__name__, locations,
+    )
+
+
 async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.Client,
                     *, clan_tags: set[str] | None = None, ended_cache=None):
     if ended_cache is not None and ended_cache.get('__client__') is not coc_client:
@@ -748,13 +763,14 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
         clan_tag = tag(clan['tag'])
         if clan_tags is not None and clan_tag not in clan_tags:
             continue
-        started = await tracking.begin(WARRIORS_UNITED_GUILD_ID, clan_tag)
+        started = None
         regular_count = cwl_count = deferred_count = skipped_count = 0
         attempted_finals = set()
         problem = None
         current_state = 'unknown'
         private = False
         try:
+            started = await tracking.begin(WARRIORS_UNITED_GUILD_ID, clan_tag)
             try:
                 roster_observed_at = datetime.now(timezone.utc)
                 current = await coc_client.get_clan(clan_tag)
@@ -765,7 +781,8 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                                         observed_at=roster_observed_at)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as error:
+                _log_scan_failure(error, clan_tag=clan_tag)
                 problem = 'Clan roster unavailable'
                 print(f'[strikes] roster refresh deferred for {clan_tag}')
             current_keys = set()
@@ -799,7 +816,8 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                     current_state = 'private'
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as error:
+                _log_scan_failure(error, clan_tag=clan_tag)
                 problem = 'War processing failed' if regular_ok else 'War source unavailable'
                 print(f'[strikes] official war check deferred for {clan_tag}')
             try:
@@ -820,7 +838,8 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                         await tracking.observe(WARRIORS_UNITED_GUILD_ID, observed)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as error:
+                _log_scan_failure(error, clan_tag=clan_tag)
                 problem = problem or ('War processing failed' if league_ok else 'War source unavailable')
                 print(f'[strikes] official CWL check deferred for {clan_tag}')
             if regular_ok and league_ok:
@@ -832,7 +851,7 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                 if saved['_id'] in attempted_finals:
                     continue
                 due_at = saved.get('next_check_at')
-                if due_at is not None and due_at > datetime.now(timezone.utc):
+                if due_at is not None and utc(due_at) > datetime.now(timezone.utc):
                     continue
                 try:
                     r, c, d, s = await _finish_official_war(
@@ -843,7 +862,8 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                     skipped_count += s
                 except asyncio.CancelledError:
                     raise
-                except Exception:
+                except Exception as error:
+                    _log_scan_failure(error, clan_tag=clan_tag)
                     problem = 'War processing failed'
             if not regular_ok or not league_ok:
                 await tracking.defer_due(WARRIORS_UNITED_GUILD_ID, clan_tag)
@@ -857,6 +877,20 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
         except asyncio.CancelledError:
             # A cancelled attempt must never mark this clan healthy.
             raise
+        except Exception as error:
+            _log_scan_failure(error, clan_tag=clan_tag)
+            if started is not None:
+                try:
+                    await tracking.finish(
+                        WARRIORS_UNITED_GUILD_ID, clan_tag, started_at=started,
+                        error='War processing failed', current_war_state=current_state,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as tracking_error:
+                    _log_scan_failure(tracking_error, clan_tag=clan_tag)
+            # A bad payload or failed clan must not starve the remaining clans.
+            continue
     full_coverage = clan_tags is None or tracked_tags <= clan_tags
     if full_coverage and tracked_tags and len(forbidden_results) == len(tracked_tags):
         for clan_tag, started in forbidden_results:
@@ -898,7 +932,7 @@ async def loop(mongo, bot, coc_client):
         except asyncio.CancelledError:
             raise
         except Exception as error:
-            print(f'[strikes] scan deferred: {type(error).__name__}')
+            _log_scan_failure(error)
         await asyncio.sleep(15)
 
 
