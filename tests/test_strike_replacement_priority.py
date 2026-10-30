@@ -24,13 +24,9 @@ class Profiles:
         self.rows = rows
 
     def find(self, query):
-        cutoff = query.get('roster_seen_at', {}).get('$gt')
-        clan = query['current_clan_tag']
-        allowed = set(clan['$in']) if isinstance(clan, dict) else {clan}
+        from test_strike_streaks import matches
         return Cursor([row.copy() for row in self.rows.values()
-                       if (cutoff is None or row.get('roster_seen_at', cutoff - timedelta(seconds=1)) > cutoff)
-                       and row.get('current_clan_tag') in allowed
-                       and ('town_hall' not in query or row.get('town_hall') == query['town_hall'])])
+                       if matches({'guild_id': 123, **row}, query)])
 
     async def update_one(self, query, update, upsert=False):
         row = self.rows.setdefault(query['_id'], {'_id': query['_id']})
@@ -196,8 +192,10 @@ def test_sync_roster_saves_town_hall_without_guessing_missing_values():
         class Profiles:
             def __init__(self):
                 self.writes = []
-            async def update_many(self, query, update):
-                pass
+            def find(self, query):
+                return Cursor([])
+            async def find_one(self, query):
+                return None
             async def update_one(self, query, update, upsert=False):
                 self.writes.append(update['$set'])
         profiles = Profiles()

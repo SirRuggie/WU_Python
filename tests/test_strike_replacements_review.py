@@ -31,14 +31,8 @@ class Profiles:
         self.updates = []
 
     def find(self, query):
-        allowed = query['current_clan_tag']
-        if isinstance(allowed, dict):
-            rows = [row for row in self.rows if row['current_clan_tag'] in allowed['$in']]
-        else:
-            rows = [row for row in self.rows if row['current_clan_tag'] == allowed]
-        if 'town_hall' in query:
-            rows = [row for row in rows if row.get('town_hall') == query['town_hall']]
-        return Cursor(rows)
+        from test_strike_streaks import matches
+        return Cursor([row for row in self.rows if matches({'guild_id': 123, **row}, query)])
 
     async def update_one(self, query, update, upsert=False):
         self.updates.append((query, update, upsert))

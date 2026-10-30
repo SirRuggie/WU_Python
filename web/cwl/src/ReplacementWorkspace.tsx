@@ -2,6 +2,7 @@ import useUnsavedWork from './useUnsavedWork'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { strikePermissions } from './strikePermissions'
+import ReplacementDeparture from './ReplacementDeparture'
 import {
   bulkSaveMessage,
   compactWeight,
@@ -27,6 +28,10 @@ type Candidate = {
   active_strikes: number
   clan_is_current?: boolean
   clan_seen_at?: string | null
+  departed?: boolean
+  last_seen_clan_tag?: string | null
+  last_seen_clan_name?: string | null
+  last_seen_at?: string | null
   is_manual?: boolean
   is_filler?: boolean
 }
@@ -589,6 +594,20 @@ export default function ReplacementWorkspace({
                               ? ' · Last known clan'
                               : ''}
                           </small>
+                          {item.departed && (
+                            <ReplacementDeparture
+                              clan={
+                                item.last_seen_clan_name ||
+                                clans.find(
+                                  (known) => known.tag === item.last_seen_clan_tag,
+                                )?.name ||
+                                item.last_seen_clan_tag ||
+                                item.clan_name ||
+                                'Unknown clan'
+                              }
+                              seenAt={item.last_seen_at}
+                            />
+                          )}
                         </div>
                         <span
                           className={`replacement-priority ${priorityOf(item)}`}

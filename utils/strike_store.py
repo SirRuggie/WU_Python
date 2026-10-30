@@ -13,6 +13,8 @@ from pymongo.errors import DuplicateKeyError
 from utils import recruit_links
 
 DEFAULT_EXEMPT_ROLE = 769130325460254740
+STRIKE_LIMIT = 4
+REPLACEMENT_GRACE = timedelta(hours=48)
 STRIKE_DAYS = 60
 IMPORT_DAYS = 60
 
@@ -129,6 +131,7 @@ class StrikeService:
         await self.mongo.strike_records.create_index([('guild_id', 1), ('member_id', 1), ('occurred_at', -1)])
         await self.mongo.strike_records.create_index([('guild_id', 1), ('clan_tag', 1), ('occurred_at', -1)])
         await self.mongo.strike_profiles.create_index([('guild_id', 1), ('current_clan_tag', 1)])
+        await self.mongo.strike_profiles.create_index([('guild_id', 1), ('departed_last_seen_at', 1)])
         await self.mongo.strike_imports.create_index('expires_at', expireAfterSeconds=0)
         await self.mongo.strike_leave_history.create_index(
             [('guild_id', 1), ('member_id', 1), ('starts_at', -1)])
@@ -136,7 +139,7 @@ class StrikeService:
     async def settings(self, guild_id: int) -> dict:
         saved = await self.mongo.strike_settings.find_one({'_id': str(int(guild_id))})
         return {'guild_id': int(guild_id), 'exempt_role_ids': [DEFAULT_EXEMPT_ROLE],
-                **(saved or {}), 'retention_days': STRIKE_DAYS}
+                **(saved or {}), 'retention_days': STRIKE_DAYS, 'strike_limit': STRIKE_LIMIT}
 
     async def monitor_activation(self, guild_id: int) -> datetime:
         """Persist the live-monitor launch boundary before reading any wars."""
@@ -222,18 +225,66 @@ class StrikeService:
             {'_id': f'{int(guild_id)}:{player}'}, {'$set': changes}, upsert=True)
         return changes
 
-    async def sync_roster(self, guild_id: int, clan_tag: str, members: list[dict]):
+    async def expire_departed_replacements(self, guild_id: int, *, now=None):
+        """Clear old clan marks only after confirmed absence and a 48h grace.
+
+        CAS the roster evidence and preference revision so a rejoin or staff edit
+        racing this pass wins. The audit reason remains on the profile forever.
+        """
+        now = utc(now or datetime.now(timezone.utc))
+        profiles = await self.mongo.strike_profiles.find(
+            {'guild_id': int(guild_id), 'departed_last_seen_at': {'$lt': now - REPLACEMENT_GRACE}}
+        ).to_list(length=None)
+        for profile in profiles:
+            clan = profile.get('departed_clan_tag')
+            if not clan or profile.get('current_clan_tag') == clan:
+                continue
+            if not (profile.get('replacement_clan_tag') == clan or profile.get('filler_clan_tag') == clan):
+                continue
+            await self.mongo.strike_profiles.update_one(
+                {'_id': profile['_id'], 'current_clan_tag': profile.get('current_clan_tag'),
+                 'departed_clan_tag': clan, 'departed_last_seen_at': profile['departed_last_seen_at'],
+                 'replacement_updated_at': profile.get('replacement_updated_at'),
+                 'updated_at': profile.get('updated_at')},
+                {'$unset': {'replacement_listed': '', 'replacement_priority': '',
+                            'replacement_note': '', 'replacement_clan_tag': '', 'filler_clan_tag': ''},
+                 '$set': {'filler': False, 'replacement_updated_by': 'system',
+                          'replacement_updated_at': now, 'replacement_clear_reason': 'Left clan (48h)'}})
+
+    async def sync_roster(self, guild_id: int, clan_tag: str, members: list[dict], *, observed_at=None):
         clan = tag(clan_tag)
+        now = utc(observed_at or datetime.now(timezone.utc))
         current_tags = [tag(member['tag']) for member in members]
-        await self.mongo.strike_profiles.update_many(
+        missing = await self.mongo.strike_profiles.find(
             {'guild_id': int(guild_id), 'current_clan_tag': clan,
-             'player_tag': {'$nin': current_tags}},
-            {'$unset': {'current_clan_tag': ''}})
+             'player_tag': {'$nin': current_tags}}).to_list(length=None)
+        for profile in missing:
+            if utc(profile.get('roster_observed_at') or profile.get('roster_seen_at') or now) > now:
+                continue
+            await self.mongo.strike_profiles.update_one(
+                {'_id': profile['_id'], 'current_clan_tag': clan,
+                 'roster_seen_at': profile.get('roster_seen_at'),
+                 'roster_observed_at': profile.get('roster_observed_at')},
+                {'$unset': {'current_clan_tag': ''},
+                 '$set': {'departed_clan_tag': clan, 'roster_observed_at': now,
+                          'departed_last_seen_at': profile.get('roster_seen_at') or now}})
+        # Includes profiles that are returning now, before refreshing their clock.
+        await self.expire_departed_replacements(guild_id, now=now)
         for member in members:
             player = tag(member['tag'])
+            identity = f'{int(guild_id)}:{player}'
+            prior = await self.mongo.strike_profiles.find_one({'_id': identity}) or {}
+            if utc(prior.get('roster_observed_at') or prior.get('roster_seen_at') or now) > now:
+                continue
             changes = {'guild_id': int(guild_id), 'player_tag': player,
                        'current_clan_tag': clan, 'player_name': member.get('name') or player,
-                       'roster_seen_at': datetime.now(timezone.utc)}
+                       'roster_seen_at': now, 'roster_observed_at': now}
+            update = {'$set': changes}
+            if prior.get('current_clan_tag') and prior['current_clan_tag'] != clan:
+                changes.update({'departed_clan_tag': prior['current_clan_tag'],
+                                'departed_last_seen_at': prior.get('roster_seen_at') or now})
+            elif prior.get('departed_clan_tag') == clan:
+                update['$unset'] = {'departed_clan_tag': '', 'departed_last_seen_at': ''}
             if isinstance(member.get('weight'), int) and not isinstance(member['weight'], bool) and member['weight'] > 0:
                 changes['weight'] = member['weight']
             th = member.get('town_hall', member.get('townHallLevel'))
@@ -241,8 +292,15 @@ class StrikeService:
                 changes['town_hall'] = th
             if member.get('member_id'):
                 changes['member_id'] = int(member['member_id'])
-            await self.mongo.strike_profiles.update_one(
-                {'_id': f'{int(guild_id)}:{player}'}, {'$set': changes}, upsert=True)
+            try:
+                await self.mongo.strike_profiles.update_one(
+                    {'_id': identity, 'roster_observed_at': prior.get('roster_observed_at')},
+                    update, upsert=True)
+            except DuplicateKeyError:
+                # A newer roster observation won while this response was in flight.
+                continue
+        await self.expire_departed_replacements(guild_id, now=now)
+
 
     async def add_manual(self, guild_id: int, player_tag: str, reason: str, actor_id: int,
                          *, member_id=None, clan_tag=None, player_name=None, request_id=None) -> dict:
@@ -549,6 +607,13 @@ class StrikeService:
             allowed = {'type': 'FWA'} if matching and family_scope == 'fwa' else {}
             clans = await self.mongo.clans.find(allowed, {'tag': 1}).to_list(length=None)
             query['current_clan_tag'] = {'$in': [tag(row['tag']) for row in clans]}
+        if not matching:
+            clan_filter = query.pop('current_clan_tag')
+            query['$or'] = [
+                {'current_clan_tag': clan_filter},
+                {'current_clan_tag': None, 'departed_clan_tag': clan_filter,
+                 'departed_last_seen_at': {'$gte': datetime.now(timezone.utc) - REPLACEMENT_GRACE}},
+            ]
         profiles = await self.mongo.strike_profiles.find(query).to_list(length=None)
         now = datetime.now(timezone.utc)
         rows = []
@@ -563,7 +628,8 @@ class StrikeService:
             ])
             counts = {row['_id']: row['count'] for row in await cursor.to_list(length=None)}
         for profile in profiles:
-            current_clan = profile.get('current_clan_tag')
+            departed = not profile.get('current_clan_tag') and bool(profile.get('departed_clan_tag'))
+            current_clan = profile.get('current_clan_tag') or profile.get('departed_clan_tag')
             marked_clan = profile.get('replacement_clan_tag')
             marked = bool(profile.get('replacement_listed') and marked_clan == current_clan)
             legacy_filler = bool(profile.get('filler') and profile.get('filler_clan_tag') == current_clan)
@@ -578,7 +644,9 @@ class StrikeService:
                 continue
             seen = profile.get('roster_seen_at')
             rows.append({**profile, 'weight': weight, 'clan_seen_at': seen,
-                         'clan_is_current': bool(isinstance(seen, datetime) and utc(seen) > cutoff),
+                         'departed': departed, 'last_seen_clan_tag': current_clan,
+                         'last_seen_at': profile.get('departed_last_seen_at') if departed else seen,
+                         'clan_is_current': bool(not departed and isinstance(seen, datetime) and utc(seen) > cutoff),
                          'filler': priority == 'replace_first' and (marked or legacy_filler),
                          'replacement_listed': marked or legacy_filler, 'is_manual': marked or legacy_filler,
                          'replacement_priority': priority,
@@ -724,7 +792,7 @@ class StrikeService:
         return {**report, 'deferred_count': len(report['deferred_accounts']), 'preview_id': preview_id}
 
     async def _war_rows(self, guild_id: int, war: dict, *, owner_cache=None, leave_cache=None,
-                        deferred=None) -> list[dict]:
+                        deferred=None, check_all=False) -> list[dict]:
         validate_war(war)
         clan = tag(war['clan_tag'])
         registered = await self.mongo.clans.find_one({'tag': clan}, {'_id': 1})
@@ -752,12 +820,12 @@ class StrikeService:
             player = tag(member['tag'])
             missed = 2 - member['attacks']
             row_id = f'war:{int(guild_id)}:{key}:{player}'
-            reason = 'Account owner conflict' if player in conflicts and missed else None
+            reason = 'Account owner conflict' if player in conflicts and (missed or check_all) else None
             owner = owners.get(player)
-            if player in conflicts and not missed:
+            if player in conflicts and not missed and not check_all:
                 continue
             exemption = None
-            if missed and reason is None:
+            if (missed or check_all) and reason is None:
                 exemption = await self._exemption(guild_id, player, owner, ended, exempt_roles, leave_cache=leave_cache)
                 if exemption == 'pending_role_check':
                     reason = 'Discord roles unavailable'
@@ -769,7 +837,7 @@ class StrikeService:
                                      'war_end': ended, 'missed_attacks': missed,
                                      'reason': reason})
                 continue
-            kind = 'exempt' if missed and exemption else ('strike' if missed == 2 else ('missed' if missed == 1 else 'completed'))
+            kind = 'exempt' if (missed or check_all) and exemption else ('strike' if missed == 2 else ('missed' if missed == 1 else 'completed'))
             rows.append({'_id': row_id,
                          'guild_id': int(guild_id), 'player_tag': player,
                          'member_id': owner, 'link_status': 'linked' if owner is not None else 'unlinked',
@@ -847,17 +915,123 @@ class StrikeService:
         return {'records': added, 'existing': existing, 'cwl_missed': missed,
                 'strikes': 0, 'war_key': cwl_war_key(war)}
 
-    async def process_war(self, guild_id: int, war: dict) -> dict:
+    async def streak(self, guild_id: int, player_tag: str) -> dict:
+        profile = await self.mongo.strike_profiles.find_one(
+            {'_id': f'{int(guild_id)}:{tag(player_tag)}'}) or {}
+        return {'count': int(profile.get('streak_count', 0)),
+                'last_war_key': profile.get('streak_last_war_key')}
+
+    async def _finish_streak_receipt(self, profile: dict):
+        """Replay only frozen strike IDs. Concurrent helpers do the same writes."""
+        receipt = profile['streak_pending']
+        for strike_id in receipt['strike_ids']:
+            await self.mongo.strike_records.update_one(
+                {'_id': strike_id, 'guild_id': profile['guild_id'],
+                 'player_tag': profile['player_tag'], 'kind': 'strike',
+                 'revoked_at': {'$exists': False}},
+                {'$set': {'revoked_at': receipt['applied_at'], 'revoked_by': 'system',
+                          'revoke_reason': receipt['reason'],
+                          'streak_receipt_id': receipt['row_id']}})
+        await self.mongo.strike_records.update_one(
+            {'_id': receipt['row_id']}, {'$set': {'streak_receipt': receipt}})
+        await self.mongo.strike_profiles.update_one(
+            {'_id': profile['_id'], 'streak_pending.row_id': receipt['row_id']},
+            {'$set': {'streak_count': receipt['count'],
+                      'streak_last_war_key': receipt['war_key'],
+                      'streak_last_order': receipt['order']},
+             '$unset': {'streak_pending': ''}, '$inc': {'streak_version': 1}})
+
+    async def _count_streak(self, row: dict) -> bool:
+        """Serialize per account with a durable CAS reservation, without leases.
+
+        Older unresolved captured wars block newer account events. The reservation
+        freezes both the next count and target strikes before any revoke; a crash
+        or another worker may safely finish it. Completed event receipts stay on
+        the permanent war ledger, and the account watermark rejects old replays.
+        """
+        guild_id, player = row['guild_id'], row['player_tag']
+        profile_id = f'{guild_id}:{player}'
+        order = utc(row['occurred_at']).isoformat() + ':' + row['war_key']
+        snapshots = await self.mongo.strike_war_snapshots.find(
+            {'guild_id': guild_id, 'status': 'observing', 'seen_active': True,
+             'end_time': {'$lte': row['occurred_at']}}).to_list(length=None)
+        for snapshot in snapshots:
+            other = snapshot['war']
+            other_order = utc(snapshot['end_time']).isoformat() + ':' + snapshot['war_key']
+            if (other_order < order and other.get('type') == 'regular'
+                    and any(tag(m['tag']) == player for m in other.get('members', []))):
+                older = await self.mongo.strike_records.find_one(
+                    {'_id': f'war:{guild_id}:{snapshot["war_key"]}:{player}'})
+                if not older or not older.get('streak_receipt'):
+                    return False
+        await self.mongo.strike_profiles.update_one(
+            {'_id': profile_id}, {'$setOnInsert': {'guild_id': guild_id,
+                'player_tag': player}}, upsert=True)
+        for _ in range(12):
+            profile = await self.mongo.strike_profiles.find_one({'_id': profile_id})
+            if profile.get('streak_pending'):
+                await self._finish_streak_receipt(profile)
+                continue
+            if profile.get('streak_last_order', '') >= order:
+                return True
+            count = int(profile.get('streak_count', 0))
+            reason = None
+            if row['kind'] != 'exempt':
+                count = count + 1 if row['missed_attacks'] == 0 else 0
+                if count == 6:
+                    reason = 'Reset by streak (6 wars played)'
+                    count = 0
+                elif count in (2, 4):
+                    reason = 'Cleared by streak (2 wars played)'
+            now = datetime.now(timezone.utc)
+            targets = []
+            if reason:
+                targets = await self.mongo.strike_records.find(
+                    {'guild_id': guild_id, 'player_tag': player, 'kind': 'strike',
+                     'revoked_at': {'$exists': False}, 'expires_at': {'$gt': now}}).to_list(length=None)
+                targets.sort(key=lambda item: (utc(item['occurred_at']), item['_id']))
+                if count:
+                    targets = targets[:1]
+            receipt = {'row_id': row['_id'], 'war_key': row['war_key'],
+                       'order': order, 'count': count, 'applied_at': now,
+                       'reason': reason, 'strike_ids': [item['_id'] for item in targets]}
+            version = ({'$exists': False} if 'streak_version' not in profile
+                       else profile['streak_version'])
+            won = await self.mongo.strike_profiles.update_one(
+                {'_id': profile_id, 'streak_version': version,
+                 'streak_pending': {'$exists': False}},
+                {'$set': {'streak_pending': receipt}})
+            if won.matched_count:
+                await self._finish_streak_receipt({**profile, 'streak_pending': receipt})
+                return True
+        return False
+
+    async def process_war(self, guild_id: int, war: dict, *, official_capture=False) -> dict:
         deferred = []
-        rows = await self._war_rows(guild_id, war, deferred=deferred)
+        if official_capture:
+            snapshot = await self.mongo.strike_war_snapshots.find_one(
+                {'_id': f'{int(guild_id)}:{war_key(war)}'})
+            if (not snapshot or not snapshot.get('seen_active')
+                    or snapshot.get('status') != 'observing' or not war.get('complete')):
+                return {'applied': 0, 'existing': 0, 'strikes': 0, 'deferred_count': 0}
+        rows = await self._war_rows(guild_id, war, deferred=deferred, check_all=official_capture)
         applied = existing = strikes = 0
         for row in rows:
+            if official_capture:
+                row['streak_eligible'] = True
             try:
                 await self.mongo.strike_records.insert_one(row)
                 applied += 1
                 strikes += row['kind'] == 'strike'
             except DuplicateKeyError:
                 existing += 1
+            if official_capture:
+                saved = await self.mongo.strike_records.find_one({'_id': row['_id']})
+                # Never convert an imported/legacy row into a new streak event.
+                if saved.get('streak_eligible') is True and saved.get('capture_source') == 'clash_api' and not saved.get('import_id'):
+                    if not await self._count_streak(saved):
+                        deferred.append({'player_tag': row['player_tag'],
+                                         'reason': 'Earlier captured war pending'})
         return {'applied': applied, 'existing': existing,
                 'strikes': strikes, 'war_key': war_key(war),
                 'deferred_accounts': deferred, 'deferred_count': len(deferred)}

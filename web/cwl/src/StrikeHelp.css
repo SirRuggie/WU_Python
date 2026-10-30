@@ -1,0 +1,23 @@
+.strike-help-trigger {
+  min-height: 44px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.strike-help-copy {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #f2f2f5;
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.strike-help-copy li + li {
+  margin-top: 12px;
+}
+
+.strike-help-panel .action-panel-close {
+  min-width: 44px;
+  min-height: 44px;
+}

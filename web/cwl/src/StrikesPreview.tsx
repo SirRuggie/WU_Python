@@ -17,6 +17,32 @@ const candidates = [
   { player_tag: '#P22ABC', player_name: 'CastleFox', clan_tag: '#FWA', clan_name: 'Warriors United FWA', weight: 115000, active_strikes: 1, is_filler: true, is_manual: true, priority: 'replace_first', note: 'Temporary filler', weight_difference: 0, discord_name: 'Fox' },
   { player_tag: '#P44DEF', player_name: 'MiniWolf', clan_tag: '#FWA', clan_name: 'Warriors United FWA', weight: 114000, active_strikes: 3, is_filler: false, is_manual: false, priority: 'normal', weight_difference: 1000 },
   { player_tag: '#P55GHI', player_name: 'GreenOak', clan_tag: '#FWA2', clan_name: 'WU FWA Two', weight: 115000, active_strikes: 2, is_filler: false, is_manual: true, priority: 'high', note: 'Free a space soon', weight_difference: 0 },
+  {
+    player_tag: '#P66JKL',
+    player_name: 'Departed Aspen',
+    clan_tag: '#FWA2',
+    clan_name: 'WU FWA Two',
+    current_clan_tag: null,
+    clan_is_current: false,
+    departed: true,
+    last_seen_clan_tag: '#FWA2',
+    last_seen_clan_name: 'WU FWA Two',
+    last_seen_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+    active_strikes: 2,
+    is_manual: true,
+    priority: 'high',
+    note: 'Confirmed departure six hours ago; retained during grace',
+  },
+  {
+    player_tag: '#P77STALE',
+    player_name: 'Stale Cedar',
+    clan_tag: '#NORTH',
+    clan_name: 'WU North',
+    clan_is_current: false,
+    active_strikes: 1,
+    is_manual: false,
+    priority: 'normal',
+  },
 ]
 const settings = { excluded_roles: [{ id: '769130325460254740', name: 'Strike exempt' }], roles: [{ id: '769130325460254740', name: 'Strike exempt' }, { id: '123456789012345600', name: 'Leave team' }], leaves: [{ discord_id: '123456789012345678', display_name: 'Fox', player_tags: ['#P22ABC', '#8LQQRT'], resume_date: '2026-11-01' }] }
 const members = [{ id: '123456789012345678', name: 'Fox', accounts: [{ tag: '#P22ABC', name: 'CastleFox', current_clan_name: 'Warriors United FWA' }, { tag: '#8LQQRT', name: 'LittleThunder', current_clan_name: 'WU North' }] }]
@@ -49,7 +75,19 @@ window.fetch = async (input, init) => {
     data = { accounts: filtered, total: filtered.length, clans: [{ tag: '#FWA', name: 'Warriors United FWA', is_fwa: true }, { tag: '#NORTH', name: 'WU North' }] }
   } else if (path.endsWith('/overview')) {
     const filtered = entries.filter(item => (!url.searchParams.get('war_key') || item.war_key === url.searchParams.get('war_key')) && (!url.searchParams.get('query')?.startsWith('#') || item.player_tag === url.searchParams.get('query')) && (url.searchParams.get('status') !== 'strikes' || item.kind === 'strike'))
-    data = { entries: filtered, clans: [{ tag: '#FWA', name: 'Warriors United FWA', is_fwa: true }, { tag: '#NORTH', name: 'WU North' }], total: filtered.length }
+    data = {
+      entries: filtered,
+      clans: [{ tag: '#FWA', name: 'Warriors United FWA', is_fwa: true }, { tag: '#NORTH', name: 'WU North' }],
+      total: filtered.length,
+      ...(url.searchParams.get('query')?.startsWith('#')
+        ? {
+            streak: {
+              count: url.searchParams.get('query') === '#P22ABC' ? 3 : 0,
+              last_war_key: 'fixture-played-war',
+            },
+          }
+        : {}),
+    }
   } else if (path.endsWith('/wars')) data = { wars: wars.filter(item => (!url.searchParams.get('clan') || item.clan_tag === url.searchParams.get('clan')) && (!url.searchParams.get('query') || `${item.clan_name} ${item.opponent_name}`.toLowerCase().includes(url.searchParams.get('query')!.toLowerCase()))) }
   else if (path.endsWith('/members')) data = { members: members.map(item => ({ ...item, accounts: [] })) }
   else if (path.includes('/members/') && path.endsWith('/accounts')) data = { member: members[0] }
