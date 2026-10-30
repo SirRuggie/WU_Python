@@ -30,6 +30,7 @@ import RosterPlayerDialog from "./RosterPlayerDialog";
 import RosterSignupPanel from "./RosterSignupPanel";
 import RosterAssignPanel from "./RosterAssignPanel";
 import RosterSelectionBar from "./RosterSelectionBar";
+import RosterBackToTop from "./RosterBackToTop";
 import RosterUndoToast from "./RosterUndoToast";
 import type { RosterUndoState } from "./rosterUndoModel";
 import {
@@ -1517,6 +1518,20 @@ export default function RosterWorkspace({
         }}
         aria-hidden="true"
       />
+      {mode === "assign" && (
+        <RosterBackToTop
+          blocked={
+            !!panel ||
+            !!editingTag ||
+            filterOpen ||
+            sortOpen ||
+            signupOpen ||
+            signupReviewOpen ||
+            !!pendingLeave
+          }
+          selectionBarHeight={!archived && selectedTags.length ? barHeight : 0}
+        />
+      )}
     </div>
   );
 }
