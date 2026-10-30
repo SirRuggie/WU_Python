@@ -210,6 +210,14 @@ The summary-chip and main-tab rows stay one line and show a soft fade only at ed
 
 The card's capacity-note suppression matches the current server reason string from `cwl_web/placement_status.py:17`; keep the match in sync if that server copy changes.
 
+## Accounts back to top and empty quick selection
+
+Only Accounts & signups on phones ≤800px has the stationary `↑ Back to top` pill. Show it after scrolling more than two viewport heights and then upward by 40px, with an 80ms debounce. Hide on downward travel or within one viewport of the top; do not reveal from small direction changes. Hide it for Details, dialogs and other panels, and unmount it on other tabs or desktop.
+
+Use a native labelled button with a Lucide ArrowUp, at least 44px height, gold boundary/text against the dark card surface and visible keyboard focus. Place it 16px from the right and bottom plus the safe-area inset; when the selection action bar is present, use its measured height to place the pill above it. Reserve bottom space so the final account's buttons remain tappable. Explicit activation focuses Build roster and scrolls to zero smoothly, or instantly for reduced motion, without changing filters, selection, tab or URL.
+
+Select 15/30 with no unlocked matches retains the current selection, including hidden selected accounts, and reports `Only 0 unlocked accounts match`. With any unlocked matches, the existing ordered replacement behavior remains. These controls only adjust transient selection; they do not save roster or signup data.
+
 ## Announcements
 
 - Main CWL and Lazy CWL use two compact pool cards. Show destination and named roles; use IDs only when lookups fail, with Retry. Preview opens the Discord preview dialog; Edit opens ActionPanel with Close initially focused.

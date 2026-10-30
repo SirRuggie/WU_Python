@@ -30,6 +30,7 @@ import RosterPlayerDialog from "./RosterPlayerDialog";
 import RosterSignupPanel from "./RosterSignupPanel";
 import RosterAssignPanel from "./RosterAssignPanel";
 import RosterSelectionBar from "./RosterSelectionBar";
+import RosterBackToTop from "./RosterBackToTop";
 import RosterUndoToast from "./RosterUndoToast";
 import type { RosterUndoState } from "./rosterUndoModel";
 import {
@@ -678,7 +679,7 @@ export default function RosterWorkspace({
   };
   const quickSelect = (count: 15 | 30) => {
     const next = quickSelectRosterMatches(filtered, count);
-    applySelection(next);
+    if (next.length > 0) applySelection(next);
     setSelectionNotice(
       next.length < count
         ? `Only ${next.length} unlocked account${next.length === 1 ? "" : "s"} match${next.length === 1 ? "es" : ""}`
@@ -1569,6 +1570,20 @@ export default function RosterWorkspace({
         }}
         aria-hidden="true"
       />
+      {mode === "assign" && (
+        <RosterBackToTop
+          blocked={
+            !!panel ||
+            !!editingTag ||
+            filterOpen ||
+            sortOpen ||
+            signupOpen ||
+            signupReviewOpen ||
+            !!pendingLeave
+          }
+          selectionBarHeight={!archived && selectedTags.length ? barHeight : 0}
+        />
+      )}
     </div>
   );
 }

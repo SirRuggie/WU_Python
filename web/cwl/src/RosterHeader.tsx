@@ -192,7 +192,9 @@ export default function RosterHeader({
       <div className="roster-header-title-row">
         <div className="roster-header-title">
           <p className="eyebrow">Staff roster</p>
-          <h1>Build roster</h1>
+          <h1 data-roster-heading tabIndex={-1}>
+            Build roster
+          </h1>
         </div>
         <div className="roster-header-title-actions">
           {roster && (

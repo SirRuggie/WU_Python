@@ -76,6 +76,57 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("mounts phone back-to-top only in Accounts & signups", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  vi.spyOn(window, "matchMedia").mockReturnValue({
+    matches: true,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  } as unknown as MediaQueryList);
+  state.api.mockResolvedValue({
+    revision: 1,
+    accounts: [],
+    clans: [],
+    metadata_updating: false,
+  });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <RosterWorkspace
+            seasonId="1"
+            seasons={[]}
+            onSeasonChange={() => {}}
+          />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+    expect(host.querySelector(".roster-back-to-top-spacer")).not.toBeNull();
+    for (const label of [
+      "Compare clans",
+      "Clan settings",
+      "Missing weights",
+      "Accounts & signups",
+    ]) {
+      const tab = [
+        ...host.querySelectorAll<HTMLButtonElement>(
+          ".roster-workflow-nav button",
+        ),
+      ].find((item) => item.textContent?.trim().startsWith(label))!;
+      await act(async () => tab.click());
+      expect(!!host.querySelector(".roster-back-to-top-spacer")).toBe(
+        label === "Accounts & signups",
+      );
+    }
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 it.each(["tab", "season", "capacity"])(
   "keeps a weight draft until %s navigation is discarded",
   async (destination) => {
