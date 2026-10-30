@@ -277,3 +277,30 @@ permission notice and no horizontal overflow. The fixture's optional Discord
 member lookup remains unavailable (503); these checks do not establish live
 Discord identity or notification delivery. Full-suite and mutation results are
 recorded with the review handoff, not treated as production deployment evidence.
+
+### linked-weight-polish-1 release and smoke (2026-10-30)
+
+PR85 released as `linked-weight-polish-1`, revision
+`b611af4781850a3bde8755d4d27d184f43a0cf93`, across frontend/backend/bot.
+The public entry is `index-tXFpE5kc.js`, SHA-256
+`6d8b4bc3fa897620264454fd542a8ceab5738101a923c7323958e0081277bba2`.
+Imports, runtime cwd/HEAD, entry and affected asset hashes, two consecutive public
+config 200 responses, protected anonymous reads, journals and scanner pass passed.
+The scanner processed 25 clans, zero finalized wars and five behind.
+
+Verified backup: `.local/linked-weight-polish-1-backup-20261030T220638Z`.
+Protected SQLite values, 155 signups, four publications and seven saved lineups
+were unchanged. Active strikes stayed at 3,558 with no unexplained changes;
+twelve Mongo collections and raw moderation-settings parity passed. Code-only
+rollback retains data and restores all layers to
+`7b1429d68c7c99dee0db55bf36d336b877c007e9`.
+Evidence: `/tmp/wu-weight-polish-release/live.json` and adjacent audits.
+
+Integrated checks passed 5,016 backend tests (21 skipped, 162 subtests), 1,060
+frontend tests, TypeScript/build, and 360/1440px isolated clear/permission checks.
+Claude's read-only production smoke passed at 360px: Gnar's Details showed Loot
+34,800 / Full 174,000, Save disabled when clean, no 4xx/5xx or overflow, matching
+runtime revision and continued scanner passes. No bad-timestamp warnings or
+backend tracebacks appeared. Nothing was saved or sent; live notification
+delivery was not tested. The bad-linked-timestamp regression and per-tag hourly
+warning limit remain non-blocking follow-up work.
