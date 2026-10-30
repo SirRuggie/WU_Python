@@ -5,7 +5,8 @@ Implemented for the Warriors United Discord bot and its existing dashboard. This
 ## Rules
 
 - Track registered family clans together, including FWA.
-- Only complete, ended, regular wars with an explicit two-attack limit qualify. CWL is deferred.
+- Only complete, ended, regular wars with an explicit two-attack limit qualify
+  for automatic strikes. CWL is informational history without strikes.
 - Both attacks missed: one strike. One missed: history only. Both used: no strike.
 - Strikes belong to the player tag. Member lookup includes linked accounts. Moving clans does not clear history.
 - Active strikes expire 60 days after the war ended, or after a manual strike was added. Expired and removed records remain available.
@@ -31,7 +32,11 @@ Discord commands use Components V2 responses: `/strikes view`, `/strikes add`, `
 
 Check past wars to preview up to 60 days of available saved history. Preview and apply run as background jobs; the dashboard polls short status requests so large imports do not hit the web proxy timeout. Reloading the page resumes the same job. Jobs stop if the web service restarts; retrying is safe because ledger records are deduplicated. Review incidents, uncheck unwanted records, then import. Availability depends on the external archive. The interface reports coverage and unavailable clans; incomplete or ambiguous wars are skipped rather than guessed.
 
-The bot starts a ten-minute monitor through its normal extension lifecycle. A persisted activation time prevents initial startup from silently importing old wars. Historical imports require the preview/apply workflow. Deterministic war/player IDs prevent a repeated scan or import from adding duplicate strikes. Manual submissions use request IDs to protect retries.
+The bot starts a ten-minute monitor through its normal extension lifecycle. The
+current-war monitor observes official Clash API wars; it does not silently
+import old wars on startup. Historical imports require the preview/apply
+workflow. Deterministic war/player IDs prevent a repeated scan or import from
+adding duplicate strikes. Manual submissions use request IDs to protect retries.
 
 Both interfaces use the same MongoDB ledger. Access has three independent options:
 
@@ -44,7 +49,9 @@ Any of these options includes viewing history and replacements. Add does not gra
 ## Main files
 
 - `utils/strike_store.py`: ledger, exemption rules, expiry, ranking, import preview/apply.
-- `utils/strike_wars.py`: saved-war retrieval, pagination, coverage, validation.
+- `utils/strike_wars.py`: historical ClashKing import retrieval, pagination, coverage, validation.
+- `utils/strike_official.py`: normalization of official current-war and CWL observations.
+- `utils/strike_tracking.py`: durable official-war snapshots and per-clan tracking health.
 - `extensions/commands/strikes.py`: Discord Components V2 commands and monitor lifecycle.
 - `cwl_web/strikes.py`: dashboard API.
 - `web/cwl/src/StrikesWorkspace.tsx`: dashboard interface.
@@ -61,7 +68,15 @@ CWL wars are recorded separately as informational history. They show each accoun
 
 ## Tracking health
 
-The Accounts page has a compact Tracking status section. Each family clan shows its last completed check, last successful check, latest saved war, and any current problem. A failed or partial check preserves the previous successful timestamp. Old checks are shown as delayed rather than healthy; a successful check can contain no new wars. Saved error details use plain, safe messages instead of raw provider responses.
+The Accounts page has a compact Tracking status section. Each family clan shows
+its last completed check, last successful check, last recorded war, current
+official war state, and any current problem. A failed or partial check preserves
+the previous successful timestamp. The visible health states are On track,
+Behind, War log private, and Error. An absent war record and unconfirmed
+current-war state must not produce a green On track summary. A confirmed
+`notInWar` response can be on track without a new record; an unfinished final
+check, stale active-war record, or missing observation is not silently healthy.
+Saved error details use plain, safe messages instead of raw provider responses.
 
 Retry queues a durable clan check for the bot and requires Add strikes access, because checking a war can create strikes. Automatic checks continue normally. Tracking status is shared through MongoDB, so dashboard and bot restarts do not erase the previous result.
 
@@ -96,3 +111,68 @@ cancel behavior was not fully exercised. Full screen-reader and physical-device
 testing remain outstanding. Existing simultaneous replacement edits and role-list
 settings are last-write-wins; this UI pass adds no version-conflict protocol.
 Notification/provider delivery was not verified by isolated fixture checks.
+
+## Official war monitor — October 29, 2026 development
+
+This change is still under integration review; the earlier dashboard and strike
+validation above does not verify this monitor in production. For automatic strike
+tracking, the official Clash API is the source for data it exposes: the current
+regular war and CWL league group/war tags. ClashKing remains a source for Discord
+account links, the separate player battle-log history feature, and the explicit
+**Import past wars** tool for historical wars. Routine `scan_once` does not read
+ClashKing war history. Imported records are labeled `ClashKing (import)`; records
+captured by this monitor are labeled `Clash API`. Older automatic ClashKing
+records retain the honest `ClashKing (legacy)` label. The existing ledger's
+`source` values (`war`, `cwl`, and manual) keep their original meaning.
+
+Each full poll checks every tracked clan's current war with the bot's existing
+official API client. Preparation and in-war observations are stored in Mongo as
+snapshots keyed by clan tag, opponent tag, and end time, matching the ledger war
+identity. A snapshot contains war type and attack limit, timing, both clans,
+and member positions, Town Halls, and observed attacks. CWL league-war
+observations use the official league group and war tags; CWL remains
+informational and cannot add strikes. Friendly and other ineligible wars are
+observations only. The shared preparation-time classifier treats listed friendly
+lengths, including 24 hours, as friendly within two minutes; only a 23-hour
+preparation within 45 minutes is a regular war. Missing or other timing is
+unknown and cannot create strikes. The explicit ClashKing import uses the same
+rule even when stored wars omit a type field; rejected wars appear in skipped
+coverage. Complete ended CWL responses are cached across checks to avoid
+refetching stable war tags; active and incomplete responses are fetched again.
+
+An observed active war receives a follow-up check about a minute after its end,
+with bounded backoff when the official source or final payload is unavailable.
+A persisted snapshot and due time survive bot restarts. Only an official
+`warEnded` response with a complete roster and attack counts can reach the
+existing `process_war` strike rules, and only a regular two-attack war can add
+automatic strikes. Two missed attacks still yield one strike; one missed attack
+is history only. Existing leave, exemption, account-link review, expiry, and
+idempotent war/player keys continue to govern the ledger. A final response
+first seen without an earlier active observation is not backfilled as a strike.
+If a later war replaces an observed war before a usable final snapshot arrives,
+that war is marked incomplete, appears in **Find war** with a review message and
+zero automatic strikes, and makes tracking Behind. No historical-gap backfill
+or missed-war report is part of this batch.
+An older incomplete war remains visible in Find war but no longer keeps a clan
+Behind after a newer completed war. Open snapshots for removed family clans are
+abandoned once, without strikes or repeated due checks.
+
+The API and tracking card show each clan's last recorded war date, current war
+state (`notInWar`, preparation, in war, ended, private, or unknown), and health.
+On track requires a confirmed not-in-war state or a completed latest-war path;
+Behind includes a missed final check or a last recorded war over three days old
+for a clan that has warred. An unknown state is never On track. Private war logs
+and source errors remain distinct from success. Invalid Clash API key/IP reasons,
+or 403 responses from every tracked clan in a full check, show an error rather
+than War log private. The summary counts
+these states rather than treating an empty war result as green. A staff Retry
+queues a durable check and still requires Add strikes access, since a completed
+check may create a strike. Each monitor pass logs a compact success line with
+clan, finalization, and nonhealthy counts; source failures remain visible.
+
+The planned release needs backend and bot startup/health verification, current
+war capture for every tracked clan, reviewed data counts and rollback assets,
+and served dashboard asset checks. The new code has been exercised with
+network-isolated fixtures, not live official API responses or production writes.
+Full integrated tests and deployment evidence will be recorded by the release
+review; none are claimed by this development section.

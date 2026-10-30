@@ -767,6 +767,7 @@
 .strikes-tracking summary {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 9px;
   min-height: 44px;
   cursor: pointer;
@@ -799,6 +800,26 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+.strikes-tracking-clan-heading {
+  min-width: 0;
+}
+.strikes-tracking-clan-heading strong,
+.strikes-tracking-clan small {
+  overflow-wrap: anywhere;
+}
+.strikes-tracking-facts {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 14px !important;
+}
+.strikes-tracking-facts small {
+  display: grid;
+  gap: 2px;
+}
+.strikes-tracking-facts strong {
+  color: #e8edf4;
+  font-weight: 650;
+}
 .strikes-tracking-clan small {
   color: #b8c5d6;
   font-size: 12px;
@@ -812,10 +833,16 @@
   font-size: 12px;
   color: #b5d5bb;
 }
-.strikes-tracking-state.delayed,
-.strikes-tracking-state.needs_review,
+.strikes-tracking-state.behind,
+.strikes-tracking-state.unverified,
 .strikes-tracking-error {
   color: #ffd697 !important;
+}
+.strikes-tracking-state.private {
+  color: #e9bcff;
+}
+.strikes-tracking-state.error {
+  color: #ffadb5;
 }
 .strikes-import-settings {
   padding: 0;
@@ -847,6 +874,9 @@
 @media (max-width: 480px) {
   .strikes-tracking {
     padding: 11px 12px;
+  }
+  .strikes-tracking-facts {
+    grid-template-columns: minmax(0, 1fr);
   }
   .strikes-import-content {
     padding: 0 12px 12px;

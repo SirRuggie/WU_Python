@@ -186,6 +186,10 @@ def entry(row, clans, profile=None):
             'war_end': public(row['occurred_at']), 'expires_at': public(row.get('expires_at')),
             'kind': 'cwl' if kind == 'cwl' else ('strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss')),
             'source': row.get('source'),
+            'source_label': ('Clash API' if row.get('capture_source') == 'clash_api' else
+                             'ClashKing (import)' if row.get('import_id') or
+                               row.get('capture_source') == 'clashking_import' else
+                             'ClashKing (legacy)' if row.get('source') in ('war', 'cwl') else None),
             'status': 'recorded' if row.get('status') == 'missed' else row.get('status'),
             'missed_attacks': row.get('missed_attacks'), 'reason': row.get('reason'),
             'exemption': row.get('exemption'), 'removed_reason': row.get('revoke_reason')}
@@ -322,7 +326,9 @@ async def wars(request):
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
         rows = await ledger.war_list(GUILD_ID, clan_tag=clan, limit=2000)
+        rows.extend(await StrikeTracking(db).incomplete_wars(GUILD_ID, clan_tag=clan))
         clans = await clan_rows(db)
+    rows.sort(key=lambda row: utc(row['war_end']), reverse=True)
     names = {row['tag']: row['name'] for row in clans}
     await _enrich_war_names(request, rows, names)
     if query:
@@ -782,6 +788,7 @@ async def _preview_work(app, actor_id, days, actor=None):
                     'clan_name': names.get(row.get('clan_tag'), row.get('clan_tag')), 'war_end': public(row['occurred_at']),
                     'missed_attacks': row.get('missed_attacks'),
                     'kind': row.get('kind'), 'source': row.get('source'),
+                    'source_label': 'ClashKing (import)',
                     'war_type': row.get('war_type') or 'regular',
                     'attacks_used': row.get('attacks_used'),
                     'discord_id': str(row['member_id']) if row.get('member_id') else None,
@@ -878,7 +885,10 @@ async def tracking_status(request):
     async with shared.mongo(request) as db:
         clans = await clan_rows(db)
         rows = await StrikeTracking(db).rows(GUILD_ID, clans)
-    return web.json_response({'clans': public(rows)})
+    summary = {key: sum(row['status'] == key for row in rows)
+               for key in ('healthy', 'behind', 'private', 'error')}
+    return web.json_response({'clans': public(rows),
+                              'summary': {**summary, 'total': len(rows)}})
 
 
 @endpoint(scope='strikes_add')

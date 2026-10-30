@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from cwl_web import strikes
 from utils.strike_store import StrikeService
-from utils.strike_wars import normalize
+from utils.strike_wars import normalize, fetch_history_report
 
 
 NOW = datetime.now(timezone.utc)
@@ -104,8 +104,11 @@ def test_war_summary_pipeline_keeps_old_one_missed_rows():
 
 
 def test_saved_war_keeps_clan_and_opponent_names():
+    end = NOW - timedelta(hours=1)
     raw = {'state': 'warEnded', 'teamSize': 1, 'attacksPerMember': 2,
-           'endTime': (NOW - timedelta(hours=1)).strftime('%Y%m%dT%H%M%S.000Z'),
+           'endTime': end.strftime('%Y%m%dT%H%M%S.000Z'),
+           'startTime': (end - timedelta(days=1)).strftime('%Y%m%dT%H%M%S.000Z'),
+           'preparationStartTime': (end - timedelta(days=1, hours=23)).strftime('%Y%m%dT%H%M%S.000Z'),
            'clan': {'tag': '#2UVGQU9', 'name': 'Family',
                     'members': [{'tag': '#PC9YGL0JL'}]},
            'opponent': {'tag': '#8GG8', 'name': 'Dragons',
@@ -113,6 +116,42 @@ def test_saved_war_keeps_clan_and_opponent_names():
     row = normalize(raw, '#2UVGQU9')
     assert row['clan_name'] == 'Family'
     assert row['opponent_name'] == 'Dragons'
+
+
+def test_missing_type_import_uses_prep_timing_and_counts_skipped_friendlies():
+    end = datetime.now(timezone.utc) - timedelta(hours=1)
+    fmt = lambda value: value.strftime('%Y%m%dT%H%M%S.000Z')
+    start = end - timedelta(days=1)
+    def raw(prep_hours):
+        return {'state': 'warEnded', 'teamSize': 1, 'attacksPerMember': 2,
+                'endTime': fmt(end), 'startTime': fmt(start),
+                'preparationStartTime': fmt(start - timedelta(hours=prep_hours)),
+                'clan': {'tag': '#2UVGQU9', 'members': [{'tag': '#PC9YGL0JL'}]},
+                'opponent': {'tag': '#8GG8', 'members': [{'tag': '#8GG82'}]}}
+    assert normalize(raw(23), '#2UVGQU9')['type'] == 'regular'
+    for hours in (24, 6):
+        try:
+            normalize(raw(hours), '#2UVGQU9')
+        except ValueError as error:
+            assert 'preparation timing' in str(error)
+        else:
+            raise AssertionError(f'{hours} h preparation must not import')
+
+    class Response:
+        status = 200
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_):
+            return None
+        async def json(self):
+            return [raw(23), raw(24), raw(6)]
+    class Session:
+        def get(self, *_args, **_kwargs):
+            return Response()
+    report = asyncio.run(fetch_history_report('#2UVGQU9', session=Session()))
+    assert report['source_count'] == 3
+    assert len(report['wars']) == 1
+    assert len(report['skipped']) == 2
 
 
 def test_war_search_resolves_old_opponent_name_before_filtering():
@@ -133,7 +172,7 @@ def test_war_search_resolves_old_opponent_name_before_filtering():
 
     @asynccontextmanager
     async def mongo(_):
-        yield object()
+        yield SimpleNamespace(strike_war_snapshots=Records([]))
 
     async def permit(*_, **__):
         pass
