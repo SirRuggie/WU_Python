@@ -489,3 +489,46 @@ Prompt 07 tour/deadline hotfix (not yet released): member timing reads the exist
 campaign one month before the CWL binding. No schema or write-path change. Deploy
 its backend from an isolated tagged release only after approval; current runtime
 remains member-tour-1 / 16cc79e.
+
+## linked-weights-1 — 2026-10-30
+
+PR #79 released frontend, backend and bot at
+`fb46bd388af287ea30f6296407853ff40105e39b` (tag `linked-weights-1`).
+Dashboard PID 3495275 ran from the matching backend directory; bot PID 3494220
+ran the same clean revision. Public config returned 200 twice consecutively.
+Runtime imports, served index/affected assets and journals passed. The bot
+completed a 25-clan scanner pass; active strikes stayed 3558 with zero unexplained
+changes. No live test messages or manual weight edits were made.
+
+Verified SQLite/Mongo backup: `.local/linked-weights-1-backup-20261030T204651Z`.
+SQLite SHA-256: `20d882692ef430c1eac76faf13e742fce17d54ff194048623b04bb17167f21c5`.
+Protected state matched: 155 signups, four publications, 42 legacy weights /43
+history events, 350 clan weights /387 history rows, seven saved lineups.
+Newest-wins audit found zero overlaps, invalid timestamps or effective changes.
+The publication baseline was refreshed after Claude verified Ruggie's normal
+publishing activity. Only the approved history `source` column/default migrated.
+Tagged validation: 4995 backend tests, 21 skips, 162 subtests;1042 frontend tests;
+type-check and build. Claude's read-only production smoke passed: clean popup,
+174k /34800 loot prefill, disabled clean Save, Clan weights link, no overflow or
+HTTP errors at 360px. No write was made during smoke.
+
+Previous frontend/backend/bot rollback target:
+`73eda11a1e883b711bc40494f023b4d87efd5a6b`. Retain both release directories.
+Guarded operational rollback (code only, never restore the database):
+
+```sh
+"/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python" -I /tmp/wu-linked-release/run.py rollback
+```
+
+The command checks current revisions and configuration, stops the bot, restores
+frontend and backend, restores the bot checkout, waits 210 seconds for leases,
+then starts and verifies both services and public assets. Evidence lives in
+`/tmp/wu-linked-release/live.json`, `mongo-gate.json`, `strike-comparison.json`
+and `activation.log`. Initial automatic approval review rejected prompt39's
+number; retry of the identical command succeeded after documenting that it is
+a follow-up to approved35. No release gate was bypassed.
+
+Later: the separately reviewed linked-weight follow-up handles historical Clear,
+permission notices, legacy bot fallback and export labeling. Archived-weight
+freezing was explicitly dropped by the owner; old-season weights may track the
+current global effective value.
