@@ -22,7 +22,7 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Deployment paths verified through the October 30 weight-range release:
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Latest recorded frontend: `back-to-top-1` / `a8031084eed09ee89b8063828d4bc2c5d40cc628`, activated with public hashes verified, Claude smoke pending at this checkpoint. Backend remains weight-range `23235ccf2671dfe5675f0bc98d38ab11a011ab09`; bot remains `b517afd46ecfa9cc08488798eba53393ed5b649f`. See [frontend releases](docs/dashboard-frontend-releases.md) for the frontend-only rollback to 23235cc before any older layered rollback.
+  - Latest recorded frontend at the October 30 08:30 smoke checkpoint: `back-to-top-1` / `a8031084eed09ee89b8063828d4bc2c5d40cc628`, public hashes verified and Claude read-only smoke 93 passed. Backend remains weight-range `23235ccf2671dfe5675f0bc98d38ab11a011ab09`; bot remains `b517afd46ecfa9cc08488798eba53393ed5b649f`. See [frontend releases](docs/dashboard-frontend-releases.md) for the guarded frontend-only rollback to 23235cc before any older layered rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
   - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](docs/dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
@@ -51,6 +51,12 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - Review artifacts must be ONE self-contained HTML file with every screenshot embedded as base64 (no relative/`/tmp` links; he reviews on other devices and in other chats). Viewports: 360×800 and 1440×1000. Include the changed files, test results, before/after counts, and the red-team results.
 - When changing a script: return the full updated script.
 - He reviews on his phone; mobile layout matters as much as desktop.
+
+## Back-to-top release — 2026-10-30
+
+- `back-to-top-1`, PR #65/tag `a8031084eed09ee89b8063828d4bc2c5d40cc628`, released frontend only. Claude's read-only 360px smoke 93 passed: hidden at the top, visible after three viewports down and 200px up, 139×44 target, tap returns to zero and focuses Build roster. Backend PID 2951316 and bot PID 2920748/invocations stayed unchanged.
+- 924 frontend tests, TypeScript/build and isolated layout passed; review 91 confirmed three required and five extra mutations killed. Public entry/roster hashes, verified backup, protected digest and guarded rollback are in [frontend releases](docs/dashboard-frontend-releases.md).
+- Later from review 91: hide the button during the undo toast (about 12px overlap); confirm real-phone toolbar resize behavior that can require extra upward travel; add workspace-level bar-height and open-panel hide-gate tests. These remain open after the passing smoke.
 
 ## Trigger-delete and weight-range releases — 2026-10-30
 

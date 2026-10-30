@@ -1,20 +1,64 @@
 # Dashboard frontend releases
 
-Latest recorded frontend: `back-to-top-1`, PR #65,
+## Back-to-top-1 — October 30, 2026
+
+Frontend at the 08:30 smoke checkpoint: `back-to-top-1`, PR #65,
 `a8031084eed09ee89b8063828d4bc2c5d40cc628`, activated after the releases below.
 Public `index-zCmtmF3Z.js` SHA-256
 `9f28a7a1b9aebbe14da09d48a5b2f94f3ee42ea9b7b5668da11929d4b774b5a0`
-matched in `/tmp/wu-back-to-top-release/live.json`. Claude smoke is pending at
-this documentation checkpoint. Backend stays `23235cc`, PID 2951316; bot stays
-`b517afd`, PID 2920748; neither restarted. Its frontend-only rollback is:
+matched in `/tmp/wu-back-to-top-release/live.json`. Claude's read-only smoke 93
+passed at 360px: hidden at the top; after three viewports down and 200px up,
+shown at (205, 740), 139×44px; tap returns to scrollY 0 and focuses Build roster.
+Backend stayed `23235cc`, PID 2951316; bot stayed `b517afd`, PID 2920748;
+both invocation IDs and routing/storage drop-in hashes were unchanged, with no restart.
+
+The clean tagged frontend passed 924 tests, TypeScript/build and isolated layout.
+Review 91 accepted the visibility/focus/accessibility and zero-unlocked-selection
+carry-in, with three required plus five extra mutations killed. Fixture checks
+covered 360×800 and 1440×1000; the selected-state button cleared the action bar
+by 20px. This is not a physical-phone or full assistive-technology audit.
+
+Release evidence (`/tmp/wu-back-to-top-release/preflight.json`, `live.json`,
+`backup.log`):
+
+- Staged 120 files from the tagged checkout. Public index SHA-256:
+  `884abc0df5506c94094e8c5c30c4b290f106a05654cbe7644396bbff052d1a41`.
+- Roster JS `RosterWorkspace-Dr5JK0D6.js` SHA-256:
+  `19a5063fa9889851cd73e2ef21b9059f75ff5e868c0b3a08ad661ce978c8225d`;
+  CSS `RosterWorkspace-CGlA1JPS.css`:
+  `9046fde769de0f45920e696abcbba7fcf992bae30dd2fad54500ddab05fa7d7b`.
+- Backup `.local/back-to-top-1-backup-20261030T115115Z/dashboard.sqlite3`:
+  1,282,048 bytes, integrity `ok`, SHA-256
+  `dcf9918a850372991ab21a3ff839f1356569be82c94a63c60f9b508cab76a8a1`.
+  Protected digest stayed
+  `34449fa23beafcae682188bf3d7cfddaf47b12a455f10d433119288a004cc4f7`.
+- Config readiness returned 200; anonymous commands read returned 401.
+
+Later from review 91: hide the button while the undo toast is visible (about
+12px overlap); check real-phone toolbar resize/upward-travel behavior; add
+workspace-level bar-height and open-panel hide-gate tests. Smoke 93 does not
+close these items.
+
+Frontend-only rollback, only when authorized and still at this release boundary:
+verify served hashes first and run this guarded command. A later release needs
+its own rollback decision; do not bypass the guard.
 
 ```bash
+set -euo pipefail
+release_root=/home/ruggie/.local/share/wu-dashboard
+test "$(readlink -f "$release_root/current")" = "$release_root/releases/a8031084eed09ee89b8063828d4bc2c5d40cc628"
+test -d "$release_root/releases/23235ccf2671dfe5675f0bc98d38ab11a011ab09"
+test "$(systemctl --user show -p WorkingDirectory --value wu-cwl-demo-web.service)" = "$release_root/backend/23235ccf2671dfe5675f0bc98d38ab11a011ab09"
+test "$(git -C /home/botrunner/wu-bot rev-parse HEAD)" = b517afd46ecfa9cc08488798eba53393ed5b649f
 /home/ruggie/.local/share/wu-dashboard/switch-release.py 23235ccf2671dfe5675f0bc98d38ab11a011ab09
 ```
 
-Verify public hashes afterward. This restores the weight-range frontend without
-changing backend, bot or data. The back-to-top smoke and full release report are
-separate follow-up documentation; the records below cover prompts 30 and 32.
+Verify public hashes afterward against the weight-range manifest: entry
+`index-BKbAuOsh.js`, SHA-256
+`35683c3f84401a77d6ecf60031a9c33bb25ef25111809ba19c1161073ade1f5e`.
+This restores the weight-range frontend without changing backend, bot or data.
+Retain both immutable release directories and shared assets. Do not restore a
+database or restart services for this frontend rollback.
 
 ## October 30 release records
 

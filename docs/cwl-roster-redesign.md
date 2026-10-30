@@ -2,7 +2,9 @@
 
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
-## Back to top and empty quick selection — October 30 development
+## Back to top and empty quick selection — October 30 release
+
+`back-to-top-1`, PR #65/tag `a8031084eed09ee89b8063828d4bc2c5d40cc628`, released frontend only. Claude read-only smoke 93 passed at 360px: hidden at the top, shown after three viewports down and 200px up at (205, 740), 139×44px; tapping returned to scrollY 0 and focused Build roster. Backend `23235cc` and bot `b517afd` were unchanged, with no restart. See [release evidence and guarded rollback](dashboard-frontend-releases.md).
 
 Prompt 28 adds a view-only `↑ Back to top` button only to Build roster → Accounts & signups on phones (≤800px). Reveal requires more than two viewport heights of scroll and 40px of upward travel, with an 80ms debounce. Downward travel hides it; reaching one viewport from the top hides it immediately. The stationary lower-right pill stays above the measured selection action bar, and bottom spacing keeps the final account's actions reachable. Details, dialogs and local panels suppress it; other roster tabs and desktop do not render it.
 
@@ -10,7 +12,9 @@ An explicit tap focuses Build roster without an incidental focus scroll and scro
 
 The authorized prompt 32 follow-up preserves the current selection when Select 15 or Select 30 finds zero unlocked matches, including selections hidden by filters, and displays `Only 0 unlocked accounts match`. Nonempty quick selections retain their existing replacement behavior and order; save and permission contracts are unchanged.
 
-Validation scope: focused component tests cover scroll thresholds, hysteresis, pending callbacks, desktop resizing, panel/dialog gating, bar offsets, focus and reduced motion. Workspace tests cover tab gating and preserving an existing selection when both quick-select controls encounter only locked matches. The 360×800 fixture layout assertions cover offsets, last-card hit testing and overflow; final browser evidence, mutation review and release verification remain separate integration gates. These automated checks do not constitute a full assistive-technology or real-phone audit.
+Validation scope: 924 frontend tests, TypeScript/build and isolated layout passed. Focused component tests cover scroll thresholds, hysteresis, pending callbacks, desktop resizing, panel/dialog gating, bar offsets, focus and reduced motion. Workspace tests cover tab gating and preserving an existing selection when both quick-select controls encounter only locked matches. Fixture browser checks at 360×800 and 1440×1000 cover offsets, last-card hit testing and overflow; review 91 confirmed three required and five extra mutations killed, and measured 20px selection-bar clearance. These checks do not constitute a full assistive-technology or real-phone audit.
+
+Later from review 91: hide Back to top while an undo toast is visible (about 12px overlap); confirm on a real phone whether browser-toolbar resize requires extra upward travel; add workspace-level vitest coverage for bar-height and open-panel hide gates. Passing smoke does not close these items.
 
 ## Weight-range release status — October 30, 2026
 
