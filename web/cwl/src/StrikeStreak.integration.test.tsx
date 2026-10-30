@@ -113,6 +113,16 @@ it("shows the account-scoped streak independently of records and rejects late pr
 it("shows grace only for confirmed departures and names the last observed clan/time", async () => {
   transport.mockResolvedValue({
     clans: [],
+    groups: [
+      {
+        clan_tag: "#OLD",
+        clan_name: "Old Clan",
+        listed: 2,
+        at_three: 0,
+        chopping_block: 0,
+      },
+    ],
+    total: 2,
     candidates: [
       {
         player_tag: "#LEFT",
@@ -144,6 +154,11 @@ it("shows grace only for confirmed departures and names the last observed clan/t
     ),
   );
   await settle();
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(".replacement-group-summary")!
+      .click(),
+  );
   expect(host.querySelectorAll(".replacement-departure")).toHaveLength(1);
   expect(host.textContent).toContain("Left Observed Clan");
   expect(host.textContent).toContain("now in New Clan");

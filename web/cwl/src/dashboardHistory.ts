@@ -2,10 +2,17 @@ import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 import { cwlPaths } from "./staffLinks";
 import { managementPaths } from "./managementLinks";
-const staffPaths: Record<string, string> = { ...cwlPaths, ...managementPaths, "weight-trial": "/clan-weights" };
+const staffPaths: Record<string, string> = {
+  ...cwlPaths,
+  ...managementPaths,
+  "weight-trial": "/clan-weights",
+};
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
 export type DashboardRoute = {
   replacementClan?: string;
+  replacementTag?: string;
+  strikeTag?: string;
+  flowFrom?: "strikes" | "replacements";
   view: DashboardView;
   season: string;
   weightPlayer?: string;
@@ -15,15 +22,26 @@ export type DashboardRoute = {
   activityFilter?: string;
   activityKind?: "war" | "cwl";
 };
-export function dashboardTarget(search: string, pathname = '/'): DashboardRoute {
-  pathname = pathname === '/' ? '/' : pathname.replace(/\/$/, '');
+export function dashboardTarget(
+  search: string,
+  pathname = "/",
+): DashboardRoute {
+  pathname = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
   const params = new URLSearchParams(search);
   const saved = savedSignupTarget(search, pathname);
-  const pathView = Object.entries({...memberPaths, ...staffPaths}).find(([, path]) => path !== '/' && path === pathname)?.[0];
-  const requested = (saved ? "signup" : undefined) || (weightAliases.includes(pathname) ? "weight-trial" : pathView) || (params.get("view") === "signups" ? "signup" : params.get("view"));
-  const value = pathname === "/server/member-activity" || requested === "member-activity"
-    ? "moderation"
-    : requested === "manage-signups" ? "roster" : requested;
+  const pathView = Object.entries({ ...memberPaths, ...staffPaths }).find(
+    ([, path]) => path !== "/" && path === pathname,
+  )?.[0];
+  const requested =
+    (saved ? "signup" : undefined) ||
+    (weightAliases.includes(pathname) ? "weight-trial" : pathView) ||
+    (params.get("view") === "signups" ? "signup" : params.get("view"));
+  const value =
+    pathname === "/server/member-activity" || requested === "member-activity"
+      ? "moderation"
+      : requested === "manage-signups"
+        ? "roster"
+        : requested;
   return {
     ...(value === "weight-trial"
       ? {
@@ -35,30 +53,76 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
             : undefined,
         }
       : {}),
-    ...(saved ? {signupPanel: "saved" as const} : {}),
+    ...(saved ? { signupPanel: "saved" as const } : {}),
     view: dashboardViews.includes(value as DashboardView)
       ? (value as DashboardView)
       : "home",
-    ...(value === "publication" && ["review", "announce"].includes(params.get("step") || "") ? { step: params.get("step") as "review" | "announce" } : {}),
-    ...(value === "replacements" && /^#[0289PYLQGRJCUV]{3,15}$/.test(params.get("clan") || "") ? {replacementClan: params.get("clan")!} : {}),
+    ...(value === "publication" &&
+    ["review", "announce"].includes(params.get("step") || "")
+      ? { step: params.get("step") as "review" | "announce" }
+      : {}),
+    ...(value === "replacements" &&
+    /^#[0289PYLQGRJCUV]{3,15}$/.test(params.get("clan") || "")
+      ? { replacementClan: params.get("clan")! }
+      : {}),
+    ...(["replacements", "strikes"].includes(value || "") &&
+    /^#[0289PYLQGRJCUV]{3,15}$/.test(params.get("tag") || "")
+      ? {
+          [value === "replacements" ? "replacementTag" : "strikeTag"]:
+            params.get("tag")!,
+        }
+      : {}),
+    ...((value === "replacements" && params.get("from") === "strikes") ||
+    (value === "strikes" && params.get("from") === "replacements")
+      ? { flowFrom: params.get("from") as "strikes" | "replacements" }
+      : {}),
     season: /^\d{1,18}$/.test(params.get("season") || "")
       ? params.get("season")!
       : "",
   };
 }
-export const seasonViews = new Set(['reminders', 'exports', 'declaration', 'publication', 'participation', 'bonuses', 'roster', 'staff']);
+export const seasonViews = new Set([
+  "reminders",
+  "exports",
+  "declaration",
+  "publication",
+  "participation",
+  "bonuses",
+  "roster",
+  "staff",
+]);
 export function dashboardPath(route: DashboardRoute) {
-  if (route.view === "signup" && route.signupPanel === "saved") return "/my-signups";
+  if (route.view === "signup" && route.signupPanel === "saved")
+    return "/my-signups";
   if (memberPaths[route.view]) return memberPaths[route.view];
   const path = staffPaths[route.view];
   const params = new URLSearchParams(path ? {} : { view: route.view });
-  if (route.view === "replacements" && /^#[0289PYLQGRJCUV]{3,15}$/.test(route.replacementClan || "")) params.set("clan", route.replacementClan!);
+  if (
+    route.view === "replacements" &&
+    /^#[0289PYLQGRJCUV]{3,15}$/.test(route.replacementClan || "")
+  )
+    params.set("clan", route.replacementClan!);
+  const player =
+    route.view === "replacements"
+      ? route.replacementTag
+      : route.view === "strikes"
+        ? route.strikeTag
+        : undefined;
+  if (/^#[0289PYLQGRJCUV]{3,15}$/.test(player || ""))
+    params.set("tag", player!);
+  if (
+    (route.view === "replacements" && route.flowFrom === "strikes") ||
+    (route.view === "strikes" && route.flowFrom === "replacements")
+  )
+    params.set("from", route.flowFrom);
   if (route.view === "weight-trial") {
     if (route.weightPlayer) params.set("player", route.weightPlayer);
     if (route.weightClan) params.set("clan", route.weightClan);
   }
-  if (route.view === "publication" && route.step) params.set("step", route.step);
-  if (route.season && seasonViews.has(route.view)) params.set("season", route.season);
+  if (route.view === "publication" && route.step)
+    params.set("step", route.step);
+  if (route.season && seasonViews.has(route.view))
+    params.set("season", route.season);
   return `${path || "/"}${params.size ? `?${params}` : ""}`;
 }
 type HistoryPort = Pick<History, "state" | "pushState" | "replaceState" | "go">;
@@ -142,13 +206,25 @@ export class DashboardHistory {
   }
 }
 
-
-export function activityContext(state: unknown, view: DashboardView): Pick<DashboardRoute, 'activityFilter' | 'activityKind'> {
-  if (view !== 'todo' && view !== 'wars') return {}
-  const value = (state as {wuActivity?: {view?: unknown; filter?: unknown; kind?: unknown}} | null)?.wuActivity
-  if (!value || value.view !== view) return {}
+export function activityContext(
+  state: unknown,
+  view: DashboardView,
+): Pick<DashboardRoute, "activityFilter" | "activityKind"> {
+  if (view !== "todo" && view !== "wars") return {};
+  const value = (
+    state as {
+      wuActivity?: { view?: unknown; filter?: unknown; kind?: unknown };
+    } | null
+  )?.wuActivity;
+  if (!value || value.view !== view) return {};
   return {
-    activityFilter: typeof value.filter === 'string' && /^#[A-Z0-9]{1,20}$/i.test(value.filter) ? value.filter : '',
-    ...(value.kind === 'war' || value.kind === 'cwl' ? {activityKind: value.kind} : {}),
-  }
+    activityFilter:
+      typeof value.filter === "string" &&
+      /^#[A-Z0-9]{1,20}$/i.test(value.filter)
+        ? value.filter
+        : "",
+    ...(value.kind === "war" || value.kind === "cwl"
+      ? { activityKind: value.kind }
+      : {}),
+  };
 }

@@ -328,7 +328,8 @@ class StrikeService:
                 {'$unset': {'replacement_listed': '', 'replacement_priority': '',
                             'replacement_note': '', 'replacement_clan_tag': '', 'filler_clan_tag': ''},
                  '$set': {'filler': False, 'replacement_updated_by': 'system',
-                          'replacement_updated_at': now, 'replacement_clear_reason': 'Left clan (48h)'}})
+                          'replacement_updated_at': now, 'replacement_clear_reason': 'Left clan (48h)'},
+             '$inc': {'revision': 1}})
 
     async def sync_roster(self, guild_id: int, clan_tag: str, members: list[dict], *, observed_at=None):
         clan = tag(clan_tag)
@@ -802,10 +803,21 @@ class StrikeService:
         ordered = heapq.nsmallest(skip + limit, retained, key=lambda item: item[0])
         return {'items': [item[1] for item in ordered[skip:]], 'total': total}
 
+    async def replacement_preference(self, guild_id: int, player_tag: str) -> dict:
+        player = tag(player_tag)
+        row = await self.mongo.strike_profiles.find_one({'_id': f'{int(guild_id)}:{player}'}) or {}
+        clan = row.get('current_clan_tag')
+        marked = bool(row.get('replacement_listed') and row.get('replacement_clan_tag') == clan)
+        filler = bool(row.get('filler') and row.get('filler_clan_tag') == clan)
+        priority = row.get('replacement_priority') if marked else 'replace_first' if filler else None
+        return {'player_tag': player, 'revision': row.get('revision', 0),
+                'priority': priority, 'note': row.get('replacement_note', '') if marked else '',
+                'clan_tag': clan, 'is_manual': marked or filler}
+
     async def set_replacement_preference(self, guild_id: int, player_tag: str,
                                          priority: str, note: str, actor_id: int,
                                          *, clan_tag: str, player_name=None, town_hall=None,
-                                         only_if_unmarked=False) -> dict | None:
+                                         only_if_unmarked=False, expected_revision=None) -> dict | None:
         """Mark one account for replacement in its verified current family clan."""
         player, clan = tag(player_tag), tag(clan_tag)
         if priority not in ('replace_first', 'high', 'normal'):
@@ -826,6 +838,11 @@ class StrikeService:
         if isinstance(town_hall, int) and not isinstance(town_hall, bool) and 0 < town_hall < 100:
             changes['town_hall'] = town_hall
         query = {'_id': f'{int(guild_id)}:{player}'}
+        if expected_revision is not None:
+            revision_match(expected_revision)
+            previous = await self.mongo.strike_profiles.find_one(query)
+            return await self._compare_write(self.mongo.strike_profiles, query['_id'],
+                                             previous, changes, expected_revision)
         if only_if_unmarked:
             # A mark in another clan is inactive and may be replaced after transfer.
             # A current-clan mark wins even when two staff members submit together.
@@ -835,7 +852,7 @@ class StrikeService:
             ]
         try:
             await self.mongo.strike_profiles.update_one(
-                query, {'$set': changes}, upsert=True)
+                query, {'$set': changes, '$inc': {'revision': 1}}, upsert=True)
         except DuplicateKeyError:
             if only_if_unmarked:
                 return None
@@ -843,8 +860,20 @@ class StrikeService:
         return changes
 
     async def clear_replacement_preference(self, guild_id: int, player_tag: str,
-                                           actor_id: int) -> None:
+                                           actor_id: int, *, expected_revision=None) -> dict | None:
         player = tag(player_tag)
+        if expected_revision is not None:
+            revision_match(expected_revision)
+            key = f'{int(guild_id)}:{player}'
+            previous = await self.mongo.strike_profiles.find_one({'_id': key})
+            changes = {'guild_id': int(guild_id), 'player_tag': player,
+                       'replacement_listed': False, 'replacement_priority': None,
+                       'replacement_note': '', 'replacement_clan_tag': None,
+                       'filler': False, 'filler_clan_tag': None,
+                       'replacement_updated_by': int(actor_id),
+                       'replacement_updated_at': datetime.now(timezone.utc)}
+            return await self._compare_write(self.mongo.strike_profiles, key,
+                                             previous, changes, expected_revision)
         await self.mongo.strike_profiles.update_one(
             {'_id': f'{int(guild_id)}:{player}'},
             {'$unset': {'replacement_listed': '', 'replacement_priority': '',
@@ -947,7 +976,7 @@ class StrikeService:
                                    row['weight'] is None,
                                    row['weight_difference'] if matching and row['weight_difference'] is not None else 0,
                                    row['player_tag']))
-        return rows[:max(1, min(5000, int(limit)))]
+        return rows if limit is None else rows[:max(1, min(5000, int(limit)))]
 
     async def _exemption(self, guild_id: int, player: str, member_id: int | None,
                          occurred_at: datetime, roles: set[int], *, leave_cache=None) -> str | None:
