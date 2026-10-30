@@ -118,7 +118,7 @@ def test_correction_refuses_stale_plan_and_streak_impact_before_any_write():
                                        'war_key': WAR_KEYS[0], 'kind': 'strike'}
         plan = await service.no_attack_correction(GUILD)
         db.strike_records.rows['a']['streak_eligible'] = True
-        with pytest.raises(StrikeConflict, match='changed'):
+        with pytest.raises(StrikeConflict, match=r'^Correction records changed; review a fresh dry run\.$'):
             await service.no_attack_correction(GUILD, reviewed_fingerprint=plan['fingerprint'])
         plan = await service.no_attack_correction(GUILD)
         assert plan['streak_review_accounts'] == [PLAYER]
