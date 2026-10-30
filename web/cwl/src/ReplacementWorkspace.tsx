@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { strikePermissions } from './strikePermissions'
 import ReplacementDeparture from './ReplacementDeparture'
+import ConfirmDialog from './ConfirmDialog'
 import {
   bulkSaveMessage,
   compactWeight,
@@ -55,20 +56,28 @@ export default function ReplacementWorkspace({
   permissions,
   isOwner,
   onDirty,
+  onWorking,
+  initialClan = '',
+  onClanChange,
 }: {
   permissions: string[]
   isOwner: boolean
   onDirty?: (dirty: boolean) => void
+  onWorking?: (busy: boolean) => void
+  initialClan?: string
+  onClanChange?: (clan: string) => void
 }) {
   const canManage = strikePermissions(permissions, isOwner).manage
   const [items, setItems] = useState<Candidate[]>([])
   const [clans, setClans] = useState<Clan[]>([])
-  const [clan, setClan] = useState('')
+  const [clan, setClan] = useState(initialClan)
+  useEffect(() => { setClan(initialClan) }, [initialClan])
   const [search, setSearch] = useState('')
   const [weightDraft, setWeightDraft] = useState('')
   const [weight, setWeight] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  useEffect(() => { onWorking?.(busy); return () => onWorking?.(false) }, [busy, onWorking])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [adding, setAdding] = useState(false)
@@ -85,6 +94,8 @@ export default function ReplacementWorkspace({
   const [editing, setEditing] = useState('')
   const [editPriority, setEditPriority] = useState<Priority>('normal')
   const [editNote, setEditNote] = useState('')
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null)
+  const [clearing, setClearing] = useState<Candidate | null>(null)
   const mutation = useRef(false)
   const editedItem = items.find((item) => item.player_tag === editing)
   const dirty = adding
@@ -93,9 +104,11 @@ export default function ReplacementWorkspace({
       (editPriority !== priorityOf(editedItem) ||
         editNote !== (editedItem.note || ''))
   useUnsavedWork(dirty || busy, onDirty)
-  const leaveEditor = () =>
-    !mutation.current &&
-    (!dirty || window.confirm('Discard unsaved replacement changes?'))
+  const leaveEditor = (action: () => void) => {
+    if (mutation.current) return
+    if (dirty) setPendingLeave(() => action)
+    else action()
+  }
   const request = useRef(0)
   const rosterRequest = useRef(0)
   useEffect(() => {
@@ -204,6 +217,41 @@ export default function ReplacementWorkspace({
 
   return (
     <section className="replacement-workspace">
+      {pendingLeave && canManage && (
+        <ConfirmDialog
+          heading="Unsaved changes"
+          text="Discard your unsaved replacement changes?"
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          disabled={busy}
+          onCancel={() => setPendingLeave(null)}
+          onConfirm={() => {
+            if (mutation.current) return
+            setPendingLeave(null)
+            pendingLeave()
+          }}
+        />
+      )}
+      {clearing && canManage && (
+        <ConfirmDialog
+          heading="Clear replacement priority?"
+          text={`Clear ${clearing.player_name || clearing.player_tag}'s replacement priority? Strike history stays.`}
+          confirmLabel="Clear priority"
+          danger
+          disabled={busy}
+          onCancel={() => setClearing(null)}
+          onConfirm={() => {
+            if (mutation.current) return
+            const target = clearing.player_tag
+            setClearing(null)
+            void save(
+              () => api(`/strikes/replacement-list/${tagPath(target)}`, 'DELETE'),
+              'Priority cleared.',
+              () => setEditing(''),
+            )
+          }}
+        />
+      )}
       <div className="page-head">
         <div>
           <p className="eyebrow">Strikes</p>
@@ -217,22 +265,23 @@ export default function ReplacementWorkspace({
           <button
             className="primary"
             disabled={busy}
-            onClick={() => {
-              if (!leaveEditor()) return
-              if (!adding) {
-                setNewClan(clan)
-                setAddMode('roster')
-                setSelectedTags([])
-              } else {
-                setSelectedTags([])
-              }
-              setNewTag('')
-              setNewNote('')
-              setNewPriority('normal')
-              setNotice('')
-              setAdding((value) => !value)
-              setEditing('')
-            }}
+            onClick={() =>
+              leaveEditor(() => {
+                if (!adding) {
+                  setNewClan(clan)
+                  setAddMode('roster')
+                  setSelectedTags([])
+                } else {
+                  setSelectedTags([])
+                }
+                setNewTag('')
+                setNewNote('')
+                setNewPriority('normal')
+                setNotice('')
+                setAdding((value) => !value)
+                setEditing('')
+              })
+            }
           >
             {adding ? 'Cancel' : 'Add accounts'}
           </button>
@@ -494,7 +543,7 @@ export default function ReplacementWorkspace({
               <select
                 value={clan}
                 disabled={busy || !!editing}
-                onChange={(event) => setClan(event.target.value)}
+                onChange={(event) => { setClan(event.target.value); onClanChange?.(event.target.value) }}
               >
                 <option value="">All clans</option>
                 {clans
@@ -643,17 +692,18 @@ export default function ReplacementWorkspace({
                             className="replacement-more"
                             aria-label={`Edit ${item.player_name || item.player_tag}`}
                             aria-expanded={editing === item.player_tag}
-                            onClick={() => {
-                              if (!leaveEditor()) return
-                              if (editing === item.player_tag) {
-                                setEditing('')
-                                return
-                              }
-                              setEditing(item.player_tag)
-                              setAdding(false)
-                              setEditPriority(priorityOf(item))
-                              setEditNote(item.note || '')
-                            }}
+                            onClick={() =>
+                              leaveEditor(() => {
+                                if (editing === item.player_tag) {
+                                  setEditing('')
+                                  return
+                                }
+                                setEditing(item.player_tag)
+                                setAdding(false)
+                                setEditPriority(priorityOf(item))
+                                setEditNote(item.note || '')
+                              })
+                            }
                           >
                             Edit
                           </button>
@@ -714,9 +764,7 @@ export default function ReplacementWorkspace({
                             <button
                               type="button"
                               disabled={busy}
-                              onClick={() => {
-                                if (leaveEditor()) setEditing('')
-                              }}
+                              onClick={() => leaveEditor(() => setEditing(''))}
                             >
                               Cancel
                             </button>
@@ -727,23 +775,7 @@ export default function ReplacementWorkspace({
                               <button
                                 type="button"
                                 disabled={busy}
-                                onClick={() => {
-                                  if (
-                                    !window.confirm(
-                                      `Clear ${item.player_name || item.player_tag}'s replacement priority? Strike history stays.`,
-                                    )
-                                  )
-                                    return
-                                  void save(
-                                    () =>
-                                      api(
-                                        `/strikes/replacement-list/${tagPath(item.player_tag)}`,
-                                        'DELETE',
-                                      ),
-                                    'Priority cleared.',
-                                    () => setEditing(''),
-                                  )
-                                }}
+                                onClick={() => setClearing(item)}
                               >
                                 Clear priority
                               </button>

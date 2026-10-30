@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from types import SimpleNamespace
 from pymongo.errors import DuplicateKeyError
 
 from utils.recruit_links import PlayerOwners
@@ -81,6 +82,9 @@ class Collection:
         row.update(update.get('$set', {}))
         if '$setOnInsert' in update and len(row) == 1:
             row.update(update['$setOnInsert'])
+        for field in update.get('$unset', {}):
+            row.pop(field, None)
+        return SimpleNamespace(matched_count=1)
 
     async def delete_one(self, query):
         self.rows.pop(query['_id'], None)
@@ -241,7 +245,8 @@ async def _ending_leave_preserves_past_exemption_but_stops_future_exemption():
     past = now - timedelta(days=1)
     assert await service._exemption(123, '#PC9YGL0JL', 456, past, set()) == 'leave'
     await service.clear_leave(123, 456)
-    assert mongo.strike_leaves.rows == {}
+    assert mongo.strike_leaves.rows['123:456']['cleared'] is True
+    assert mongo.strike_leaves.rows['123:456']['revision'] == 1
     assert await service._exemption(123, '#PC9YGL0JL', 456, past, set()) == 'leave'
     assert await service._exemption(123, '#PC9YGL0JL', 456,
                                     now + timedelta(days=1), set()) is None

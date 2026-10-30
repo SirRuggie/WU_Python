@@ -63,7 +63,7 @@ checks are not live delivery or a full assistive-technology audit.
 
 ## Staff workflow
 
-The **Strikes** dashboard has History, Leave, Exempt roles, and Import wars tabs. **Replacements** is a child page beneath Strikes in the sidebar.
+The **Strikes** dashboard has Accounts, Leave, and Settings tabs. Exempt roles and Import past wars are in Settings. **Replacements** is a child page beneath Strikes in the sidebar.
 
 History starts with one row per player account with active strikes, ordered by active strike count. All accounts also shows inactive and missed-only accounts. Accounts linked to the same Discord member remain separate. Open an account to see strike dates, war matchups, and removal history. One-missed records stay hidden unless selected. Find a war by clan or opponent, then choose its date to see that war’s missed attacks. History supports player, Discord member, clan, and status searches; add a manual strike with a reason, or remove a strike with a reason. Choosing a member lets staff choose the player account.
 
@@ -251,6 +251,94 @@ production evidence.
   helper failed during staging. The installed helper was not changed.
 Full integrated tests and deployment evidence will be recorded by the release
 review; none are claimed by this development section.
+
+
+## Strikes UX backend contracts — prompt 23
+
+The backend contracts below are ready for the separate frontend integration;
+this section does not claim that the new controls have shipped.
+
+- `GET /api/cwl/strikes/accounts` keeps `status=active|all`, `query`, `clan`,
+  `limit` (1–100, default 25), and `offset`. The new `action` is `all`,
+  `over_limit`, or `new_this_week`. `summary.over_limit` and
+  `summary.new_this_week` count accounts after search/clan/status filters but
+  before the action filter or paging. `strike_limit` is returned with the same
+  calculation. At least that many active strikes means over limit. New this week
+  means at least one currently active strike dated within the last seven days.
+  Changing the limit never changes strikes, streaks, replacements or delivery.
+- Account grouping has deterministic date/tag ties. Profiles are joined in
+  batches of at most 200 through their routed collection, so different database
+  routes do not require a cross-database aggregation join. Only the page is
+  retained in application memory; totals and filters scan the full population.
+  Case-insensitive substring searches can still require a full scan.
+- History filters run before count/skip/limit, including expired/removed/exempt
+  records. Equal incident dates use the record ID as a stable tie-breaker.
+- `GET /api/cwl/strikes/wars` now returns `wars`, `total`, `limit`, `offset`, and
+  `name_search_incomplete`; limits are 1–100, default 25. Search applies across
+  the complete ledger and incomplete-capture population, before paging. Saved
+  incidents take precedence over an incomplete placeholder for the same war.
+  Remote opponent names remain searchable: the HTTP adapter enriches batches of
+  at most 100 within the existing shared eight-second lookup budget (six
+  concurrent requests, four seconds per request). A missing/unavailable name
+  falls back to its tag and sets `name_search_incomplete`; callers should keep
+  that limitation visible. With no search, only the returned page is enriched.
+- Settings return `revision` (legacy/missing 0), `strike_limit` (default 4), and
+  role `managed`, `position`, and `color` metadata, in descending server position
+  order. The picker hides managed roles using that flag. Existing managed or
+  unavailable exemptions remain visible/removable and may be retained; they are
+  never silently dropped. A removed managed exemption cannot be newly selected.
+  `PUT /settings/roles` requires `revision` and `role_ids`, and optionally accepts
+  `strike_limit` (integer 1–20). It returns the new revision and effective limit.
+  Concurrent saves return 409, including first writes against legacy documents.
+  Monitoring activation fields are preserved.
+- Leave save and delete require `revision`; active leave rows and successful
+  writes return it. Before starting a new leave edit, fetch
+  `GET /settings/leaves/{member_id}` for the current revision, including a cleared
+  leave's tombstone. A successful transition atomically records its prior
+  interval in `pending_history`, then archives it idempotently. Failed CAS writes
+  do not archive or shorten anyone's interval. A restart can finish a pending
+  archive on the next edit or exemption read; unavailable archival data fails
+  closed. Clearing keeps an empty interval and revision tombstone, preventing
+  delete/recreate ABA. Existing internal service callers may omit the expected
+  revision; they still use a conditional write against their freshly read state.
+  No transaction support or collection migration is assumed.
+- `GET /targets?query=...` requires `strikes_add` and returns `accounts` and
+  `members`. An empty query returns neither. Names search known saved profiles
+  and ledger identities plus Discord member suggestions; tags use the public
+  player provider and member IDs resolve linked accounts. Suggestions are capped
+  at 25 per group, with at most six player lookups in flight. Account fields are
+  `tag`, `name`, `town_hall`, `current_clan_tag`, `current_clan_name`. Selecting a
+  member can use the existing member-accounts route, now including town hall;
+  link sets over 100 or unavailable/conflicting links fail explicitly. This is
+  not a global player-name search. Manual add still requires its existing review
+  and idempotent request ID; the reason limit stays 500.
+- Import preview returns `summary: {strikes, accounts, history_only}` over all
+  unique proposed rows. The frontend recomputes those selected counts when the
+  user excludes rows. Apply reports `added_strikes`, `history_only`, `duplicates`,
+  and `excluded` separately, retaining legacy response fields. Revalidation can
+  reduce strikes or encounter a concurrent duplicate; those actual results are
+  reported, never forced to match a stale preview. Exempt rows cannot be promoted
+  solely because an exemption disappeared after preview.
+
+Backend checks use isolated sample collections with an outbound guard: revision
+races and legacy creation, leave receipt crashes/recovery and tombstones,
+300-account cross-page summary/search, more than 2,000 wars, history precedence,
+managed-role retention, import races, permissions and unavailable providers.
+Frontend keyboard/accessibility, phone/desktop density and confirmation checks
+remain separate integration gates. No live notification or API delivery is
+inferred from these fixtures.
+
+The prompt 23 browser fixture contains 300 accounts and a 28-record player.
+`npm run test:layout` also runs the browser-only Strikes fixture at 360×800 and
+1440×1000, with outbound requests blocked. Set `WU_TEST_PYTHON` to the backend
+venv and `WU_LAYOUT_STAFF_PORT` to an unused loopback port when another staff
+preview occupies 8981. `WU_LAYOUT_MODERATION_PORT` similarly overrides 8983;
+both fixture ports must remain within 8900–8999. It checks paging, both Add entry points, dirty cancellation,
+focus return to the player row, role eligibility, import counts and retained
+settings edits after a simulated 409. Visible enabled controls are at least 44px,
+text is at least 12px and measured text contrast is at least 4.5:1. Representative
+phone history rows measure 53px versus 242px in the prior fixture (4.57× row
+density); this comparison excludes the page's shared header and controls.
 
 
 ## Strike streaks release closure — 2026-10-30
