@@ -39,7 +39,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 it.each(["queue", "details"])(
-  "%s: permission-gated link uses guarded app navigation and no manual weight input",
+  "%s: permission-gated link uses guarded app navigation and Details keeps the linked editor",
   async (surface) => {
     const navigate = vi.fn();
     const render = async (permissions: string[]) =>
@@ -73,7 +73,9 @@ it.each(["queue", "details"])(
     const link = document.querySelector<HTMLAnchorElement>(
       'a[href^="/clan-weights"]',
     )!;
-    expect(link.textContent).toBe("Open Clan weights →");
+    expect(link.textContent).toBe(
+      surface === "details" ? "Also on Clan weights ›" : "Open Clan weights →",
+    );
     const click = new MouseEvent("click", {
       bubbles: true,
       cancelable: true,
@@ -95,8 +97,13 @@ it.each(["queue", "details"])(
       ).toBeNull();
     await render(["cwl_roster"]);
     expect(document.querySelector('a[href^="/clan-weights"]')).toBeNull();
-    expect(document.body.textContent).toContain(
-      "Weight comes from Clan weights. Ask a staff member with Clan weights access.",
-    );
+    if (surface === "queue")
+      expect(document.body.textContent).toContain(
+        "Weight comes from Clan weights. Ask a staff member with Clan weights access.",
+      );
+    else
+      expect(
+        document.querySelector(".linked-weight-field input"),
+      ).not.toBeNull();
   },
 );

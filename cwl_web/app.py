@@ -978,6 +978,8 @@ def _roster_rows(db, sid):
         row["kept"] = bool(row["kept"])
         saved_weight = db.execute("SELECT initial_weight FROM player_weights WHERE tag=?", (row["tag"],)).fetchone()
         row["initial_manual_weight"] = saved_weight["initial_weight"] if saved_weight else None
+        row["weight_revision"] = official.get(row["tag"], {}).get("weight_revision", 0)
+        row["weight_storages"] = official.get(row["tag"], {}).get("weight_storages")
         row["clan_weight_managed"] = row["tag"] in official
         for field in ('clan_weight_clan_tag', 'clan_weight_clan_name', 'clan_weight_saved_at'):
             row[field] = official.get(row['tag'], {}).get(field)
@@ -1238,9 +1240,14 @@ async def bulk_assign_roster(request):
 async def update_roster_account(request):
     session = _require(request, "editor")
     body = await _json(request)
-    allowed = {"revision", "manual_weight", "assigned_clan_tag", "kept"}
+    allowed = {"revision", "manual_weight", "weight_revision", "weight_storages", "assigned_clan_tag", "kept"}
     if not set(body) <= allowed or not (set(body) - {"revision"}):
         _fail(400, "Invalid roster update")
+    if "manual_weight" in body:
+        if type(body.get("weight_revision")) is not int or not 0 <= body["weight_revision"] < 2**63:
+            _fail(400, "Expected weight revision")
+    elif "weight_revision" in body or "weight_storages" in body:
+        _fail(400, "Weight metadata requires a weight")
     try:
         player_tag = tag(request.match_info["tag"])
     except ValueError:
@@ -1255,9 +1262,7 @@ async def update_roster_account(request):
             _fail(404, "Signed-up account not found")
         old = db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone()
         before = dict(old) if old else None
-        if "manual_weight" in body and player_tag in saved_sources(db, [player_tag]):
-            _fail(409, "This account uses Clan weights. Update its weight under Clan management.")
-        manual = body.get("manual_weight", old["manual_weight"] if old else None)
+        manual = old["manual_weight"] if old else None
         if manual is not None and (type(manual) is not int or manual <= 0 or manual > 1_000_000_000):
             _fail(400, "Invalid manual weight")
         assigned = body.get("assigned_clan_tag", old["assigned_clan_tag"] if old else None)
@@ -1280,10 +1285,21 @@ async def update_roster_account(request):
                    "manual_weight=excluded.manual_weight,assigned_clan_tag=excluded.assigned_clan_tag,kept=excluded.kept",
                    (sid, player_tag, manual, assigned, int(kept)))
         after = dict(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag=?", (sid, player_tag)).fetchone())
+        weight_changed = False
         if "manual_weight" in body:
-            from .player_weights import record
-            record(db, player_tag, manual, sid, session["user_id"])
-        revision = _bump(db, sid)
+            from utils.clan_weight_store import ClanWeightStore, WeightConflict
+            change = {"weight": body["manual_weight"], "revision": body["weight_revision"]}
+            if "weight_storages" in body:
+                change["storages"] = body["weight_storages"]
+            try:
+                weight_changed = ClanWeightStore.save_roster(
+                    db, sid, player_tag, change, session["user_id"],
+                    session.get("display_name") or session.get("username"))
+            except WeightConflict as exc:
+                _fail(409, str(exc))
+            except ValueError as exc:
+                _fail(400, str(exc))
+        revision = _revision(db, sid) if weight_changed else _bump(db, sid)
         _audit(db, sid, player_tag, session["user_id"], "manual_roster_edit", before, after)
         _record_undo(db, sid, session["user_id"], "Edit account placement", revision,
                      [{"tag": player_tag, "before": _placement(before),

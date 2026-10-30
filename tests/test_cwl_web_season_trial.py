@@ -12,6 +12,7 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
     auth = fixture.RosterTests.auth
     call = fixture.RosterTests.call
     revision = fixture.RosterTests.revision
+    weight_revision = fixture.RosterTests.weight_revision
     signup = fixture.RosterTests.signup
     host = fixture.RosterTests.host
 
@@ -89,7 +90,7 @@ class SeasonTrial(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await (await self.call('GET', base + '/publication', self.owner)).json())['draft_changed'])
         # A genuine weight edit still requires republishing, including after archive.
         response = await self.call('PATCH', base + '/roster/%23P2Y', self.owner,
-            json={'revision': await self.revision(), 'manual_weight': 174000})
+            json={"weight_revision": self.weight_revision('#P2Y'), 'revision': await self.revision(), 'manual_weight': 174000})
         self.assertEqual(response.status, 200)
         self.assertTrue((await (await self.call('GET', base + '/publication', self.owner)).json())['draft_changed'])
         await self.call('PATCH', base, self.owner, json={'status': 'archived'})
