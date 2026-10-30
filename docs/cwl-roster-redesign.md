@@ -12,7 +12,15 @@ The authorized prompt 32 follow-up preserves the current selection when Select 1
 
 Validation scope: focused component tests cover scroll thresholds, hysteresis, pending callbacks, desktop resizing, panel/dialog gating, bar offsets, focus and reduced motion. Workspace tests cover tab gating and preserving an existing selection when both quick-select controls encounter only locked matches. The 360×800 fixture layout assertions cover offsets, last-card hit testing and overflow; final browser evidence, mutation review and release verification remain separate integration gates. These automated checks do not constitute a full assistive-technology or real-phone audit.
 
-## Status (2026-10-29)
+## Weight-range release status — October 30, 2026
+
+`weight-range-1`, PR #64/tag `23235ccf2671dfe5675f0bc98d38ab11a011ab09`, released frontend and backend with the bot unchanged at `b517afd`. Both range endpoints are inclusive (Ruggie, October 30), while validation still requires minimum < maximum. Compare defaults to Weight: high to low; Select 15/30 skips locked accounts in visible order and the selection cap blocks the 51st account. Claude's read-only 360px smoke (handoff 92) confirmed Jujupon at 179k no longer showed Outside weight range for Lazy.128's 172–179 range, quick picks were visible, and Compare used the new default.
+
+Tagged checks passed: 4,844 backend tests / 21 skipped / 153 subtests, 914 frontend tests and TypeScript/build; fourteen accepted mutations were killed. Protected pre/post data matched; no assignments or locks were written by the evaluation change. Public hash/backup evidence and frontend/backend-only rollback to b517afd are in [backend releases](dashboard-backend-releases.md#weight-range-1--october-30-2026). Later frontend releases are recorded independently.
+
+Later from review 87: remove the now-unreachable Max-50 action branch and reconcile older select-all/Max-50 prose; the shared-boundary `find` reports only one matching note when several boundaries overlap. The zero-unlocked selection-preservation correction belongs to the separate accepted back-to-top change, not the weight-range release.
+
+## Earlier status (2026-10-29)
 
 `weight-totals-1` released at `4f57d6e73941d3adc3b3223611927081bf794df9` (PR #59), frontend only. Assign and Balance now show totals of known effective weights; Avg TH remains. Empty clans say `Total: no weights yet`, and the duplicate Fill spot / Signup Details dirty dialog is fixed. 901 frontend tests, TypeScript/build and full isolated layout passed. Public `index-5dIAUgQj.js` SHA256 `b3f78cd7daba401cd67513e69fced2d6bf989e8a0b44b9e7f840d28a742d5c12` matched; backend `f95830b`/PID 2249061 stayed unchanged without restart. Backup integrity and counts matched (Main 22/18/18, Lazy 118/89/71); frontend rollback is `8c7b5a8c29c6dab65801879cf20226f94e7efc7c`. Claude's read-only owner 360px smoke PASSED (handoff 65): Assign current total 2,652k and no-weights state, Balance totals and no overflow; GETs only, no console errors. Detailed evidence is in CLAUDE.md.
 
@@ -570,6 +578,6 @@ Missing weights has one `Enter weights as: Loot | Full` control above the queue,
 
 Ruggie decided that a clan weight is always a total. Assign current/projected and Balance current/preview display the sum of known effective weights, grouped in `k` (for example `4,512.5k`); no known weights displays `Total: no weights yet`. Keep the weighed-count hint when the total is partial and retain `Avg TH`, which measures Town Hall level rather than weight. Balance math, sorting, ties, API payloads and save behavior are unchanged. The frontend-only release also fixed the second `playerDirty` dialog after roster Discard on Fill spot / Signup Details. Claude accepted the fixture review (handoff 63) and the read-only owner 360px release smoke passed (handoff 65).
 
-## Weight range and quick selection — prompt 32 (implementation, not released)
+## Weight range and quick selection — prompt 32 (released October 30)
 
-Both endpoints of a configured range are inclusive throughout status, impact, eligibility and automatic planning. Wording uses “Range: 172k–179k” and “Includes 172k to 179k.” No assignments or locks are changed by evaluation. Compare defaults to descending weight; quick picks and the selection cap follow the updated contracts above. Frontend and backend release are required after review.
+Both endpoints of a configured range are inclusive throughout status, impact, eligibility and automatic planning. Wording uses “Range: 172k–179k” and “Includes 172k to 179k.” No assignments or locks are changed by evaluation. Compare defaults to descending weight; quick picks and the selection cap follow the updated contracts above. Frontend/backend release and read-only smoke passed as recorded in the October 30 status above.
