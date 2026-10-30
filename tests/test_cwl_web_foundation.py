@@ -715,6 +715,8 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
                     {"tag": "#P2Y", "name": "Main Home", "type": "Tactical"},
                     {"tag": "#Q2Y", "name": "CWL Host", "type": "CWL Hosting"},
                     {"tag": "#G2Y", "name": "Other", "type": "Unknown"},
+                    {"tag": "#V2Y", "name": "CWL Family", "type": "CWL"},
+                    {"tag": "#L2Y", "name": "Legacy Family", "type": "Competitive"},
                 ]
         class Collection:
             def find(self, query, projection, **kwargs):
@@ -727,8 +729,8 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
                 pass
         with patch("cwl_web.providers.AsyncMongoClient", Client), patch("cwl_web.providers.collection_for", return_value=Collection()):
             data = await LiveProviders(mongo_uri="mongodb://unused", routes={}).family_clans()
-        self.assertEqual({item["tag"] for item in data["clans"]}, {"#R2Y", "#P2Y"})
-        self.assertEqual(calls, [{"type": {"$in": ["FWA", "Tactical", "Flexible Fun", "Competitive"]}}])
+        self.assertEqual({item["tag"] for item in data["clans"]}, {"#R2Y", "#P2Y", "#V2Y", "#L2Y"})
+        self.assertEqual(calls, [{"type": {"$in": ["FWA", "Tactical", "Flexible Fun", "Competitive", "CWL"]}}])
 
     async def test_live_link_adapter_filters_other_users_and_retains_verification_metadata(self):
         items = [

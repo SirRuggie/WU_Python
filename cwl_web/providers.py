@@ -69,7 +69,7 @@ class ProviderUnavailable(Exception):
     pass
 
 
-FAMILY_TYPES = ("FWA", "Tactical", "Flexible Fun", "Competitive")
+FAMILY_TYPES = ("FWA", "Tactical", "Flexible Fun", "Competitive", "CWL")
 WEIGHTS_URL = "https://www.fwastats.com/Weights.json"
 WEIGHTS_CACHE_SECONDS = 15 * 60
 WEIGHTS_MAX_BYTES = 8 * 1024 * 1024

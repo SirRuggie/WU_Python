@@ -107,7 +107,7 @@ async def accounts_for_member(provider, user_id, *, verified_only=False):
         directory = {}
         for item in clans:
             if not isinstance(item, dict) or item.get("type") not in (
-                "FWA", "Tactical", "Flexible Fun", "Competitive"
+                "FWA", "Tactical", "Flexible Fun", "Competitive", "CWL"
             ):
                 raise ValueError("Invalid family directory category")
             value = player_tag(item.get("tag"))
