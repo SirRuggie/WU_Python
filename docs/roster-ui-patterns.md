@@ -124,6 +124,8 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 
 ## Weights
 
+- Assign current/projected and Balance current/preview weight labels show the total of known effective weights, formatted with grouped `k` values (for example `4,512.5k`). Keep `N of M weighed` for partial totals and say `Total: no weights yet` when none are known. Clan cards use the same total rule. `Avg TH` remains a separate Town Hall measure; display copy does not change balancing, sort order, save payloads or permissions.
+
 - Compact missing-weight queue: TH icon and name open Details; TH/tag/pool/source metadata stays readable at 12px. Desktop controls sit beside identity; phone controls sit below it.
 - One queue-level `Enter weights as: Loot | Full` switch sits below search, defaults to Loot and controls every missing-weight input; rows have no unit toggle. Switching reinterprets unsaved text and updates each full-weight hint without changing saved weights. Reuse `parseManualWeight` and inline validation. Never save on typing or unit changes; explicit Save only, then focus the next editable row. Details keeps its own `CompactWeightField` unit control and explicit Save/clear-to-source behavior. The unit conversion and save payload are unchanged.
 - Render 50 rows and Load more. Search covers all missing accounts; keep unsaved drafts even when rows are filtered out, and retain the app's leave guard.
