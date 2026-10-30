@@ -41,6 +41,10 @@ def effective_event(settings: dict, kind: str) -> dict:
     if kind not in EVENT_CATEGORIES:
         raise ValueError("Unsupported member event")
     event = settings["events"][kind]
+    if "categories" not in settings:  # Original callers and persisted rows.
+        return {"enabled": bool(event["enabled"]),
+                "channel_id": event.get("channel_id"),
+                "forum_tag_id": event.get("forum_tag_id")}
     category = settings["categories"][EVENT_CATEGORIES[kind]]
     if category["mode"] == "off":
         return {"enabled": False, **empty_destination()}

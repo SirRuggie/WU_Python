@@ -79,7 +79,12 @@ def test_text_notice_has_v2_and_disables_mentions():
     assert 'embeds' not in payload and 'content' not in payload
     rendered = json.dumps(payload['components'], ensure_ascii=False)
     assert '@everyone' not in rendered and '@here' not in rendered
-    assert ':D>' in rendered and 'Moderator ID:' in rendered
+    assert ':f>' in rendered and '**Joined**' in rendered
+    actions = [component for container in payload['components']
+               for row in container['components'] if row['type'] == 1
+               for component in row['components']]
+    assert actions == [{'type': 2, 'style': 5, 'label': 'View profile ↗',
+                        'url': 'https://discord.com/users/123456789012345678'}]
 
 
 def test_forum_notice_uploads_avatar_in_initial_request_and_returns_message_receipt():
@@ -99,9 +104,12 @@ def test_forum_notice_uploads_avatar_in_initial_request_and_returns_message_rece
     assert len(payload['name']) <= 100
     assert payload['applied_tags'] == ['123456789012345680']
     message = payload['message']
-    assert 'flags' not in message and 'components' not in message
+    assert 'flags' not in message
     assert message['allowed_mentions'] == {'parse': []}
     assert message['embeds'][0]['thumbnail']['url'] == 'attachment://member-avatar.png'
+    assert message['components'] == [{'type': 1, 'components': [
+        {'type': 2, 'style': 5, 'label': 'View profile ↗',
+         'url': 'https://discord.com/users/123456789012345678'}]}]
     assert fields['files[0]'][0] == b'avatar-bytes'
     assert fields['files[0]'][1]['content_type'] == 'image/png'
 

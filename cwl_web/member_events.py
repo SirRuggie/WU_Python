@@ -230,6 +230,17 @@ def _checked_settings(body):
     if not isinstance(body, dict) or type(body.get("revision")) is not int or body["revision"] < 0:
         raise web.HTTPBadRequest(text="Choose a valid settings revision.")
     if set(body) == {"revision", "events"}:  # Original API clients.
+        legacy = body["events"]
+        if not isinstance(legacy, dict) or set(legacy) != set(EVENT_TYPES):
+            raise web.HTTPBadRequest(text="Choose all four event settings.")
+        for kind in EVENT_TYPES:
+            value = legacy[kind]
+            if not isinstance(value, dict) or set(value) != {"enabled", "channel_id", "forum_tag_id"}:
+                raise web.HTTPBadRequest(text=f"Invalid {kind} settings.")
+            if type(value["enabled"]) is not bool:
+                raise web.HTTPBadRequest(text=f"Invalid {kind} enable setting.")
+            _destination({"channel_id": value["channel_id"],
+                          "forum_tag_id": value["forum_tag_id"]}, kind)
         body = normalize_settings(body, MemberEventStore.default_settings())
     if set(body) == {"revision", "main", "categories", "events", "ignores"}:
         body = {"schema_version": SCHEMA_VERSION, **body}

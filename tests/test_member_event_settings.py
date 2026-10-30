@@ -10,6 +10,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, patch
 
 from aiohttp import web
+from aiohttp.test_utils import make_mocked_request
 from pymongo.errors import DuplicateKeyError
 
 from cwl_web import member_events as api
@@ -90,6 +91,18 @@ class LayeredSettingsTests(unittest.IsolatedAsyncioTestCase):
         settings["ignores"] = {"users": ["1"]}
         with self.assertRaises(web.HTTPBadRequest):
             api._checked_settings(settings)
+
+    def test_malformed_legacy_settings_fail_closed(self):
+        events = MemberEventStore.default_settings()["events"]
+        for malformed in (None, [], {}, {**events, "unknown": events["join"]},
+                          {key: value for key, value in events.items() if key != "join"}):
+            with self.subTest(malformed_type=type(malformed).__name__):
+                with self.assertRaises(web.HTTPBadRequest):
+                    api._checked_settings({"revision": 0, "events": malformed})
+        bad_event = {**events, "join": {"enabled": "yes", "channel_id": None,
+                                          "forum_tag_id": None}}
+        with self.assertRaises(web.HTTPBadRequest):
+            api._checked_settings({"revision": 0, "events": bad_event})
 
 
 class TestAuditTests(unittest.IsolatedAsyncioTestCase):
@@ -203,6 +216,31 @@ class TestSendApiTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(web.HTTPForbidden):
                 await api.send_test(request)
         self.store.settings.assert_not_awaited()
+        self.store.reserve_test.assert_not_awaited()
+
+    async def test_real_manage_guard_checks_csrf_and_roles(self):
+        from cwl_web import server_management
+        class Context:
+            async def __aenter__(self):
+                return NS(ticket_setup=NS(find_one=AsyncMock(return_value={})))
+            async def __aexit__(self, *args):
+                pass
+        session = {"user_id": self.staff["user_id"], "csrf": "secret"}
+        with patch("cwl_web.app._session", return_value=session), \
+             patch.object(server_management, "mongo", return_value=Context()), \
+             patch.object(server_management, "allowed", new=AsyncMock(return_value=False)) as allowed:
+            missing_csrf = make_mocked_request("POST", api.PREFIX + "/test")
+            missing_csrf["manage_identity"] = self.staff
+            with self.assertRaises(web.HTTPForbidden):
+                await api.send_test(missing_csrf)
+            allowed.assert_not_awaited()
+
+            valid_csrf = make_mocked_request("POST", api.PREFIX + "/test",
+                                             headers={"X-CSRF-Token": "secret"})
+            valid_csrf["manage_identity"] = self.staff
+            with self.assertRaises(web.HTTPForbidden):
+                await api.send_test(valid_csrf)
+            allowed.assert_awaited_once()
         self.store.reserve_test.assert_not_awaited()
 
     async def test_malformed_discord_result_is_uncertain_without_retry(self):
