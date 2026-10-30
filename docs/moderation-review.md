@@ -283,3 +283,33 @@ logs recorded no underlying exception class, so the cause is not proven. Prompt
 36 tracks concurrency, class-only diagnostics and two display follow-ups; this
 release closure does not claim those 503s are fixed or that real Discord test
 messages were sent.
+
+## Avatar 503 release — October 30
+
+`avatar-503-1` is live at `44a37083f8fa5cb19df79873b9f6a412cceccd21`.
+The dashboard frontend and backend use immutable release directories for that
+revision; the bot stayed at `fb46bd388af287ea30f6296407853ff40105e39b`
+without a restart. Public `index-DtTrE87U.js` SHA-256 is
+`d22d3ac2c274700968a641dfe2047b7310646585c81cac692561230130dfeed4`.
+
+Integrated checks passed: 5,002 backend tests (21 skipped, 162 subtests), 1,043
+frontend tests, TypeScript and build. Isolated 360px/1440px checks covered avatar
+loading, legacy redirect, denied access and disabled test sending without a
+channel. Activation required two consecutive public config 200 responses, active
+service with the expected cwd, public asset hashes, anonymous denials and a clean
+current journal.
+
+The private backup is retained at `.local/avatar-503-1-backup-20261030T211645Z`;
+SQLite SHA-256 `4d781f50bf0d75e85929a0ceeca9f9241c72f85295e2d0bbd3414e669e1b2158`.
+Pre/post protected counts and digests matched: 155 signups, four publications,
+seven saved lineups, 3,558 active strikes. All twelve checked Mongo collection
+counts and moderation settings matched. No database restore or live message was
+performed. Previous frontend/backend assets at `fb46bd3` remain available for
+code-only rollback; the guarded local coordinator is `/tmp/wu-avatar-release/run.py`.
+
+Claude's read-only production smoke passed: runtime and public hash matched,
+`/server/member-activity` redirected to `/server/moderation`, and 22 of 22 parallel
+no-store avatar reads returned 200. No backend 503 or traceback appeared in the
+checked journal; nothing was saved or sent. Deployment tooling needed a recursive
+manifest finalizer for nested shared assets; this was a staging-tool issue, not an
+application or production check failure.
