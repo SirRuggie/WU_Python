@@ -708,7 +708,7 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ProviderUnavailable):
             await provider.family_clans()
 
-    async def test_live_family_filter_excludes_hosting_and_unknown_types(self):
+    async def test_live_family_directory_accepts_all_active_stored_types(self):
         calls = []
         class Cursor:
             async def to_list(self, length):
@@ -718,6 +718,8 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
                     {"tag": "#P2Y", "name": "Main Home", "type": "Tactical"},
                     {"tag": "#Q2Y", "name": "CWL Host", "type": "CWL Hosting"},
                     {"tag": "#G2Y", "name": "Other", "type": "Unknown"},
+                    {"tag": "#J2Y", "name": "Archived", "type": "CWL", "archived": True},
+                    {"tag": "#L2Y", "name": "Removed", "type": "FWA", "removed": True},
                 ]
         class Collection:
             def find(self, query, projection, **kwargs):
@@ -730,8 +732,8 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
                 pass
         with patch("cwl_web.providers.AsyncMongoClient", Client), patch("cwl_web.providers.collection_for", return_value=Collection()):
             data = await LiveProviders(mongo_uri="mongodb://unused", routes={}).family_clans()
-        self.assertEqual({item["tag"] for item in data["clans"]}, {"#R2Y", "#P2Y"})
-        self.assertEqual(calls, [{"type": {"$in": ["FWA", "Tactical", "Flexible Fun", "Competitive"]}}])
+        self.assertEqual({item["tag"] for item in data["clans"]}, {"#R2Y", "#P2Y", "#Q2Y", "#G2Y"})
+        self.assertEqual(calls, [{"archived": {"$ne": True}, "removed": {"$ne": True}}])
 
     async def test_live_link_adapter_filters_other_users_and_retains_verification_metadata(self):
         items = [
