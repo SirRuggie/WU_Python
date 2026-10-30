@@ -1,8 +1,13 @@
-import type { AutoPreview, RosterAccount, RosterClan } from './roster'
+import type { AutoPreview, RosterAccount, RosterClan } from "./roster";
 export function rosterWeightSummary(accounts: RosterAccount[]) {
-  const known = accounts.filter(a => a.effective_weight !== null)
-  return { count: accounts.length, weighed: known.length,
-    average: known.length ? Math.round(known.reduce((sum, a) => sum + a.effective_weight!, 0) / known.length) : null }
+  const known = accounts.filter((a) => a.effective_weight !== null);
+  return {
+    count: accounts.length,
+    weighed: known.length,
+    total: known.length
+      ? known.reduce((sum, account) => sum + account.effective_weight!, 0)
+      : null,
+  };
 }
 export function planPresentation(accounts: RosterAccount[], clans: RosterClan[], preview: AutoPreview, candidates: string[], targets: string[]) {
   const changes = new Map(preview.placements.map(p => [p.tag, p.assigned_clan_tag]))

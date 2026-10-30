@@ -10,7 +10,7 @@ import {
   rosterWeightSummary,
 } from "./rosterPlanPresentation";
 import "./RosterBalance.css";
-import { compactRosterWeight } from "./rosterCompactWeight";
+import { formattedRosterWeight, totalRosterWeight } from "./rosterTotalWeight";
 
 type Props = {
   roster: RosterSnapshot;
@@ -33,8 +33,8 @@ const reasons: Record<string, string> = {
   full: "Matching clans are full",
   no_eligible_rule: "No clan matches the pool and weight rules",
 };
-const averageText = (value: number | null) =>
-  value === null ? "Unknown" : compactRosterWeight(value);
+const totalText = (value: number | null) =>
+  value === null ? "Total: no weights yet" : totalRosterWeight(value);
 export default function RosterBalance({
   roster,
   seasonId,
@@ -356,8 +356,8 @@ export default function RosterBalance({
                           <strong>{c.name}</strong>
                           <small>
                             {c.pool === "main" ? "Main CWL" : "Lazy CWL"} ·{" "}
-                            {stats.count}/{c.capacity ?? "Unconfigured"} · Avg{" "}
-                            {averageText(stats.average)}
+                            {stats.count}/{c.capacity ?? "Unconfigured"} ·{" "}
+                            {totalText(stats.total)}
                           </small>
                           {stats.weighed < stats.count && (
                             <small>
@@ -436,8 +436,10 @@ export default function RosterBalance({
                     accounts
                   </span>
                   <span>
-                    Avg {averageText(before.average)} →{" "}
-                    {averageText(after.average)}
+                    {totalText(before.total)} →{" "}
+                    {after.total === null
+                      ? "Total: no weights yet"
+                      : formattedRosterWeight(after.total)}
                   </span>
                   {after.weighed < after.count && (
                     <small>

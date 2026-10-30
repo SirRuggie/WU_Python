@@ -3,7 +3,7 @@ import { Input, ProgressBar } from "./rosterUi/primitives";
 import { ChevronRight, Search, Unlink } from "lucide-react";
 import ActionPanel from "./ActionPanel";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
-import { compactRosterWeight } from "./rosterCompactWeight";
+import { formattedRosterWeight } from "./rosterTotalWeight";
 import "./RosterAssignPanel.css";
 
 type Props = {
@@ -21,7 +21,7 @@ type Destination = {
   currentCount: number;
   projectedCount: number;
   incomingCount: number;
-  currentAverageWeight: number | null;
+  currentTotalWeight: number | null;
   currentKnownWeights: number;
 };
 
@@ -45,8 +45,8 @@ function destinationProjection(
     currentCount,
     projectedCount: currentCount + incomingCount,
     incomingCount,
-    currentAverageWeight: weights.length
-      ? weights.reduce((total, weight) => total + weight, 0) / weights.length
+    currentTotalWeight: weights.length
+      ? weights.reduce((total, weight) => total + weight, 0)
       : null,
     currentKnownWeights: weights.length,
   };
@@ -201,7 +201,7 @@ export default function RosterAssignPanel({
                   currentCount,
                   projectedCount,
                   incomingCount,
-                  currentAverageWeight,
+                  currentTotalWeight,
                   currentKnownWeights,
                 }) => {
                   const currentlyFull = currentCount >= clan.effective_capacity;
@@ -242,8 +242,9 @@ export default function RosterAssignPanel({
                         </span>
                         <span className="roster-assign-clan-meta">
                           <span>
-                            Current avg{" "}
-                            {compactRosterWeight(currentAverageWeight)}
+                            {currentTotalWeight === null
+                              ? "Current total: no weights yet"
+                              : `Current total ${formattedRosterWeight(currentTotalWeight)}`}
                           </span>
                           {currentKnownWeights < currentCount && (
                             <span>
