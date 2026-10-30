@@ -56,6 +56,10 @@ class Cursor:
     def __init__(self, rows):
         self.rows = deepcopy(rows)
 
+    async def __aiter__(self):
+        for row in self.rows:
+            yield row
+
     async def to_list(self, length=None):
         return self.rows
 

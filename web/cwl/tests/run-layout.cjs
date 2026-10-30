@@ -110,7 +110,7 @@ server.stdout.on("data", (chunk) => {
           }
         }
         if (!process.exitCode) {
-          const staffPort = 8981;
+          const staffPort = Number(process.env.WU_LAYOUT_STAFF_PORT || 8981);
           const staffServer = spawn(
             python,
             [
@@ -335,7 +335,7 @@ server.stdout.on("data", (chunk) => {
           }
         }
         if (!process.exitCode) {
-          const moderationPort = 8983;
+          const moderationPort = Number(process.env.WU_LAYOUT_MODERATION_PORT || 8983);
           await new Promise((resolve, reject) => {
             const probe = require("node:net").createServer();
             probe.once("error", reject);

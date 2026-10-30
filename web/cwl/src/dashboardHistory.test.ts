@@ -220,3 +220,12 @@ it.each([false, true])(
     expect(f.current().url).toBe("/signup");
   },
 );
+
+it('round-trips only a valid replacement clan and never carries it into other destinations', () => {
+ const route = dashboardTarget('?clan=%23Q2Y', '/clans/replacements');
+ expect(route).toEqual({ view: 'replacements', season: '', replacementClan: '#Q2Y' });
+ expect(dashboardPath(route)).toBe('/clans/replacements?clan=%23Q2Y');
+ expect(dashboardTarget('?clan=https://evil.test', '/clans/replacements').replacementClan).toBeUndefined();
+ expect(dashboardPath({ ...route, view: 'strikes' })).toBe('/clans/strikes');
+ expect(dashboardTarget('?clan=%23Q2Y', '/clans/strikes').replacementClan).toBeUndefined();
+});

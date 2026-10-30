@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from utils.strike_store import StrikeService
 from cwl_web import strikes as api
@@ -25,6 +25,10 @@ class Cursor:
     def limit(self, value):
         self.max_items = value
         return self
+
+    async def __aiter__(self):
+        for row in self.rows:
+            yield row
 
     async def to_list(self, length=None):
         end = self.max_items if self.max_items is not None else length
@@ -67,6 +71,7 @@ class Mongo:
     def __init__(self, rows=None, profiles=None):
         self.strike_records = Records(rows)
         self.strike_profiles = Profiles(profiles)
+        self.strike_settings = SimpleNamespace(find_one=AsyncMock(return_value=None))
 
 
 def test_default_history_filters_strikes_before_count_and_pagination():

@@ -4,7 +4,7 @@ import { cwlPaths } from "./staffLinks";
 import { managementPaths } from "./managementLinks";
 const staffPaths: Record<string, string> = { ...cwlPaths, ...managementPaths, "weight-trial": "/clan-weights" };
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
-export type DashboardRoute = { view: DashboardView; season: string; signupPanel?: "register" | "saved"; step?: "review" | "announce"; activityFilter?: string; activityKind?: "war" | "cwl" };
+export type DashboardRoute = { replacementClan?: string; view: DashboardView; season: string; signupPanel?: "register" | "saved"; step?: "review" | "announce"; activityFilter?: string; activityKind?: "war" | "cwl" };
 export function dashboardTarget(search: string, pathname = '/'): DashboardRoute {
   pathname = pathname === '/' ? '/' : pathname.replace(/\/$/, '');
   const params = new URLSearchParams(search);
@@ -18,6 +18,7 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
       ? (value as DashboardView)
       : "home",
     ...(value === "publication" && ["review", "announce"].includes(params.get("step") || "") ? { step: params.get("step") as "review" | "announce" } : {}),
+    ...(value === "replacements" && /^#[0289PYLQGRJCUV]{3,15}$/.test(params.get("clan") || "") ? {replacementClan: params.get("clan")!} : {}),
     season: /^\d{1,18}$/.test(params.get("season") || "")
       ? params.get("season")!
       : "",
@@ -29,6 +30,7 @@ export function dashboardPath(route: DashboardRoute) {
   if (memberPaths[route.view]) return memberPaths[route.view];
   const path = staffPaths[route.view];
   const params = new URLSearchParams(path ? {} : { view: route.view });
+  if (route.view === "replacements" && /^#[0289PYLQGRJCUV]{3,15}$/.test(route.replacementClan || "")) params.set("clan", route.replacementClan!);
   if (route.view === "publication" && route.step) params.set("step", route.step);
   if (route.season && seasonViews.has(route.view)) params.set("season", route.season);
   return `${path || "/"}${params.size ? `?${params}` : ""}`;
