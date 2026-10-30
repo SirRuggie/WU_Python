@@ -11,7 +11,7 @@ export function comparisonWeightRange(
     : min !== null
       ? `${compactRosterWeight(min)}+`
       : max !== null
-        ? `under ${compactRosterWeight(max)}`
+        ? `up to ${compactRosterWeight(max)}`
         : "";
 }
 export function outsideComparisonRange(
@@ -21,7 +21,7 @@ export function outsideComparisonRange(
   return (
     weight !== null &&
     ((clan.min_weight !== null && weight < clan.min_weight) ||
-      (clan.max_weight !== null && weight >= clan.max_weight))
+      (clan.max_weight !== null && weight > clan.max_weight))
   );
 }
 export function comparisonPublishNote(

@@ -25,16 +25,17 @@ const clan = {
   max_weight: 170000,
 } as RosterClan;
 describe("Compare presentation contracts", () => {
-  it("uses inclusive minimum and exclusive maximum, never flags missing", () => {
+  it("uses inclusive minimum and maximum, never flags missing", () => {
     expect(outsideComparisonRange(149999, clan)).toBe(true);
     expect(outsideComparisonRange(150000, clan)).toBe(false);
     expect(outsideComparisonRange(169999, clan)).toBe(false);
-    expect(outsideComparisonRange(170000, clan)).toBe(true);
+    expect(outsideComparisonRange(170000, clan)).toBe(false);
+    expect(outsideComparisonRange(170001, clan)).toBe(true);
     expect(outsideComparisonRange(null, clan)).toBe(false);
     expect(comparisonWeightRange(clan)).toBe("150k–170k");
     expect(comparisonWeightRange({ ...clan, max_weight: null })).toBe("150k+");
     expect(comparisonWeightRange({ ...clan, min_weight: null })).toBe(
-      "under 170k",
+      "up to 170k",
     );
   });
   it("formats identical known totals for both header consumers", () => {
@@ -96,7 +97,18 @@ describe("Compare presentation contracts", () => {
     );
     expect(html).toContain('aria-label="Details for Long &lt;Name&gt;"');
     expect(html).toContain("Checking…");
-    expect(html).toContain("Outside weight range");
+    expect(html).not.toContain("Outside weight range");
+    const overMax = renderToStaticMarkup(
+      <ComparePlayerCard
+        account={{ ...account, effective_weight: 170001 }}
+        clan={clan}
+        now={Date.now()}
+        published={[]}
+        busy={false}
+        onDetails={() => {}}
+      />,
+    );
+    expect(overMax).toContain("Outside weight range");
     expect(html).toContain("Locked placement");
     expect(html).not.toContain('type="checkbox"');
     expect(html).not.toContain("Location unknown");

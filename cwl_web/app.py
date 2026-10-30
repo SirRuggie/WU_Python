@@ -1424,7 +1424,7 @@ def _auto_plan(db, sid, pool=None):
                 continue
             if clan["min_weight"] is not None and weight < clan["min_weight"]:
                 continue
-            if clan["max_weight"] is not None and weight >= clan["max_weight"]:
+            if clan["max_weight"] is not None and weight > clan["max_weight"]:
                 continue
             eligible.append(clan)
         if not eligible:

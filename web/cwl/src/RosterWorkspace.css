@@ -36,17 +36,20 @@
   scroll-margin-top: 80px;
 }
 
-.roster-list-heading label {
+.roster-quick-select {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  margin: 0;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
-.roster-list-heading input {
-  width: 20px;
-  height: 20px;
+.roster-quick-select button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 7px 8px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .roster-list-heading > span {
@@ -146,7 +149,7 @@
 
   .roster-list-heading > span {
     width: 100%;
-    padding: 0 0 8px 28px;
+    padding: 0 0 8px;
     text-align: left;
   }
 }

@@ -413,20 +413,34 @@ export function reconcileRosterSelection(
   const existing = new Set(allAccounts.map((account) => account.tag));
   return unique(selectedTags.filter((tag) => existing.has(tag)));
 }
-export function selectAllRosterMatches(
-  selectedTags: string[],
+export const MAX_ROSTER_SELECTION = 50;
+
+/** Quick picks follow the entire filtered order, including rows not rendered yet. */
+export function quickSelectRosterMatches(
   matches: RosterAccount[],
-): string[] {
-  return unique([...selectedTags, ...matches.map((account) => account.tag)]);
+  count: 15 | 30,
+) {
+  return matches
+    .filter((account) => !account.kept)
+    .slice(0, count)
+    .map((account) => account.tag);
 }
-export function toggleAllRosterMatches(
+
+/** All retains matching selections and any hidden selections, subject to the cap. */
+export function addAllRosterMatches(
   selectedTags: string[],
   matches: RosterAccount[],
-  checked: boolean,
-): string[] {
-  if (checked) return selectAllRosterMatches(selectedTags, matches);
-  const matching = new Set(matches.map((account) => account.tag));
-  return selectedTags.filter((tag) => !matching.has(tag));
+) {
+  const next = unique([...selectedTags, ...matches.map((account) => account.tag)]);
+  return next.length <= MAX_ROSTER_SELECTION ? next : null;
+}
+
+export function toggleRosterSelection(selectedTags: string[], tag: string) {
+  if (selectedTags.includes(tag))
+    return selectedTags.filter((item) => item !== tag);
+  return selectedTags.length < MAX_ROSTER_SELECTION
+    ? [...selectedTags, tag]
+    : null;
 }
 export function rosterSelectionSummary(
   selectedTags: string[],

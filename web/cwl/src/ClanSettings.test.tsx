@@ -159,6 +159,29 @@ it("archived settings are view-only with no save or inputs", async () => {
   expect(document.querySelectorAll("input")).toHaveLength(0);
   expect(button("Save settings")).toBeUndefined();
 });
+it("shows inclusive wording and a non-blocking same-pool shared-boundary note", async () => {
+  const peer = { ...clan, tag: "#PEER", name: "Lazy.128", min_weight: 170000, max_weight: 179000 };
+  await act(async () =>
+    root.render(
+      <ClanSettingsEditor
+        clan={{ ...clan, name: "Lazy.127" }}
+        clans={[clan, peer, { ...peer, tag: "#OTHER", pool: "lazy" }]}
+        archived={false}
+        busy={false}
+        trigger={null}
+        onClose={() => true}
+        onDirty={() => {}}
+        onSave={vi.fn()}
+      />,
+    ),
+  );
+  expect(document.body.textContent).toContain("Includes 150k to 170k.");
+  expect(document.body.textContent).toContain("170k fits both Lazy.127 and Lazy.128.");
+  expect(button("Save settings").disabled).toBe(true);
+  await type("Maximum weight", "171");
+  expect(document.body.textContent).not.toContain("fits both");
+  expect(button("Save settings").disabled).toBe(false);
+});
 it("requires both setup fields and preserves stale edits", async () => {
   const props = {
     busy: false,
