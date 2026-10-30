@@ -8,9 +8,10 @@ import {
   progressiveRosterReleaseAccounts,
   reconcileRosterSelection,
   rosterSelectionSummary,
-  selectAllRosterMatches,
+  addAllRosterMatches,
+  quickSelectRosterMatches,
   serializeRosterReleasePreferences,
-  toggleAllRosterMatches,
+  toggleRosterSelection,
   type RosterReleaseFilters,
 } from "./rosterReleaseModel";
 
@@ -139,6 +140,18 @@ describe("roster release filter model", () => {
         filters({ statuses: ["missing_weight"], minWeight: 1 }),
       ).matches,
     ).toEqual([]);
+  });
+
+  it("includes both 172k and 179k, excludes adjacent weights and missing", () => {
+    const boundaryRows = [171999, 172000, 179000, 179001, null].map(
+      (weight, index) => account(`#BOUNDARY${index}`, { effective_weight: weight }),
+    );
+    const result = deriveRosterRelease(
+      boundaryRows,
+      [],
+      filters({ minWeight: 172000, maxWeight: 179000 }),
+    );
+    expect(result.matches.map((row) => row.effective_weight)).toEqual([172000, 179000]);
   });
 
   it("facets each section against every other active section", () => {
@@ -277,7 +290,7 @@ describe("roster release ordering and progressive display", () => {
 
 describe("roster release selection and preferences", () => {
   it("selects all matches across batches, merges prior hidden selection, and reconciles only deleted tags", () => {
-    const selected = selectAllRosterMatches(["#D"], accounts.slice(0, 3));
+    const selected = addAllRosterMatches(["#D"], accounts.slice(0, 3))!;
     expect(selected).toEqual(["#D", "#A", "#B", "#C"]);
     expect(
       rosterSelectionSummary(
@@ -294,9 +307,7 @@ describe("roster release selection and preferences", () => {
       staleSelectedCount: 0,
       allMatchesSelected: true,
     });
-    expect(
-      toggleAllRosterMatches(selected, accounts.slice(0, 3), false),
-    ).toEqual(["#D"]);
+    expect(toggleRosterSelection(selected, "#A")).toEqual(["#D", "#B", "#C"]);
     expect(reconcileRosterSelection([...selected, "#GONE"], accounts)).toEqual(
       selected,
     );
@@ -308,6 +319,33 @@ describe("roster release selection and preferences", () => {
         accounts,
       ).staleSelectedCount,
     ).toBe(1);
+  });
+
+  it("quick-selects unlocked accounts in the current order and replaces hidden selections", () => {
+    const ordered = Array.from({ length: 34 }, (_, index) =>
+      account(`#${index}`, { kept: index % 4 === 0 }),
+    );
+    expect(quickSelectRosterMatches(ordered, 15)).toEqual(
+      ordered.filter((row) => !row.kept).slice(0, 15).map((row) => row.tag),
+    );
+    expect(quickSelectRosterMatches(ordered, 30)).toHaveLength(25);
+    expect(quickSelectRosterMatches(ordered.slice(0, 12), 30)).toHaveLength(9);
+    expect(quickSelectRosterMatches(ordered, 15)).not.toContain("#0");
+  });
+
+  it("never adds a 51st selection by checkbox or All matching", () => {
+    const fifty = Array.from({ length: 50 }, (_, index) => `#${index}`);
+    expect(toggleRosterSelection(fifty, "#another")).toBeNull();
+    expect(toggleRosterSelection(fifty, "#0")).toHaveLength(49);
+    expect(addAllRosterMatches(fifty, [account("#another")])).toBeNull();
+    expect(addAllRosterMatches(["#hidden"], [account("#visible")])).toEqual([
+      "#hidden",
+      "#visible",
+    ]);
+    const fortyNine = fifty.slice(0, 49);
+    const fiftieth = toggleRosterSelection(fortyNine, "#fiftieth")!;
+    expect(fiftieth).toHaveLength(50);
+    expect(toggleRosterSelection(fiftieth, "#fifty-first")).toBeNull();
   });
 
   it("validates localStorage preferences field by field and falls back safely", () => {

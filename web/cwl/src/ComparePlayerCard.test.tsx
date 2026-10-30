@@ -71,7 +71,7 @@ it("shows assigned clan, current location and spoken age", () => {
   }
 });
 it("keeps the TH-first headline, metadata, shared clan status and warning row in order", () => {
-  const body = card();
+  const body = card(record, null, 170001);
   expect([...body.children].map((row) => row.className)).toEqual([
     "player-card-top compare-player-top",
     "player-card-meta compare-player-meta",
@@ -124,9 +124,7 @@ it("checking names the assigned clan without an age; No clan retains age", () =>
     "Assigned clan· Checking…",
   );
   expect(host.querySelector(".compare-location-age")).toBeNull();
-  expect(host.querySelector(".compare-player-tags")?.textContent).not.toContain(
-    "Checking…",
-  );
+  expect(host.querySelector(".compare-player-tags")).toBeNull();
   expect(
     describedText(
       card({ ...record, current_clan_tag: null, current_clan_name: null })
@@ -135,7 +133,7 @@ it("checking names the assigned clan without an age; No clan retains age", () =>
   ).toBe(
     "Assigned clan: Assigned clan. Now in no clan, checked 2 minutes ago.",
   );
-  expect(host.querySelector(".compare-player-body")?.children).toHaveLength(4);
+  expect(host.querySelector(".compare-player-body")?.children).toHaveLength(3);
 });
 it("a publication note adds exactly one fifth row and missing weight replaces the headline number", () => {
   const body = card(record, [], null);

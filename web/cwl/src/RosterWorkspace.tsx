@@ -37,7 +37,9 @@ import {
   deriveRosterRelease,
   orderRosterReleaseAccounts,
   progressiveRosterReleaseAccounts,
-  toggleAllRosterMatches,
+  addAllRosterMatches,
+  quickSelectRosterMatches,
+  toggleRosterSelection,
   type RosterReleasePreferences,
 } from "./rosterReleaseModel";
 import StaffSignupControls from "./StaffSignupControls";
@@ -166,6 +168,16 @@ export default function RosterWorkspace({
         ? releasePreferences.pool
         : poolFilter;
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectionNotice, setSelectionNotice] = useState("");
+  const selectionRef = useRef<string[]>([]);
+  useEffect(() => {
+    selectionRef.current = selectedTags;
+  }, [selectedTags]);
+  useEffect(() => setSelectionNotice(""), [seasonId]);
+  const applySelection = (next: string[]) => {
+    selectionRef.current = next;
+    setSelectedTags(next);
+  };
   const [panelTagsOverride, setPanelTagsOverride] = useState<string[] | null>(
     null,
   );
@@ -437,11 +449,13 @@ export default function RosterWorkspace({
       (previous.canSignups && !canSignups)
     ) {
       setSelectedTags([]);
+      setSelectionNotice("");
       closePanel();
     }
     previousPermissions.current = { canRoster, canSignups };
     if (!canRoster && !canSignups) {
       setSelectedTags([]);
+      setSelectionNotice("");
       closePanel();
     } else if (roster)
       setSelectedTags((current) =>
@@ -654,15 +668,31 @@ export default function RosterWorkspace({
   const panelAccounts = panelTags
     .map((tag) => roster?.accounts.find((account) => account.tag === tag))
     .filter((account): account is NonNullable<typeof account> => !!account);
-  const allMatchingSelected =
-    matchingTags.length > 0 &&
-    matchingTags.every((tag) => selectedTags.includes(tag));
-  const toggleSelected = (tag: string) =>
-    setSelectedTags((current) =>
-      current.includes(tag)
-        ? current.filter((item) => item !== tag)
-        : [...current, tag],
+  const toggleSelected = (tag: string) => {
+    const next = toggleRosterSelection(selectionRef.current, tag);
+    if (next === null) setSelectionNotice("50 is the most per action");
+    else {
+      applySelection(next);
+      setSelectionNotice("");
+    }
+  };
+  const quickSelect = (count: 15 | 30) => {
+    const next = quickSelectRosterMatches(filtered, count);
+    applySelection(next);
+    setSelectionNotice(
+      next.length < count
+        ? `Only ${next.length} unlocked account${next.length === 1 ? "" : "s"} match${next.length === 1 ? "es" : ""}`
+        : "",
     );
+  };
+  const selectAllMatching = () => {
+    const next = addAllRosterMatches(selectionRef.current, filtered);
+    if (next === null) setSelectionNotice("50 is the most per action");
+    else {
+      applySelection(next);
+      setSelectionNotice("");
+    }
+  };
   const assignSelected = async (
     destination: string | null,
   ): Promise<boolean> => {
@@ -889,7 +919,10 @@ export default function RosterWorkspace({
           onAssign={(trigger) => openPanel("assign", trigger)}
           onBalance={(trigger) => openPanel("balance", trigger)}
           onSignup={(trigger) => openPanel("signup", trigger)}
-          onClear={() => setSelectedTags([])}
+          onClear={() => {
+            applySelection([]);
+            setSelectionNotice("");
+          }}
           onHeight={setBarHeight}
         />
       )}
@@ -1384,32 +1417,51 @@ export default function RosterWorkspace({
                 ref={listHeading}
                 tabIndex={-1}
               >
-                <label className="roster-select-all">
-                  <input
-                    type="checkbox"
-                    checked={allMatchingSelected}
-                    disabled={
-                      uiLocked ||
-                      archived ||
-                      (!canRoster && !canSignups) ||
-                      !matchingTags.length
-                    }
-                    onChange={(event) =>
-                      setSelectedTags((current) =>
-                        toggleAllRosterMatches(
-                          current,
-                          filtered,
-                          event.target.checked,
-                        ),
-                      )
-                    }
-                  />{" "}
-                  Select all {matchingTags.length} matching
-                </label>
+                <div
+                  className="roster-quick-select"
+                  aria-label="Quick account selection"
+                >
+                  <Button
+                    disabled={uiLocked || archived || (!canRoster && !canSignups) || !matchingTags.length}
+                    onClick={() => quickSelect(15)}
+                  >
+                    Select 15
+                  </Button>
+                  <Button
+                    disabled={uiLocked || archived || (!canRoster && !canSignups) || !matchingTags.length}
+                    onClick={() => quickSelect(30)}
+                  >
+                    Select 30
+                  </Button>
+                  {matchingTags.length > 0 && matchingTags.length <= 50 && (
+                    <Button
+                      disabled={uiLocked || archived || (!canRoster && !canSignups)}
+                      onClick={selectAllMatching}
+                    >
+                      All {matchingTags.length}
+                    </Button>
+                  )}
+                  {selectedTags.length > 0 && (
+                    <Button
+                      disabled={uiLocked || archived}
+                      onClick={() => {
+                        applySelection([]);
+                        setSelectionNotice("");
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
                 <span>
                   {`${filtered.length} matching · ${selectedTags.length} selected`}
                 </span>
               </div>
+              {selectionNotice && (
+                <p className="roster-selection-hint" role="status">
+                  {selectionNotice}
+                </p>
+              )}
               {groupByDiscord && groupNamesError && (
                 <p role="status">
                   Discord profiles could not be loaded. Accounts remain grouped
