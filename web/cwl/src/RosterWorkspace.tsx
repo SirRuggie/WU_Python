@@ -75,7 +75,10 @@ type Props = {
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;
-  onDirtySummary?: (summary: { weightCount: number; onlyWeights: boolean }) => void;
+  onDirtySummary?: (summary: {
+    weightCount: number;
+    onlyWeights: boolean;
+  }) => void;
   onEditFocus?: (element: HTMLElement) => void;
   onSeasonChange: (id: string) => void;
   initialReadiness?: "all" | "unassigned" | "missing_weight" | "over_capacity";
@@ -279,7 +282,10 @@ export default function RosterWorkspace({
   useEffect(() => {
     if (!canRoster && mode !== "assign") setMode("assign");
   }, [canRoster, mode, setMode]);
-  const [pendingLeave, setPendingLeave] = useState<null | { action: () => void; working: boolean }>(null);
+  const [pendingLeave, setPendingLeave] = useState<null | {
+    action: () => void;
+    working: boolean;
+  }>(null);
   const requestLeave = (action: () => void, requiresDiscard = dirty) => {
     if (working) {
       setPendingLeave({ action: () => {}, working: true });
@@ -541,7 +547,18 @@ export default function RosterWorkspace({
         );
       return true;
     } catch (error) {
-      if (activeSeason.current === sid) await fail(error);
+      if (activeSeason.current === sid) {
+        if (
+          "manual_weight" in body &&
+          error instanceof ApiError &&
+          error.status === 409
+        )
+          setFeedback({
+            kind: "error",
+            text: "Changed by someone else · Reload",
+          });
+        else await fail(error);
+      }
       return false;
     } finally {
       setBusy(false);
@@ -854,7 +871,10 @@ export default function RosterWorkspace({
     <div
       className={`roster-workspace roster-ui${mode === "assign" ? " roster-workspace-assign" : ""}`}
       onFocusCapture={(event) => {
-        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        if (
+          event.target instanceof HTMLInputElement ||
+          event.target instanceof HTMLTextAreaElement
+        ) {
           lastEditFocus.current = event.target;
           onEditFocus?.(event.target);
         }
@@ -931,8 +951,16 @@ export default function RosterWorkspace({
       {pendingLeave && (
         <ConfirmDialog
           key={pendingLeave.working ? "working" : "dirty"}
-          heading={pendingLeave.working ? "Save in progress" : "Unsaved changes"}
-          text={pendingLeave.working ? "Wait for the save to finish." : onlyWeightsDirty ? `You have ${weightsDirtyCount} unsaved weight${weightsDirtyCount === 1 ? "" : "s"}.` : "You have unsaved roster changes."}
+          heading={
+            pendingLeave.working ? "Save in progress" : "Unsaved changes"
+          }
+          text={
+            pendingLeave.working
+              ? "Wait for the save to finish."
+              : onlyWeightsDirty
+                ? `You have ${weightsDirtyCount} unsaved weight${weightsDirtyCount === 1 ? "" : "s"}.`
+                : "You have unsaved roster changes."
+          }
           confirmLabel={pendingLeave.working ? "OK" : "Discard"}
           cancelLabel="Keep editing"
           hideCancel={pendingLeave.working}
@@ -991,7 +1019,10 @@ export default function RosterWorkspace({
         onAutoPlace={(trigger) => {
           if (mode !== "assign") {
             mayLeaveEditor(() => {
-              setReleasePreferences((current) => ({ ...current, pool: viewPool }));
+              setReleasePreferences((current) => ({
+                ...current,
+                pool: viewPool,
+              }));
               setMode("assign");
               openPanel("auto", trigger);
             });
@@ -1001,7 +1032,10 @@ export default function RosterWorkspace({
         }}
         onFillSignupSpot={(item) => {
           if (!canRoster || (uiLocked && !working)) return false;
-          if (working) { requestLeave(() => {}); return false; }
+          if (working) {
+            requestLeave(() => {});
+            return false;
+          }
           requestSignupNavigation(() => {
             const pool = item.from_pool === "lazy" ? "lazy" : "main";
             try {
@@ -1038,7 +1072,10 @@ export default function RosterWorkspace({
         }}
         onSignupDetails={(tag) => {
           if (uiLocked && !working) return false;
-          if (working) { requestLeave(() => {}); return false; }
+          if (working) {
+            requestLeave(() => {});
+            return false;
+          }
           requestSignupNavigation(() => {
             setSelectedTags([]);
             setFeedback(null);
@@ -1256,7 +1293,12 @@ export default function RosterWorkspace({
               onSave={(tag, weight) =>
                 edit(
                   tag,
-                  { manual_weight: weight },
+                  {
+                    manual_weight: weight,
+                    weight_revision:
+                      roster.accounts.find((account) => account.tag === tag)
+                        ?.weight_revision ?? 0,
+                  },
                   "Manual weight saved. Existing placement preserved.",
                 )
               }
@@ -1327,6 +1369,10 @@ export default function RosterWorkspace({
               error={feedback?.kind === "error" ? feedback.text : undefined}
               onClose={() => {
                 if (!busy) setEditingTag(null);
+              }}
+              onReload={async () => {
+                await refresh();
+                setFeedback(null);
               }}
               onSave={(body) => edit(editingTag, body, "Account updated.")}
               onRemove={() => removeSignup(editingTag)}
@@ -1424,20 +1470,32 @@ export default function RosterWorkspace({
                   aria-label="Quick account selection"
                 >
                   <Button
-                    disabled={uiLocked || archived || (!canRoster && !canSignups) || !matchingTags.length}
+                    disabled={
+                      uiLocked ||
+                      archived ||
+                      (!canRoster && !canSignups) ||
+                      !matchingTags.length
+                    }
                     onClick={() => quickSelect(15)}
                   >
                     Select 15
                   </Button>
                   <Button
-                    disabled={uiLocked || archived || (!canRoster && !canSignups) || !matchingTags.length}
+                    disabled={
+                      uiLocked ||
+                      archived ||
+                      (!canRoster && !canSignups) ||
+                      !matchingTags.length
+                    }
                     onClick={() => quickSelect(30)}
                   >
                     Select 30
                   </Button>
                   {matchingTags.length > 0 && matchingTags.length <= 50 && (
                     <Button
-                      disabled={uiLocked || archived || (!canRoster && !canSignups)}
+                      disabled={
+                        uiLocked || archived || (!canRoster && !canSignups)
+                      }
                       onClick={selectAllMatching}
                     >
                       All {matchingTags.length}

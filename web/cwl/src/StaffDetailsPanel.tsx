@@ -120,14 +120,21 @@ export default function StaffDetailsPanel({
           return true;
         }
         setError(
-          cause instanceof Error ? cause.message : "Could not save account.",
+          cause instanceof ApiError &&
+            cause.status === 409 &&
+            "manual_weight" in body
+            ? "Changed by someone else · Reload"
+            : cause instanceof Error
+              ? cause.message
+              : "Could not save account.",
         );
         if (
           cause instanceof ApiError &&
           [401, 403, 409].includes(cause.status)
         ) {
-          setSnapshot(null);
-          if (cause.status === 409) {
+          if (cause.status !== 409 || !("manual_weight" in body))
+            setSnapshot(null);
+          if (cause.status === 409 && !("manual_weight" in body)) {
             try {
               const latest = await api<RosterSnapshot>(`${path}/roster`);
               if (id === generation.current) setSnapshot(latest);
@@ -237,6 +244,16 @@ export default function StaffDetailsPanel({
             setRequest(null);
             setSnapshot(null);
             request.trigger?.focus({ preventScroll: true });
+          }}
+          onReload={async () => {
+            const id = generation.current;
+            const latest = await api<RosterSnapshot>(
+              `/seasons/${encodeURIComponent(request.seasonId)}/roster`,
+            );
+            if (id === generation.current) {
+              setSnapshot(latest);
+              setError("");
+            }
           }}
           onSave={(body) => write(false, body)}
           onRemove={() => write(true)}

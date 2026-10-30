@@ -6,6 +6,10 @@ import { readFileSync } from "node:fs";
 import WeightQueue from "./WeightQueue";
 import type { RosterAccount } from "./roster";
 
+vi.mock("./DashboardPermissions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./DashboardPermissions")>()),
+  useDashboardPermission: () => true,
+}));
 const accounts = Array.from(
   { length: 65 },
   (_, i) =>
@@ -390,4 +394,17 @@ it("keeps the FWA split and link through unavailable metadata and updates when k
   await show();
   expect(host.textContent).toContain("Other accounts · enter here");
   expect(host.querySelector(".weight-queue-row input")).not.toBeNull();
+});
+
+it("rejects a non-thousand value inline before submit", async () => {
+  const props = await render();
+  await type(input(), "30300");
+  expect(rows()[0].textContent).toContain("Full weight must end in 000");
+  expect(button("Save", rows()[0]).disabled).toBe(true);
+  await act(async () =>
+    rows()[0].dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(props.onSave).not.toHaveBeenCalled();
 });

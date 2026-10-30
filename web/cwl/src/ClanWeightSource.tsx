@@ -5,7 +5,9 @@ import { useDashboardPermission } from "./DashboardPermissions";
 export default function ClanWeightSource({
   onNavigate,
   account,
+  compact = false,
 }: {
+  compact?: boolean;
   onNavigate?: (player?: string, clan?: string) => void;
   account?: {
     tag: string;
@@ -23,19 +25,23 @@ export default function ClanWeightSource({
   if (account?.current_fwa_clan_tag)
     params.set("clan", account.current_fwa_clan_tag);
   return (
-    <div className="clan-weight-source">
+    <div
+      className={`clan-weight-source${compact ? " clan-weight-source-compact" : ""}`}
+    >
       {account?.current_fwa_status === "stale" && (
         <span>Last known clan membership. Refresh to check again.</span>
       )}
       {allowed ? (
         <>
-          <span>
-            {account?.clan_weight_saved_at
-              ? `Saved in ${account.clan_weight_clan_name || account.clan_weight_clan_tag} · ${new Date(account.clan_weight_saved_at).toLocaleDateString()}`
-              : account?.current_fwa_clan_tag && !account.clan_weight_managed
-                ? "Set this FWA player's weight in Clan weights"
-                : "Weight comes from Clan weights"}
-          </span>{" "}
+          {!compact && (
+            <span>
+              {account?.clan_weight_saved_at
+                ? `Saved in ${account.clan_weight_clan_name || account.clan_weight_clan_tag} · ${new Date(account.clan_weight_saved_at).toLocaleDateString()}`
+                : account?.current_fwa_clan_tag && !account.clan_weight_managed
+                  ? "Set this FWA player's weight in Clan weights"
+                  : "Weight comes from Clan weights"}
+            </span>
+          )}{" "}
           <a
             href={`/clan-weights${params.size ? `?${params}` : ""}`}
             onClick={(event) => {
@@ -56,11 +62,15 @@ export default function ClanWeightSource({
               }
             }}
           >
-            {account?.current_fwa_clan_tag && !account.clan_weight_managed
-              ? "Set in Clan weights ›"
-              : "Open Clan weights →"}
+            {compact
+              ? "Also on Clan weights ›"
+              : account?.current_fwa_clan_tag && !account.clan_weight_managed
+                ? "Set in Clan weights ›"
+                : "Open Clan weights →"}
           </a>
         </>
+      ) : compact ? (
+        "Also on Clan weights ›"
       ) : account?.current_fwa_clan_tag && !account.clan_weight_managed ? (
         "Set this FWA player’s weight in Clan weights. Ask a staff member with Clan weights access."
       ) : (

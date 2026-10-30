@@ -37,6 +37,42 @@ def validate_weight(weight, storages=None):
             raise ValueError('Full weight must be divisible by the storage count. Correct Loot or Storages.')
 
 
+def effective_weights(db, tags):
+    """Resolve retained legacy and linked rows by aware saved time.
+
+    Equal instants favor the linked ledger, including an intentional blank.
+    The revision always belongs to that ledger, regardless of the winning value.
+    """
+    tags = tuple(tags)
+    if not tags:
+        return {}
+    placeholders = ','.join('?' for _ in tags)
+    result = {row['tag']: dict(row) for row in db.execute(
+        'SELECT * FROM clan_player_weights WHERE tag IN (' + placeholders + ')', tags)}
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='player_weights'").fetchone():
+        return result
+
+    def instant(value):
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError('Saved weight timestamp has no timezone; reconcile before editing.')
+        return parsed.astimezone(timezone.utc)
+
+    for raw in db.execute('SELECT * FROM player_weights WHERE tag IN (' + placeholders + ')', tags):
+        legacy = dict(raw)
+        current = result.get(legacy['tag'])
+        legacy_time = instant(legacy['updated_at'])
+        if current is not None and legacy_time <= instant(current['updated_at']):
+            continue
+        result[legacy['tag']] = {
+            **(current or {'tag': legacy['tag'], 'revision': 0, 'player_name': legacy['tag'],
+                          'town_hall': None, 'last_clan_tag': '', 'last_clan_name': '', 'actor_id': ''}),
+            'weight': legacy['weight'], 'updated_at': legacy['updated_at'],
+            'storages': None, 'source': 'Roster',
+        }
+    return result
+
+
 class ClanWeightStore:
     def __init__(self, path, transaction_factory=None):
         self.path = path
@@ -63,14 +99,15 @@ class ClanWeightStore:
 
     def all(self):
         with self.connect() as db:
-            return [dict(row) for row in db.execute('SELECT * FROM clan_player_weights ORDER BY last_clan_name,player_name,tag')]
+            rows = db.execute('SELECT tag FROM clan_player_weights ORDER BY last_clan_name,player_name,tag').fetchall()
+            resolved = effective_weights(db, [row['tag'] for row in rows])
+            return [resolved[row['tag']] for row in rows]
 
     def for_members(self, tags):
         if not tags:
             return {}
         with self.connect() as db:
-            return {row['tag']: dict(row) for row in db.execute(
-                'SELECT * FROM clan_player_weights WHERE tag IN (' + ','.join('?' for _ in tags) + ')', tuple(tags))}
+            return effective_weights(db, tags)
 
     def last_saved(self, clan_tag):
         with self.connect() as db:
@@ -90,7 +127,8 @@ class ClanWeightStore:
             rows = db.execute('SELECT * FROM clan_player_weights WHERE ' + predicate +
                               ' ORDER BY player_name COLLATE NOCASE,tag LIMIT ? OFFSET ?',
                               (*args, limit, offset)).fetchall()
-            return {'players': [dict(row) for row in rows], 'total': total}
+            resolved = effective_weights(db, [row['tag'] for row in rows])
+            return {'players': [resolved[row['tag']] for row in rows], 'total': total}
 
     @staticmethod
     def _invalidate(db, changed_tags):
@@ -102,14 +140,15 @@ class ClanWeightStore:
                        "ON CONFLICT(season_id) DO UPDATE SET revision=revision+1", tuple(changed_tags))
 
     @staticmethod
-    def _write(db, change, current, member, clan, actor, actor_name, now):
+    def _write(db, change, current, member, clan, actor, actor_name, now, source="Clan weights"):
         revision = current['revision'] if current else 0
         storages = change.get('storages', current['storages'] if current else None)
-        same = current and current['weight'] == change['weight'] and current['storages'] == storages
+        effective = effective_weights(db, [change['tag']]).get(change['tag'])
+        same = current and effective['weight'] == change['weight'] and effective['storages'] == storages
         if not same:
             validate_weight(change['weight'], storages)
         if revision != change['revision'] and not same:
-            raise WeightConflict('A weight changed since you loaded it. Refresh before saving again.')
+            raise WeightConflict('Changed by someone else · Reload')
         if same:
             return False  # Includes unchanged legacy values and lost-response retries.
         db.execute('INSERT OR REPLACE INTO clan_player_weights('
@@ -118,8 +157,8 @@ class ClanWeightStore:
                    (change['tag'], change['weight'], revision + 1, member['name'], member['town_hall'],
                     clan['tag'], clan['name'], now, actor, storages))
         db.execute('INSERT INTO clan_player_weight_history('
-                   'tag,weight,revision,clan_tag,actor_id,updated_at,storages,actor_name) VALUES (?,?,?,?,?,?,?,?)',
-                   (change['tag'], change['weight'], revision + 1, clan['tag'], actor, now, storages, actor_name))
+                   'tag,weight,revision,clan_tag,actor_id,updated_at,storages,actor_name,source) VALUES (?,?,?,?,?,?,?,?,?)',
+                   (change['tag'], change['weight'], revision + 1, clan['tag'], actor, now, storages, actor_name, source))
         return True
 
     def save(self, roster, changes, actor, actor_name=None):
@@ -157,6 +196,27 @@ class ClanWeightStore:
                                   actor, actor_name, now)
             self._invalidate(db, [player_tag] if changed else [])
             return dict(db.execute('SELECT * FROM clan_player_weights WHERE tag=?', (player_tag,)).fetchone())
+
+    @classmethod
+    def save_roster(cls, db, season_id, player_tag, change, actor, actor_name=None):
+        """Write through the caller's roster transaction, never a nested connection.
+
+        Signup existence is a creation boundary. Placement undo remains separate;
+        the invalidation makes any earlier placement undo stale as before.
+        """
+        member = db.execute('SELECT * FROM signups WHERE season_id=? AND tag=?',
+                            (season_id, player_tag)).fetchone()
+        if member is None:
+            raise ValueError('Signed-up account not found')
+        current = db.execute('SELECT * FROM clan_player_weights WHERE tag=?', (player_tag,)).fetchone()
+        changed = cls._write(
+            db, {**change, 'tag': player_tag}, current,
+            {'name': member['player_name'], 'town_hall': member['town_hall']},
+            {'tag': current['last_clan_tag'] if current else '',
+             'name': current['last_clan_name'] if current else ''},
+            actor, actor_name, datetime.now(timezone.utc).isoformat(), source='Roster')
+        cls._invalidate(db, [player_tag] if changed else [])
+        return changed
 
     def remember_lineup(self, clan_tag, lineup):
         order = lineup.get('order')
@@ -210,4 +270,6 @@ def initialize(db):
     columns = {row['name'] for row in db.execute('PRAGMA table_info(clan_player_weight_history)')}
     if 'actor_name' not in columns:
         db.execute('ALTER TABLE clan_player_weight_history ADD COLUMN actor_name TEXT')
+    if 'source' not in columns:
+        db.execute("ALTER TABLE clan_player_weight_history ADD COLUMN source TEXT NOT NULL DEFAULT 'Clan weights'")
     db.execute('CREATE INDEX IF NOT EXISTS clan_player_weight_history_clan_id ON clan_player_weight_history(clan_tag,id DESC)')

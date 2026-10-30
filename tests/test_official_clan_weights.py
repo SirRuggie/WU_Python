@@ -111,10 +111,10 @@ def test_background_capture_fwa_only_and_failures_retain_history(ledger):
     assert weights.saved_lineup('#R2Y')['order'] == lineup()['order']
 
 
-def test_manual_cannot_override_saved_or_explicitly_blank_clan_weight(ledger):
+def test_older_manual_does_not_override_saved_or_explicitly_blank_clan_weight(ledger):
     store, weights = ledger
     with store.tx() as db:
-        db.execute("INSERT INTO player_weights VALUES('#P2Y',170000,170000,'now')")
+        db.execute("INSERT INTO player_weights VALUES('#P2Y',170000,170000,'2020-01-01T00:00:00Z')")
         db.execute('UPDATE roster_entries SET manual_weight=170000')
     save(weights, 149000)
     cached = {'accounts': [{'tag': '#P2Y', 'war_weight': 100000}]}
