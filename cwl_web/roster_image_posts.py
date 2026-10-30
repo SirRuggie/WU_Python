@@ -1,5 +1,6 @@
 """Staff authorization and HTTP adaptation for roster image delivery."""
 import re
+from utils.cwl_roster_order import ordered_roster_clans
 from aiohttp import web
 from utils.cwl_roster_image_store import RosterImageStore, has_active_image_message
 from .server_management import discord, GUILD_ID
@@ -47,7 +48,7 @@ async def posts(request):
     storage = store(request)
     result = storage.posts(sid)
     publication = storage.publication(sid)
-    result['clans'] = [] if publication is None else [{k: v for k, v in group.items() if k != 'accounts'} | {'count': len(group['accounts']), 'pages': (len(group['accounts']) + 14) // 15} for group in groups_for(publication)[2].values()]
+    result['clans'] = [] if publication is None else [{k: v for k, v in group.items() if k != 'accounts'} | {'count': len(group['accounts']), 'pages': (len(group['accounts']) + 14) // 15} for group in ordered_roster_clans(groups_for(publication)[2].values())]
     return web.json_response(result)
 
 
@@ -83,6 +84,7 @@ def groups_for(publication):
             continue
         group = groups.setdefault(clan, {'tag': clan, 'name': account['assigned_clan_name'] or clan,
             'pool': clans.get(clan, {}).get('pool') or account['pool'],
+            'capacity': clans.get(clan, {}).get('capacity'),
             'league': clans.get(clan, {}).get('cwl_league') or 'League unavailable', 'accounts': []})
         group['accounts'].append(account)
     return season, pub, groups

@@ -4,6 +4,7 @@ import io
 import json
 import math
 import re
+from utils.cwl_roster_order import ordered_roster_clans
 import unicodedata
 from urllib.parse import quote
 from aiohttp import web, FormData
@@ -36,7 +37,7 @@ def snapshot(request, version=None, clan_tag=None):
     for row in rows:
         if not row['assigned_clan_tag']:continue
         key=row['assigned_clan_tag']
-        group=groups.setdefault(key,{'tag':key,'name':row['assigned_clan_name'] or key,'pool':clans.get(key,{}).get('pool') or row['pool'],'league':clans.get(key,{}).get('cwl_league') or 'League unavailable','accounts':[]})
+        group=groups.setdefault(key,{'tag':key,'name':row['assigned_clan_name'] or key,'pool':clans.get(key,{}).get('pool') or row['pool'],'capacity':clans.get(key,{}).get('capacity'),'league':clans.get(key,{}).get('cwl_league') or 'League unavailable','accounts':[]})
         group['accounts'].append(row)
     if clan_tag is not None:
         if clan_tag not in groups:raise web.HTTPNotFound(text='This clan has no players in the finalized roster.')
@@ -80,7 +81,7 @@ def render(season,pub,group,page):
 
 async def listing(request):
     season,pub,groups=snapshot(request)
-    return web.json_response({'version':pub['version'],'season':season['label'],'clans':[{k:v for k,v in g.items() if k!='accounts'}|{'count':len(g['accounts']),'pages':math.ceil(len(g['accounts'])/15)} for g in groups.values()]})
+    return web.json_response({'version':pub['version'],'season':season['label'],'clans':[{k:v for k,v in g.items() if k!='accounts'}|{'count':len(g['accounts']),'pages':math.ceil(len(g['accounts'])/15)} for g in ordered_roster_clans(groups.values())]})
 
 async def metadata(request,group):
     from .clan_metadata import enrich
