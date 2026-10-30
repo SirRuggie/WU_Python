@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import ConfirmDialog from "./ConfirmDialog";
 import type { AnnouncementChannel } from "./announcements";
 import ScheduleEditor from "./warReminders/ScheduleEditor";
 import TestPanel from "./warReminders/TestPanel";
@@ -7,7 +8,16 @@ import DeliveryHistory from "./warReminders/DeliveryHistory";
 import type { ReminderData, ReminderSettings } from "./warReminders/types";
 import "./WarReminders.css";
 
+export type ReminderEditor = {
+  changes: number;
+  summary: string;
+  save: () => Promise<boolean>;
+  discard: () => void;
+};
 type Props = {
+  onEditor?: (editor: ReminderEditor | null) => void;
+  embedded?: boolean;
+  active?: boolean;
   disabled?: boolean;
   tag: string;
   channels: AnnouncementChannel[];
@@ -21,6 +31,9 @@ export default function WarReminders({
   onDirty,
   onBusy,
   disabled = false,
+  embedded = false,
+  active = true,
+  onEditor,
 }: Props) {
   const base = "/manage/clans/" + encodeURIComponent(tag) + "/war-reminders";
   const [data, setData] = useState<ReminderData | null>(null);
@@ -83,15 +96,15 @@ export default function WarReminders({
   }, [base]);
 
   useEffect(() => {
-    if (!data) return;
+    if (!data || !active) return;
     const timer = setInterval(() => {
       if (!document.hidden) void refreshHistory().catch(() => {});
     }, 15000);
     return () => clearInterval(timer);
-  }, [!!data, refreshHistory]);
+  }, [!!data, active, refreshHistory]);
 
   async function save() {
-    if (!draft || !data || saving.current) return;
+    if (!draft || !data || saving.current) return false;
     saving.current = true;
     const turn = ++generation.current;
     setBusy(true);
@@ -102,21 +115,52 @@ export default function WarReminders({
         settings: draft,
         revision: data.revision,
       });
-      if (turn !== generation.current) return;
+      if (turn !== generation.current) return false;
       setData(result);
       setDraft(result.settings);
       setNotice("War reminders saved.");
+      return true;
     } catch (e) {
       if (turn === generation.current)
         setError(e instanceof Error ? e.message : "Could not save reminders.");
+      return false;
     } finally {
       saving.current = false;
       if (turn === generation.current) setBusy(false);
     }
   }
 
+  const changes =
+    draft && data
+      ? Object.keys(draft).filter(
+          (key) =>
+            JSON.stringify(draft[key as keyof ReminderSettings]) !==
+            JSON.stringify(data.settings[key as keyof ReminderSettings]),
+        ).length
+      : 0;
+  useEffect(() => {
+    onEditor?.({
+      changes,
+      summary: draft
+        ? `${draft.enabled ? "On" : "Off"} · ${draft.minutes.length} times`
+        : "Loading…",
+      save,
+      discard: () => {
+        if (!saving.current) {
+          setDraft(data?.settings || null);
+          setError("");
+        }
+      },
+    });
+    return () => onEditor?.(null);
+  }, [onEditor, draft, data]);
+  const [confirmReload, setConfirmReload] = useState(false);
+
   function reload() {
-    if (dirty && !confirm("Discard reminder edits and reload?")) return;
+    if (dirty) {
+      setConfirmReload(true);
+      return;
+    }
     void load();
   }
 
@@ -153,18 +197,20 @@ export default function WarReminders({
               )
             }
           />
-          <div className="clan-actions">
-            <small>
-              {dirty ? "Unsaved reminder changes" : "Reminder settings saved"}
-            </small>
-            <button
-              className="primary"
-              disabled={busy || testBusy || disabled || !dirty}
-              onClick={() => void save()}
-            >
-              Save reminders
-            </button>
-          </div>
+          {!embedded && (
+            <div className="clan-actions">
+              <small>
+                {dirty ? "Unsaved reminder changes" : "Reminder settings saved"}
+              </small>
+              <button
+                className="primary"
+                disabled={busy || testBusy || disabled || !dirty}
+                onClick={() => void save()}
+              >
+                Save reminders
+              </button>
+            </div>
+          )}
           <DeliveryHistory data={data} enabled={data.settings.enabled} />
           <details
             className="war-disclosure"
@@ -185,13 +231,24 @@ export default function WarReminders({
               }
               base={base}
               settings={draft}
-              active={testOpen}
+              active={active && testOpen}
               disabled={busy || disabled}
               onDelivered={refreshHistory}
               onBusy={setTestBusy}
             />
           </details>
         </>
+      )}
+      {confirmReload && (
+        <ConfirmDialog
+          text="Discard unsaved war reminder changes?"
+          confirmLabel="Discard"
+          onCancel={() => setConfirmReload(false)}
+          onConfirm={() => {
+            setConfirmReload(false);
+            void load();
+          }}
+        />
       )}
     </section>
   );

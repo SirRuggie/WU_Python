@@ -8,7 +8,8 @@ import ClanFields from "./clanManagement/ClanFields";
 import type { Clan } from "./clanManagement/types";
 import "./ClanManagement.css";
 import ClanHistory from "./ClanHistory";
-import WarReminders from "./WarReminders";
+import WarReminders, { type ReminderEditor } from "./WarReminders";
+import ConfirmDialog from "./ConfirmDialog";
 type Directory = { clans: Clan[]; types: string[]; town_halls: string[] };
 type Choice = { id: string; name: string };
 const path = (tag: string) => "/manage/clans/" + encodeURIComponent(tag);
@@ -19,14 +20,43 @@ const sections = [
   "Artwork",
   "War reminders",
 ] as const;
+function sectionSummary(section: string, clan: Clan, reminder: string): string {
+  if (section === "Details") return clan.type || "Clan type not set";
+  if (section === "Roles")
+    return `${["leader_role_id", "role_id"].filter((key) => clan[key]).length} of 2 roles set`;
+  if (section === "Channels")
+    return `${["chat_channel_id", "announcement_id", "rules_channel_id", "leadership_channel_id", "thread_id"].filter((key) => clan[key]).length} of 5 set`;
+  if (section === "Artwork")
+    return `${["logo", "banner"].filter((key) => clan[key]).length} of 2 images set`;
+  return reminder;
+}
 export default function ClanManagement({
   onDirty,
 }: {
   onDirty: (value: boolean) => void;
 }) {
-  const [view, setView] = useState<"overview" | "clans" | "history">(
-    "overview",
-  );
+  const [view, setView] = useState<"overview" | "clans" | "history">("clans");
+  const reminderEditor = useRef<ReminderEditor | null>(null);
+  const [reminderChanges, setReminderChanges] = useState(0);
+  const [reminderSummary, setReminderSummary] = useState("Loading…");
+  const [sectionCollapsed, setSectionCollapsed] = useState(false);
+  const [confirmation, setConfirmation] = useState<{
+    text: string;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
+  const receiveEditor = useCallback((editor: ReminderEditor | null) => {
+    reminderEditor.current = editor;
+    setReminderChanges(editor?.changes || 0);
+    setReminderSummary(editor?.summary || "Loading…");
+  }, []);
+  function confirmAction(text: string): Promise<boolean> {
+    return new Promise((resolve) =>
+      setConfirmation((current) => {
+        current?.resolve(false);
+        return { text, resolve };
+      }),
+    );
+  }
   const [overviewReturnTag, setOverviewReturnTag] = useState<string | null>(
     null,
   );
@@ -172,15 +202,18 @@ export default function ClanManagement({
       clearInterval(timer);
     };
   }, [statusUrl]);
-  function select(row: Clan | null) {
+  async function select(row: Clan | null) {
     if (disabled) return;
     if (row?.tag === saved?.tag) {
       setShowDirectory(false);
       requestAnimationFrame(() => headingRef.current?.focus());
       return;
     }
-    if (dirty && !confirm("Discard unsaved clan changes?")) return;
+    if (dirty && !(await confirmAction("Discard unsaved clan changes?")))
+      return;
     ++editGeneration.current;
+    setSectionCollapsed(false);
+    setSection("Details");
     setSaved(row);
     setDraft(row ? { ...row } : null);
     setNotice("");
@@ -210,32 +243,72 @@ export default function ClanManagement({
     }
   }
   async function save() {
-    if (!draft || !saved) return;
+    if (!draft || !saved || disabled) return;
+    if (
+      draft.type !== saved.type &&
+      (draft.type === "FWA" || saved.type === "FWA")
+    ) {
+      const effects =
+        saved.type === "FWA"
+          ? "removes this clan from Clan weights and FWA strike rules"
+          : "adds this clan to Clan weights and FWA strike rules; its members can only sign up for Lazy CWL";
+      if (
+        !(await confirmAction(
+          `Changing ${saved.type || "Not set"} → ${draft.type || "Not set"} ${effects}. Save this change?`,
+        ))
+      )
+        return;
+    }
     await run(async () => {
-      const values = Object.fromEntries(
-        Object.entries(draft).filter(
-          ([key, value]) =>
-            !["tag", "revision"].includes(key) && value !== saved[key],
-        ),
-      );
-      const result = await api<Clan>(path(saved.tag), "PATCH", {
-        revision: saved.revision,
-        values,
-      });
-      setSaved(result);
-      setDraft(result);
-      setNotice("Clan saved. Discord uses these same settings.");
-      await load();
+      const errors: string[] = [];
+      if (clanDirty) {
+        const values = Object.fromEntries(
+          Object.entries(draft).filter(
+            ([key, value]) =>
+              !["tag", "revision"].includes(key) && value !== saved[key],
+          ),
+        );
+        try {
+          const result = await api<Clan>(path(saved.tag), "PATCH", {
+            revision: saved.revision,
+            values,
+          });
+          setSaved(result);
+          setDraft(result);
+          setData((current) => ({
+            ...current,
+            clans: current.clans.map((clan) =>
+              clan.tag === result.tag ? result : clan,
+            ),
+          }));
+        } catch (error) {
+          errors.push(
+            `Clan details: ${error instanceof Error ? error.message : "Could not save."} Reload that section to resolve a conflict.`,
+          );
+        }
+      }
+      if (reminderDirty && !(await reminderEditor.current?.save()))
+        errors.push(
+          "War reminders changed or could not be saved. Reload that section; other edits are kept.",
+        );
+      if (errors.length) setError(errors.join(" "));
+      else setNotice("Clan settings saved.");
     });
+  }
+  function discard() {
+    setDraft(saved);
+    reminderEditor.current?.discard();
+    setError("");
+    setNotice("");
   }
   async function action(kind: "emoji" | "thread") {
     if (
       !saved ||
-      !confirm(
+      !(await confirmAction(
         kind === "emoji"
           ? "Create a clan emoji from the saved logo?"
           : "Find or create the clan thread?",
-      )
+      ))
     )
       return;
     await run(async () => {
@@ -266,9 +339,10 @@ export default function ClanManagement({
   }
   const disabled = busy || reminderBusy || !!statusUrl;
 
-  function changeView(next: typeof view) {
+  async function changeView(next: typeof view) {
     if (disabled || next === view) return;
-    if (dirty && !confirm("Discard unsaved clan changes?")) return;
+    if (dirty && !(await confirmAction("Discard unsaved clan changes?")))
+      return;
     if (dirty) setDraft(saved);
     ++editGeneration.current;
     setReminderDirty(false);
@@ -282,6 +356,7 @@ export default function ClanManagement({
     setDraft({ ...clan });
     setReminderDirty(false);
     setSection("War reminders");
+    setSectionCollapsed(false);
     setView("clans");
     setAdding(false);
     setError("");
@@ -296,9 +371,7 @@ export default function ClanManagement({
         <div>
           <p className="eyebrow">Clan management</p>
           <h1>Family clans</h1>
-          <p>
-            Monitor your family’s reminders and manage each clan in one place.
-          </p>
+          <p>Set up each clan and its war reminders.</p>
         </div>
         <button
           disabled={disabled}
@@ -311,27 +384,22 @@ export default function ClanManagement({
         </button>
       </div>
       <div className="clan-tabs" aria-label="Clan management views">
-        <button
-          disabled={disabled}
-          aria-pressed={view === "overview"}
-          onClick={() => changeView("overview")}
-        >
-          Reminder overview
-        </button>
-        <button
-          disabled={disabled}
-          aria-pressed={view === "clans"}
-          onClick={() => changeView("clans")}
-        >
-          Clans
-        </button>
-        <button
-          disabled={disabled}
-          aria-pressed={view === "history"}
-          onClick={() => changeView("history")}
-        >
-          Settings history
-        </button>
+        {(
+          [
+            ["clans", "Clans"],
+            ["overview", "Reminders"],
+            ["history", "History"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            disabled={disabled}
+            aria-pressed={view === key}
+            onClick={() => void changeView(key)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       <div hidden={view !== "overview"}>
         <ReminderOverview
@@ -398,7 +466,7 @@ export default function ClanManagement({
               <button disabled={disabled}>Add clan</button>
             </form>
           )}
-          <div className="clan-layout">
+          <div className={`clan-layout ${draft ? "clan-detail-open" : ""}`}>
             <ClanDirectory
               clans={data.clans}
               types={data.types}
@@ -419,7 +487,14 @@ export default function ClanManagement({
               onSelect={select}
             />
             {draft ? (
-              <section className="card">
+              <section className="card clan-editor">
+                <button
+                  className="clan-all-link"
+                  disabled={disabled}
+                  onClick={() => void select(null)}
+                >
+                  ‹ All clans
+                </button>
                 <div className="page-head">
                   <div>
                     <h2 ref={headingRef} tabIndex={-1}>
@@ -428,11 +503,13 @@ export default function ClanManagement({
                     <small>{draft.tag}</small>
                   </div>
                   <button
-                    disabled={disabled || reminderDirty}
-                    onClick={() => {
+                    disabled={disabled}
+                    onClick={async () => {
                       if (
-                        !dirty ||
-                        confirm("Discard edits and load current settings?")
+                        !clanDirty ||
+                        (await confirmAction(
+                          "Discard clan details and load current settings? Other section edits stay.",
+                        ))
                       )
                         void run(() => load(true));
                     }}
@@ -444,111 +521,130 @@ export default function ClanManagement({
                   sections={sections}
                   value={section}
                   disabled={disabled}
-                  onChange={(tab) => {
-                    if (tab === section) return;
-                    if (
-                      reminderDirty &&
-                      !confirm("Discard unsaved reminder changes?")
-                    )
-                      return;
-                    setReminderDirty(false);
-                    setSection(tab);
+                  onChange={(next) => {
+                    setSection(next);
+                    setSectionCollapsed(false);
                   }}
                 />
-                {section === "War reminders" && clanDirty && (
-                  <div className="clan-pending" role="status">
-                    <span>
-                      You have unsaved clan details. Reminder settings are saved
-                      separately.
-                    </span>
-                    <button disabled={disabled} onClick={() => void save()}>
-                      Save clan details
-                    </button>
-                  </div>
-                )}
-                <div
-                  role="tabpanel"
-                  id="clan-settings-panel"
-                  aria-labelledby={"clan-section-" + sections.indexOf(section)}
-                  tabIndex={0}
-                >
-                  {section === "War reminders" && (
-                    <WarReminders
-                      key={draft.tag}
-                      tag={draft.tag}
-                      channels={channels}
-                      onDirty={reminderChanged}
-                      onBusy={reminderActivityChanged}
-                      disabled={busy}
-                    />
-                  )}
-                  <ClanFields
-                    section={section}
-                    draft={draft}
-                    saved={saved}
-                    disabled={disabled}
-                    dirty={clanDirty}
-                    data={data}
-                    channels={channels}
-                    roles={roles}
-                    memberQuery={memberQuery}
-                    setMemberQuery={setMemberQuery}
-                    members={members}
-                    memberError={memberError}
-                    change={change}
-                    action={action}
-                    upload={upload}
-                  />
-                </div>
-                {section !== "War reminders" && (
-                  <>
-                    <div className="clan-actions">
-                      <span className="small">
-                        {clanDirty
-                          ? "Unsaved clan changes"
-                          : "Clan details saved"}
+                {sections.map((item, index) => (
+                  <div key={item} className="clan-section-card">
+                    <button
+                      className="clan-section-toggle"
+                      aria-expanded={section === item && !sectionCollapsed}
+                      aria-controls={`clan-panel-${index}`}
+                      disabled={disabled}
+                      onClick={() => {
+                        setSection(item);
+                        setSectionCollapsed(
+                          section === item && !sectionCollapsed,
+                        );
+                      }}
+                    >
+                      <strong>{item}</strong>
+                      <span>
+                        {sectionSummary(item, draft, reminderSummary)}
                       </span>
-                      <button
-                        className="primary"
-                        disabled={disabled || !clanDirty}
-                        onClick={() => void save()}
-                      >
-                        Save changes
-                      </button>
+                    </button>
+                    <div
+                      hidden={section !== item || sectionCollapsed}
+                      id={`clan-panel-${index}`}
+                      role="tabpanel"
+                      aria-labelledby={`clan-section-${index}`}
+                    >
+                      {item === "War reminders" ? (
+                        <WarReminders
+                          embedded
+                          active={
+                            section === "War reminders" && !sectionCollapsed
+                          }
+                          key={draft.tag}
+                          tag={draft.tag}
+                          channels={channels}
+                          onDirty={reminderChanged}
+                          onBusy={reminderActivityChanged}
+                          onEditor={receiveEditor}
+                          disabled={busy}
+                        />
+                      ) : (
+                        <ClanFields
+                          section={item}
+                          draft={draft}
+                          saved={saved}
+                          disabled={disabled}
+                          dirty={clanDirty}
+                          data={data}
+                          channels={channels}
+                          roles={roles}
+                          memberQuery={memberQuery}
+                          setMemberQuery={setMemberQuery}
+                          members={members}
+                          memberError={memberError}
+                          change={change}
+                          action={action}
+                          upload={upload}
+                        />
+                      )}
                     </div>
-                    <details className="clan-remove">
-                      <summary>Remove clan</summary>
-                      <p>
-                        Removes this family clan from the bot. Existing CWL
-                        history, Discord channels, roles and artwork are kept.
-                      </p>
-                      <button
-                        className="danger-link"
-                        disabled={disabled}
-                        onClick={() => {
-                          const confirmTag = prompt(
-                            `Type ${saved?.tag} to remove this clan from the family directory.`,
-                          );
-                          if (confirmTag !== saved?.tag) return;
-                          void run(async () => {
-                            await api(path(saved!.tag), "DELETE", {
-                              revision: saved!.revision,
-                              confirm_tag: confirmTag,
-                            });
-                            setSaved(null);
-                            setDraft(null);
-                            await load();
-                            setNotice(
-                              "Clan removed from the family directory.",
-                            );
-                          });
-                        }}
-                      >
-                        Remove clan…
-                      </button>
-                    </details>
-                  </>
-                )}
+                  </div>
+                ))}
+                <div className="clan-actions">
+                  <span role="status">
+                    {Object.keys(draft).filter(
+                      (key) =>
+                        !["tag", "revision"].includes(key) &&
+                        draft[key] !== saved?.[key],
+                    ).length + reminderChanges}{" "}
+                    unsaved changes
+                  </span>
+                  <button
+                    className="primary"
+                    disabled={disabled || !dirty}
+                    onClick={() => void save()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    disabled={disabled || !dirty}
+                    onClick={async () => {
+                      if (await confirmAction("Discard unsaved clan changes?"))
+                        discard();
+                    }}
+                  >
+                    Discard
+                  </button>
+                </div>
+                <section className="clan-danger-zone" aria-label="Danger zone">
+                  <h3>Danger zone</h3>
+                  <p>
+                    Remove this family clan. You can restore its settings from
+                    History.
+                  </p>
+                  <button
+                    className="danger-link"
+                    disabled={disabled}
+                    onClick={async () => {
+                      if (
+                        !saved ||
+                        !(await confirmAction(
+                          `Remove ${saved.name}? You can restore it from History.`,
+                        ))
+                      )
+                        return;
+                      void run(async () => {
+                        await api(path(saved.tag), "DELETE", {
+                          revision: saved.revision,
+                          confirm_tag: saved.tag,
+                        });
+                        setSaved(null);
+                        setDraft(null);
+                        await load();
+                        setNotice("Clan removed from the family directory.");
+                      });
+                    }}
+                  >
+                    Remove clan
+                  </button>
+                </section>
               </section>
             ) : (
               <section className="card">
@@ -558,6 +654,19 @@ export default function ClanManagement({
             )}
           </div>
         </>
+      )}
+      {confirmation && (
+        <ConfirmDialog
+          text={confirmation.text}
+          onCancel={() => {
+            confirmation.resolve(false);
+            setConfirmation(null);
+          }}
+          onConfirm={() => {
+            confirmation.resolve(true);
+            setConfirmation(null);
+          }}
+        />
       )}
     </section>
   );

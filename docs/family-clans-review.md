@@ -56,3 +56,23 @@ legacy Discord-handler changes remain in progress. Narrow/wide browser checks,
 full final regression/build, required mutation set and completion review remain
 mandatory before READY. No production settings or Discord messages were changed
 by this development work.
+
+## Combined editor progress (not final verification)
+
+The clan editor now has one Save/Discard bar for clan fields and reminder settings.
+Each API receives its own saved revision. Render tests cover either section
+conflicting while the other saves, retention of the failed draft, and in-app
+confirmation before leaving or removing a named clan. Phone section cards retain
+their drafts when collapsed; hidden reminder sections stop polling and previews.
+The phone directory is hidden while a clan is open. Off reminder rows are compact;
+rows with attention errors retain their details and remain first.
+
+Validation: 1,075 frontend tests passed across 207 files, including the new
+combined-editor, hidden-polling and compact-overview regressions. TypeScript passed.
+Mutating the default to Reminders and restoring a second save bar each killed the
+new render tests. Browser measurements, routing, and the remaining prompt items
+still require implementation and final verification; these checks are not a
+READY declaration.
+
+Additional copy: `Latest scheduled outcome` → `Last reminder`; the old separate
+`Save reminders` control is replaced by the shared `Save` in the clan editor.
