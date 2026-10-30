@@ -1233,3 +1233,22 @@ and activity type visible; put date range and uncommon identity/delivery details
 behind labeled disclosures. Staff-only avatar reads follow history permissions.
 Never use current profile availability as a prerequisite for viewing an archived
 identity. See [member activity review](member-activity-review.md) for validation.
+
+## Moderation log settings — October 29 development scope
+
+The moderation editor applies this standard through explicit Save and Discard,
+revision conflict recovery that retains the draft, a visible dirty state, and
+44px category/event switch targets with keyboard focus. Event hints show the
+effective destination; the four supported controls stay visible while future
+registry events remain hidden. Preview is rendered only when opened, from the
+shared bot payload returned by settings GET, with separate forum-starter
+rendering and escaped external text. Send
+test requires saved settings, names the saved destination in a confirmation, and
+makes one attempt; an uncertain response must not trigger an automatic retry.
+History retains its search, filters, and Details while moderation reason/actor
+appears in each relevant compact card. Frontend tests and build passed; isolated
+narrow/wide browser and integrated backend checks remain release-review items,
+not evidence of live Discord delivery or complete assistive-technology coverage.
+The settings GET currently includes preview payloads before Preview is opened;
+only rendering is deferred, so rule 9's preview-fetch preference remains a
+release-review limitation for this workflow.
