@@ -1,14 +1,17 @@
-import { fetchReadWithRetry } from '../readRetry'
-import { Fragment, useEffect, useRef, useState } from "react";
+import { fetchReadWithRetry } from "../readRetry";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
-import TownHallIcon from "../TownHallIcon";
+import ConfirmDialog from "../ConfirmDialog";
+import WeightRow from "./WeightRow";
+import SavedPlayers from "./SavedPlayers";
 import {
+  isMissing,
+  gaps,
   copyTable,
   sheetWeightWarning,
   orderedMembers,
   orderLabel,
   draftFor,
-  editDraft,
   validateDraft,
   warLoot,
   pasteColumn,
@@ -17,16 +20,48 @@ import {
 } from "./model";
 import "./WeightTrial.css";
 
-type Clan = { tag: string; name: string; type?: string };
+type Clan = {
+  tag: string;
+  name: string;
+  type?: string;
+  members_count: number | null;
+  weighed_count: number | null;
+  missing_count: number | null;
+  last_saved_at: string | null;
+  status: string;
+};
+const clanLabel = (clan: Clan) =>
+  `${clan.name} · ${clan.weighed_count == null ? (clan.status === "loading" ? "Loading progress…" : "Progress unavailable") : `${clan.weighed_count}/${clan.members_count} weighed`} · ${clan.last_saved_at ? `saved ${new Date(clan.last_saved_at).toLocaleDateString()}` : "not saved yet"}${clan.status === "stale" ? " · stale membership" : ""}`;
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Could not complete this action.";
 export default function WeightTrial({
   onDirty,
+  onState,
+  targetClan,
+  targetPlayer,
+  seasonId,
+  onRoster,
 }: {
   onDirty: (dirty: boolean) => void;
+  onState?: (state: { count: number; busy: boolean }) => void;
+  targetClan?: string;
+  targetPlayer?: string;
+  seasonId?: string;
+  onRoster?: () => void;
 }) {
+  const [savedReset, setSavedReset] = useState(0);
+  const [showMissingLoot, setShowMissingLoot] = useState(false);
+  const [filter, setFilter] = useState<"all" | "missing" | "check">("all");
+  const [savedState, setSavedState] = useState({ count: 0, busy: false });
+  const savedSummary = useCallback(
+    (count: number, busy: boolean) => setSavedState({ count, busy }),
+    [],
+  );
+  const [outside, setOutside] = useState<number | null>(null);
+  const [pendingAction, setPendingAction] = useState<null | (() => void)>(null);
+  const editFocus = useRef<HTMLElement | null>(null);
   const [clans, setClans] = useState<Clan[]>([]);
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(targetClan || "");
   const [search, setSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [roster, setRoster] = useState<Roster | null>(null);
@@ -51,28 +86,82 @@ export default function WeightTrial({
   const changed = members.filter(
     (row) => JSON.stringify(values[row.tag]) !== JSON.stringify(draftFor(row)),
   );
-  const dirty = changed.length > 0;
+  const dirty = changed.length > 0 || savedState.count > 0;
+  const totalChanged = changed.length + savedState.count;
+  const anyBusy = busy || savedState.busy;
+  const missing = members.filter((row) => isMissing(row, draftFor(row)));
+  const emptyMissing = missing.filter(
+    (row) => !(values[row.tag] || draftFor(row)).loot.trim(),
+  );
+  const missingWarLoot = members.filter(
+    (row) => roster?.war_order?.[row.tag] && !values[row.tag]?.loot.trim(),
+  );
+  const checks = members.filter((row) =>
+    sheetWeightWarning(row.tag, members, values, roster?.war_order),
+  );
+  const visible = members.filter((row) =>
+    filter === "missing"
+      ? missing.includes(row) || (showMissingLoot && !draftFor(row).loot.trim())
+      : filter === "check"
+        ? checks.includes(row) ||
+          (changed.includes(row) &&
+            !!sheetWeightWarning(row.tag, members, {}, roster?.war_order))
+        : true,
+  );
+  const placeholders = roster ? gaps(roster) : [];
+  const entries = [
+    ...visible.map((row) => ({
+      tag: row.tag,
+      position: roster?.war_order?.[row.tag] ?? 1000,
+      row,
+    })),
+    ...(filter === "all"
+      ? placeholders.map((gap) => ({ ...gap, row: null }))
+      : []),
+  ].sort((a, b) => a.position - b.position);
+  const guard = (action: () => void) => {
+    if (anyBusy || saving.current) return;
+    if (dirty) setPendingAction(() => action);
+    else action();
+  };
   useEffect(() => {
-    if (!dirty && !busy) return;
+    if (targetClan) setSelected(targetClan);
+  }, [targetClan]);
+  useEffect(() => {
+    if (targetPlayer && roster) {
+      const input = inputs.current[`${targetPlayer}-loot`];
+      input?.scrollIntoView?.({ block: "center" });
+      input?.focus();
+    }
+  }, [targetPlayer, roster]);
+  useEffect(() => {
+    onState?.({ count: totalChanged, busy: anyBusy });
+  }, [totalChanged, anyBusy, onState]);
+  useEffect(() => {
+    if (!dirty && !anyBusy) return;
     const protect = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", protect);
     return () => window.removeEventListener("beforeunload", protect);
-  }, [dirty, busy]);
+  }, [dirty, anyBusy]);
   useEffect(() => {
-    onDirty(dirty || busy);
+    onDirty(dirty || anyBusy);
     return () => onDirty(false);
-  }, [dirty, busy, onDirty]);
+  }, [dirty, anyBusy, onDirty]);
   useEffect(() => {
     let active = true;
     setDirectoryError("");
     setDirectoryLoading(true);
-    void api<{ clans: Clan[] }>("/weight-trial/clans")
+    void api<{ clans: Clan[]; outside_fwa_missing_count: number | null }>(
+      `/weight-trial/clans${seasonId ? `?season_id=${encodeURIComponent(seasonId)}` : ""}`,
+    )
       .then((result) => {
-        if (active)
-          setClans(result.clans.sort((a, b) => a.name.localeCompare(b.name)));
+        if (active) {
+          setClans(result.clans);
+          setOutside(result.outside_fwa_missing_count);
+        }
       })
       .catch((cause) => {
         if (active) {
@@ -86,7 +175,7 @@ export default function WeightTrial({
     return () => {
       active = false;
     };
-  }, [directoryAttempt]);
+  }, [directoryAttempt, seasonId]);
   useEffect(() => {
     const id = ++request.current;
     setRoster(null);
@@ -99,6 +188,7 @@ export default function WeightTrial({
       .then((result) => {
         if (id !== request.current) return;
         setRoster(result);
+        setDirectoryAttempt((value) => value + 1);
         setValues(
           Object.fromEntries(
             result.members.map((row) => [row.tag, draftFor(row)]),
@@ -115,21 +205,26 @@ export default function WeightTrial({
       request.current++;
     };
   }, [selected, attempt]);
-  const discard = () =>
-    !dirty ||
-    window.confirm(
-      "Discard unsaved weights? Saved weights will stay unchanged.",
-    );
-  const select = (tag: string) => {
-    if (!saving.current && discard()) {
+  const select = (tag: string) =>
+    guard(() => {
       setSelected(tag);
       setPickerOpen(false);
       setSearch("");
+      setFilter("all");
       pickerButton.current?.focus();
-    }
-  };
-  const refresh = () => {
-    if (!saving.current && discard()) setAttempt((value) => value + 1);
+    });
+  const refresh = () => guard(() => setAttempt((value) => value + 1));
+  const nextMissing = () => {
+    setFilter("missing");
+    const current = emptyMissing.findIndex(
+      (row) => inputs.current[`${row.tag}-loot`] === editFocus.current,
+    );
+    const target = emptyMissing[(current + 1) % emptyMissing.length];
+    requestAnimationFrame(() => {
+      const input = inputs.current[`${target?.tag}-loot`];
+      input?.scrollIntoView?.({ block: "center" });
+      input?.focus();
+    });
   };
   const save = async () => {
     if (saving.current || !roster || !changed.length) return;
@@ -166,6 +261,7 @@ export default function WeightTrial({
           result.members.map((row) => [row.tag, draftFor(row)]),
         ),
       );
+      setDirectoryAttempt((value) => value + 1);
       setNotice(
         `${changes.length} weight${changes.length === 1 ? "" : "s"} saved.`,
       );
@@ -190,9 +286,12 @@ export default function WeightTrial({
     setError("");
     setNotice("");
     try {
-      const response = await fetchReadWithRetry("/api/cwl/weight-trial/export.xlsx", {
-        credentials: "same-origin",
-      });
+      const response = await fetchReadWithRetry(
+        "/api/cwl/weight-trial/export.xlsx",
+        {
+          credentials: "same-origin",
+        },
+      );
       if ([401, 403].includes(response.status)) {
         setRoster(null);
         setValues({});
@@ -222,20 +321,73 @@ export default function WeightTrial({
       .includes(search.toLowerCase()),
   );
   return (
-    <div className="weight-trial">
+    <div
+      className="weight-trial"
+      onFocusCapture={(event) => {
+        if (event.target instanceof HTMLInputElement)
+          editFocus.current = event.target;
+      }}
+    >
+      {pendingAction && (
+        <ConfirmDialog
+          heading="Unsaved changes"
+          text={`You have ${totalChanged} unsaved weight${totalChanged === 1 ? "" : "s"}.`}
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          danger
+          returnFocus={() => editFocus.current}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => {
+            const action = pendingAction;
+            setPendingAction(null);
+            setValues(
+              Object.fromEntries(
+                members.map((row) => [row.tag, draftFor(row)]),
+              ),
+            );
+            setSavedReset((value) => value + 1);
+            action();
+          }}
+        />
+      )}
       <div className="page-head">
         <div>
           <p className="eyebrow">Clan management</p>
           <h1>Clan weights</h1>
-          <p>
-            Enter loot or full weight. Changing storages recalculates weight
-            from loot.
-          </p>
+          <p>Type each player's loot. Full weight = loot × storages.</p>
         </div>
       </div>
-      <p className="weight-trial-note">
-        Official CWL weight source. Saved clan weights take priority. Manual weights or FWA Stats are used only for accounts without a saved clan weight.
-      </p>
+      <details className="weight-trial-note">
+        <summary>How weights are used ›</summary>
+        <p>Weights saved here win over manual weights and FWA Stats.</p>
+        <p>
+          Weights follow each player across clans. Save explicitly; manual
+          weights or FWA Stats apply only when no saved clan weight exists.
+        </p>
+      </details>
+      {!!outside && (
+        <p>
+          {outside} CWL signups outside FWA clans need a weight ·{" "}
+          <a
+            href={`/cwl/roster?season=${encodeURIComponent(seasonId || "")}`}
+            onClick={(event) => {
+              if (onRoster && !event.ctrlKey && !event.metaKey) {
+                event.preventDefault();
+                onRoster();
+              }
+            }}
+          >
+            Build roster ›
+          </a>
+        </p>
+      )}
+      <SavedPlayers
+        externalBusy={busy}
+        resetToken={savedReset}
+        target={targetPlayer && !targetClan ? targetPlayer : undefined}
+        onState={savedSummary}
+        guard={guard}
+      />
       {directoryError && (
         <p role="alert" className="notice error">
           {directoryError}
@@ -253,11 +405,12 @@ export default function WeightTrial({
             disabled={busy}
             onClick={() => setPickerOpen(!pickerOpen)}
           >
-            {clans.find((clan) => clan.tag === selected)?.name ||
-              "Choose a clan"}{" "}
+            {(clans.find((clan) => clan.tag === selected)
+              ? clanLabel(clans.find((clan) => clan.tag === selected)!)
+              : "") || "Choose a clan"}{" "}
             ▾
           </button>
-          {pickerOpen && (
+          {(pickerOpen || !selected) && (
             <div
               id="weight-clan-options"
               onKeyDown={(event) => {
@@ -285,8 +438,7 @@ export default function WeightTrial({
                     disabled={busy}
                     onClick={() => select(clan.tag)}
                   >
-                    {clan.name}
-                    <small>{clan.type || clan.tag}</small>
+                    {clanLabel(clan)}
                   </button>
                 ))}
               </div>
@@ -301,7 +453,7 @@ export default function WeightTrial({
         <section className="weight-trial-members" aria-label="Member weights">
           <div className="weight-trial-toolbar">
             <div>
-              <h2>{roster?.clan.name || "Choose a clan"}</h2>
+              {roster && <h2>{roster.clan.name}</h2>}
               {roster && (
                 <small>
                   {members.length} current members · Checked{" "}
@@ -332,9 +484,11 @@ export default function WeightTrial({
                 </p>
               )}
             </div>
-            <button disabled={!selected || busy || loading} onClick={refresh}>
-              Refresh members
-            </button>
+            {selected && (
+              <button disabled={anyBusy || loading} onClick={refresh}>
+                Refresh members
+              </button>
+            )}
           </div>
           {error && (
             <p
@@ -353,7 +507,7 @@ export default function WeightTrial({
           )}
           {loading && <p role="status">Loading current members…</p>}
           {roster && (
-            <>
+            <div className="weight-trial-editor">
               <p className="weight-trial-order" role="status">
                 {orderLabel(roster)}
                 {roster.war_source?.opponent
@@ -367,137 +521,114 @@ export default function WeightTrial({
                 <span>Loot</span>
                 <span>Full weight</span>
               </div>
-              {members.map((row, index) => {
-                const draft = values[row.tag] || draftFor(row);
-                const warning = sheetWeightWarning(
-                  row.tag,
-                  members,
-                  values,
-                  roster.war_order,
-                );
-                let invalid = "";
-                try {
-                  validateDraft(draft);
-                } catch (cause) {
-                  invalid = message(cause);
+              <div className="weight-trial-filters">
+                <p>
+                  {missing.length
+                    ? `${missing.length} missing`
+                    : "All weighed ✓"}{" "}
+                  · {checks.length} to check
+                </p>
+                {(["all", "missing", "check"] as const).map((option) => (
+                  <button
+                    key={option}
+                    aria-pressed={filter === option}
+                    onClick={() => {
+                      setFilter(option);
+                      setShowMissingLoot(false);
+                    }}
+                  >
+                    {option === "all"
+                      ? "All"
+                      : option === "missing"
+                        ? `Missing (${missing.length})`
+                        : `Check (${checks.length})`}
+                  </button>
+                ))}
+                <button disabled={!emptyMissing.length} onClick={nextMissing}>
+                  Next missing ›
+                </button>
+              </div>
+              {entries.map((entry) => {
+                const row = entry.row;
+                if (!row) {
+                  const gap = placeholders.find(
+                    (item) => item.tag === entry.tag,
+                  )!;
+                  return (
+                    <div className="weight-trial-gap" key={entry.tag}>
+                      {gap.position} ·{" "}
+                      {gap.name
+                        ? `${gap.name} · left the clan`
+                        : "Not in clan anymore"}
+                    </div>
+                  );
                 }
+                const index = visible.indexOf(row);
                 return (
                   <Fragment key={row.tag}>
                     {roster.war_order &&
                       !roster.war_order[row.tag] &&
                       (index === 0 ||
-                        roster.war_order[members[index - 1].tag]) && (
+                        roster.war_order[visible[index - 1].tag]) && (
                         <h3 className="weight-trial-outside">
                           Current members outside this war
                         </h3>
                       )}
-                    <div
-                      className={`weight-trial-row${JSON.stringify(draft) !== JSON.stringify(draftFor(row)) ? " is-edited" : ""}${invalid || warning ? " has-weight-issue" : ""}`}
-                      key={row.tag}
-                    >
-                      <strong className="weight-trial-position">
-                        {roster.war_order
-                          ? (roster.war_order[row.tag] ?? "—")
-                          : (row.clan_position ?? "—")}
-                      </strong>
-                      <div className="weight-trial-player">
-                        <TownHallIcon level={row.town_hall} />
-                        <span>
-                          <strong title={row.name}>{row.name}</strong>
-                          <small>{row.tag}</small>
-                        </span>
-                      </div>
-                      {(["storages", "loot", "full"] as const).map((field) => (
-                        <label className="weight-trial-field" key={field}>
-                          <span>
-                            {field === "full"
-                              ? "Full weight"
-                              : field === "loot"
-                                ? "Loot"
-                                : "Storages"}
-                          </span>
-                          <input
-                            ref={(element) => {
-                              inputs.current[`${row.tag}-${field}`] = element;
-                            }}
-                            type="text"
-                            inputMode="numeric"
-                            aria-label={`${field === "full" ? "Full weight" : field} for ${row.name} ${row.tag}`}
-                            aria-invalid={!!invalid}
-                            aria-describedby={
-                              invalid
-                                ? `weight-error-${index}`
-                                : warning
-                                  ? `weight-warning-${index}`
-                                  : undefined
-                            }
-                            value={draft[field]}
-                            placeholder={field === "storages" ? "5" : "N/A"}
-                            maxLength={12}
-                            disabled={busy}
-                            onFocus={(event) => event.currentTarget.select()}
-                            onChange={(event) => {
-                              setValues((current) => ({
-                                ...current,
-                                [row.tag]: editDraft(
-                                  draft,
-                                  field,
-                                  event.target.value,
-                                ),
-                              }));
-                              setNotice("");
-                            }}
-                            onPaste={(event) => {
-                              const text = event.clipboardData.getData("text");
-                              if (!/[\n\t]/.test(text)) return;
-                              event.preventDefault();
-                              try {
-                                const updates = pasteColumn(
-                                  members,
-                                  values,
-                                  index,
-                                  field,
-                                  text,
-                                );
-                                setValues((current) => ({
-                                  ...current,
-                                  ...updates,
-                                }));
-                                setNotice(
-                                  `${Object.keys(updates).length} rows pasted · Not saved yet.`,
-                                );
-                              } catch (cause) {
-                                setError(message(cause));
-                              }
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.preventDefault();
-                                inputs.current[
-                                  `${members[index + 1]?.tag}-${field}`
-                                ]?.focus();
-                              }
-                            }}
-                          />
-                        </label>
-                      ))}
-                      {!invalid && warning && (
-                        <small
-                          className="weight-trial-row-warning"
-                          id={`weight-warning-${index}`}
-                        >
-                          Check weight: {warning}
-                        </small>
+                    <WeightRow
+                      row={row}
+                      draft={values[row.tag] || draftFor(row)}
+                      position={
+                        roster.war_order
+                          ? roster.war_order[row.tag]
+                          : row.clan_position
+                      }
+                      warning={sheetWeightWarning(
+                        row.tag,
+                        members,
+                        values,
+                        roster.war_order,
                       )}
-                      {invalid && (
-                        <small
-                          className="weight-trial-row-error"
-                          id={`weight-error-${index}`}
-                        >
-                          {invalid}
-                        </small>
-                      )}
-                    </div>
+                      busy={anyBusy}
+                      last={index === visible.length - 1}
+                      inputRef={(field) => (element) => {
+                        inputs.current[`${row.tag}-${field}`] = element;
+                      }}
+                      onChange={(draft) => {
+                        setValues((current) => ({
+                          ...current,
+                          [row.tag]: draft,
+                        }));
+                        setNotice("");
+                      }}
+                      onKey={(event, field) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          inputs.current[
+                            `${visible[index + 1]?.tag}-${field}`
+                          ]?.focus();
+                        }
+                      }}
+                      onPaste={(event, field) => {
+                        const text = event.clipboardData.getData("text");
+                        if (!/[\n\t]/.test(text)) return;
+                        event.preventDefault();
+                        try {
+                          const updates = pasteColumn(
+                            visible,
+                            values,
+                            index,
+                            field,
+                            text,
+                          );
+                          setValues((current) => ({ ...current, ...updates }));
+                          setNotice(
+                            `${Object.keys(updates).length} rows pasted · Not saved yet.`,
+                          );
+                        } catch (cause) {
+                          setError(message(cause));
+                        }
+                      }}
+                    />
                   </Fragment>
                 );
               })}
@@ -507,46 +638,49 @@ export default function WeightTrial({
                   {dirty
                     ? `${changed.length} unsaved weight${changed.length === 1 ? "" : "s"}`
                     : "All changes saved"}
-                  <small>Enter moves down. Tab moves across.</small>
+                  <small className="weight-keyboard-hint">
+                    Enter moves down. Tab moves across.
+                  </small>
                 </span>
                 <button
                   className="primary"
-                  disabled={!dirty || busy || loading}
+                  disabled={!changed.length || anyBusy || loading}
                   onClick={() => void save()}
                 >
                   {busy ? "Please wait…" : "Save weights"}
                 </button>
               </div>
-            </>
+            </div>
           )}
           <details className="weight-trial-export">
             <summary>Export & copy weights</summary>
             <p>
-              Excel includes every saved weight. “Clan at last save” may
-              differ from a player’s current clan. Unsaved edits are excluded.
+              Excel includes every saved weight. “Clan at last save” may differ
+              from a player’s current clan. Unsaved edits are excluded.
             </p>
-            <button disabled={busy || dirty} onClick={() => void exportAll()}>
+            <button
+              disabled={anyBusy || dirty}
+              onClick={() => void exportAll()}
+            >
               Export all saved weights (.xlsx)
             </button>
             <button
-              disabled={busy || dirty || !members.length}
+              disabled={anyBusy || dirty || !members.length}
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(
                     copyTable(members, values),
                   );
                   setNotice("Current member weights copied for Excel.");
-                } catch {
-                  setError(
-                    "Clipboard unavailable. Use the Excel export instead.",
-                  );
+                } catch (cause) {
+                  setError(message(cause));
                 }
               }}
             >
               Copy member table
             </button>
             <button
-              disabled={busy || dirty || !members.length}
+              disabled={anyBusy || dirty || !members.length}
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(
@@ -562,14 +696,44 @@ export default function WeightTrial({
             >
               Copy loot for FWA column F
             </button>
+            <h3>Before pasting into F17</h3>
+            <ul className="weight-export-checklist">
+              <li>{dirty ? "✕" : "✓"} Weights saved</li>
+              <li>
+                {missingWarLoot.length > 0
+                  ? "✕ Missing loot"
+                  : roster?.war_order
+                    ? "✓ War loot available"
+                    : "✕ War loot not verified"}
+              </li>
+              <li>
+                {roster?.war_order
+                  ? "✓ War lineup available"
+                  : "✕ War lineup unknown"}
+              </li>
+              <li>Check: Same war in the sheet</li>
+              <li>Check: Storage counts match</li>
+              <li>Check: No small-storage adjustment in the sheet</li>
+            </ul>
+            {missingWarLoot.length > 0 && (
+              <p>
+                {missingWarLoot.length} player
+                {missingWarLoot.length === 1 ? "" : "s"} missing loot ·{" "}
+                <button
+                  onClick={() => {
+                    setFilter("missing");
+                    setShowMissingLoot(true);
+                  }}
+                >
+                  Show
+                </button>
+                {!missing.length && "Saved Not Available rows have no loot."}
+              </p>
+            )}
             <p className="small">
-              Save first. The column F copy contains loot only, in war order,
-              without a heading. Confirm the same war and storage counts in the
-              sheet before pasting into F17. If the sheet uses a separate
-              small-storage adjustment, check those rows manually; this editor
-              calculates loot × storages only. It does not submit weights.
-              Players outside the war are excluded; missing war players or loot
-              block copying.
+              Column F excludes members outside this war. Departed war players
+              block copying; match the sheet manually using the full table
+              export.
             </p>
           </details>
         </section>

@@ -18,7 +18,7 @@ export default function WeightQueueRow({
   error,
 }: {
   account: RosterAccount;
-  onClanWeights?: () => void;
+  onClanWeights?: (player?: string, clan?: string) => void;
   value: ManualWeightDraft;
   onChange: (value: ManualWeightDraft) => void;
   disabled: boolean;
@@ -56,9 +56,12 @@ export default function WeightQueueRow({
             : "No saved FWA weight"}
         </div>
       </div>
-      {account.clan_weight_managed ? (
+      {account.clan_weight_managed || account.current_fwa_clan_tag ? (
         <div className="weight-queue-managed">
-          <ClanWeightSource onNavigate={onClanWeights} />
+          {account.clan_weight_managed && !account.current_fwa_clan_tag && (
+            <small>Saved player · current FWA membership not confirmed</small>
+          )}
+          <ClanWeightSource account={account} onNavigate={onClanWeights} />
         </div>
       ) : (
         <CompactWeightField

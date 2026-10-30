@@ -9,7 +9,7 @@ import "./WeightQueue.css";
 
 type Props = {
   onOrderChange?: (tags: string[]) => void;
-  onClanWeights?: () => void;
+  onClanWeights?: (player?: string, clan?: string) => void;
   onDirty?: (dirty: boolean) => void;
   onDirtyCount?: (count: number) => void;
   resetToken?: number;
@@ -92,7 +92,13 @@ export default function WeightQueue({
   }, [disabled, focusTarget, accounts]);
 
   async function save(account: RosterAccount) {
-    if (disabled || pending.current || account.clan_weight_managed) return;
+    if (
+      disabled ||
+      pending.current ||
+      account.clan_weight_managed ||
+      account.current_fwa_clan_tag
+    )
+      return;
     const state = compactWeightState({
       ...(drafts[account.tag] || emptyDraft),
       unit,
@@ -102,7 +108,7 @@ export default function WeightQueue({
     const next = [
       ...matching.slice(index + 1),
       ...matching.slice(0, index).reverse(),
-    ].find((item) => !item.clan_weight_managed);
+    ].find((item) => !item.clan_weight_managed && !item.current_fwa_clan_tag);
     pending.current = true;
     setSaving(true);
     try {
@@ -201,26 +207,56 @@ export default function WeightQueue({
               No missing-weight accounts match your search.
             </div>
           )}
-          {shown.map((account) => (
-            <WeightQueueRow
-              key={account.tag}
-              account={account}
-              onClanWeights={onClanWeights}
-              value={{ ...(drafts[account.tag] || emptyDraft), unit }}
-              onChange={(value) => {
-                setDrafts((current) => ({ ...current, [account.tag]: value }));
-                setErrors((current) => ({ ...current, [account.tag]: "" }));
-              }}
-              disabled={disabled}
-              busy={busy || saving}
-              onEdit={onEdit}
-              onSave={() => void save(account)}
-              error={errors[account.tag]}
-              inputRef={(node) => {
-                if (node) inputs.current.set(account.tag, node);
-                else inputs.current.delete(account.tag);
-              }}
-            />
+          {([true, false] as const).map((fwa) => (
+            <div key={String(fwa)}>
+              {shown.some(
+                (account) =>
+                  Boolean(
+                    account.clan_weight_managed || account.current_fwa_clan_tag,
+                  ) === fwa,
+              ) && (
+                <h3>
+                  {fwa
+                    ? "FWA players · set in Clan weights ›"
+                    : "Other accounts · enter here"}
+                </h3>
+              )}
+              {shown
+                .filter(
+                  (account) =>
+                    Boolean(
+                      account.clan_weight_managed ||
+                        account.current_fwa_clan_tag,
+                    ) === fwa,
+                )
+                .map((account) => (
+                  <WeightQueueRow
+                    key={account.tag}
+                    account={account}
+                    onClanWeights={onClanWeights}
+                    value={{ ...(drafts[account.tag] || emptyDraft), unit }}
+                    onChange={(value) => {
+                      setDrafts((current) => ({
+                        ...current,
+                        [account.tag]: value,
+                      }));
+                      setErrors((current) => ({
+                        ...current,
+                        [account.tag]: "",
+                      }));
+                    }}
+                    disabled={disabled}
+                    busy={busy || saving}
+                    onEdit={onEdit}
+                    onSave={() => void save(account)}
+                    error={errors[account.tag]}
+                    inputRef={(node) => {
+                      if (node) inputs.current.set(account.tag, node);
+                      else inputs.current.delete(account.tag);
+                    }}
+                  />
+                ))}
+            </div>
           ))}
           <div className="weight-queue-more">
             <span>

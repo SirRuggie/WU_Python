@@ -274,7 +274,9 @@ def login_destination(query):
     if view == "my-signups":
         return "/my-signups"
     if view == "weight-trial":
-        return "/clan-weights"
+        params = {key: str(query[key]).upper() for key in ('player', 'clan')
+                  if re.fullmatch(r'#[A-Z0-9]{1,20}', str(query.get(key, '')), re.I)}
+        return "/clan-weights" + ("?" + urlencode(params) if params else "")
     if view == "signups":
         view = "signup"
     if view not in {"home", "search", "wars", "events", "todo", "signup", "assignments"}:
@@ -288,6 +290,10 @@ def saved_login_destination(request):
         return value
     if len(value) <= 150:
         path, _, query = value.partition("?")
+        if path == '/clan-weights':
+            params = {key: values[0] for key, values in parse_qs(query).items()}
+            params['view'] = 'weight-trial'
+            return login_destination(params)
         if path in MANAGEMENT_PAGE_PATHS.values():
             return path
         for view, destination in CWL_PAGE_PATHS.items():
@@ -973,6 +979,8 @@ def _roster_rows(db, sid):
         saved_weight = db.execute("SELECT initial_weight FROM player_weights WHERE tag=?", (row["tag"],)).fetchone()
         row["initial_manual_weight"] = saved_weight["initial_weight"] if saved_weight else None
         row["clan_weight_managed"] = row["tag"] in official
+        for field in ('clan_weight_clan_tag', 'clan_weight_clan_name', 'clan_weight_saved_at'):
+            row[field] = official.get(row['tag'], {}).get(field)
         row["effective_weight"] = (row["source_weight"] if row["clan_weight_managed"] else
                                    row["manual_weight"] if row["manual_weight"] is not None else row["source_weight"])
         result.append(row)
@@ -1022,6 +1030,22 @@ async def roster(request):
             _family_tags(request), enrich_clan_metadata(request, result["clans"]),
             enrich_locations(request, result["accounts"]),
         )
+    if request.query.get('background') == '1':
+        import time
+        cached_family = request.app.get('roster_family_snapshot')
+        fwa_tags = (cached_family[2] if cached_family and len(cached_family) > 2
+                    and cached_family[0] > time.monotonic() else None)
+    else:
+        from .clan_weight_trial import family as weight_family
+        try:
+            fwa_tags = {clan['tag'] for clan in await weight_family(request)}
+        except ProviderUnavailable:
+            fwa_tags = None
+    for account in result['accounts']:
+        known = account.get('current_clan_status') == 'current' and fwa_tags is not None
+        account['current_fwa_clan_tag'] = (
+            account.get('current_clan_tag') if known and account.get('current_clan_tag') in fwa_tags else None)
+        account['current_fwa_status'] = 'current' if known else 'unavailable'
     hosting_tags = {clan["tag"] for clan in result["clans"] if not clan["archived"]}
     for account in result["accounts"]:
         # Unknown/stale locations or directory outages are not proof of an outside clan.

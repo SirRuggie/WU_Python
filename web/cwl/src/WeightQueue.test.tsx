@@ -107,13 +107,19 @@ it("does not save or rewrite unsaved text when the top unit changes", async () =
   await click(button("Full"));
   expect(input().value).toBe("25,000");
   expect(input(1).value).toBe("12,000");
-  expect(rows()[0].textContent).toContain("= 25,000 · saved for future seasons");
-  expect(rows()[1].textContent).toContain("= 12,000 · saved for future seasons");
+  expect(rows()[0].textContent).toContain(
+    "= 25,000 · saved for future seasons",
+  );
+  expect(rows()[1].textContent).toContain(
+    "= 12,000 · saved for future seasons",
+  );
   expect(props.onSave).not.toHaveBeenCalled();
   expect(
     host.querySelectorAll(".weight-queue-unit-picker [aria-pressed]"),
   ).toHaveLength(2);
-  expect(host.querySelectorAll(".weight-queue-row [aria-pressed]")).toHaveLength(0);
+  expect(
+    host.querySelectorAll(".weight-queue-row [aria-pressed]"),
+  ).toHaveLength(0);
 });
 
 it("reports nonempty drafts and clears drafts and errors on reset without saving", async () => {
@@ -317,8 +323,18 @@ it("focus after Save skips clan-weight-managed rows", async () => {
     );
   }
   await act(async () => root.render(<Harness />));
-  await type(input(), "25000");
-  await click(button("Save", rows()[0]));
+  await type(
+    host.querySelector<HTMLInputElement>(
+      'input[aria-label="Loot for Player 0"]',
+    )!,
+    "25000",
+  );
+  await click(
+    button(
+      "Save",
+      rows().find((row) => row.textContent?.includes("Player 0"))!,
+    ),
+  );
   expect(document.activeElement?.getAttribute("aria-label")).toBe(
     "Loot for Player 2",
   );

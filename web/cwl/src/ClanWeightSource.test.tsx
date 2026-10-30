@@ -71,7 +71,7 @@ it.each(["queue", "details"])(
       );
     await render(["cwl_roster", "clan_weights"]);
     const link = document.querySelector<HTMLAnchorElement>(
-      'a[href="/clan-weights"]',
+      'a[href^="/clan-weights"]',
     )!;
     expect(link.textContent).toBe("Open Clan weights →");
     const click = new MouseEvent("click", {
@@ -94,7 +94,7 @@ it.each(["queue", "details"])(
         ),
       ).toBeNull();
     await render(["cwl_roster"]);
-    expect(document.querySelector('a[href="/clan-weights"]')).toBeNull();
+    expect(document.querySelector('a[href^="/clan-weights"]')).toBeNull();
     expect(document.body.textContent).toContain(
       "Weight comes from Clan weights. Ask a staff member with Clan weights access.",
     );

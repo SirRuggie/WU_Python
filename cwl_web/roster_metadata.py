@@ -16,7 +16,8 @@ async def enrich(request, result):
         async def fetch():
             try:
                 family = await asyncio.wait_for(app['providers'].family_clans(), 15)
-                app['roster_family_snapshot'] = (time.monotonic() + 120, {c['tag'] for c in family['clans']})
+                app['roster_family_snapshot'] = (time.monotonic() + 120, {c['tag'] for c in family['clans']},
+                                                 {c['tag'] for c in family['clans'] if c.get('type') == 'FWA'})
             except Exception as error:
                 if not isinstance(error, (ProviderUnavailable, TimeoutError)):
                     logging.getLogger(__name__).exception('Roster family lookup failed')

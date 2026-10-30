@@ -70,7 +70,7 @@ import {
 type Props = {
   onFamilyClans?: () => void;
   onPublication?: (draft: import("./publication").PublicationDraft) => void;
-  onClanWeights?: () => void;
+  onClanWeights?: (player?: string, clan?: string) => void;
   seasonId: string;
   seasons: Season[];
   onDirty?: (dirty: boolean) => void;

@@ -18,6 +18,7 @@ export type Roster = {
     imported: boolean;
   } | null;
   war_source?: {
+    names?: Record<string, string>;
     state: string;
     cached?: boolean;
     captured_at?: string;
@@ -35,17 +36,48 @@ export function draftFor(row: Member): Draft {
     loot: row.weight === null ? "" : String(row.weight / storages),
   };
 }
-function whole(text: string, max: number): number {
-  const clean = text.trim().replace(/,/g, "");
-  if (!/^\d+$/.test(clean) || Number(clean) < 1 || Number(clean) > max)
-    throw new Error(`Enter a whole number from 1 to ${max.toLocaleString()}.`);
-  return Number(clean);
+export function whole(text: string, max: number): number {
+  const clean = text.trim();
+  const match = clean.match(/^(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d+))?([kK])?$/);
+  const value = match
+    ? Number((match[1] + (match[2] ? "." + match[2] : "")).replace(/,/g, "")) *
+      (match[3] ? 1000 : 1)
+    : NaN;
+  if (!Number.isSafeInteger(value) || value < 1 || value > max)
+    throw new Error(
+      `Enter a whole number from 1 to ${max.toLocaleString()}, such as 35,800 or 35.8k.`,
+    );
+  return value;
+}
+export function formatFull(value: string) {
+  try {
+    return `${(whole(value, 9999999) / 1000).toLocaleString("en-US", { maximumFractionDigits: 3 })}k`;
+  } catch {
+    return value.trim() ? "—" : "N/A";
+  }
+}
+export function isMissing(row: Member, draft: Draft) {
+  return row.revision === 0 && !draft.full.trim() && !draft.loot.trim();
+}
+export function gaps(roster: Roster) {
+  const current = new Set(roster.members.map((row) => row.tag));
+  return Object.entries(roster.war_order || {})
+    .filter(([tag]) => !current.has(tag))
+    .map(([tag, position]) => ({
+      tag,
+      position,
+      name: roster.war_source?.names?.[tag],
+    }));
 }
 export function validateDraft(draft: Draft) {
   const storages = whole(draft.storages, 5);
   if (!draft.full.trim() && !draft.loot.trim())
     return { storages, weight: null };
   const weight = whole(draft.full, 999999);
+  if (weight % 1000)
+    throw new Error(
+      "Full weight must end in 000. Correct Loot or Full weight; values are never rounded.",
+    );
   const loot = whole(draft.loot, 999999);
   if (loot * storages !== weight)
     throw new Error(
@@ -161,7 +193,9 @@ export function orderLabel(roster: Roster): string {
     return "Clan order · War lineup unavailable. Positions are not war placements.";
   if (roster.war_source?.cached) {
     const captured = roster.war_source.captured_at;
-    const date = captured ? new Date(captured).toLocaleString() : "unknown time";
+    const date = captured
+      ? new Date(captured).toLocaleString()
+      : "unknown time";
     return `Saved war lineup · Captured ${date}. Check this matches the spreadsheet before copying.`;
   }
   const state = roster.war_source?.state;
@@ -190,6 +224,10 @@ export function sheetWeightWarning(
   };
   const row = rows.find((member) => member.tag === tag);
   if (!row) return "";
+  const raw =
+    drafts[tag]?.full ?? (row.weight === null ? "" : String(row.weight));
+  if (/^\d+$/.test(raw) && Number(raw) % 1000)
+    return "Weight must end in 000 for the FWA sheet.";
   const weight = weightFor(row);
   if (weight === null) return "";
   if (weight % 1000 !== 0) return "Weight must end in 000 for the FWA sheet.";

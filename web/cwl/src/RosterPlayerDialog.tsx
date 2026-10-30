@@ -27,7 +27,7 @@ import "./RosterPlayerDialog.css";
 type Props = {
   previous?: () => void;
   next?: () => void;
-  onClanWeights?: () => void;
+  onClanWeights?: (player?: string, clan?: string) => void;
   onDirty?: (dirty: boolean) => void;
   account: RosterAccount;
   clans: RosterClan[];
@@ -292,7 +292,7 @@ export default function RosterPlayerDialog({
           <section aria-label="Weight">
             <h3>Weight</h3>
             {account.clan_weight_managed ? (
-              <ClanWeightSource onNavigate={onClanWeights} />
+              <ClanWeightSource account={account} onNavigate={onClanWeights} />
             ) : (
               <form
                 onSubmit={(event) => {
