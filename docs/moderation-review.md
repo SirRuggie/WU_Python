@@ -254,3 +254,32 @@ role/ownership changes can take up to 30 seconds to affect these two read endpoi
 Every write and all other endpoints obtain fresh Discord identity. Mongo pooling,
 confirmed-missing-avatar caching and zero automatic image retries remain unchanged.
 The historical production 503 cause is still an inference, not proven.
+
+## Moderation polish release closure — 2026-10-30
+
+`moderation-polish-1`, PR #72, shipped frontend and isolated dashboard backend at
+`568d5689e94909d9123461ca7f0524144eca3f50`. The bot stayed at
+`1a4aae32eb5581162190fbc0954b9536bbc9187c` without a restart. Claude passed the
+read-only 360px smoke (handoff 108): history names, Log settings and saved status,
+with no saves or test sends. Public entry `index-BNw8xs6y.js`, SHA-256
+`ea437b05560fc1ad0f7e4024cb7a9fdea995227da8011a8e5fe253d1ed191e64`, and all 36
+checked owning/shared assets matched the manifest.
+
+Final integrated checks: 4,916 backend tests, 21 skipped, 162 subtests; 963 frontend
+tests; TypeScript/build. Sixty scratch release checks passed, including a mutation
+that removes the final runtime check. Backup:
+`.local/moderation-polish-1-backup-20261030T152118Z`. SQLite protected rows, 12 Mongo
+collection counts, raw moderation settings and effective destinations matched.
+Active strikes remained 3,607 with zero clears or unexplained changes. Backend
+cwd, two consecutive public config 200s and the final current-invocation journal
+passed after data reconciliation. The historical frontend/backend rollback was
+`1a4aae32eb5581162190fbc0954b9536bbc9187c`, with the bot unchanged; later releases
+supersede that target. Evidence remains in `/tmp/wu-moderation-polish-release/`
+(`live.json`, `mongo-postcheck.json`, `strike-comparison.json`).
+
+Smoke also found three transient avatar 503s among 11 first-load requests;
+19 individual refetches later returned 200. Initials remained usable. Historical
+logs recorded no underlying exception class, so the cause is not proven. Prompt
+36 tracks concurrency, class-only diagnostics and two display follow-ups; this
+release closure does not claim those 503s are fixed or that real Discord test
+messages were sent.

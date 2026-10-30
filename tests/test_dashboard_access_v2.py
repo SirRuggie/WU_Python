@@ -51,6 +51,21 @@ class DashboardAccessTests(unittest.IsolatedAsyncioTestCase):
         row = self.collection.documents.get(DOCUMENT_ID, {})
         return await self.call('POST','/access',headers,json={'revision':row.get('revision',0) if revision is None else revision,'kind':kind,'id':subject,'permissions':permissions})
 
+    async def test_roster_weight_write_requires_clan_weights_and_denial_is_atomic(self):
+        await self.save(['cwl_roster'])
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO seasons(id,label) VALUES(1,'Test')")
+            db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall) VALUES(1,'#P2Y','100','main',0,'Player',17)")
+        body = {'revision': 0, 'manual_weight': 170000, 'weight_revision': 0}
+        response = await self.call('PATCH', '/seasons/1/roster/%23P2Y', self.member, json=body)
+        self.assertEqual(response.status, 403)
+        self.assertEqual(self.app['store'].rows('SELECT * FROM clan_player_weights'), [])
+        self.assertEqual(self.app['store'].rows('SELECT * FROM roster_entries'), [])
+        await self.save(['cwl_roster', 'clan_weights'])
+        response = await self.call('PATCH', '/seasons/1/roster/%23P2Y', self.member, json=body)
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual(self.app['store'].one('SELECT weight FROM clan_player_weights')['weight'], 170000)
+
     async def test_only_two_fixed_owners_manage_access(self):
         for actor in (self.member,self.fake_owner):
             self.assertEqual((await self.call('GET','/access',actor)).status,403)

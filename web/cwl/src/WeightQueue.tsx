@@ -1,3 +1,4 @@
+import { useDashboardPermission } from "./DashboardPermissions";
 import { usesClanWeights } from "./clanWeightPolicy";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
@@ -60,6 +61,7 @@ export default function WeightQueue({
   useEffect(() => {
     onOrderChange?.(orderKey ? orderKey.split("|") : []);
   }, [orderKey, onOrderChange]);
+  const canWeight = useDashboardPermission("clan_weights");
   const disabled = busy || saving || archived;
   const dirtyCount = missing.filter(
     (account) => !!drafts[account.tag]?.text.trim(),
@@ -93,7 +95,8 @@ export default function WeightQueue({
   }, [disabled, focusTarget, accounts]);
 
   async function save(account: RosterAccount) {
-    if (disabled || pending.current || usesClanWeights(account)) return;
+    if (disabled || !canWeight || pending.current || usesClanWeights(account))
+      return;
     const state = compactWeightState({
       ...(drafts[account.tag] || emptyDraft),
       unit,
@@ -234,7 +237,7 @@ export default function WeightQueue({
                         [account.tag]: "",
                       }));
                     }}
-                    disabled={disabled}
+                    disabled={disabled || !canWeight}
                     busy={busy || saving}
                     onEdit={onEdit}
                     onSave={() => void save(account)}

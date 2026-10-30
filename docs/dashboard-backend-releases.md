@@ -1,5 +1,58 @@
 # Dashboard backend releases
 
+## No-war-strikes-1 — October 30, 2026
+
+Released PR [#77](https://github.com/SirRuggie/WU_Python/pull/77), tag
+`no-war-strikes-1`, frontend/backend/bot `73eda11a1e883b711bc40494f023b4d87efd5a6b`.
+Includes prompts 40 and 37/41. Claude read-only smoke 131 PASSED at 360px:
+20 clans on track, 5 behind, no request errors, exact NO WAR opponent setting,
+and removed strike history retained. The preceding strike-scan-1 incident was
+closed by Claude smoke 128; recovery observed seven state changes and five durable
+finals, with zero ended observations missing. Unobserved-and-gone wars cannot be
+proven absent; no speculative history import was performed.
+
+Clean tagged checks: 4,985 backend passed, 21 skipped, 162 subtests; 1,034 frontend
+passed, TypeScript/build passed. Both required pre-apply guard mutations were
+killed (stale fingerprint and neutral history label). Production entry
+`index-BipoOtjv.js` SHA-256
+`bea1b2f126251a5c63bf144354f930b6a8138f288540f32c9413277484e80297`
+and 36 affected asset hashes matched the manifest. Bot PID 3402328 and dashboard
+PID 3402568 were healthy; dashboard cwd was the matching isolated backend archive.
+Two consecutive config 200s passed after five attempts; anonymous protected reads
+returned 401. First scanner pass covered 25 clans; current journals were clean.
+No live test messages were sent. Claude smoke was read-only.
+
+Backup: `.local/no-war-strikes-1-backup-20261030T191903Z` under the repository;
+SQLite integrity passed, SHA-256
+`3467f6c8fb029c3bd1c3d9383e2686ec56b167de9711881d2715de67ecc4379b`.
+Twelve Mongo archives were verified. With the scanner stopped, the reviewed exact
+war-key correction examined 77 rows, soft-revoked 50 strikes, relabelled two neutral
+misses and left 25 unchanged. Active strikes changed 3,608 → 3,558, precisely one
+per affected account; all 7,727 records were retained, all 577 profiles unchanged
+during application, unrelated row hashes unchanged, no streak-review accounts.
+Post-start active count remained 3,558 with zero unexplained changes. Protected
+SQLite and Mongo checks passed (approved lineup cache projection reconciled).
+Private per-account evidence remains outside Git; no account tags are copied here.
+
+Evidence: `/tmp/wu-no-war-release/{live.json,correction-plan.json,correction-apply.json,
+account-changes.json,mongo-postcheck.json,strike-comparison.json}`. The coordinator
+waited 210 seconds after stopping the bot and verified no future identity leases
+before restart. Scratch verifier fixes: explicitly empty optional Mongo test URI,
+an accessible exact-tag bot import export, and recursive frontend asset staging.
+
+Rollback code only, never restore the DB or reverse the approved revokes:
+`"/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python" -I /tmp/wu-no-war-release/run.py rollback`.
+The guarded coordinator restores frontend/backend
+`cb0052dc93cc30b127e2cbe5006a06c149c43671` and bot
+`c9b4ac0f5ca7f64a6fc329d06dde419af403ab46`, with lease wait and readiness/hash checks.
+Current frontend/backend directories are under
+`/home/ruggie/.local/share/wu-dashboard/{releases,backend}/73eda11a1e883b711bc40494f023b4d87efd5a6b`.
+
+Later: show active versus removed counts and the No-attack war label in Find war;
+bound pending staff retries for private/deferred clans and consume removed-clan
+retries, with regression coverage (Claude 130–131). Neither blocks linked weights.
+
+
 ## Moderation-logs-1 — October 30, 2026
 
 PR [#68](https://github.com/SirRuggie/WU_Python/pull/68), tag `moderation-logs-1`,
@@ -436,3 +489,46 @@ Prompt 07 tour/deadline hotfix (not yet released): member timing reads the exist
 campaign one month before the CWL binding. No schema or write-path change. Deploy
 its backend from an isolated tagged release only after approval; current runtime
 remains member-tour-1 / 16cc79e.
+
+## linked-weights-1 — 2026-10-30
+
+PR #79 released frontend, backend and bot at
+`fb46bd388af287ea30f6296407853ff40105e39b` (tag `linked-weights-1`).
+Dashboard PID 3495275 ran from the matching backend directory; bot PID 3494220
+ran the same clean revision. Public config returned 200 twice consecutively.
+Runtime imports, served index/affected assets and journals passed. The bot
+completed a 25-clan scanner pass; active strikes stayed 3558 with zero unexplained
+changes. No live test messages or manual weight edits were made.
+
+Verified SQLite/Mongo backup: `.local/linked-weights-1-backup-20261030T204651Z`.
+SQLite SHA-256: `20d882692ef430c1eac76faf13e742fce17d54ff194048623b04bb17167f21c5`.
+Protected state matched: 155 signups, four publications, 42 legacy weights /43
+history events, 350 clan weights /387 history rows, seven saved lineups.
+Newest-wins audit found zero overlaps, invalid timestamps or effective changes.
+The publication baseline was refreshed after Claude verified Ruggie's normal
+publishing activity. Only the approved history `source` column/default migrated.
+Tagged validation: 4995 backend tests, 21 skips, 162 subtests;1042 frontend tests;
+type-check and build. Claude's read-only production smoke passed: clean popup,
+174k /34800 loot prefill, disabled clean Save, Clan weights link, no overflow or
+HTTP errors at 360px. No write was made during smoke.
+
+Previous frontend/backend/bot rollback target:
+`73eda11a1e883b711bc40494f023b4d87efd5a6b`. Retain both release directories.
+Guarded operational rollback (code only, never restore the database):
+
+```sh
+"/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python" -I /tmp/wu-linked-release/run.py rollback
+```
+
+The command checks current revisions and configuration, stops the bot, restores
+frontend and backend, restores the bot checkout, waits 210 seconds for leases,
+then starts and verifies both services and public assets. Evidence lives in
+`/tmp/wu-linked-release/live.json`, `mongo-gate.json`, `strike-comparison.json`
+and `activation.log`. Initial automatic approval review rejected prompt39's
+number; retry of the identical command succeeded after documenting that it is
+a follow-up to approved35. No release gate was bypassed.
+
+Later: the separately reviewed linked-weight follow-up handles historical Clear,
+permission notices, legacy bot fallback and export labeling. Archived-weight
+freezing was explicitly dropped by the owner; old-season weights may track the
+current global effective value.

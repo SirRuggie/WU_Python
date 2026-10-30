@@ -29,6 +29,10 @@ class Cursor:
         self.rows = self.rows[:count]
         return self
 
+    async def __aiter__(self):
+        for row in self.rows:
+            yield row
+
     async def to_list(self, length=None):
         return self.rows
 
@@ -98,9 +102,9 @@ def test_war_summary_pipeline_keeps_old_one_missed_rows():
     ledger = StrikeService(SimpleNamespace(strike_records=records))
     asyncio.run(ledger.war_list(1))
     match = records.pipeline[0]['$match']
-    assert match['kind']['$in'] == ['strike', 'missed', 'exempt', 'cwl']
+    assert match['kind']['$in'] == ['strike', 'missed', 'exempt', 'cwl', 'no_attack']
     assert 'occurred_at' not in match  # prior imports remain discoverable
-    assert records.pipeline[1] == {'$sort': {'occurred_at': -1}}
+    assert records.pipeline[1] == {'$sort': {'occurred_at': -1, '_id': 1}}
 
 
 def test_saved_war_keeps_clan_and_opponent_names():
@@ -162,8 +166,12 @@ def test_war_search_resolves_old_opponent_name_before_filtering():
              'war_end': end, 'missed_accounts': 2, 'strikes': 1, 'one_missed': 1}]
 
     class Ledger:
-        async def war_list(self, guild_id, **kwargs):
-            return [row.copy() for row in rows]
+        async def war_page(self, guild_id, **kwargs):
+            assert kwargs['query'] == 'Dragons'
+            found = [row.copy() for row in rows]
+            await kwargs['enrich_names'](found)
+            found = [row for row in found if kwargs['query'] in row['opponent_name']]
+            return {'items': found, 'total': len(found)}
 
     class Provider:
         async def clan(self, value):

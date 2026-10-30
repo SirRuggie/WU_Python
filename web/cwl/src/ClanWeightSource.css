@@ -18,3 +18,7 @@
   outline: 2px solid var(--roster-text);
   outline-offset: 2px;
 }
+
+.clan-weight-source-compact a {
+  min-height: 44px;
+}

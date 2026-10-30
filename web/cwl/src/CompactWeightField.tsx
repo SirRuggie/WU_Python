@@ -1,10 +1,20 @@
 import { useId, type Ref } from "react";
-import { parseManualWeight, type ManualWeightDraft } from "./manualWeight";
+import { type ManualWeightDraft } from "./manualWeight";
+import { editDraft, validateDraft } from "./weightTrial/model";
 import { Button } from "./rosterUi/primitives";
 
 export function compactWeightState(value: ManualWeightDraft) {
   try {
-    return { weight: parseManualWeight(value), error: "" };
+    return {
+      weight: validateDraft(
+        editDraft(
+          { storages: "5", loot: "", full: "" },
+          value.unit,
+          value.text,
+        ),
+      ).weight,
+      error: "",
+    };
   } catch (error) {
     return { weight: null, error: (error as Error).message };
   }

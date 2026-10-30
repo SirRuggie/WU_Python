@@ -390,10 +390,11 @@ export default function WeightTrial({
       </div>
       <details className="weight-trial-note">
         <summary>How weights are used ›</summary>
-        <p>Weights saved here win over manual weights and FWA Stats.</p>
+        <p>Clan weights and roster Details share the same saved weight.</p>
         <p>
-          Weights follow each player across clans. Save explicitly; manual
-          weights or FWA Stats apply only when no saved clan weight exists.
+          Weights follow each player across clans. Save explicitly in either
+          place. The newest saved weight wins; a saved blank means Not
+          Available.
         </p>
         <p>
           Member counts use the last check. Open a clan and refresh members to

@@ -47,6 +47,10 @@ class Providers:
 
 
 class RosterTests(unittest.IsolatedAsyncioTestCase):
+    def weight_revision(self, player_tag):
+        row = self.app["store"].one("SELECT revision FROM clan_player_weights WHERE tag=?", (player_tag,))
+        return row["revision"] if row else 0
+
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.providers = Providers()
@@ -180,7 +184,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         await self.signup("main", "#P2Y")
         await self.host("#C2Y", "main")
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "assigned_clan_tag": "#C2Y", "manual_weight": 160000, "kept": True})
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "assigned_clan_tag": "#C2Y", "manual_weight": 160000, "kept": True})
         self.assertEqual(response.status, 200)
         with self.app["store"].tx() as db:
             db.execute("UPDATE seasons SET signup_open=0 WHERE id=?", (self.sid,))
@@ -196,7 +200,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(db.execute("SELECT * FROM signups WHERE season_id=? AND tag='#P2Y'", (self.sid,)).fetchone())
             self.assertIsNone(db.execute("SELECT * FROM roster_entries WHERE season_id=? AND tag='#P2Y'", (self.sid,)).fetchone())
             self.assertIsNotNone(db.execute("SELECT * FROM roster_audit WHERE season_id=? AND action='staff_remove_signup'", (self.sid,)).fetchone())
-            self.assertIsNotNone(db.execute("SELECT * FROM player_weights WHERE tag='#P2Y'").fetchone())
+            self.assertIsNotNone(db.execute("SELECT * FROM clan_player_weights WHERE tag='#P2Y'").fetchone())
         self.assertGreater(await self.revision(), revision)
 
     async def test_staff_remove_signup_rejects_archived_season(self):
@@ -289,10 +293,10 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("GET", f"/seasons/{self.sid}/roster", self.member)
         self.assertEqual(response.status, 403)
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23Q2Y", self.member,
-                                   json={"revision": await self.revision(), "manual_weight": 169000})
+                                   json={"weight_revision": self.weight_revision('#Q2Y'), "revision": await self.revision(), "manual_weight": 169000})
         self.assertEqual(response.status, 403)
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23Q2Y", self.owner,
-                                   json={"revision": await self.revision(), "manual_weight": 169000,
+                                   json={"weight_revision": self.weight_revision('#Q2Y'), "revision": await self.revision(), "manual_weight": 169000,
                                          "assigned_clan_tag": "#C2Y"})
         self.assertEqual(response.status, 200)
         response = await self.call("GET", f"/seasons/{self.sid}/roster", self.owner)
@@ -336,7 +340,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         await self.signup("main", "#P2Y")
         await self.host("#C2Y", "main")
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "manual_weight": 176000})
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "manual_weight": 176000})
         self.assertEqual(response.status, 200)
         revision = await self.revision()
         response = await self.call("POST", f"/seasons/{self.sid}/roster/auto-preview", self.owner,
@@ -348,28 +352,28 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
                                    json={"revision": revision, "placements": preview["placements"]})
         self.assertEqual(response.status, 409)
 
-    async def test_source_outage_keeps_values_and_manual_override(self):
+    async def test_linked_weight_is_available_without_external_source(self):
         await self.signup("main", "#P2Y")
         response = await self.call("POST", f"/seasons/{self.sid}/roster/refresh-weights", self.owner,
                                    json={"revision": await self.revision()})
         self.assertEqual(response.status, 200)
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "manual_weight": 177000})
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "manual_weight": 177000})
         self.assertEqual(response.status, 200)
         previous = self.app["store"].one("SELECT source_checked_at FROM roster_entries WHERE tag='#P2Y'")["source_checked_at"]
         self.providers.fail_weights = True
         response = await self.call("POST", f"/seasons/{self.sid}/roster/refresh-weights", self.owner,
                                    json={"revision": await self.revision()})
-        self.assertEqual(response.status, 503)
+        self.assertEqual(response.status, 200)
         response = await self.call("GET", f"/seasons/{self.sid}/roster", self.owner)
         account = (await response.json())["accounts"][0]
-        self.assertEqual(account["source_weight"], 176000)
-        self.assertEqual(account["manual_weight"], 177000)
+        self.assertEqual(account["source_weight"], 177000)
+        self.assertIsNone(account["manual_weight"])
         self.assertEqual(account["effective_weight"], 177000)
-        self.assertEqual(account["source_status"], "unavailable")
-        self.assertEqual(account["source_modified_at"], "2026-05-15T11:37:17Z")
-        self.assertEqual(account["source_name"], "FWA Stats")
-        self.assertEqual(account["source_checked_at"], previous)
+        self.assertEqual(account["source_status"], "current")
+        self.assertEqual(account["source_modified_at"], account["clan_weight_saved_at"])
+        self.assertEqual(account["source_name"], "Clan weights")
+        self.assertNotEqual(account["source_checked_at"], previous)
 
     async def test_war_size_can_be_below_assigned_count_without_moving_players(self):
         await self.host("#C2Y", "main")
@@ -453,17 +457,17 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
                                    json={"revision": await self.revision()})
         self.assertEqual(response.status, 200)
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "manual_weight": 177000})
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "manual_weight": 177000})
         self.assertEqual(response.status, 200)
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "manual_weight": None})
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "manual_weight": None})
         self.assertEqual(response.status, 200)
         response = await self.call("GET", f"/seasons/{self.sid}/roster", self.owner)
         account = (await response.json())["accounts"][0]
         self.assertIsNone(account["manual_weight"])
-        self.assertEqual(account["effective_weight"], 176000)
+        self.assertIsNone(account["effective_weight"])
         response = await self.call("POST", f"/seasons/{self.sid}/roster/auto-apply", self.owner,
-                                   json={"revision": await self.revision(), "placements": []})
+                                   json={"revision": await self.revision(), "placements": [{"tag": "#P2Y", "assigned_clan_tag": "#C2Y"}]})
         self.assertEqual(response.status, 409)
         self.assertIsNone(self.app["store"].one("SELECT assigned_clan_tag FROM roster_entries WHERE tag='#P2Y'")["assigned_clan_tag"])
 
@@ -575,7 +579,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(roster["clans"][0]["archived"])
         self.assertEqual(next(a for a in roster["accounts"] if a["tag"] == "#P2Y")["assigned_clan_tag"], "#C2Y")
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": roster["revision"], "manual_weight": 170000})
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": roster["revision"], "manual_weight": 170000})
         self.assertEqual(response.status, 200)
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/assignments", self.owner,
                                    json={"revision": await self.revision(), "tags": ["#Q2Y"],
@@ -588,7 +592,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
     async def test_directory_change_invalidates_auto_preview_without_lineup(self):
         await self.signup("main", "#P2Y")
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "manual_weight": 176000})
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "manual_weight": 176000})
         self.assertEqual(response.status, 200)
         old_revision = await self.revision()
         response = await self.call("POST", f"/seasons/{self.sid}/roster/auto-preview", self.owner,
@@ -668,7 +672,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         await self.call("POST", "/clans", self.owner, json={"tag": "#C2Y"})
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "assigned_clan_tag": "#C2Y",
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "assigned_clan_tag": "#C2Y",
                                          "manual_weight": 176000})
         self.assertEqual(response.status, 200)
         response = await self.call("GET", f"/seasons/{self.sid}/my-assignments", self.member)
@@ -729,7 +733,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("GET", f"/seasons/{self.sid}/publication", self.owner)
         self.assertTrue((await response.json())["draft_changed"])
         snapshot = self.app["store"].one("SELECT * FROM publication_accounts WHERE tag='#P2Y'")
-        self.assertEqual((snapshot["assigned_clan_tag"], snapshot["manual_weight"]), ("#C2Y", 176000))
+        self.assertEqual((snapshot["assigned_clan_tag"], snapshot["effective_weight"]), ("#C2Y", 176000))
 
     async def test_withdraw_publication_hides_all_versions_and_preserves_work(self):
         await self.signup("main", "#P2Y")
@@ -920,7 +924,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         await self.signup("main", "#Q2Y")
         await self.host("#C2Y", "main")
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "assigned_clan_tag": "#C2Y",
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "assigned_clan_tag": "#C2Y",
                                          "manual_weight": 176000})
         self.assertEqual(response.status, 200)
         roster = await (await self.call("GET", f"/seasons/{self.sid}/roster", self.owner)).json()
@@ -930,7 +934,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         row = self.app["store"].one("SELECT assigned_clan_tag,kept,manual_weight FROM roster_entries WHERE tag='#P2Y'")
         self.assertEqual((row["assigned_clan_tag"], row["kept"], row["manual_weight"]),
-                         (None, 0, 176000))
+                         (None, 0, None))
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/assignments", self.owner,
                                    json={"revision": await self.revision(), "tags": ["#P2Y", "#Q2Y"],
                                          "assigned_clan_tag": "#C2Y"})
@@ -941,7 +945,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         rows = self.app["store"].rows("SELECT assigned_clan_tag,manual_weight FROM roster_entries WHERE tag IN ('#P2Y','#Q2Y')")
         self.assertTrue(all(row["assigned_clan_tag"] is None for row in rows))
-        self.assertIn(176000, [row["manual_weight"] for row in rows])
+        self.assertEqual(self.app["store"].one("SELECT weight FROM clan_player_weights WHERE tag='#P2Y'")["weight"], 176000)
         response = await self.call("PATCH", f"/seasons/{self.sid}/lineup/%23C2Y/rules", self.owner,
                                    json={"revision": await self.revision(), "pool": "main", "capacity": 15,
                                          "min_weight": 150000, "max_weight": 180000})
@@ -1022,7 +1026,7 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
                                    json={"revision": roster["revision"], "undo_id": roster["undo"]["id"]})
         self.assertEqual(response.status, 404)
         response = await self.call("PATCH", f"/seasons/{self.sid}/roster/%23P2Y", self.owner,
-                                   json={"revision": await self.revision(), "manual_weight": 176000})
+                                   json={"weight_revision": self.weight_revision('#P2Y'), "revision": await self.revision(), "manual_weight": 176000})
         self.assertEqual(response.status, 200)
         response = await self.call("POST", f"/seasons/{self.sid}/roster/undo", self.owner,
                                    json={"revision": await self.revision(), "undo_id": roster["undo"]["id"]})

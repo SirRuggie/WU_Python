@@ -98,3 +98,28 @@
   -webkit-text-fill-color: currentColor;
   text-decoration: underline;
 }
+
+.linked-weight-inputs {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 8px;
+}
+.linked-weight-inputs label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.linked-weight-inputs label:last-child {
+  grid-column: 1 / -1;
+}
+.linked-weight-inputs input,
+.linked-weight-inputs select {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+}
+.linked-weight-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}

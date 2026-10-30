@@ -1,6 +1,16 @@
 # Account strikes
 
-Implemented for the Warriors United Discord bot and its existing dashboard. This document describes the new system; `botghost-strike-sentinel-investigation.md` describes the old BotGhost reference.
+## No-war-strikes-1 — released October 30, 2026
+
+Tag `no-war-strikes-1` at `73eda11a1e883b711bc40494f023b4d87efd5a6b` is live across
+bot/backend/frontend; Claude smoke 131 passed. The exact-tag NO WAR rule is neutral
+for streaks. The reviewed correction retained all records and soft-revoked exactly
+50 strikes (3,608 → 3,558), with two neutral miss relabels and no unrelated changes.
+See [the backend release record](dashboard-backend-releases.md) for evidence and
+code-only rollback. The strike-scan-1 incident closed at smoke 128.
+
+Later: Find war should separate active/removed counts and label No-attack war;
+bound pending private/deferred-clan staff retries and consume removed-clan retries.
 
 ## Rules
 
@@ -14,7 +24,10 @@ Implemented for the Warriors United Discord bot and its existing dashboard. This
 
 ## Streaks and departure grace — prompt 25 implementation
 
-For newly finalized official-API captures, a played war means the account was
+Eligible captures start with the official-API monitor deployed with prompt 22
+(2026-10-30 00:06), including captures made before the streak release that finalize
+after it. Already-finalized and imported wars remain excluded. For a newly
+finalized eligible capture, a played war means the account was
 in an ended regular-war lineup and used both attacks. Every second consecutive
 played war (2 and 4) clears the oldest active strike. At six played wars, all
 active strikes clear and the streak resets to zero. Missing one or both attacks
@@ -42,6 +55,8 @@ target is at least 44px. The current shared help default is **4 strikes**; promp
 23 will add the configurable setting and wire its value into the help. This
 batch does not add a settings editor or automated replacement.
 
+A move between family clans does not reset the streak or transfer a clan-specific
+replacement mark. Exemptions remain neutral even when both attacks were used.
 A confirmed departed account remains in Replacements during its 48-hour grace
 period with an explicit **Left clan** label and its last-seen clan/time. A stale
 roster alone is not labeled as a confirmed departure. After more than 48 hours
@@ -58,7 +73,7 @@ checks are not live delivery or a full assistive-technology audit.
 
 ## Staff workflow
 
-The **Strikes** dashboard has History, Leave, Exempt roles, and Import wars tabs. **Replacements** is a child page beneath Strikes in the sidebar.
+The **Strikes** dashboard has Accounts, Leave, and Settings tabs. Exempt roles and Import past wars are in Settings. **Replacements** is a child page beneath Strikes in the sidebar.
 
 History starts with one row per player account with active strikes, ordered by active strike count. All accounts also shows inactive and missed-only accounts. Accounts linked to the same Discord member remain separate. Open an account to see strike dates, war matchups, and removal history. One-missed records stay hidden unless selected. Find a war by clan or opponent, then choose its date to see that war’s missed attacks. History supports player, Discord member, clan, and status searches; add a manual strike with a reason, or remove a strike with a reason. Choosing a member lets staff choose the player account.
 
@@ -246,3 +261,210 @@ production evidence.
   helper failed during staging. The installed helper was not changed.
 Full integrated tests and deployment evidence will be recorded by the release
 review; none are claimed by this development section.
+
+
+## Strikes UX backend contracts — prompt 23
+
+These backend contracts and their frontend controls shipped in `strikes-ux-1`
+(`cb0052d`). Claude verified the production UI at 360px with read-only checks.
+
+- `GET /api/cwl/strikes/accounts` keeps `status=active|all`, `query`, `clan`,
+  `limit` (1–100, default 25), and `offset`. The new `action` is `all`,
+  `over_limit`, or `new_this_week`. `summary.over_limit` and
+  `summary.new_this_week` count accounts after search/clan/status filters but
+  before the action filter or paging. `strike_limit` is returned with the same
+  calculation. At least that many active strikes means over limit. New this week
+  means at least one currently active strike dated within the last seven days.
+  Changing the limit never changes strikes, streaks, replacements or delivery.
+- Account grouping has deterministic date/tag ties. Profiles are joined in
+  batches of at most 200 through their routed collection, so different database
+  routes do not require a cross-database aggregation join. Only the page is
+  retained in application memory; totals and filters scan the full population.
+  Case-insensitive substring searches can still require a full scan.
+- History filters run before count/skip/limit, including expired/removed/exempt
+  records. Equal incident dates use the record ID as a stable tie-breaker.
+- `GET /api/cwl/strikes/wars` now returns `wars`, `total`, `limit`, `offset`, and
+  `name_search_incomplete`; limits are 1–100, default 25. Search applies across
+  the complete ledger and incomplete-capture population, before paging. Saved
+  incidents take precedence over an incomplete placeholder for the same war.
+  Remote opponent names remain searchable: the HTTP adapter enriches batches of
+  at most 100 within the existing shared eight-second lookup budget (six
+  concurrent requests, four seconds per request). A missing/unavailable name
+  falls back to its tag and sets `name_search_incomplete`; callers should keep
+  that limitation visible. With no search, only the returned page is enriched.
+- Settings return `revision` (legacy/missing 0), `strike_limit` (default 4), and
+  role `managed`, `position`, and `color` metadata, in descending server position
+  order. The picker hides managed roles using that flag. Existing managed or
+  unavailable exemptions remain visible/removable and may be retained; they are
+  never silently dropped. A removed managed exemption cannot be newly selected.
+  `PUT /settings/roles` requires `revision` and `role_ids`, and optionally accepts
+  `strike_limit` (integer 1–20). It returns the new revision and effective limit.
+  Concurrent saves return 409, including first writes against legacy documents.
+  Monitoring activation fields are preserved.
+- Leave save and delete require `revision`; active leave rows and successful
+  writes return it. Before starting a new leave edit, fetch
+  `GET /settings/leaves/{member_id}` for the current revision, including a cleared
+  leave's tombstone. A successful transition atomically records its prior
+  interval in `pending_history`, then archives it idempotently. Failed CAS writes
+  do not archive or shorten anyone's interval. A restart can finish a pending
+  archive on the next edit or exemption read; unavailable archival data fails
+  closed. Clearing keeps an empty interval and revision tombstone, preventing
+  delete/recreate ABA. Existing internal service callers may omit the expected
+  revision; they still use a conditional write against their freshly read state.
+  No transaction support or collection migration is assumed.
+- `GET /targets?query=...` requires `strikes_add` and returns `accounts` and
+  `members`. An empty query returns neither. Names search known saved profiles
+  and ledger identities plus Discord member suggestions; tags use the public
+  player provider and member IDs resolve linked accounts. Suggestions are capped
+  at 25 per group, with at most six player lookups in flight. Account fields are
+  `tag`, `name`, `town_hall`, `current_clan_tag`, `current_clan_name`. Selecting a
+  member can use the existing member-accounts route, now including town hall;
+  link sets over 100 or unavailable/conflicting links fail explicitly. This is
+  not a global player-name search. Manual add still requires its existing review
+  and idempotent request ID; the reason limit stays 500.
+- Import preview returns `summary: {strikes, accounts, history_only}` over all
+  unique proposed rows. The frontend recomputes those selected counts when the
+  user excludes rows. Apply reports `added_strikes`, `history_only`, `duplicates`,
+  and `excluded` separately, retaining legacy response fields. Revalidation can
+  reduce strikes or encounter a concurrent duplicate; those actual results are
+  reported, never forced to match a stale preview. Exempt rows cannot be promoted
+  solely because an exemption disappeared after preview.
+
+Backend checks use isolated sample collections with an outbound guard: revision
+races and legacy creation, leave receipt crashes/recovery and tombstones,
+300-account cross-page summary/search, more than 2,000 wars, history precedence,
+managed-role retention, import races, permissions and unavailable providers.
+Frontend keyboard/accessibility, phone/desktop density and confirmation checks
+passed the isolated integration gates before the `strikes-ux-1` release. No live notification or API delivery is
+inferred from these fixtures.
+
+The prompt 23 browser fixture contains 300 accounts and a 28-record player.
+`npm run test:layout` also runs the browser-only Strikes fixture at 360×800 and
+1440×1000, with outbound requests blocked. Set `WU_TEST_PYTHON` to the backend
+venv and `WU_LAYOUT_STAFF_PORT` to an unused loopback port when another staff
+preview occupies 8981. `WU_LAYOUT_MODERATION_PORT` similarly overrides 8983;
+both fixture ports must remain within 8900–8999. It checks paging, both Add entry points, dirty cancellation,
+focus return to the player row, role eligibility, import counts and retained
+settings edits after a simulated 409. Visible enabled controls are at least 44px,
+text is at least 12px and measured text contrast is at least 4.5:1. Representative
+phone history rows measure 53px versus 242px in the prior fixture (4.57× row
+density); this comparison excludes the page's shared header and controls.
+
+
+## Strike streaks release closure — 2026-10-30
+
+`strike-streaks-1`, PR #71, shipped frontend, isolated dashboard backend and bot at
+`1a4aae32eb5581162190fbc0954b9536bbc9187c`. Claude passed the read-only 360px
+production smoke (handoff 107): all eight help lines, Close, tracking summary and
+account list; no writes or test notifications. The public entry was
+`index-B5C-PdiQ.js`, SHA-256
+`e97e2bf2a4a7ef00bf75ad35016dc2f74bd800c97189aabd32b6dfe6aa9fcd44`.
+All 34 checked owning/shared assets matched the manifest. Final verification:
+4,903 backend tests, 21 skipped, 162 subtests; 957 frontend tests; TypeScript/build.
+
+Backup: `.local/strike-streaks-1-backup-20261030T145631Z` (SQLite and 12 Mongo
+archives). Protected state comparisons passed. Active strikes remained 3,607;
+zero explained clears and zero unexplained changes. The first bot pass reported
+25 clans, zero finalized wars and 10 behind. Backend startup, two consecutive
+config 200s and current-invocation journals passed. This is release evidence,
+not proof of live Discord delivery. The release's historical rollback target was
+`c494022e924994435496c3e4f0722eb781460380`; later releases supersede that target.
+Evidence is retained in `/tmp/wu-strike-streaks-release/` (`live.json`,
+`mongo-postcheck.json`, `strike-comparison.json`, `activation-fresh.log`).
+
+### Later — streak and departure display
+
+- Discord `/strikes replacements` still lacks the departed mover's “Left X” text.
+- After 48 hours but before the next sync, a mover's mark disappears from lists;
+  the next sync clears the stored mark. This display interval is accepted.
+- Put departure age inline with the label, such as “Left clan · 6 h ago”.
+
+### Saved-final scan recovery (2026-10-30)
+
+Mongo's default BSON datetime decoder returns naive UTC values. The automatic
+monitor normalizes a saved final's `next_check_at` and `end_time` through the
+existing `utc()` helper before comparing them with an aware current time. This
+applies both to the retry deadline and to the storage owner's next-check/backoff
+calculation. It does not change war eligibility, strike counts, or streak rules.
+
+A clan-level failure now records `War processing failed` on that clan's tracking
+row and proceeds to the next clan. Cancellation still propagates. If the database
+also refuses the tracking write, the failure is logged and the scan still proceeds;
+no healthy result is invented. Diagnostics include the exception class and the
+file/line/function traceback chain, without logging upstream exception bodies,
+credentials, or player payloads.
+
+Regression coverage round-trips deadlines and saved finals through BSON, checks
+future deadlines remain deferred, retries a saved complete final exactly once,
+and proves a broken first clan cannot block a later clan's still-visible ended
+war. The isolated release-backup replay restores Mongo archives locally and uses
+recorded official GET responses with fake roster/strike processing. It demonstrates
+scan recovery, not live Discord delivery or the outcome of live strike processing.
+Any ended war without a captured complete final still follows the existing review
+path; this fix does not automatically import missing historical wars.
+
+
+## Strikes UX polish — prompt 37
+
+Name and Discord-linked Add-strike suggestions use saved profiles, latest ledger
+names, and tracked clan membership; they do not fan out to live player lookups.
+An exact player tag still uses the authorized public provider. Missing saved TH
+or clan information stays unknown. Suggestions remain capped at 25.
+
+Import results count each stored candidate once, including candidates that were
+already present when the preview was made. This applies to regular and CWL
+history, preserves the preview approval/exclusion rules, and retains the insert
+race check. Removing a strike accepts a trimmed reason of 1–500 characters at
+both the HTTP and storage boundaries.
+
+At the configured limit the account says “Limit reached”; only higher counts say
+“Over limit.” The account detail keeps Add strike, while Refresh records and Find
+war remain on the account list. Row action names identify the date and opponent.
+The isolated browser checks cover 360×800 and 1440×1000: import/result copy,
+compact detail controls, row actions, focus return, discard confirmation, errors,
+44px targets, minimum 12px text, contrast and horizontal overflow. No live
+notifications or production writes are part of these checks.
+
+Prompt 41 completes shared singular/plural count labels, including history-only
+records and selected records. On phone account details the tracking box is hidden
+and Players, Status and Add strike share one row; desktop remains unchanged.
+The browser regression requires three complete visible rows and a first row at
+or above 560px at 360×800.
+
+Import counters retain one documented overlap: if another request inserts an
+excluded candidate after preview, it counts as both submitted excluded and an
+observed duplicate. No row is inserted by that excluded selection.
+
+## No-attack opponents and reviewed correction (prompt 40)
+
+The shared strike settings default to opponent tag `#2CYVV92R` (NO WAR). Staff
+can replace the list in Settings using the same revision check as the strike
+limit and exempt roles. An explicit empty list disables this rule. Regular
+scanner finals and ClashKing previews/imports use the same tag comparison;
+clan display names never decide eligibility. Neutral rows remain in history and
+Find war, with no strike and no streak event. Missing account links or Discord
+roles cannot turn a neutral war into a strike or block recording it.
+
+Scanner failures defer due work and queued staff retries for two minutes; failed
+requests are retained, while successful scans consume only their matching
+request timestamp. A failed begin records a safe error without overwriting a
+newer scan token. Cancellation still propagates.
+
+`StrikeService.no_attack_correction` is dry-run unless supplied its reviewed
+fingerprint. Its fixed two war keys are in `utils/strike_no_attack.py`. The
+review lists every target row and fingerprints all unrelated rows. Apply stops
+on stale input or evidence of affected streak receipts/watermarks before any
+write. It soft-revokes unremoved strikes and relabels one-missed rows as neutral,
+with actor `Ruggie (approved 2026-10-30)` and reason `No-attack war (NO WAR)`.
+No physical deletion or automatic historical backfill occurs. Re-running a
+completed plan is a no-op. If a partial apply fails, review a fresh remaining
+plan; do not automatically replay the old plan.
+
+Release requires Claude acceptance, fresh verified backup, scanner stopped for
+the correction, exactly the reviewed 50 strike revokes plus two neutral rows,
+account-by-account active-count reconciliation and unchanged unrelated row
+hashes. Affected streak state must be proven neutral or reviewed explicitly.
+The correction has only been rehearsed against an isolated backup database;
+production correction and release are pending. Runtime rollback restores old
+bot/backend/frontend assets, never silently restores the database or reverses
+approved audit removals.

@@ -224,3 +224,84 @@ def test_ended_cwl_cache_saves_second_pass_calls_and_active_refetches():
             await strikes._league_observations(client, '#P2Y', {}, ended_cache)
         assert client.get_league_war.await_count == 2  # Active tag refetched on pass two.
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('future', [False, True])
+def test_pending_final_deadline_roundtrips_mongo_utc(monkeypatch, future):
+    """Mongo's default codec removes tzinfo; a saved final still reaches its retry."""
+    from bson import BSON
+    deadline = datetime.now(timezone.utc) + timedelta(hours=1 if future else -1)
+    deadline = BSON(BSON.encode({'at': deadline})).decode()['at']
+    assert deadline.tzinfo is None
+    saved_war = {'state': 'warEnded', 'complete': True}
+    tracking = SimpleNamespace(
+        ensure_indexes=AsyncMock(), abandon_untracked=AsyncMock(return_value=set()),
+        begin=AsyncMock(return_value='token'), abandon_older=AsyncMock(return_value=0),
+        pending_finals=AsyncMock(return_value=[
+            {'_id': 'persisted-final', 'next_check_at': deadline, 'war': saved_war}]),
+        finish=AsyncMock(), rows=AsyncMock(return_value=[{'status': 'healthy'}]),
+    )
+    store = SimpleNamespace(ensure_indexes=AsyncMock(), sync_roster=AsyncMock())
+    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: SimpleNamespace(
+        to_list=AsyncMock(return_value=[{'tag': '#P2Y'}]))))
+    client = SimpleNamespace(
+        get_clan=AsyncMock(return_value=SimpleNamespace(members=[])),
+        get_clan_war=AsyncMock(return_value=war('random', state='notInWar')),
+        get_league_group=AsyncMock(return_value=SimpleNamespace(rounds=[])),
+    )
+    final = AsyncMock(return_value=(1, 0, 0, 0))
+    monkeypatch.setattr(strikes, 'service', lambda *_: store)
+    monkeypatch.setattr(strikes, 'StrikeTracking', lambda *_: tracking)
+    monkeypatch.setattr(strikes, '_warm_weight_cache', AsyncMock())
+    monkeypatch.setattr(strikes, '_finish_official_war', final)
+    asyncio.run(strikes.scan_once(mongo, object(), client))
+    assert final.await_count == (0 if future else 1)
+    assert tracking.finish.await_args.kwargs['error'] is None
+    assert tracking.finish.await_args.kwargs['regular_wars'] == (0 if future else 1)
+
+
+@pytest.mark.parametrize('begin_fails', [False, True])
+def test_bad_clan_does_not_block_later_ended_war_and_logs_safe_location(monkeypatch, caplog, begin_fails):
+    clans = [{'tag': '#P2Y'}, {'tag': '#8GG8'}]
+    store = SimpleNamespace(ensure_indexes=AsyncMock(), sync_roster=AsyncMock())
+    tracking = SimpleNamespace(
+        ensure_indexes=AsyncMock(), abandon_untracked=AsyncMock(return_value=set()),
+        begin=AsyncMock(side_effect=[TypeError('secret-token-body') if begin_fails else 'first-token', 'second-token']),
+        failed_begin=AsyncMock(), defer_due=AsyncMock(),
+        snapshot_key=lambda *_: 'key', snapshot=AsyncMock(return_value={'seen_active': True}),
+        observe=AsyncMock(return_value={'status': 'observing', 'seen_active': True}),
+        finalized=AsyncMock(), abandon_older=AsyncMock(return_value=0),
+        pending_finals=AsyncMock(side_effect=[[]] if begin_fails else [TypeError('secret-token-body'), []]),
+        finish=AsyncMock(), rows=AsyncMock(return_value=[{'status': 'error'}, {'status': 'healthy'}]),
+    )
+    # First clan is broken; the next clan's still-visible ended war must finalize.
+    ended = war('random')
+    ended.clan.tag = '#8GG8'
+    ended.opponent.tag = '#P2Y'
+    client = SimpleNamespace(
+        get_clan=AsyncMock(return_value=SimpleNamespace(members=[])),
+        get_clan_war=AsyncMock(side_effect=[war('random', state='notInWar'), ended]),
+        get_league_group=AsyncMock(return_value=SimpleNamespace(rounds=[])),
+    )
+    store.process_war = AsyncMock(return_value={'deferred_count': 0})
+    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: SimpleNamespace(
+        to_list=AsyncMock(return_value=clans))))
+    monkeypatch.setattr(strikes, 'service', lambda *_: store)
+    monkeypatch.setattr(strikes, 'StrikeTracking', lambda *_: tracking)
+    monkeypatch.setattr(strikes, '_warm_weight_cache', AsyncMock())
+    if begin_fails:
+        client.get_clan_war.side_effect = [ended]
+    successful = asyncio.run(strikes.scan_once(mongo, object(), client))
+    assert successful == {'#8GG8'}
+    tracking.defer_due.assert_awaited_once()
+    assert tracking.begin.await_count == 2
+    if begin_fails:
+        tracking.failed_begin.assert_awaited_once()
+    else:
+        assert tracking.finish.await_args_list[0].kwargs['error'] == 'War processing failed'
+        assert tracking.finish.await_args_list[0].kwargs['started_at'] == 'first-token'
+    assert tracking.finish.await_args_list[-1].kwargs['error'] is None
+    store.process_war.assert_awaited_once()
+    tracking.finalized.assert_awaited_once()
+    assert 'TypeError' in caplog.text and 'strikes.py:' in caplog.text
+    assert 'secret-token-body' not in caplog.text

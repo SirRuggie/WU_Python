@@ -323,6 +323,12 @@ function App() {
   >(null);
   const weightEditFocus = useRef<HTMLElement | null>(null);
   const [manageDirty, setManageDirty] = useState(false)
+  const [strikeWorking, setStrikeWorking] = useState(false)
+  const [replacementClan, setReplacementClan] = useState(entryTarget.replacementClan || '')
+  const [pendingStrikeLeave, setPendingStrikeLeave] = useState<null | {action: () => void; working: boolean}>(null)
+  useEffect(() => {
+    if (!['strikes', 'replacements'].includes(view) || !strikePermissions(session?.dashboard_permissions, session?.is_owner).view) setPendingStrikeLeave(null)
+  }, [view, session])
   const [cwlDirty, setCwlDirty] = useState(false)
   const [rosterDirtySummary, setRosterDirtySummary] = useState({ weightCount: 0, onlyWeights: false })
   const [pendingRosterLeave, setPendingRosterLeave] = useState<null | { action: () => void; working: boolean }>(null)
@@ -341,6 +347,9 @@ function App() {
     if (view === 'roster') {
       if (rosterBusy) { setPendingRosterLeave({ action: () => {}, working: true }); return false }
       if (cwlDirty) { setPendingRosterLeave({ action: action || (() => {}), working: false }); return false }
+    }
+    if (['strikes', 'replacements'].includes(view) && (manageDirty || strikeWorking)) {
+      setPendingStrikeLeave({action: action || (() => {}), working: strikeWorking}); return false
     }
     if (view === 'weight-trial') {
       if (weightState.busy) return false
@@ -407,6 +416,7 @@ function App() {
           !isTourReadOnly(),
         );
       setActivityVisit(window.history.state?.wuDashboardIndex || 0)
+      if (destination !== view) setReplacementClan('')
       if (destination === 'signup') setSignupPanel(panel)
       setActivitySearch(filter)
       setActivityKind(kind)
@@ -511,6 +521,7 @@ function App() {
       setActivityVisit(event.state?.wuDashboardIndex || 0);
       setActivitySearch(target.activityFilter || "");
       setActivityKind(target.activityKind);
+      setReplacementClan(target.replacementClan || "");
       setWeightTarget({ player: target.weightPlayer, clan: target.weightClan });
       const destination = navigationState.current.allowedView(target.view);
       if (target.season && seasonViews.has(destination))
@@ -535,6 +546,7 @@ function App() {
     navigation.current?.write(
       {
         view: destination,
+        ...(destination === "replacements" ? {replacementClan} : {}),
         ...(destination === "weight-trial"
           ? { weightPlayer: weightTarget.player, weightClan: weightTarget.clan }
           : {}),
@@ -546,7 +558,7 @@ function App() {
       },
       false,
     );
-  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind])
+  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, weightTarget])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
@@ -752,6 +764,33 @@ function App() {
   if (!session) return <div className="center-screen"><Brand /><p>Checking Discord sign-in…</p></div>
 
   return <DashboardPermissions.Provider value={{owner: session.is_owner, permissions: session.dashboard_permissions || []}}><div className={`shell${tourActive ? ' tour-active' : ''}`}>
+    {pendingStrikeLeave && (
+      <ConfirmDialog
+        key={pendingStrikeLeave.working ? 'working' : 'dirty'}
+        heading={
+          pendingStrikeLeave.working ? 'Save in progress' : 'Unsaved changes'
+        }
+        text={
+          pendingStrikeLeave.working
+            ? 'Wait for the save to finish.'
+            : 'Discard your unsaved strike or replacement changes?'
+        }
+        confirmLabel={pendingStrikeLeave.working ? 'OK' : 'Discard'}
+        cancelLabel="Keep editing"
+        hideCancel={pendingStrikeLeave.working}
+        onCancel={() => setPendingStrikeLeave(null)}
+        onConfirm={() => {
+          const pending = pendingStrikeLeave
+          setPendingStrikeLeave(null)
+          if (pending.working) return
+          if (strikeWorking) {
+            setPendingStrikeLeave({ ...pending, working: true })
+            return
+          }
+          pending.action()
+        }}
+      />
+    )}
     {pendingWeightLeave && (
       <ConfirmDialog
         heading="Unsaved changes"
@@ -862,8 +901,50 @@ function App() {
             />
           </div>
         )}
-        {view === 'strikes' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <StrikesWorkspace onDirty={setManageDirty} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} userId={session.user.id} />}
-        {view === 'replacements' && strikePermissions(session.dashboard_permissions, session.is_owner).view && <ReplacementWorkspace onDirty={setManageDirty} permissions={session.dashboard_permissions || []} isOwner={session.is_owner} />}
+        {view === 'strikes' &&
+          strikePermissions(session.dashboard_permissions, session.is_owner).view && (
+            <StrikesWorkspace
+              onWorking={setStrikeWorking}
+              onFindReplacement={(clan) => {
+                if (
+                  navigation.current?.pending ||
+                  allowedView('replacements') !== 'replacements'
+                )
+                  return
+                const proceed = () => {
+                  navigation.current?.write(
+                    { view: 'replacements', season: '', replacementClan: clan },
+                    true,
+                  )
+                  setActivityVisit(window.history.state?.wuDashboardIndex || 0)
+                  setReplacementClan(clan)
+                  acceptRoute('replacements')
+                }
+                if (canLeave(proceed)) proceed()
+              }}
+              onDirty={setManageDirty}
+              permissions={session.dashboard_permissions || []}
+              isOwner={session.is_owner}
+              userId={session.user.id}
+            />
+          )}
+        {view === 'replacements' &&
+          strikePermissions(session.dashboard_permissions, session.is_owner).view && (
+            <ReplacementWorkspace
+              onWorking={setStrikeWorking}
+              initialClan={replacementClan}
+              onClanChange={(clan) => {
+                setReplacementClan(clan)
+                navigation.current?.write(
+                  { view: 'replacements', season: '', replacementClan: clan },
+                  false,
+                )
+              }}
+              onDirty={setManageDirty}
+              permissions={session.dashboard_permissions || []}
+              isOwner={session.is_owner}
+            />
+          )}
         {view === 'text-commands' && <TextCommands onDirty={setManageDirty} />}
         {isManagementArea(view) && <ServerManagement key={view} area={view} onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}
         {view === 'manage' && <ServerManagement onDirty={setManageDirty} onNavigate={destination => changeView(destination as View)} />}

@@ -5,6 +5,7 @@ import { managementPaths } from "./managementLinks";
 const staffPaths: Record<string, string> = { ...cwlPaths, ...managementPaths, "weight-trial": "/clan-weights" };
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
 export type DashboardRoute = {
+  replacementClan?: string;
   view: DashboardView;
   season: string;
   weightPlayer?: string;
@@ -39,6 +40,7 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
       ? (value as DashboardView)
       : "home",
     ...(value === "publication" && ["review", "announce"].includes(params.get("step") || "") ? { step: params.get("step") as "review" | "announce" } : {}),
+    ...(value === "replacements" && /^#[0289PYLQGRJCUV]{3,15}$/.test(params.get("clan") || "") ? {replacementClan: params.get("clan")!} : {}),
     season: /^\d{1,18}$/.test(params.get("season") || "")
       ? params.get("season")!
       : "",
@@ -50,6 +52,7 @@ export function dashboardPath(route: DashboardRoute) {
   if (memberPaths[route.view]) return memberPaths[route.view];
   const path = staffPaths[route.view];
   const params = new URLSearchParams(path ? {} : { view: route.view });
+  if (route.view === "replacements" && /^#[0289PYLQGRJCUV]{3,15}$/.test(route.replacementClan || "")) params.set("clan", route.replacementClan!);
   if (route.view === "weight-trial") {
     if (route.weightPlayer) params.set("player", route.weightPlayer);
     if (route.weightClan) params.set("clan", route.weightClan);

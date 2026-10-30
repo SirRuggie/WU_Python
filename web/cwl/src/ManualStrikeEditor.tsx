@@ -1,17 +1,30 @@
-import { useEffect, useRef, useState } from 'react'
-import { api } from './api'
+import { useEffect, useRef, useState } from "react";
+import { api } from "./api";
+import ConfirmDialog from "./ConfirmDialog";
 
-type Account = { tag: string; name: string; current_clan_name?: string | null }
-type Member = { id: string; name: string; accounts: Account[] }
+type Account = {
+  tag: string;
+  name: string;
+  town_hall?: number | null;
+  current_clan_name?: string | null;
+  current_clan_tag?: string | null;
+};
+type Member = { id: string; name: string; accounts: Account[] };
 type Props = {
-  initialAccount?: { player_tag: string; player_name: string } | null
-  onCancel: () => void
-  onSaved: () => Promise<void>
-  onDirty: (dirty: boolean) => void
-  onBusy: (busy: boolean) => void
-}
+  initialAccount?: {
+    player_tag: string;
+    player_name: string;
+    current_clan_name?: string | null;
+  } | null;
+  onCancel: () => void;
+  onSaved: () => Promise<void>;
+  onDirty: (dirty: boolean) => void;
+  onBusy: (busy: boolean) => void;
+};
 const message = (cause: unknown) =>
-  cause instanceof Error ? cause.message : 'Could not load accounts. Try again.'
+  cause instanceof Error
+    ? cause.message
+    : "Could not load accounts. Try again.";
 
 export default function ManualStrikeEditor({
   initialAccount,
@@ -20,102 +33,119 @@ export default function ManualStrikeEditor({
   onDirty,
   onBusy,
 }: Props) {
-  const [mode, setMode] = useState<'member' | 'tag'>(
-    initialAccount ? 'tag' : 'member',
-  )
-  const [query, setQuery] = useState('')
-  const [matches, setMatches] = useState<Member[]>([])
-  const [member, setMember] = useState<Member | null>(null)
-  const [tag, setTag] = useState(initialAccount?.player_tag || '')
-  const [reason, setReason] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [review, setReview] = useState(false)
-  const [retry, setRetry] = useState(0)
-  const sequence = useRef(0)
-  const submitting = useRef(false)
-  const requestId = useRef(crypto.randomUUID())
-  const heading = useRef<HTMLHeadingElement>(null)
-  const account = member?.accounts.find((item) => item.tag === tag)
+  const [choosing, setChoosing] = useState(!initialAccount);
+  const [query, setQuery] = useState("");
+  const [matches, setMatches] = useState<Member[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [member, setMember] = useState<Member | null>(null);
+  const [account, setAccount] = useState<Account | null>(
+    initialAccount
+      ? {
+          tag: initialAccount.player_tag,
+          name: initialAccount.player_name,
+          current_clan_name: initialAccount.current_clan_name,
+        }
+      : null,
+  );
+  const tag = account?.tag || "";
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [review, setReview] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [discarding, setDiscarding] = useState(false);
+  const initialTag = useRef(initialAccount?.player_tag || "");
+  const sequence = useRef(0);
+  const submitting = useRef(false);
+  const requestId = useRef(crypto.randomUUID());
+  const heading = useRef<HTMLHeadingElement>(null);
+  const dirty = !!(reason || query || tag !== initialTag.current || review);
   const name =
-    account?.name ||
-    (tag === initialAccount?.player_tag ? initialAccount.player_name : tag)
+    account?.name && account.name !== tag
+      ? account.name
+      : "Player name unavailable";
   useEffect(() => {
-    heading.current?.focus()
-  }, [review])
+    heading.current?.focus();
+  }, [review]);
   useEffect(() => {
-    onDirty(!!(reason || query || tag || review))
-    return () => onDirty(false)
-  }, [reason, query, tag, review, onDirty])
+    onDirty(dirty);
+    return () => onDirty(false);
+  }, [dirty, onDirty]);
   useEffect(() => {
-    const turn = ++sequence.current
-    if (mode !== 'member' || member || query.trim().length < 2) {
-      setLoading(false)
-      return
+    const turn = ++sequence.current;
+    if (!choosing || member || query.trim().length < 2) {
+      setLoading(false);
+      return;
     }
-    setMatches([])
-    setLoading(true)
-    setError('')
+    setMatches([]);
+    setAccounts([]);
+    setLoading(true);
+    setError("");
     const timer = setTimeout(() => {
-      void api<{ members: Member[] }>(
-        `/strikes/members?query=${encodeURIComponent(query.trim())}`,
+      void api<{ members: Member[]; accounts: Account[] }>(
+        `/strikes/targets?query=${encodeURIComponent(query.trim())}`,
       )
         .then((data) => {
-          if (turn === sequence.current) setMatches(data.members)
+          if (turn === sequence.current) {
+            setMatches(data.members);
+            setAccounts(data.accounts);
+          }
         })
         .catch((cause) => {
-          if (turn === sequence.current) setError(message(cause))
+          if (turn === sequence.current) setError(message(cause));
         })
         .finally(() => {
-          if (turn === sequence.current) setLoading(false)
-        })
-    }, 250)
+          if (turn === sequence.current) setLoading(false);
+        });
+    }, 250);
     return () => {
-      clearTimeout(timer)
-      sequence.current++
-    }
-  }, [query, mode, member, retry])
+      clearTimeout(timer);
+      sequence.current++;
+    };
+  }, [query, choosing, member, retry]);
   async function choose(value: Member) {
-    const turn = ++sequence.current
-    setTag('')
-    setMember(null)
-    setMatches([])
-    setLoading(true)
-    setError('')
+    const turn = ++sequence.current;
+    setAccount(null);
+    setMember(null);
+    setMatches([]);
+    setAccounts([]);
+    setLoading(true);
+    setError("");
     try {
       const data = await api<{ member: Member }>(
         `/strikes/members/${encodeURIComponent(value.id)}/accounts`,
-      )
-      if (turn !== sequence.current) return
-      setMember(data.member)
+      );
+      if (turn !== sequence.current) return;
+      setMember(data.member);
+      setAccounts(data.member.accounts);
       // Require an explicit account choice, even for a member with one account.
     } catch (cause) {
-      if (turn === sequence.current) setError(message(cause))
+      if (turn === sequence.current) setError(message(cause));
     } finally {
-      if (turn === sequence.current) setLoading(false)
+      if (turn === sequence.current) setLoading(false);
     }
   }
   async function save() {
-    if (submitting.current || !review || !tag.trim() || !reason.trim()) return
-    submitting.current = true
-    setBusy(true)
-    onBusy(true)
-    setError('')
+    if (submitting.current || !review || !tag.trim() || !reason.trim()) return;
+    submitting.current = true;
+    setBusy(true);
+    onBusy(true);
+    setError("");
     try {
-      await api('/strikes/manual', 'POST', {
+      await api("/strikes/manual", "POST", {
         player_tag: tag.trim(),
         reason: reason.trim(),
         request_id: requestId.current,
-      })
-      onDirty(false)
-      await onSaved()
+      });
+      onDirty(false);
+      await onSaved();
     } catch (cause) {
-      setError(message(cause))
+      setError(message(cause));
     } finally {
-      submitting.current = false
-      setBusy(false)
-      onBusy(false)
+      submitting.current = false;
+      setBusy(false);
+      onBusy(false);
     }
   }
   return (
@@ -124,8 +154,24 @@ export default function ManualStrikeEditor({
       aria-label="Add strike"
       aria-busy={busy}
     >
+      {discarding && (
+        <ConfirmDialog
+          heading="Unsaved changes"
+          text="Discard this unsaved strike?"
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          disabled={busy}
+          onCancel={() => setDiscarding(false)}
+          onConfirm={() => {
+            if (submitting.current) return;
+            setDiscarding(false);
+            onDirty(false);
+            onCancel();
+          }}
+        />
+      )}
       <h2 ref={heading} tabIndex={-1}>
-        {review ? 'Review strike' : 'Add a strike'}
+        {review ? "Review strike" : "Add a strike"}
       </h2>
       {error && (
         <div className="notice error" role="alert">
@@ -163,6 +209,10 @@ export default function ManualStrikeEditor({
               <dt>Reason</dt>
               <dd>{reason}</dd>
             </div>
+            <div>
+              <dt>Current clan</dt>
+              <dd>{account?.current_clan_name || "Clan unavailable"}</dd>
+            </div>
           </dl>
           <p>This adds one manual strike to this account.</p>
           <div className="strikes-inline">
@@ -174,119 +224,129 @@ export default function ManualStrikeEditor({
               disabled={busy}
               onClick={() => void save()}
             >
-              {busy ? 'Saving…' : 'Confirm strike'}
+              {busy ? "Saving…" : "Confirm strike"}
             </button>
           </div>
         </>
       ) : (
         <form
           onSubmit={(event) => {
-            event.preventDefault()
-            if (tag.trim() && reason.trim() && !loading) setReview(true)
+            event.preventDefault();
+            if (!choosing && tag.trim() && reason.trim() && !loading)
+              setReview(true);
           }}
         >
           <fieldset disabled={busy}>
-            <label>
-              Find account by
-              <select
-                value={mode}
-                onChange={(event) => {
-                  sequence.current++
-                  setMode(event.target.value as 'member' | 'tag')
-                  setMember(null)
-                  setTag('')
-                  setMatches([])
-                  setError('')
-                }}
-              >
-                <option value="member">Discord member</option>
-                <option value="tag">Player tag</option>
-              </select>
-            </label>
-            {mode === 'member' ? (
+            {!choosing && account ? (
+              <div className="strike-target-identity">
+                <p>
+                  Adding a strike to <strong>{name}</strong> ·{" "}
+                  {account.current_clan_name || "Clan unavailable"}
+                </p>
+                <small>{tag}</small>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChoosing(true);
+                    setQuery("");
+                    setMember(null);
+                    setAccounts([]);
+                    setMatches([]);
+                  }}
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
               <>
                 <label>
-                  Find Discord member
+                  Find player or Discord member
                   <input
                     type="search"
                     value={query}
+                    maxLength={80}
                     onChange={(event) => {
-                      sequence.current++
-                      setQuery(event.target.value)
-                      setMember(null)
-                      setTag('')
-                      setMatches([])
+                      sequence.current++;
+                      setQuery(event.target.value);
+                      setMember(null);
+                      setMatches([]);
+                      setAccounts([]);
                     }}
-                    placeholder="Name or Discord ID"
+                    placeholder="Name, tag or Discord member"
                   />
                 </label>
                 {loading && <p role="status">Looking up accounts…</p>}
-                {!member && matches.length > 0 && (
-                  <div className="strike-member-matches">
-                    {matches.map((item) => (
-                      <button
-                        type="button"
-                        key={item.id}
-                        disabled={loading}
-                        onClick={() => void choose(item)}
-                      >
-                        {item.name}
-                        <small>{item.id}</small>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {!member &&
-                  !loading &&
+                {!loading &&
+                  !error &&
+                  (accounts.length > 0 || matches.length > 0) && (
+                    <div className="strike-member-matches">
+                      {accounts.map((item) => (
+                        <button
+                          type="button"
+                          key={item.tag}
+                          onClick={() => {
+                            sequence.current++;
+                            setAccount(item);
+                            setChoosing(false);
+                            setQuery("");
+                            setError("");
+                          }}
+                        >
+                          <strong>
+                            {item.name === item.tag
+                              ? "Player name unavailable"
+                              : item.name}
+                          </strong>
+                          <small>
+                            {item.tag} · TH {item.town_hall ?? "unknown"} ·{" "}
+                            {item.current_clan_name || "Clan unavailable"}
+                          </small>
+                        </button>
+                      ))}
+                      {matches.map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          onClick={() => void choose(item)}
+                        >
+                          {item.name}
+                          <small>
+                            Discord member · {item.id} · Choose account
+                          </small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                {member && <p>Accounts linked to {member.name}</p>}
+                {!loading &&
                   !error &&
                   query.trim().length >= 2 &&
+                  !accounts.length &&
                   !matches.length && (
                     <p>
-                      No matching members. Try another name or use a player tag.
+                      No matching accounts or members. Try a player tag or
+                      another name.
                     </p>
                   )}
-                {member && (
-                  <>
-                    <p>
-                      {member.name} <small>· {member.id}</small>
-                    </p>
-                    <label>
-                      Clash account
-                      <select
-                        required
-                        value={tag}
-                        onChange={(event) => setTag(event.target.value)}
-                      >
-                        <option value="">Choose an account</option>
-                        {member.accounts.map((item) => (
-                          <option key={item.tag} value={item.tag}>
-                            {item.name} · {item.tag}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {!member.accounts.length && (
-                      <p>No linked accounts found. You can use a player tag.</p>
-                    )}
-                  </>
+                {account && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChoosing(false);
+                      setQuery("");
+                      setError("");
+                    }}
+                  >
+                    Keep current account
+                  </button>
                 )}
               </>
-            ) : (
-              <label>
-                Player tag
-                <input
-                  required
-                  value={tag}
-                  onChange={(event) => setTag(event.target.value)}
-                  placeholder="#PLAYERTAG"
-                />
-              </label>
             )}
             <label>
               Reason
               <input
                 required
-                maxLength={300}
+                maxLength={500}
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder="Why is this strike needed?"
@@ -294,12 +354,22 @@ export default function ManualStrikeEditor({
             </label>
           </fieldset>
           <div className="strikes-inline">
-            <button type="button" disabled={busy} onClick={onCancel}>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (submitting.current) return;
+                if (dirty) setDiscarding(true);
+                else onCancel();
+              }}
+            >
               Cancel
             </button>
             <button
               className="primary"
-              disabled={busy || loading || !tag.trim() || !reason.trim()}
+              disabled={
+                busy || choosing || loading || !tag.trim() || !reason.trim()
+              }
             >
               Review strike
             </button>
@@ -307,5 +377,5 @@ export default function ManualStrikeEditor({
         </form>
       )}
     </section>
-  )
+  );
 }

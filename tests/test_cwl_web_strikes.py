@@ -57,6 +57,7 @@ def test_import_apply_returns_numeric_skipped_count():
             assert actor_id == 123
             assert excluded_keys == ['row1']
             return {'applied': 2, 'strikes': 1, 'existing': 3,
+                    'added_strikes': 1, 'history_only': 1, 'duplicates': 3,
                     'excluded': 1, 'skipped': [{'war': 'one'}, {'war': 'two'}]}
 
     async def permit(request, section, *, write=False):
@@ -90,6 +91,7 @@ def test_import_apply_returns_numeric_skipped_count():
     response = asyncio.run(run())
     payload = json.loads(response.text)
     assert payload['result'] == {'applied': 2, 'strikes': 1, 'skipped': 4, 'skipped_wars': 2,
+                                 'added_strikes': 1, 'history_only': 1, 'duplicates': 3, 'excluded': 1,
                                  'deferred_accounts': [], 'deferred_count': 0,
                                  'skipped_war_details': [{'war': 'one'}, {'war': 'two'}],
                                  'cwl_wars': 0, 'cwl_records': 0, 'cwl_missed': 0}
@@ -120,6 +122,7 @@ def test_preview_api_separates_deferred_accounts_from_skipped_wars():
     class Ledger:
         async def preview_import(self, guild_id, wars, actor_id, *, cwl_wars=()):
             return {'preview_id': 'id123', 'wars': 1, 'items': [],
+                    'summary': {'strikes': 0, 'accounts': 0, 'history_only': 0},
                     'existing': 0, 'deferred_accounts': [deferred],
                     'skipped': [{'war': '#2UVGQU9', 'reason': 'Account links unavailable'}]}
 
@@ -143,6 +146,7 @@ def test_preview_api_separates_deferred_accounts_from_skipped_wars():
              patch.object(strike_wars, 'fetch_history_report', fake_history):
             return await strikes._preview_work({}, 123, 90)
     result = asyncio.run(run())
+    assert result['summary'] == {'strikes': 0, 'accounts': 0, 'history_only': 0}
     assert result['deferred_count'] == 1
     assert result['deferred_accounts'][0]['war_end'] == end.isoformat()
     assert result['incomplete_wars'] == 1

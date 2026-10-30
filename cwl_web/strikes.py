@@ -16,7 +16,7 @@ from aiohttp import web
 from . import server_management as shared
 from .providers import ProviderUnavailable, tag
 from utils import recruit_links
-from utils.strike_store import StrikeService, utc
+from utils.strike_store import StrikeConflict, StrikeService, utc
 from utils.strike_tracking import StrikeTracking
 from utils.replacement_filters import parse_weight, compact_weight
 
@@ -36,7 +36,9 @@ def endpoint(fn=None, *, scope=None):
             return await fn(request)
         except ValueError as exc:
             raise web.HTTPBadRequest(text=str(exc)) from exc
-        except RuntimeError as exc:
+        except StrikeConflict as exc:
+            raise web.HTTPConflict(text=str(exc)) from exc
+        except (RuntimeError, ProviderUnavailable) as exc:
             raise web.HTTPServiceUnavailable(text='Strike data could not be checked. Try again.') from exc
     return guarded
 
@@ -116,14 +118,16 @@ async def account_rows(request, member_id):
     links = await recruit_links.resolve(int(member_id))
     if links.unavailable or links.conflicts:
         raise ProviderUnavailable('Account links could not be verified. Try again.')
-    tags = list(links.sources)
+    tags = sorted(links.sources)
+    if len(tags) > 100:
+        raise ProviderUnavailable('Too many linked accounts to verify safely. Contact staff.')
     sem = asyncio.Semaphore(6)
 
     async def account(value):
         async with sem:
             return await request.app['providers'].player(value)
     rows = await asyncio.gather(*(account(value) for value in tags))
-    return [{'tag': row['tag'], 'name': row['name'],
+    return [{'tag': row['tag'], 'name': row['name'], 'town_hall': row.get('town_hall'),
              'current_clan_tag': row.get('current_clan_tag'),
              'current_clan_name': row.get('current_clan_name')} for row in rows]
 
@@ -131,6 +135,52 @@ async def account_rows(request, member_id):
 def display_member(row):
     user = row.get('user') or {}
     return {'id': str(user['id']), 'name': row.get('nick') or user.get('global_name') or user.get('username') or str(user['id']), 'accounts': []}
+
+
+@endpoint(scope='strikes_add')
+async def targets(request):
+    """Known player names, direct tags, or member-linked accounts; no global name API."""
+    query = request.query.get('query', '').strip()
+    if len(query) > 80:
+        raise ValueError('Use a shorter name, tag, or ID.')
+    if len(query) < 2:
+        return web.json_response({'accounts': [], 'members': []})
+    members_found = []
+    if query.startswith('#'):
+        rows = [await request.app['providers'].player(tag(query))]
+    elif re.fullmatch(r'[0-9]{15,22}', query):
+        await shared.discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{query}')
+        links = await recruit_links.resolve(int(query))
+        if links.unavailable or links.conflicts:
+            raise ProviderUnavailable('Account links could not be verified. Try again.')
+        async with shared.mongo(request) as db:
+            ledger = await service(request, db)
+            rows = await ledger.saved_target_accounts(GUILD_ID, sorted(links.sources))
+    else:
+        from .manage_roles import searchable_members, search_text
+        async with shared.mongo(request) as db:
+            ledger = await service(request, db)
+            known = await ledger.known_targets(GUILD_ID, query)
+            rows = await ledger.saved_target_accounts(GUILD_ID, [row['player_tag'] for row in known])
+        folded = search_text(query)
+        candidates = await searchable_members(request)
+        members_found = [display_member(row) for row in candidates
+                         if not (row.get('user') or {}).get('bot') and folded in search_text(' '.join(
+                             str(value or '') for value in (row.get('nick'),
+                             (row.get('user') or {}).get('global_name'),
+                             (row.get('user') or {}).get('username'))))][:25]
+    accounts_found = [{key: row.get(key) for key in
+                       ('tag', 'name', 'town_hall', 'current_clan_tag', 'current_clan_name')} for row in rows]
+    return web.json_response({'accounts': accounts_found, 'members': members_found})
+
+
+@endpoint
+async def leave_state(request):
+    member_id = uid(request.match_info['member_id'])
+    async with shared.mongo(request) as db:
+        ledger = await service(request, db)
+        revision = await ledger.leave_revision(GUILD_ID, int(member_id))
+    return web.json_response({'revision': revision})
 
 
 @endpoint
@@ -184,7 +234,7 @@ def entry(row, clans, profile=None):
                 or _OPPONENT_NAME_CACHE.get(row.get('opponent_tag'), (0, None))[1]
                 or row.get('opponent_tag'),
             'war_end': public(row['occurred_at']), 'expires_at': public(row.get('expires_at')),
-            'kind': 'cwl' if kind == 'cwl' else ('strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss')),
+            'kind': 'no_attack' if kind == 'no_attack' else ('cwl' if kind == 'cwl' else ('strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss'))),
             'source': row.get('source'),
             'source_label': ('Clash API' if row.get('capture_source') == 'clash_api' else
                              'ClashKing (import)' if row.get('import_id') or
@@ -259,7 +309,8 @@ async def accounts(request):
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
         result = await ledger.account_list(GUILD_ID, query=query, clan_tag=clan,
-                                           status=status, limit=limit, skip=offset)
+                                           status=status, limit=limit, skip=offset,
+                                           action=request.query.get('action', 'all'))
         clans = await clan_rows(db)
     names = {row['tag']: row['name'] for row in clans}
     entries = [{'player_tag': row['player_tag'], 'player_name': row['player_name'],
@@ -270,14 +321,16 @@ async def accounts(request):
                 'clan_seen_at': public(row.get('clan_seen_at')),
                 'clan_is_current': row.get('clan_is_current', False),
                 'active_strikes': row['active_strikes'], 'total_strikes': row['total_strikes'],
+                'over_limit': row.get('over_limit', False), 'new_this_week': row.get('new_this_week', False),
                 'last_strike_at': public(row['last_strike_at']),
                 'last_record_at': public(row.get('last_record_at'))}
                for row in result['items']]
     return web.json_response({'accounts': entries, 'total': result['total'],
-                              'clans': clans, 'limit': limit, 'offset': offset})
+                              'clans': clans, 'limit': limit, 'offset': offset,
+                              'summary': result['summary'], 'strike_limit': result['strike_limit']})
 
 
-async def _enrich_war_names(request, rows, clan_names):
+async def _enrich_war_names(request, rows, clan_names, *, budget=8):
     """Resolve only missing opponent labels, using bounded cache and time."""
     now = time.monotonic()
     missing = set()
@@ -302,10 +355,10 @@ async def _enrich_war_names(request, rows, clan_names):
         except (ProviderUnavailable, aiohttp.ClientError, asyncio.TimeoutError, ValueError):
             name = None
         _OPPONENT_NAME_CACHE[opponent] = (time.monotonic() + (3600 if name else 300), name)
-    if missing:
+    if missing and budget > 0:
         tasks = [asyncio.create_task(lookup(opponent)) for opponent in sorted(missing)]
         try:
-            await asyncio.wait_for(asyncio.gather(*tasks), timeout=8)
+            await asyncio.wait_for(asyncio.gather(*tasks), timeout=budget)
         except asyncio.TimeoutError:
             for task in tasks:
                 task.cancel()
@@ -327,21 +380,26 @@ async def wars(request):
     if len(query) > 80:
         raise ValueError('Use a shorter clan, opponent, or date.')
     clan = request.query.get('clan') or None
+    limit = number(request.query.get('limit', '25'))
+    offset = number(request.query.get('offset', '0'), 0, 100000)
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        rows = await ledger.war_list(GUILD_ID, clan_tag=clan, limit=2000)
-        rows.extend(await StrikeTracking(db).incomplete_wars(GUILD_ID, clan_tag=clan))
         clans = await clan_rows(db)
-    rows.sort(key=lambda row: utc(row['war_end']), reverse=True)
-    names = {row['tag']: row['name'] for row in clans}
-    await _enrich_war_names(request, rows, names)
-    if query:
-        folded = query.casefold()
-        rows = [row for row in rows if folded in ' '.join(str(value or '') for value in (
-            row.get('clan_tag'), row.get('clan_name'), row.get('opponent_tag'),
-            row.get('opponent_name'), utc(row['war_end']).date().isoformat(),
-        )).casefold()]
-    return web.json_response({'wars': [public(row) for row in rows]})
+        names = {row['tag']: row['name'] for row in clans}
+        deadline = time.monotonic() + 8
+        name_search_incomplete = False
+        async def enrich(rows):
+            nonlocal name_search_incomplete
+            await _enrich_war_names(request, rows, names, budget=max(0, deadline - time.monotonic()))
+            name_search_incomplete |= any(row.get('opponent_tag') and
+                                          row.get('opponent_name') == row['opponent_tag'] for row in rows)
+        result = await ledger.war_page(GUILD_ID, clan_tag=clan, query=query,
+                                       limit=limit, skip=offset, clan_names=names, enrich_names=enrich)
+    # Without a search only the displayed page needs remote name enrichment.
+    await _enrich_war_names(request, result['items'], names)
+    return web.json_response({'wars': [public(row) for row in result['items']],
+                              'total': result['total'], 'limit': limit, 'offset': offset,
+                              'name_search_incomplete': bool(name_search_incomplete)})
 
 
 @endpoint(scope='strikes_add')
@@ -379,10 +437,20 @@ async def remove(request):
     return web.json_response({'ok': True})
 
 
+async def no_attack_labels(request, tags):
+    rows = [{'opponent_tag': value,
+             'opponent_name': 'NO WAR' if value == '#2CYVV92R' else None} for value in tags]
+    await _enrich_war_names(request, rows, {})
+    return {row['opponent_tag']: row['opponent_name'] for row in rows}
+
+
 @endpoint
 async def settings(request):
     actor = await shared.identity(request)
-    roles = [{'id': str(row['id']), 'name': row['name']} for row in actor['roles'] if str(row['id']) != str(GUILD_ID)]
+    roles = [{'id': str(row['id']), 'name': row['name'],
+              'managed': bool(row.get('managed', False)), 'position': row.get('position', 0),
+              'color': row.get('color', 0)} for row in actor['roles'] if str(row['id']) != str(GUILD_ID)]
+    roles.sort(key=lambda row: (-row['position'], int(row['id'])))
     role_names = {row['id']: row['name'] for row in roles}
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
@@ -400,31 +468,48 @@ async def settings(request):
     result = []
     for row, name in zip(leaves, names):
         result.append({'discord_id': str(row['member_id']), 'display_name': name,
+                       'revision': row.get('revision', 0),
                        'player_tags': row.get('account_tags') or [], 'resume_date': utc(row['until']).date().isoformat()})
     return web.json_response({'excluded_roles': [{'id': str(value), 'name': role_names.get(str(value), f'Role {value}')} for value in config['exempt_role_ids']],
-                              'roles': roles, 'leaves': result, 'strike_limit': config['strike_limit']})
+                              'roles': roles, 'leaves': result, 'strike_limit': config['strike_limit'],
+                              'no_attack_opponents': config['no_attack_opponents'],
+                              'no_attack_names': await no_attack_labels(request, config['no_attack_opponents']),
+                              'revision': config['revision']})
 
 
 @endpoint
 async def save_roles(request):
-    data = await body(request, {'role_ids'})
+    data = await body(request, {'role_ids', 'strike_limit', 'revision', 'no_attack_opponents'})
+    revision = number(data.get('revision'), 0, 2**53 - 1)
+    limit = number(data['strike_limit'], 1, 20) if 'strike_limit' in data else None
     roles = data.get('role_ids')
     if not isinstance(roles, list) or len(roles) > 100:
         raise ValueError('Choose up to 100 roles.')
     roles = [uid(value) for value in roles]
     actor = await shared.identity(request)
-    known = {str(row['id']) for row in actor['roles'] if str(row['id']) != str(GUILD_ID)}
-    if set(roles) - known:
-        raise ValueError('A selected role no longer exists. Refresh the role list.')
+    selectable = {str(row['id']) for row in actor['roles']
+                  if str(row['id']) != str(GUILD_ID) and not row.get('managed', False)}
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        await ledger.set_exempt_roles(GUILD_ID, roles, int(actor['user_id']))
-    return web.json_response({'ok': True})
+        current = await ledger.settings(GUILD_ID)
+        if current['revision'] != revision:
+            raise StrikeConflict('Changed by someone else · Reload')
+        retained = {str(value) for value in current['exempt_role_ids']}
+        if set(roles) - selectable - retained:
+            raise ValueError('A selected role is managed or no longer exists. Refresh the role list.')
+        config = await ledger.set_exempt_roles(GUILD_ID, roles, int(actor['user_id']),
+                                               expected_revision=revision, strike_limit=limit,
+                                               no_attack_opponents=data.get('no_attack_opponents'))
+    return web.json_response({'ok': True, 'revision': config['revision'],
+                              'strike_limit': config['strike_limit'],
+                              'no_attack_opponents': config['no_attack_opponents'],
+                              'no_attack_names': await no_attack_labels(request, config['no_attack_opponents'])})
 
 
 @endpoint
 async def save_leave(request):
-    data = await body(request, {'discord_id', 'player_tags', 'resume_date'})
+    data = await body(request, {'discord_id', 'player_tags', 'resume_date', 'revision'})
+    revision = number(data.get('revision'), 0, 2**53 - 1)
     member_id = uid(data.get('discord_id'))
     values = data.get('player_tags')
     if not isinstance(values, list) or not values or len(values) > 100:
@@ -438,17 +523,21 @@ async def save_leave(request):
     from .app import _session
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        await ledger.set_leave(GUILD_ID, int(member_id), data['resume_date'], int(_session(request)['user_id']), account_tags=values)
-    return web.json_response({'ok': True})
+        saved = await ledger.set_leave(GUILD_ID, int(member_id), data['resume_date'],
+                                        int(_session(request)['user_id']), account_tags=values,
+                                        expected_revision=revision)
+    return web.json_response({'ok': True, 'revision': saved['revision']})
 
 
 @endpoint
 async def remove_leave(request):
+    data = await body(request, {'revision'})
+    revision = number(data.get('revision'), 0, 2**53 - 1)
     member_id = uid(request.match_info['member_id'])
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        await ledger.clear_leave(GUILD_ID, int(member_id))
-    return web.json_response({'ok': True})
+        saved = await ledger.clear_leave(GUILD_ID, int(member_id), expected_revision=revision)
+    return web.json_response({'ok': True, 'revision': saved['revision']})
 
 
 @endpoint
@@ -812,7 +901,7 @@ async def _preview_work(app, actor_id, days, actor=None):
             item['deferred_accounts'] = sum(1 for row in deferred if row['clan_tag'] == item['clan_tag'])
             item['processing_skipped_wars'] = sum(1 for row in result.get('skipped', [])
                                                   if row.get('war') == item['clan_tag'])
-        return {'preview_id': result['preview_id'], 'wars_scanned': sum(item['source_count'] for item in coverage),
+        return {'preview_id': result['preview_id'], 'summary': result['summary'], 'wars_scanned': sum(item['source_count'] for item in coverage),
                 'complete_wars': result['wars'] + result.get('cwl_wars', 0),
                 'regular_wars': result['wars'], 'cwl_wars': result.get('cwl_wars', 0),
                 'cwl_records': result.get('cwl_records', 0), 'cwl_missed': result.get('cwl_missed', 0),
@@ -829,6 +918,8 @@ async def _apply_work(app, actor_id, preview_id, exclusions, actor=None):
         ledger = await service(background, db)
         result = await ledger.apply_import(GUILD_ID, preview_id, actor_id, excluded_keys=exclusions)
     return {'applied': result['applied'], 'strikes': result.get('strikes', 0),
+            'added_strikes': result['added_strikes'], 'history_only': result['history_only'],
+            'duplicates': result['duplicates'], 'excluded': result.get('excluded', 0),
             'cwl_wars': result.get('cwl_wars', 0), 'cwl_records': result.get('cwl_records', 0),
             'cwl_missed': result.get('cwl_missed', 0),
             'skipped': result.get('excluded', 0) + result.get('existing', 0),
@@ -920,10 +1011,11 @@ routes = [web.get(API + '/tracking', tracking_status),
           web.post(API + '/tracking/retry', tracking_retry),
           web.get(API + '/overview', overview), web.get(API + '/accounts', accounts),
           web.get(API + '/wars', wars),
-          web.get(API + '/members', members),
+          web.get(API + '/members', members), web.get(API + '/targets', targets),
           web.get(API + '/members/{member_id}/accounts', member_accounts),
           web.post(API + '/manual', manual), web.post(API + '/{strike_id}/remove', remove),
           web.get(API + '/settings', settings), web.put(API + '/settings/roles', save_roles),
+          web.get(API + '/settings/leaves/{member_id}', leave_state),
           web.post(API + '/settings/leaves', save_leave), web.delete(API + '/settings/leaves/{member_id}', remove_leave),
           web.get(API + '/replacements', replacements), web.put(API + '/replacements/{player_tag}', save_filler),
           web.get(API + '/replacement-roster', replacement_roster),

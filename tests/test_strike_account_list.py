@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from cwl_web import strikes
 from utils.strike_store import StrikeService
@@ -15,6 +15,10 @@ NOW = datetime.now(timezone.utc)
 class Cursor:
     def __init__(self, rows):
         self.rows = rows
+
+    async def __aiter__(self):
+        for row in self.rows:
+            yield row
 
     async def to_list(self, length=None):
         return self.rows
@@ -61,6 +65,7 @@ def fixtures():
     ]
     records = Records(rows)
     return StrikeService(SimpleNamespace(strike_records=records,
+                                         strike_settings=SimpleNamespace(find_one=AsyncMock(return_value=None)),
                                          strike_profiles=Profiles(profiles))), records
 
 
@@ -80,7 +85,7 @@ def test_account_list_default_active_and_all_historical():
     assert all_rows['items'][1]['current_clan_tag'] == '#2UVGQU9'
     assert all_rows['items'][1]['clan_is_current'] is False
     match = records.pipeline[0]['$match']
-    assert match == {'guild_id': 1, 'kind': {'$in': ['strike', 'missed', 'exempt', 'cwl']}}
+    assert match == {'guild_id': 1, 'kind': {'$in': ['strike', 'missed', 'exempt', 'cwl', 'no_attack']}}
     assert all_rows['items'][2]['total_strikes'] == 0
     assert all_rows['items'][2]['last_strike_at'] is None
     assert records.pipeline[2]['$group']['_id'] == '$player_tag'

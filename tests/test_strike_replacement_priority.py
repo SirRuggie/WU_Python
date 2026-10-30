@@ -255,9 +255,9 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_pa
     from cwl_web.store import Store
     store = Store(str(tmp_path / 'weights.sqlite'))
     with store.tx() as db:
-        db.execute("INSERT INTO player_weights(tag,weight,updated_at) VALUES('#PC9YGL0JL',151000,'2026-10-23')")
+        db.execute("INSERT INTO player_weights(tag,weight,updated_at) VALUES('#PC9YGL0JL',151000,'2026-10-23T00:00:00+00:00')")
         if official != 'absent':
-            db.execute("INSERT INTO clan_player_weights(tag,weight,revision,player_name,town_hall,last_clan_tag,last_clan_name,updated_at,actor_id) VALUES('#PC9YGL0JL',?,1,'Sample',16,'#2UVGQU9','Sample','2026-10-23','1')", (official,))
+            db.execute("INSERT INTO clan_player_weights(tag,weight,revision,player_name,town_hall,last_clan_tag,last_clan_name,updated_at,actor_id) VALUES('#PC9YGL0JL',?,1,'Sample',16,'#2UVGQU9','Sample','2026-10-23T00:00:00+00:00','1')", (official,))
 
     async def run():
         request = SimpleNamespace(method='GET', query={'weight': '149k' , 'scope': 'all',

@@ -49,7 +49,7 @@ def test_preview_batches_duplicate_lookup_once_for_each_war():
 
         async def rows(guild_id, current, **kwargs):
             index = wars.index(current)
-            return [{'_id': f'old-{index}-{offset}', 'guild_id': guild_id,
+            return [{'_id': f'old-{index}-{offset}', 'guild_id': guild_id, 'player_tag': f'#P{offset}',
                      'kind': 'completed' if offset == 0 else ('missed' if offset % 2 else 'strike'),
                      'occurred_at': current['end_time'],
                      'expires_at': current['end_time'] + timedelta(days=90)}

@@ -1,5 +1,15 @@
 # CWL roster redesign — spec and status
 
+## Linked weights — review pending, October 30, 2026
+
+Prompt 39 reverses the FWA popup link-only rule: roster Details and Clan weights
+share explicit Save/Clear, parsing, history and revision checks. See
+[the weight contract](clan-weight-trial.md). Backend release required for shared
+write handling and the history source column; no production activation yet.
+Read-only backup audit: 42 legacy / 350 clan rows, zero overlaps or changed
+values, all timestamps reliable. Source and history rows are retained.
+
+
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
 ## Back to top and empty quick selection — October 30 release

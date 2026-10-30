@@ -67,7 +67,7 @@ afterEach(async () => {
 });
 async function render(
   overrides: Partial<RosterAccount> = {},
-  permissions = ["cwl_roster", "cwl_signups"],
+  permissions = ["cwl_roster", "cwl_signups", "clan_weights"],
   extra: { archived?: boolean; viewOnly?: "declaration" } = {},
 ) {
   await act(async () =>
@@ -147,15 +147,15 @@ it("unassign confirms its exact existing placement body and stays open", async (
   expect(close).not.toHaveBeenCalled();
 });
 
-it("Loot defaults to the manual value, previews full weight, and blank clears to source", async () => {
+it("Loot shows the linked value and blank saves Not Available", async () => {
   await render();
   const input = document.querySelector<HTMLInputElement>(
-    ".compact-weight-controls input",
+    'input[aria-label="Loot for Amber"]',
   )!;
   expect(input.value).toBe("25000");
   expect(input.getAttribute("aria-label")).toBe("Loot for Amber");
   expect(document.body.textContent).toContain(
-    "= 125,000 full weight · saved for future seasons",
+    "Loot × storages = full weight. Blank means Not Available.",
   );
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(
@@ -166,7 +166,11 @@ it("Loot defaults to the manual value, previews full weight, and blank clears to
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await click("Save");
-  expect(save).toHaveBeenCalledExactlyOnceWith({ manual_weight: null });
+  expect(save).toHaveBeenCalledExactlyOnceWith({
+    manual_weight: null,
+    weight_revision: 0,
+    weight_storages: 5,
+  });
   expect(close).not.toHaveBeenCalled();
 });
 it("keeps the last known location with age rather than an unavailable placeholder", async () => {
@@ -221,7 +225,7 @@ it("staff without roster or signup access see no editing actions", async () => {
 it("a concurrent refresh does not erase unsaved weight text", async () => {
   await render();
   const input = document.querySelector<HTMLInputElement>(
-    ".compact-weight-controls input",
+    'input[aria-label="Loot for Amber"]',
   )!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(
@@ -230,7 +234,11 @@ it("a concurrent refresh does not erase unsaved weight text", async () => {
     )!.set!.call(input, "31000");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await render({ manual_weight: 130000 });
+  await render({
+    manual_weight: 130000,
+    effective_weight: 130000,
+    weight_revision: 2,
+  });
   expect(input.value).toBe("31000");
   expect(save).not.toHaveBeenCalled();
 });
@@ -269,7 +277,7 @@ it("rechecks dirty weight at confirmation", async () => {
   await render();
   await click("Remove signup");
   const input = document.querySelector<HTMLInputElement>(
-    ".compact-weight-controls input",
+    'input[aria-label="Loot for Amber"]',
   )!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(
@@ -316,9 +324,8 @@ it("Change clan immediately sends the exact manual placement body", async () => 
 
 it("keeps Save disabled for an equivalent full-weight value", async () => {
   await render();
-  await click("Full");
   const input = document.querySelector<HTMLInputElement>(
-    ".compact-weight-controls input",
+    'input[aria-label="Full weight for Amber"]',
   )!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(
@@ -345,7 +352,89 @@ it("routes an FWA member without a saved weight to Clan weights consistently", a
     ["cwl_roster", "clan_weights"],
   );
   const section = document.querySelector('[aria-label="Weight"]')!;
-  expect(section.textContent).toContain("Set in Clan weights ›");
+  expect(section.textContent).toContain("Also on Clan weights ›");
+  expect(section.querySelector("input")).not.toBeNull();
+  expect(save).not.toHaveBeenCalled();
+});
+
+it.each(["179000", "179,000", "179k"])(
+  "FWA popup saves %s through the linked revision",
+  async (text) => {
+    await render({
+      clan_weight_managed: true,
+      current_fwa_clan_tag: "#FWA",
+      weight_revision: 7,
+    });
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Full weight for Amber"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("Save");
+    expect(save).toHaveBeenCalledExactlyOnceWith({
+      manual_weight: 179000,
+      weight_revision: 7,
+      weight_storages: 5,
+    });
+  },
+);
+
+it("a weight conflict preserves typed text and Clear waits for Save", async () => {
+  await render({ clan_weight_managed: true, weight_revision: 4 });
+  const input = document.querySelector<HTMLInputElement>(
+    'input[aria-label="Full weight for Amber"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, "179k");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  save.mockRejectedValueOnce(new Error("Changed by someone else · Reload"));
+  await click("Save");
+  expect(input.value).toBe("179k");
+  expect(document.body.textContent).toContain(
+    "Changed by someone else · Reload",
+  );
+  await click("Clear weight");
+  expect(input.value).toBe("");
+  expect(save).toHaveBeenCalledTimes(1);
+  await click("Save");
+  expect(save).toHaveBeenLastCalledWith({
+    manual_weight: null,
+    weight_revision: 4,
+    weight_storages: 5,
+  });
+});
+
+it("opens a historical fractional-thousand weight clean and closes without a discard prompt", async () => {
+  await render({ effective_weight: 151500 });
+  expect(document.body.textContent).toContain(
+    "Saved value isn't a whole thousand. Enter a new one to change it.",
+  );
+  expect(
+    document.querySelector<HTMLInputElement>(
+      'input[aria-label="Full weight for Amber"]',
+    )!.value,
+  ).toBe("");
+  await click("‹ Build roster");
+  expect(close).toHaveBeenCalledOnce();
+  expect(document.body.textContent).not.toContain("Discard the unsaved weight");
+  expect(save).not.toHaveBeenCalled();
+});
+it("roster-only staff can place players but cannot edit linked weights", async () => {
+  await render({ current_fwa_clan_tag: "#R2Y", clan_weight_managed: true }, [
+    "cwl_roster",
+  ]);
+  const section = document.querySelector('[aria-label="Weight"]')!;
   expect(section.querySelector("input")).toBeNull();
+  expect(section.textContent).toContain("125,000");
+  expect(section.textContent).toContain("Clan weights access required");
   expect(save).not.toHaveBeenCalled();
 });

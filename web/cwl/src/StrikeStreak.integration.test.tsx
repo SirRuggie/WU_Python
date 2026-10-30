@@ -46,6 +46,8 @@ it("shows the account-scoped streak independently of records and rejects late pr
       return Promise.resolve({
         clans: [],
         total: 2,
+        strike_limit: 4,
+        summary: { over_limit: 0, new_this_week: 0 },
         accounts: ["Alpha", "Birch"].map((name) => ({
           player_tag: `#${name}`,
           player_name: name,
@@ -85,7 +87,7 @@ it("shows the account-scoped streak independently of records and rejects late pr
   expect(host.textContent).toContain(
     "Streak: 3 wars played · 1 more to lose a strike",
   );
-  expect(host.textContent).toContain("No strikes found.");
+  expect(host.textContent).toContain("No records found.");
   await click("← Players");
   await settle();
   oldPending = true;
@@ -145,10 +147,14 @@ it("shows grace only for confirmed departures and names the last observed clan/t
   expect(host.querySelectorAll(".replacement-departure")).toHaveLength(1);
   expect(host.textContent).toContain("Left Observed Clan");
   expect(host.textContent).toContain("now in New Clan");
-  const departureDetails = host.querySelector('.replacement-departure details')!;
-  expect(departureDetails.hasAttribute('open')).toBe(false);
-  await act(async () => (departureDetails.querySelector('summary') as HTMLElement).click());
-  expect(departureDetails.hasAttribute('open')).toBe(true);
+  const departureDetails = host.querySelector(
+    ".replacement-departure details",
+  )!;
+  expect(departureDetails.hasAttribute("open")).toBe(false);
+  await act(async () =>
+    (departureDetails.querySelector("summary") as HTMLElement).click(),
+  );
+  expect(departureDetails.hasAttribute("open")).toBe(true);
   expect(host.querySelector("time")?.getAttribute("datetime")).toBe(
     "2026-10-30T12:00:00.000Z",
   );

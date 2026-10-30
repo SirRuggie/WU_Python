@@ -1,5 +1,13 @@
 # Dashboard frontend releases
 
+## No-war-strikes-1 — October 30, 2026
+
+Frontend `73eda11a1e883b711bc40494f023b4d87efd5a6b` is live and Claude smoke 131 passed.
+Entry `index-BipoOtjv.js`, hash `bea1b2f126251a5c63bf144354f930b6a8138f288540f32c9413277484e80297`.
+Clean tagged npm ci/build and 1,034 frontend tests passed. See the backend release
+record for coordinated rollback, backup/count evidence and the approved correction.
+
+
 ## Moderation-logs-1 — October 30, 2026
 
 Latest verified frontend: `c494022e924994435496c3e4f0722eb781460380`, tag
@@ -174,3 +182,12 @@ staged audience rollout, not as a substitute for isolated build artifacts.
 
 Never report "not deployed" without checking actual public asset hashes.
 The release-1 tag is local; remote publication was not authorized in this run.
+
+## linked-weights-1
+
+Released and smoke-passed 2026-10-30 at
+`fb46bd388af287ea30f6296407853ff40105e39b`. Public `index-ChNst9uj.js`
+SHA-256 `ace9289aa3436554d9dd0cda0004f0250641df58d0dcd3757f7308e827aa1685`
+matched the immutable manifest, as did affected feature chunks. Previous release
+for all three code layers is `73eda11a1e883b711bc40494f023b4d87efd5a6b`.
+See [backend release evidence and guarded rollback](dashboard-backend-releases.md#linked-weights-1--2026-10-30).
