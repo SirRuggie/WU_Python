@@ -556,6 +556,7 @@ async def replacements(request):
     limit = number(request.query.get('limit', '25'), 1, 100)
     sort = request.query.get('sort', 'priority')
     search = request.query.get('query', '')
+    exact_tag = tag(request.query['exact_tag']) if request.query.get('exact_tag') else None
     raw_browse = request.query.get('browse_all', 'false').lower()
     if raw_browse not in ('true', 'false', '1', '0'):
         raise ValueError('Choose whether to browse all accounts.')
@@ -570,9 +571,7 @@ async def replacements(request):
         tags = [row['player_tag'] for row in profiles]
         try:
             from utils.clan_weights import source_weights
-            weights = ({row['player_tag']: {'weight': row.get('weight')} for row in profiles}
-                       if weight is None else
-                       await source_weights(request.app['store'], request.app['providers'], tags) if tags else {})
+            weights = await source_weights(request.app['store'], request.app['providers'], tags) if tags else {}
         except ProviderUnavailable as exc:
             if weight is not None:
                 raise web.HTTPServiceUnavailable(text='Current FWA weights are unavailable. Try again.') from exc
@@ -588,6 +587,9 @@ async def replacements(request):
                                         limit=None, weights=effective_weights,
                                         browse_all=browse_all, family_scope=scope,
                                         town_hall=town_hall if weight is not None else None)
+    town_halls = sorted({row['town_hall'] for row in rows if row.get('town_hall')})
+    if exact_tag:
+        rows = [row for row in rows if row['player_tag'] == exact_tag]
     names = {row['tag']: row['name'] for row in clans}
     def candidate(row):
         return {'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
@@ -619,7 +621,7 @@ async def replacements(request):
                               'top': [candidate(row) for row in page['top']],
                               'groups': [{**group, 'clan_name': names.get(group['clan_tag']) or group['clan_tag']}
                                          for group in page['groups']],
-                              'clans': clans, 'total': page['total'], 'offset': offset,
+                              'clans': clans, 'town_halls': town_halls, 'total': page['total'], 'offset': offset,
                               'limit': limit, 'include_low': include_low, 'sort': sort,
                               'matching_weight': weight, 'matching_weight_label': compact_weight(weight),
                               'scope': scope, 'browse_all': browse_all, 'town_hall': town_hall})

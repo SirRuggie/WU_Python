@@ -35,4 +35,5 @@ export type Result = {
   top?: Candidate[];
   groups?: GroupSummary[];
   total?: number;
+  town_halls?: number[];
 };

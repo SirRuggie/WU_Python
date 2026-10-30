@@ -68,6 +68,13 @@ export default function ReplacementWorkspace({
   const [items, setItems] = useState<Candidate[]>([]);
   const [top, setTop] = useState<Candidate[]>([]);
   const [summaries, setSummaries] = useState<GroupSummary[]>([]);
+  const [townHalls, setTownHalls] = useState<number[]>([]);
+  const [reloaded, setReloaded] = useState<{
+    tag: string;
+    priority: Priority;
+    note: string;
+  } | null>(null);
+  const [existingEdit, setExistingEdit] = useState("");
   const [total, setTotal] = useState(0);
   const [includeLow, setIncludeLow] = useViewState(memory, "includeLow", false);
   const [townHall, setTownHall] = useViewState(memory, "townHall", "");
@@ -107,7 +114,7 @@ export default function ReplacementWorkspace({
     if (!initialTag) return;
     let active = true;
     void api<Result>(
-      `/strikes/replacements?query=${encodeURIComponent(initialTag)}&include_low=true&limit=1`,
+      `/strikes/replacements?exact_tag=${encodeURIComponent(initialTag)}&include_low=true&limit=1`,
     )
       .then((result) => {
         if (!active) return;
@@ -224,6 +231,7 @@ export default function ReplacementWorkspace({
       );
       if (current !== request.current) return;
       setItems(result.candidates || []);
+      if (!weight) setTownHalls(result.town_halls || []);
       if (!weight) setTop(result.top || []);
       setSummaries(result.groups || []);
       setTotal(result.total ?? result.candidates.length);
@@ -369,6 +377,7 @@ export default function ReplacementWorkspace({
                   setEditing("");
                   return;
                 }
+                setReloaded(null);
                 setSelectedCandidate(item);
                 setEditing(item.player_tag);
                 setEditRevision(item.revision);
@@ -404,6 +413,12 @@ export default function ReplacementWorkspace({
             );
           }}
         >
+          {reloaded?.tag === editing && (
+            <p role="status">
+              Saved by someone else: {priorityLabels[reloaded.priority]} · "
+              {reloaded.note}"
+            </p>
+          )}
           <label>
             Priority
             <select
@@ -443,7 +458,7 @@ export default function ReplacementWorkspace({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => setClearing(item)}
+                onClick={() => setClearing({ ...item, revision: editRevision })}
               >
                 Clear priority
               </button>
@@ -543,14 +558,24 @@ export default function ReplacementWorkspace({
             disabled={busy}
             onClick={async () => {
               if (editing) {
+                setBusy(true);
                 try {
-                  const latest = await api<{ revision: number }>(
-                    `/strikes/replacement-list/${tagPath(editing)}`,
-                  );
+                  const latest = await api<{
+                    revision: number;
+                    priority?: Priority;
+                    note?: string;
+                  }>(`/strikes/replacement-list/${tagPath(editing)}`);
                   setEditRevision(latest.revision);
+                  setReloaded({
+                    tag: editing,
+                    priority: latest.priority || "normal",
+                    note: latest.note || "",
+                  });
                   setError("");
                 } catch (cause) {
                   setError(errorText(cause));
+                } finally {
+                  setBusy(false);
                 }
               } else if (adding && addMode === "tag") {
                 await newBaseline.reload();
@@ -613,7 +638,9 @@ export default function ReplacementWorkspace({
               if (
                 !newTag.trim() ||
                 newBaseline.revision === null ||
-                newBaseline.loading
+                newBaseline.loading ||
+                (newBaseline.saved?.is_manual &&
+                  existingEdit !== newBaseline.tag)
               )
                 return;
               void save(
@@ -624,7 +651,9 @@ export default function ReplacementWorkspace({
                     priority: newPriority,
                     note: newNote.trim(),
                   }),
-                "Account added.",
+                newBaseline.saved?.is_manual
+                  ? "Priority saved."
+                  : "Account added.",
                 () => {
                   setAdding(false);
                   setNewTag("");
@@ -754,11 +783,34 @@ export default function ReplacementWorkspace({
               <input
                 value={newTag}
                 disabled={busy}
-                onChange={(event) => setNewTag(event.target.value)}
+                onChange={(event) => {
+                  setExistingEdit("");
+                  setNewTag(event.target.value);
+                }}
                 placeholder="#PLAYERTAG"
                 required
               />
             </label>
+          )}
+          {addMode === "tag" && newBaseline.saved?.is_manual && (
+            <p role="status">
+              Already marked:{" "}
+              {priorityLabels[newBaseline.saved.priority || "normal"]} · "
+              {newBaseline.saved.note}" ·{" "}
+              {existingEdit !== newBaseline.tag && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setExistingEdit(newBaseline.tag);
+                    setNewPriority(newBaseline.saved!.priority || "normal");
+                    setNewNote(newBaseline.saved!.note);
+                  }}
+                >
+                  Edit instead
+                </button>
+              )}
+            </p>
           )}
           <div className="replacement-add-details">
             <label>
@@ -797,14 +849,19 @@ export default function ReplacementWorkspace({
                   !!rosterError
                 : !newTag.trim() ||
                   newBaseline.revision === null ||
-                  newBaseline.loading)
+                  newBaseline.loading ||
+                  (!!newBaseline.saved?.is_manual &&
+                    existingEdit !== newBaseline.tag))
             }
           >
             {busy
               ? "Saving…"
               : addMode === "roster"
                 ? `Add ${selectedTags.length} ${selectedTags.length === 1 ? "account" : "accounts"}`
-                : "Add account"}
+                : existingEdit === newBaseline.tag &&
+                    newBaseline.saved?.is_manual
+                  ? "Save"
+                  : "Add account"}
           </button>
         </form>
       )}
@@ -876,8 +933,21 @@ export default function ReplacementWorkspace({
                 )}
               </form>
               <small>
-                FWA clans only. Enter 149 or 149000 for a weight of 149,000.
+                FWA clans only. Within current filters. Enter 149 or 149000 for
+                a weight of 149,000.
               </small>
+              {weight && (
+                <p aria-live="polite">
+                  {loading
+                    ? "Finding matches…"
+                    : `${items.length} best slots within current filters`}
+                </p>
+              )}
+              {!loading && weight && (
+                <div className="replacement-list">
+                  {items.map(renderCandidate)}
+                </div>
+              )}
             </section>
             <section
               className="replacement-top"
@@ -923,7 +993,7 @@ export default function ReplacementWorkspace({
                 onChange={(event) => setTownHall(event.target.value)}
               >
                 <option value="">All Town Halls</option>
-                {Array.from({ length: 18 }, (_, i) => i + 1).map((th) => (
+                {townHalls.map((th) => (
                   <option key={th} value={th}>
                     TH {th}
                   </option>
@@ -1024,9 +1094,6 @@ export default function ReplacementWorkspace({
                 />
               ))}
             </>
-          )}
-          {!loading && weight && (
-            <div className="replacement-list">{items.map(renderCandidate)}</div>
           )}
         </>
       )}

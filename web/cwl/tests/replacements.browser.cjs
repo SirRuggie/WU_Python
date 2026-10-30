@@ -146,7 +146,9 @@ if (out) fs.mkdirSync(out, { recursive: true });
       await p.waitForFunction(
         () => document.querySelectorAll(".replacement-row").length === 3,
       );
-      await p.locator(".replacement-row").first().scrollIntoViewIfNeeded();
+      const matchBox = await p.getByRole("button", {name:"Match", exact:true}).boundingBox();
+      const resultBox = await p.locator(".replacement-match .replacement-row").first().boundingBox();
+      assert(resultBox.y >= matchBox.y && resultBox.y - matchBox.y < 300, "Recruit results must be directly below Match");
       await snap("best-three");
       const state = await p.request
         .get(origin + "/qa/state")

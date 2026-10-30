@@ -83,7 +83,11 @@ it("retains a conflicting edit and only changes its baseline after explicit Relo
   await input(note, "Keep my text");
   vi.mocked(api).mockImplementation(async (_path, method) => {
     if (method) throw new ApiError("Changed by someone else · Reload", 409);
-    return { revision: 8 } as never;
+    return {
+      revision: 8,
+      priority: "replace_first",
+      note: "Their note",
+    } as never;
   });
   await click("Save");
   expect(note.isConnected).toBe(true);
@@ -95,6 +99,9 @@ it("retains a conflicting edit and only changes its baseline after explicit Relo
     revision: 7,
   });
   await click("Reload list");
+  expect(host.textContent).toContain(
+    'Saved by someone else: Chopping Block · "Their note"',
+  );
   expect(note.value).toBe("Keep my text");
   vi.mocked(api).mockImplementation(async (_path, method) =>
     method ? ({} as never) : ({ candidates: [row], clans: [] } as never),
@@ -187,12 +194,74 @@ it("restores filters and expanded clans when returning from strike history", asy
   await act(async () => root.render(<div>Strike history</div>));
   await act(async () => show());
   expect(
-    host.querySelector<HTMLInputElement>('input[placeholder="Name or player tag"]')!
-      .value,
+    host.querySelector<HTMLInputElement>(
+      'input[placeholder="Name or player tag"]',
+    )!.value,
   ).toBe("Sample");
   expect(
     host
       .querySelector(".replacement-group-summary")
       ?.getAttribute("aria-expanded"),
   ).toBe("true");
+});
+
+it("shows an existing tag mark before editing and preserves its note on Save", async () => {
+  await render();
+  vi.mocked(api).mockImplementation(async (path, method) => {
+    if (!method && path === "/strikes/replacement-list/%23P2Y")
+      return {
+        revision: 7,
+        priority: "replace_first",
+        note: "Keep this note",
+        is_manual: true,
+      } as never;
+    return { candidates: [row], clans: [] } as never;
+  });
+  await click("Add accounts");
+  const select = host.querySelector(
+    ".replacement-add-mode select",
+  ) as HTMLSelectElement;
+  await act(async () => {
+    select.value = "tag";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await input(host.querySelector(".replacement-tag-choice input")!, "#P2Y");
+  expect(host.textContent).toContain(
+    'Already marked: Chopping Block · "Keep this note"',
+  );
+  expect(button("Add account").disabled).toBe(true);
+  await click("Edit instead");
+  expect(
+    (host.querySelector(".replacement-add-details input") as HTMLInputElement)
+      .value,
+  ).toBe("Keep this note");
+  await click("Save");
+  expect(api).toHaveBeenCalledWith("/strikes/replacement-list", "POST", {
+    player_tag: "#P2Y",
+    revision: 7,
+    priority: "replace_first",
+    note: "Keep this note",
+  });
+});
+
+it("Clear after a conflict reload uses the visible saved revision", async () => {
+  await render();
+  await click("Edit");
+  vi.mocked(api).mockImplementation(async (_path, method) => {
+    if (method) throw new ApiError("Changed", 409);
+    return { revision: 8, priority: "normal", note: "New saved note" } as never;
+  });
+  await click("Save");
+  await click("Reload list");
+  expect(host.textContent).toContain(
+    'Saved by someone else: Normal · "New saved note"',
+  );
+  vi.mocked(api).mockResolvedValue({ candidates: [row], clans: [] } as never);
+  await click("Clear priority");
+  await click("Clear");
+  expect(api).toHaveBeenCalledWith(
+    "/strikes/replacement-list/%23P2Y",
+    "DELETE",
+    { revision: 8 },
+  );
 });

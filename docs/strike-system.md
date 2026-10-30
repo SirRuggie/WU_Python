@@ -486,9 +486,33 @@ priority-free Top 10, ignored tag links, lost Back state, native confirmation an
 stale writes. Full suites passed 4,995 backend tests (21 skipped, 162 subtests)
 and 1,046 frontend tests. These fixture checks do not prove live Discord delivery.
 
-For the same fixture, the initial API payload fell from 163,750 to 9,082 bytes.
-Warm in-memory API measurements were about 17ms before and 14ms after; these are
+With provider weights restored in the review correction, the same fixture
+returned 165,115 bytes before and 9,114 after. Warm in-memory API measurements
+were about 19ms before and 16ms after; these are
 not production latency measurements. The browser reached the new initial view
 in about half a second on this host. The first response contains summary/Top 10
 metadata; expanded clans fetch their own bounded pages. Unknown weight values
 remain available in the ordinary list, but are excluded from recruit matching.
+
+### Replacement review corrections
+
+The list resolves provider weights even without a recruit filter, then applies
+saved overrides; it does not assume strike profiles contain an upstream weight.
+Deep links use exact tags, and Town Hall choices come from available accounts.
+Recruit matching says “Within current filters” and places its live result count
+and best-three cards directly under Match at narrow and wide widths.
+
+After a stale edit, Reload retains the draft and displays the latest saved
+priority/note alongside it. Explicit Save overwrites that visible revision;
+Clear uses that same reloaded revision. Adding an already marked tag shows its
+saved value and requires Edit instead, prefilled with the saved note. It cannot
+silently replace the mark from an empty Add form. These paths use the existing
+storage owner and authorization; no Discord writes or new storage are involved.
+
+Review-correction verification: 4,996 backend tests passed (21 skipped, 162
+subtests), 1,048 frontend tests, type-check/build and the complete layout suite.
+Eight additional faults were killed: profile-only weights, missing revisions
+on add/update/clear, stale edit/clear revisions, missing reloaded note, and
+blanking an existing note. At 360/1440px, the first recruit result is less than
+300px below Match; filters, scroll return, 44px controls, readable labels, no
+horizontal overflow, and the fixture strike ledger remained verified.
