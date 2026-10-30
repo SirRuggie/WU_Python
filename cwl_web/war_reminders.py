@@ -150,9 +150,83 @@ async def test_send(request):
     return web.json_response({'url': urls[0], 'urls': urls})
 
 
+async def copy_targets(request):
+    await require_manage(request, 'clans')
+    async with mongo(request) as db:
+        store = WarReminderStore(db)
+        source = await clan(request, store)
+        rows = await store.copy_targets()
+    return web.json_response({'clans': [
+        {'tag': row['tag'], 'name': row['name'], 'type': row.get('type') or '',
+         'revision': revision(config), 'settings': reminders.settings(config)}
+        for row, config in rows if row['tag'] != source['tag']
+    ]})
+
+
+async def copy_settings(request):
+    actor = await require_manage(request, 'clans', write=True)
+    body = await request.json()
+    if not isinstance(body, dict) or set(body) != {'revision', 'fields', 'targets'}:
+        raise web.HTTPBadRequest(text='Review the reminder copy first.')
+    try:
+        reminders.copied_settings(None, None, body['fields'])
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from None
+    targets = body['targets']
+    if not isinstance(targets, list) or not 1 <= len(targets) <= 100:
+        raise web.HTTPBadRequest(text='Choose between 1 and 100 clans.')
+    from .providers import tag as normalize_tag
+    seen = set()
+    for target in targets:
+        if not isinstance(target, dict) or set(target) != {'tag', 'revision'} or not isinstance(target['revision'], str):
+            raise web.HTTPBadRequest(text='Refresh the target clans before copying.')
+        try:
+            valid_tag = normalize_tag(target['tag'])
+        except (ValueError, TypeError, AttributeError):
+            raise web.HTTPBadRequest(text='Choose a valid target clan.') from None
+        if valid_tag != target['tag'] or valid_tag in seen or valid_tag == tag(request):
+            raise web.HTTPBadRequest(text='Choose each other clan once.')
+        seen.add(valid_tag)
+    results = []
+    async with mongo(request) as db:
+        store = WarReminderStore(db)
+        source = await clan(request, store)
+        config = await store.get_settings(source['tag'])
+        if body['revision'] != revision(config):
+            raise web.HTTPConflict(text='Source reminders changed. Review the copy again.')
+        for target in targets:
+            target_tag = target['tag']
+            try:
+                row = await store.clan(target_tag)
+                if not row:
+                    raise ValueError('Clan removed. Refresh the list.')
+                before = await store.get_settings(target_tag)
+                if target['revision'] != revision(before):
+                    raise SettingsConflict
+                values = reminders.copied_settings(config, before, body['fields'])
+                if values['channel_id']:
+                    await channel(request, values['channel_id'])
+                await store.save_settings(target_tag, before, values, actor['user_id'],
+                                          history_context=(row, actor))
+                results.append({'tag': target_tag, 'ok': True,
+                                'message': 'Copied' if values['channel_id'] else 'Copied · Needs a channel · Off'})
+            except SettingsConflict:
+                results.append({'tag': target_tag, 'ok': False, 'message': 'Settings changed. Review this clan again.'})
+            except (ValueError, web.HTTPBadRequest) as exc:
+                results.append({'tag': target_tag, 'ok': False, 'message': exc.text if isinstance(exc, web.HTTPException) else str(exc)})
+            except Exception:
+                # A transport/storage failure may follow a successful write. Do
+                # not repeat it automatically or expose upstream exception text.
+                import logging
+                logging.getLogger(__name__).exception('Reminder copy needs verification for %s', target_tag)
+                results.append({'tag': target_tag, 'ok': False, 'message': 'Could not confirm the save. Check this clan before retrying.'})
+    return web.json_response({'results': results})
+
+
 BASE = API+'/clans/{tag}/war-reminders'
 routes = [
     web.get(API+'/war-reminders/overview', overview),
     web.get(BASE, read), web.put(BASE, save),
+    web.get(BASE+'/copy', copy_targets), web.post(BASE+'/copy', copy_settings),
     web.post(BASE+'/preview', preview), web.post(BASE+'/test', test_send),
 ]

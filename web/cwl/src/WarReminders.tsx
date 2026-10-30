@@ -3,6 +3,7 @@ import { api } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
 import type { AnnouncementChannel } from "./announcements";
 import ScheduleEditor from "./warReminders/ScheduleEditor";
+import CopyReminders from "./warReminders/CopyReminders";
 import TestPanel from "./warReminders/TestPanel";
 import DeliveryHistory from "./warReminders/DeliveryHistory";
 import type { ReminderData, ReminderSettings } from "./warReminders/types";
@@ -39,12 +40,13 @@ export default function WarReminders({
   const [data, setData] = useState<ReminderData | null>(null);
   const [draft, setDraft] = useState<ReminderSettings | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copyBusy, setCopyBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
   const [testOpen, setTestOpen] = useState(false);
   useEffect(() => {
-    onBusy?.(busy || testBusy);
+    onBusy?.(busy || testBusy || copyBusy);
     return () => onBusy?.(false);
-  }, [busy, testBusy, onBusy]);
+  }, [busy, testBusy, copyBusy, onBusy]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const generation = useRef(0);
@@ -190,7 +192,7 @@ export default function WarReminders({
           <ScheduleEditor
             settings={draft}
             channels={channels}
-            disabled={busy || testBusy || disabled}
+            disabled={busy || testBusy || copyBusy || disabled}
             onChange={(patch) =>
               setDraft((current) =>
                 current ? { ...current, ...patch } : current,
@@ -204,13 +206,20 @@ export default function WarReminders({
               </small>
               <button
                 className="primary"
-                disabled={busy || testBusy || disabled || !dirty}
+                disabled={busy || testBusy || copyBusy || disabled || !dirty}
                 onClick={() => void save()}
               >
                 Save reminders
               </button>
             </div>
           )}
+          <CopyReminders
+            key={tag}
+            base={base}
+            source={data}
+            disabled={disabled || busy || testBusy || dirty}
+            onBusy={setCopyBusy}
+          />
           <DeliveryHistory data={data} enabled={data.settings.enabled} />
           <details
             className="war-disclosure"
@@ -232,7 +241,7 @@ export default function WarReminders({
               base={base}
               settings={draft}
               active={active && testOpen}
-              disabled={busy || disabled}
+              disabled={busy || copyBusy || disabled}
               onDelivered={refreshHistory}
               onBusy={setTestBusy}
             />

@@ -49,6 +49,13 @@ class WarReminderStore:
         latest = {row['_id']: row['latest'] for row in await cursor.to_list(length=None)}
         return [(row, configs.get(row['tag']), states.get(row['tag']), latest.get(row['tag'])) for row in clans]
 
+    async def copy_targets(self):
+        clans = await self.db.clans.find({}).sort('name', 1).to_list(length=None)
+        tags = [clan['tag'] for clan in clans]
+        configs = {row['_id']: row for row in await self.settings.find(
+            {'_id': {'$in': tags}}).to_list(length=None)}
+        return [(clan, configs.get(clan['tag'])) for clan in clans]
+
     async def clan(self, tag):
         return await self.db.clans.find_one({'tag': tag})
 

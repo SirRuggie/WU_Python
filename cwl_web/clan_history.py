@@ -33,7 +33,7 @@ def history_value(field, value):
     if field == 'minutes' and isinstance(value, list):
         return ', '.join(f'{minute}m' for minute in value) or 'None'
     if field == 'audience':
-        return {'remaining': 'Players with attacks left', 'all': 'Everyone'}.get(value, 'Unknown')
+        return {'remaining': 'Players with attacks left', 'zero': 'Players with no attacks used'}.get(value, 'Unknown')
     return str(value)
 
 def public_changes(row):
