@@ -71,7 +71,7 @@ export default function ReplacementWorkspace({
   const [townHalls, setTownHalls] = useState<number[]>([]);
   const [reloaded, setReloaded] = useState<{
     tag: string;
-    priority: Priority;
+    priority: Priority | null;
     note: string;
   } | null>(null);
   const [existingEdit, setExistingEdit] = useState("");
@@ -415,8 +415,11 @@ export default function ReplacementWorkspace({
         >
           {reloaded?.tag === editing && (
             <p role="status">
-              Saved by someone else: {priorityLabels[reloaded.priority]} · "
-              {reloaded.note}"
+              Saved by someone else:{" "}
+              {reloaded.priority
+                ? priorityLabels[reloaded.priority]
+                : "Not marked (cleared)"}{" "}
+              · "{reloaded.note}"
             </p>
           )}
           <label>
@@ -562,13 +565,13 @@ export default function ReplacementWorkspace({
                 try {
                   const latest = await api<{
                     revision: number;
-                    priority?: Priority;
+                    priority?: Priority | null;
                     note?: string;
                   }>(`/strikes/replacement-list/${tagPath(editing)}`);
                   setEditRevision(latest.revision);
                   setReloaded({
                     tag: editing,
-                    priority: latest.priority || "normal",
+                    priority: latest.priority ?? null,
                     note: latest.note || "",
                   });
                   setError("");

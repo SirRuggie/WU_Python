@@ -516,3 +516,13 @@ on add/update/clear, stale edit/clear revisions, missing reloaded note, and
 blanking an existing note. At 360/1440px, the first recruit result is less than
 300px below Match; filters, scroll return, 44px controls, readable labels, no
 horizontal overflow, and the fixture strike ledger remained verified.
+
+### Replacements conflict after another staff member clears a mark
+
+Reload after a revision conflict preserves the local priority/note draft and
+shows `Saved by someone else: Not marked (cleared)` when the saved priority is
+null. It never labels a removed mark as Normal. The existing explicit Save and
+Clear actions still use the reloaded revision; Reload itself does not write.
+The regression simulates the other staff member's clear, the 409 and Reload,
+then verifies the saved-state message and retained draft. Restoring the old
+`|| "normal"` fallback is killed by that regression.

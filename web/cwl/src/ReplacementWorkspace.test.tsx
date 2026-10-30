@@ -265,3 +265,23 @@ it("Clear after a conflict reload uses the visible saved revision", async () => 
     { revision: 8 },
   );
 });
+
+it("shows another staff member's clear after a conflict without losing the draft", async () => {
+  await render();
+  await click("Edit");
+  const note = [...host.querySelectorAll("input")].find(
+    (n) => n.value === "Original",
+  )!;
+  await input(note, "Keep my text");
+  vi.mocked(api).mockImplementation(async (_path, method) => {
+    if (method) throw new ApiError("Changed by someone else · Reload", 409);
+    return { revision: 8, priority: null, note: "" } as never;
+  });
+  await click("Save");
+  await click("Reload list");
+  expect(host.textContent).toContain(
+    "Saved by someone else: Not marked (cleared)",
+  );
+  expect(host.textContent).not.toContain("Saved by someone else: Normal");
+  expect(note.value).toBe("Keep my text");
+});
