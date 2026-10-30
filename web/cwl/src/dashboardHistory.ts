@@ -21,7 +21,9 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
   const saved = savedSignupTarget(search, pathname);
   const pathView = Object.entries({...memberPaths, ...staffPaths}).find(([, path]) => path !== '/' && path === pathname)?.[0];
   const requested = (saved ? "signup" : undefined) || (weightAliases.includes(pathname) ? "weight-trial" : pathView) || (params.get("view") === "signups" ? "signup" : params.get("view"));
-  const value = requested === "manage-signups" ? "roster" : requested;
+  const value = pathname === "/server/member-activity" || requested === "member-activity"
+    ? "moderation"
+    : requested === "manage-signups" ? "roster" : requested;
   return {
     ...(value === "weight-trial"
       ? {

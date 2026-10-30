@@ -211,6 +211,49 @@ identifies a possible failure path, **not the proven cause of the three historic
 production 503s**; no production tracing or requests were performed for this
 follow-up. The client uses its existing initials fallback on an empty image.
 
+## Avatar concurrency follow-up (prompt 36, review pending)
+
+The dashboard now owns one lazy Mongo client per application and closes it at
+application cleanup. Injected fixture clients remain externally owned. Each
+request still performs authorization, including negative avatar-cache hits;
+permissions and image bytes are not cached. The missing-avatar cache still holds
+only confirmed absence, and database outages remain uncached 503 responses.
+Underlying HTTP failure causes are recorded as exception class names only, never
+connection strings or exception messages. Failed images retain initials with no
+automatic retry (therefore no retry storm).
+
+An isolated 12-request fixture reproduces the old per-request-pool fan-out under
+a constrained connection budget. All requests succeed with the shared pool;
+restoring the old client allocation kills the concurrency test. This demonstrates
+the allocation defect, not proof that Mongo rather than Discord caused the three
+historical production failures: those logs discarded the underlying cause. The
+new exception-class diagnostics are needed to confirm any remaining live failure.
+No live API load test or Discord delivery is claimed.
+
+Legacy member-activity URLs canonicalize to Moderation and retain its existing
+permission gate. A category or row with no effective destination says “Not
+posting — no channel set”; stored enabled flags, routing and save payloads are
+unchanged. Tests cover the message alongside checked switches and no settings
+writes.
+
+UI validation uses `tests/avatar-polish.browser.cjs <fixture-port>` against the
+isolated moderation fixture. It follows the legacy URL through the local test
+session, verifies the canonical Moderation URL at 360×800 and 1440×1000, supplies
+an empty-channel settings response without saving it, and checks for overflow
+and browser errors. The category switch wraps its status at narrow widths.
+
+
+### Moderation history identity read cache
+
+Only GET history and GET event avatar share Discord identity results for 30 seconds,
+keyed by signed-in user, bounded to 128 LRU entries. Concurrent reads share one
+in-flight fetch; failures are not cached. A cancelled reader does not cancel the
+shared fetch; logout removes the user's entry, including an in-flight one.
+Authorization and current dashboard grants are checked for every request. Discord
+role/ownership changes can take up to 30 seconds to affect these two read endpoints.
+Every write and all other endpoints obtain fresh Discord identity. Mongo pooling,
+confirmed-missing-avatar caching and zero automatic image retries remain unchanged.
+The historical production 503 cause is still an inference, not proven.
 
 ## Moderation polish release closure — 2026-10-30
 
