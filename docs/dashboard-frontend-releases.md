@@ -1,5 +1,13 @@
 # Dashboard frontend releases
 
+## No-war-strikes-1 — October 30, 2026
+
+Frontend `73eda11a1e883b711bc40494f023b4d87efd5a6b` is live and Claude smoke 131 passed.
+Entry `index-BipoOtjv.js`, hash `bea1b2f126251a5c63bf144354f930b6a8138f288540f32c9413277484e80297`.
+Clean tagged npm ci/build and 1,034 frontend tests passed. See the backend release
+record for coordinated rollback, backup/count evidence and the approved correction.
+
+
 ## Moderation-logs-1 — October 30, 2026
 
 Latest verified frontend: `c494022e924994435496c3e4f0722eb781460380`, tag

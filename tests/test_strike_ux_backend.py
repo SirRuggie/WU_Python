@@ -144,6 +144,13 @@ class Collection:
             row.pop(key, None)
         return SimpleNamespace(matched_count=1)
 
+    async def find_one_and_update(self, query, update, return_document=False):
+        before = await self.find_one(query)
+        if before is None:
+            return None
+        await self.update_one(query, update)
+        return await self.find_one({'_id': before['_id']}) if return_document else before
+
     async def aggregate(self, pipeline):
         rows = list(self.rows.values())
         for stage in pipeline:
@@ -615,4 +622,88 @@ def test_settings_returns_own_successful_receipt_before_concurrent_successor(exi
                                          expected_revision=first['revision'],
                                          strike_limit=first['strike_limit'])
         assert db.strike_settings.rows['1'] == successor_row
+    run(scenario())
+
+
+@pytest.mark.parametrize('length', [500, 501])
+def test_remove_reason_limit_in_http_and_store(length):
+    async def scenario():
+        db, store = setup()
+        await db.strike_records.insert_one(record('remove-me'))
+        reason = 'x' * length
+        if length == 501:
+            with pytest.raises(ValueError):
+                await store.revoke(1, 'remove-me', 9, reason)
+            assert 'revoked_at' not in db.strike_records.rows['remove-me']
+        else:
+            removed = await store.revoke(1, 'remove-me', 9, reason)
+            assert removed['revoke_reason'] == reason
+        ledger = SimpleNamespace(revoke=AsyncMock())
+        request = SimpleNamespace(method='POST', app={'strike_service': ledger},
+                                  match_info={'strike_id': 'remove-me'},
+                                  json=AsyncMock(return_value={'reason': reason}))
+        @asynccontextmanager
+        async def mongo(_):
+            yield db
+        with patch.object(api.shared, 'require_manage', AsyncMock()), \
+             patch.object(api.shared, 'mongo', mongo), \
+             patch('cwl_web.app._session', return_value={'user_id': '9'}):
+            if length == 501:
+                with pytest.raises(web.HTTPBadRequest):
+                    await api.remove(request)
+                ledger.revoke.assert_not_awaited()
+            else:
+                response = await api.remove(request)
+                assert response.status == 200
+                ledger.revoke.assert_awaited_once()
+    run(scenario())
+
+
+def test_reimport_counts_candidates_already_present_at_preview_once():
+    from utils.recruit_links import PlayerOwners
+    async def scenario():
+        db, store = setup()
+        await db.clans.insert_one({'_id': 'clan', 'tag': '#Q2Y'})
+        store.link_resolver = AsyncMock(return_value=PlayerOwners(owners={'#P2Y': '2', '#G2Y': '2'}))
+        store.role_resolver = AsyncMock(return_value=[])
+        war = {'clan_tag': '#Q2Y', 'opponent_tag': '#J2Y', 'end_time': NOW - timedelta(days=1),
+               'type': 'regular', 'state': 'warEnded', 'complete': True, 'attacks_per_member': 2,
+               'members': [{'tag': '#P2Y', 'name': 'Strike', 'attacks': 0},
+                           {'tag': '#G2Y', 'name': 'History', 'attacks': 1}]}
+        preview = await store.preview_import(1, [war], actor_id=9)
+        first = await store.apply_import(1, preview['preview_id'], 9)
+        assert first['applied'] == 2
+        before = deepcopy(db.strike_records.rows)
+        repeat = await store.preview_import(1, [war, war], actor_id=9)
+        result = await store.apply_import(1, repeat['preview_id'], 9)
+        assert result['duplicates'] == 2
+        assert result['applied'] == result['added_strikes'] == 0
+        assert db.strike_records.rows == before
+    run(scenario())
+
+
+def test_name_and_linked_target_search_use_saved_th_and_current_clan_without_live_player_calls():
+    from cwl_web import manage_roles
+    async def scenario():
+        db, store = setup()
+        await db.clans.insert_one({'_id': 'clan', 'tag': '#Q2Y', 'name': 'Family'})
+        await db.strike_profiles.insert_one({'_id': 'profile', 'guild_id': api.GUILD_ID,
+            'player_tag': '#P2Y', 'player_name': 'Known player', 'town_hall': 16,
+            'current_clan_tag': '#Q2Y'})
+        provider = SimpleNamespace(player=AsyncMock(side_effect=AssertionError('No live name lookups')))
+        request = SimpleNamespace(method='GET', app={'strike_service': store, 'providers': provider}, query={'query': 'Known'})
+        @asynccontextmanager
+        async def mongo(_):
+            yield db
+        with patch.object(api.shared, 'require_manage', AsyncMock()), \
+             patch.object(api.shared, 'mongo', mongo), \
+             patch.object(api.shared, 'discord', AsyncMock(return_value={})), \
+             patch.object(manage_roles, 'searchable_members', AsyncMock(return_value=[])), \
+             patch.object(api.recruit_links, 'resolve', AsyncMock(return_value=SimpleNamespace(sources={'#P2Y': ['fixture']}, unavailable=False, conflicts={}))):
+            for query in ('Known', '123456789012345678'):
+                request.query = {'query': query}
+                response = await api.targets(request)
+                assert json.loads(response.text)['accounts'] == [{'tag': '#P2Y', 'name': 'Known player',
+                    'town_hall': 16, 'current_clan_tag': '#Q2Y', 'current_clan_name': 'Family'}]
+            provider.player.assert_not_awaited()
     run(scenario())
