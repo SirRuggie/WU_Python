@@ -1,5 +1,163 @@
 # Dashboard backend releases
 
+## Moderation-logs-1 — October 30, 2026
+
+PR [#68](https://github.com/SirRuggie/WU_Python/pull/68), tag `moderation-logs-1`,
+released frontend, isolated backend and bot at
+`c494022e924994435496c3e4f0722eb781460380`. Claude ACCEPT 95 required **bot first**:
+the old bot cannot resolve newly saved inherited destinations. Activation waited
+for new bot PID 3015926, clean main, startup and gateway readiness, then restarted
+the isolated backend (PID 3016201), waited for two consecutive public config 200s
+(six attempts), and finally switched frontend assets. Anonymous commands returned
+401. Current-invocation journals were clean; the old bot PID 2920748 shutdown
+CancelledError is outside the new invocation and is not a new-process failure.
+
+Claude read-only smoke 98 passed: public entry hash matched, runtime revisions
+matched, and the 360px history/settings screens reflected the preserved routing.
+No production **Send test**, live test message, or staff settings save was made.
+Three of eight avatar reads returned 503 and fell back to initials; prompt 33 item 6
+tracks that defect. Mocked transport tests do not prove real Discord delivery.
+
+The integrated revision `1b27627` passed **4863 backend tests, 21 skipped, 162
+subtests**, and **933 frontend tests**, TypeScript/build. The final tag differs
+from that checked tree only in three documentation files; clean tagged `npm ci`,
+933 frontend tests, TypeScript/build passed again. Seventeen mocked release
+checks covered bot-first order, readiness failures, public hashes, protected data,
+rollback refusal after settings changes, and late bot journal failure. Staged
+1,581 backend files and 120 frontend files. The installed frontend stager's nested
+asset defect required the reviewed recursive staging finalizer; it did not change
+production configuration or the helper. The tag's final delta was docs only.
+
+Read-only settings normalization was verified before and after activation:
+raw settings unchanged, revision 1 retained, zero normalization writes.
+
+| Event | Before enabled / channel / forum tag | After enabled / channel / forum tag |
+| --- | --- | --- |
+| Join | true / 1564485264364011580 / null | true / 1564485264364011580 / null |
+| Leave | true / 1564485264364011580 / null | true / 1564485264364011580 / null |
+| Kick | false / null / null | false / null / null |
+| Ban | false / null / null | false / null / null |
+
+Durable backup: repository `.local/moderation-logs-1-backup-20261030T121900Z/`.
+SQLite `dashboard.sqlite3` is 1,282,048 bytes, integrity `ok`, SHA256
+`ecbb1a47bd0cc6fd6e38826486e2f81612e98bff0a5a41e7e2126acc53fa295e`.
+Its 58 table counts include 152 signups, 139 roster entries, 350 clan weights,
+387 clan-weight history rows and 7 war lineups. Protected SQLite digest stayed
+`34449fa23beafcae682188bf3d7cfddaf47b12a455f10d433119288a004cc4f7`.
+Twelve Mongo JSONL archives and index inventories were verified: 3 commands,
+10 command-history rows, 7,722 strike records, 1 strike settings, 0 leaves,
+0 leave history, 577 profiles, 0 imports, 25 tracking, 10 war snapshots,
+25 member-events rows and 0 test-audit rows. Protected definitions, policy/history
+and test audit matched; raw moderation settings matched exactly. Live history
+and receipts, roster profile fields, tracking snapshots and TTL imports are
+explicitly volatile and were not falsely treated as frozen. Full pre/post evidence:
+`/tmp/wu-moderation-release/{preflight.json,live.json,mongo-postcheck.json,backup.log}`;
+durable backup manifests remain alongside the archives.
+
+### Guarded moderation rollback
+
+Only with rollback authorization, restore **frontend a803108**, then **backend
+23235cc**, verify old-backend readiness and public assets, and only then restore
+**bot b517afd**. Keep the newer bot if any gate fails. If staff has saved inherited
+settings since release, the old bot may silently stop logging: stop for an explicit
+effective-destination review. Never restore data to make a guard pass. Retain the
+older rollback chain: back-to-top frontend→23235cc; weight-range frontend/backend
+→b517afd; trigger-delete all layers→6a2f8d7.
+
+The following commands use durable archives, not `/tmp` release coordinators.
+They intentionally reject **any** raw settings change, including a same-destination
+staff save. Run in one Bash session only at this exact release boundary. Preserve
+absolute environment paths and the frontend-routing/storage-guard drop-ins.
+
+```bash
+set -euo pipefail
+release_root=/home/ruggie/.local/share/wu-dashboard
+release_sha=c494022e924994435496c3e4f0722eb781460380
+old_fe=a8031084eed09ee89b8063828d4bc2c5d40cc628
+old_be=23235ccf2671dfe5675f0bc98d38ab11a011ab09
+old_bot=b517afd46ecfa9cc08488798eba53393ed5b649f
+repo='/nvme0n1-disk/Projects/Bot - Warriors United'
+dropin=/home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d
+settings_unchanged() {
+  PYTHONDONTWRITEBYTECODE=1 "$repo/.venv/bin/python" -I - <<'PY'
+import gzip, hashlib, json, sys
+from pathlib import Path
+from bson import json_util
+from dotenv import dotenv_values
+from pymongo import MongoClient
+repo = Path('/nvme0n1-disk/Projects/Bot - Warriors United')
+root = Path('/home/ruggie/.local/share/wu-dashboard/backend/c494022e924994435496c3e4f0722eb781460380')
+sys.path.insert(0, str(root))
+from utils.mongo_routes import RoutedCollections
+backup = repo / '.local/moderation-logs-1-backup-20261030T121900Z/mongo'
+with gzip.open(backup / 'member_events.jsonl.gz', 'rt') as stream:
+    rows = [json_util.loads(line) for line in stream]
+canonical = lambda row: json_util.dumps(row, json_options=json_util.CANONICAL_JSON_OPTIONS,
+                                        sort_keys=True, separators=(',', ':'))
+expected = json.loads((backup / 'manifest.json').read_text())['collections']['member_events']
+digest = hashlib.sha256(''.join(canonical(row) + '\n' for row in rows).encode()).hexdigest()
+assert len(rows) == expected['count'] and digest == expected['protected_sha256'], 'Backup changed'
+sid = 'member-events-settings:644963518025826315'
+before = next((row for row in rows if row.get('_id') == sid), None)
+config = dotenv_values(repo / '.env')
+with MongoClient(config['MONGODB_URI'], retryWrites=False, serverSelectionTimeoutMS=10000,
+                 connectTimeoutMS=10000, socketTimeoutMS=30000) as client:
+    routes = RoutedCollections(client, overrides=json.loads(config.get('MONGODB_ROUTES') or '{}'))
+    after = routes.member_events.find_one({'_id': sid}, max_time_ms=10000)
+assert before == after, 'STOP: settings changed; review inherited destinations before old bot'
+print('Raw settings match the verified release backup; no writes performed')
+PY
+}
+test "$(readlink -f "$release_root/current")" = "$release_root/releases/$release_sha"
+test "$(systemctl --user show -p WorkingDirectory --value wu-cwl-demo-web.service)" = "$release_root/backend/$release_sha"
+test "$(readlink /proc/$(systemctl --user show -p MainPID --value wu-cwl-demo-web.service)/cwd)" = "$release_root/backend/$release_sha"
+test "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot rev-parse HEAD)" = "$release_sha"
+test "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot branch --show-current)" = main
+test -z "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot status --porcelain)"
+test -d "$release_root/releases/$old_fe"
+test -d "$release_root/backend/$old_be"
+sudo -n -u botrunner git -C /home/botrunner/wu-bot cat-file -e "$old_bot^{commit}"
+settings_unchanged
+preserved=$(sha256sum "$dropin/frontend-routing.conf" "$dropin/storage-guard.conf")
+"$release_root/switch-release.py" "$old_fe"
+printf '[Service]\nWorkingDirectory=%s/backend/%s\n' "$release_root" "$old_be" > "$dropin/release.conf"
+test "$preserved" = "$(sha256sum "$dropin/frontend-routing.conf" "$dropin/storage-guard.conf")"
+systemctl --user daemon-reload
+systemctl --user restart wu-cwl-demo-web.service
+consecutive=0
+for attempt in $(seq 1 30); do
+  code=$(curl --max-time 3 -sS -o /dev/null -w '%{http_code}' https://dash.warriorsunited.cc/api/cwl/config || true)
+  if [ "$code" = 200 ]; then consecutive=$((consecutive + 1)); else consecutive=0; fi
+  [ "$consecutive" -ge 2 ] && break
+  sleep 3
+done
+test "$consecutive" -ge 2
+systemctl --user is-active --quiet wu-cwl-demo-web.service
+test "$(readlink /proc/$(systemctl --user show -p MainPID --value wu-cwl-demo-web.service)/cwd)" = "$release_root/backend/$old_be"
+invocation=$(systemctl --user show -p InvocationID --value wu-cwl-demo-web.service)
+test -n "$invocation"
+web_journal=$(journalctl --user _SYSTEMD_INVOCATION_ID="$invocation" --no-pager)
+if printf '%s' "$web_journal" | grep -Eqi 'Traceback|ModuleNotFoundError|ImportError|SyntaxError'; then exit 1; fi
+# Exact retained public index and affected owning bundle, before bot downgrade.
+test "$(curl --max-time 15 -fsS https://dash.warriorsunited.cc/ | sha256sum | cut -d' ' -f1)" = 884abc0df5506c94094e8c5c30c4b290f106a05654cbe7644396bbff052d1a41
+test "$(curl --max-time 15 -fsS https://dash.warriorsunited.cc/assets/index-zCmtmF3Z.js | sha256sum | cut -d' ' -f1)" = 9f28a7a1b9aebbe14da09d48a5b2f94f3ee42ea9b7b5668da11929d4b774b5a0
+test "$(curl --max-time 15 -fsS https://dash.warriorsunited.cc/assets/ModerationWorkspace-TKsK06cB.js | sha256sum | cut -d' ' -f1)" = 448ac5bbf55fed2fea319161086043edb9e4194e8a2a78976b348394a9ea917c
+# Recheck after old backend is ready, closing the staff-save race during rollback.
+settings_unchanged
+test "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot rev-parse HEAD)" = "$release_sha"
+test "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot branch --show-current)" = main
+test -z "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot status --porcelain)"
+sudo -n -u botrunner git -C /home/botrunner/wu-bot reset --hard "$old_bot"
+sudo -n systemctl restart wu-bot.service
+```
+
+After the bot restart, require a new active PID, clean main at b517afd, startup and
+`shard is ready:` in its new InvocationID journal, with no new traceback/import
+failure. Recheck anonymous commands401, selected public asset hashes and protected
+data against a fresh rollback preflight snapshot. A failure is a stop for operator
+review, never a reason to restore SQLite/Mongo or retry a Discord notification.
+
+
 ## Weight-range-1 — October 30, 2026
 
 PR [#64](https://github.com/SirRuggie/WU_Python/pull/64), tag `weight-range-1`,
@@ -209,8 +367,8 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Latest backend recorded here: `/home/ruggie/.local/share/wu-dashboard/backend/23235ccf2671dfe5675f0bc98d38ab11a011ab09/`, tag `weight-range-1`; bot remains `b517afd46ecfa9cc08488798eba53393ed5b649f`.
-- Its rollback backend is `/home/ruggie/.local/share/wu-dashboard/backend/b517afd46ecfa9cc08488798eba53393ed5b649f/`; paired frontend and bot rules are listed above.
+- Latest backend recorded here: `/home/ruggie/.local/share/wu-dashboard/backend/c494022e924994435496c3e4f0722eb781460380/`, tag `moderation-logs-1`; bot is the same revision, verified in smoke 98.
+- Its rollback backend is `/home/ruggie/.local/share/wu-dashboard/backend/23235ccf2671dfe5675f0bc98d38ab11a011ab09/`, paired with frontend a803108 and bot b517afd through the guarded moderation procedure above. Older rollback records remain historical.
 - Both are clean `git archive` exports. Current release imports were verified from the isolated directory using the existing virtualenv.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.

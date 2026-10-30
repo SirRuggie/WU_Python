@@ -108,12 +108,18 @@ checked readable controls, visible focus, results, and no horizontal overflow.
 These checks do not establish live Discord delivery or full screen-reader support.
 No production settings, live messages, or served dashboard assets were changed.
 
-## Layered routing and log cards — October 29, 2026 (development)
+## Layered routing and log cards — released October 30, 2026
 
-This batch is **not deployed**. The earlier release evidence above remains
-historical; it does not verify the new routing model, card format, or test-send
-endpoint in production. A backend and bot release, with separate frontend asset
-verification, will require direct approval and release checks.
+Released as `moderation-logs-1`, PR #68, `c494022e924994435496c3e4f0722eb781460380`.
+The bot shipped first and passed startup/gateway readiness before the backend and
+frontend were exposed. Claude ACCEPT 95 and read-only smoke 98 passed. Effective
+Join/Leave remained enabled at channel 1564485264364011580; Kick/Ban remained
+disabled with no channel; every forum tag stayed null. Raw settings and revision 1
+were unchanged, with no normalization writes. See [release evidence and guarded
+rollback](dashboard-backend-releases.md#moderation-logs-1--october-30-2026).
+No production Send test was used. This verifies the read-only dashboard/runtime,
+not live Discord delivery. Avatar reads returned 503 for three of eight requests
+in smoke; cards fell back to initials. Prompt 33 item 6 tracks the follow-up.
 
 The four supported events remain Join, Leave, Kick, and Ban. Settings schema 2
 adds one main destination, Members and Moderation category destinations, and an
@@ -134,9 +140,10 @@ persists schema 2 through the existing revision compare-and-swap check. A dry-ru
 against a backup copy contained 22 rows and one settings row; all four effective
 enabled/destination values and the revision matched before and after
 normalization, unrelated rows were untouched, and the dry-run made zero writes.
-This is backup-copy evidence, not a live migration. Before an approved backend
-release, recheck the backup, row counts, parity, and rollback readiness against
-the actual release candidate.
+This early 22-row result is backup-copy evidence, not a live migration. Claude's
+later review used a 24-row backup. The release-time archive held 25 member-event
+rows; its exact raw settings and all four effective destinations passed pre/post
+checks. These are successive snapshots, not contradictory migration counts.
 
 The bot and dashboard preview share the same card builders. Text-channel messages
 and replies to existing forum posts use Components V2: an event accent, avatar
@@ -163,11 +170,13 @@ A save in the narrow interval after the final revision read and before the POST
 could still send a sample to the previously confirmed destination; there is no
 cross-service transaction covering Mongo and Discord.
 
-Development evidence so far: focused backend/card/transport/routing tests passed
-(87 tests and 16 subtests), independent focused review passed (53 tests and 16
-subtests), and the frontend passed 909 tests plus TypeScript and production build.
-The backup-copy parity report and four targeted mutation results are in
-`/tmp/wu-moderation-logs-qa`. The integrated full backend suite and browser
-layout checks were still in progress when this section was written; their final
-results belong in the release review. No live Discord test, production database
-write, service restart, or deployment was performed for this batch.
+Final integrated verification passed 4,863 backend tests, 21 skipped and 162
+subtests, plus 933 frontend tests, TypeScript/build. Clean final-tag frontend
+checks passed again; the tag differed only in three documentation files from
+the integrated checked tree. Four required feature mutants and seventeen mocked
+release-gate checks passed. Earlier focused development counts are superseded by
+these full integrated results.
+Release backups, protected-state comparisons, public hashes and runtime checks
+are recorded in the linked release record. Current-invocation journals were
+clean; the old bot's shutdown CancelledError was excluded from new-process
+readiness. No real Discord Send test has been performed by this release workflow.
