@@ -17,11 +17,11 @@ async def available(db):
     for section in ('MAIN','FWA'):
         for row in await store.list_active(db,section=section):
             result[section+':'+row['clan_tag']]=dict(section=section,tag=row['clan_tag'],name=row.get('clan_name') or row['clan_tag'],revision=fingerprint(row),active=True)
-    directory=await db.clans.find({'type':{'$in':['FWA','Tactical','Flexible Fun','Competitive']}}).to_list(length=201)
+    directory=await db.clans.find({'archived': {'$ne': True}, 'removed': {'$ne': True}}).to_list(length=201)
     if len(directory)>200:raise web.HTTPServiceUnavailable(text='Clan directory is too large. Narrow it in Discord first.')
     from .providers import tag
     for clan in directory:
-        section='FWA' if clan['type']=='FWA' else 'MAIN'; value=tag(clan['tag']); key=section+':'+value
+        section='FWA' if clan.get('type')=='FWA' else 'MAIN'; value=tag(clan['tag']); key=section+':'+value
         result.setdefault(key,dict(section=section,tag=value,name=clan.get('name') or value,revision=fingerprint(None),active=False))
     return result
 

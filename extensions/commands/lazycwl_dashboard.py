@@ -110,7 +110,7 @@ def _section_buttons(token):
 async def _clans(mongo, token):
     if _section(token) == "FWA":
         return await _fwa_clans(mongo)
-    clans = await mongo.clans.find({"type": {"$in": ["Tactical", "Flexible Fun", "Competitive"]}}).to_list(length=None)
+    clans = await mongo.clans.find({"type": {"$ne": "FWA"}, "archived": {"$ne": True}, "removed": {"$ne": True}}).to_list(length=None)
     return sorted((c for c in clans if c.get("tag")), key=lambda c: c.get("name") or "")
 
 
