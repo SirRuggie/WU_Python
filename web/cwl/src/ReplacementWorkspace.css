@@ -362,3 +362,23 @@
     flex-wrap: wrap;
   }
 }
+.replacement-departure {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  color: #efd69b;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.replacement-departure small {
+  color: #d2d2db;
+  font-size: 12px;
+}
+
+.replacement-departure summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}

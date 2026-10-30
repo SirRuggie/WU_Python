@@ -670,7 +670,7 @@ async def _finish_official_war(tracking, store, guild_id, war):
         # remains due for another official fetch before the next war replaces it.
         return 0, 0, 0, 1
     if war['type'] == 'regular' and war['attacks_per_member'] == 2:
-        result = await store.process_war(guild_id, war)
+        result = await store.process_war(guild_id, war, official_capture=True)
         deferred = result.get('deferred_count', 0)
         if deferred:
             return 0, 0, deferred, 0
@@ -756,11 +756,13 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
         private = False
         try:
             try:
+                roster_observed_at = datetime.now(timezone.utc)
                 current = await coc_client.get_clan(clan_tag)
                 roster = [{'tag': member.tag, 'name': member.name,
                            'town_hall': getattr(member, 'town_hall', None)}
                           for member in current.members]
-                await store.sync_roster(WARRIORS_UNITED_GUILD_ID, clan_tag, roster)
+                await store.sync_roster(WARRIORS_UNITED_GUILD_ID, clan_tag, roster,
+                                        observed_at=roster_observed_at)
             except asyncio.CancelledError:
                 raise
             except Exception:

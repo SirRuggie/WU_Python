@@ -237,8 +237,12 @@ async def overview(request):
         for value, profile in await asyncio.gather(*(current(value) for value in tags)):
             if profile is not None:
                 by_tag[value] = profile
-        return web.json_response({'entries': [entry(row, names, by_tag.get(row['player_tag'])) for row in data['items']],
-                                  'clans': clans, 'members': [], 'total': data['total'], 'limit': limit, 'offset': offset})
+        streak = await ledger.streak(GUILD_ID, args['player_tag']) if args.get('player_tag') else None
+        return web.json_response({
+            'entries': [entry(row, names, by_tag.get(row['player_tag'])) for row in data['items']],
+            'clans': clans, 'members': [], 'streak': streak,
+            'total': data['total'], 'limit': limit, 'offset': offset,
+        })
 
 
 @endpoint
@@ -398,7 +402,7 @@ async def settings(request):
         result.append({'discord_id': str(row['member_id']), 'display_name': name,
                        'player_tags': row.get('account_tags') or [], 'resume_date': utc(row['until']).date().isoformat()})
     return web.json_response({'excluded_roles': [{'id': str(value), 'name': role_names.get(str(value), f'Role {value}')} for value in config['exempt_role_ids']],
-                              'roles': roles, 'leaves': result})
+                              'roles': roles, 'leaves': result, 'strike_limit': config['strike_limit']})
 
 
 @endpoint
@@ -487,7 +491,14 @@ async def replacements(request):
                                         town_hall=town_hall)
     names = {row['tag']: row['name'] for row in clans}
     candidates = [{'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
-                   'clan_tag': row.get('current_clan_tag'), 'clan_name': names.get(row.get('current_clan_tag'), row.get('current_clan_tag')),
+                   'clan_tag': row.get('last_seen_clan_tag') if row.get('departed') else row.get('current_clan_tag'),
+                   'clan_name': names.get(row.get('last_seen_clan_tag') if row.get('departed') else row.get('current_clan_tag')),
+                   'current_clan_tag': row.get('current_clan_tag'),
+                   'current_clan_name': names.get(row.get('current_clan_tag')),
+                   'departed': bool(row.get('departed')),
+                   'last_seen_clan_tag': row.get('last_seen_clan_tag'),
+                   'last_seen_clan_name': names.get(row.get('last_seen_clan_tag')),
+                   'last_seen_at': public(row.get('last_seen_at')),
                    'weight': row.get('weight'), 'weight_label': compact_weight(row.get('weight')),
                    'town_hall': row.get('town_hall'), 'active_strikes': row['active_strikes'],
                    'is_filler': bool(row.get('filler')), 'is_manual': bool(row.get('is_manual')),
