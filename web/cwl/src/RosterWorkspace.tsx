@@ -679,7 +679,7 @@ export default function RosterWorkspace({
   };
   const quickSelect = (count: 15 | 30) => {
     const next = quickSelectRosterMatches(filtered, count);
-    applySelection(next);
+    if (next.length > 0) applySelection(next);
     setSelectionNotice(
       next.length < count
         ? `Only ${next.length} unlocked account${next.length === 1 ? "" : "s"} match${next.length === 1 ? "es" : ""}`

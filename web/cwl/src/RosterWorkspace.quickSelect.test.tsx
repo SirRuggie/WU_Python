@@ -122,6 +122,24 @@ it('hides All above 50, keeps quick picks in filtered order, and shows All at 50
     await act(async () => button('Select 30')!.click())
     expect(host.textContent).toContain('Only 1 unlocked account matches')
     expect(host.textContent).toContain('1 matching · 1 selected')
+    await search('Player 00')
+    for (const label of ['Select 15', 'Select 30']) {
+      await act(async () => button(label)!.click())
+      expect(host.textContent).toContain('Only 0 unlocked accounts match')
+      expect(host.textContent).toContain('1 matching · 1 selected')
+      expect(host.textContent).toContain('1 hidden by filters')
+      expect(
+        host.querySelector<HTMLInputElement>(
+          '[aria-label="Select Player 00 for bulk actions"]',
+        )?.checked,
+      ).toBe(false)
+    }
+    await search('Special')
+    expect(
+      host.querySelector<HTMLInputElement>(
+        '[aria-label="Select Special account for bulk actions"]',
+      )?.checked,
+    ).toBe(true)
     await act(async () => render('2'))
     expect(host.textContent).toContain('50 matching')
     expect(button('All 50')).toBeDefined()

@@ -2,6 +2,16 @@
 
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
+## Back to top and empty quick selection — October 30 development
+
+Prompt 28 adds a view-only `↑ Back to top` button only to Build roster → Accounts & signups on phones (≤800px). Reveal requires more than two viewport heights of scroll and 40px of upward travel, with an 80ms debounce. Downward travel hides it; reaching one viewport from the top hides it immediately. The stationary lower-right pill stays above the measured selection action bar, and bottom spacing keeps the final account's actions reachable. Details, dialogs and local panels suppress it; other roster tabs and desktop do not render it.
+
+An explicit tap focuses Build roster without an incidental focus scroll and scrolls to zero smoothly, or instantly for reduced motion. Filters, selection, tab, URL and persistent data stay unchanged. The native button has an accessible label, visible keyboard focus, a 44px minimum target, gold text/boundary contrast and safe-area spacing.
+
+The authorized prompt 32 follow-up preserves the current selection when Select 15 or Select 30 finds zero unlocked matches, including selections hidden by filters, and displays `Only 0 unlocked accounts match`. Nonempty quick selections retain their existing replacement behavior and order; save and permission contracts are unchanged.
+
+Validation scope: focused component tests cover scroll thresholds, hysteresis, pending callbacks, desktop resizing, panel/dialog gating, bar offsets, focus and reduced motion. Workspace tests cover tab gating and preserving an existing selection when both quick-select controls encounter only locked matches. The 360×800 fixture layout assertions cover offsets, last-card hit testing and overflow; final browser evidence, mutation review and release verification remain separate integration gates. These automated checks do not constitute a full assistive-technology or real-phone audit.
+
 ## Status (2026-10-29)
 
 `weight-totals-1` released at `4f57d6e73941d3adc3b3223611927081bf794df9` (PR #59), frontend only. Assign and Balance now show totals of known effective weights; Avg TH remains. Empty clans say `Total: no weights yet`, and the duplicate Fill spot / Signup Details dirty dialog is fixed. 901 frontend tests, TypeScript/build and full isolated layout passed. Public `index-5dIAUgQj.js` SHA256 `b3f78cd7daba401cd67513e69fced2d6bf989e8a0b44b9e7f840d28a742d5c12` matched; backend `f95830b`/PID 2249061 stayed unchanged without restart. Backup integrity and counts matched (Main 22/18/18, Lazy 118/89/71); frontend rollback is `8c7b5a8c29c6dab65801879cf20226f94e7efc7c`. Claude's read-only owner 360px smoke PASSED (handoff 65): Assign current total 2,652k and no-weights state, Balance totals and no overflow; GETs only, no console errors. Detailed evidence is in CLAUDE.md.
