@@ -10,8 +10,8 @@ from extensions.commands import strikes
 from utils import strike_wars
 
 
-def war(kind, *, state='warEnded'):
-    end = datetime.now(timezone.utc) - timedelta(minutes=3)
+def war(kind, *, state='warEnded', end=None):
+    end = end or datetime.now(timezone.utc) - timedelta(minutes=3)
     member = SimpleNamespace(tag='#PC9YGL0JL', name='Player', town_hall=17,
                              map_position=1, attacks=[])
     side = lambda value: SimpleNamespace(tag=value, name=value, members=[member])
@@ -57,6 +57,44 @@ def test_monitor_routes_official_regular_and_cwl_without_clashking(monkeypatch):
     assert store.process_war.await_args.args[1]['type'] == 'regular'
     assert store.process_cwl_war.await_args.args[1]['type'] == 'cwl'
     legacy.assert_not_awaited()
+
+
+@pytest.mark.parametrize('kind,state', [
+    ('random', 'preparation'), ('random', 'inWar'),
+    ('cwl', 'preparation'), ('cwl', 'inWar'),
+])
+def test_active_scan_routes_only_to_observation(monkeypatch, kind, state):
+    end = datetime.now(timezone.utc) + timedelta(hours=47 if state == 'preparation' else 1)
+    active = war(kind, state=state, end=end)
+    store = SimpleNamespace(ensure_indexes=AsyncMock(), sync_roster=AsyncMock(),
+                            process_war=AsyncMock(), process_cwl_war=AsyncMock())
+    tracking = SimpleNamespace(ensure_indexes=AsyncMock(),
+                               abandon_untracked=AsyncMock(return_value=set()),
+                               begin=AsyncMock(return_value='token'),
+                               snapshot_key=lambda *_: 'key', observe=AsyncMock(),
+                               pending_finals=AsyncMock(return_value=[]),
+                               abandon_older=AsyncMock(return_value=0),
+                               finish=AsyncMock(), rows=AsyncMock(return_value=[{'status': 'behind'}]))
+    clans = SimpleNamespace(to_list=AsyncMock(return_value=[{'tag': '#P2Y'}]))
+    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: clans))
+    client = SimpleNamespace(
+        get_clan=AsyncMock(return_value=SimpleNamespace(members=[])),
+        get_clan_war=AsyncMock(return_value=active if kind == 'random' else
+                               war('random', state='notInWar')),
+        get_league_group=AsyncMock(return_value=SimpleNamespace(
+            rounds=[['#2UVGQU9']] if kind == 'cwl' else [])),
+        get_league_war=AsyncMock(return_value=active))
+    final = AsyncMock(return_value=(0, 0, 0, 0))
+    monkeypatch.setattr(strikes, 'service', lambda *_: store)
+    monkeypatch.setattr(strikes, 'StrikeTracking', lambda *_: tracking)
+    monkeypatch.setattr(strikes, '_finish_official_war', final)
+    monkeypatch.setattr(strikes, '_warm_weight_cache', AsyncMock())
+    asyncio.run(strikes.scan_once(mongo, object(), client))
+    final.assert_not_awaited()
+    tracking.observe.assert_awaited_once()
+    assert tracking.observe.await_args.args[1]['state'] == state
+    store.process_war.assert_not_awaited()
+    store.process_cwl_war.assert_not_awaited()
 
 
 @pytest.mark.parametrize('failure', [RuntimeError('links down'), asyncio.CancelledError()])
