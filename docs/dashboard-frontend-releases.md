@@ -1,5 +1,16 @@
 # Dashboard frontend releases
 
+Current frontend: `strike-tracking-2`
+(`6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`, PR #61), paired with the
+matching isolated backend and bot. Claude's read-only smoke passed; public
+`index-CEDGmeqX.js` SHA-256 was
+`8d11c9f20cfd22fa5946f7b682fdcc62e15d0da9abf0529ff9ce50aae41968de`.
+Frontend rollback target: `4f57d6e73941d3adc3b3223611927081bf794df9`.
+Use the [three-layer rollback procedure](dashboard-backend-releases.md#strike-tracking-2--october-30-2026)
+for this release; switching only the frontend does not roll back its backend or
+bot changes. The installed staging helper still needs a nested-asset fix;
+this release used a reviewed scratch helper without changing the installed one.
+
 Production frontend serving is separate from the workspace as of 2026-10-27.
 
 - Public domain: `https://dash.warriorsunited.cc`

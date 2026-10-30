@@ -112,10 +112,17 @@ testing remain outstanding. Existing simultaneous replacement edits and role-lis
 settings are last-write-wins; this UI pass adds no version-conflict protocol.
 Notification/provider delivery was not verified by isolated fixture checks.
 
-## Official war monitor — October 29, 2026 development
+## Official war monitor — released October 30, 2026
 
-This change is still under integration review; the earlier dashboard and strike
-validation above does not verify this monitor in production. For automatic strike
+`strike-tracking-2` (`6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`, PR #61)
+is live in the frontend, isolated backend, and bot. Claude's read-only smoke
+passed. The first completed official pass checked 25 clans, finalized zero wars,
+and found 13 Behind; the tracking card showed 12 On track / 13 Behind, with no
+private or error states. The 13 Behind clans reflect current/incomplete wars and
+older last-recorded wars; no historical-gap backfill ran. No live test strikes or
+Discord messages were sent. See [backend release evidence](dashboard-backend-releases.md#strike-tracking-2--october-30-2026).
+
+For automatic strike
 tracking, the official Clash API is the source for data it exposes: the current
 regular war and CWL league group/war tags. ClashKing remains a source for Discord
 account links, the separate player battle-log history feature, and the explicit
@@ -170,9 +177,28 @@ queues a durable check and still requires Add strikes access, since a completed
 check may create a strike. Each monitor pass logs a compact success line with
 clan, finalization, and nonhealthy counts; source failures remain visible.
 
-The planned release needs backend and bot startup/health verification, current
-war capture for every tracked clan, reviewed data counts and rollback assets,
-and served dashboard asset checks. The new code has been exercised with
-network-isolated fixtures, not live official API responses or production writes.
+Release checks included 4,830 backend tests passed (21 skipped), 906 frontend
+tests, TypeScript and the clean tagged frontend build, backend startup,
+one completed official-API pass, public asset hashes, protected data comparison,
+and Claude's read-only smoke. A durable SQLite and Mongo backup was verified
+before activation. The release expired no import previews because none were
+active. The earlier network-isolated fixture results remain separate from this
+production evidence.
+
+### Later — non-blocking review items
+
+- Add tests that kill the surviving mutations: missing prep treated as regular,
+  any other prep length treated as regular, removing `abandon_untracked` from
+  `scan_once`, and caching ended but incomplete CWL wars.
+- Deduplicate tracked clans, or use consistent cardinality in the all-403 guard,
+  so duplicate clan documents cannot make a partial check look like every clan
+  returned 403.
+- In the all-403 case, align the displayed war state with Error; it currently
+  still reads “War log private.”
+- Review whether the three-day stale health rule should apply to idle clans.
+  This affects health only, never strike creation.
+- Repair the installed frontend staging helper for nested assets such as
+  `assets/tour`; this release used a reviewed scratch helper after the standard
+  helper failed during staging. The installed helper was not changed.
 Full integrated tests and deployment evidence will be recorded by the release
 review; none are claimed by this development section.
