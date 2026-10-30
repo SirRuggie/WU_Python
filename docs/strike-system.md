@@ -526,3 +526,32 @@ Clear actions still use the reloaded revision; Reload itself does not write.
 The regression simulates the other staff member's clear, the 409 and Reload,
 then verifies the saved-state message and retained draft. Restoring the old
 `|| "normal"` fallback is killed by that regression.
+
+### replacements-2 release and smoke (2026-10-30)
+
+PR80 released as tag `replacements-2`, revision
+`7b1429d68c7c99dee0db55bf36d336b877c007e9`, across frontend, backend and bot.
+Public `index-NjsFCoY4.js` SHA-256 is
+`c591a4658058d8d3dd2869483e86478a774d3dbfaaa82ea1229324a6828e9528`.
+The backend cwd and bot HEAD matched; readiness required two consecutive public
+config 200 responses. Protected anonymous endpoints denied access and both
+journals were clean. The first scanner pass covered 25 clans, zero finalized
+wars and eight behind.
+
+Verified backup: `.local/replacements-2-backup-20261030T215222Z`.
+Protected SQLite values, 155 signups, four publications and seven saved lineups
+were unchanged; active strikes remained 3,558. Twelve Mongo collections and raw
+moderation-settings parity passed. Rollback retains data and restores code to
+`370797052fc0238632916af785174ff730292ef4`. Activation evidence is retained in
+`/tmp/wu-replacements-release/live.json` and adjacent audit files.
+
+Integrated verification passed 5,015 backend tests (21 skipped, 162 subtests),
+1,060 frontend tests, TypeScript/build and all layout stages across split runs.
+An obsolete browser assertion was updated to expect the already-approved full
+weight validation; no application behavior changed in that correction.
+
+Claude's read-only production smoke passed at 360px: 229 accounts with three or
+more strikes, manual marks first in Top 10 with weights, collapsed summaries,
+present-only Town Hall choices, no missing row weights, and recruit matches
+below Match. No 4xx/5xx or horizontal overflow appeared. Nothing was marked,
+edited or saved; this is not proof of live Discord delivery.
