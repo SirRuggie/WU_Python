@@ -120,6 +120,7 @@ export default function RosterPlayerDialog({
   const pending = useRef(false);
   const assignTrigger = useRef<HTMLButtonElement>(null);
   const [weight, setWeight] = useState(detailsWeightDraft(account));
+  const [clearRequested, setClearRequested] = useState(false);
   const baseline = useRef({
     tag: account.tag,
     draft: detailsWeightDraft(account),
@@ -130,13 +131,15 @@ export default function RosterPlayerDialog({
     null,
   );
   const currentHost = clans.find((c) => c.tag === account.assigned_clan_tag);
-  const dirty =
-    canWeight &&
-    JSON.stringify(weight) !== JSON.stringify(detailsWeightDraft(account));
   const unusualWeight =
     account.effective_weight !== null && account.effective_weight % 1000 !== 0;
+  const dirty =
+    canWeight &&
+    ((clearRequested && unusualWeight && !weight.full && !weight.loot) ||
+      JSON.stringify(weight) !== JSON.stringify(detailsWeightDraft(account)));
   useUnsavedWork(dirty || busy, onDirty);
   useEffect(() => {
+    setClearRequested(false);
     const previous = baseline.current;
     const draft = detailsWeightDraft(account);
     setWeight((current) =>
@@ -181,6 +184,7 @@ export default function RosterPlayerDialog({
           }),
         ))
       ) {
+        setClearRequested(false);
         setWeight(
           detailsWeightDraft({
             ...account,
@@ -340,6 +344,8 @@ export default function RosterPlayerDialog({
                   disabled={busy}
                   name={account.player_name}
                   unchanged={!dirty}
+                  allowEmptyClear={unusualWeight}
+                  onClear={() => setClearRequested(true)}
                 />
               </form>
             )}

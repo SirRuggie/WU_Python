@@ -38,6 +38,7 @@ export default function WeightQueue({
   resetToken,
 }: Props) {
   const [search, setSearch] = useState("");
+  const [permissionNotice, setPermissionNotice] = useState(false);
   const [limit, setLimit] = useState(50);
   const [drafts, setDrafts] = useState<Record<string, ManualWeightDraft>>({});
   const [unit, setUnit] = useState<ManualWeightDraft["unit"]>("loot");
@@ -151,6 +152,12 @@ export default function WeightQueue({
           Refresh weights
         </Button>
       </div>
+      {permissionNotice && (
+        <p role="status">
+          Permission needed: changing weights needs Clan weights access. Ask an
+          owner.
+        </p>
+      )}
       <label className="weight-queue-search">
         <span className="sr-only">Find account</span>
         <input
@@ -239,7 +246,10 @@ export default function WeightQueue({
                     }}
                     disabled={disabled || !canWeight}
                     busy={busy || saving}
-                    onEdit={onEdit}
+                    onEdit={(tag) => {
+                      if (!canWeight) setPermissionNotice(true);
+                      else onEdit(tag);
+                    }}
                     onSave={() => void save(account)}
                     error={errors[account.tag]}
                     inputRef={(node) => {

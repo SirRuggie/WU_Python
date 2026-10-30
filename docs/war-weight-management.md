@@ -70,3 +70,17 @@ an editor visit, restart persistence, older/invalid responses, and Mongo recover
 UI checked with isolated 50-member fixtures at desktop, 390px, and 320px: official
 labels, compact FWA selector, readable fields, and no horizontal page overflow.
 No production weights were altered for verification; no live messages were sent.
+
+## Linked-weight follow-up
+
+Weight edits require Clan weights access (or owner access). Roster-only staff
+can still place players and refresh the queue; clicking its edit control shows
+an in-app permission notice instead of opening the editor. Historical values
+such as 151500 remain unchanged on open. Explicit Clear followed by Save can
+set them to Not Available; Clear alone does not write.
+
+The bot retains legacy weights when the linked table is absent and treats an
+invalid timestamp as unavailable instead of crashing. Working roster exports
+label the old field `legacy_manual_weight` alongside `effective_weight`;
+published exports keep their snapshot columns. Archived-season freezing is
+not part of this change, per the owner's decision.

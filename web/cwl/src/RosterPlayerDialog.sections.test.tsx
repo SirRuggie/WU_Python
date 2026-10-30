@@ -438,3 +438,15 @@ it("roster-only staff can place players but cannot edit linked weights", async (
   expect(section.textContent).toContain("Clan weights access required");
   expect(save).not.toHaveBeenCalled();
 });
+
+it("allows clearing a historical fractional-thousand value only after explicit Save", async () => {
+  await render({ effective_weight: 151500, weight_revision: 4 });
+  await click("Clear weight");
+  expect(save).not.toHaveBeenCalled();
+  await click("Save");
+  expect(save).toHaveBeenLastCalledWith({
+    manual_weight: null,
+    weight_revision: 4,
+    weight_storages: 5,
+  });
+});

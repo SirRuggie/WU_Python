@@ -596,10 +596,15 @@ def _manual_weights():
         with sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=0.2) as db:
             from utils.clan_weight_store import effective_weights
             db.row_factory = sqlite3.Row
-            tags = [row[0] for row in db.execute(
-                'SELECT tag FROM player_weights UNION SELECT tag FROM clan_player_weights')]
+            tables = {row[0] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            legacy = ({row['tag']: row['weight'] for row in db.execute(
+                'SELECT tag,weight FROM player_weights')} if 'player_weights' in tables else {})
+            if 'clan_player_weights' not in tables:
+                return legacy
+            tags = set(legacy) | {row[0] for row in db.execute('SELECT tag FROM clan_player_weights')}
             return {tag: row['weight'] for tag, row in effective_weights(db, tags).items()}
-    except (sqlite3.Error, OSError):
+    except (sqlite3.Error, OSError, ValueError):
         return {}
 
 
