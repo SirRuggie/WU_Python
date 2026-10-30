@@ -457,8 +457,8 @@ class StrikeService:
 
     async def revoke(self, guild_id: int, strike_id: str, actor_id: int, reason: str) -> dict:
         reason = str(reason or '').strip()
-        if not reason:
-            raise ValueError('Give a reason for removing the strike.')
+        if not 1 <= len(reason) <= 500:
+            raise ValueError('Give a reason of at most 500 characters for removing the strike.')
         now = datetime.now(timezone.utc)
         result = await self.mongo.strike_records.find_one_and_update(
             {'_id': str(strike_id), 'guild_id': int(guild_id), 'kind': 'strike',
@@ -546,6 +546,29 @@ class StrikeService:
         found.update({row['player_tag']: row for row in profiles})
         return sorted(found.values(), key=lambda row: (
             str(row.get('player_name') or '').casefold(), row['player_tag']))[:limit]
+
+    async def saved_target_accounts(self, guild_id: int, players) -> list[dict]:
+        """Display saved identities without one upstream request per suggestion."""
+        players = list(dict.fromkeys(tag(player) for player in players))[:25]
+        profiles = await self.mongo.strike_profiles.find({
+            'guild_id': int(guild_id), 'player_tag': {'$in': players}}).to_list(length=25)
+        by_tag = {row['player_tag']: row for row in profiles}
+        clans = await self.mongo.clans.find({}).to_list(length=None)
+        clan_names = {row.get('tag'): row.get('name') for row in clans}
+        result = []
+        for player in players:
+            profile = by_tag.get(player, {})
+            name = profile.get('player_name')
+            if not name:
+                latest = await self.mongo.strike_records.find({
+                    'guild_id': int(guild_id), 'player_tag': player}).sort(
+                    [('occurred_at', -1), ('_id', 1)]).limit(1).to_list(length=1)
+                name = latest[0].get('player_name') if latest else None
+            clan = profile.get('current_clan_tag')
+            result.append({'tag': player, 'name': name or player,
+                           'town_hall': profile.get('town_hall'),
+                           'current_clan_tag': clan, 'current_clan_name': clan_names.get(clan)})
+        return result
 
     async def leave_revision(self, guild_id: int, member_id: int) -> int:
         row = await self.mongo.strike_leaves.find_one({'_id': f'{int(guild_id)}:{int(member_id)}'})
@@ -1346,6 +1369,12 @@ class StrikeService:
                 continue
             results['wars'] += 1
             for row in rows:
+                if row['_id'] in attempted:
+                    continue
+                attempted.add(row['_id'])
+                if await self.mongo.strike_records.find_one({'_id': row['_id'], 'guild_id': int(guild_id)}):
+                    results['existing'] += 1
+                    continue
                 original = approved.get(row['_id'])
                 if original is None:
                     if row['_id'] in preview.get('deferred_rows', {}):
@@ -1356,9 +1385,8 @@ class StrikeService:
                             'missed_attacks': row['missed_attacks'],
                             'reason': 'Not approved in this preview; create a new preview'})
                     continue
-                if row['_id'] in excluded or row['_id'] in attempted:
+                if row['_id'] in excluded:
                     continue
-                attempted.add(row['_id'])
                 # An exemption discovered since preview can lower a strike.
                 # Clearing an exemption cannot promote an originally exempt row.
                 if original != 'strike' and row['kind'] == 'strike':
@@ -1386,9 +1414,14 @@ class StrikeService:
                 continue
             results['cwl_wars'] += 1
             for row in rows:
-                if approved.get(row['_id']) != 'cwl' or row['_id'] in excluded or row['_id'] in attempted:
+                if row['_id'] in attempted:
                     continue
                 attempted.add(row['_id'])
+                if await self.mongo.strike_records.find_one({'_id': row['_id'], 'guild_id': int(guild_id)}):
+                    results['existing'] += 1
+                    continue
+                if approved.get(row['_id']) != 'cwl' or row['_id'] in excluded:
+                    continue
                 row['created_by'] = int(actor_id)
                 row['import_id'] = str(preview_id)
                 row['capture_source'] = 'clashking_import'

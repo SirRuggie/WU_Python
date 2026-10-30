@@ -255,8 +255,8 @@ review; none are claimed by this development section.
 
 ## Strikes UX backend contracts — prompt 23
 
-The backend contracts below are ready for the separate frontend integration;
-this section does not claim that the new controls have shipped.
+These backend contracts and their frontend controls shipped in `strikes-ux-1`
+(`cb0052d`). Claude verified the production UI at 360px with read-only checks.
 
 - `GET /api/cwl/strikes/accounts` keeps `status=active|all`, `query`, `clan`,
   `limit` (1–100, default 25), and `offset`. The new `action` is `all`,
@@ -325,7 +325,7 @@ races and legacy creation, leave receipt crashes/recovery and tombstones,
 300-account cross-page summary/search, more than 2,000 wars, history precedence,
 managed-role retention, import races, permissions and unavailable providers.
 Frontend keyboard/accessibility, phone/desktop density and confirmation checks
-remain separate integration gates. No live notification or API delivery is
+passed the isolated integration gates before the `strikes-ux-1` release. No live notification or API delivery is
 inferred from these fixtures.
 
 The prompt 23 browser fixture contains 300 accounts and a 28-record player.
@@ -392,3 +392,35 @@ recorded official GET responses with fake roster/strike processing. It demonstra
 scan recovery, not live Discord delivery or the outcome of live strike processing.
 Any ended war without a captured complete final still follows the existing review
 path; this fix does not automatically import missing historical wars.
+
+
+## Strikes UX polish — prompt 37
+
+Name and Discord-linked Add-strike suggestions use saved profiles, latest ledger
+names, and tracked clan membership; they do not fan out to live player lookups.
+An exact player tag still uses the authorized public provider. Missing saved TH
+or clan information stays unknown. Suggestions remain capped at 25.
+
+Import results count each stored candidate once, including candidates that were
+already present when the preview was made. This applies to regular and CWL
+history, preserves the preview approval/exclusion rules, and retains the insert
+race check. Removing a strike accepts a trimmed reason of 1–500 characters at
+both the HTTP and storage boundaries.
+
+At the configured limit the account says “Limit reached”; only higher counts say
+“Over limit.” The account detail keeps Add strike, while Refresh records and Find
+war remain on the account list. Row action names identify the date and opponent.
+The isolated browser checks cover 360×800 and 1440×1000: import/result copy,
+compact detail controls, row actions, focus return, discard confirmation, errors,
+44px targets, minimum 12px text, contrast and horizontal overflow. No live
+notifications or production writes are part of these checks.
+
+Prompt 41 completes shared singular/plural count labels, including history-only
+records and selected records. On phone account details the tracking box is hidden
+and Players, Status and Add strike share one row; desktop remains unchanged.
+The browser regression requires three complete visible rows and a first row at
+or above 560px at 360×800.
+
+Import counters retain one documented overlap: if another request inserts an
+excluded candidate after preview, it counts as both submitted excluded and an
+observed duplicate. No row is inserted by that excluded selection.
