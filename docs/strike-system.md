@@ -468,3 +468,27 @@ The correction has only been rehearsed against an isolated backup database;
 production correction and release are pending. Runtime rollback restores old
 bot/backend/frontend assets, never silently restores the database or reverses
 approved audit removals.
+
+### Replacements redesign verification (October 30, 2026)
+
+The isolated 273-account / 816-strike fixture preserves the strike ledger across
+navigation and draft cancellation. Checks cover 360×800 and 1440×1000, both
+Strikes/Replacements Back directions, clan+tag and tag-only links, multiple open
+clans, remembered filters/scroll, the in-place priority editor, recruit matching,
+44px control targets and 12px minimum control text. The desktop recruit box stays
+beside Top 10. A browser-found unmount scroll overwrite has a regression test.
+The existing compact Strikes detail density check remains in force.
+
+Backend regression coverage includes 48-hour removal/rejoin, authorization,
+malformed filters, paging, unknown weights, stale add/edit/clear and unchanged
+strike history. Six deliberate faults were caught: default one-strike inclusion,
+priority-free Top 10, ignored tag links, lost Back state, native confirmation and
+stale writes. Full suites passed 4,995 backend tests (21 skipped, 162 subtests)
+and 1,046 frontend tests. These fixture checks do not prove live Discord delivery.
+
+For the same fixture, the initial API payload fell from 163,750 to 9,082 bytes.
+Warm in-memory API measurements were about 17ms before and 14ms after; these are
+not production latency measurements. The browser reached the new initial view
+in about half a second on this host. The first response contains summary/Top 10
+metadata; expanded clans fetch their own bounded pages. Unknown weight values
+remain available in the ordinary list, but are excluded from recruit matching.
