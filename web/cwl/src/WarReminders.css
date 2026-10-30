@@ -175,3 +175,16 @@
   padding-top: 0;
   border-top: 0;
 }
+
+.war-delivery-link {
+  color: var(--accent, #e5bc60);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.war-delivery-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
