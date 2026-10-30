@@ -132,7 +132,13 @@ identity. A snapshot contains war type and attack limit, timing, both clans,
 and member positions, Town Halls, and observed attacks. CWL league-war
 observations use the official league group and war tags; CWL remains
 informational and cannot add strikes. Friendly and other ineligible wars are
-observations only.
+observations only. The shared preparation-time classifier treats listed friendly
+lengths, including 24 hours, as friendly within two minutes; only a 23-hour
+preparation within 45 minutes is a regular war. Missing or other timing is
+unknown and cannot create strikes. The explicit ClashKing import uses the same
+rule even when stored wars omit a type field; rejected wars appear in skipped
+coverage. Complete ended CWL responses are cached across checks to avoid
+refetching stable war tags; active and incomplete responses are fetched again.
 
 An observed active war receives a follow-up check about a minute after its end,
 with bounded backoff when the official source or final payload is unavailable.
@@ -147,12 +153,18 @@ If a later war replaces an observed war before a usable final snapshot arrives,
 that war is marked incomplete, appears in **Find war** with a review message and
 zero automatic strikes, and makes tracking Behind. No historical-gap backfill
 or missed-war report is part of this batch.
+An older incomplete war remains visible in Find war but no longer keeps a clan
+Behind after a newer completed war. Open snapshots for removed family clans are
+abandoned once, without strikes or repeated due checks.
 
 The API and tracking card show each clan's last recorded war date, current war
 state (`notInWar`, preparation, in war, ended, private, or unknown), and health.
 On track requires a confirmed not-in-war state or a completed latest-war path;
-Behind includes a missed final check and stale active-warring record. Private
-war logs and source errors remain distinct from success. The summary counts
+Behind includes a missed final check or a last recorded war over three days old
+for a clan that has warred. An unknown state is never On track. Private war logs
+and source errors remain distinct from success. Invalid Clash API key/IP reasons,
+or 403 responses from every tracked clan in a full check, show an error rather
+than War log private. The summary counts
 these states rather than treating an empty war result as green. A staff Retry
 queues a durable check and still requires Add strikes access, since a completed
 check may create a strike. Each monitor pass logs a compact success line with

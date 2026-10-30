@@ -34,6 +34,8 @@ class Rows:
                     return False
                 if '$ne' in expected and value == expected['$ne']:
                     return False
+                if '$in' in expected and value not in expected['$in']:
+                    return False
             elif value != expected:
                 return False
         return True
@@ -89,7 +91,7 @@ def real_war(state, *, end=None, hits=0, kind='random'):
                              'mapPosition': 1, 'opponentAttacks': 0,
                              'bestOpponentAttack': {}, 'attacks': member_attacks}]}
     raw = {'state': state, 'teamSize': 1, 'attacksPerMember': 2,
-           'preparationStartTime': fmt(end - timedelta(days=2)),
+           'preparationStartTime': fmt(end - timedelta(days=1, hours=23)),
            'startTime': fmt(end - timedelta(days=1)), 'endTime': fmt(end),
            'clan': side(CLAN, PLAYER, attacks),
            'opponent': side(OPPONENT, OPPONENT, [])}
@@ -107,6 +109,25 @@ def test_real_coc_model_normalizes_public_attack_details_and_enum():
     assert war['members'][0]['attacks'] == 1
     assert war['members'][0]['attack_details'][0]['stars'] == 2
     assert war['complete'] is True
+
+
+def test_24_hour_friendly_is_observed_without_strikes_and_23_hour_regular_can_strike():
+    async def run():
+        owner = tracking()
+        store = SimpleNamespace(process_war=AsyncMock(return_value={'deferred_count': 0}))
+        for index, (prep_hours, expected) in enumerate(((24, 'friendly'), (23, 'regular'))):
+            model = real_war('warEnded', end=datetime.now(timezone.utc) -
+                             timedelta(days=index, minutes=2))
+            model.preparation_start_time = SimpleNamespace(
+                time=model.start_time.time - timedelta(hours=prep_hours))
+            final = normalize(model, CLAN)
+            assert final['type'] == expected
+            active = {**final, 'state': 'inWar'}
+            await owner.observe(GUILD, active, now=final['end_time'] - timedelta(hours=2))
+            result = await _finish_official_war(owner, store, GUILD, final)
+            assert result[0] == (1 if expected == 'regular' else 0)
+        assert store.process_war.await_count == 1
+    asyncio.run(run())
 
 
 def test_aggregate_mismatch_or_missing_start_cannot_finalize():
@@ -173,6 +194,77 @@ def test_no_active_capture_or_missing_final_makes_zero_strikes_and_review_row():
         assert len(incomplete) == 1 and incomplete[0]['strikes'] == 0
         assert 'review in Find war' in incomplete[0]['review_message']
         store.process_war.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_active_and_incomplete_final_never_post_and_pending_requires_complete_end():
+    async def run():
+        owner = tracking()
+        active = normalize(real_war('inWar'), CLAN)
+        await owner.observe(GUILD, active)
+        store = SimpleNamespace(process_war=AsyncMock())
+        assert await _finish_official_war(owner, store, GUILD, active) == (0, 0, 0, 0)
+        assert await owner.pending_finals(GUILD, CLAN) == []
+        final = {**active, 'state': 'warEnded', 'complete': False}
+        assert await _finish_official_war(owner, store, GUILD, final) == (0, 0, 0, 1)
+        assert await owner.pending_finals(GUILD, CLAN) == []
+        store.process_war.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_removed_clan_snapshot_abandoned_once_and_cannot_reactivate():
+    async def run():
+        owner = tracking()
+        active = normalize(real_war('inWar'), CLAN)
+        await owner.observe(GUILD, active, now=active['end_time'] - timedelta(minutes=5))
+        assert await owner.abandon_untracked(GUILD, set()) == {CLAN}
+        assert await owner.abandon_untracked(GUILD, set()) == set()
+        assert await owner.due_clans(GUILD, now=active['end_time'] + timedelta(hours=1)) == set()
+        final = {**active, 'state': 'warEnded'}
+        store = SimpleNamespace(process_war=AsyncMock())
+        assert await _finish_official_war(owner, store, GUILD, final) == (0, 0, 0, 0)
+        assert (await owner.snapshot(GUILD, final))['status'] == 'abandoned'
+        store.process_war.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_tracking_health_uses_latest_war_and_unknown_private_stale_fail_closed():
+    async def run():
+        owner = tracking()
+        clans = [{'tag': CLAN, 'name': 'Clan'}]
+        async def finish(state='notInWar', **kwargs):
+            token = await owner.begin(GUILD, CLAN)
+            await owner.finish(GUILD, CLAN, started_at=token,
+                               current_war_state=state, **kwargs)
+            return (await owner.rows(GUILD, clans))[0]
+        unknown = await finish('unknown')
+        assert unknown['status'] == 'behind'
+        assert owner.mongo.strike_tracking.rows[owner.key(GUILD, CLAN)]['last_scan_status'] == 'needs_review'
+        assert (await finish('private', private=True))['status'] == 'private'
+        await owner.begin(GUILD, CLAN)
+        assert (await owner.rows(GUILD, clans))[0]['status'] == 'behind'
+        assert (await finish('private', private=True,
+                             error='War source unavailable'))['status'] == 'error'
+
+        old_end = datetime.now(timezone.utc) - timedelta(days=30)
+        old = normalize(real_war('inWar', end=old_end), CLAN)
+        await owner.observe(GUILD, old, now=old_end - timedelta(minutes=5))
+        await owner.abandon_older(GUILD, CLAN, set(), now=old_end + timedelta(minutes=2))
+        assert (await finish())['status'] == 'behind'
+
+        recent_end = datetime.now(timezone.utc) - timedelta(days=1)
+        recent = normalize(real_war('inWar', end=recent_end), CLAN)
+        await owner.observe(GUILD, recent, now=recent_end - timedelta(minutes=5))
+        await owner.finalized(GUILD, {**recent, 'state': 'warEnded'})
+        await owner.mongo.strike_records.insert_one({
+            '_id': 'recent', 'guild_id': GUILD, 'clan_tag': CLAN,
+            'source': 'war', 'occurred_at': recent_end})
+        assert (await finish())['status'] == 'healthy'
+
+        stale_end = datetime.now(timezone.utc) - timedelta(days=4)
+        owner.mongo.strike_records.rows['recent']['occurred_at'] = stale_end
+        owner.mongo.strike_war_snapshots.rows[owner.snapshot_key(GUILD, recent)]['end_time'] = stale_end
+        assert (await finish())['status'] == 'behind'
     asyncio.run(run())
 
 

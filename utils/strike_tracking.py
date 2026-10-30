@@ -20,7 +20,7 @@ def safe_error(error: Exception | str) -> str:
         return error if error in {'War source unavailable', 'Clan roster unavailable',
                                   'Account links unavailable', 'War processing failed',
                                   'Incomplete war data', 'Unresolved accounts',
-                                  'War log private'} else 'Tracking check failed'
+                                  'War log private', 'Clash API key/IP rejected'} else 'Tracking check failed'
     name = type(error).__name__
     if name in {'ClientError', 'ClientConnectorError', 'ClientResponseError', 'TimeoutError'}:
         return 'War source unavailable'
@@ -57,7 +57,7 @@ class StrikeTracking:
         now = utc(now or datetime.now(timezone.utc))
         key = self.snapshot_key(guild_id, war)
         existing = await self.mongo.strike_war_snapshots.find_one({'_id': key})
-        if existing and existing.get('status') in ('finalized', 'incomplete'):
+        if existing and existing.get('status') in ('finalized', 'incomplete', 'abandoned'):
             return existing
         active = war['state'] in ('preparation', 'inWar')
         attempts = (int(existing.get('final_check_attempts') or 0) + 1
@@ -111,6 +111,23 @@ class StrikeTracking:
                 count += 1
         return count
 
+    async def abandon_untracked(self, guild_id: int, tracked_tags: set[str], *, now=None):
+        """Retire open snapshots for clans removed from the tracked roster."""
+        now = utc(now or datetime.now(timezone.utc))
+        rows = await self.mongo.strike_war_snapshots.find(
+            {'guild_id': int(guild_id), 'status': 'observing'}).to_list(length=None)
+        removed = set()
+        for row in rows:
+            if row['clan_tag'] in tracked_tags:
+                continue
+            result = await self.mongo.strike_war_snapshots.update_one(
+                {'_id': row['_id'], 'status': 'observing'},
+                {'$set': {'status': 'abandoned', 'abandoned_at': now,
+                          'next_check_at': None, 'updated_at': now}})
+            if result.matched_count:
+                removed.add(row['clan_tag'])
+        return removed
+
     async def defer_due(self, guild_id: int, clan_tag: str, *, now=None):
         """Back off source failures without losing the durable final deadline."""
         now = utc(now or datetime.now(timezone.utc))
@@ -133,7 +150,7 @@ class StrikeTracking:
             {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
              'status': 'observing'}).to_list(length=None)
         return [row for row in rows if row['war'].get('state') == 'warEnded'
-                and row.get('seen_active')]
+                and row['war'].get('complete') and row.get('seen_active')]
 
     async def due_clans(self, guild_id: int, *, now=None):
         now = utc(now or datetime.now(timezone.utc))
@@ -221,10 +238,14 @@ class StrikeTracking:
         saved = await self.mongo.strike_tracking.find({'guild_id': guild_id}).to_list(length=None)
         indexed = {row.get('clan_tag'): row for row in saved}
         snapshots = getattr(self.mongo, 'strike_war_snapshots', None)
-        incomplete = (await snapshots.find(
-            {'guild_id': guild_id, 'status': 'incomplete'},
-            {'clan_tag': 1}).to_list(length=None)) if snapshots is not None else []
-        incomplete_tags = {row['clan_tag'] for row in incomplete}
+        ended = (await snapshots.find(
+            {'guild_id': guild_id, 'status': {'$in': ['incomplete', 'finalized']}},
+            {'clan_tag': 1, 'end_time': 1, 'status': 1}).to_list(length=None)) if snapshots is not None else []
+        latest_ended = {}
+        for row in ended:
+            prior = latest_ended.get(row['clan_tag'])
+            if prior is None or utc(row['end_time']) > utc(prior['end_time']):
+                latest_ended[row['clan_tag']] = row
         result = []
         for clan in clans:
             clan_tag = tag(clan['tag'])
@@ -240,13 +261,24 @@ class StrikeTracking:
                  'source': {'$in': ['war', 'cwl']}},
                 {'occurred_at': 1}, sort=[('occurred_at', -1)])
             recorded = latest.get('occurred_at') if latest else None
-            stale = bool(recorded and now - utc(recorded) > WAR_STALE
-                         and state in ('preparation', 'inWar', 'warEnded'))
+            latest_snapshot = latest_ended.get(clan_tag)
+            latest_time = max((utc(value) for value in
+                               (recorded, latest_snapshot.get('end_time') if latest_snapshot else None)
+                               if value is not None), default=None)
+            latest_incomplete = bool(latest_snapshot and latest_snapshot['status'] == 'incomplete'
+                                     and (recorded is None or
+                                          utc(latest_snapshot['end_time']) >= utc(recorded)))
+            stale = bool(latest_time and now - latest_time > WAR_STALE)
             check_stale = not checked or now - utc(checked) > RECENT
-            status = ('private' if state == 'private' else
-                      'error' if item.get('error') and item.get('error') != 'War log private' else
-                      'behind' if unfinished or check_stale or state == 'unknown' or
-                        clan_tag in incomplete_tags or stale or
+            failure = item.get('error')
+            hard_error = failure and failure not in ('War log private', 'Incomplete war data',
+                                                      'Unresolved accounts')
+            status = ('error' if hard_error else
+                      'behind' if unfinished or check_stale else
+                      'private' if state == 'private' else
+                      'behind' if state == 'unknown' or
+                        latest_incomplete or stale or item.get('skipped_wars') or
+                        item.get('deferred_accounts') or
                         (state != 'notInWar' and not recorded) else 'healthy')
             result.append({'clan_tag': clan_tag, 'clan_name': clan.get('name') or clan_tag,
                            'status': status, 'last_started_at': started,

@@ -213,6 +213,8 @@ def test_saved_war_without_type_needs_explicit_two_attack_limit():
     regular = {
         'state': 'warEnded', 'teamSize': 1, 'attacksPerMember': 2,
         'endTime': '20260927T151018.000Z',
+        'startTime': '20260926T151018.000Z',
+        'preparationStartTime': '20260925T161018.000Z',
         'clan': {'tag': '#2UVGQU9', 'members': [{'tag': '#PC9YGL0JL'}]},
         'opponent': {'tag': '#8GG8', 'members': [{'tag': '#8GG82'}]},
     }

@@ -651,13 +651,15 @@ async def _warm_weight_cache(mongo):
 
 async def _finish_official_war(tracking, store, guild_id, war):
     """Only a previously observed, complete official final may write records."""
+    if war.get('state') != 'warEnded':
+        return 0, 0, 0, 0
     prior = await tracking.snapshot(guild_id, war)
     if prior is None:
         # The current endpoint may still show a war that ended before this
         # monitor was deployed. Do not report or backfill that historical gap.
         return 0, 0, 0, 0
     snapshot = await tracking.observe(guild_id, war)
-    if snapshot.get('status') in ('finalized', 'incomplete'):
+    if snapshot.get('status') in ('finalized', 'incomplete', 'abandoned'):
         return 0, 0, 0, 0
     if not snapshot.get('seen_active'):
         # An already-ended war first seen at startup belongs to the old gap.
@@ -683,7 +685,7 @@ async def _finish_official_war(tracking, store, guild_id, war):
     return 0, 0, 0, 0
 
 
-async def _league_observations(client, clan_tag, cache):
+async def _league_observations(client, clan_tag, cache, ended_cache=None):
     """Read the bounded current league group; only previously active wars can post."""
     try:
         group = await client.get_league_group(clan_tag)
@@ -696,10 +698,27 @@ async def _league_observations(client, clan_tag, cache):
     observations = []
     for war_tag in tags:
         if war_tag not in cache:
-            cache[war_tag] = await client.get_league_war(war_tag)
+            if ended_cache is not None and war_tag in ended_cache:
+                cache[war_tag] = ended_cache[war_tag]
+            else:
+                cache[war_tag] = await client.get_league_war(war_tag)
         war = cache[war_tag]
         if war is None:
             raise ValueError('Official CWL war response is unavailable.')
+        state = str(getattr(getattr(war, 'state', None), 'value', getattr(war, 'state', None)))
+        if ended_cache is not None and state == 'warEnded' and war_tag not in ended_cache:
+            # Cache complete ended wars even when this pair is unrelated to the
+            # selected clan; every group member otherwise refetches those tags.
+            owner_tag = getattr(getattr(war, 'clan', None), 'tag', None)
+            try:
+                complete = normalize_official_war(war, owner_tag)
+            except (TypeError, ValueError, AttributeError):
+                complete = None
+            if complete and complete['complete']:
+                ended_cache[war_tag] = war
+                while len(ended_cache) > 1024:
+                    oldest = next(key for key in ended_cache if key != '__client__')
+                    ended_cache.pop(oldest)
         sides = (getattr(war, 'clan', None), getattr(war, 'opponent', None))
         if not any(side is not None and getattr(side, 'tag', None) == clan_tag
                    for side in sides):
@@ -710,14 +729,21 @@ async def _league_observations(client, clan_tag, cache):
     return observations
 
 async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.Client,
-                    *, clan_tags: set[str] | None = None):
+                    *, clan_tags: set[str] | None = None, ended_cache=None):
+    if ended_cache is not None and ended_cache.get('__client__') is not coc_client:
+        ended_cache.clear()
+        ended_cache['__client__'] = coc_client
     store = service(mongo, bot)
     tracking = StrikeTracking(mongo)
     await store.ensure_indexes()
     await tracking.ensure_indexes()
     clans = await mongo.clans.find({'tag': {'$type': 'string'}}, {'tag': 1}).to_list(length=None)
+    tracked_tags = {tag(clan['tag']) for clan in clans}
+    for removed in await tracking.abandon_untracked(WARRIORS_UNITED_GUILD_ID, tracked_tags):
+        print(f'[strikes] stopped tracking removed clan {removed}')
     league_cache = {}
     checked = finalized_total = 0
+    forbidden_results = []
     for clan in clans:
         clan_tag = tag(clan['tag'])
         if clan_tags is not None and clan_tag not in clan_tags:
@@ -761,16 +787,22 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                         skipped_count += s
                     else:
                         await tracking.observe(WARRIORS_UNITED_GUILD_ID, observed)
-            except coc.PrivateWarLog:
-                private = True
-                current_state = 'private'
+            except coc.PrivateWarLog as error:
+                forbidden_results.append((clan_tag, started))
+                reason = str(getattr(error, 'reason', '') or '').lower()
+                if ('invalid' in reason and ('ip' in reason or 'key' in reason)):
+                    problem = 'Clash API key/IP rejected'
+                else:
+                    private = True
+                    current_state = 'private'
             except asyncio.CancelledError:
                 raise
             except Exception:
                 problem = 'War processing failed' if regular_ok else 'War source unavailable'
                 print(f'[strikes] official war check deferred for {clan_tag}')
             try:
-                league_wars = await _league_observations(coc_client, clan_tag, league_cache)
+                league_wars = await _league_observations(coc_client, clan_tag,
+                                                         league_cache, ended_cache)
                 league_ok = True
                 for observed in league_wars:
                     current_keys.add(tracking.snapshot_key(WARRIORS_UNITED_GUILD_ID, observed))
@@ -823,6 +855,11 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
         except asyncio.CancelledError:
             # A cancelled attempt must never mark this clan healthy.
             raise
+    full_coverage = clan_tags is None or tracked_tags <= clan_tags
+    if full_coverage and tracked_tags and len(forbidden_results) == len(tracked_tags):
+        for clan_tag, started in forbidden_results:
+            await tracking.finish(WARRIORS_UNITED_GUILD_ID, clan_tag, started_at=started,
+                                  error='Clash API key/IP rejected', current_war_state='private')
     if clan_tags is None:
         await _warm_weight_cache(mongo)
     if checked:
@@ -835,12 +872,13 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
 
 async def loop(mongo, bot, coc_client):
     tracking = StrikeTracking(mongo)
+    ended_cache = {}
     next_full = 0.0
     while True:
         try:
             if time.monotonic() >= next_full:
                 pending = await tracking.pending(WARRIORS_UNITED_GUILD_ID)
-                await scan_once(mongo, bot, coc_client)
+                await scan_once(mongo, bot, coc_client, ended_cache=ended_cache)
                 for row in pending:
                     await tracking.consume_retry(WARRIORS_UNITED_GUILD_ID,
                                                  row['clan_tag'], row['retry_requested_at'])
@@ -850,7 +888,8 @@ async def loop(mongo, bot, coc_client):
                 due = await tracking.due_clans(WARRIORS_UNITED_GUILD_ID)
                 if pending or due:
                     wanted = {row['clan_tag'] for row in pending} | due
-                    await scan_once(mongo, bot, coc_client, clan_tags=wanted)
+                    await scan_once(mongo, bot, coc_client, clan_tags=wanted,
+                                    ended_cache=ended_cache)
                     for row in pending:
                         await tracking.consume_retry(WARRIORS_UNITED_GUILD_ID,
                                                      row['clan_tag'], row['retry_requested_at'])

@@ -114,7 +114,7 @@ def test_history_capped_and_previously_recorded_war_read_from_ledger():
         row = (await tracking.rows(1, [{'tag': '#P2Y'}]))[0]
         assert row['latest_recorded_war_at'] == end
         assert len(row['error_history']) == 5
-        assert row['status'] == 'error'
+        assert row['status'] == 'behind'
     asyncio.run(run())
 
 

@@ -12,6 +12,7 @@ from urllib.parse import quote
 import aiohttp
 
 from utils.strike_store import tag, stamp, validate_war
+from utils.strike_war_type import classify_war_type
 
 BASE = 'https://api.clashk.ing'
 TIMEOUT = aiohttp.ClientTimeout(total=25)
@@ -49,6 +50,12 @@ def normalize(raw: dict, clan_tag: str, *, now=None) -> dict:
     kind = raw.get('type', raw.get('warType'))
     if kind not in (None, 'regular', 'random'):
         raise ValueError('Not a regular war.')
+    war_type = classify_war_type(_date(raw.get('startTime')) if raw.get('startTime') else None,
+                                 _date(raw.get('preparationStartTime'))
+                                 if raw.get('preparationStartTime') else None,
+                                 war_tag=raw.get('tag'))
+    if war_type != 'regular':
+        raise ValueError(f'War preparation timing is {war_type}; not a regular war.')
     if state not in ('warEnded', 'ended'):
         raise ValueError('War is not ended.')
     team_size = raw.get('teamSize')
