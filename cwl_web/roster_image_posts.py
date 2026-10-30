@@ -95,7 +95,6 @@ async def deliver(request):
     import json
     import math
     import aiohttp
-    from urllib.parse import quote
     from .app import _json, _sid
     from .providers import tag as parse_tag
     from .roster_images import metadata, render
