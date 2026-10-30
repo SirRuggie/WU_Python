@@ -104,7 +104,9 @@ export default function ChannelCombobox({
           aria-controls={listId}
           aria-activedescendant={activeOption}
           aria-describedby={hintId}
-          placeholder="Search channels and forum posts"
+          placeholder={
+            onResolve ? "Search channels and forum posts" : "Search channels"
+          }
           value={query}
           disabled={disabled}
           onFocus={() => {

@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import ChannelCombobox from "./ChannelCombobox";
 import ModerationPreviewCard from "./ModerationPreviewCard";
+import ScheduleEditor from "./warReminders/ScheduleEditor";
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
@@ -33,6 +34,7 @@ it("keeps the phone keyboard guidance accessible and reveals it only for fine po
       value=""
       disabled={false}
       onChange={() => {}}
+      onResolve={() => {}}
     />,
   );
   const input = host.querySelector("input")!;
@@ -49,6 +51,28 @@ it("keeps the phone keyboard guidance accessible and reveals it only for fine po
   expect(phone).toContain("width: 1px");
   expect(phone).not.toMatch(/display:\s*none|visibility:\s*hidden/);
   expect(fine).toContain("clip-path: none");
+});
+it("offers only channel search in the non-forum reminder consumer", async () => {
+  await render(
+    <ScheduleEditor
+      settings={{
+        enabled: false,
+        channel_id: "",
+        war_started: false,
+        minutes: [],
+        audience: "remaining",
+      }}
+      channels={[]}
+      disabled={false}
+      onChange={() => {}}
+    />,
+  );
+  const input = host.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  expect(input.placeholder).toBe("Search channels");
+  expect(
+    document.getElementById(input.getAttribute("aria-describedby")!)
+      ?.textContent,
+  ).not.toContain("forum");
 });
 it("shows escaped names and hover IDs in history, with quiet initials on an empty image", async () => {
   transport.mockResolvedValue({

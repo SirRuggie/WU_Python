@@ -8,6 +8,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, Mock, patch
 
 from aiohttp import web
+from aiohttp.test_utils import make_mocked_request
 from cwl_web import member_events as api, moderation_names, server_management
 from utils.member_events import GUILD_ID, MemberEventStore, TestRateLimited as RateLimited
 from utils.member_event_cards import build_card, build_forum_message, sample_row
@@ -131,6 +132,28 @@ class AvatarPolish(unittest.IsolatedAsyncioTestCase):
 
 
 class NamePolish(unittest.IsolatedAsyncioTestCase):
+    async def test_listing_returns_resolved_moderator_name(self):
+        uid = '987654321098765432'
+        row = {**sample_row('kick'), '_id': '1792972800000:' + 'a' * 32,
+               'moderator_id': uid, 'delivery_status': 'sent'}
+        store = NS(search=AsyncMock(return_value=([row], None)))
+        @asynccontextmanager
+        async def database(request):
+            yield NS(member_events=object())
+        request = make_mocked_request('GET', api.PREFIX, app=web.Application())
+        with patch.object(api, 'require_manage', new=AsyncMock()) as auth, \
+             patch.object(api, 'mongo', database), \
+             patch.object(api, 'MemberEventStore', return_value=store), \
+             patch.object(moderation_names, 'discord', new=AsyncMock(return_value={
+                 'user': {'id': uid, 'username': 'moderator'}, 'nick': 'Morgan <Staff>',
+             })) as lookup:
+            response = await api.listing(request)
+        auth.assert_awaited_once_with(request, 'roles')
+        lookup.assert_awaited_once_with(request, 'GET', f'/guilds/{GUILD_ID}/members/{uid}')
+        event = json.loads(response.text)['events'][0]
+        self.assertEqual(event['moderator_id'], uid)
+        self.assertEqual(event['moderator_name'], 'Morgan <Staff>')
+
     async def test_unique_name_lookup_uses_existing_member_shape_and_cache(self):
         request=NS(app={});uid='123456789012345678'
         with patch.object(moderation_names,'discord',new=AsyncMock(return_value={'user':{'id':uid,'username':'person'},'nick':'<b>Mod & Name</b>'})) as lookup:
