@@ -310,3 +310,71 @@ it("does not discard a queued pool change if a save starts before confirmation",
     host.remove();
   }
 });
+
+it("keeps selection across assign pool filters without a discard dialog", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const account = {
+    tag: "#P2Y",
+    user_id: "1",
+    player_name: "Selected player",
+    pool: "main",
+    town_hall: 16,
+    effective_weight: 120000,
+    assigned_clan_tag: null,
+    kept: false,
+    source_status: "current",
+    source_weight: 120000,
+    manual_weight: null,
+  };
+  state.api.mockResolvedValue({
+    revision: 1,
+    accounts: [account],
+    clans: [],
+    metadata_updating: false,
+  });
+  window.confirm = vi.fn(() => false);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const poolButton = (name: string) =>
+    [
+      ...host.querySelectorAll<HTMLButtonElement>(
+        ".roster-list-pool-tabs button",
+      ),
+    ].find((b) => b.textContent?.trim() === name)!;
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <RosterWorkspace
+            seasonId="1"
+            seasons={[]}
+            onSeasonChange={() => {}}
+          />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+    await act(async () =>
+      host
+        .querySelector<HTMLInputElement>(
+          'input[aria-label="Select Selected player for bulk actions"]',
+        )!
+        .click(),
+    );
+    expect(
+      document.querySelector(".roster-selection-dock")?.textContent,
+    ).toContain("1 selected");
+    for (const pool of ["Main CWL", "Lazy CWL", "All accounts"]) {
+      await act(async () => poolButton(pool).click());
+      expect(document.querySelector(".confirm-dialog")).toBeNull();
+      expect(poolButton(pool).getAttribute("aria-pressed")).toBe("true");
+      expect(
+        document.querySelector(".roster-selection-dock")?.textContent,
+      ).toContain("1 selected");
+    }
+    expect(window.confirm).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

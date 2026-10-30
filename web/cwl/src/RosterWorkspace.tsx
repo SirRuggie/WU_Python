@@ -243,13 +243,21 @@ export default function RosterWorkspace({
     signupDirty ||
     signupReviewOpen ||
     selectedTags.length > 0;
+  const onlyWeightsDirty =
+    weightsDirtyCount > 0 &&
+    !rulesDirty &&
+    !playerDirty &&
+    !signupDirty &&
+    !signupReviewOpen &&
+    !panel &&
+    selectedTags.length === 0;
   useUnsavedWork(dirty || working, onDirty);
   useEffect(() => {
     onDirtySummary?.({
       weightCount: weightsDirtyCount,
-      onlyWeights: weightsDirtyCount > 0 && !rulesDirty && !playerDirty && !signupDirty && !signupReviewOpen && !panel && selectedTags.length === 0,
+      onlyWeights: onlyWeightsDirty,
     });
-  }, [weightsDirtyCount, rulesDirty, playerDirty, signupDirty, signupReviewOpen, panel, selectedTags.length, onDirtySummary]);
+  }, [weightsDirtyCount, onlyWeightsDirty, onDirtySummary]);
   useEffect(() => {
     onBusy?.(working);
     return () => onBusy?.(false);
@@ -884,7 +892,7 @@ export default function RosterWorkspace({
         <ConfirmDialog
           key={pendingLeave.working ? "working" : "dirty"}
           heading={pendingLeave.working ? "Save in progress" : "Unsaved changes"}
-          text={pendingLeave.working ? "Wait for the save to finish." : weightsDirtyCount > 0 && !rulesDirty && !playerDirty && !signupDirty && !signupReviewOpen && !panel && selectedTags.length === 0 ? `You have ${weightsDirtyCount} unsaved weight${weightsDirtyCount === 1 ? "" : "s"}.` : "You have unsaved roster changes."}
+          text={pendingLeave.working ? "Wait for the save to finish." : onlyWeightsDirty ? `You have ${weightsDirtyCount} unsaved weight${weightsDirtyCount === 1 ? "" : "s"}.` : "You have unsaved roster changes."}
           confirmLabel={pendingLeave.working ? "OK" : "Discard"}
           cancelLabel="Keep editing"
           hideCancel={pendingLeave.working}
@@ -1145,13 +1153,10 @@ export default function RosterWorkspace({
                 <Button
                   key={pool}
                   aria-pressed={releasePreferences.pool === pool}
-                  disabled={uiLocked && !working}
-                  onClick={() => {
-                    if (releasePreferences.pool === pool) return;
-                    mayLeaveEditor(() =>
-                      setReleasePreferences((current) => ({ ...current, pool })),
-                    );
-                  }}
+                  disabled={uiLocked}
+                  onClick={() =>
+                    setReleasePreferences((current) => ({ ...current, pool }))
+                  }
                 >
                   {pool === "all"
                     ? "All accounts"

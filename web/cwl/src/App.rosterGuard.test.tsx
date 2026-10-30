@@ -145,3 +145,75 @@ it("keeps a roster draft guarded when Discard history replay receives no popstat
     host.remove();
   }
 });
+
+vi.mock("./PublicationWorkspace", () => ({
+  default: () => <p>Finalize reached</p>,
+}));
+
+it("guards Finalize navigation with Keep editing and exact Discard action", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  history.replaceState({ wuDashboardIndex: 0 }, "", "/cwl/roster?season=1");
+  state.api.mockImplementation(async (path: string) => {
+    if (path === "/auth/me")
+      return {
+        authenticated: true,
+        user: { id: "1", username: "Staff" },
+        is_owner: true,
+        can_edit: true,
+        csrf_token: "fixture",
+      };
+    if (path === "/seasons")
+      return {
+        seasons: [
+          { id: 1, label: "November", status: "draft", signup_open: true },
+        ],
+        member_season: { season_id: 1, revision: 0 },
+      };
+    if (path === "/config") return { dev_fixture: true };
+    return {};
+  });
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  window.confirm = vi.fn(() => false);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+  };
+  const button = (name: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent?.trim() === name,
+    )!;
+  try {
+    await act(async () => root.render(<App />));
+    await settle();
+    await act(async () => button("Finalize roster").click());
+    expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
+      "You have 1 unsaved weight.",
+    );
+    await act(async () => button("Keep editing").click());
+    expect(
+      host.querySelector<HTMLInputElement>('input[aria-label="Unsaved weight"]')
+        ?.value,
+    ).toBe("750");
+    expect(location.pathname).toBe("/cwl/roster");
+    await act(async () => button("Finalize roster").click());
+    await act(async () => button("Discard").click());
+    await settle();
+    expect(host.textContent).toContain("Finalize reached");
+    expect(location.pathname).toBe("/cwl/publish");
+    expect(new URLSearchParams(location.search).get("step")).toBe("review");
+    expect(window.confirm).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

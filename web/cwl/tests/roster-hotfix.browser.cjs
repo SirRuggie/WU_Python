@@ -58,6 +58,22 @@ const shots = process.env.WU_LAYOUT_SCREENSHOTS;
         false,
       );
       if (shots) await page.screenshot({ path: `${shots}/${width}-top.png` });
+      await page.locator(".roster-player-select input").first().check();
+      for (const name of ["Main CWL", "Lazy CWL", "All accounts"]) {
+        const tab = page
+          .getByRole("group", { name: "CWL account pool", exact: true })
+          .getByRole("button", { name, exact: true });
+        await tab.click();
+        assert.equal(await tab.getAttribute("aria-pressed"), "true");
+        assert.equal(await page.locator(".confirm-dialog").count(), 0);
+        assert.match(
+          await page.locator(".roster-selection-dock").innerText(),
+          /1 selected/,
+        );
+      }
+      await page
+        .getByRole("button", { name: "Clear selected accounts", exact: true })
+        .click();
       await page.getByRole("button", { name: /Missing weights/ }).click();
       const queue = page.locator(".weight-queue");
       await queue.waitFor();
@@ -196,6 +212,7 @@ const shots = process.env.WU_LAYOUT_SCREENSHOTS;
         nativeConfirmCalls: 0,
         checks: [
           "two hosting clans only",
+          "selection persists through All/Main/Lazy without dialog",
           "one top switch",
           "Loot/Full reinterpretation",
           "Keep editing",
