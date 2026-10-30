@@ -89,3 +89,8 @@ it.each(["back", "close", "escape"])(
     }
   },
 );
+
+it("uses the singular strike threshold", () => {
+  expect(strikeHelpText(1)).toMatch(/\bAt 1 strike\b/);
+  expect(strikeHelpText(1)).not.toContain("At 1 strikes");
+});

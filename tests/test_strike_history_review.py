@@ -126,7 +126,7 @@ def test_grouped_account_active_filter_and_member_snapshot_fallback():
         assert all_accounts['items'][-1]['total_strikes'] == 0
         match = mongo.strike_records.pipeline[0]['$match']
         assert match['player_tag']['$in'] == ['#8GG82', '#PC9YGL0JL', '#YLC820G']
-        assert match['kind'] == {'$in': ['strike', 'missed', 'exempt', 'cwl']}
+        assert match['kind'] == {'$in': ['strike', 'missed', 'exempt', 'cwl', 'no_attack']}
         group = mongo.strike_records.pipeline[2]['$group']
         assert group['_id'] == '$player_tag'
         active_condition = group['active_strikes']['$sum']['$cond'][0]['$and']

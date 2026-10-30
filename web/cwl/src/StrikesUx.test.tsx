@@ -69,9 +69,17 @@ const input = async (selector: string, value: string) => {
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
+const countText = (element: Element | null) => {
+  const walker = document.createTreeWalker(element!, NodeFilter.SHOW_TEXT);
+  const parts: string[] = [];
+  while (walker.nextNode()) parts.push(walker.currentNode.textContent || "");
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+};
 const settings: StrikeSettings = {
   revision: 8,
   strike_limit: 7,
+  no_attack_opponents: ["#2CYVV92R"],
+  no_attack_names: { "#2CYVV92R": "NO WAR" },
   leaves: [],
   excluded_roles: [{ id: "9", name: "Old integration", managed: true }],
   roles: [
@@ -113,6 +121,7 @@ it("preserves server role order, hides only managed additions, and retains a con
     revision: 8,
     role_ids: ["9", "3"],
     strike_limit: 11,
+    no_attack_opponents: ["#2CYVV92R"],
   });
   expect(host.textContent).toContain("Changed by someone else · Reload");
   expect(
@@ -136,8 +145,16 @@ it("preserves server role order, hides only managed additions, and retains a con
 });
 it("uses its successful revision receipt for the next save without a racing settings read", async () => {
   transport
-    .mockResolvedValueOnce({ revision: 9, strike_limit: 10 })
-    .mockResolvedValueOnce({ revision: 10, strike_limit: 11 });
+    .mockResolvedValueOnce({
+      revision: 9,
+      strike_limit: 10,
+      no_attack_opponents: ["#2CYVV92R"],
+    })
+    .mockResolvedValueOnce({
+      revision: 10,
+      strike_limit: 11,
+      no_attack_opponents: ["#2CYVV92R"],
+    });
   await render(<SettingsFixture />);
   await input('input[type="number"]', "10");
   await click("Save settings");
@@ -181,7 +198,7 @@ it("renders full-population summaries and queries pages and action chips on the 
   );
   await settle();
   expect(host.textContent).toContain("37 over limit · 19 new this week");
-  expect(host.textContent).toContain("Over limit (7)");
+  expect(host.textContent).toContain("Limit reached (7)");
   const link = host.querySelector<HTMLAnchorElement>(
     'a[href*="replacements"]',
   )!;
@@ -219,6 +236,7 @@ it.each([
   ["expired", "strike", "Expired"],
   ["removed", "strike", "Removed"],
   ["recorded", "miss", "One attack missed (no strike)"],
+  ["recorded", "no_attack", "No-attack war (no strike)"],
   ["recorded", "cwl", "CWL miss (no strike)"],
   ["exempt", "strike", "Exempt (no strike)"],
 ] as const)(
@@ -246,6 +264,11 @@ it.each([
       />,
     );
     expect(host.textContent).toContain(text);
+    expect(
+      host.querySelector(".strike-row-more")?.getAttribute("aria-label"),
+    ).toBe(
+      `Details and actions for ${new Date(item.war_end!).toLocaleDateString(undefined, { month: "numeric", day: "numeric" })} vs Opponent`,
+    );
     expect(host.querySelector("svg")).not.toBeNull();
     expect(host.textContent).not.toContain("Aspen");
     expect(host.textContent).not.toContain("#P2Y");
@@ -262,64 +285,104 @@ it.each([
     }
   },
 );
-it("shows selected import counts before opening record details and reports actual duplicate/history outcomes", async () => {
-  const entries = [true, true, false].map((will_strike, i) => ({
-    key: `entry${i}`,
-    player_tag: "#P2Y",
-    player_name: "Aspen",
-    clan_name: "Oak",
-    war_end: "2026-10-01T00:00:00Z",
-    missed_attacks: will_strike ? 2 : 1,
-    will_strike,
-  }));
-  sessionStorage.setItem(
-    "wu:strikes:import:1",
-    JSON.stringify({
-      preview: {
-        preview_id: "preview",
-        wars_scanned: 3,
-        complete_wars: 3,
-        incomplete_wars: 0,
-        entries,
-        coverage: [],
-      },
-      excluded: [],
-    }),
-  );
-  transport.mockImplementation(async (path: string) => {
-    if (path === "/strikes/settings") return settings;
-    if (path === "/strikes/import/apply")
-      return {
-        added_strikes: 1,
-        duplicates: 1,
-        history_only: 1,
-        applied: 2,
-        strikes: 1,
-        skipped: 1,
-      };
-    return { entries: [], total: 0, clans: [] };
-  });
-  await render(<StrikesWorkspace permissions={[]} isOwner userId="1" />);
-  await settle();
-  expect(host.textContent).toContain(
-    "Adds 2 strikes to 1 accounts · 1 history-only",
-  );
-  const disclosure = [...host.querySelectorAll("details")].find((node) =>
-    node
-      .querySelector("summary")
-      ?.textContent?.includes("Review selected records"),
-  )!;
-  expect(disclosure.open).toBe(false);
-  expect(host.textContent).toContain("ClashKing (import)");
-  await click("Add 2 strikes");
-  expect(transport).toHaveBeenCalledWith("/strikes/import/apply", "POST", {
-    preview_id: "preview",
-    excluded_keys: [],
-  });
-  expect(host.textContent).toContain(
-    "1 strikes added · 1 skipped as duplicate · 1 history-only",
-  );
-});
+it.each([1, 2])(
+  "shows selected import counts for %s strikes and reports actual duplicate/history outcomes",
+  async (count) => {
+    const entries = [
+      ...Array(count).fill(true),
+      ...Array(count).fill(false),
+    ].map((will_strike, i) => ({
+      key: `entry${i}`,
+      player_tag: `#P${i}Y`,
+      player_name: "Aspen",
+      clan_name: "Oak",
+      war_end: "2026-10-01T00:00:00Z",
+      missed_attacks: will_strike ? 2 : 1,
+      will_strike,
+    }));
+    sessionStorage.setItem(
+      "wu:strikes:import:1",
+      JSON.stringify({
+        preview: {
+          preview_id: "preview",
+          wars_scanned: 3,
+          complete_wars: count,
+          incomplete_wars: count,
+          deferred_count: count,
+          entries,
+          coverage: [{ clan_name: "Oak", wars: count, skipped: count, deferred_accounts: count }],
+        },
+        excluded: [],
+      }),
+    );
+    transport.mockImplementation(async (path: string) => {
+      if (path === "/strikes/settings") return settings;
+      if (path === "/strikes/import/apply")
+        return {
+          added_strikes: 1,
+          deferred_count: count,
+          duplicates: 1,
+          history_only: 1,
+          applied: 2,
+          strikes: 1,
+          skipped: 1,
+        };
+      return { entries: [], total: 0, clans: [] };
+    });
+    await render(<StrikesWorkspace permissions={[]} isOwner userId="1" />);
+    await settle();
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" +
+          `Adds ${count} ${count === 1 ? "strike" : "strikes"} to ${count} ${count === 1 ? "account" : "accounts"} · ${count} history-only ${count === 1 ? "record" : "records"}` +
+          "\\b",
+      ),
+    );
+    expect(countText(host)).toMatch(new RegExp(`\\b${count} ${count === 1 ? "needs" : "need"} review\\b`));
+    const disclosure = [...host.querySelectorAll("details")].find((node) =>
+      node
+        .querySelector("summary")
+        ?.textContent?.includes("Review selected records"),
+    )!;
+    expect(disclosure.open).toBe(false);
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" + `${count} complete ${count === 1 ? "war" : "wars"}` + "\\b",
+      ),
+    );
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" + `${count} skipped ${count === 1 ? "war" : "wars"}` + "\\b",
+      ),
+    );
+    expect(countText(host.querySelector(".strikes-coverage"))).toMatch(
+      new RegExp("\\b" + `${count} ${count === 1 ? "war" : "wars"}` + "\\b"),
+    );
+    const boxes = [
+      ...host.querySelectorAll<HTMLInputElement>(
+        ".strikes-import-review input[type=checkbox]",
+      ),
+    ];
+    await act(async () => boxes.slice(count).forEach((box) => box.click()));
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" +
+          `${count} ${count === 1 ? "record" : "records"} selected` +
+          "\\b",
+      ),
+    );
+
+    expect(host.textContent).toContain("ClashKing (import)");
+    await click(`Add ${count} ${count === 1 ? "strike" : "strikes"}`);
+    expect(transport).toHaveBeenCalledWith("/strikes/import/apply", "POST", {
+      preview_id: "preview",
+      excluded_keys: entries.slice(count).map((entry) => entry.key),
+    });
+    expect(host.textContent).toContain(
+      "1 strike added · 1 skipped as duplicate · 1 history-only",
+    );
+  },
+);
 it("paginates 28 detail records independently of the account page, retains filters across pages, and keeps removal behind row actions", async () => {
   transport.mockImplementation(async (path: string) => {
     if (path.startsWith("/strikes/accounts"))
@@ -487,3 +550,117 @@ it("sends the selected leave revision and retains the date and accounts after a 
     host.querySelector<HTMLInputElement>('input[type="date"]')!.value,
   ).toBe("2027-01-01");
 });
+
+it("preserves no-attack opponent edits on conflict and submits tags with the same revision", async () => {
+  transport.mockRejectedValueOnce(new ApiError("Conflict", 409));
+  await render(<SettingsFixture />);
+  expect(host.textContent).toContain("NO WAR · #2CYVV92R");
+  expect(host.textContent).toContain(
+    "Wars against these clans never give strikes.",
+  );
+  const field = host.querySelector("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(field, "#2CYVV92R\n#P2Y");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Save settings");
+  expect(transport.mock.calls[0][2]).toMatchObject({
+    revision: 8,
+    no_attack_opponents: ["#2CYVV92R", "#P2Y"],
+  });
+  expect(field.value).toBe("#2CYVV92R\n#P2Y");
+  expect(host.textContent).toContain("Changed by someone else · Reload");
+});
+it.each([1, 6, 7, 8])(
+  "labels the strike limit correctly at %s",
+  async (count) => {
+    transport.mockImplementation(async (path: string) =>
+      path.startsWith("/strikes/accounts")
+        ? {
+            total: 1,
+            strike_limit: 7,
+            summary: { over_limit: count >= 7 ? 1 : 0, new_this_week: 0 },
+            clans: [],
+            accounts: [
+              {
+                player_tag: "#P2Y",
+                player_name: "Aspen",
+                active_strikes: count,
+                total_strikes: count,
+                over_limit: count >= 7,
+              },
+            ],
+          }
+        : { members: [] },
+    );
+    await render(
+      <StrikesWorkspace
+        permissions={["strikes_remove"]}
+        isOwner={false}
+        userId="1"
+      />,
+    );
+    await settle();
+    const label =
+      host.querySelector(".strike-account-action")?.textContent?.trim() || "";
+    expect(label).toBe(
+      count < 7 ? "" : count === 7 ? "Limit reached (7)" : "Over limit (7)",
+    );
+  },
+);
+
+it.each([1, 3])(
+  "renders %s account, record, and total strike labels",
+  async (count) => {
+    transport.mockImplementation(async (path: string) => {
+      if (path.startsWith("/strikes/accounts"))
+        return {
+          total: count,
+          strike_limit: 7,
+          summary: { over_limit: 0, new_this_week: 0 },
+          clans: [],
+          accounts: [
+            {
+              player_tag: "#P2Y",
+              player_name: "Count player",
+              active_strikes: count,
+              total_strikes: count,
+            },
+          ],
+        };
+      if (path.startsWith("/strikes/overview"))
+        return { total: count, entries: [], clans: [] };
+      return { members: [] };
+    });
+    await render(
+      <StrikesWorkspace
+        permissions={["strikes_remove"]}
+        isOwner={false}
+        userId="1"
+      />,
+    );
+    await settle();
+    expect(countText(host.querySelector(".strikes-list-head"))).toMatch(
+      new RegExp(
+        "\\b" + `${count} ${count === 1 ? "account" : "accounts"}` + "\\b",
+      ),
+    );
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>("[data-strike-player]")!.click(),
+    );
+    await settle();
+    expect(countText(host.querySelector(".strikes-list-head"))).toMatch(
+      new RegExp(
+        "\\b" + `${count} ${count === 1 ? "record" : "records"}` + "\\b",
+      ),
+    );
+    expect(countText(host)).toMatch(
+      new RegExp(
+        "\\b" + `${count} total ${count === 1 ? "strike" : "strikes"}` + "\\b",
+      ),
+    );
+  },
+);

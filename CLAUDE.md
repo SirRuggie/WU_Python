@@ -11,6 +11,14 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - **Record.** `docs/cwl-roster-redesign.md` is the decision record. Every Codex prompt carries its exact update (decisions, status, Later list).
 - No `sed -i` / `awk` / `perl -pi`. Commit only what Ruggie or a Ruggie-approved prompt asks for. Conventional Commits. No Co-Authored-By or Claude-Session trailers.
 
+## Latest deployed release (Claude smoke 131)
+
+`no-war-strikes-1`: frontend, backend and bot at `73eda11a1e883b711bc40494f023b4d87efd5a6b`.
+Read-only smoke passed. Previous dashboard code: `cb0052dc93cc30b127e2cbe5006a06c149c43671`;
+previous bot: `c9b4ac0f5ca7f64a6fc329d06dde419af403ab46`.
+Use the guarded rollback in `docs/dashboard-backend-releases.md`; do not reverse
+approved NO WAR corrections or restore databases for a code rollback.
+
 ## Stack
 - Frontend: `web/cwl/`, React 19 + TypeScript + Vite, plain CSS, Lucide icons, React Aria (custom menus). Routing: custom History API (`dashboardHistory.ts`, `App.tsx`), not React Router.
 - Backend: Python. Roster logic in `app.py` (`_auto_plan`), `cwl_balance.py`, `cwl_permissions.py`, `roster_locations.py`. API prefix `/api/cwl`.

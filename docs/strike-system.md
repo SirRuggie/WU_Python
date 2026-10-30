@@ -1,6 +1,16 @@
 # Account strikes
 
-Implemented for the Warriors United Discord bot and its existing dashboard. This document describes the new system; `botghost-strike-sentinel-investigation.md` describes the old BotGhost reference.
+## No-war-strikes-1 — released October 30, 2026
+
+Tag `no-war-strikes-1` at `73eda11a1e883b711bc40494f023b4d87efd5a6b` is live across
+bot/backend/frontend; Claude smoke 131 passed. The exact-tag NO WAR rule is neutral
+for streaks. The reviewed correction retained all records and soft-revoked exactly
+50 strikes (3,608 → 3,558), with two neutral miss relabels and no unrelated changes.
+See [the backend release record](dashboard-backend-releases.md) for evidence and
+code-only rollback. The strike-scan-1 incident closed at smoke 128.
+
+Later: Find war should separate active/removed counts and label No-attack war;
+bound pending private/deferred-clan staff retries and consume removed-clan retries.
 
 ## Rules
 
@@ -255,8 +265,8 @@ review; none are claimed by this development section.
 
 ## Strikes UX backend contracts — prompt 23
 
-The backend contracts below are ready for the separate frontend integration;
-this section does not claim that the new controls have shipped.
+These backend contracts and their frontend controls shipped in `strikes-ux-1`
+(`cb0052d`). Claude verified the production UI at 360px with read-only checks.
 
 - `GET /api/cwl/strikes/accounts` keeps `status=active|all`, `query`, `clan`,
   `limit` (1–100, default 25), and `offset`. The new `action` is `all`,
@@ -325,7 +335,7 @@ races and legacy creation, leave receipt crashes/recovery and tombstones,
 300-account cross-page summary/search, more than 2,000 wars, history precedence,
 managed-role retention, import races, permissions and unavailable providers.
 Frontend keyboard/accessibility, phone/desktop density and confirmation checks
-remain separate integration gates. No live notification or API delivery is
+passed the isolated integration gates before the `strikes-ux-1` release. No live notification or API delivery is
 inferred from these fixtures.
 
 The prompt 23 browser fixture contains 300 accounts and a 28-record player.
@@ -392,3 +402,69 @@ recorded official GET responses with fake roster/strike processing. It demonstra
 scan recovery, not live Discord delivery or the outcome of live strike processing.
 Any ended war without a captured complete final still follows the existing review
 path; this fix does not automatically import missing historical wars.
+
+
+## Strikes UX polish — prompt 37
+
+Name and Discord-linked Add-strike suggestions use saved profiles, latest ledger
+names, and tracked clan membership; they do not fan out to live player lookups.
+An exact player tag still uses the authorized public provider. Missing saved TH
+or clan information stays unknown. Suggestions remain capped at 25.
+
+Import results count each stored candidate once, including candidates that were
+already present when the preview was made. This applies to regular and CWL
+history, preserves the preview approval/exclusion rules, and retains the insert
+race check. Removing a strike accepts a trimmed reason of 1–500 characters at
+both the HTTP and storage boundaries.
+
+At the configured limit the account says “Limit reached”; only higher counts say
+“Over limit.” The account detail keeps Add strike, while Refresh records and Find
+war remain on the account list. Row action names identify the date and opponent.
+The isolated browser checks cover 360×800 and 1440×1000: import/result copy,
+compact detail controls, row actions, focus return, discard confirmation, errors,
+44px targets, minimum 12px text, contrast and horizontal overflow. No live
+notifications or production writes are part of these checks.
+
+Prompt 41 completes shared singular/plural count labels, including history-only
+records and selected records. On phone account details the tracking box is hidden
+and Players, Status and Add strike share one row; desktop remains unchanged.
+The browser regression requires three complete visible rows and a first row at
+or above 560px at 360×800.
+
+Import counters retain one documented overlap: if another request inserts an
+excluded candidate after preview, it counts as both submitted excluded and an
+observed duplicate. No row is inserted by that excluded selection.
+
+## No-attack opponents and reviewed correction (prompt 40)
+
+The shared strike settings default to opponent tag `#2CYVV92R` (NO WAR). Staff
+can replace the list in Settings using the same revision check as the strike
+limit and exempt roles. An explicit empty list disables this rule. Regular
+scanner finals and ClashKing previews/imports use the same tag comparison;
+clan display names never decide eligibility. Neutral rows remain in history and
+Find war, with no strike and no streak event. Missing account links or Discord
+roles cannot turn a neutral war into a strike or block recording it.
+
+Scanner failures defer due work and queued staff retries for two minutes; failed
+requests are retained, while successful scans consume only their matching
+request timestamp. A failed begin records a safe error without overwriting a
+newer scan token. Cancellation still propagates.
+
+`StrikeService.no_attack_correction` is dry-run unless supplied its reviewed
+fingerprint. Its fixed two war keys are in `utils/strike_no_attack.py`. The
+review lists every target row and fingerprints all unrelated rows. Apply stops
+on stale input or evidence of affected streak receipts/watermarks before any
+write. It soft-revokes unremoved strikes and relabels one-missed rows as neutral,
+with actor `Ruggie (approved 2026-10-30)` and reason `No-attack war (NO WAR)`.
+No physical deletion or automatic historical backfill occurs. Re-running a
+completed plan is a no-op. If a partial apply fails, review a fresh remaining
+plan; do not automatically replay the old plan.
+
+Release requires Claude acceptance, fresh verified backup, scanner stopped for
+the correction, exactly the reviewed 50 strike revokes plus two neutral rows,
+account-by-account active-count reconciliation and unchanged unrelated row
+hashes. Affected streak state must be proven neutral or reviewed explicitly.
+The correction has only been rehearsed against an isolated backup database;
+production correction and release are pending. Runtime rollback restores old
+bot/backend/frontend assets, never silently restores the database or reverses
+approved audit removals.

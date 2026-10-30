@@ -26,6 +26,9 @@ fs.mkdirSync(output, { recursive: true });
       await p.screenshot({ path: path.join(output, `${width}-${name}.png`) });
       const m = await p.evaluate(() => ({
         width: innerWidth,
+        firstRowY:
+          document.querySelector(".strike-compact-row")?.getBoundingClientRect()
+            .top ?? null,
         scrollWidth: document.documentElement.scrollWidth,
         rows: [...document.querySelectorAll(".strike-compact-row")].map(
           (e) => e.getBoundingClientRect().height,
@@ -42,6 +45,17 @@ fs.mkdirSync(output, { recursive: true });
             height: e.getBoundingClientRect().height,
           })),
       }));
+      if (width === 360 && name === "detail") {
+        const visibleRows = await p.locator(".strike-compact-row").evaluateAll(
+          (rows) =>
+            rows.filter((row) => {
+              const rect = row.getBoundingClientRect();
+              return rect.top >= 0 && rect.bottom <= innerHeight;
+            }).length,
+        );
+        if (m.firstRowY > 560 || visibleRows < 3)
+          throw Error("phone detail must show at least three strike rows");
+      }
       if (m.scrollWidth > width) throw Error("overflow " + name);
       if (m.small.length)
         throw Error("small target " + name + JSON.stringify(m.small));
@@ -120,11 +134,12 @@ fs.mkdirSync(output, { recursive: true });
     await snap("list");
     await p.getByRole("button", { name: /CastleFox/ }).click();
     await p.locator(".strike-compact-row").first().waitFor();
+    await p.getByText("No-attack war (no strike)", { exact: false }).waitFor();
     await snap("detail");
     await p.getByRole("button", { name: "Next", exact: true }).click();
-    await p.getByText("26–28 of 28").waitFor();
+    await p.getByText("26–29 of 29").waitFor();
     await p.waitForFunction(
-      () => document.querySelectorAll(".strike-compact-row").length === 3,
+      () => document.querySelectorAll(".strike-compact-row").length === 4,
     );
     await p.getByRole("button", { name: "Add strike", exact: true }).click();
     await p
@@ -166,6 +181,9 @@ fs.mkdirSync(output, { recursive: true });
       .click();
     await p.getByRole("button", { name: /Add 1 strike/ }).waitFor();
     await snap("import-preview");
+    await p.getByRole("button", { name: "Add 1 strike", exact: true }).click();
+    await p.getByText(/1 strike added · 0 skipped as duplicate/).waitFor();
+    await snap("import-result");
     await p.goto(origin + "/strikes-preview.html?settingsConflict=1");
     await p.getByRole("button", { name: "Settings", exact: true }).click();
     await p.getByRole("spinbutton").fill("9");

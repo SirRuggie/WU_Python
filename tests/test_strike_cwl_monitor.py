@@ -260,16 +260,18 @@ def test_pending_final_deadline_roundtrips_mongo_utc(monkeypatch, future):
     assert tracking.finish.await_args.kwargs['regular_wars'] == (0 if future else 1)
 
 
-def test_bad_clan_does_not_block_later_ended_war_and_logs_safe_location(monkeypatch, caplog):
+@pytest.mark.parametrize('begin_fails', [False, True])
+def test_bad_clan_does_not_block_later_ended_war_and_logs_safe_location(monkeypatch, caplog, begin_fails):
     clans = [{'tag': '#P2Y'}, {'tag': '#8GG8'}]
     store = SimpleNamespace(ensure_indexes=AsyncMock(), sync_roster=AsyncMock())
     tracking = SimpleNamespace(
         ensure_indexes=AsyncMock(), abandon_untracked=AsyncMock(return_value=set()),
-        begin=AsyncMock(side_effect=['first-token', 'second-token']),
+        begin=AsyncMock(side_effect=[TypeError('secret-token-body') if begin_fails else 'first-token', 'second-token']),
+        failed_begin=AsyncMock(), defer_due=AsyncMock(),
         snapshot_key=lambda *_: 'key', snapshot=AsyncMock(return_value={'seen_active': True}),
         observe=AsyncMock(return_value={'status': 'observing', 'seen_active': True}),
         finalized=AsyncMock(), abandon_older=AsyncMock(return_value=0),
-        pending_finals=AsyncMock(side_effect=[TypeError('secret-token-body'), []]),
+        pending_finals=AsyncMock(side_effect=[[]] if begin_fails else [TypeError('secret-token-body'), []]),
         finish=AsyncMock(), rows=AsyncMock(return_value=[{'status': 'error'}, {'status': 'healthy'}]),
     )
     # First clan is broken; the next clan's still-visible ended war must finalize.
@@ -287,11 +289,18 @@ def test_bad_clan_does_not_block_later_ended_war_and_logs_safe_location(monkeypa
     monkeypatch.setattr(strikes, 'service', lambda *_: store)
     monkeypatch.setattr(strikes, 'StrikeTracking', lambda *_: tracking)
     monkeypatch.setattr(strikes, '_warm_weight_cache', AsyncMock())
-    asyncio.run(strikes.scan_once(mongo, object(), client))
+    if begin_fails:
+        client.get_clan_war.side_effect = [ended]
+    successful = asyncio.run(strikes.scan_once(mongo, object(), client))
+    assert successful == {'#8GG8'}
+    tracking.defer_due.assert_awaited_once()
     assert tracking.begin.await_count == 2
-    assert tracking.finish.await_args_list[0].kwargs['error'] == 'War processing failed'
-    assert tracking.finish.await_args_list[0].kwargs['started_at'] == 'first-token'
-    assert tracking.finish.await_args_list[1].kwargs['error'] is None
+    if begin_fails:
+        tracking.failed_begin.assert_awaited_once()
+    else:
+        assert tracking.finish.await_args_list[0].kwargs['error'] == 'War processing failed'
+        assert tracking.finish.await_args_list[0].kwargs['started_at'] == 'first-token'
+    assert tracking.finish.await_args_list[-1].kwargs['error'] is None
     store.process_war.assert_awaited_once()
     tracking.finalized.assert_awaited_once()
     assert 'TypeError' in caplog.text and 'strikes.py:' in caplog.text

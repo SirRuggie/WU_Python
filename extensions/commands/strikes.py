@@ -758,19 +758,22 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
         print(f'[strikes] stopped tracking removed clan {removed}')
     league_cache = {}
     checked = finalized_total = 0
+    successful = set()
     forbidden_results = []
     for clan in clans:
         clan_tag = tag(clan['tag'])
         if clan_tags is not None and clan_tag not in clan_tags:
             continue
         started = None
+        attempted_at = datetime.now(timezone.utc)
+        attempt_token = uuid.uuid4().hex
         regular_count = cwl_count = deferred_count = skipped_count = 0
         attempted_finals = set()
         problem = None
         current_state = 'unknown'
         private = False
         try:
-            started = await tracking.begin(WARRIORS_UNITED_GUILD_ID, clan_tag)
+            started = await tracking.begin(WARRIORS_UNITED_GUILD_ID, clan_tag, token=attempt_token)
             try:
                 roster_observed_at = datetime.now(timezone.utc)
                 current = await coc_client.get_clan(clan_tag)
@@ -865,13 +868,15 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                 except Exception as error:
                     _log_scan_failure(error, clan_tag=clan_tag)
                     problem = 'War processing failed'
-            if not regular_ok or not league_ok:
+            if problem or deferred_count or not regular_ok or not league_ok:
                 await tracking.defer_due(WARRIORS_UNITED_GUILD_ID, clan_tag)
             await tracking.finish(WARRIORS_UNITED_GUILD_ID, clan_tag, started_at=started,
                                   regular_wars=regular_count, cwl_wars=cwl_count,
                                   deferred_accounts=deferred_count, skipped_wars=skipped_count,
                                   error=problem, current_war_state=current_state,
                                   private=private)
+            if not problem and not deferred_count and not private:
+                successful.add(clan_tag)
             checked += 1
             finalized_total += regular_count + cwl_count
         except asyncio.CancelledError:
@@ -889,6 +894,14 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                     raise
                 except Exception as tracking_error:
                     _log_scan_failure(tracking_error, clan_tag=clan_tag)
+            try:
+                if started is None:
+                    await tracking.failed_begin(WARRIORS_UNITED_GUILD_ID, clan_tag, attempted_at, token=attempt_token)
+                await tracking.defer_due(WARRIORS_UNITED_GUILD_ID, clan_tag)
+            except asyncio.CancelledError:
+                raise
+            except Exception as tracking_error:
+                _log_scan_failure(tracking_error, clan_tag=clan_tag)
             # A bad payload or failed clan must not starve the remaining clans.
             continue
     full_coverage = clan_tags is None or tracked_tags <= clan_tags
@@ -896,6 +909,7 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
         for clan_tag, started in forbidden_results:
             await tracking.finish(WARRIORS_UNITED_GUILD_ID, clan_tag, started_at=started,
                                   error='Clash API key/IP rejected', current_war_state='private')
+    successful.difference_update(clan for clan, _ in forbidden_results)
     if clan_tags is None:
         await _warm_weight_cache(mongo)
     if checked:
@@ -904,6 +918,7 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
                                     tag(clan['tag']) in clan_tags])
         behind = sum(row['status'] == 'behind' for row in rows)
         print(f'[strikes] pass: {checked} clans, {finalized_total} wars finalized, {behind} behind')
+    return successful
 
 
 async def loop(mongo, bot, coc_client):
@@ -914,8 +929,10 @@ async def loop(mongo, bot, coc_client):
         try:
             if time.monotonic() >= next_full:
                 pending = await tracking.pending(WARRIORS_UNITED_GUILD_ID)
-                await scan_once(mongo, bot, coc_client, ended_cache=ended_cache)
+                successful = await scan_once(mongo, bot, coc_client, ended_cache=ended_cache)
                 for row in pending:
+                    if row['clan_tag'] not in (successful or set()):
+                        continue
                     await tracking.consume_retry(WARRIORS_UNITED_GUILD_ID,
                                                  row['clan_tag'], row['retry_requested_at'])
                 next_full = time.monotonic() + POLL_SECONDS
@@ -924,9 +941,11 @@ async def loop(mongo, bot, coc_client):
                 due = await tracking.due_clans(WARRIORS_UNITED_GUILD_ID)
                 if pending or due:
                     wanted = {row['clan_tag'] for row in pending} | due
-                    await scan_once(mongo, bot, coc_client, clan_tags=wanted,
+                    successful = await scan_once(mongo, bot, coc_client, clan_tags=wanted,
                                     ended_cache=ended_cache)
                     for row in pending:
+                        if row['clan_tag'] not in (successful or set()):
+                            continue
                         await tracking.consume_retry(WARRIORS_UNITED_GUILD_ID,
                                                      row['clan_tag'], row['retry_requested_at'])
         except asyncio.CancelledError:
