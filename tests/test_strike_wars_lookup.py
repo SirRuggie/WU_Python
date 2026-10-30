@@ -133,7 +133,7 @@ def test_war_search_resolves_old_opponent_name_before_filtering():
 
     @asynccontextmanager
     async def mongo(_):
-        yield object()
+        yield SimpleNamespace(strike_war_snapshots=Records([]))
 
     async def permit(*_, **__):
         pass

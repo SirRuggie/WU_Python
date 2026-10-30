@@ -829,7 +829,7 @@ async def scan_once(mongo: MongoClient, bot: hikari.GatewayBot, coc_client: coc.
         rows = await tracking.rows(WARRIORS_UNITED_GUILD_ID,
                                    [clan for clan in clans if clan_tags is None or
                                     tag(clan['tag']) in clan_tags])
-        behind = sum(row['status'] != 'healthy' for row in rows)
+        behind = sum(row['status'] == 'behind' for row in rows)
         print(f'[strikes] pass: {checked} clans, {finalized_total} wars finalized, {behind} behind')
 
 
