@@ -77,6 +77,7 @@ DEFAULT_ROUTES = MappingProxyType({
     'strike_imports': Namespace("settings", 'strike_imports'),
     'strike_tracking': Namespace("settings", 'strike_tracking'),
     'member_events': Namespace("settings", 'member_events'),
+    'member_event_test_audit': Namespace("settings", 'member_event_test_audit'),
 })
 
 
