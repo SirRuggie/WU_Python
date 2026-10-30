@@ -40,3 +40,27 @@ describe('background roster metadata', () => {
     expect(result.revision).toBe(3);
   });
 });
+
+import { retainRosterFwa } from './roster';
+import { usesClanWeights } from './clanWeightPolicy';
+it('preserves last known split through unknown polls and replaces it with fresh evidence', () => {
+  const member = {...accounts[1], current_clan_tag:'#FWA', current_clan_status:'current' as const,
+    current_fwa_clan_tag:'#FWA', current_fwa_status:'current'};
+  const before = {revision:3, accounts:[member], clans, undo:null};
+  const unavailable = {...member, current_fwa_clan_tag:null, current_fwa_status:'unavailable'};
+  const poll = {...before, accounts:[unavailable]};
+  for (const merge of [mergeRosterMetadata, retainRosterFwa]) {
+    const retained = merge(before,poll);
+    expect(usesClanWeights(retained.accounts[0])).toBe(true);
+    expect(retained.accounts[0].current_fwa_status).toBe('stale');
+    expect(merge(retained,poll).accounts[0].current_fwa_clan_tag).toBe('#FWA');
+    const fresh = merge(retained,{...poll,accounts:[{...unavailable,current_fwa_status:'current'}]});
+    expect(usesClanWeights(fresh.accounts[0])).toBe(false);
+    const changedClan = merge(before,{...poll,accounts:[{...unavailable,current_clan_tag:'#OTHER'}]});
+    expect(usesClanWeights(changedClan.accounts[0])).toBe(false);
+  }
+  expect(usesClanWeights(retainRosterFwa(null,poll).accounts[0])).toBe(false);
+  expect(usesClanWeights(retainRosterFwa(before,{...poll,accounts:[{...unavailable,pool:'main'}]}).accounts[0])).toBe(false);
+  const loaded = mergeRosterMetadata({...before,accounts:[unavailable]},before);
+  expect(usesClanWeights(loaded.accounts[0])).toBe(true);
+});

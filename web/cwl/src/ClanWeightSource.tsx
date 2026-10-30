@@ -14,6 +14,7 @@ export default function ClanWeightSource({
     clan_weight_clan_tag?: string | null;
     clan_weight_saved_at?: string | null;
     current_fwa_clan_tag?: string | null;
+    current_fwa_status?: string;
   };
 }) {
   const allowed = useDashboardPermission("clan_weights");
@@ -23,6 +24,9 @@ export default function ClanWeightSource({
     params.set("clan", account.current_fwa_clan_tag);
   return (
     <div className="clan-weight-source">
+      {account?.current_fwa_status === "stale" && (
+        <span>Last known clan membership. Refresh to check again.</span>
+      )}
       {allowed ? (
         <>
           <span>
@@ -52,9 +56,13 @@ export default function ClanWeightSource({
               }
             }}
           >
-            Open Clan weights →
+            {account?.current_fwa_clan_tag && !account.clan_weight_managed
+              ? "Set in Clan weights ›"
+              : "Open Clan weights →"}
           </a>
         </>
+      ) : account?.current_fwa_clan_tag && !account.clan_weight_managed ? (
+        "Set this FWA player’s weight in Clan weights. Ask a staff member with Clan weights access."
       ) : (
         "Weight comes from Clan weights. Ask a staff member with Clan weights access."
       )}

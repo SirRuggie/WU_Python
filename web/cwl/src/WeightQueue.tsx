@@ -1,3 +1,4 @@
+import { usesClanWeights } from "./clanWeightPolicy";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "./rosterUi/primitives";
@@ -92,13 +93,7 @@ export default function WeightQueue({
   }, [disabled, focusTarget, accounts]);
 
   async function save(account: RosterAccount) {
-    if (
-      disabled ||
-      pending.current ||
-      account.clan_weight_managed ||
-      account.current_fwa_clan_tag
-    )
-      return;
+    if (disabled || pending.current || usesClanWeights(account)) return;
     const state = compactWeightState({
       ...(drafts[account.tag] || emptyDraft),
       unit,
@@ -108,7 +103,7 @@ export default function WeightQueue({
     const next = [
       ...matching.slice(index + 1),
       ...matching.slice(0, index).reverse(),
-    ].find((item) => !item.clan_weight_managed && !item.current_fwa_clan_tag);
+    ].find((item) => !usesClanWeights(item));
     pending.current = true;
     setSaving(true);
     try {
@@ -190,6 +185,11 @@ export default function WeightQueue({
       <div className="weight-queue-help">
         Saving doesn't move anyone. Refresh keeps manual weights.
       </div>
+      {accounts.some((account) => account.current_fwa_status === "stale") && (
+        <p role="status">
+          Clan membership could not be checked. Showing last known groups.
+        </p>
+      )}
       {archived && (
         <div className="weight-queue-help">Archived season · view only</div>
       )}
@@ -209,12 +209,7 @@ export default function WeightQueue({
           )}
           {([true, false] as const).map((fwa) => (
             <div key={String(fwa)}>
-              {shown.some(
-                (account) =>
-                  Boolean(
-                    account.clan_weight_managed || account.current_fwa_clan_tag,
-                  ) === fwa,
-              ) && (
+              {shown.some((account) => usesClanWeights(account) === fwa) && (
                 <h3>
                   {fwa
                     ? "FWA players · set in Clan weights ›"
@@ -222,13 +217,7 @@ export default function WeightQueue({
                 </h3>
               )}
               {shown
-                .filter(
-                  (account) =>
-                    Boolean(
-                      account.clan_weight_managed ||
-                        account.current_fwa_clan_tag,
-                    ) === fwa,
-                )
+                .filter((account) => usesClanWeights(account) === fwa)
                 .map((account) => (
                   <WeightQueueRow
                     key={account.tag}

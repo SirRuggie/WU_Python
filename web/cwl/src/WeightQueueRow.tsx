@@ -1,3 +1,4 @@
+import { usesClanWeights } from "./clanWeightPolicy";
 import type { Ref } from "react";
 import ClanWeightSource from "./ClanWeightSource";
 import TownHallIcon from "./TownHallIcon";
@@ -56,7 +57,7 @@ export default function WeightQueueRow({
             : "No saved FWA weight"}
         </div>
       </div>
-      {account.clan_weight_managed || account.current_fwa_clan_tag ? (
+      {usesClanWeights(account) ? (
         <div className="weight-queue-managed">
           {account.clan_weight_managed && !account.current_fwa_clan_tag && (
             <small>Saved player · current FWA membership not confirmed</small>

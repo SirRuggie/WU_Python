@@ -339,3 +339,55 @@ it("focus after Save skips clan-weight-managed rows", async () => {
     "Loot for Player 2",
   );
 });
+
+import { DashboardPermissions } from "./DashboardPermissions";
+import { mergeRosterMetadata } from "./roster";
+it("keeps the FWA split and link through unavailable metadata and updates when known", async () => {
+  const member = {
+    ...accounts[0],
+    current_clan_tag: "#FWA",
+    current_clan_status: "current" as const,
+    current_fwa_clan_tag: "#FWA",
+    current_fwa_status: "current",
+  };
+  let snapshot = { revision: 1, accounts: [member], clans: [], undo: null };
+  const show = async () =>
+    act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <WeightQueue
+            accounts={snapshot.accounts}
+            busy={false}
+            onEdit={() => {}}
+            onSave={async () => true}
+            onRefresh={() => {}}
+          />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+  await show();
+  expect(host.textContent).toContain("Set in Clan weights ›");
+  expect(host.querySelector(".weight-queue-row input")).toBeNull();
+  const unknown = {
+    ...snapshot,
+    accounts: [
+      {
+        ...member,
+        current_fwa_clan_tag: null,
+        current_fwa_status: "unavailable",
+      },
+    ],
+  };
+  snapshot = mergeRosterMetadata(snapshot, unknown) as typeof snapshot;
+  await show();
+  expect(host.textContent).toContain("FWA players");
+  expect(host.textContent).toContain("Showing last known groups");
+  expect(host.querySelector(".weight-queue-row input")).toBeNull();
+  snapshot = mergeRosterMetadata(snapshot, {
+    ...unknown,
+    accounts: [{ ...unknown.accounts[0], current_fwa_status: "current" }],
+  }) as typeof snapshot;
+  await show();
+  expect(host.textContent).toContain("Other accounts · enter here");
+  expect(host.querySelector(".weight-queue-row input")).not.toBeNull();
+});

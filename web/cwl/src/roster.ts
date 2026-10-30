@@ -1,3 +1,4 @@
+import { retainFwaMembership } from "./clanWeightPolicy";
 import type { Pool } from './api'
 export type RosterAccount = {
   signed_up_at?: string | null;
@@ -57,7 +58,7 @@ export function mergeRosterMetadata(current: RosterSnapshot, incoming: RosterSna
     ...current, metadata_updating: incoming.metadata_updating,
     accounts: current.accounts.map(account => {
       const live = accounts.get(account.tag);
-      return live ? { ...account, current_clan_tag: live.current_clan_tag,
+      return live ? { ...account, ...retainFwaMembership(account, live), current_clan_tag: live.current_clan_tag,
         current_clan_name: live.current_clan_name, current_clan_status: live.current_clan_status,
         current_clan_checked_at: live.current_clan_checked_at,
         outside_family_and_hosts: live.outside_family_and_hosts } : account;
@@ -67,4 +68,12 @@ export function mergeRosterMetadata(current: RosterSnapshot, incoming: RosterSna
       return live ? { ...clan, cwl_league: live.cwl_league, cwl_league_stale: live.cwl_league_stale } : clan;
     }),
   };
+}
+
+// Call only within the same season; the workspace clears snapshots on season change.
+export function retainRosterFwa(current: RosterSnapshot | null, incoming: RosterSnapshot): RosterSnapshot {
+  const previous = new Map(current?.accounts.map(account => [account.tag, account]));
+  return { ...incoming, accounts: incoming.accounts.map(account => ({
+    ...account, ...retainFwaMembership(previous.get(account.tag), account),
+  })) };
 }

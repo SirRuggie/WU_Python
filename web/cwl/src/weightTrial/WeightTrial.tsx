@@ -29,9 +29,10 @@ type Clan = {
   missing_count: number | null;
   last_saved_at: string | null;
   status: string;
+  membership_checked_at?: string | null;
 };
 const clanLabel = (clan: Clan) =>
-  `${clan.name} · ${clan.weighed_count == null ? (clan.status === "loading" ? "Loading progress…" : "Progress unavailable") : `${clan.weighed_count}/${clan.members_count} weighed`} · ${clan.last_saved_at ? `saved ${new Date(clan.last_saved_at).toLocaleDateString()}` : "not saved yet"}${clan.status === "stale" ? " · stale membership" : ""}`;
+  `${clan.name} · ${clan.weighed_count == null ? (clan.status === "loading" ? "Loading progress…" : "Progress unavailable") : `${clan.weighed_count}/${clan.members_count} weighed`} · ${clan.last_saved_at ? `saved ${new Date(clan.last_saved_at).toLocaleDateString()}` : "not saved yet"}${clan.status === "stale" ? (clan.membership_checked_at ? ` · members checked ${new Date(clan.membership_checked_at).toLocaleString()}` : " · members need checking") : ""}`;
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Could not complete this action.";
 export default function WeightTrial({
@@ -152,28 +153,58 @@ export default function WeightTrial({
   }, [dirty, anyBusy, onDirty]);
   useEffect(() => {
     let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let retries = 0;
+    const delays = [1000, 2000, 4000, 8000, 16000, 30000];
+    setOutside(null);
     setDirectoryError("");
     setDirectoryLoading(true);
-    void api<{ clans: Clan[]; outside_fwa_missing_count: number | null }>(
-      `/weight-trial/clans${seasonId ? `?season_id=${encodeURIComponent(seasonId)}` : ""}`,
-    )
-      .then((result) => {
-        if (active) {
-          setClans(result.clans);
-          setOutside(result.outside_fwa_missing_count);
-        }
-      })
-      .catch((cause) => {
-        if (active) {
+    const poll = async () => {
+      let again = false;
+      try {
+        const result = await api<{
+          clans: Clan[];
+          outside_fwa_missing_count: number | null;
+        }>(
+          `/weight-trial/clans${seasonId ? `?season_id=${encodeURIComponent(seasonId)}` : ""}`,
+        );
+        if (!active) return;
+        setClans(result.clans);
+        setOutside(result.outside_fwa_missing_count);
+        setDirectoryError("");
+        again = result.clans.some((clan) => clan.status === "loading");
+      } catch (cause) {
+        if (!active) return;
+        setDirectoryError(message(cause));
+        const denied =
+          cause instanceof ApiError && [401, 403].includes(cause.status);
+        if (denied) {
           setClans([]);
-          setDirectoryError(message(cause));
+          setOutside(null);
         }
-      })
-      .finally(() => {
+        again = !denied;
+      } finally {
         if (active) setDirectoryLoading(false);
-      });
+      }
+      if (!active || !again) return;
+      if (retries < delays.length) timer = setTimeout(poll, delays[retries++]);
+      else {
+        setClans((current) =>
+          current.map((clan) =>
+            clan.status === "loading"
+              ? { ...clan, status: "unavailable" }
+              : clan,
+          ),
+        );
+        setDirectoryError(
+          "Progress is still unavailable. Open a clan to check its members, or try again.",
+        );
+      }
+    };
+    void poll();
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, [directoryAttempt, seasonId]);
   useEffect(() => {
@@ -363,6 +394,10 @@ export default function WeightTrial({
         <p>
           Weights follow each player across clans. Save explicitly; manual
           weights or FWA Stats apply only when no saved clan weight exists.
+        </p>
+        <p>
+          Member counts use the last check. Open a clan and refresh members to
+          check again.
         </p>
       </details>
       {!!outside && (
@@ -667,13 +702,20 @@ export default function WeightTrial({
             <button
               disabled={anyBusy || dirty || !members.length}
               onClick={async () => {
+                let text: string;
                 try {
-                  await navigator.clipboard.writeText(
-                    copyTable(members, values),
-                  );
-                  setNotice("Current member weights copied for Excel.");
+                  text = copyTable(members, values);
                 } catch (cause) {
                   setError(message(cause));
+                  return;
+                }
+                try {
+                  await navigator.clipboard.writeText(text);
+                  setNotice("Current member weights copied for Excel.");
+                } catch {
+                  setError(
+                    "Copy blocked by the browser. Select the text and copy it manually.",
+                  );
                 }
               }}
             >
@@ -682,15 +724,22 @@ export default function WeightTrial({
             <button
               disabled={anyBusy || dirty || !members.length}
               onClick={async () => {
+                let text: string;
                 try {
-                  await navigator.clipboard.writeText(
-                    warLoot(members, values, roster?.war_order),
-                  );
+                  text = warLoot(members, values, roster?.war_order);
+                } catch (cause) {
+                  setError(message(cause));
+                  return;
+                }
+                try {
+                  await navigator.clipboard.writeText(text);
                   setNotice(
                     "Loot copied in war order. Check the same clan and war in the FWA sheet, then paste into F17.",
                   );
-                } catch (cause) {
-                  setError(message(cause));
+                } catch {
+                  setError(
+                    "Copy blocked by the browser. Select the text and copy it manually.",
+                  );
                 }
               }}
             >

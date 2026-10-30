@@ -1,3 +1,4 @@
+import { retainRosterFwa } from "./roster";
 import ConfirmDialog from "./ConfirmDialog";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import { requestDetailsNavigation } from "./detailsNavigation";
@@ -322,7 +323,7 @@ export default function RosterWorkspace({
       );
       if (id !== requestId.current || activeSeason.current !== seasonId)
         return null;
-      setRoster(snapshot);
+      setRoster((current) => retainRosterFwa(current, snapshot));
       setRefreshEpoch((value) => value + 1);
       setMetadataNotice("");
       setMetadataRequest(id);

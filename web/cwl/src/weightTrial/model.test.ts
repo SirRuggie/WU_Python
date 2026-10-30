@@ -148,3 +148,28 @@ it("normalizes equivalent loot forms and formats full weights without rounding w
   for (const text of ["3,58,00", "35.8001k", "1e5", "12cats"])
     expect(() => validateDraft(editDraft(blank, "loot", text))).toThrow();
 });
+
+import { whole } from "./model";
+it("parses every one- and two-decimal k value in the accepted range exactly", () => {
+  for (const places of [1, 2]) {
+    const scale = 10 ** places;
+    for (let digits = 1; digits * (1000 / scale) <= 999999; digits++) {
+      const text = `${Math.floor(digits / scale)}.${String(digits % scale).padStart(places, "0")}k`;
+      expect(whole(text, 999999), text).toBe(digits * (1000 / scale));
+    }
+  }
+  for (const text of ["32.2k", "32.20k", "32.2000k", "32,200", "32200.00"])
+    expect(whole(text, 999999)).toBe(32200);
+  for (const text of [
+    "0",
+    "0.0001k",
+    "1.001",
+    "999.9991k",
+    "1000k",
+    "1e3",
+    "NaN",
+    "3,22k",
+    "999999999999999999k",
+  ])
+    expect(() => whole(text, 999999), text).toThrow();
+});

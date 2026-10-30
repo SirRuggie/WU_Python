@@ -39,10 +39,14 @@ export function draftFor(row: Member): Draft {
 export function whole(text: string, max: number): number {
   const clean = text.trim();
   const match = clean.match(/^(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d+))?([kK])?$/);
-  const value = match
-    ? Number((match[1] + (match[2] ? "." + match[2] : "")).replace(/,/g, "")) *
-      (match[3] ? 1000 : 1)
-    : NaN;
+  // Scale the digit string, never a binary floating-point fraction.
+  const fraction = match?.[2] || "";
+  const places = match?.[3] ? 3 : 0;
+  const exact = match && !/[1-9]/.test(fraction.slice(places));
+  const digits = match
+    ? match[1].replace(/,/g, "") + fraction.slice(0, places).padEnd(places, "0")
+    : "";
+  const value = exact ? Number(digits) : NaN;
   if (!Number.isSafeInteger(value) || value < 1 || value > max)
     throw new Error(
       `Enter a whole number from 1 to ${max.toLocaleString()}, such as 35,800 or 35.8k.`,

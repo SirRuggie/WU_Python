@@ -218,7 +218,8 @@ it("shows honest export checklist, missing-loot action and real clipboard failur
     },
   });
   await click("Copy member table");
-  expect(host.textContent).toContain("Clipboard permission denied");
+  expect(host.textContent).toContain("Copy blocked by the browser");
+  expect(host.textContent).not.toContain("Clipboard permission denied");
 });
 it("searches saved players and labels unknown location neutrally", async () => {
   await render();
@@ -340,4 +341,193 @@ it("owns hidden-label styling, readable text and disclosure targets on cold navi
   expect(
     host.querySelector(".weight-trial-editor .weight-trial-export"),
   ).toBeNull();
+});
+
+it("shows plain clipboard failures for both copy actions, retaining validation guidance", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (path, ...args) =>
+    path.includes("/clans/")
+      ? { ...roster, members: [rows[0]], war_order: { [rows[0].tag]: 1 } }
+      : original(path, ...args),
+  );
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: vi
+        .fn()
+        .mockRejectedValue(
+          new TypeError("Cannot read properties of undefined"),
+        ),
+    },
+  });
+  await render();
+  await click("Needs work");
+  for (const button of ["Copy member table", "Copy loot for FWA column F"]) {
+    await click(button);
+    expect(host.textContent).toContain(
+      "Copy blocked by the browser. Select the text and copy it manually.",
+    );
+    expect(host.textContent).not.toContain("Cannot read properties");
+  }
+});
+it("polls loading progress with bounded backoff and stops when loaded", async () => {
+  vi.useFakeTimers();
+  try {
+    const complete = {
+      clans: [
+        {
+          tag: "#R2Y",
+          name: "Loading clan",
+          members_count: 50,
+          weighed_count: 50,
+          status: "current",
+        },
+      ],
+      outside_fwa_missing_count: 0,
+    };
+    vi.mocked(api)
+      .mockResolvedValueOnce({
+        ...complete,
+        clans: [
+          {
+            ...complete.clans[0],
+            members_count: null,
+            weighed_count: null,
+            status: "loading",
+          },
+        ],
+      })
+      .mockResolvedValue(complete);
+    await render();
+    expect(host.textContent).toContain("Loading progress…");
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(api).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(host.textContent).toContain("50/50 weighed");
+    await act(async () => vi.advanceTimersByTimeAsync(120000));
+    expect(api).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("bounds retries and makes stalled progress actionable", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api).mockResolvedValue({
+      clans: [
+        {
+          tag: "#R2Y",
+          name: "Waiting",
+          members_count: null,
+          weighed_count: null,
+          status: "loading",
+        },
+      ],
+      outside_fwa_missing_count: null,
+    });
+    await render();
+    await act(async () => vi.advanceTimersByTimeAsync(120000));
+    expect(api).toHaveBeenCalledTimes(7);
+    expect(host.textContent).toContain("Progress is still unavailable");
+    expect(host.textContent).not.toContain("Loading progress…");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("cancels old-season timers and ignores late progress responses", async () => {
+  vi.useFakeTimers();
+  try {
+    let oldResolve!: (value: unknown) => void;
+    vi.mocked(api).mockImplementation((path) =>
+      path.includes("season_id=1")
+        ? new Promise((resolve) => {
+            oldResolve = resolve;
+          })
+        : Promise.resolve({ clans: [], outside_fwa_missing_count: 0 }),
+    );
+    await render();
+    await act(async () =>
+      root.render(<WeightTrial onDirty={onDirty} seasonId="2" />),
+    );
+    await act(async () =>
+      oldResolve({
+        clans: [
+          {
+            tag: "#OLD",
+            name: "Wrong season",
+            status: "loading",
+            members_count: null,
+            weighed_count: null,
+          },
+        ],
+        outside_fwa_missing_count: 9,
+      }),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(120000));
+    expect(host.textContent).not.toContain("Wrong season");
+    expect(api).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("shows a plain last-check date when cached membership needs checking", async () => {
+  vi.mocked(api).mockResolvedValue({
+    clans: [
+      {
+        tag: "#R2Y",
+        name: "Known",
+        members_count: 50,
+        weighed_count: 48,
+        status: "stale",
+        membership_checked_at: "2026-10-30T12:00:00Z",
+      },
+    ],
+    outside_fwa_missing_count: null,
+  });
+  await render();
+  expect(host.textContent).toContain("members checked");
+  expect(host.textContent).not.toContain("stale membership");
+});
+it("disposes pending progress timers when navigating away", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api).mockResolvedValue({
+      clans: [
+        {
+          tag: "#R2Y",
+          name: "Waiting",
+          members_count: null,
+          weighed_count: null,
+          status: "loading",
+        },
+      ],
+      outside_fwa_missing_count: null,
+    });
+    await render();
+    await act(async () => root.render(<div>Other page</div>));
+    await act(async () => vi.advanceTimersByTimeAsync(120000));
+    expect(api).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("stops progress retries on access denial and removes protected counts", async () => {
+  vi.useFakeTimers();
+  try {
+    const { ApiError } = await import("../api");
+    const denied = new ApiError("Access denied", 403);
+    denied.status = 403;
+    vi.mocked(api).mockRejectedValue(denied);
+    await render();
+    await act(async () => vi.advanceTimersByTimeAsync(120000));
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain("Access denied");
+    expect(
+      host.querySelectorAll(".weight-trial-clan-list button"),
+    ).toHaveLength(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -168,7 +168,7 @@ staff to Clan weights without presenting an ineffective manual override.
 
 The landing list shows cached current-member progress and last-save dates, with
 missing clans first. Unknown membership is not zero membership; a failed refresh
-retains its previous count and timestamp with a stale label. A bounded background
+retains its previous count with a plain “members checked” timestamp. A bounded background
 worker refreshes roster observations alongside lineup capture. Opening the list
 does not fan out to game roster endpoints.
 
@@ -177,7 +177,10 @@ focused. A previously saved NULL is intentional Not Available and counts weighed
 an untouched blank with revision zero remains missing. There is no new Not
 Available control. Loot absence can still block Column F even on a weighed row.
 Phones show Loot beside read-only Full and a storage-count picker; desktop Full
-remains editable. Decimal-k and grouped entry normalize identically. Invalid
+remains editable. Decimal-k entry scales digit strings exactly (the fractional part
+is padded to three digits), never multiplies a floating-point decimal. Thus
+`32.2k`, `32.20k`, `32,200` and `32200` all mean exactly 32,200. Nonzero digits
+beyond three decimal-k places, fractions of a unit, and out-of-range values are rejected. Invalid
 values remain visible with correction guidance; full weights must end in 000.
 Existing saved values are read unchanged, and unchanged retries do not rewrite
 history. The verified backup snapshot had 350 rows, zero nondivisible weights and
