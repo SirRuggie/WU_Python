@@ -148,6 +148,8 @@ async def fake_discord(method, path, **kwargs):
         return {"id": bot_id}
     if method == "GET" and path == f"/guilds/{GUILD_ID}/members/{bot_id}":
         return {"roles": []}
+    if method == "GET" and path == f"/guilds/{GUILD_ID}/members/987654321098765432":
+        return {"nick": "Fixture moderator", "user": {"id": "987654321098765432", "username": "fixture-moderator"}}
     if method == "GET" and path == f"/guilds/{GUILD_ID}/members/{staff_id}":
         return {"roles": []}
     if method == "GET" and path == f"/guilds/{GUILD_ID}/roles":
