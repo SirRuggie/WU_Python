@@ -120,6 +120,22 @@ async def _war_retry_is_idempotent_and_records_one_miss_without_strike():
     assert next(iter(mongo.strike_records.rows.values()))['kind'] == 'missed'
 
 
+def test_duplicate_two_missed_strike_does_not_increase_reported_strikes():
+    async def run():
+        mongo = Mongo()
+        async def links(tags):
+            return PlayerOwners(owners={})
+        ledger = StrikeService(mongo, link_resolver=links)
+        candidate = war(attacks=0)
+        first = await ledger.process_war(123, candidate)
+        second = await ledger.process_war(123, candidate)
+        assert first['strikes'] == 1
+        assert second['strikes'] == 0
+        assert second['existing'] == 1
+        assert len(mongo.strike_records.rows) == 1
+    asyncio.run(run())
+
+
 def test_unknown_member_roles_defer_only_that_account():
     asyncio.run(_unknown_member_roles_defer_only_that_account())
 

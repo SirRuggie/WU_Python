@@ -31,7 +31,8 @@ def test_monitor_routes_official_regular_and_cwl_without_clashking(monkeypatch):
                                snapshot=AsyncMock(return_value={'seen_active': True}),
                                observe=AsyncMock(return_value={'status': 'observing', 'seen_active': True}),
                                finalized=AsyncMock(), abandon_older=AsyncMock(return_value=0),
-                               pending_finals=AsyncMock(return_value=[]), finish=AsyncMock(),
+                               pending_finals=AsyncMock(return_value=[]), defer_due=AsyncMock(),
+                               finish=AsyncMock(),
                                rows=AsyncMock(return_value=[{'status': 'healthy'}]))
     clan_rows = SimpleNamespace(to_list=AsyncMock(return_value=[{'tag': '#P2Y'}]))
     mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: clan_rows))
@@ -83,3 +84,22 @@ def test_regular_failure_keeps_cwl_check_and_cancellation_propagates(monkeypatch
     else:
         asyncio.run(strikes.scan_once(mongo, object(), client))
         store.process_cwl_war.assert_awaited_once()
+
+
+def test_empty_current_response_cannot_report_healthy(monkeypatch):
+    store = SimpleNamespace(ensure_indexes=AsyncMock(), sync_roster=AsyncMock())
+    tracking = SimpleNamespace(ensure_indexes=AsyncMock(), begin=AsyncMock(return_value='token'),
+                               pending_finals=AsyncMock(return_value=[]), defer_due=AsyncMock(),
+                               abandon_older=AsyncMock(return_value=0), finish=AsyncMock(),
+                               rows=AsyncMock(return_value=[{'status': 'error'}]))
+    clan_rows = SimpleNamespace(to_list=AsyncMock(return_value=[{'tag': '#P2Y'}]))
+    mongo = SimpleNamespace(clans=SimpleNamespace(find=lambda *_: clan_rows))
+    client = SimpleNamespace(get_clan=AsyncMock(return_value=SimpleNamespace(members=[])),
+                             get_clan_war=AsyncMock(return_value=None),
+                             get_league_group=AsyncMock(return_value=SimpleNamespace(rounds=[])))
+    monkeypatch.setattr(strikes, 'service', lambda *_: store)
+    monkeypatch.setattr(strikes, 'StrikeTracking', lambda *_: tracking)
+    monkeypatch.setattr(strikes, '_warm_weight_cache', AsyncMock())
+    asyncio.run(strikes.scan_once(mongo, object(), client))
+    assert tracking.finish.await_args.kwargs['error'] == 'War source unavailable'
+    assert tracking.finish.await_args.kwargs['current_war_state'] == 'unknown'

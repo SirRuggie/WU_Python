@@ -11,6 +11,9 @@ from pymongo.errors import DuplicateKeyError
 from extensions.commands.strikes import _finish_official_war, _league_observations
 from utils.strike_official import normalize
 from utils.strike_tracking import StrikeTracking
+from utils.recruit_links import PlayerOwners
+from utils.strike_store import StrikeService, DEFAULT_EXEMPT_ROLE
+from test_strike_review import Mongo
 
 GUILD = 123
 CLAN = '#2UVGQU9'
@@ -190,4 +193,40 @@ def test_source_failure_backoff_and_final_payload_survive_new_prep():
                                   now=active['end_time'] + timedelta(minutes=2))
         assert (await owner.snapshot(GUILD, final))['status'] == 'observing'
         assert len(await owner.pending_finals(GUILD, CLAN)) == 1
+    asyncio.run(run())
+
+
+def test_official_final_honors_one_miss_role_and_leave():
+    async def run():
+        for case in ('one_miss', 'role', 'leave'):
+            mongo = Mongo()
+            mongo.strike_war_snapshots = Rows()
+            owner = StrikeTracking(mongo)
+            async def links(tags):
+                return PlayerOwners(owners={} if case == 'one_miss' else {PLAYER: '456'})
+            async def roles(guild_id, member_id):
+                return [DEFAULT_EXEMPT_ROLE] if case == 'role' else []
+            final = normalize(real_war('warEnded', hits=1 if case == 'one_miss' else 0), CLAN)
+            if case == 'leave':
+                ended = final['end_time']
+                mongo.strike_leaves.rows['123:456'] = {
+                    '_id': '123:456', 'guild_id': GUILD, 'member_id': 456,
+                    'starts_at': ended - timedelta(days=1),
+                    'updated_at': ended - timedelta(days=1),
+                    'until': ended + timedelta(days=1),
+                    'account_tags': [PLAYER],
+                }
+            active = normalize(real_war('inWar', end=final['end_time'],
+                                        hits=1 if case == 'one_miss' else 0), CLAN)
+            await owner.observe(GUILD, active, now=final['end_time'] - timedelta(hours=2))
+            service = StrikeService(mongo, link_resolver=links, role_resolver=roles)
+            assert await _finish_official_war(owner, service, GUILD, final) == (1, 0, 0, 0)
+            rows = list(mongo.strike_records.rows.values())
+            assert len(rows) == 1
+            assert rows[0]['kind'] == {'one_miss': 'missed', 'role': 'exempt',
+                                      'leave': 'exempt'}[case]
+            assert rows[0]['capture_source'] == 'clash_api'
+            assert rows[0]['exemption'] == {'one_miss': None, 'role': 'role',
+                                            'leave': 'leave'}[case]
+            assert (await owner.snapshot(GUILD, final))['status'] == 'finalized'
     asyncio.run(run())
