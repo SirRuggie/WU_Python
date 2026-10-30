@@ -11,7 +11,13 @@ from aiohttp.test_utils import make_mocked_request
 
 from cwl_web import member_events as api
 from extensions.events import member_events as transport
+from utils.member_event_cards import build_card
+from utils.member_event_settings import normalize_settings
 from utils.member_events import GUILD_ID, MemberEventStore, avatar_source, event_key, safe_text
+
+
+def settings():
+    return normalize_settings(None, MemberEventStore.default_settings())
 
 
 class MemberEventTests(unittest.IsolatedAsyncioTestCase):
@@ -42,10 +48,9 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<@123>", text)
         self.assertNotIn("@everyone", text)
         self.assertNotIn("**bad**", text)
-        card, attachments = transport.components({**self.row, "display_name": "<@123> @everyone"})
-        built = card[0].build()[0]
+        built = build_card({**self.row, "display_name": "<@123> @everyone"})["components"][0]
         self.assertEqual(built["accent_color"], 0x2BA66A)
-        self.assertEqual(attachments, [])
+        self.assertNotIn("@everyone", json.dumps(built))
         json.dumps(built)
 
     def test_card_uses_utc_for_naive_saved_times_and_shows_join_date(self):
@@ -58,17 +63,17 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
             occurred = datetime(2026, 10, 27, 2, 59, 36)
             joined = datetime(2025, 7, 30, 13, 45, 12)
             row = {**self.row, "event_type": "leave", "occurred_at": occurred, "joined_at": joined}
-            card, _ = transport.components(row)
-            text = json.dumps(card[0].build()[0])
+            card = build_card(row)
+            text = json.dumps(card)
             stamp = int(occurred.replace(tzinfo=timezone.utc).timestamp())
             joined_stamp = int(joined.replace(tzinfo=timezone.utc).timestamp())
-            self.assertIn(f"<t:{stamp}:R>", text)
-            self.assertIn(f"Joined server: <t:{joined_stamp}:D>", text)
+            self.assertIn(f"<t:{stamp}:f>", text)
+            self.assertIn(f"<t:{joined_stamp}:f>", text)
             self.assertIn(f"<t:{joined_stamp}:R>", text)
-            aware, _ = transport.components({**row, "occurred_at": occurred.replace(tzinfo=timezone.utc), "joined_at": joined.replace(tzinfo=timezone.utc)})
-            self.assertEqual(card[0].build()[0], aware[0].build()[0])
-            unknown, _ = transport.components({**row, "joined_at": None})
-            self.assertIn("date unavailable", json.dumps(unknown[0].build()[0]))
+            aware = build_card({**row, "occurred_at": occurred.replace(tzinfo=timezone.utc), "joined_at": joined.replace(tzinfo=timezone.utc)})
+            self.assertEqual(card, aware)
+            unknown = build_card({**row, "joined_at": None})
+            self.assertIn("Date unavailable", json.dumps(unknown))
         finally:
             if previous is None:
                 os.environ.pop("TZ", None)
@@ -83,7 +88,7 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
         row = dict(self.row)
         store = NS(ensure_indexes=AsyncMock(), capture=AsyncMock(return_value=row),
                    save_avatar=AsyncMock(), ready=AsyncMock(return_value=row),
-                   settings=AsyncMock(return_value=MemberEventStore.default_settings()))
+                   settings=AsyncMock(return_value=settings()))
         order = []
         async def capture(**kwargs):
             order.append("capture")
@@ -172,7 +177,7 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
             return self.row
         store = NS(capture=AsyncMock(side_effect=capture), latest_joined_at=AsyncMock(return_value=self.now),
                    latest_identity=AsyncMock(return_value=None),
-                   settings=AsyncMock(return_value=MemberEventStore.default_settings()),
+                   settings=AsyncMock(return_value=settings()),
                    save_avatar=AsyncMock(), ready=AsyncMock(return_value=self.row),
                    enrich_recent_kick=AsyncMock())
         with patch.object(transport, "MemberEventStore", return_value=store), \
@@ -243,7 +248,7 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_channel_mismatch_never_claims_or_posts(self):
         store = NS(claim=AsyncMock(), finish=AsyncMock(),
-                   settings=AsyncMock(return_value=MemberEventStore.default_settings()),
+                   settings=AsyncMock(return_value=settings()),
                    skip_queued=AsyncMock())
         with patch.object(transport, "channel_ready", new=AsyncMock(return_value=False)), \
              patch.object(transport, "post_card", new=AsyncMock()) as post:
@@ -253,7 +258,7 @@ class MemberEventTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ambiguous_post_is_marked_uncertain_and_not_retried(self):
         store = NS(claim=AsyncMock(return_value=self.row), finish=AsyncMock(),
-                   settings=AsyncMock(return_value=MemberEventStore.default_settings()),
+                   settings=AsyncMock(return_value=settings()),
                    skip_queued=AsyncMock())
         with patch.object(transport, "channel_ready", new=AsyncMock(return_value=NS(type=0))), \
              patch.object(transport, "post_card", new=AsyncMock(side_effect=TimeoutError)) as post:

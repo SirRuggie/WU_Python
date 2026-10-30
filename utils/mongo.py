@@ -38,6 +38,8 @@ class MongoClient(AsyncMongoClient):
         self.strike_war_snapshots = collection_for(self, "strike_war_snapshots", routes=routes)
         # Permanent identity and avatar snapshots plus delivery receipts. No TTL.
         self.member_events = collection_for(self, "member_events", routes=routes)
+        # Test-send rate claims and audit live apart from real member history.
+        self.member_event_test_audit = collection_for(self, "member_event_test_audit", routes=routes)
         self.fwa_data = collection_for(self, "fwa_data", routes=routes)
         self.fwa_band_data = collection_for(self, "fwa_band_data", routes=routes)
         self.ticket_setup = collection_for(self, "ticket_setup", routes=routes)

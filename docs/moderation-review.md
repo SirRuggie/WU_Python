@@ -107,3 +107,106 @@ selection, ID lookup, and explicit Save. Desktop and 320/390px mobile inspection
 checked readable controls, visible focus, results, and no horizontal overflow.
 These checks do not establish live Discord delivery or full screen-reader support.
 No production settings, live messages, or served dashboard assets were changed.
+
+## Layered routing and log cards — released October 30, 2026
+
+Released as `moderation-logs-1`, PR #68, `c494022e924994435496c3e4f0722eb781460380`.
+The bot shipped first and passed startup/gateway readiness before the backend and
+frontend were exposed. Claude ACCEPT 95 and read-only smoke 98 passed. Effective
+Join/Leave remained enabled at channel 1564485264364011580; Kick/Ban remained
+disabled with no channel; every forum tag stayed null. Raw settings and revision 1
+were unchanged, with no normalization writes. See [release evidence and guarded
+rollback](dashboard-backend-releases.md#moderation-logs-1--october-30-2026).
+No production Send test was used. This verifies the read-only dashboard/runtime,
+not live Discord delivery. Avatar reads returned 503 for three of eight requests
+in smoke; cards fell back to initials. Prompt 33 item 6 tracks the follow-up.
+
+The four supported events remain Join, Leave, Kick, and Ban. Settings schema 2
+adds one main destination, Members and Moderation category destinations, and an
+optional destination for each event. An event uses its own destination when set,
+otherwise its category destination, otherwise Main. Turning a category Off stops
+its Discord posts even when an event has an override; disabling one event stops
+only that event's posts. History capture and its name/ID, type, date filters and
+expandable Details stay available when posting is off. Kick and ban history cards
+show the known moderator and reason inline. Unavailable actor, reason, role,
+join-date, account-date, and member-count data remain visibly unknown or use the
+specific fallback text; they are not inferred from unrelated actions. Existing
+default Join/Leave posting remains unchanged.
+
+Legacy settings are normalized **on read**, with their four event destinations
+preserved as event overrides, Main unset, categories inheriting Main, and the
+revision preserved. A read does not rewrite Mongo. Only an explicit Save changes
+persists schema 2 through the existing revision compare-and-swap check. A dry-run
+against a backup copy contained 22 rows and one settings row; all four effective
+enabled/destination values and the revision matched before and after
+normalization, unrelated rows were untouched, and the dry-run made zero writes.
+This early 22-row result is backup-copy evidence, not a live migration. Claude's
+later review used a 24-row backup. The release-time archive held 25 member-event
+rows; its exact raw settings and all four effective destinations passed pre/post
+checks. These are successive snapshots, not contradictory migration counts.
+
+The bot and dashboard preview share the same card builders. Text-channel messages
+and replies to existing forum posts use Components V2: an event accent, avatar
+thumbnail/name, event title and details, separator, member-count/ID/time footer,
+and one Discord profile link button. `allowed_mentions` suppresses pings. A new
+forum post retains the compact embed starter and link button because Discord's
+forum thread-create payload does not accept the Components V2 flag; its preview
+uses that same forum starter payload. External identity, role, and reason text is
+escaped. Receipt, duplicate-claim, and uncertain-delivery behavior still permit
+only one send attempt; no second format or automatic retry follows an ambiguous
+Discord response. These checks use simulated transport and do not establish live
+Discord rendering or delivery.
+
+The explicit **Send test** action uses saved settings only. The dashboard disables
+it for an unsaved draft and confirms the saved effective destination before one
+POST with the event and revision. The backend rechecks staff write access, CSRF,
+revision, destination ownership and posting permissions, then reserves an atomic
+per-event 10-second rate slot. Rate and audit records live in the separate
+`settings.member_event_test_audit` collection; sample sends never enter member
+history or delivery receipts. A known superseded revision is rejected before
+the Discord POST. If Discord acceptance or audit completion is uncertain, the UI
+asks staff to check Discord before trying again and never retries automatically.
+A save in the narrow interval after the final revision read and before the POST
+could still send a sample to the previously confirmed destination; there is no
+cross-service transaction covering Mongo and Discord.
+
+Historical accepted revision `91c94c3` passed **4,863 backend / 923 frontend**
+tests. Those counts describe that reviewed revision, not the later integrated
+release.
+
+Final integrated verification passed 4,863 backend tests, 21 skipped and 162
+subtests, plus 933 frontend tests, TypeScript/build. Clean final-tag frontend
+checks passed again; the tag differed only in three documentation files from
+the integrated checked tree. Four required feature mutants and seventeen mocked
+release-gate checks passed. Earlier focused development counts are superseded by
+these full integrated results.
+Release backups, protected-state comparisons, public hashes and runtime checks
+are recorded in the linked release record. Current-invocation journals were
+clean; the old bot's shutdown CancelledError was excluded from new-process
+readiness. No real Discord Send test has been performed by this release workflow.
+
+
+## Moderation polish follow-up
+
+History resolves unique moderator IDs through the existing Discord member adapter,
+with at most three concurrent requests and a three-second page budget. Names are
+cached per application and guild for 120 seconds (unknown results for 30 seconds),
+with a 256-entry bound. Unknown members remain visibly unknown; IDs are hover
+metadata. Sample previews render member names while retaining the real Discord
+payload used for delivery. Category toggles remember the last active destination
+mode in the current editor session. A fresh page with a saved Off category starts
+with Main because no prior mode is stored in the existing schema.
+
+A revision recheck that cancels a test before posting releases only its own rate
+claim. Sent and uncertain attempts retain the ten-second slot. The cancelled audit
+record remains. Older rate records need no migration; their existing expiry works.
+
+Avatar diagnosis: this endpoint reads archived Mongo bytes; it does not fetch a
+Discord avatar. Confirmed missing/empty/unsupported images now return 204 and are
+negatively cached for 30 seconds, bounded to 128 guild/event keys per application.
+Every request still checks current staff authorization before using the cache.
+Mongo and authorization outages remain genuine 503 responses. A simulated Mongo
+server-selection failure reproduces the actual helper's 503 conversion. This
+identifies a possible failure path, **not the proven cause of the three historical
+production 503s**; no production tracing or requests were performed for this
+follow-up. The client uses its existing initials fallback on an empty image.

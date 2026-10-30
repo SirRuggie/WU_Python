@@ -109,6 +109,9 @@ mean that player owes all five attacks.
 
 ## Data sources
 
+See [Tasks official API transport](tasks-official-api.md) for the current shared
+client, preserved cache/error contracts, and remaining third-party inventory.
+
 | What | Source | Auth |
 |---|---|---|
 | Discord ID ↔ player tags | `POST https://api.clashk.ing/v2/links/shared` | developer bearer token |

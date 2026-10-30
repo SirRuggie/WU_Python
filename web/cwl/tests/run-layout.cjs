@@ -334,6 +334,59 @@ server.stdout.on("data", (chunk) => {
             totalsServer.kill();
           }
         }
+        if (!process.exitCode) {
+          const moderationPort = 8983;
+          await new Promise((resolve, reject) => {
+            const probe = require("node:net").createServer();
+            probe.once("error", reject);
+            probe.listen(moderationPort, "127.0.0.1", () => probe.close(resolve));
+          });
+          const moderationServer = spawn(
+            python,
+            [
+              "-I",
+              path.join(__dirname, "fixtures/moderation_logs.py"),
+              path.join(root, "web/cwl/dist"),
+              String(moderationPort),
+            ],
+            {
+              env: {
+                PATH: process.env.PATH,
+                HOME: temp,
+                WU_FIXTURE_BACKEND: root,
+              },
+              stdio: ["ignore", "ignore", "inherit"],
+            },
+          );
+          try {
+            let ready = false;
+            for (let attempt = 0; attempt < 100; attempt++) {
+              if (moderationServer.exitCode !== null)
+                throw new Error("Moderation fixture exited");
+              try {
+                ready = (
+                  await fetch(`http://127.0.0.1:${moderationPort}/api/cwl/config`)
+                ).ok;
+              } catch {
+                /* Starting isolated fixture. */
+              }
+              if (ready) break;
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+            if (!ready) throw new Error("Moderation fixture startup timed out");
+            const code = await new Promise((resolve) => {
+              const child = spawn(
+                process.execPath,
+                [path.join(__dirname, "moderation-logs.browser.cjs"), String(moderationPort)],
+                { stdio: "inherit", env: process.env },
+              );
+              child.on("exit", resolve);
+            });
+            if (code !== 0) process.exitCode = code || 1;
+          } finally {
+            moderationServer.kill();
+          }
+        }
       } catch (error) {
         console.error(error);
         process.exitCode = 1;

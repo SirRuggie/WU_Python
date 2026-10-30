@@ -1,7 +1,7 @@
 """Data layer for /todo - what each linked account still owes.
 
 Read docs/todo-dashboard-proposal.md for the design and
-docs/clashking-war-endpoints.md for the payload shapes this is written against.
+docs/tasks-official-api.md for transport ownership and provider exceptions.
 
 THREE RULES THIS MODULE EXISTS TO ENFORCE:
 
@@ -57,9 +57,9 @@ def _d(msg: str) -> None:
 # In-process only. Nothing here needs to survive a restart: a cold cache costs
 # one dashboard open, and the bot restarts routinely (Restart=always, plus
 # reboot.py's os._exit(0)). coc.py's own FIFO cache already absorbs the
-# positive path - measured TTLs from the proxy are 60s on players, ~95-120s on
-# currentwar, 600s on clans - so this layer exists mainly for the NEGATIVE
-# answers, which coc.py cannot cache because they are derived, not URL-keyed.
+# positive path when the official response permits caching. This layer also
+# caches derived NEGATIVE answers, which are not URL-keyed coc.py responses.
+# The explicit Tasks TTLs below remain the application freshness contract.
 #
 # On a normal day most sections are "nothing to do", and that answer is stable
 # for days. Caching it is where the real saving is.
@@ -77,7 +77,7 @@ _fetch_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
 )
 
 TTL_LINKS = 6 * 60 * 60      # linking is a rare manual act
-TTL_WAR_ACTIVE = 120         # a hit can land any second; matches upstream max-age
+TTL_WAR_ACTIVE = 120         # short-lived active-war application cache
 
 # The player cache is THE PLAYER->CLAN MAPPING, and that is why it gets its own
 # constant instead of borrowing TTL_WAR_ACTIVE as it used to. Staleness here has
@@ -107,9 +107,9 @@ TTL_ERROR = 60               # coalesce a brief outage without hiding it for lon
 # Simultaneous player lookups. coc.py's own BasicThrottler is the real ceiling -
 # it spaces request STARTS ~33ms apart across the whole client (throttle_limit
 # defaults to 30/s) and releases its lock before the request runs, so ~30/s is
-# the floor no matter what this is set to. This bounds open sockets rather than
-# request rate, and it is deliberately modest: proxy.clashk.ing is ClashKing's
-# infrastructure, offered free, and 46 simultaneous lookups is not neighbourly.
+# the request-rate ceiling regardless of this setting. This bounds open sockets rather than
+# request rate. Keep the existing eight-request cap alongside the shared
+# official client throttler; switching transport does not increase concurrency.
 FETCH_CONCURRENCY = 8
 
 
@@ -458,21 +458,10 @@ def drop_render_caches(extra: tuple[str, ...] = ()) -> int:
 
 
 def _http_detail(exc: Exception) -> str:
-    """Exception class plus the HTTP status the proxy actually returned.
+    """Describe the official client's exception without assuming every error is HTTP.
 
-    THE OPEN QUESTION THIS EXISTS TO ANSWER. We talk to proxy.clashk.ing, not
-    Supercell (utils/startup.py:78), and it is UNVERIFIED whether a Supercell
-    503 reaches us as a 503. If the proxy rewrites it to 500 or 502, coc.py
-    raises HTTPException or GatewayError instead of Maintenance, the whole
-    maintenance path never fires, and it fails SILENTLY - the panel goes back
-    to blaming the user's accounts and nothing in the logs says why.
-
-    Logging the raw status here means the next maintenance window diagnoses
-    itself. Without it, confirming the proxy's behaviour costs two windows: one
-    to notice nothing happened, another to instrument and wait again.
-
-    Reads defensively because a non-HTTP exception can reach these clauses:
-    `status` and `reason` are HTTPException attributes, not universal ones.
+    Keep status/reason diagnostics for maintenance and gateway failures. Network
+    timeouts have neither field and must still produce an unavailable section.
     """
     detail = type(exc).__name__
     status = getattr(exc, "status", None)
@@ -803,7 +792,7 @@ async def _get_war(
 
         if war is None:
             # coc.Client.get_clan_war() returns a ClanWar or raises; None is an
-            # unexpected client/proxy shape, not proof that no war exists.
+            # unexpected client response shape, not proof that no war exists.
             print(f"[todo] war lookup failed for {clan_tag}: empty response")
             result = ("error", None)
             cache_put(key, result, TTL_ERROR)
@@ -1146,7 +1135,7 @@ def _actionable_war_state(
     """Return the displayable phase for a war that still has a deadline.
 
     The API phase and its UTC timestamps normally move together.  During an
-    upstream/proxy transition they can briefly disagree, and trusting the
+    upstream transition they can briefly disagree, and trusting the
     phase alone exposed "ends 2 hours ago" as an actionable Battle Day row.
     A passed end timestamp is conclusive: never display an attack that can no
     longer be made.  Conversely, a preparation timestamp that has arrived is
@@ -1446,7 +1435,7 @@ async def _get_raid(coc_client: coc.Client, clan_tag: str):
         return result
     except coc.PrivateWarLog:
         # Raid logs have no private-log setting. coc.py uses this exception for
-        # any 403, so treating it as "not started" would hide an auth/proxy
+        # any 403, so treating it as "not started" would hide an authentication
         # failure as a definitive answer.
         result = ("error", None)
         cache_put(key, result, TTL_ERROR)

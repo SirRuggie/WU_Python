@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError } from './api'
 import './MemberActivityHistory.css'
+import { eventTypes } from './moderationSettingsModel'
 
 type MemberEvent = {
   id: string
@@ -13,6 +14,7 @@ type MemberEvent = {
   joined_at?: string | null
   reason?: string | null
   moderator_id?: string | null
+  moderator_name?: string | null
   delivery_status?: string | null
 }
 type Response = { events: MemberEvent[]; next_cursor: string | null }
@@ -232,9 +234,13 @@ export default function MemberActivityHistory({ active = true }: { active?: bool
         <>
           <ul className="member-activity-list" aria-label="Member join and leave history">
             {rows.map(item => {
-              const name = item.display_name?.trim() || item.username?.trim() || 'Unknown member'
-              const username = item.username?.trim()
+              const identity = (value?: string | null) => value?.trim() !== item.user_id ? value?.trim() : ''
+              const username = identity(item.username)
+              const name = identity(item.display_name) || username || 'Unknown member'
+              const moderatorName = item.moderator_name?.trim() !== item.moderator_id ? item.moderator_name?.trim() : ''
               const eventLabel = { join: 'Joined', leave: 'Left', kick: 'Kicked', ban: 'Banned' }[item.event_type]
+              const eventIcon = eventTypes.find(event => event.key === item.event_type)?.icon || '●'
+              const isModeration = item.event_type === 'kick' || item.event_type === 'ban'
               const deliveryText = item.delivery_status
                 ? deliveryLabels[item.delivery_status] || ''
                 : ''
@@ -247,14 +253,20 @@ export default function MemberActivityHistory({ active = true }: { active?: bool
                   <div className="member-activity-identity">
                     <MemberAvatar name={name} url={item.avatar_url} />
                     <div>
-                      <strong>{name}</strong>
+                      <strong title={item.user_id}>{name}</strong>
                       {username && <small>@{username}</small>}
                     </div>
                   </div>
                   <span className={`member-activity-kind ${item.event_type}`}>
-                    <span aria-hidden="true">●</span>
+                    <span aria-hidden="true">{eventIcon}</span>
                     {eventLabel}
                   </span>
+                  {isModeration && (
+                    <p className="member-activity-moderation">
+                      by <span title={item.moderator_id || undefined}>{moderatorName || 'an unknown moderator'}</span>
+                      {' · '}“{item.reason?.trim() || 'No reason given'}”
+                    </p>
+                  )}
                   <div className="member-activity-meta">
                     <time className="member-activity-date" dateTime={item.occurred_at}>
                       {formatDate(item.occurred_at)}
@@ -269,10 +281,10 @@ export default function MemberActivityHistory({ active = true }: { active?: bool
                   </div>
                   <details className="member-activity-details">
                     <summary>Details</summary>
-                    <p>Discord ID {item.user_id}</p>
+                    <p title={item.user_id}>Member: {name}</p>
                     {item.joined_at && <p>Member joined {formatDate(item.joined_at)}</p>}
                     {item.reason && <p>Reason: {item.reason}</p>}
-                    {item.moderator_id && <p>Moderator ID {item.moderator_id}</p>}
+                    {item.moderator_id && <p title={item.moderator_id}>Moderator: {moderatorName || 'Unknown moderator'}</p>}
                     {deliveryText && <p>{deliveryText}</p>}
                     {!item.joined_at && !item.reason && !item.moderator_id && !deliveryText && <p>No additional details recorded.</p>}
                   </details>

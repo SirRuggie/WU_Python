@@ -1,11 +1,20 @@
 """Staff-only HTTP access to durable member join/leave snapshots."""
 from __future__ import annotations
 
+import asyncio
+import time
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 
 from aiohttp import web
 
-from utils.member_events import GUILD_ID, ID_PATTERN, MemberEventStore, public_event
+from utils.member_events import (
+    GUILD_ID, ID_PATTERN, MemberEventStore, SettingsConflict,
+    TestRateLimited, public_event,
+)
+from utils.member_event_settings import (
+    CATEGORIES, EVENT_TYPES, SCHEMA_VERSION, effective_event, normalize_settings,
+)
 from .server_management import API, mongo, require_manage
 
 PREFIX = API + "/member-events"
@@ -49,8 +58,12 @@ async def listing(request):
             guild_id=GUILD_ID, query=q, kind=kind, start=start, end=end,
             before=before or None, limit=limit,
         )
-    response = web.json_response({"events": [public_event(row, api_prefix=PREFIX) for row in rows],
-                                  "next_cursor": cursor})
+    from .moderation_names import resolve_names
+    names = await resolve_names(request, [row.get("moderator_id") for row in rows])
+    payload = {"events": [{**public_event(row, api_prefix=PREFIX),
+                           "moderator_name": names.get(str(row.get("moderator_id")))} for row in rows],
+               "next_cursor": cursor}
+    response = web.json_response(payload)
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -60,10 +73,21 @@ async def avatar(request):
     row_id = request.match_info["event_id"]
     if not ID_PATTERN.fullmatch(row_id):
         raise web.HTTPNotFound()
+    # Authorization always runs, including cache hits. Cache only confirmed absence,
+    # never permission failures or Mongo outages, and never avatar bytes.
+    missing = request.app.setdefault('member_avatar_missing', OrderedDict())
+    key = (GUILD_ID, row_id)
+    now = time.monotonic()
+    if missing.get(key, 0) > now:
+        return web.Response(status=204, headers={"Cache-Control": "no-store"})
+    missing.pop(key, None)
     async with mongo(request) as db:
         row = await MemberEventStore(db.member_events).avatar(row_id, GUILD_ID)
     if not row or not row.get("avatar") or row.get("avatar_type") not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
-        raise web.HTTPNotFound()
+        missing[key] = time.monotonic() + 30
+        while len(missing) > 128:
+            missing.popitem(last=False)
+        return web.Response(status=204, headers={"Cache-Control": "no-store"})
     response = web.Response(body=bytes(row["avatar"]), content_type=row["avatar_type"])
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -159,7 +183,8 @@ async def destination(request):
 async def settings(request):
     staff = await require_manage(request, "roles")
     async with mongo(request) as db:
-        saved = await MemberEventStore(db.member_events).settings()
+        saved = normalize_settings(await MemberEventStore(db.member_events).settings(),
+                                   MemberEventStore.default_settings())
     try:
         from .server_management import discord
         actor, effective = await _bot_permissions(request)
@@ -177,7 +202,8 @@ async def settings(request):
         except web.HTTPException:
             post_warning = "Forum post search is unavailable. You can still look up a post by ID."
         known = {row["id"] for row in options}
-        for channel_id in {config["channel_id"] for config in saved["events"].values() if config["channel_id"]} - known:
+        configured = [saved["main"], *saved["categories"].values(), *saved["events"].values()]
+        for channel_id in {config.get("channel_id") for config in configured if config.get("channel_id")} - known:
             try:
                 option = await _resolve_option(request, channel_id, actor, effective, staff)
                 if option:
@@ -190,10 +216,108 @@ async def settings(request):
         options = None
         channels_available = False
         warning = "Discord channel inventory is unavailable; saved settings are shown."
-    response = web.json_response({**saved, "channels": options,
+    from utils.member_event_cards import build_card, build_forum_message, sample_row
+    preview_cards = {kind: build_card(sample_row(kind)) for kind in EVENT_TYPES}
+    forum_preview_cards = {kind: build_forum_message(sample_row(kind)) for kind in EVENT_TYPES}
+    sample = sample_row("kick")
+    preview_names = {sample["user_id"]: sample["display_name"], sample["moderator_id"]: "Sample moderator"}
+    response = web.json_response({**saved, "preview_names": preview_names, "preview_cards": preview_cards,
+                                  "forum_preview_cards": forum_preview_cards, "channels": options,
                                   "channels_available": channels_available, "warning": warning})
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+def _snowflake(value, label):
+    if value is not None and (not isinstance(value, str) or not value.isascii()
+                              or not value.isdigit() or not 15 <= len(value) <= 22):
+        raise web.HTTPBadRequest(text=f"Invalid {label} ID.")
+    return value
+
+
+def _destination(value, label):
+    if not isinstance(value, dict) or set(value) != {"channel_id", "forum_tag_id"}:
+        raise web.HTTPBadRequest(text=f"Invalid {label} destination.")
+    channel_id = _snowflake(value["channel_id"], f"{label} channel")
+    tag_id = _snowflake(value["forum_tag_id"], f"{label} forum tag")
+    if tag_id and not channel_id:
+        raise web.HTTPBadRequest(text="A forum tag requires a channel.")
+    return {"channel_id": channel_id, "forum_tag_id": tag_id}
+
+
+def _checked_settings(body):
+    if not isinstance(body, dict) or type(body.get("revision")) is not int or body["revision"] < 0:
+        raise web.HTTPBadRequest(text="Choose a valid settings revision.")
+    if set(body) == {"revision", "events"}:  # Original API clients.
+        legacy = body["events"]
+        if not isinstance(legacy, dict) or set(legacy) != set(EVENT_TYPES):
+            raise web.HTTPBadRequest(text="Choose all four event settings.")
+        for kind in EVENT_TYPES:
+            value = legacy[kind]
+            if not isinstance(value, dict) or set(value) != {"enabled", "channel_id", "forum_tag_id"}:
+                raise web.HTTPBadRequest(text=f"Invalid {kind} settings.")
+            if type(value["enabled"]) is not bool:
+                raise web.HTTPBadRequest(text=f"Invalid {kind} enable setting.")
+            _destination({"channel_id": value["channel_id"],
+                          "forum_tag_id": value["forum_tag_id"]}, kind)
+        body = normalize_settings(body, MemberEventStore.default_settings())
+    if set(body) == {"revision", "main", "categories", "events", "ignores"}:
+        body = {"schema_version": SCHEMA_VERSION, **body}
+    if set(body) != {"schema_version", "revision", "main", "categories", "events", "ignores"}:
+        raise web.HTTPBadRequest(text="Choose all member log settings.")
+    if body["schema_version"] != SCHEMA_VERSION or body["ignores"] != {}:
+        raise web.HTTPBadRequest(text="Unsupported member log settings schema.")
+    main = _destination(body["main"], "main")
+    categories = body["categories"]
+    if not isinstance(categories, dict) or set(categories) != set(CATEGORIES):
+        raise web.HTTPBadRequest(text="Choose both member log categories.")
+    checked_categories = {}
+    for category in CATEGORIES:
+        value = categories[category]
+        if not isinstance(value, dict) or set(value) != {"mode", "channel_id", "forum_tag_id"}:
+            raise web.HTTPBadRequest(text=f"Invalid {category} category.")
+        if value["mode"] not in ("main", "own", "off"):
+            raise web.HTTPBadRequest(text=f"Invalid {category} routing mode.")
+        checked_categories[category] = {"mode": value["mode"], **_destination(
+            {"channel_id": value["channel_id"], "forum_tag_id": value["forum_tag_id"]}, category)}
+    events = body["events"]
+    if not isinstance(events, dict) or set(events) != set(EVENT_TYPES):
+        raise web.HTTPBadRequest(text="Choose all four event settings.")
+    checked_events = {}
+    for kind in EVENT_TYPES:
+        value = events[kind]
+        if not isinstance(value, dict) or set(value) != {"enabled", "channel_id", "forum_tag_id"}:
+            raise web.HTTPBadRequest(text=f"Invalid {kind} settings.")
+        if type(value["enabled"]) is not bool:
+            raise web.HTTPBadRequest(text=f"Invalid {kind} enable setting.")
+        checked_events[kind] = {"enabled": value["enabled"], **_destination(
+            {"channel_id": value["channel_id"], "forum_tag_id": value["forum_tag_id"]}, kind)}
+    return {"schema_version": SCHEMA_VERSION, "revision": body["revision"],
+            "main": main, "categories": checked_categories, "events": checked_events,
+            "ignores": {}}
+
+
+async def _validate_destination(request, kind, resolved, actor, effective, staff):
+    channel_id, tag_id = resolved["channel_id"], resolved["forum_tag_id"]
+    if not channel_id:
+        raise web.HTTPBadRequest(text=f"Choose a {kind} channel before enabling delivery.")
+    try:
+        option = await _resolve_option(request, channel_id, actor, effective, staff)
+    except (web.HTTPNotFound, web.HTTPForbidden):
+        raise web.HTTPBadRequest(text=f"The {kind} destination is missing or inaccessible to the bot.") from None
+    if not option or not option["can_post"]:
+        raise web.HTTPBadRequest(text=f"The bot cannot post in the {kind} destination.")
+    if option["type"] != "forum" and tag_id:
+        raise web.HTTPBadRequest(text="Forum tags can only be used with forum channels.")
+    if option["requires_tag"] and not tag_id:
+        raise web.HTTPBadRequest(text=f"The {kind} forum requires a tag.")
+    if tag_id:
+        tag = next((tag for tag in option["available_tags"] if tag["id"] == tag_id), None)
+        if not tag:
+            raise web.HTTPBadRequest(text=f"The {kind} forum tag is no longer available.")
+        if tag["moderated"] and not option["can_manage_threads"]:
+            raise web.HTTPBadRequest(text=f"The bot cannot apply the moderated {kind} forum tag.")
+    return option
 
 
 async def save_settings(request):
@@ -202,53 +326,15 @@ async def save_settings(request):
         body = await request.json()
     except Exception:
         raise web.HTTPBadRequest(text="Invalid settings JSON.") from None
-    if not isinstance(body, dict) or set(body) != {"revision", "events"}:
-        raise web.HTTPBadRequest(text="Choose all four event settings and a revision.")
-    revision, events = body["revision"], body["events"]
-    from utils.member_events import EVENT_TYPES, SettingsConflict
-    if type(revision) is not int or revision < 0 or not isinstance(events, dict) or set(events) != set(EVENT_TYPES):
-        raise web.HTTPBadRequest(text="Invalid member event settings.")
-    from .server_management import discord
+    checked = _checked_settings(body)
     actor, effective = await _bot_permissions(request)
-    checked = {}
     for kind in EVENT_TYPES:
-        config = events[kind]
-        if not isinstance(config, dict) or set(config) != {"enabled", "channel_id", "forum_tag_id"}:
-            raise web.HTTPBadRequest(text=f"Invalid {kind} destination.")
-        enabled, channel_id, tag_id = config["enabled"], config["channel_id"], config["forum_tag_id"]
-        if type(enabled) is not bool:
-            raise web.HTTPBadRequest(text=f"Invalid {kind} enable setting.")
-        if channel_id is not None and (not isinstance(channel_id, str) or not channel_id.isdigit() or not 15 <= len(channel_id) <= 22):
-            raise web.HTTPBadRequest(text=f"Invalid {kind} channel.")
-        if tag_id is not None and (not isinstance(tag_id, str) or not tag_id.isdigit() or not 15 <= len(tag_id) <= 22):
-            raise web.HTTPBadRequest(text=f"Invalid {kind} forum tag.")
-        if enabled and not channel_id:
-            raise web.HTTPBadRequest(text=f"Choose a {kind} channel before enabling delivery.")
-        if tag_id and not channel_id:
-            raise web.HTTPBadRequest(text="A forum tag requires a channel.")
-        if enabled:
-            try:
-                option = await _resolve_option(request, channel_id, actor, effective, staff)
-            except (web.HTTPNotFound, web.HTTPForbidden):
-                raise web.HTTPBadRequest(text=f"The {kind} destination is missing or inaccessible to the bot.") from None
-            if not option:
-                raise web.HTTPBadRequest(text=f"The {kind} channel must be an accessible text channel, forum, or forum post in this server.")
-            if not option["can_post"]:
-                raise web.HTTPBadRequest(text=f"The bot cannot post in the {kind} destination. Check permissions, including Send Messages in Threads for posts, and whether the post is locked.")
-            if option["type"] != "forum" and tag_id:
-                raise web.HTTPBadRequest(text="Forum tags can only be used with forum channels.")
-            if option["requires_tag"] and not tag_id:
-                raise web.HTTPBadRequest(text=f"The {kind} forum requires a tag.")
-            if tag_id:
-                tag = next((tag for tag in option["available_tags"] if tag["id"] == tag_id), None)
-                if not tag:
-                    raise web.HTTPBadRequest(text=f"The {kind} forum tag is no longer available.")
-                if tag["moderated"] and not option["can_manage_threads"]:
-                    raise web.HTTPBadRequest(text=f"The bot cannot apply the moderated {kind} forum tag.")
-        checked[kind] = {"enabled": enabled, "channel_id": channel_id, "forum_tag_id": tag_id}
+        resolved = effective_event(checked, kind)
+        if resolved["enabled"]:
+            await _validate_destination(request, kind, resolved, actor, effective, staff)
     async with mongo(request) as db:
         try:
-            saved = await MemberEventStore(db.member_events).save_settings(revision, checked)
+            saved = await MemberEventStore(db.member_events).save_settings(checked["revision"], checked)
         except SettingsConflict:
             raise web.HTTPConflict(text="Member log settings changed. Reload before saving.") from None
     response = web.json_response(saved)
@@ -256,6 +342,79 @@ async def save_settings(request):
     return response
 
 
-routes.extend([web.get(PREFIX + "/settings", settings), web.put(PREFIX + "/settings", save_settings)])
+async def send_test(request):
+    staff = await require_manage(request, "roles", write=True)
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="Invalid test JSON.") from None
+    if (not isinstance(body, dict) or set(body) != {"event_type", "revision"}
+            or body["event_type"] not in EVENT_TYPES
+            or type(body["revision"]) is not int or body["revision"] < 0):
+        raise web.HTTPBadRequest(text="Choose an event and saved settings revision.")
+    kind = body["event_type"]
+    async with mongo(request) as db:
+        store = MemberEventStore(db.member_events, db.member_event_test_audit)
+        saved = await store.settings()
+        if body["revision"] != saved["revision"]:
+            raise web.HTTPConflict(text="Member log settings changed. Reload before testing.")
+        resolved = effective_event(saved, kind)
+        if not resolved["enabled"]:
+            raise web.HTTPBadRequest(text="Enable this event and save before testing.")
+        actor, effective = await _bot_permissions(request)
+        option = await _validate_destination(request, kind, resolved, actor, effective, staff)
+        from utils.member_event_cards import build_card, build_forum_message, sample_row
+        from .server_management import DiscordDeliveryUncertain, discord
+        now = datetime.now(timezone.utc)
+        try:
+            audit_id = await store.reserve_test(kind, str(staff["user_id"]), now)
+        except TestRateLimited as exc:
+            raise web.HTTPTooManyRequests(text=str(exc)) from None
+        # A save may have completed while Discord permissions were checked.
+        # Never send a sample for settings already known to be superseded.
+        latest = await store.settings()
+        if latest["revision"] != saved["revision"]:
+            await store.cancel_test(audit_id, kind=kind, destination=resolved["channel_id"])
+            raise web.HTTPConflict(text="Member log settings changed. Reload before testing.")
+        sample = sample_row(kind)
+        sample["occurred_at"] = now
+        forum = option["type"] == "forum"
+        payload = build_forum_message(sample, test_staff_id=str(staff["user_id"])) if forum else build_card(
+            sample, test_staff_id=str(staff["user_id"]))
+        if forum:
+            title = f"Test {kind} · {now.strftime('%Y-%m-%d %H:%M UTC')}"
+            data = {"name": title[:100], "message": payload}
+            if resolved["forum_tag_id"]:
+                data["applied_tags"] = [resolved["forum_tag_id"]]
+            path = f"/channels/{resolved['channel_id']}/threads"
+        else:
+            data = payload
+            path = f"/channels/{resolved['channel_id']}/messages"
+        try:
+            sent = await discord(request, "POST", path, json=data, roster_delivery=True)
+        except asyncio.CancelledError:
+            await store.finish_test(audit_id, status="uncertain", destination=resolved["channel_id"])
+            raise
+        except (DiscordDeliveryUncertain, web.HTTPException):
+            await store.finish_test(audit_id, status="uncertain", destination=resolved["channel_id"])
+            raise web.HTTPServiceUnavailable(text="Test delivery is unconfirmed. Check Discord before sending again.") from None
+        item = sent.get("message") or sent if isinstance(sent, dict) else None
+        message_id = item.get("id") if isinstance(item, dict) else None
+        if not isinstance(message_id, str) or not message_id.isdigit():
+            await store.finish_test(audit_id, status="uncertain", destination=resolved["channel_id"])
+            raise web.HTTPServiceUnavailable(text="Test delivery is unconfirmed. Check Discord before sending again.")
+        try:
+            await store.finish_test(audit_id, status="sent", destination=resolved["channel_id"])
+        except Exception:
+            raise web.HTTPServiceUnavailable(
+                text="Test was accepted but its audit could not be recorded. Check Discord before sending again.") from None
+    response = web.json_response({"sent": True, "event_type": kind,
+                                  "destination": {"id": option["id"], "name": option["name"],
+                                                  "type": option["type"]}, "message_id": message_id})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+routes.extend([web.get(PREFIX + "/settings", settings), web.put(PREFIX + "/settings", save_settings),
+               web.post(PREFIX + "/test", send_test)])
 
 routes.append(web.get(PREFIX + "/destinations/{channel_id}", destination))

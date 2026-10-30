@@ -13,6 +13,8 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from pymongo.write_concern import WriteConcern
 
+from .member_event_settings import normalize_settings
+
 GUILD_ID = 644963518025826315
 MAX_AVATAR_BYTES = 256 * 1024
 ID_PATTERN = re.compile(r"\d{13}:[0-9a-f]{32}\Z")
@@ -75,8 +77,9 @@ def effective_permissions(base: int, role_ids, user_id: int, overwrites, guild_i
 
 
 class MemberEventStore:
-    def __init__(self, collection):
+    def __init__(self, collection, test_audit=None):
         self.collection = collection.with_options(write_concern=WriteConcern(w="majority", wtimeout=10000)) if hasattr(collection, "with_options") else collection
+        self.test_audit = test_audit.with_options(write_concern=WriteConcern(w="majority", wtimeout=10000)) if hasattr(test_audit, "with_options") else test_audit
 
     async def ensure_indexes(self):
         await self.collection.create_index("event_key", unique=True, name="member_event_key")
@@ -94,32 +97,71 @@ class MemberEventStore:
         }}
 
     async def settings(self):
-        row = await self.collection.find_one({"_id": SETTINGS_ID}, {"revision": 1, "events": 1})
-        return {"revision": row["revision"], "events": row["events"]} if row else self.default_settings()
+        row = await self.collection.find_one({"_id": SETTINGS_ID})
+        return normalize_settings(row, self.default_settings())
 
-    async def save_settings(self, revision: int, events: dict):
+    async def save_settings(self, revision: int, settings: dict):
+        # Accept the original events-only call for older integrations. New
+        # writes always persist the normalized schema after the CAS succeeds.
+        if "events" not in settings:
+            settings = {"events": settings}
+        normalized = normalize_settings({"revision": revision, **settings}, self.default_settings())
+        values = {key: normalized[key] for key in ("schema_version", "main", "categories", "events", "ignores")}
         if revision == 0:
             try:
                 await self.collection.insert_one({"_id": SETTINGS_ID, "event_key": SETTINGS_ID,
-                                                  "revision": 1, "events": events})
+                                                  "revision": 1, **values})
             except DuplicateKeyError:
                 raise SettingsConflict("Member log settings changed") from None
-            return {"revision": 1, "events": events}
+            return {**normalized, "revision": 1}
         row = await self.collection.find_one_and_update(
             {"_id": SETTINGS_ID, "revision": revision},
-            {"$set": {"events": events}, "$inc": {"revision": 1}},
+            {"$set": values, "$inc": {"revision": 1}},
             return_document=ReturnDocument.AFTER,
         )
         if not row:
             raise SettingsConflict("Member log settings changed")
-        return {"revision": row["revision"], "events": row["events"]}
+        return normalize_settings(row, self.default_settings())
+
+    async def reserve_test(self, kind: str, staff_id: str, now: datetime):
+        """Atomically rate-limit a test without touching event history."""
+        if self.test_audit is None:
+            raise RuntimeError("Member-event test audit storage is unavailable")
+        rate_id = f"member-event-test-rate:{GUILD_ID}:{kind}"
+        audit_id = f"member-event-test:{uuid.uuid4().hex}"
+        try:
+            await self.test_audit.find_one_and_update(
+                {"_id": rate_id, "last_at": {"$lte": now - timedelta(seconds=10)}},
+                {"$set": {"last_at": now, "staff_id": staff_id, "audit_id": audit_id}},
+                upsert=True, return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            raise TestRateLimited("Wait 10 seconds before sending another test for this event.") from None
+        await self.test_audit.insert_one({"_id": audit_id, "guild_id": GUILD_ID,
+                                          "event_type": kind, "staff_id": staff_id,
+                                          "at": now, "status": "attempting"})
+        return audit_id
+
+    async def cancel_test(self, audit_id: str, *, kind: str, destination: str):
+        """Release only this unsent claim; never clear a newer caller's cooldown."""
+        await self.finish_test(audit_id, status="cancelled", destination=destination)
+        await self.test_audit.delete_one({
+            "_id": f"member-event-test-rate:{GUILD_ID}:{kind}", "audit_id": audit_id,
+        })
+
+    async def finish_test(self, audit_id: str, *, status: str, destination: str):
+        await self.test_audit.update_one(
+            {"_id": audit_id, "status": "attempting"},
+            {"$set": {"status": status, "destination": destination}},
+        )
 
     async def capture(self, *, guild_id: int, user_id: int, kind: str, display_name: str,
                       username: str, avatar: bytes | None, avatar_type: str | None,
                       at: datetime, joined_at=None, channel_id: int | None = None,
                       forum_tag_id: int | None = None, reason: str | None = None,
                       moderator_id: int | None = None, audit_entry_id: int | None = None,
-                      episode: int | None = None):
+                      episode: int | None = None, account_created_at: datetime | None = None,
+                      member_count: int | None = None, roles: list[str] | None = None):
         if guild_id != GUILD_ID or kind not in EVENT_TYPES:
             raise ValueError("Member event is outside the configured guild")
         if avatar is not None and (len(avatar) > MAX_AVATAR_BYTES or avatar_type not in ("image/png", "image/jpeg", "image/gif", "image/webp")):
@@ -136,6 +178,9 @@ class MemberEventStore:
             "avatar_type": avatar_type if avatar else None,
             "occurred_at": at, "joined_at": joined_at, "channel_id": channel_id,
             "forum_tag_id": forum_tag_id, "reason": str(reason)[:500] if reason else None,
+            "account_created_at": account_created_at if isinstance(account_created_at, datetime) else None,
+            "member_count": member_count if isinstance(member_count, int) and member_count >= 0 else None,
+            "roles": [str(role)[:100] for role in roles[:30]] if isinstance(roles, list) else None,
             "moderator_id": str(moderator_id) if moderator_id else None,
             "audit_entry_id": str(audit_entry_id) if audit_entry_id else None,
             "delivery_status": "capturing", "message_id": None,
@@ -248,14 +293,16 @@ class MemberEventStore:
             {"guild_id": guild_id, "user_id": str(user_id),
              "event_type": {"$in": ["join", "leave"]}},
             {"display_name": 1, "username": 1, "avatar": 1, "avatar_type": 1,
-             "joined_at": 1, "occurred_at": 1}, sort=[("_id", -1)],
+             "joined_at": 1, "occurred_at": 1, "account_created_at": 1,
+             "member_count": 1, "roles": 1}, sort=[("_id", -1)],
         )
 
     async def latest_identity(self, guild_id: int, user_id: int):
         return await self.collection.find_one(
             {"guild_id": guild_id, "user_id": str(user_id), "event_type": {"$in": EVENT_TYPES}},
             {"display_name": 1, "username": 1, "avatar": 1, "avatar_type": 1,
-             "joined_at": 1, "occurred_at": 1}, sort=[("_id", -1)],
+             "joined_at": 1, "occurred_at": 1, "account_created_at": 1,
+             "member_count": 1, "roles": 1}, sort=[("_id", -1)],
         )
 
     async def enrich_ban(self, guild_id: int, user_id: int, at: datetime,
@@ -340,12 +387,13 @@ class MemberEventStore:
 
     async def enrich_recent_kick(self, guild_id: int, user_id: int, at: datetime,
                                  display_name: str, username: str, joined_at,
-                                 avatar: bytes | None, avatar_type: str | None):
+                                 avatar: bytes | None, avatar_type: str | None,
+                                 roles: list[str] | None = None):
         row = await self.collection.find_one(
             {"guild_id": guild_id, "user_id": str(user_id), "event_type": "kick",
              "occurred_at": {"$gte": at - timedelta(seconds=30),
                              "$lte": at + timedelta(seconds=30)}},
-            {"display_name": 1, "username": 1, "avatar": 1, "joined_at": 1},
+            {"display_name": 1, "username": 1, "avatar": 1, "joined_at": 1, "roles": 1},
             sort=[("_id", -1)],
         )
         if not row:
@@ -359,6 +407,8 @@ class MemberEventStore:
         if not row.get("avatar") and avatar and avatar_type:
             values["avatar"] = avatar
             values["avatar_type"] = avatar_type
+        if row.get("roles") is None and roles is not None:
+            values["roles"] = [str(role)[:100] for role in roles[:30]]
         if values:
             await self.collection.update_one({"_id": row["_id"], "event_type": "kick"},
                                              {"$set": values})
@@ -419,4 +469,8 @@ def public_event(row: dict, *, api_prefix: str) -> dict:
 
 
 class SettingsConflict(Exception):
+    pass
+
+
+class TestRateLimited(Exception):
     pass
