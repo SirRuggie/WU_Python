@@ -548,6 +548,15 @@ async def replacements(request):
     scope = request.query.get('scope') or 'fwa'
     if scope not in ('fwa', 'all'):
         raise ValueError('Choose FWA or all clans.')
+    raw_low = request.query.get('include_low', 'false').lower()
+    if raw_low not in ('true', 'false', '1', '0'):
+        raise ValueError('Choose whether to show one or two strikes.')
+    include_low = raw_low in ('true', '1')
+    offset = number(request.query.get('offset', '0'), 0, 100000)
+    limit = number(request.query.get('limit', '25'), 1, 100)
+    sort = request.query.get('sort', 'priority')
+    search = request.query.get('query', '')
+    exact_tag = tag(request.query['exact_tag']) if request.query.get('exact_tag') else None
     raw_browse = request.query.get('browse_all', 'false').lower()
     if raw_browse not in ('true', 'false', '1', '0'):
         raise ValueError('Choose whether to browse all accounts.')
@@ -574,12 +583,16 @@ async def replacements(request):
             for value in tags
         ]})
         effective_weights = {row['tag']: row['war_weight'] for row in resolved['accounts']}
-        rows = await ledger.replacement(GUILD_ID, weight, clan_tag=clan,
-                                        limit=5000, weights=effective_weights,
+        rows = await ledger.replacement(GUILD_ID, weight, clan_tag=clan if weight is not None else None,
+                                        limit=None, weights=effective_weights,
                                         browse_all=browse_all, family_scope=scope,
-                                        town_hall=town_hall)
+                                        town_hall=town_hall if weight is not None else None)
+    town_halls = sorted({row['town_hall'] for row in rows if row.get('town_hall')})
+    if exact_tag:
+        rows = [row for row in rows if row['player_tag'] == exact_tag]
     names = {row['tag']: row['name'] for row in clans}
-    candidates = [{'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
+    def candidate(row):
+        return {'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
                    'clan_tag': row.get('last_seen_clan_tag') if row.get('departed') else row.get('current_clan_tag'),
                    'clan_name': names.get(row.get('last_seen_clan_tag') if row.get('departed') else row.get('current_clan_tag')),
                    'current_clan_tag': row.get('current_clan_tag'),
@@ -595,8 +608,21 @@ async def replacements(request):
                    'clan_seen_at': public(row.get('clan_seen_at')),
                    'clan_is_current': bool(row.get('clan_is_current')),
                    'weight_difference': row['weight_difference'],
-                   'discord_id': str(row['member_id']) if row.get('member_id') else None} for row in rows]
-    return web.json_response({'candidates': candidates, 'clans': clans, 'total': len(candidates),
+                   'discord_id': str(row['member_id']) if row.get('member_id') else None, 'revision': row.get('revision', 0)}
+    from utils.replacement_view import replacement_page, best_slots
+    if weight is not None:
+        selected = best_slots(rows, weight)
+        page = {'items': selected, 'total': len(selected), 'top': [], 'groups': []}
+    else:
+        page = replacement_page(rows, include_low=include_low, clan=clan,
+                                town_hall=town_hall, search=search, sort=sort,
+                                offset=offset, limit=limit)
+    return web.json_response({'candidates': [candidate(row) for row in page['items']],
+                              'top': [candidate(row) for row in page['top']],
+                              'groups': [{**group, 'clan_name': names.get(group['clan_tag']) or group['clan_tag']}
+                                         for group in page['groups']],
+                              'clans': clans, 'town_halls': town_halls, 'total': page['total'], 'offset': offset,
+                              'limit': limit, 'include_low': include_low, 'sort': sort,
                               'matching_weight': weight, 'matching_weight_label': compact_weight(weight),
                               'scope': scope, 'browse_all': browse_all, 'town_hall': town_hall})
 
@@ -627,7 +653,7 @@ async def _live_replacement_roster(request, db, clan_value):
     return roster
 
 
-@endpoint(scope='strikes')
+@endpoint(scope='strikes_read')
 async def replacement_roster(request):
     clan = request.query.get('clan')
     if not clan:
@@ -699,10 +725,19 @@ async def bulk_add_replacement_list(request):
 
 
 @endpoint
+async def replacement_preference(request):
+    player = tag(request.match_info['player_tag'])
+    async with shared.mongo(request) as db:
+        ledger = await service(request, db)
+        return web.json_response(await ledger.replacement_preference(GUILD_ID, player))
+
+
+@endpoint
 async def add_replacement_list(request):
-    data = await body(request, {'player_tag', 'priority', 'note'})
+    data = await body(request, {'player_tag', 'priority', 'note', 'revision'})
     if 'player_tag' not in data:
         raise ValueError('Choose a player account.')
+    revision = number(data.get('revision'), 0, 2**53 - 1)
     profile = await _verified_replacement_player(request, data['player_tag'])
     from .app import _session
     async with shared.mongo(request) as db:
@@ -710,15 +745,16 @@ async def add_replacement_list(request):
         saved = await ledger.set_replacement_preference(
             GUILD_ID, profile['tag'], data.get('priority'), data.get('note', ''),
             int(_session(request)['user_id']), clan_tag=profile['current_clan_tag'],
-            player_name=profile.get('name'), town_hall=profile.get('town_hall'))
+            player_name=profile.get('name'), town_hall=profile.get('town_hall'), expected_revision=revision)
     return web.json_response({'ok': True, 'player_tag': saved['player_tag'],
                               'priority': saved['replacement_priority'],
-                              'clan_tag': saved['replacement_clan_tag']})
+                              'clan_tag': saved['replacement_clan_tag'], 'revision': saved['revision']})
 
 
 @endpoint
 async def update_replacement_list(request):
-    data = await body(request, {'priority', 'note'})
+    data = await body(request, {'priority', 'note', 'revision'})
+    revision = number(data.get('revision'), 0, 2**53 - 1)
     profile = await _verified_replacement_player(request, request.match_info['player_tag'])
     from .app import _session
     async with shared.mongo(request) as db:
@@ -726,42 +762,25 @@ async def update_replacement_list(request):
         saved = await ledger.set_replacement_preference(
             GUILD_ID, profile['tag'], data.get('priority'), data.get('note', ''),
             int(_session(request)['user_id']), clan_tag=profile['current_clan_tag'],
-            player_name=profile.get('name'), town_hall=profile.get('town_hall'))
+            player_name=profile.get('name'), town_hall=profile.get('town_hall'), expected_revision=revision)
     return web.json_response({'ok': True, 'player_tag': saved['player_tag'],
                               'priority': saved['replacement_priority'],
-                              'clan_tag': saved['replacement_clan_tag']})
+                              'clan_tag': saved['replacement_clan_tag'], 'revision': saved['revision']})
 
 
 @endpoint
 async def delete_replacement_list(request):
+    data = await body(request, {'revision'})
+    revision = number(data.get('revision'), 0, 2**53 - 1)
     player = tag(request.match_info['player_tag'])
     from .app import _session
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        await ledger.clear_replacement_preference(GUILD_ID, player, int(_session(request)['user_id']))
-    return web.json_response({'ok': True})
+        saved = await ledger.clear_replacement_preference(GUILD_ID, player, int(_session(request)['user_id']),
+                                                           expected_revision=revision)
+    return web.json_response({'ok': True, 'revision': saved['revision']})
 
 
-@endpoint
-async def save_filler(request):
-    """Compatibility endpoint for the original dashboard filler toggle."""
-    data = await body(request, {'is_filler'})
-    if type(data.get('is_filler')) is not bool:
-        raise ValueError('Choose a replacement preference.')
-    player = tag(request.match_info['player_tag'])
-    from .app import _session
-    if data['is_filler']:
-        profile = await _verified_replacement_player(request, player)
-        async with shared.mongo(request) as db:
-            ledger = await service(request, db)
-            await ledger.set_replacement_preference(GUILD_ID, player, 'replace_first', '',
-                int(_session(request)['user_id']), clan_tag=profile['current_clan_tag'],
-                player_name=profile.get('name'), town_hall=profile.get('town_hall'))
-    else:
-        async with shared.mongo(request) as db:
-            ledger = await service(request, db)
-            await ledger.clear_replacement_preference(GUILD_ID, player, int(_session(request)['user_id']))
-    return web.json_response({'ok': True})
 
 
 JOB_TTL_SECONDS = 60 * 60
@@ -1017,8 +1036,9 @@ routes = [web.get(API + '/tracking', tracking_status),
           web.get(API + '/settings', settings), web.put(API + '/settings/roles', save_roles),
           web.get(API + '/settings/leaves/{member_id}', leave_state),
           web.post(API + '/settings/leaves', save_leave), web.delete(API + '/settings/leaves/{member_id}', remove_leave),
-          web.get(API + '/replacements', replacements), web.put(API + '/replacements/{player_tag}', save_filler),
+          web.get(API + '/replacements', replacements),
           web.get(API + '/replacement-roster', replacement_roster),
+          web.get(API + '/replacement-list/{player_tag}', replacement_preference),
           web.post(API + '/replacement-list/bulk', bulk_add_replacement_list),
           web.post(API + '/replacement-list', add_replacement_list),
           web.put(API + '/replacement-list/{player_tag}', update_replacement_list),

@@ -202,9 +202,11 @@ it("renders full-population summaries and queries pages and action chips on the 
   const link = host.querySelector<HTMLAnchorElement>(
     'a[href*="replacements"]',
   )!;
-  expect(link.getAttribute("href")).toBe("/clans/replacements?clan=%23Q2Y");
+  expect(link.getAttribute("href")).toBe(
+    "/clans/replacements?clan=%23Q2Y&tag=%23P2Y&from=strikes",
+  );
   await act(async () => link.click());
-  expect(replacement).toHaveBeenCalledWith("#Q2Y");
+  expect(replacement).toHaveBeenCalledWith("#Q2Y", "#P2Y");
   await click("Next");
   await settle();
   expect(transport.mock.calls.at(-1)![0]).toContain("offset=25");
@@ -310,7 +312,14 @@ it.each([1, 2])(
           incomplete_wars: count,
           deferred_count: count,
           entries,
-          coverage: [{ clan_name: "Oak", wars: count, skipped: count, deferred_accounts: count }],
+          coverage: [
+            {
+              clan_name: "Oak",
+              wars: count,
+              skipped: count,
+              deferred_accounts: count,
+            },
+          ],
         },
         excluded: [],
       }),
@@ -338,7 +347,9 @@ it.each([1, 2])(
           "\\b",
       ),
     );
-    expect(countText(host)).toMatch(new RegExp(`\\b${count} ${count === 1 ? "needs" : "need"} review\\b`));
+    expect(countText(host)).toMatch(
+      new RegExp(`\\b${count} ${count === 1 ? "needs" : "need"} review\\b`),
+    );
     const disclosure = [...host.querySelectorAll("details")].find((node) =>
       node
         .querySelector("summary")

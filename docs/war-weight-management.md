@@ -84,3 +84,33 @@ invalid timestamp as unavailable instead of crashing. Working roster exports
 label the old field `legacy_manual_weight` alongside `effective_weight`;
 published exports keep their snapshot columns. Archived-season freezing is
 not part of this change, per the owner's decision.
+
+## Linked-weight follow-up release — October 30
+
+`linked-weight-followup-1` / PR81 is live at
+`370797052fc0238632916af785174ff730292ef4` on frontend, backend and bot.
+It makes Clear reachable for historical non-thousand values, preserves legacy
+weights when the linked table is absent, labels the working export's legacy
+column, and shows the roster-only permission notice without opening an editor.
+Public `index-BLr7_MkH.js` SHA-256:
+`34eb9f2a51355b38a10a96f58ac495729b83f1703e8b392c060c8183b9a09a51`.
+
+Integrated validation: 5,004 backend tests (21 skipped, 162 subtests), 1,045
+frontend tests, TypeScript/build. The clean tagged release differs from the
+integration-tested code only in Avatar release docs. Startup imports, active cwd,
+two consecutive public config 200s, public assets and anonymous denial checks
+passed. Bot restarted after the lease-expiry wait; first scanner pass reported
+25 clans, zero wars finalized and eight behind. Current journals were clean.
+
+Backup `.local/linked-weight-followup-1-backup-20261030T213342Z` is retained.
+Protected SQLite tables matched, including 155 signups, four publications and
+seven saved lineups. Active strikes stayed 3,558; no unexplained changes. All
+12 Mongo collection checks and raw moderation settings matched. No scripted live
+message or authenticated write was performed. Code-only rollback retains
+frontend/backend `44a3708` and bot `fb46bd3`; never restore the DB for code rollback.
+The guarded local coordinator is `/tmp/wu-linked-followup-release/run.py`.
+
+Claude's read-only production smoke passed: runtime revisions and public entry
+matched; at 360px Gnar's Details showed Loot 34800 / Full 174000, Save disabled
+when clean and Clear enabled, with no errors or overflow. Closed without a write.
+The roster-only notice remains covered by accepted tests, not the owner session.

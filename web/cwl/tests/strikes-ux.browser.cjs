@@ -54,7 +54,7 @@ fs.mkdirSync(output, { recursive: true });
             }).length,
         );
         if (m.firstRowY > 560 || visibleRows < 3)
-          throw Error("phone detail must show at least three strike rows");
+          throw Error("phone detail must show at least three strike rows: " + JSON.stringify({firstRowY:m.firstRowY,visibleRows}));
       }
       if (m.scrollWidth > width) throw Error("overflow " + name);
       if (m.small.length)

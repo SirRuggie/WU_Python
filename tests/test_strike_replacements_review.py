@@ -173,10 +173,12 @@ def test_current_clan_verification_fails_closed_on_provider_outage():
     asyncio.run(run())
 
 
-def test_replacement_list_routes_registered_next_to_legacy_toggle():
+def test_replacement_list_routes_registered_without_unused_legacy_toggle():
     from cwl_web import strikes as api
     routes = {(route.method, route.path) for route in api.routes}
     assert ('GET', api.API + '/replacements') in routes
+    assert ('PUT', api.API + '/replacements/{player_tag}') not in routes
+    assert ('GET', api.API + '/replacement-list/{player_tag}') in routes
     assert ('POST', api.API + '/replacement-list') in routes
     assert ('PUT', api.API + '/replacement-list/{player_tag}') in routes
     assert ('DELETE', api.API + '/replacement-list/{player_tag}') in routes

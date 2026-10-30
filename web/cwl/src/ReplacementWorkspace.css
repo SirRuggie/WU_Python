@@ -294,7 +294,7 @@
   opacity: 0.65;
   cursor: default;
 }
-.replacement-roster-list input[type='checkbox'] {
+.replacement-roster-list input[type="checkbox"] {
   width: 16px;
   min-width: 16px;
   height: 16px;
@@ -327,14 +327,7 @@
 }
 
 .replacement-match {
-  grid-column: 1 / -1;
   border-top: 1px solid #383838;
-}
-.replacement-match summary {
-  cursor: pointer;
-  min-height: 44px;
-  padding: 12px 0;
-  color: #b9c5d5;
 }
 .replacement-match form {
   max-width: 600px;
@@ -346,7 +339,7 @@
 .replacement-workspace :is(button, input, select) {
   min-height: 44px;
 }
-.replacement-workspace input[type='checkbox'] {
+.replacement-workspace input[type="checkbox"] {
   min-height: 16px;
 }
 .replacement-editor .replacement-roster-list label {
@@ -381,4 +374,87 @@
   display: flex;
   align-items: center;
   cursor: pointer;
+}
+
+.replacement-top h2,
+.replacement-match h2 {
+  font-size: 16px;
+  margin: 12px 0;
+}
+.replacement-top ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.replacement-top button {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+}
+.replacement-top span {
+  font-size: 12px;
+  color: var(--roster-text-muted);
+}
+.replacement-group-summary {
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  white-space: normal;
+}
+.replacement-group-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 12px 0;
+}
+.replacement-group-actions button {
+  min-height: 44px;
+}
+@media (max-width: 600px) {
+  .replacement-top ol {
+    grid-template-columns: 1fr;
+  }
+}
+.replacement-identity > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 700;
+}
+.replacement-overview-count {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-block: 12px;
+  font-size: 14px;
+}
+.replacement-overview-count label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+.replacement-overview-count input {
+  width: 22px;
+  height: 22px;
+}
+.replacement-overview {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .replacement-overview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
 }

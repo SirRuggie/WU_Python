@@ -551,7 +551,7 @@ def test_replacement_api_groups_family_move_under_original_clan():
         store.replacement = AsyncMock(return_value=[{
             'player_tag': PLAYER, 'current_clan_tag': '#8GG8', 'departed': True,
             'last_seen_clan_tag': CLAN, 'last_seen_at': NOW,
-            'replacement_priority': 'high', 'active_strikes': 0, 'weight_difference': None}])
+            'replacement_priority': 'high', 'active_strikes': 0, 'weight_difference': None, 'is_manual': True}])
         @asynccontextmanager
         async def mongo(request):
             yield db

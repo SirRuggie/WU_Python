@@ -77,9 +77,9 @@ The **Strikes** dashboard has Accounts, Leave, and Settings tabs. Exempt roles a
 
 History starts with one row per player account with active strikes, ordered by active strike count. All accounts also shows inactive and missed-only accounts. Accounts linked to the same Discord member remain separate. Open an account to see strike dates, war matchups, and removal history. One-missed records stay hidden unless selected. Find a war by clan or opponent, then choose its date to see that war’s missed attacks. History supports player, Discord member, clan, and status searches; add a manual strike with a reason, or remove a strike with a reason. Choosing a member lets staff choose the player account.
 
-The Replacements page shows marked accounts and accounts with active strikes, grouped by family clan. Use Add accounts to choose a family clan and check accounts from its current roster, or enter a player tag. Selected accounts share Chopping Block, High priority, or Normal and an optional note. Accounts already manually listed are left unchanged. The clan roster is checked again on save. Marking or clearing a replacement never adds or removes strikes. Clearing a priority removes its note and manual listing; an account with active strikes still appears as a normal candidate. Preferences apply to the clan where they were set, so moving clans does not transfer that preference. Existing filler marks appear as Chopping Block.
+The Replacements page defaults to manually marked accounts and accounts with at least three active strikes. Show 1–2 strikes too includes the lower counts. This fixed threshold is independent of the over-limit setting. Clans start collapsed, ordered by urgency, with listed/3+/Chopping Block counts; multiple clans can stay open. The global Top 10 orders Chopping Block, High, then Normal, followed by most strikes and lowest weight. Town Hall, search and sort apply before server paging (25 rows per expanded clan). Use Add accounts to choose a family clan and check accounts from its current roster, or enter a player tag. Selected accounts share Chopping Block, High priority, or Normal and an optional note. Accounts already manually listed are left unchanged. The clan roster is checked again on save. Marking or clearing a replacement never adds or removes strikes. Clearing a priority removes its note and manual listing; an account with active strikes still appears as a normal candidate. Preferences apply to the clan where they were set, so moving clans does not transfer that preference. Existing filler marks appear as Chopping Block.
 
-Enter an optional recruit weight on the same page to find FWA matches. Known weights rank by replacement priority, active strikes, then nearest weight; unknown weights are clearly marked and appear after known matches. Without a recruit weight, accounts remain visible even when their weight is unknown. Existing roster weights and manual weight overrides are reused.
+The visible recruit box accepts 149 or 149000 and returns the three closest known-weight FWA slots, using priority and strikes to break ties. Unknown weights are excluded from matching but remain in the ordinary list. Ordinary reads use saved weights without upstream requests. Cards open the account’s Strikes history. Find replacement opens a clan/tag deep link; Back retains origin filters, expanded clans and scroll in memory for the signed-in session. The Strikes account detail offers the same in-place priority editor. Single add/edit/clear requires the displayed revision; stale writes return 409 and retain the draft until explicit Reload. Clear and unsaved changes use in-app dialogs. The obsolete PUT /replacements/{tag} route has no callers and is removed; replacement-roster reads require a Strikes view grant. The public bot panel and bulk add behavior are unchanged.
 
 Leave starts when approved and resumes tracking at **00:00 UTC on the selected date**. All currently linked accounts are selected initially; staff can uncheck individual accounts.
 
@@ -468,3 +468,61 @@ The correction has only been rehearsed against an isolated backup database;
 production correction and release are pending. Runtime rollback restores old
 bot/backend/frontend assets, never silently restores the database or reverses
 approved audit removals.
+
+### Replacements redesign verification (October 30, 2026)
+
+The isolated 273-account / 816-strike fixture preserves the strike ledger across
+navigation and draft cancellation. Checks cover 360×800 and 1440×1000, both
+Strikes/Replacements Back directions, clan+tag and tag-only links, multiple open
+clans, remembered filters/scroll, the in-place priority editor, recruit matching,
+44px control targets and 12px minimum control text. The desktop recruit box stays
+beside Top 10. A browser-found unmount scroll overwrite has a regression test.
+The existing compact Strikes detail density check remains in force.
+
+Backend regression coverage includes 48-hour removal/rejoin, authorization,
+malformed filters, paging, unknown weights, stale add/edit/clear and unchanged
+strike history. Six deliberate faults were caught: default one-strike inclusion,
+priority-free Top 10, ignored tag links, lost Back state, native confirmation and
+stale writes. Full suites passed 4,995 backend tests (21 skipped, 162 subtests)
+and 1,046 frontend tests. These fixture checks do not prove live Discord delivery.
+
+With provider weights restored in the review correction, the same fixture
+returned 165,115 bytes before and 9,114 after. Warm in-memory API measurements
+were about 19ms before and 16ms after; these are
+not production latency measurements. The browser reached the new initial view
+in about half a second on this host. The first response contains summary/Top 10
+metadata; expanded clans fetch their own bounded pages. Unknown weight values
+remain available in the ordinary list, but are excluded from recruit matching.
+
+### Replacement review corrections
+
+The list resolves provider weights even without a recruit filter, then applies
+saved overrides; it does not assume strike profiles contain an upstream weight.
+Deep links use exact tags, and Town Hall choices come from available accounts.
+Recruit matching says “Within current filters” and places its live result count
+and best-three cards directly under Match at narrow and wide widths.
+
+After a stale edit, Reload retains the draft and displays the latest saved
+priority/note alongside it. Explicit Save overwrites that visible revision;
+Clear uses that same reloaded revision. Adding an already marked tag shows its
+saved value and requires Edit instead, prefilled with the saved note. It cannot
+silently replace the mark from an empty Add form. These paths use the existing
+storage owner and authorization; no Discord writes or new storage are involved.
+
+Review-correction verification: 4,996 backend tests passed (21 skipped, 162
+subtests), 1,048 frontend tests, type-check/build and the complete layout suite.
+Eight additional faults were killed: profile-only weights, missing revisions
+on add/update/clear, stale edit/clear revisions, missing reloaded note, and
+blanking an existing note. At 360/1440px, the first recruit result is less than
+300px below Match; filters, scroll return, 44px controls, readable labels, no
+horizontal overflow, and the fixture strike ledger remained verified.
+
+### Replacements conflict after another staff member clears a mark
+
+Reload after a revision conflict preserves the local priority/note draft and
+shows `Saved by someone else: Not marked (cleared)` when the saved priority is
+null. It never labels a removed mark as Normal. The existing explicit Save and
+Clear actions still use the reloaded revision; Reload itself does not write.
+The regression simulates the other staff member's clear, the 409 and Reload,
+then verifies the saved-state message and retained draft. Restoring the old
+`|| "normal"` fallback is killed by that regression.
