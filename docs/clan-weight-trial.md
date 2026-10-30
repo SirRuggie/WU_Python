@@ -17,13 +17,22 @@ players. Full input accepts `179000`, `179,000` and `179k`; Loot × storages use
 the same parser. Clear is local until explicit Save. A saved blank means Not
 Available and never revives an older imported value. Popup creation requires a
 signup in the selected season; Find any player still cannot create a never-saved
-random tag. Existing permission boundaries remain in place.
+random tag. Popup and queue weight writes require both roster editing access and
+Clan weights access (or owner); placement-only edits still require roster access
+alone. Roster-only staff see a read-only weight and the Clan weights reference.
+The HTTP route enforces the weight permission before any database mutation.
+Historical non-thousand values remain readable; opening their editor is clean,
+and entering a replacement uses the shared parser without rounding.
 
 Legacy manual and clan values are resolved by timezone-aware saved instant;
 equal instants favor the clan ledger. No legacy rows/events are deleted or
 rewritten. The October 30 read-only backup audit found 42 legacy rows and 350
 clan rows, no missing/naive timestamps, zero overlaps and zero effective-weight
-changes. Repeat this audit from the fresh release backup at activation.
+changes. The season-scope audit of the 19:19Z release backup covered every
+season: one draft season, 155 signups, two publications, zero effective changes;
+there were no archived seasons. Published snapshot rows are not rewritten.
+Repeat both audits from the fresh release backup at activation, and stop if an
+archived or published season changes.
 
 Both edit paths record actor, aware time and source (`Roster` / `Clan weights`)
 in clan history and use the same per-player revision. A conflicting changed
@@ -221,3 +230,28 @@ links persist through history and validated OAuth return paths. Access and CSRF
 checks remain unchanged. Frontend automated tests cover these interactions;
 independent 50-member narrow/wide browser measurements and release evidence are
 separate gates, not implied by a local test or build.
+
+## Linked-weight reader audit — October 30 rework
+
+- Bot replacements: `_manual_weights()` now calls the shared resolver, retaining
+  explicit nulls so Clear overrides the cached upstream value.
+- Dashboard replacements and strikes FWA weights: `source_weights` and
+  `overlay_accounts` use the resolver; the retained manual fallback cannot
+  override a resolved row, including null.
+- Roster, Compare, working exports and publishing input: `_roster_rows` uses
+  resolved values. Published exports read immutable publication accounts.
+- Clan weight saved-player search and XLSX: `ClanWeightStore` resolves reads.
+- Signup carry-forward trigger and recovery migration retain legacy reads solely
+  for initial values/history; they do not override effective display values.
+- `initial_manual_weight` is intentionally the first historical value, not a
+  competing current-weight reader. No legacy records are removed or rewritten.
+
+Rework verification: 4,995 backend tests passed (21 skipped, 162 subtests),
+1,042 frontend tests passed, and TypeScript/build passed. Six mutations were
+killed: oldest wins, popup legacy-only write, popup CAS bypass, bot legacy-only
+read, comparing unchanged values against the linked row rather than the
+resolved value, and bypassing the weight permission. Isolated browser checks
+at 360 and 1440 covered Save/Clear, conflict/explicit Reload, read-only
+roster-only access and closing a historical 151,500 value without a discard
+prompt. Targets are at least 44px and there is no horizontal overflow. This
+is fixture evidence, not live Discord delivery evidence.

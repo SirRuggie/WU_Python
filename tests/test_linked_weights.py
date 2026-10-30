@@ -85,3 +85,33 @@ def test_roster_write_and_clan_write_share_revision_and_keep_legacy(linked):
         ('staff', 'Clan weights'), ('roster-staff', 'Roster'), ('clan-staff', 'Clan weights'),
         ('roster-staff', 'Roster'), ('roster-staff', 'Roster')]
     assert len(store.rows('SELECT * FROM player_weight_events')) == 1
+
+
+def test_bot_reads_popup_save_and_clear_instead_of_legacy(linked, monkeypatch):
+    from extensions.commands import strikes
+    store, _ = linked
+    monkeypatch.setenv('CWL_WEB_DB_PATH', str(store.path))
+    with store.tx() as db:
+        db.execute("INSERT INTO seasons(id,label) VALUES(1,'November')")
+        db.execute("INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall) VALUES(1,'#P2Y','1','main',0,'Player',17)")
+        record(db, '#P2Y', 150000, 1, 'old', recorded_at='2020-01-01T00:00:00Z')
+        ClanWeightStore.save_roster(db, 1, '#P2Y', {'weight': 170000, 'revision': 1}, 'staff')
+    assert strikes._manual_weights() == {'#P2Y': 170000}
+    with store.tx() as db:
+        ClanWeightStore.save_roster(db, 1, '#P2Y', {'weight': None, 'revision': 2}, 'staff')
+    assert strikes._manual_weights() == {'#P2Y': None}
+    assert store.one('SELECT weight FROM player_weights')['weight'] == 150000
+
+
+def test_same_linked_value_is_a_change_when_newer_legacy_wins(linked):
+    from utils.clan_weight_store import WeightConflict
+    store, ledger = linked
+    with store.tx() as db:
+        record(db, '#P2Y', 160000, 1, 'staff', recorded_at='2026-01-02T00:00:00Z')
+        db.execute("UPDATE clan_player_weights SET updated_at='2026-01-01T00:00:00Z'")
+    with pytest.raises(WeightConflict, match='Changed by someone else'):
+        ledger.save_existing('#P2Y', {'weight': 150000, 'revision': 0, 'storages': 5}, 'stale')
+    ledger.save_existing('#P2Y', {'weight': 150000, 'revision': 1, 'storages': 5}, 'staff')
+    assert ledger.for_members(['#P2Y'])['#P2Y']['weight'] == 150000
+    assert ledger.for_members(['#P2Y'])['#P2Y']['revision'] == 2
+    assert len(store.rows('SELECT * FROM clan_player_weight_history')) == 2

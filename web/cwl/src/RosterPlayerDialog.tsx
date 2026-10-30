@@ -51,7 +51,10 @@ const detailsWeightDraft = (account: RosterAccount): Draft =>
     tag: account.tag,
     name: account.player_name,
     town_hall: account.town_hall,
-    weight: account.effective_weight,
+    weight:
+      account.effective_weight !== null && account.effective_weight % 1000 !== 0
+        ? null
+        : account.effective_weight,
     revision: account.weight_revision ?? 0,
     storages: account.weight_storages ?? undefined,
   });
@@ -103,6 +106,8 @@ export default function RosterPlayerDialog({
   ]);
   const rosterPermission = useDashboardPermission("cwl_roster");
   const canRoster = rosterPermission && !archived && !viewOnly;
+  const weightPermission = useDashboardPermission("clan_weights");
+  const canWeight = canRoster && weightPermission;
   const signupPermission = useDashboardPermission("cwl_signups");
   const canSignups = signupPermission && !archived && !viewOnly;
   const reason = archived
@@ -125,17 +130,11 @@ export default function RosterPlayerDialog({
     null,
   );
   const currentHost = clans.find((c) => c.tag === account.assigned_clan_tag);
-  let invalidWeight = false;
-  let parsedWeight: ReturnType<typeof validateDraft> | null = null;
-  try {
-    parsedWeight = validateDraft(weight);
-  } catch {
-    invalidWeight = true;
-  }
   const dirty =
-    invalidWeight ||
-    parsedWeight?.weight !== account.effective_weight ||
-    weight.storages !== detailsWeightDraft(account).storages;
+    canWeight &&
+    JSON.stringify(weight) !== JSON.stringify(detailsWeightDraft(account));
+  const unusualWeight =
+    account.effective_weight !== null && account.effective_weight % 1000 !== 0;
   useUnsavedWork(dirty || busy, onDirty);
   useEffect(() => {
     const previous = baseline.current;
@@ -169,7 +168,7 @@ export default function RosterPlayerDialog({
     }
   }
   async function saveWeight() {
-    if (!canRoster) return;
+    if (!canWeight) return;
     try {
       const value = validateDraft(weight);
       if (
@@ -316,20 +315,34 @@ export default function RosterPlayerDialog({
         {canRoster && !archived && (
           <section aria-label="Weight">
             <h3>Weight</h3>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void saveWeight();
-              }}
-            >
-              <LinkedWeightField
-                value={weight}
-                onChange={setWeight}
-                disabled={busy}
-                name={account.player_name}
-                unchanged={!dirty}
-              />
-            </form>
+            {!canWeight && (
+              <p>
+                {fullWeight(account.effective_weight)} · View only · Clan
+                weights access required
+              </p>
+            )}
+            {unusualWeight && (
+              <p>
+                Saved weight: {fullWeight(account.effective_weight)}. Saved
+                value isn't a whole thousand. Enter a new one to change it.
+              </p>
+            )}
+            {canWeight && (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveWeight();
+                }}
+              >
+                <LinkedWeightField
+                  value={weight}
+                  onChange={setWeight}
+                  disabled={busy}
+                  name={account.player_name}
+                  unchanged={!dirty}
+                />
+              </form>
+            )}
             <ClanWeightSource
               account={account}
               onNavigate={onClanWeights}

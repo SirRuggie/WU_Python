@@ -594,8 +594,11 @@ def _manual_weights():
         return {}
     try:
         with sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=0.2) as db:
-            return {row[0]: row[1] for row in db.execute(
-                'SELECT tag,weight FROM player_weights WHERE weight IS NOT NULL')}
+            from utils.clan_weight_store import effective_weights
+            db.row_factory = sqlite3.Row
+            tags = [row[0] for row in db.execute(
+                'SELECT tag FROM player_weights UNION SELECT tag FROM clan_player_weights')]
+            return {tag: row['weight'] for tag, row in effective_weights(db, tags).items()}
     except (sqlite3.Error, OSError):
         return {}
 

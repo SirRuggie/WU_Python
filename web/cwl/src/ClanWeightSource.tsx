@@ -69,8 +69,9 @@ export default function ClanWeightSource({
                 : "Open Clan weights →"}
           </a>
         </>
-      ) : compact ? null : account?.current_fwa_clan_tag &&
-        !account.clan_weight_managed ? (
+      ) : compact ? (
+        "Also on Clan weights ›"
+      ) : account?.current_fwa_clan_tag && !account.clan_weight_managed ? (
         "Set this FWA player’s weight in Clan weights. Ask a staff member with Clan weights access."
       ) : (
         "Weight comes from Clan weights. Ask a staff member with Clan weights access."

@@ -1244,6 +1244,8 @@ async def update_roster_account(request):
     if not set(body) <= allowed or not (set(body) - {"revision"}):
         _fail(400, "Invalid roster update")
     if "manual_weight" in body:
+        from .clan_weight_trial import authorize
+        authorize(request)
         if type(body.get("weight_revision")) is not int or not 0 <= body["weight_revision"] < 2**63:
             _fail(400, "Expected weight revision")
     elif "weight_revision" in body or "weight_storages" in body:

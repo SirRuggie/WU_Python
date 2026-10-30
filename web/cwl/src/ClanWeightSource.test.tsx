@@ -102,8 +102,6 @@ it.each(["queue", "details"])(
         "Weight comes from Clan weights. Ask a staff member with Clan weights access.",
       );
     else
-      expect(
-        document.querySelector(".linked-weight-field input"),
-      ).not.toBeNull();
+      expect(document.querySelector(".linked-weight-field input")).toBeNull();
   },
 );
