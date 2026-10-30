@@ -25,7 +25,9 @@ export default function ClanWeightSource({
   if (account?.current_fwa_clan_tag)
     params.set("clan", account.current_fwa_clan_tag);
   return (
-    <div className="clan-weight-source">
+    <div
+      className={`clan-weight-source${compact ? " clan-weight-source-compact" : ""}`}
+    >
       {account?.current_fwa_status === "stale" && (
         <span>Last known clan membership. Refresh to check again.</span>
       )}

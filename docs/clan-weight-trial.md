@@ -12,13 +12,28 @@ test copy is created. Writes use the dashboard Store transaction and majority-
 acknowledged Mongo recovery checkpoints. Legacy HTTP paths and internal app keys
 remain compatible with existing clients; they do not select a separate database.
 
-Saved clan weights (including an intentional Not Available) take precedence over
-old manual overrides and external imports in CWL placement and account views.
-Accounts without a saved clan-weight record can still use manual entry or external
-fallback. Staff edit authoritative values in Clan weights; the roster editor
-shows the source and rejects an override for a managed player. Previous manual
-values remain in history. Migration invalidates draft revisions; published roster
-snapshots remain historical until staff publish again.
+The roster popup and Clan weights now edit one linked ledger, including FWA
+players. Full input accepts `179000`, `179,000` and `179k`; Loot × storages uses
+the same parser. Clear is local until explicit Save. A saved blank means Not
+Available and never revives an older imported value. Popup creation requires a
+signup in the selected season; Find any player still cannot create a never-saved
+random tag. Existing permission boundaries remain in place.
+
+Legacy manual and clan values are resolved by timezone-aware saved instant;
+equal instants favor the clan ledger. No legacy rows/events are deleted or
+rewritten. The October 30 read-only backup audit found 41 legacy rows and 350
+clan rows, no missing/naive timestamps, zero overlaps and zero effective-weight
+changes. Repeat this audit from the fresh release backup at activation.
+
+Both edit paths record actor, aware time and source (`Roster` / `Clan weights`)
+in clan history and use the same per-player revision. A conflicting changed
+value gets `Changed by someone else · Reload`; the popup retains typed input
+until explicit Reload and a subsequent Save. Identical-value replay retains the
+existing idempotent no-op behavior. Draft roster invalidation remains shared
+across seasons containing the player; published snapshots remain immutable.
+Placement Undo changes only assignment/lock, never the linked weight. The roster
+revision gate remains mandatory, and prior placement receipts become stale after
+a weight change. Legacy manual rows remain available for code rollback.
 
 Saves recheck that the clan is still in the family and the edited accounts are
 still current members. Per-player revisions reject conflicting edits atomically.
