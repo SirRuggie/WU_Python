@@ -19,17 +19,17 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 
 ## Safety rules (non-negotiable)
 - Never use the production database or live API in development or tests. Use isolated fixture data only (26-, 65- and 125-account fixtures exist). For frontend-only releases, Ruggie separately approved a read-only production DB backup and pre/post count verification as standing release steps (2026-10-29 Codex chat, recorded in `/home/ruggie/wu-handoff/ruggie.md`). This does not authorize application data writes, backend/bot/schema changes or service restarts.
-- Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Deployment paths verified through 2026-10-29:
+- Production serves a `current` symlink → `releases/<commit-sha>/`, outside the workspace (set up in the `fea7e66` deploy). A workspace `npm run build` must never affect production. Deployment paths verified through the October 30 weight-range release:
   - Current symlink: `/home/ruggie/.local/share/wu-dashboard/current`
   - Releases directory: `/home/ruggie/.local/share/wu-dashboard/releases/`
-  - Current strike-tracking-2 frontend: `/home/ruggie/.local/share/wu-dashboard/releases/6a2f8d735d1ee6e5ea912be10d3bba75a143ce09/`; backend and bot use the same revision.
+  - Latest recorded frontend at the October 30 08:30 smoke checkpoint: `back-to-top-1` / `a8031084eed09ee89b8063828d4bc2c5d40cc628`, public hashes verified and Claude read-only smoke 93 passed. Backend remains weight-range `23235ccf2671dfe5675f0bc98d38ab11a011ab09`; bot remains `b517afd46ecfa9cc08488798eba53393ed5b649f`. See [frontend releases](docs/dashboard-frontend-releases.md) for the guarded frontend-only rollback to 23235cc before any older layered rollback.
   - Historical rollback snapshot: `/home/ruggie/.local/share/wu-dashboard/releases/snapshot-20261027T171555Z/`.
-  - Current rollback: follow the [three-layer guarded procedure](docs/dashboard-backend-releases.md#strike-tracking-2--october-30-2026) to restore frontend `4f57d6e73941d3adc3b3223611927081bf794df9`, backend `f95830b5b774ba34b29f4756a1cc9e3747148f1b`, and bot `16cc79e7db39e3aaadf99c99117994b9103a47e8`; never restore the databases for code rollback.
+  - Weight-range rollback restores frontend/backend to `b517afd` with the bot unchanged. Trigger-delete rollback restores all three to `6a2f8d7`. Follow the [guarded manual procedure](docs/dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range); a later frontend release must be rolled back first. Never restore databases for code rollback.
 - Never report "not deployed" (or "deployed") without checking which asset hashes production is actually serving. (On 2026-10-27, a workspace build went live by accident because the old setup served `web/cwl/dist` directly.)
 - Deploy procedure: back up and verify the DB → record live counts per season/pool (signups, assigned, locks, publication version) → build from a clean checkout of a tagged commit into `releases/<sha>/` → atomic symlink switch → read-only smoke test → counts must match exactly. Rollback = point the symlink back at the previous release.
 - Frontend-only unless Ruggie explicitly approves backend, schema, endpoint or policy changes. If a fix seems to need one, stop and ask.
 - No UI path may write signups, assignments, locks, weights or publications without an explicit user action through the existing endpoints and their revision checks.
-- The workspace is shared with a concurrent moderation task. Never format or edit its files (`ChannelCombobox.tsx`, `ModerationSettings.tsx`, `moderationSettingsModel.ts`, and the rest of the moderation work). Run Prettier only on files you changed.
+- The former moderation-file protection is retired: landed via PR #36; retired 2026-10-29 with Ruggie’s approval. The four preserved workspace files were verified byte-identical to origin/main before restoring them to workspace HEAD. Run Prettier only on files you changed.
 
 ## Red-team checklist (every change, before commit; report how each item was verified)
 1. List every changed file; confirm the scope.
@@ -52,9 +52,23 @@ Repo process rules: `.claude/rules/orchestration.md`, `docs/agent-orchestration.
 - When changing a script: return the full updated script.
 - He reviews on his phone; mobile layout matters as much as desktop.
 
-## Strike-tracking release — 2026-10-30
+## Back-to-top release — 2026-10-30
 
-- Current frontend/backend/bot: `strike-tracking-2`, `6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`, PR #61. Claude read-only smoke PASSED; the official bot pass checked 25 clans, and Tracking showed 12 On track / 13 Behind, 0 private / 0 error. Public entry and feature hashes, backend readiness/cwd, protected data and durable backups passed. No historical gap backfill or live test messages. See `docs/strike-system.md` and `docs/dashboard-backend-releases.md` for policy, rollback and Later items.
+- `back-to-top-1`, PR #65/tag `a8031084eed09ee89b8063828d4bc2c5d40cc628`, released frontend only. Claude's read-only 360px smoke 93 passed: hidden at the top, visible after three viewports down and 200px up, 139×44 target, tap returns to zero and focuses Build roster. Backend PID 2951316 and bot PID 2920748/invocations stayed unchanged.
+- 924 frontend tests, TypeScript/build and isolated layout passed; review 91 confirmed three required and five extra mutations killed. Public entry/roster hashes, verified backup, protected digest and guarded rollback are in [frontend releases](docs/dashboard-frontend-releases.md).
+- Later from review 91: hide the button during the undo toast (about 12px overlap); confirm real-phone toolbar resize behavior that can require extra upward travel; add workspace-level bar-height and open-panel hide-gate tests. These remain open after the passing smoke.
+
+## Trigger-delete and weight-range releases — 2026-10-30
+
+- `trigger-delete-1`, PR #63/tag at `b517afd46ecfa9cc08488798eba53393ed5b649f`, released frontend/backend/bot. Plain and recipient trigger messages are deleted only after a successful reply when the new default-on option is enabled. Delete failures remain visible and later success clears the warning. Claude smoke 90 passed; Codex and Claude did not post a live trigger. Ruggie's own Discord test is separate.
+- `weight-range-1`, PR #64/tag at `23235ccf2671dfe5675f0bc98d38ab11a011ab09`, released frontend/backend; bot stayed at b517afd, PID 2920748 with unchanged invocation. Inclusive range bounds, descending-weight Compare and capped quick picks passed Claude's read-only 360px smoke 92, including Jujupon 179k inside Lazy.128's 172–179 range.
+- Tagged checks: trigger-delete 4,839 backend / 21 skipped / 133 subtests and 908 frontend; weight-range 4,844 backend / 21 skipped / 153 subtests and 914 frontend. TypeScript/build passed for both. Verified backups, public entry/feature hashes and protected-state comparisons are in [backend releases](docs/dashboard-backend-releases.md#weight-range-1--october-30-2026).
+- Tooling limits are recorded there: nested-asset staging fallback; trigger-delete first rolled back after a wrong journal window, then passed with InvocationID-scoped checks; weight-range's owning-bundle verifier corrected nonexistent standalone chunk assumptions. Preserve routing/storage drop-ins and all data during rollback.
+- Later: prompt 31 fixes the pre-existing command pattern hyphen under browser `v` regex semantics. Prompt 32 cleanup retains the unreachable Max-50 branch, stale selection documentation and first-only shared-boundary note as review items. The zero-unlocked selection correction is carried by the separate accepted back-to-top change.
+
+## Strike-tracking release — 2026-10-30 (historical)
+
+- At that release, frontend/backend/bot were `strike-tracking-2`, `6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`, PR #61. Claude read-only smoke PASSED; the official bot pass checked 25 clans, and Tracking showed 12 On track / 13 Behind, 0 private / 0 error. Public entry and feature hashes, backend readiness/cwd, protected data and durable backups passed. No historical gap backfill or live test messages. See `docs/strike-system.md` and `docs/dashboard-backend-releases.md` for policy, rollback and Later items.
 
 ## Weight totals release — 2026-10-29
 

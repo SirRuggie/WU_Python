@@ -107,3 +107,67 @@ selection, ID lookup, and explicit Save. Desktop and 320/390px mobile inspection
 checked readable controls, visible focus, results, and no horizontal overflow.
 These checks do not establish live Discord delivery or full screen-reader support.
 No production settings, live messages, or served dashboard assets were changed.
+
+## Layered routing and log cards — October 29, 2026 (development)
+
+This batch is **not deployed**. The earlier release evidence above remains
+historical; it does not verify the new routing model, card format, or test-send
+endpoint in production. A backend and bot release, with separate frontend asset
+verification, will require direct approval and release checks.
+
+The four supported events remain Join, Leave, Kick, and Ban. Settings schema 2
+adds one main destination, Members and Moderation category destinations, and an
+optional destination for each event. An event uses its own destination when set,
+otherwise its category destination, otherwise Main. Turning a category Off stops
+its Discord posts even when an event has an override; disabling one event stops
+only that event's posts. History capture and its name/ID, type, date filters and
+expandable Details stay available when posting is off. Kick and ban history cards
+show the known moderator and reason inline. Unavailable actor, reason, role,
+join-date, account-date, and member-count data remain visibly unknown or use the
+specific fallback text; they are not inferred from unrelated actions. Existing
+default Join/Leave posting remains unchanged.
+
+Legacy settings are normalized **on read**, with their four event destinations
+preserved as event overrides, Main unset, categories inheriting Main, and the
+revision preserved. A read does not rewrite Mongo. Only an explicit Save changes
+persists schema 2 through the existing revision compare-and-swap check. A dry-run
+against a backup copy contained 22 rows and one settings row; all four effective
+enabled/destination values and the revision matched before and after
+normalization, unrelated rows were untouched, and the dry-run made zero writes.
+This is backup-copy evidence, not a live migration. Before an approved backend
+release, recheck the backup, row counts, parity, and rollback readiness against
+the actual release candidate.
+
+The bot and dashboard preview share the same card builders. Text-channel messages
+and replies to existing forum posts use Components V2: an event accent, avatar
+thumbnail/name, event title and details, separator, member-count/ID/time footer,
+and one Discord profile link button. `allowed_mentions` suppresses pings. A new
+forum post retains the compact embed starter and link button because Discord's
+forum thread-create payload does not accept the Components V2 flag; its preview
+uses that same forum starter payload. External identity, role, and reason text is
+escaped. Receipt, duplicate-claim, and uncertain-delivery behavior still permit
+only one send attempt; no second format or automatic retry follows an ambiguous
+Discord response. These checks use simulated transport and do not establish live
+Discord rendering or delivery.
+
+The explicit **Send test** action uses saved settings only. The dashboard disables
+it for an unsaved draft and confirms the saved effective destination before one
+POST with the event and revision. The backend rechecks staff write access, CSRF,
+revision, destination ownership and posting permissions, then reserves an atomic
+per-event 10-second rate slot. Rate and audit records live in the separate
+`settings.member_event_test_audit` collection; sample sends never enter member
+history or delivery receipts. A known superseded revision is rejected before
+the Discord POST. If Discord acceptance or audit completion is uncertain, the UI
+asks staff to check Discord before trying again and never retries automatically.
+A save in the narrow interval after the final revision read and before the POST
+could still send a sample to the previously confirmed destination; there is no
+cross-service transaction covering Mongo and Discord.
+
+Development evidence so far: focused backend/card/transport/routing tests passed
+(87 tests and 16 subtests), independent focused review passed (53 tests and 16
+subtests), and the frontend passed 909 tests plus TypeScript and production build.
+The backup-copy parity report and four targeted mutation results are in
+`/tmp/wu-moderation-logs-qa`. The integrated full backend suite and browser
+layout checks were still in progress when this section was written; their final
+results belong in the release review. No live Discord test, production database
+write, service restart, or deployment was performed for this batch.

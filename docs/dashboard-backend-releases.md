@@ -1,11 +1,145 @@
 # Dashboard backend releases
 
+## Weight-range-1 — October 30, 2026
+
+PR [#64](https://github.com/SirRuggie/WU_Python/pull/64), tag `weight-range-1`,
+released frontend and backend `23235ccf2671dfe5675f0bc98d38ab11a011ab09`.
+The bot stayed at `b517afd46ecfa9cc08488798eba53393ed5b649f`, PID 2920748,
+with the same invocation and no restart. Backend PID 2951316 ran from the
+matching isolated archive; readiness reached two consecutive config 200s after
+six attempts, and its current-invocation journal was clean. Anonymous commands
+returned 401. These are release-time observations, not a promise that later
+frontend releases use the same revision.
+
+The index and 36 selected public assets matched the manifest, including the
+owning RosterWorkspace JS/CSS chunks. Entry `index-BKbAuOsh.js` SHA-256:
+`35683c3f84401a77d6ecf60031a9c33bb25ef25111809ba19c1161073ade1f5e`.
+Tagged checks passed: 4,844 backend tests, 21 skipped, 153 subtests; 914 frontend
+tests; TypeScript/build. Fourteen accepted mutations were killed. Claude's
+read-only 360px smoke (handoff 92) confirmed quick picks, descending-weight
+Compare, and Jujupon at 179k inside Lazy.128's 172–179 range. No assignment,
+lock, publication or live Discord test writes were performed.
+
+Durable backup: `.local/weight-range-1-backup-20261030T114234Z/dashboard.sqlite3`
+under the repository, 1,282,048 bytes, SHA-256
+`732fd66b55a776c1b0a61c84157b3038a8c923575b7b4b1754185f1c0bbe7b98`.
+Integrity and all 58 table counts passed; protected pre/post digest remained
+`34449fa23beafcae682188bf3d7cfddaf47b12a455f10d433119288a004cc4f7`.
+Evidence: `/tmp/wu-weight-range-release/{live.json,preflight.json,activation.log,independent-review.md}`
+and the durable backup's `verification.json`/`before.json`.
+
+The scratch verifier initially required standalone Compare/ClanSettings assets,
+although both live in RosterWorkspace. It was corrected to check the owning
+bundle; independent mocked missing/corrupt-bundle checks passed before actual
+public verification. The installed staging helper still failed on nested tour
+assets; a reviewed recursive finalizer completed staging without editing the
+installed helper. Rollback restores **frontend and backend to b517afd only**;
+the bot remains unchanged. Use the guarded manual procedure below.
+
+## Trigger-delete-1 — October 30, 2026
+
+PR [#63](https://github.com/SirRuggie/WU_Python/pull/63), tag `trigger-delete-1`,
+released frontend, backend and bot at
+`b517afd46ecfa9cc08488798eba53393ed5b649f` after direct user approval.
+Backend PID 2920362 ran from the isolated archive; config returned two consecutive
+200s after six attempts. Bot PID 2920748 was on clean `main`, with startup and
+gateway readiness confirmed. Both current-invocation journals were clean;
+anonymous commands returned 401. Public entry `index-LzSl5cD4.js` SHA-256 was
+`693fe2b517b88b25c51ce8681d588bed46b33e54784b9c070cbd53868b5af392`;
+TextCommands-2Qkug76B.js was
+`900a2f44f333b8cd28975af5ada128e3768abbebf2bc6e69a13056536b8e8d5e`.
+Checked entry/feature assets matched the release manifest.
+
+Tagged checks passed: 4,839 backend tests, 21 skipped, 133 subtests; 908 frontend
+tests; TypeScript/build. Claude's read-only smoke (handoff 90) confirmed the
+checked Delete the trigger message control for `!lazy`, runtime revisions and
+clean journal. Codex and Claude sent no live trigger; Ruggie's own `!lazy` test
+remains separate from this evidence.
+
+Durable backup: `.local/trigger-delete-1-backup-20261030T111258Z/dashboard.sqlite3`,
+1,282,048 bytes, SHA-256
+`911b4ef0774226df384deffda42e43203db53afd788a5c19d521e5e9aa8dd9c0`.
+Integrity and all 58 table counts matched. Protected signups/assigned/locks
+were Main 26/22/22 and Lazy 126/117/101; publication remained version 1 withdrawn.
+Pre/post digest stayed
+`5b32f1132ecf3aced3b37fba18504e4861299d1262e6525f224b45c327dd8e16`.
+Ten Mongo collections were verified; command definitions/history were 3/10 and
+strike_records 7,722. Protected definitions, history and policy were unchanged.
+Evidence: `/tmp/wu-trigger-delete-release/{live.json,runtime-proof.json,baseline.json,activation.log}`
+and `attempt-1/`; durable backup verification accompanies the database.
+
+The first activation was rolled back across all three code layers because the
+verifier included a prior bot shutdown cancellation in its journal window.
+Readiness was corrected to the new systemd InvocationID, with three focused
+checks; the retry passed. An import-module typo was also corrected, and 199
+generated pyc files were removed only from the inactive new archive before
+exact-archive verification. Nested assets required the same reviewed recursive
+staging fallback. These tooling errors are not hidden as a first-pass success.
+
+### Guarded manual rollback for trigger-delete and weight-range
+
+Run only with rollback authorization. This procedure uses permanent artifacts,
+not `/tmp` coordinators. It refuses unexpected frontend/backend/bot revisions;
+if a later frontend release is active, roll that release back through its own
+procedure first. Preserve all database changes and retained assets. Never
+restore SQLite or Mongo for a code rollback.
+
+Choose **one** release in the same shell, then run the common guarded block:
+
+```bash
+# Weight-range: frontend/backend rollback; bot stays b517afd.
+release_sha=23235ccf2671dfe5675f0bc98d38ab11a011ab09
+rollback_sha=b517afd46ecfa9cc08488798eba53393ed5b649f
+rollback_bot=no
+```
+
+```bash
+# Trigger-delete: all three code layers roll back to strike-tracking-2.
+release_sha=b517afd46ecfa9cc08488798eba53393ed5b649f
+rollback_sha=6a2f8d735d1ee6e5ea912be10d3bba75a143ce09
+rollback_bot=yes
+```
+
+```bash
+(
+set -eu
+release_root=/home/ruggie/.local/share/wu-dashboard
+test "$(readlink -f "$release_root/current")" = "$release_root/releases/$release_sha"
+test "$(systemctl --user show wu-cwl-demo-web.service -p WorkingDirectory --value)" = "$release_root/backend/$release_sha"
+test "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot rev-parse HEAD)" = b517afd46ecfa9cc08488798eba53393ed5b649f
+test "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot branch --show-current)" = main
+test -z "$(sudo -n -u botrunner git -C /home/botrunner/wu-bot status --porcelain)"
+test -d "$release_root/releases/$rollback_sha"
+test -d "$release_root/backend/$rollback_sha"
+dropin_dir=/home/ruggie/.config/systemd/user/wu-cwl-demo-web.service.d
+preserved_before=$(find "$dropin_dir" -maxdepth 1 -name '*.conf' ! -name release.conf -type f -exec sha256sum {} + | sort)
+"$release_root/switch-release.py" "$rollback_sha"
+printf '[Service]\nWorkingDirectory=%s/backend/%s\n' "$release_root" "$rollback_sha" > "$dropin_dir/release.conf"
+test "$preserved_before" = "$(find "$dropin_dir" -maxdepth 1 -name '*.conf' ! -name release.conf -type f -exec sha256sum {} + | sort)"
+systemctl --user daemon-reload
+systemctl --user restart wu-cwl-demo-web.service
+if [ "$rollback_bot" = yes ]; then
+  sudo -n -u botrunner git -C /home/botrunner/wu-bot reset --hard "$rollback_sha"
+  sudo -n systemctl restart wu-bot.service
+fi
+)
+```
+
+Keep `frontend-routing.conf` and `storage-guard.conf` unchanged; do not remove
+`release.conf` or restart from the workspace. Afterward verify two consecutive
+public `/api/cwl/config` 200s, anonymous commands 401, actual `/proc/<PID>/cwd`,
+and current-invocation journals. Check bot startup/gateway readiness if restarted;
+otherwise verify its PID and InvocationID are unchanged. Fetch the public index
+and its entry/affected feature assets and compare bytes/hashes with the retained
+target release, not just the symlink. Recheck protected data against the rollback
+preflight snapshot; stop and investigate discrepancies without restoring data.
+
 ## Strike-tracking-2 — October 30, 2026
 
 `strike-tracking-2` (`6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`, PR #61)
-is the current frontend, isolated backend, and bot revision. The backend runs
+was the frontend, isolated backend, and bot revision at that release. The backend ran
 from `backend/6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`; the frontend
-`current` symlink points to the matching release, and the bot is at the same
+`current` symlink pointed to the matching release, and the bot was at the same
 clean main SHA. The old frontend/backend/bot rollback targets are respectively
 `4f57d6e73941d3adc3b3223611927081bf794df9`,
 `f95830b5b774ba34b29f4756a1cc9e3747148f1b`, and
@@ -75,8 +209,8 @@ Since the Clan settings deployment on 2026-10-27 (2026-10-28 UTC), `wu-cwl-demo-
 
 ## Layout and invariants
 
-- Current release: `/home/ruggie/.local/share/wu-dashboard/backend/6a2f8d735d1ee6e5ea912be10d3bba75a143ce09/`, tag `strike-tracking-2`.
-- Current rollback backend: `/home/ruggie/.local/share/wu-dashboard/backend/f95830b5b774ba34b29f4756a1cc9e3747148f1b/`; paired frontend and bot targets are listed above.
+- Latest backend recorded here: `/home/ruggie/.local/share/wu-dashboard/backend/23235ccf2671dfe5675f0bc98d38ab11a011ab09/`, tag `weight-range-1`; bot remains `b517afd46ecfa9cc08488798eba53393ed5b649f`.
+- Its rollback backend is `/home/ruggie/.local/share/wu-dashboard/backend/b517afd46ecfa9cc08488798eba53393ed5b649f/`; paired frontend and bot rules are listed above.
 - Both are clean `git archive` exports. Current release imports were verified from the isolated directory using the existing virtualenv.
 - Interpreter remains `/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python`; do not replace shared dependencies during an application release.
 - Environment files remain at their absolute existing paths: workspace `.local/cwl-web.env` and `/home/ruggie/.local/share/wu-dashboard/frontend-routing.env`. The database path is absolute; routing sets `CWL_WEB_STATIC_DIR=/home/ruggie/.local/share/wu-dashboard/current`.
@@ -99,9 +233,10 @@ Prove `/proc/<MainPID>/cwd`, active service and clean restart journal. Verify pu
 
 Triggers include startup/journal failure, wrong cwd or public hashes, failed smoke, or protected-data mismatch. Do not overwrite data to resolve a count mismatch; investigate legitimate concurrent edits separately.
 
-Use the current three-layer rollback commands in
-[Strike-tracking-2](#strike-tracking-2--october-30-2026); older release-specific
-targets below remain historical.
+Use the [guarded release-specific commands](#guarded-manual-rollback-for-trigger-delete-and-weight-range)
+for weight-range or trigger-delete, after rolling back any later frontend-only
+release. Strike-tracking-2 and older targets remain historical; do not apply
+them directly to an unexpected newer runtime.
 
 Re-check service health, cwd, public hashes, protected counts and rules after rollback. A full rollback switches both code layers, not just the frontend. Existing tabs need a reload.
 

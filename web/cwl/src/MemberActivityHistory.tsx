@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError } from './api'
 import './MemberActivityHistory.css'
+import { eventTypes } from './moderationSettingsModel'
 
 type MemberEvent = {
   id: string
@@ -235,6 +236,8 @@ export default function MemberActivityHistory({ active = true }: { active?: bool
               const name = item.display_name?.trim() || item.username?.trim() || 'Unknown member'
               const username = item.username?.trim()
               const eventLabel = { join: 'Joined', leave: 'Left', kick: 'Kicked', ban: 'Banned' }[item.event_type]
+              const eventIcon = eventTypes.find(event => event.key === item.event_type)?.icon || '●'
+              const isModeration = item.event_type === 'kick' || item.event_type === 'ban'
               const deliveryText = item.delivery_status
                 ? deliveryLabels[item.delivery_status] || ''
                 : ''
@@ -252,9 +255,15 @@ export default function MemberActivityHistory({ active = true }: { active?: bool
                     </div>
                   </div>
                   <span className={`member-activity-kind ${item.event_type}`}>
-                    <span aria-hidden="true">●</span>
+                    <span aria-hidden="true">{eventIcon}</span>
                     {eventLabel}
                   </span>
+                  {isModeration && (
+                    <p className="member-activity-moderation">
+                      by {item.moderator_id ? `@${item.moderator_id}` : 'an unknown moderator'}
+                      {' · '}“{item.reason?.trim() || 'No reason given'}”
+                    </p>
+                  )}
                   <div className="member-activity-meta">
                     <time className="member-activity-date" dateTime={item.occurred_at}>
                       {formatDate(item.occurred_at)}

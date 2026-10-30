@@ -1,0 +1,36 @@
+.roster-workspace .roster-back-to-top {
+  position: fixed;
+  z-index: 34;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid #d8b65a;
+  border-radius: 999px;
+  background: #23232a;
+  color: #f6df9b;
+  box-shadow: 0 4px 16px #0006;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.roster-workspace .roster-back-to-top:focus-visible {
+  border-color: transparent;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.roster-back-to-top-spacer {
+  height: calc(76px + env(safe-area-inset-bottom));
+  flex: none;
+}
+
+@media (min-width: 801px) {
+  .roster-workspace .roster-back-to-top,
+  .roster-back-to-top-spacer {
+    display: none;
+  }
+}

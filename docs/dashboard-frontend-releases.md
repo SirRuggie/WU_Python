@@ -1,15 +1,90 @@
 # Dashboard frontend releases
 
-Current frontend: `strike-tracking-2`
-(`6a2f8d735d1ee6e5ea912be10d3bba75a143ce09`, PR #61), paired with the
-matching isolated backend and bot. Claude's read-only smoke passed; public
-`index-CEDGmeqX.js` SHA-256 was
-`8d11c9f20cfd22fa5946f7b682fdcc62e15d0da9abf0529ff9ce50aae41968de`.
-Frontend rollback target: `4f57d6e73941d3adc3b3223611927081bf794df9`.
-Use the [three-layer rollback procedure](dashboard-backend-releases.md#strike-tracking-2--october-30-2026)
-for this release; switching only the frontend does not roll back its backend or
-bot changes. The installed staging helper still needs a nested-asset fix;
-this release used a reviewed scratch helper without changing the installed one.
+## Back-to-top-1 — October 30, 2026
+
+Frontend at the 08:30 smoke checkpoint: `back-to-top-1`, PR #65,
+`a8031084eed09ee89b8063828d4bc2c5d40cc628`, activated after the releases below.
+Public `index-zCmtmF3Z.js` SHA-256
+`9f28a7a1b9aebbe14da09d48a5b2f94f3ee42ea9b7b5668da11929d4b774b5a0`
+matched in `/tmp/wu-back-to-top-release/live.json`. Claude's read-only smoke 93
+passed at 360px: hidden at the top; after three viewports down and 200px up,
+shown at (205, 740), 139×44px; tap returns to scrollY 0 and focuses Build roster.
+Backend stayed `23235cc`, PID 2951316; bot stayed `b517afd`, PID 2920748;
+both invocation IDs and routing/storage drop-in hashes were unchanged, with no restart.
+
+The clean tagged frontend passed 924 tests, TypeScript/build and isolated layout.
+Review 91 accepted the visibility/focus/accessibility and zero-unlocked-selection
+carry-in, with three required plus five extra mutations killed. Fixture checks
+covered 360×800 and 1440×1000; the selected-state button cleared the action bar
+by 20px. This is not a physical-phone or full assistive-technology audit.
+
+Release evidence (`/tmp/wu-back-to-top-release/preflight.json`, `live.json`,
+`backup.log`):
+
+- Staged 120 files from the tagged checkout. Public index SHA-256:
+  `884abc0df5506c94094e8c5c30c4b290f106a05654cbe7644396bbff052d1a41`.
+- Roster JS `RosterWorkspace-Dr5JK0D6.js` SHA-256:
+  `19a5063fa9889851cd73e2ef21b9059f75ff5e868c0b3a08ad661ce978c8225d`;
+  CSS `RosterWorkspace-CGlA1JPS.css`:
+  `9046fde769de0f45920e696abcbba7fcf992bae30dd2fad54500ddab05fa7d7b`.
+- Backup `.local/back-to-top-1-backup-20261030T115115Z/dashboard.sqlite3`:
+  1,282,048 bytes, integrity `ok`, SHA-256
+  `dcf9918a850372991ab21a3ff839f1356569be82c94a63c60f9b508cab76a8a1`.
+  Protected digest stayed
+  `34449fa23beafcae682188bf3d7cfddaf47b12a455f10d433119288a004cc4f7`.
+- Config readiness returned 200; anonymous commands read returned 401.
+
+Later from review 91: hide the button while the undo toast is visible (about
+12px overlap); check real-phone toolbar resize/upward-travel behavior; add
+workspace-level bar-height and open-panel hide-gate tests. Smoke 93 does not
+close these items.
+
+Frontend-only rollback, only when authorized and still at this release boundary:
+verify served hashes first and run this guarded command. A later release needs
+its own rollback decision; do not bypass the guard.
+
+```bash
+set -euo pipefail
+release_root=/home/ruggie/.local/share/wu-dashboard
+test "$(readlink -f "$release_root/current")" = "$release_root/releases/a8031084eed09ee89b8063828d4bc2c5d40cc628"
+test -d "$release_root/releases/23235ccf2671dfe5675f0bc98d38ab11a011ab09"
+test "$(systemctl --user show -p WorkingDirectory --value wu-cwl-demo-web.service)" = "$release_root/backend/23235ccf2671dfe5675f0bc98d38ab11a011ab09"
+test "$(git -C /home/botrunner/wu-bot rev-parse HEAD)" = b517afd46ecfa9cc08488798eba53393ed5b649f
+/home/ruggie/.local/share/wu-dashboard/switch-release.py 23235ccf2671dfe5675f0bc98d38ab11a011ab09
+```
+
+Verify public hashes afterward against the weight-range manifest: entry
+`index-BKbAuOsh.js`, SHA-256
+`35683c3f84401a77d6ecf60031a9c33bb25ef25111809ba19c1161073ade1f5e`.
+This restores the weight-range frontend without changing backend, bot or data.
+Retain both immutable release directories and shared assets. Do not restore a
+database or restart services for this frontend rollback.
+
+## October 30 release records
+
+These entries describe the verified release boundaries. A later frontend-only
+release can advance the frontend independently of backend and bot; verify the
+served hashes before acting on a rollback target.
+
+| Release | Frontend/backend revision | Bot | Read-only smoke |
+| --- | --- | --- | --- |
+| `trigger-delete-1`, [PR #63](https://github.com/SirRuggie/WU_Python/pull/63) | `b517afd46ecfa9cc08488798eba53393ed5b649f` | Same revision, restarted | Passed, Claude handoff 90 |
+| `weight-range-1`, [PR #64](https://github.com/SirRuggie/WU_Python/pull/64) | `23235ccf2671dfe5675f0bc98d38ab11a011ab09` | Stayed at `b517afd`, no restart | Passed, Claude handoff 92 |
+
+Trigger-delete public entry `index-LzSl5cD4.js` SHA-256:
+`693fe2b517b88b25c51ce8681d588bed46b33e54784b9c070cbd53868b5af392`.
+Weight-range entry `index-BKbAuOsh.js` SHA-256:
+`35683c3f84401a77d6ecf60031a9c33bb25ef25111809ba19c1161073ade1f5e`.
+Weight-range verified the index and 36 selected assets, including owning
+RosterWorkspace chunks rather than nonexistent standalone Compare/ClanSettings
+chunks. Public hashes, backups, protected-state evidence, tooling corrections
+and [guarded manual rollback commands](dashboard-backend-releases.md#guarded-manual-rollback-for-trigger-delete-and-weight-range)
+are recorded with the backend releases.
+
+Trigger-delete rolls all three code layers back to `6a2f8d7`; weight-range rolls
+frontend/backend back to `b517afd`, leaving the bot alone. Never restore data.
+The installed staging helper's nested-assets defect remains: both releases used
+a reviewed recursive finalizer after the build, without modifying that helper.
 
 Production frontend serving is separate from the workspace as of 2026-10-27.
 

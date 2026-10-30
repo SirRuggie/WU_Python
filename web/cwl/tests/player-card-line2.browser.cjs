@@ -39,6 +39,7 @@ assert(Number.isInteger(port) && port >= 8900 && port <= 8999);
         .getByRole("button", { name: "Open local test session" })
         .click();
       await page.locator(".roster-player-card").first().waitFor();
+      if (width === 360) await require("./back-to-top.browser.cjs")(page);
       if (width === 360 || width === 1440) {
         const attentionLines = page.locator(".signup-activity-line");
         await attentionLines.first().waitFor();

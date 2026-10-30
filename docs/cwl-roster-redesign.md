@@ -2,7 +2,29 @@
 
 Staff-facing CWL roster page (Roster → Accounts & signups). Staff assign signed-up Clash of Clans accounts to hosting clans in two pools (Main CWL, Lazy CWL), balance the clans by count and weight, manage signups, and publish from the Finalize roster tab. Placements are a private draft until published. Signup changes save immediately and members can see them.
 
-## Status (2026-10-29)
+## Back to top and empty quick selection — October 30 release
+
+`back-to-top-1`, PR #65/tag `a8031084eed09ee89b8063828d4bc2c5d40cc628`, released frontend only. Claude read-only smoke 93 passed at 360px: hidden at the top, shown after three viewports down and 200px up at (205, 740), 139×44px; tapping returned to scrollY 0 and focused Build roster. Backend `23235cc` and bot `b517afd` were unchanged, with no restart. See [release evidence and guarded rollback](dashboard-frontend-releases.md).
+
+Prompt 28 adds a view-only `↑ Back to top` button only to Build roster → Accounts & signups on phones (≤800px). Reveal requires more than two viewport heights of scroll and 40px of upward travel, with an 80ms debounce. Downward travel hides it; reaching one viewport from the top hides it immediately. The stationary lower-right pill stays above the measured selection action bar, and bottom spacing keeps the final account's actions reachable. Details, dialogs and local panels suppress it; other roster tabs and desktop do not render it.
+
+An explicit tap focuses Build roster without an incidental focus scroll and scrolls to zero smoothly, or instantly for reduced motion. Filters, selection, tab, URL and persistent data stay unchanged. The native button has an accessible label, visible keyboard focus, a 44px minimum target, gold text/boundary contrast and safe-area spacing.
+
+The authorized prompt 32 follow-up preserves the current selection when Select 15 or Select 30 finds zero unlocked matches, including selections hidden by filters, and displays `Only 0 unlocked accounts match`. Nonempty quick selections retain their existing replacement behavior and order; save and permission contracts are unchanged.
+
+Validation scope: 924 frontend tests, TypeScript/build and isolated layout passed. Focused component tests cover scroll thresholds, hysteresis, pending callbacks, desktop resizing, panel/dialog gating, bar offsets, focus and reduced motion. Workspace tests cover tab gating and preserving an existing selection when both quick-select controls encounter only locked matches. Fixture browser checks at 360×800 and 1440×1000 cover offsets, last-card hit testing and overflow; review 91 confirmed three required and five extra mutations killed, and measured 20px selection-bar clearance. These checks do not constitute a full assistive-technology or real-phone audit.
+
+Later from review 91: hide Back to top while an undo toast is visible (about 12px overlap); confirm on a real phone whether browser-toolbar resize requires extra upward travel; add workspace-level vitest coverage for bar-height and open-panel hide gates. Passing smoke does not close these items.
+
+## Weight-range release status — October 30, 2026
+
+`weight-range-1`, PR #64/tag `23235ccf2671dfe5675f0bc98d38ab11a011ab09`, released frontend and backend with the bot unchanged at `b517afd`. Both range endpoints are inclusive (Ruggie, October 30), while validation still requires minimum < maximum. Compare defaults to Weight: high to low; Select 15/30 skips locked accounts in visible order and the selection cap blocks the 51st account. Claude's read-only 360px smoke (handoff 92) confirmed Jujupon at 179k no longer showed Outside weight range for Lazy.128's 172–179 range, quick picks were visible, and Compare used the new default.
+
+Tagged checks passed: 4,844 backend tests / 21 skipped / 153 subtests, 914 frontend tests and TypeScript/build; fourteen accepted mutations were killed. Protected pre/post data matched; no assignments or locks were written by the evaluation change. Public hash/backup evidence and frontend/backend-only rollback to b517afd are in [backend releases](dashboard-backend-releases.md#weight-range-1--october-30-2026). Later frontend releases are recorded independently.
+
+Later from review 87: remove the now-unreachable Max-50 action branch and reconcile older select-all/Max-50 prose; the shared-boundary `find` reports only one matching note when several boundaries overlap. The zero-unlocked selection-preservation correction belongs to the separate accepted back-to-top change, not the weight-range release.
+
+## Earlier status (2026-10-29)
 
 `weight-totals-1` released at `4f57d6e73941d3adc3b3223611927081bf794df9` (PR #59), frontend only. Assign and Balance now show totals of known effective weights; Avg TH remains. Empty clans say `Total: no weights yet`, and the duplicate Fill spot / Signup Details dirty dialog is fixed. 901 frontend tests, TypeScript/build and full isolated layout passed. Public `index-5dIAUgQj.js` SHA256 `b3f78cd7daba401cd67513e69fced2d6bf989e8a0b44b9e7f840d28a742d5c12` matched; backend `f95830b`/PID 2249061 stayed unchanged without restart. Backup integrity and counts matched (Main 22/18/18, Lazy 118/89/71); frontend rollback is `8c7b5a8c29c6dab65801879cf20226f94e7efc7c`. Claude's read-only owner 360px smoke PASSED (handoff 65): Assign current total 2,652k and no-weights state, Balance totals and no overflow; GETs only, no console errors. Detailed evidence is in CLAUDE.md.
 
@@ -560,6 +582,6 @@ Missing weights has one `Enter weights as: Loot | Full` control above the queue,
 
 Ruggie decided that a clan weight is always a total. Assign current/projected and Balance current/preview display the sum of known effective weights, grouped in `k` (for example `4,512.5k`); no known weights displays `Total: no weights yet`. Keep the weighed-count hint when the total is partial and retain `Avg TH`, which measures Town Hall level rather than weight. Balance math, sorting, ties, API payloads and save behavior are unchanged. The frontend-only release also fixed the second `playerDirty` dialog after roster Discard on Fill spot / Signup Details. Claude accepted the fixture review (handoff 63) and the read-only owner 360px release smoke passed (handoff 65).
 
-## Weight range and quick selection — prompt 32 (implementation, not released)
+## Weight range and quick selection — prompt 32 (released October 30)
 
-Both endpoints of a configured range are inclusive throughout status, impact, eligibility and automatic planning. Wording uses “Range: 172k–179k” and “Includes 172k to 179k.” No assignments or locks are changed by evaluation. Compare defaults to descending weight; quick picks and the selection cap follow the updated contracts above. Frontend and backend release are required after review.
+Both endpoints of a configured range are inclusive throughout status, impact, eligibility and automatic planning. Wording uses “Range: 172k–179k” and “Includes 172k to 179k.” No assignments or locks are changed by evaluation. Compare defaults to descending weight; quick picks and the selection cap follow the updated contracts above. Frontend/backend release and read-only smoke passed as recorded in the October 30 status above.
