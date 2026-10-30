@@ -241,3 +241,16 @@ isolated moderation fixture. It follows the legacy URL through the local test
 session, verifies the canonical Moderation URL at 360×800 and 1440×1000, supplies
 an empty-channel settings response without saving it, and checks for overflow
 and browser errors. The category switch wraps its status at narrow widths.
+
+
+### Moderation history identity read cache
+
+Only GET history and GET event avatar share Discord identity results for 30 seconds,
+keyed by signed-in user, bounded to 128 LRU entries. Concurrent reads share one
+in-flight fetch; failures are not cached. A cancelled reader does not cancel the
+shared fetch; logout removes the user's entry, including an in-flight one.
+Authorization and current dashboard grants are checked for every request. Discord
+role/ownership changes can take up to 30 seconds to affect these two read endpoints.
+Every write and all other endpoints obtain fresh Discord identity. Mongo pooling,
+confirmed-missing-avatar caching and zero automatic image retries remain unchanged.
+The historical production 503 cause is still an inference, not proven.

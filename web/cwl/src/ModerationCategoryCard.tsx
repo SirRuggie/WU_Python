@@ -155,6 +155,7 @@ export default function ModerationCategoryCard({
             busy ||
             dirty ||
             !value.enabled ||
+            !effective.target?.channel_id ||
             effective.source === "off" ||
             hasInvalidEventDestination(saved, event.key, channels) ||
             !inventoryAvailable;
@@ -217,12 +218,21 @@ export default function ModerationCategoryCard({
                   <button
                     type="button"
                     disabled={testDisabled}
-                    title={dirty ? "Save changes first" : undefined}
+                    title={
+                      !effective.target?.channel_id
+                        ? "Choose a channel first"
+                        : dirty
+                          ? "Save changes first"
+                          : undefined
+                    }
                     onClick={() => onTest(event.key)}
                   >
                     Send test
                   </button>
                 </div>
+                {!effective.target?.channel_id && (
+                  <small>Choose a channel first</small>
+                )}
                 {dirty && <small>Save changes first to send a test.</small>}
               </div>
               {openPicker === event.key && (

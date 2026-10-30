@@ -289,8 +289,15 @@ it("shows the missing effective channel without changing enabled settings", asyn
     card.querySelector(".moderation-category-switch")?.textContent,
   ).toContain("Not posting — no channel set");
   expect(card.querySelectorAll(".moderation-event-row")).toHaveLength(2);
-  for (const row of card.querySelectorAll(".moderation-event-row"))
+  for (const row of card.querySelectorAll(".moderation-event-row")) {
     expect(row.textContent).toContain("Not posting — no channel set");
+    const test = [...row.querySelectorAll("button")].find(
+      (b) => b.textContent === "Send test",
+    )!;
+    expect(test.disabled).toBe(true);
+    expect(test.title).toBe("Choose a channel first");
+    expect(row.textContent).toContain("Choose a channel first");
+  }
   expect(
     card.querySelector<HTMLInputElement>('[aria-label="Moderation logging"]')
       ?.checked,

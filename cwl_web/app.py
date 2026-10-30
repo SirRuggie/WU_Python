@@ -401,6 +401,8 @@ async def auth_callback(request):
 
 async def logout(request):
     session = _require(request)
+    from .manage_identity_cache import invalidate
+    invalidate(request.app, session["user_id"])
     body = await request.json() if request.can_read_body else {}
     push_id = body.get("push_id") if isinstance(body, dict) else None
     with _store(request).tx() as db:
