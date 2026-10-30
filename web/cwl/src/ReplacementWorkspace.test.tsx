@@ -149,3 +149,50 @@ it("starts collapsed with Top 10 and requests the fixed threshold, TH and sort f
   });
   expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain("sort=strikes");
 });
+
+it("restores filters and expanded clans when returning from strike history", async () => {
+  const memory = new Map<string, unknown>();
+  const onHistory = vi.fn();
+  const show = () =>
+    root.render(
+      <ReplacementWorkspace
+        permissions={[]}
+        isOwner
+        memory={memory}
+        onHistory={onHistory}
+      />,
+    );
+  await act(async () => show());
+  await act(async () =>
+    (
+      host.querySelector(".replacement-group-summary") as HTMLButtonElement
+    ).click(),
+  );
+  const search = host.querySelector<HTMLInputElement>(
+    'input[placeholder="Name or player tag"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(search, "Sample");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    (
+      host.querySelector(".replacement-identity a") as HTMLAnchorElement
+    ).click(),
+  );
+  expect(onHistory).toHaveBeenCalledWith("#P2Y");
+  await act(async () => root.render(<div>Strike history</div>));
+  await act(async () => show());
+  expect(
+    host.querySelector<HTMLInputElement>('input[placeholder="Name or player tag"]')!
+      .value,
+  ).toBe("Sample");
+  expect(
+    host
+      .querySelector(".replacement-group-summary")
+      ?.getAttribute("aria-expanded"),
+  ).toBe("true");
+});

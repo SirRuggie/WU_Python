@@ -33,7 +33,7 @@ import { AccountIdentity } from './AccountIdentity'
 import { useMobileNavigation } from './useMobileNavigation'
 import { stopPushOnSignout } from './webPush'
 import RouteLoadBoundary from './RouteLoadBoundary'
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useMemo, useCallback, useEffect, useRef, useState } from 'react'
 import OwnerPrankBoundary from './ownerPrank/OwnerPrankBoundary'
 import ConfirmDialog from './ConfirmDialog'
 import { api, ApiError, setCsrfToken, type Account, type Pool, type Season, type Session, type Signup } from './api'
@@ -324,6 +324,13 @@ function App() {
   const weightEditFocus = useRef<HTMLElement | null>(null);
   const [manageDirty, setManageDirty] = useState(false)
   const [strikeWorking, setStrikeWorking] = useState(false)
+  const flowMemory = useMemo(
+    () => ({ strikes: new Map<string, unknown>(), replacements: new Map<string, unknown>() }),
+    [session?.user.id],
+  );
+  const [replacementTag, setReplacementTag] = useState(entryTarget.replacementTag || "");
+  const [strikeTag, setStrikeTag] = useState(entryTarget.strikeTag || "");
+  const [flowFrom, setFlowFrom] = useState(entryTarget.flowFrom);
   const [replacementClan, setReplacementClan] = useState(entryTarget.replacementClan || '')
   const [pendingStrikeLeave, setPendingStrikeLeave] = useState<null | {action: () => void; working: boolean}>(null)
   useEffect(() => {
@@ -416,7 +423,7 @@ function App() {
           !isTourReadOnly(),
         );
       setActivityVisit(window.history.state?.wuDashboardIndex || 0)
-      if (destination !== view) setReplacementClan('')
+      if (destination !== view) { setReplacementClan(''); setReplacementTag(''); setStrikeTag(''); setFlowFrom(undefined); }
       if (destination === 'signup') setSignupPanel(panel)
       setActivitySearch(filter)
       setActivityKind(kind)
@@ -436,6 +443,19 @@ function App() {
     window.addEventListener('keydown', shortcut)
     return () => window.removeEventListener('keydown', shortcut)
   })
+  const returnStrikeFlow = (destination: 'strikes' | 'replacements') => {
+    if (navigation.current?.pending || allowedView(destination) !== destination) return;
+    const proceed = () => {
+      const clan = destination === 'replacements' ? String(flowMemory.replacements.get('clan') || '') : '';
+      navigation.current?.write({view:destination,season:'',replacementClan:clan}, true);
+      setReplacementClan(clan);
+      setReplacementTag('');
+      setStrikeTag('');
+      setFlowFrom(undefined);
+      acceptRoute(destination);
+    };
+    if (canLeave(proceed)) proceed();
+  };
   const openPublication = (step: 'review' | 'announce') => {
     if (navigation.current?.pending || (view === 'publication' && publicationStep === step)) return
     const proceed = () => {
@@ -522,6 +542,9 @@ function App() {
       setActivitySearch(target.activityFilter || "");
       setActivityKind(target.activityKind);
       setReplacementClan(target.replacementClan || "");
+      setReplacementTag(target.replacementTag || "");
+      setStrikeTag(target.strikeTag || "");
+      setFlowFrom(target.flowFrom);
       setWeightTarget({ player: target.weightPlayer, clan: target.weightClan });
       const destination = navigationState.current.allowedView(target.view);
       if (target.season && seasonViews.has(destination))
@@ -546,7 +569,7 @@ function App() {
     navigation.current?.write(
       {
         view: destination,
-        ...(destination === "replacements" ? {replacementClan} : {}),
+        ...(destination === "replacements" ? {replacementClan, replacementTag, flowFrom} : destination === "strikes" ? {strikeTag, flowFrom} : {}),
         ...(destination === "weight-trial"
           ? { weightPlayer: weightTarget.player, weightClan: weightTarget.clan }
           : {}),
@@ -558,7 +581,7 @@ function App() {
       },
       false,
     );
-  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, weightTarget])
+  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, flowFrom, weightTarget])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
@@ -905,19 +928,25 @@ function App() {
           strikePermissions(session.dashboard_permissions, session.is_owner).view && (
             <StrikesWorkspace
               onWorking={setStrikeWorking}
-              onFindReplacement={(clan) => {
+              memory={flowMemory.strikes}
+              targetTag={strikeTag}
+              onBack={flowFrom === 'replacements' ? () => returnStrikeFlow('replacements') : undefined}
+              onFindReplacement={(clan, tag) => {
                 if (
                   navigation.current?.pending ||
                   allowedView('replacements') !== 'replacements'
                 )
                   return
                 const proceed = () => {
+                  flowMemory.strikes.set('scroll', window.scrollY);
                   navigation.current?.write(
-                    { view: 'replacements', season: '', replacementClan: clan },
+                    { view: 'replacements', season: '', replacementClan: clan, replacementTag: tag, flowFrom: 'strikes' },
                     true,
                   )
                   setActivityVisit(window.history.state?.wuDashboardIndex || 0)
                   setReplacementClan(clan)
+                  setReplacementTag(tag)
+                  setFlowFrom("strikes")
                   acceptRoute('replacements')
                 }
                 if (canLeave(proceed)) proceed()
@@ -933,10 +962,24 @@ function App() {
             <ReplacementWorkspace
               onWorking={setStrikeWorking}
               initialClan={replacementClan}
+              initialTag={replacementTag}
+              memory={flowMemory.replacements}
+              onBack={flowFrom === 'strikes' ? () => returnStrikeFlow('strikes') : undefined}
+              onHistory={(tag) => {
+                if (navigation.current?.pending || allowedView('strikes') !== 'strikes') return;
+                const proceed = () => {
+                  flowMemory.replacements.set('scroll', window.scrollY);
+                  navigation.current?.write({view:'strikes',season:'',strikeTag:tag,flowFrom:'replacements'}, true);
+                  setStrikeTag(tag);
+                  setFlowFrom('replacements');
+                  acceptRoute('strikes');
+                };
+                if (canLeave(proceed)) proceed();
+              }}
               onClanChange={(clan) => {
                 setReplacementClan(clan)
                 navigation.current?.write(
-                  { view: 'replacements', season: '', replacementClan: clan },
+                  { view: 'replacements', season: '', replacementClan: clan, replacementTag, flowFrom },
                   false,
                 )
               }}

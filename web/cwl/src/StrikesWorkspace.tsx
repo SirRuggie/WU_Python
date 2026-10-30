@@ -1,3 +1,9 @@
+import StrikeReplacementRow from "./StrikeReplacementRow";
+import {
+  useViewState,
+  useViewScroll,
+  type ViewMemory,
+} from "./strikeViewMemory";
 import { strikeCountLabel } from "./strikeCountLabel";
 import StrikeHistoryRow from "./StrikeHistoryRow";
 import StrikeSettingsEditor, {
@@ -238,6 +244,9 @@ export default function StrikesWorkspace({
   userId,
   onDirty,
   onFindReplacement,
+  targetTag = "",
+  memory,
+  onBack,
   onWorking,
 }: {
   permissions: string[];
@@ -245,7 +254,10 @@ export default function StrikesWorkspace({
   userId: string;
   onDirty?: (dirty: boolean) => void;
   onWorking?: (busy: boolean) => void;
-  onFindReplacement?: (clan: string) => void;
+  onFindReplacement?: (clan: string, tag: string) => void;
+  targetTag?: string;
+  memory?: ViewMemory;
+  onBack?: () => void;
 }) {
   const access = strikePermissions(permissions, isOwner);
   const visibleTabs = tabs.filter((item) =>
@@ -283,16 +295,25 @@ export default function StrikesWorkspace({
     clans: [],
     total: 0,
   });
-  const [selectedAccount, setSelectedAccount] = useState<StrikeAccount | null>(
+  const [selectedAccount, setSelectedAccount] =
+    useViewState<StrikeAccount | null>(memory, "selectedAccount", null);
+  const [query, setQuery] = useViewState(memory, "query", "");
+  const [historyMember, setHistoryMember] = useViewState<Member | null>(
+    memory,
+    "historyMember",
     null,
   );
-  const [query, setQuery] = useState("");
-  const [historyMember, setHistoryMember] = useState<Member | null>(null);
   const [historyMatches, setHistoryMatches] = useState<Member[]>([]);
-  const [status, setStatus] = useState("all");
-  const [actionFilter, setActionFilter] = useState("all");
+  const [status, setStatus] = useViewState(memory, "status", "all");
+  const [actionFilter, setActionFilter] = useViewState(
+    memory,
+    "actionFilter",
+    "all",
+  );
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const [accountStatus, setAccountStatus] = useState<"active" | "all">(
+  const [accountStatus, setAccountStatus] = useViewState<"active" | "all">(
+    memory,
+    "accountStatus",
     "active",
   );
   const [showWarSearch, setShowWarSearch] = useState(false);
@@ -304,10 +325,14 @@ export default function StrikesWorkspace({
   const [warRetry, setWarRetry] = useState(0);
   const [warLoading, setWarLoading] = useState(false);
   const [warError, setWarError] = useState("");
-  const [selectedWar, setSelectedWar] = useState<War | null>(null);
-  const [clan, setClan] = useState("");
-  const [accountPage, setAccountPage] = useState(0);
-  const [detailPage, setDetailPage] = useState(0);
+  const [selectedWar, setSelectedWar] = useViewState<War | null>(
+    memory,
+    "selectedWar",
+    null,
+  );
+  const [clan, setClan] = useViewState(memory, "clan", "");
+  const [accountPage, setAccountPage] = useViewState(memory, "accountPage", 0);
+  const [detailPage, setDetailPage] = useViewState(memory, "detailPage", 0);
   const page = selectedAccount || selectedWar ? detailPage : accountPage;
   const setPage =
     selectedAccount || selectedWar ? setDetailPage : setAccountPage;
@@ -315,14 +340,17 @@ export default function StrikesWorkspace({
   const listHeading = useRef<HTMLHeadingElement>(null);
   const returnPlayer = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
+  useViewScroll(memory, !loading);
   const historyRequest = useRef(0);
   const accountRequest = useRef(0);
   const memberRequest = useRef(0);
   const [busy, setBusy] = useState(false);
+  const [replacementDirty, setReplacementDirty] = useState(false);
+  const [replacementBusy, setReplacementBusy] = useState(false);
   useEffect(() => {
-    onWorking?.(busy);
+    onWorking?.(busy || replacementBusy);
     return () => onWorking?.(false);
-  }, [busy, onWorking]);
+  }, [busy, replacementBusy, onWorking]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
@@ -375,6 +403,7 @@ export default function StrikesWorkspace({
     return () => window.removeEventListener("dashboard-access-changed", clear);
   }, []);
   const dirty =
+    replacementDirty ||
     settingsDirty ||
     manualDirty ||
     !!removeReason ||
@@ -385,7 +414,7 @@ export default function StrikesWorkspace({
     (() => void) | null
   >(null);
   const leaveDraft = (action: () => void) => {
-    if (busy) return;
+    if (busy || replacementBusy) return;
     if (dirty) setPendingNavigation(() => action);
     else action();
   };
@@ -492,10 +521,20 @@ export default function StrikesWorkspace({
       clearTimeout(timer);
     };
   }, [accessLost, access.view, memberQuery, tab]);
+  const accountFiltersMounted = useRef(false);
   useEffect(() => {
+    if (!accountFiltersMounted.current) {
+      accountFiltersMounted.current = true;
+      return;
+    }
     setAccountPage(0);
   }, [query, historyMember?.id, accountStatus, actionFilter, clan]);
+  const detailFiltersMounted = useRef(false);
   useEffect(() => {
+    if (!detailFiltersMounted.current) {
+      detailFiltersMounted.current = true;
+      return;
+    }
     setDetailPage(0);
   }, [status]);
   useEffect(() => {
@@ -687,6 +726,29 @@ export default function StrikesWorkspace({
     setStatus("all");
     setDetailPage(0);
   };
+  useEffect(() => {
+    if (!targetTag || !access.view || accessLost) return;
+    let active = true;
+    void api<AccountOverview>(
+      `/strikes/accounts?query=${encodeURIComponent(targetTag)}&status=all`,
+    )
+      .then((data) => {
+        if (!active) return;
+        const found = data.accounts.find(
+          (account) => account.player_tag === targetTag,
+        );
+        if (found) {
+          setTab("history");
+          chooseAccount(found);
+        } else setError("This account's strike history could not be found.");
+      })
+      .catch((cause) => {
+        if (active) setError(errorText(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [targetTag, access.view, accessLost]);
   const chooseWar = (war: War) => {
     setSelectedAccount(null);
     setSelectedWar(war);
@@ -850,6 +912,11 @@ export default function StrikesWorkspace({
     <section
       className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : ""}`}
     >
+      {onBack && (
+        <button type="button" disabled={busy} onClick={onBack}>
+          ‹ Back to Replacements
+        </button>
+      )}
       <div className="page-head">
         <div>
           <p className="eyebrow">Family clans</p>
@@ -1227,6 +1294,13 @@ export default function StrikesWorkspace({
                     selectedAccount.total_strikes,
                     "total strike",
                   )}
+                  <StrikeReplacementRow
+                    key={selectedAccount.player_tag}
+                    tag={selectedAccount.player_tag}
+                    canManage={access.manage}
+                    onDirty={setReplacementDirty}
+                    onWorking={setReplacementBusy}
+                  />
                   <StrikeStreak
                     loading={loading}
                     streak={
@@ -1455,7 +1529,7 @@ export default function StrikesWorkspace({
                             </span>
                             {account.current_clan_tag && (
                               <a
-                                href={`/clans/replacements?clan=${encodeURIComponent(account.current_clan_tag)}`}
+                                href={`/clans/replacements?clan=${encodeURIComponent(account.current_clan_tag)}&tag=${encodeURIComponent(account.player_tag)}&from=strikes`}
                                 onClick={(event) => {
                                   if (
                                     !onFindReplacement ||
@@ -1466,7 +1540,10 @@ export default function StrikesWorkspace({
                                   )
                                     return;
                                   event.preventDefault();
-                                  onFindReplacement(account.current_clan_tag!);
+                                  onFindReplacement(
+                                    account.current_clan_tag!,
+                                    account.player_tag,
+                                  );
                                 }}
                               >
                                 Find replacement ›

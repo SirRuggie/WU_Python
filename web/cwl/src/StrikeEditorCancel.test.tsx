@@ -170,6 +170,8 @@ const candidates = [
     note: "Original",
     active_strikes: 2,
     is_manual: true,
+    clan_tag: "#R2Y",
+    revision: 3,
   },
   {
     player_tag: "#Q2Y",
@@ -178,11 +180,28 @@ const candidates = [
     note: "",
     active_strikes: 4,
     is_manual: true,
+    clan_tag: "#R2Y",
+    revision: 3,
   },
 ];
 async function replacements(canManage = true) {
   transport.mockImplementation(async (_path, method) =>
-    method ? {} : { candidates, clans: [] },
+    method
+      ? {}
+      : {
+          candidates,
+          clans: [{ tag: "#R2Y", name: "Family" }],
+          groups: [
+            {
+              clan_tag: "#R2Y",
+              clan_name: "Family",
+              listed: 2,
+              at_three: 1,
+              chopping_block: 0,
+            },
+          ],
+          total: 2,
+        },
   );
   await render(
     <ReplacementWorkspace
@@ -192,6 +211,11 @@ async function replacements(canManage = true) {
   );
 }
 async function edit(name: string) {
+  const group = host.querySelector<HTMLButtonElement>(
+    ".replacement-group-summary",
+  );
+  if (group?.getAttribute("aria-expanded") === "false")
+    await act(async () => group.click());
   await act(async () =>
     host
       .querySelector<HTMLButtonElement>(`[aria-label="Edit ${name}"]`)!
@@ -258,20 +282,20 @@ it("clears only the confirmed replacement priority, keeps draft on cancel, and p
   expect(document.querySelector("dialog")?.textContent).toContain(
     "Strike history stays.",
   );
-  await click("Cancel", document.querySelector("dialog")!);
+  await click("Keep", document.querySelector("dialog")!);
   expect(
     host.querySelector<HTMLInputElement>(".replacement-edit-panel input")!
       .value,
   ).toBe("Unsaved");
   expect(transport.mock.calls.every((call) => !call[1])).toBe(true);
   await click("Clear priority");
-  const confirm = button("Clear priority", document.querySelector("dialog")!);
+  const confirm = button("Clear", document.querySelector("dialog")!);
   await act(async () => {
     confirm.click();
     confirm.click();
   });
   expect(transport.mock.calls.filter((call) => call[1])).toEqual([
-    ["/strikes/replacement-list/%23P2Y", "DELETE"],
+    ["/strikes/replacement-list/%23P2Y", "DELETE", { revision: 3 }],
   ]);
 });
 

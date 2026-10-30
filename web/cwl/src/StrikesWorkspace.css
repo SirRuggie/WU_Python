@@ -1058,3 +1058,37 @@
     font-size: 13px;
   }
 }
+.strike-replacement-row {
+  margin-block: 4px;
+  border-block: 1px solid var(--border);
+}
+.strike-replacement-row p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.strike-replacement-row form {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.strike-replacement-row label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 180px;
+}
+.strike-replacement-row button,
+.strike-replacement-row select,
+.strike-replacement-row textarea {
+  min-height: 44px;
+  max-width: 100%;
+}
+@media (max-width: 760px) {
+  .strikes-player-detail .page-head,
+  .strikes-player-detail .strikes-toolbar {
+    margin-bottom: 2px;
+  }
+}

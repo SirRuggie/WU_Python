@@ -1,3 +1,8 @@
+import {
+  useViewState,
+  useViewScroll,
+  type ViewMemory,
+} from "./strikeViewMemory";
 import useUnsavedWork from "./useUnsavedWork";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
@@ -42,6 +47,10 @@ export default function ReplacementWorkspace({
   onDirty,
   onWorking,
   initialClan = "",
+  initialTag = "",
+  memory,
+  onHistory,
+  onBack,
   onClanChange,
 }: {
   permissions: string[];
@@ -49,6 +58,10 @@ export default function ReplacementWorkspace({
   onDirty?: (dirty: boolean) => void;
   onWorking?: (busy: boolean) => void;
   initialClan?: string;
+  initialTag?: string;
+  memory?: ViewMemory;
+  onHistory?: (tag: string) => void;
+  onBack?: () => void;
   onClanChange?: (clan: string) => void;
 }) {
   const canManage = strikePermissions(permissions, isOwner).manage;
@@ -56,33 +69,72 @@ export default function ReplacementWorkspace({
   const [top, setTop] = useState<Candidate[]>([]);
   const [summaries, setSummaries] = useState<GroupSummary[]>([]);
   const [total, setTotal] = useState(0);
-  const [includeLow, setIncludeLow] = useState(false);
-  const [townHall, setTownHall] = useState("");
-  const [sort, setSort] = useState("priority");
-  const [openClans, setOpenClans] = useState<string[]>(
+  const [includeLow, setIncludeLow] = useViewState(memory, "includeLow", false);
+  const [townHall, setTownHall] = useViewState(memory, "townHall", "");
+  const [sort, setSort] = useViewState(memory, "sort", "priority");
+  const [openClans, setOpenClans] = useViewState<string[]>(
+    memory,
+    "openClans",
     initialClan ? [initialClan] : [],
   );
-  const [targetTag, setTargetTag] = useState("");
+  const [targetTag, setTargetTag] = useState(initialTag);
   const [refresh, setRefresh] = useState(0);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(
     null,
   );
   const [clans, setClans] = useState<Clan[]>([]);
-  const [clan, setClan] = useState(initialClan);
+  const [clan, setClan] = useViewState(memory, "clan", initialClan);
   useEffect(() => {
-    setClan(initialClan);
-  }, [initialClan]);
-  const [search, setSearch] = useState("");
-  const [weightDraft, setWeightDraft] = useState("");
-  const [weight, setWeight] = useState("");
+    if (initialClan) {
+      setClan(initialClan);
+      setOpenClans((current) => [...new Set([...current, initialClan])]);
+    }
+    setTargetTag(initialTag);
+  }, [initialClan, initialTag]);
+  const [search, setSearch] = useViewState(memory, "search", "");
+  const [weightDraft, setWeightDraft] = useViewState(memory, "weightDraft", "");
+  const [weight, setWeight] = useViewState(memory, "weight", "");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  useViewScroll(memory, !loading);
   useEffect(() => {
     onWorking?.(busy);
     return () => onWorking?.(false);
   }, [busy, onWorking]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!initialTag) return;
+    let active = true;
+    void api<Result>(
+      `/strikes/replacements?query=${encodeURIComponent(initialTag)}&include_low=true&limit=1`,
+    )
+      .then((result) => {
+        if (!active) return;
+        const target = result.candidates.find(
+          (row) => row.player_tag === initialTag,
+        );
+        const group = target?.clan_tag || target?.last_seen_clan_tag;
+        if (!target || !group) {
+          setError("This account is not on the current replacement list.");
+          return;
+        }
+        setClan(group);
+        setSearch("");
+        setTownHall("");
+        setWeight("");
+        if (target.active_strikes < 3 && !target.is_manual) setIncludeLow(true);
+        setOpenClans((current) => [...new Set([...current, group])]);
+        setTargetTag(initialTag);
+      })
+      .catch((cause) => {
+        if (active) setError(errorText(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialTag]);
+
   const [adding, setAdding] = useState(false);
   const [addMode, setAddMode] = useState<"roster" | "tag">("roster");
   const [newClan, setNewClan] = useState("");
@@ -248,7 +300,24 @@ export default function ReplacementWorkspace({
     <article className="card replacement-row" key={item.player_tag}>
       <div className="replacement-row-main">
         <div className="replacement-identity">
-          <strong>{item.player_name || item.player_tag}</strong>
+          <a
+            href={`/clans/strikes?tag=${encodeURIComponent(item.player_tag)}&from=replacements`}
+            onClick={(event) => {
+              if (
+                !onHistory ||
+                event.button !== 0 ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              onHistory(item.player_tag);
+            }}
+          >
+            {item.player_name || item.player_tag}
+          </a>
           <small>
             {item.player_tag}
             {item.clan_is_current === false ? " · Last known clan" : ""}
@@ -388,6 +457,11 @@ export default function ReplacementWorkspace({
 
   return (
     <section className="replacement-workspace">
+      {onBack && (
+        <button type="button" disabled={busy} onClick={onBack}>
+          ‹ Back to Strikes
+        </button>
+      )}
       {pendingLeave && canManage && (
         <ConfirmDialog
           heading="Unsaved changes"
@@ -736,91 +810,14 @@ export default function ReplacementWorkspace({
       )}
       {!adding && (
         <>
-          <section className="replacement-match">
-            <h2>
-              Got a recruit? Enter their weight
-              {weight ? ` · ${compactWeight(enteredWeight(weight))}` : ""}
-            </h2>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const nextWeight = weightDraft.trim();
-                if (
-                  nextWeight &&
-                  clan &&
-                  !clans.find((item) => item.tag === clan)?.is_fwa
-                )
-                  setClan("");
-                setWeight(nextWeight);
-              }}
-            >
-              <label>
-                Recruit war weight
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  disabled={busy || !!editing}
-                  value={weightDraft}
-                  onChange={(event) => setWeightDraft(event.target.value)}
-                  placeholder="e.g. 149"
-                />
-              </label>
-              <button disabled={busy || !!editing} type="submit">
-                Match
-              </button>
-              {weight && (
-                <button
-                  disabled={busy || !!editing}
-                  type="button"
-                  onClick={() => {
-                    setWeight("");
-                    setWeightDraft("");
-                  }}
-                >
-                  Clear
-                </button>
-              )}
-            </form>
-            <small>
-              FWA clans only. Enter 149 or 149000 for a weight of 149,000.
-            </small>
-          </section>
-          <section
-            className="replacement-top"
-            aria-label="Top 10 across all clans"
-          >
-            <h2>Top 10 across all clans</h2>
-            <ol>
-              {top.map((item) => (
-                <li key={item.player_tag}>
-                  <button
-                    disabled={busy || !!editing}
-                    onClick={() => {
-                      const tag = item.clan_tag || item.last_seen_clan_tag;
-                      if (tag) {
-                        setOpenClans((current) => [
-                          ...new Set([...current, tag]),
-                        ]);
-                        setTargetTag(item.player_tag);
-                      }
-                    }}
-                  >
-                    <strong>{item.player_name}</strong>
-                    <span>
-                      {item.clan_name || item.last_seen_clan_name} ·{" "}
-                      {priorityLabels[priorityOf(item)]} · {item.active_strikes}{" "}
-                      active ·{" "}
-                      {item.weight == null
-                        ? "No weight"
-                        : compactWeight(item.weight)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </section>
-          <div className="replacement-filters">
+          <div className="replacement-overview-count">
+            <span role="status">
+              {loading
+                ? "Loading replacements…"
+                : weight
+                  ? `${total} best ${total === 1 ? "slot" : "slots"} · FWA only`
+                  : `${total} accounts · ${includeLow ? "1+ strikes" : "3+ strikes"}`}
+            </span>
             <label>
               <input
                 type="checkbox"
@@ -830,6 +827,94 @@ export default function ReplacementWorkspace({
               />
               Show 1–2 strikes too
             </label>
+          </div>
+          <div className="replacement-overview">
+            <section className="replacement-match">
+              <h2>
+                Got a recruit? Enter their weight
+                {weight ? ` · ${compactWeight(enteredWeight(weight))}` : ""}
+              </h2>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const nextWeight = weightDraft.trim();
+                  if (
+                    nextWeight &&
+                    clan &&
+                    !clans.find((item) => item.tag === clan)?.is_fwa
+                  )
+                    setClan("");
+                  setWeight(nextWeight);
+                }}
+              >
+                <label>
+                  Recruit war weight
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    disabled={busy || !!editing}
+                    value={weightDraft}
+                    onChange={(event) => setWeightDraft(event.target.value)}
+                    placeholder="e.g. 149"
+                  />
+                </label>
+                <button disabled={busy || !!editing} type="submit">
+                  Match
+                </button>
+                {weight && (
+                  <button
+                    disabled={busy || !!editing}
+                    type="button"
+                    onClick={() => {
+                      setWeight("");
+                      setWeightDraft("");
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </form>
+              <small>
+                FWA clans only. Enter 149 or 149000 for a weight of 149,000.
+              </small>
+            </section>
+            <section
+              className="replacement-top"
+              aria-label="Top 10 across all clans"
+            >
+              <h2>Top 10 across all clans</h2>
+              <ol>
+                {top.map((item) => (
+                  <li key={item.player_tag}>
+                    <button
+                      disabled={busy || !!editing}
+                      onClick={() => {
+                        const tag = item.clan_tag || item.last_seen_clan_tag;
+                        if (tag) {
+                          setOpenClans((current) => [
+                            ...new Set([...current, tag]),
+                          ]);
+                          setTargetTag(item.player_tag);
+                        }
+                      }}
+                    >
+                      <strong>{item.player_name}</strong>
+                      <span>
+                        {item.clan_name || item.last_seen_clan_name} ·{" "}
+                        {priorityLabels[priorityOf(item)]} ·{" "}
+                        {item.active_strikes} active ·{" "}
+                        {item.weight == null
+                          ? "No weight"
+                          : compactWeight(item.weight)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          </div>
+          <div className="replacement-filters">
             <label>
               Town Hall
               <select
@@ -890,15 +975,11 @@ export default function ReplacementWorkspace({
           </div>
           {weight && (
             <p className="replacement-weight-note">
-              FWA only · priority, strikes, then weight (
-              {compactWeight(enteredWeight(weight))}).
+              Best 3 FWA slots by closest weight; ties use priority then strikes
+              ({compactWeight(enteredWeight(weight))}).
             </p>
           )}
-          <div className="replacement-count" role="status">
-            {loading
-              ? "Loading replacements…"
-              : `${total} ${total === 1 ? "account" : "accounts"} · ${includeLow ? "1+ strikes" : "3+ strikes"}`}
-          </div>
+
           {!loading && !error && total === 0 && (
             <div className="card replacement-empty">
               {search ? "No accounts match." : "No replacement accounts yet."}
@@ -938,6 +1019,7 @@ export default function ReplacementWorkspace({
                       ),
                     )
                   }
+                  memory={memory}
                   renderCandidate={renderCandidate}
                 />
               ))}

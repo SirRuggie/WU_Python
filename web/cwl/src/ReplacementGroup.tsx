@@ -1,3 +1,4 @@
+import { useViewState, type ViewMemory } from "./strikeViewMemory";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import type { Candidate, GroupSummary, Result } from "./replacementTypes";
@@ -5,6 +6,7 @@ import type { Candidate, GroupSummary, Result } from "./replacementTypes";
 /** Fetch only expanded clans. Each clan owns its cursor and ignores stale reads. */
 export default function ReplacementGroup({
   group,
+  memory,
   query,
   refresh,
   open,
@@ -14,6 +16,7 @@ export default function ReplacementGroup({
   renderCandidate,
 }: {
   group: GroupSummary;
+  memory?: ViewMemory;
   query: string;
   refresh: number;
   open: boolean;
@@ -23,14 +26,19 @@ export default function ReplacementGroup({
   renderCandidate: (row: Candidate) => ReactNode;
 }) {
   const [rows, setRows] = useState<Candidate[]>([]),
-    [offset, setOffset] = useState(0);
+    [offset, setOffset] = useViewState(memory, `offset:${group.clan_tag}`, 0);
   const [loading, setLoading] = useState(false),
     [error, setError] = useState("");
   const [retry, setRetry] = useState(0),
     [total, setTotal] = useState(group.listed);
   const generation = useRef(0),
     node = useRef<HTMLElement>(null);
+  const filtersMounted = useRef(false);
   useEffect(() => {
+    if (!filtersMounted.current) {
+      filtersMounted.current = true;
+      return;
+    }
     setOffset(0);
   }, [query, refresh]);
   useEffect(() => {
