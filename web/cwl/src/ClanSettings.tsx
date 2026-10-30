@@ -74,7 +74,7 @@ export default function ClanSettings(props: Props) {
     return true;
   };
   return (
-    <section className="roster-ui clan-settings" aria-label="Clan settings">
+    <section className="roster-ui clan-settings" aria-label="Hosting clans">
       {props.onHostingChanged && props.onHostingBusy && !props.archived && (
         <HostingClanControls
           clans={props.clans}

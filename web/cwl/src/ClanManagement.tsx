@@ -12,6 +12,7 @@ import ClanFields from "./clanManagement/ClanFields";
 import type { Clan } from "./clanManagement/types";
 import "./ClanManagement.css";
 import ClanHistory from "./ClanHistory";
+import AddClan from "./clanManagement/AddClan";
 import WarReminders, { type ReminderEditor } from "./WarReminders";
 import ConfirmDialog from "./ConfirmDialog";
 type Directory = { clans: Clan[]; types: string[]; town_halls: string[] };
@@ -94,7 +95,6 @@ export default function ClanManagement({
       initialRoute?.section || "Details",
     ),
     [query, setQuery] = useState(""),
-    [newTag, setNewTag] = useState(""),
     [adding, setAdding] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -474,32 +474,37 @@ export default function ClanManagement({
             </p>
           )}
           {adding && (
-            <form
-              className="card clan-add"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  const result = await api<Directory>("/manage/clans", "POST", {
-                    tag: newTag,
-                  });
-                  setData(result);
-                  setNewTag("");
+            <AddClan
+              disabled={disabled}
+              onBusy={setBusy}
+              onOpen={(clan, warning) => {
+                void (async () => {
+                  if (
+                    dirty &&
+                    !(await confirmAction("Discard unsaved clan changes?"))
+                  )
+                    return;
+                  ++editGeneration.current;
+                  setSaved(clan);
+                  setDraft({ ...clan });
+                  setReminderDirty(false);
                   setAdding(false);
-                  setNotice("Clan added. Select it to finish its settings.");
-                });
+                  setSection("Details");
+                  setSectionCollapsed(false);
+                  setShowDirectory(false);
+                  setNotice(
+                    warning || "Review the setup checklist for this clan.",
+                  );
+                  onNavigate?.({
+                    tab: "clans",
+                    tag: clan.tag,
+                    section: "Details",
+                  });
+                  void load();
+                  requestAnimationFrame(() => headingRef.current?.focus());
+                })();
               }}
-            >
-              <label>
-                Clan tag
-                <input
-                  required
-                  placeholder="#CLANTAG"
-                  value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
-                />
-              </label>
-              <button disabled={disabled}>Add clan</button>
-            </form>
+            />
           )}
           <div className={`clan-layout ${draft ? "clan-detail-open" : ""}`}>
             <ClanDirectory
@@ -530,6 +535,36 @@ export default function ClanManagement({
                 >
                   ‹ All clans
                 </button>
+                <nav aria-label="Clan setup checklist" className="clan-tabs">
+                  {(
+                    [
+                      ["Clan type", "Details", !!draft.type],
+                      ["Leader role", "Roles", !!draft.leader_role_id],
+                      ["Channels", "Channels", !!draft.chat_channel_id],
+                      [
+                        "War reminders",
+                        "War reminders",
+                        reminderSummary.startsWith("On"),
+                      ],
+                    ] as const
+                  ).map(([label, target, complete]) => (
+                    <button
+                      key={label}
+                      disabled={disabled}
+                      onClick={() => {
+                        setSection(target);
+                        setSectionCollapsed(false);
+                        onNavigate?.({
+                          tab: "clans",
+                          tag: draft.tag,
+                          section: target,
+                        });
+                      }}
+                    >
+                      {complete ? "✓" : "✗"} {label}
+                    </button>
+                  ))}
+                </nav>
                 <div className="page-head">
                   <div>
                     <h2 ref={headingRef} tabIndex={-1}>

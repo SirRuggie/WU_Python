@@ -12,6 +12,8 @@ from utils.url_safety import MAX_IMAGE_BYTES
 from .server_management import API,GUILD_ID,require_manage,mongo,discord,queue_action
 from .manage_operations import revision
 from .providers import tag as normalize_tag,ProviderUnavailable
+from utils.war_reminder_store import WarReminderStore, SettingsConflict
+from utils.war_reminders import settings as reminder_defaults
 FIELDS=('name','type','th_requirements','leader_id','leader_role_id','role_id','chat_channel_id','announcement_id','rules_channel_id','leadership_channel_id','thread_id','logo','banner','profile','emoji')
 IDS=('leader_id','leader_role_id','role_id','chat_channel_id','announcement_id','rules_channel_id','leadership_channel_id','thread_id')
 def public(row):return {'tag':row['tag'],'revision':revision(row),**{k:str(row.get(k) or '') for k in FIELDS}}
@@ -60,19 +62,68 @@ async def members(request):
 
 from utils.clan_dashboard_history import audit, finish_change, collection as history_collection
 
+async def lookup(request):
+    await require_manage(request, 'clans')
+    clan_tag = tag(request)
+    async with mongo(request) as db:
+        existing = await db.clans.find_one({'tag': clan_tag})
+        if existing:
+            return web.json_response({'state': 'existing', 'clan': public(existing)})
+        removed = await history_collection(db).find_one(
+            {'guild_id': GUILD_ID, 'clan.tag': clan_tag, 'action': 'before_remove'},
+            sort=[('at', -1), ('_id', -1)],
+        )
+        reminders = await WarReminderStore(db).get_settings(clan_tag) if removed else None
+    try:
+        info = await request.app['providers'].clan_roster(clan_tag)
+    except ProviderUnavailable:
+        raise web.HTTPServiceUnavailable(text='Clash could not confirm this clan. Try again.') from None
+    return web.json_response({
+        'state': 'removed' if removed else 'found',
+        'tag': clan_tag, 'name': info['name'], 'members': len(info['members']),
+        'removal_id': removed['_id'] if removed else None,
+        'reminder_revision': revision(reminders) if removed else None,
+    })
+
 async def add(request):
     actor=await require_manage(request,'clans',write=True);body=await request.json()
     try:clan_tag=normalize_tag(body.get('tag',''))
     except (ValueError,AttributeError):raise web.HTTPBadRequest(text='Enter a valid clan tag.') from None
     try:info=await request.app['providers'].clan(clan_tag)
     except ProviderUnavailable:raise web.HTTPServiceUnavailable(text='Clash could not confirm this clan. Try again.') from None
+    warning = ''
     async with mongo(request) as db:
+        removed = await history_collection(db).find_one(
+            {'guild_id': GUILD_ID, 'clan.tag': clan_tag, 'action': 'before_remove'},
+            sort=[('at', -1), ('_id', -1)],
+        )
+        before_reminders = None
+        if removed:
+            if body.get('mode') != 'fresh' or body.get('removal_id') != removed['_id']:
+                raise web.HTTPConflict(text='This clan was removed. Look it up and choose Restore old settings or Start fresh.')
+            store = WarReminderStore(db)
+            before_reminders = await store.get_settings(clan_tag)
+            if body.get('reminder_revision') != revision(before_reminders):
+                raise web.HTTPConflict(text='Reminder settings changed. Look up this clan again before starting fresh.')
         if not await ensure_clan_tag_index(db):raise web.HTTPServiceUnavailable(text='Clan uniqueness check failed. Nothing was added.')
         row={'tag':clan_tag,**{k:0 if k in IDS else '' for k in FIELDS},'name':info['name'],'thread_message_id':0}
         try:result=await db.clans.update_one({'tag':clan_tag},{'$setOnInsert':row},upsert=True)
         except DuplicateKeyError:raise web.HTTPConflict(text='Clan was just added. Refresh the list.') from None
-        if result.upserted_id:await audit(db,actor,'add',await db.clans.find_one({'tag':clan_tag}))
-    return await listing(request)
+        if not result.upserted_id:
+            raise web.HTTPConflict(text='Already in the family. Open this clan to edit its settings.')
+        added = await db.clans.find_one({'tag':clan_tag})
+        await audit(db,actor,'add',added)
+        if removed:
+            try:
+                await store.save_settings(clan_tag, before_reminders, reminder_defaults(),
+                                          actor['user_id'], history_context=(added, actor))
+            except SettingsConflict:
+                warning = 'Clan added, but reminders changed at the same time. Those changes were kept. Review War reminders.'
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Clan added; reminder reset could not be confirmed')
+                warning = 'Clan added. Could not confirm the reminder reset. Review War reminders before continuing.'
+    return web.json_response({'clan': public(added), 'warning': warning})
 
 async def change_names(request, actor, before, after):
     """Freeze available Discord labels without making a metadata outage block a save."""
@@ -185,4 +236,4 @@ async def action(request):
     async with mongo(request) as db:row=await current(request,db,body)
     return await queue_action(request,'clans',request.match_info['action'],{'tag':row['tag']},revision(row))
 
-routes=[web.get(API+'/clans',listing),web.post(API+'/clans',add),web.get(API+'/clan-choices',choices),web.get(API+'/clan-members',members),web.patch(API+'/clans/{tag}',save),web.delete(API+'/clans/{tag}',remove),web.post(API+'/clans/{tag}/images/{slot}',image),web.post(API+'/clans/{tag}/actions/{action}',action)]
+routes=[web.get(API+'/clans',listing),web.post(API+'/clans',add),web.get(API+'/clans/{tag}/lookup',lookup),web.get(API+'/clan-choices',choices),web.get(API+'/clan-members',members),web.patch(API+'/clans/{tag}',save),web.delete(API+'/clans/{tag}',remove),web.post(API+'/clans/{tag}/images/{slot}',image),web.post(API+'/clans/{tag}/actions/{action}',action)]
