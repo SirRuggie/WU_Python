@@ -150,17 +150,18 @@ async def targets(request):
         rows = [await request.app['providers'].player(tag(query))]
     elif re.fullmatch(r'[0-9]{15,22}', query):
         await shared.discord(request, 'GET', f'/guilds/{GUILD_ID}/members/{query}')
-        rows = (await account_rows(request, query))[:25]
+        links = await recruit_links.resolve(int(query))
+        if links.unavailable or links.conflicts:
+            raise ProviderUnavailable('Account links could not be verified. Try again.')
+        async with shared.mongo(request) as db:
+            ledger = await service(request, db)
+            rows = await ledger.saved_target_accounts(GUILD_ID, sorted(links.sources))
     else:
         from .manage_roles import searchable_members, search_text
         async with shared.mongo(request) as db:
             ledger = await service(request, db)
             known = await ledger.known_targets(GUILD_ID, query)
-        sem = asyncio.Semaphore(6)
-        async def player(row):
-            async with sem:
-                return await request.app['providers'].player(row['player_tag'])
-        rows = await asyncio.gather(*(player(row) for row in known))
+            rows = await ledger.saved_target_accounts(GUILD_ID, [row['player_tag'] for row in known])
         folded = search_text(query)
         candidates = await searchable_members(request)
         members_found = [display_member(row) for row in candidates

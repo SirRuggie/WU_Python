@@ -26,6 +26,9 @@ fs.mkdirSync(output, { recursive: true });
       await p.screenshot({ path: path.join(output, `${width}-${name}.png`) });
       const m = await p.evaluate(() => ({
         width: innerWidth,
+        firstRowY:
+          document.querySelector(".strike-compact-row")?.getBoundingClientRect()
+            .top ?? null,
         scrollWidth: document.documentElement.scrollWidth,
         rows: [...document.querySelectorAll(".strike-compact-row")].map(
           (e) => e.getBoundingClientRect().height,
@@ -166,6 +169,9 @@ fs.mkdirSync(output, { recursive: true });
       .click();
     await p.getByRole("button", { name: /Add 1 strike/ }).waitFor();
     await snap("import-preview");
+    await p.getByRole("button", { name: "Add 1 strike", exact: true }).click();
+    await p.getByText(/1 strike added · 0 skipped as duplicate/).waitFor();
+    await snap("import-result");
     await p.goto(origin + "/strikes-preview.html?settingsConflict=1");
     await p.getByRole("button", { name: "Settings", exact: true }).click();
     await p.getByRole("spinbutton").fill("9");

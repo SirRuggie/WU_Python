@@ -225,7 +225,7 @@ function savedImport(userId: string): ImportDraft {
   }
 }
 const importResultText = (result: ImportResult) =>
-  `${result.added_strikes ?? result.strikes} strikes added · ${result.duplicates ?? (Array.isArray(result.skipped) ? result.skipped.length : result.skipped)} skipped as duplicate · ${result.history_only ?? result.applied - result.strikes} history-only${result.excluded ? ` · ${result.excluded} excluded` : ""}${(result.deferred_count ?? result.deferred_accounts?.length ?? 0) > 0 ? ` · ${result.deferred_count ?? result.deferred_accounts?.length} need review` : ""}.`;
+  `${result.added_strikes ?? result.strikes} ${(result.added_strikes ?? result.strikes) === 1 ? "strike" : "strikes"} added · ${result.duplicates ?? (Array.isArray(result.skipped) ? result.skipped.length : result.skipped)} skipped as duplicate · ${result.history_only ?? result.applied - result.strikes} history-only${result.excluded ? ` · ${result.excluded} excluded` : ""}${(result.deferred_count ?? result.deferred_accounts?.length ?? 0) > 0 ? ` · ${result.deferred_count ?? result.deferred_accounts?.length} need review` : ""}.`;
 
 export default function StrikesWorkspace({
   permissions,
@@ -950,7 +950,9 @@ export default function StrikesWorkspace({
       {tab === "history" && !manualOpen && (
         <>
           <StrikeTrackingStatus canRetry={access.add} />
-          <div className="strikes-toolbar">
+          <div
+            className={`strikes-toolbar${selectedAccount ? " strikes-toolbar-player" : ""}`}
+          >
             {!selectedAccount && !selectedWar && (
               <div className="strikes-history-search">
                 <label>
@@ -1078,38 +1080,43 @@ export default function StrikesWorkspace({
               </button>
             )}
           </div>
-          <div className="strikes-war-tools">
-            <button
-              disabled={busy || loading}
-              onClick={() =>
-                void (selectedAccount || selectedWar
-                  ? refreshHistory()
-                  : refreshAccounts())
-              }
-            >
-              Refresh records
-            </button>
-            <button
-              aria-expanded={showWarSearch}
-              onClick={() => setShowWarSearch((open) => !open)}
-            >
-              {showWarSearch ? "Close war search" : "Find war"}
-            </button>
-            {selectedWar && (
-              <div className="strikes-selected-war">
-                <span>
-                  {warMatchup(selectedWar.clan_name, selectedWar.opponent_name)}{" "}
-                  · {dateText(selectedWar.war_end)} ·{" "}
-                  {selectedWar.source_label || "Source unavailable"}
-                  {selectedWar.incomplete
-                    ? " · Incomplete · No automatic strikes"
-                    : " · All records"}
-                </span>
-                <button onClick={clearWar}>Clear war</button>
-              </div>
-            )}
-          </div>
-          {showWarSearch && (
+          {!selectedAccount && (
+            <div className="strikes-war-tools">
+              <button
+                disabled={busy || loading}
+                onClick={() =>
+                  void (selectedAccount || selectedWar
+                    ? refreshHistory()
+                    : refreshAccounts())
+                }
+              >
+                Refresh records
+              </button>
+              <button
+                aria-expanded={showWarSearch}
+                onClick={() => setShowWarSearch((open) => !open)}
+              >
+                {showWarSearch ? "Close war search" : "Find war"}
+              </button>
+              {selectedWar && (
+                <div className="strikes-selected-war">
+                  <span>
+                    {warMatchup(
+                      selectedWar.clan_name,
+                      selectedWar.opponent_name,
+                    )}{" "}
+                    · {dateText(selectedWar.war_end)} ·{" "}
+                    {selectedWar.source_label || "Source unavailable"}
+                    {selectedWar.incomplete
+                      ? " · Incomplete · No automatic strikes"
+                      : " · All records"}
+                  </span>
+                  <button onClick={clearWar}>Clear war</button>
+                </div>
+              )}
+            </div>
+          )}
+          {!selectedAccount && showWarSearch && (
             <div className="card strikes-war-search">
               <label>
                 Find war
@@ -1419,32 +1426,38 @@ export default function StrikesWorkspace({
                         </span>
                         <span aria-hidden="true">›</span>
                       </button>
-                      {account.over_limit && (
-                        <div className="strike-account-action">
-                          <span>
-                            Over limit ({accountOverview.strike_limit})
-                          </span>
-                          {account.current_clan_tag && (
-                            <a
-                              href={`/clans/replacements?clan=${encodeURIComponent(account.current_clan_tag)}`}
-                              onClick={(event) => {
-                                if (
-                                  !onFindReplacement ||
-                                  event.ctrlKey ||
-                                  event.metaKey ||
-                                  event.shiftKey ||
-                                  event.altKey
-                                )
-                                  return;
-                                event.preventDefault();
-                                onFindReplacement(account.current_clan_tag!);
-                              }}
-                            >
-                              Find replacement ›
-                            </a>
-                          )}
-                        </div>
-                      )}
+                      {accountOverview.strike_limit != null &&
+                        account.active_strikes >=
+                          accountOverview.strike_limit && (
+                          <div className="strike-account-action">
+                            <span>
+                              {account.active_strikes ===
+                              accountOverview.strike_limit
+                                ? "Limit reached"
+                                : "Over limit"}{" "}
+                              ({accountOverview.strike_limit})
+                            </span>
+                            {account.current_clan_tag && (
+                              <a
+                                href={`/clans/replacements?clan=${encodeURIComponent(account.current_clan_tag)}`}
+                                onClick={(event) => {
+                                  if (
+                                    !onFindReplacement ||
+                                    event.ctrlKey ||
+                                    event.metaKey ||
+                                    event.shiftKey ||
+                                    event.altKey
+                                  )
+                                    return;
+                                  event.preventDefault();
+                                  onFindReplacement(account.current_clan_tag!);
+                                }}
+                              >
+                                Find replacement ›
+                              </a>
+                            )}
+                          </div>
+                        )}
                     </div>
                   ))}
               </div>
@@ -1734,7 +1747,10 @@ export default function StrikesWorkspace({
             {preview && (
               <>
                 <p className="strikes-import-summary" aria-live="polite">
-                  Adds {importStrikes} strikes to {importAccounts} accounts ·{" "}
+                  Adds {importStrikes}{" "}
+                  {importStrikes === 1 ? "strike" : "strikes"} to{" "}
+                  {importAccounts}{" "}
+                  {importAccounts === 1 ? "account" : "accounts"} ·{" "}
                   {importHistory} history-only records
                 </p>
                 <p>
@@ -1850,7 +1866,7 @@ export default function StrikesWorkspace({
                   >
                     {busy || importJob?.phase === "apply"
                       ? "Importing…"
-                      : `Add ${importStrikes} strikes`}
+                      : `Add ${importStrikes} ${importStrikes === 1 ? "strike" : "strikes"}`}
                   </button>
                 </div>
               </>

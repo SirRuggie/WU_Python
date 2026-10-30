@@ -36,6 +36,17 @@ export default function StrikeHistoryRow({
   children?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const date = item.war_end
+    ? new Date(item.war_end).toLocaleDateString(undefined, {
+        month: "numeric",
+        day: "numeric",
+      })
+    : "Date unavailable";
+  const opponent =
+    item.source === "manual"
+      ? "Manual"
+      : `vs ${item.opponent_name || "Unknown opponent"}`;
+
   const expires = item.expires_at ? new Date(item.expires_at) : null;
   const validExpiry =
     expires && Number.isFinite(expires.getTime()) ? expires : null;
@@ -61,18 +72,9 @@ export default function StrikeHistoryRow({
           </strong>
         )}
         <span className="strike-compact-facts">
-          <time dateTime={item.war_end || undefined}>
-            {item.war_end
-              ? new Date(item.war_end).toLocaleDateString(undefined, {
-                  month: "numeric",
-                  day: "numeric",
-                })
-              : "Date unavailable"}
-          </time>
+          <time dateTime={item.war_end || undefined}>{date}</time>
           {" · "}
-          {item.source === "manual"
-            ? "Manual"
-            : `vs ${item.opponent_name || "Unknown opponent"}`}
+          {opponent}
           {item.reason && <> · {item.reason}</>}
           {" · "}
           <span className="strike-inline-status">
@@ -91,7 +93,7 @@ export default function StrikeHistoryRow({
       </div>
       <button
         className="strike-row-more"
-        aria-label={`Details and actions for ${item.id}`}
+        aria-label={`Details and actions for ${date} ${opponent}`}
         aria-expanded={expanded || removing}
         onClick={() => setExpanded((value) => !value)}
       >

@@ -1041,3 +1041,13 @@
 .strikes-workspace .notice button {
   min-height: 44px;
 }
+
+@media (max-width: 480px) {
+  .strikes-toolbar.strikes-toolbar-player {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .strikes-toolbar-player > button:first-child {
+    grid-column: 1 / -1;
+  }
+}

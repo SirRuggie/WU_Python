@@ -138,6 +138,7 @@ def test_cwl_import_requires_preview_approval_and_stays_view_only_on_retry():
         assert second['cwl_records'] == 1 and second['existing'] == 1
         backfill = await service.apply_import(123, second['preview_id'], 789)
         assert backfill['applied'] == 1 and backfill['strikes'] == 0
+        assert backfill['duplicates'] == 1
         assert len(db.strike_records.rows) == 2
     asyncio.run(run())
 
