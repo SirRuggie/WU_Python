@@ -491,9 +491,10 @@ async def replacements(request):
                                         town_hall=town_hall)
     names = {row['tag']: row['name'] for row in clans}
     candidates = [{'player_tag': row['player_tag'], 'player_name': row.get('player_name') or row['player_tag'],
-                   'clan_tag': row.get('current_clan_tag') or row.get('last_seen_clan_tag'),
-                   'clan_name': names.get(row.get('current_clan_tag') or row.get('last_seen_clan_tag')),
+                   'clan_tag': row.get('last_seen_clan_tag') if row.get('departed') else row.get('current_clan_tag'),
+                   'clan_name': names.get(row.get('last_seen_clan_tag') if row.get('departed') else row.get('current_clan_tag')),
                    'current_clan_tag': row.get('current_clan_tag'),
+                   'current_clan_name': names.get(row.get('current_clan_tag')),
                    'departed': bool(row.get('departed')),
                    'last_seen_clan_tag': row.get('last_seen_clan_tag'),
                    'last_seen_clan_name': names.get(row.get('last_seen_clan_tag')),

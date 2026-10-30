@@ -42,8 +42,8 @@ it("shows departed grace with escaped last-seen clan and a machine-readable time
   const html = renderToStaticMarkup(
     <ReplacementDeparture clan="<Clan>" seenAt="2026-10-30T12:00:00Z" />,
   );
-  expect(html).toContain("Left clan · 48-hour grace period");
-  expect(html).toContain("Last seen in &lt;Clan&gt;");
+  expect(html).toContain("Left &lt;Clan&gt;");
+  expect(html).toContain("<summary title=");
   expect(html).toContain('dateTime="2026-10-30T12:00:00.000Z"');
 });
 
@@ -57,3 +57,17 @@ it.each([null, "broken"])(
     ).toContain("Time unavailable");
   },
 );
+
+it("shows relative departure age and the current clan for a move", () => {
+  const html = renderToStaticMarkup(
+    <ReplacementDeparture
+      clan="Old clan"
+      currentClan="New clan"
+      seenAt={new Date(Date.now() - 6 * 3600000).toISOString()}
+    />,
+  );
+  expect(html).toContain("now in New clan");
+  expect(html).toContain("6h 0m ago");
+  expect(html).toContain("<details>");
+  expect(html).toContain("<summary title=");
+});

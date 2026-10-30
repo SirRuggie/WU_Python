@@ -121,6 +121,8 @@ it("shows grace only for confirmed departures and names the last observed clan/t
         departed: true,
         last_seen_clan_tag: "#OLD",
         last_seen_clan_name: "Observed Clan",
+        current_clan_tag: "#NEW",
+        current_clan_name: "New Clan",
         last_seen_at: "2026-10-30T12:00:00Z",
         clan_is_current: false,
       },
@@ -141,8 +143,12 @@ it("shows grace only for confirmed departures and names the last observed clan/t
   );
   await settle();
   expect(host.querySelectorAll(".replacement-departure")).toHaveLength(1);
-  expect(host.textContent).toContain("Left clan · 48-hour grace period");
-  expect(host.textContent).toContain("Last seen in Observed Clan");
+  expect(host.textContent).toContain("Left Observed Clan");
+  expect(host.textContent).toContain("now in New Clan");
+  const departureDetails = host.querySelector('.replacement-departure details')!;
+  expect(departureDetails.hasAttribute('open')).toBe(false);
+  await act(async () => (departureDetails.querySelector('summary') as HTMLElement).click());
+  expect(departureDetails.hasAttribute('open')).toBe(true);
   expect(host.querySelector("time")?.getAttribute("datetime")).toBe(
     "2026-10-30T12:00:00.000Z",
   );

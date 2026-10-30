@@ -375,3 +375,10 @@
   color: #d2d2db;
   font-size: 12px;
 }
+
+.replacement-departure summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}

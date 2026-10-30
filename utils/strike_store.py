@@ -261,13 +261,18 @@ class StrikeService:
         for profile in missing:
             if utc(profile.get('roster_observed_at') or profile.get('roster_seen_at') or now) > now:
                 continue
+            departed = profile.get('departed_clan_tag')
+            preserve_departure = departed and departed in (
+                profile.get('replacement_clan_tag'), profile.get('filler_clan_tag'))
             await self.mongo.strike_profiles.update_one(
                 {'_id': profile['_id'], 'current_clan_tag': clan,
                  'roster_seen_at': profile.get('roster_seen_at'),
                  'roster_observed_at': profile.get('roster_observed_at')},
                 {'$unset': {'current_clan_tag': ''},
-                 '$set': {'departed_clan_tag': clan, 'roster_observed_at': now,
-                          'departed_last_seen_at': profile.get('roster_seen_at') or now}})
+                 '$set': {'departed_clan_tag': departed if preserve_departure else clan,
+                          'roster_observed_at': now,
+                          'departed_last_seen_at': (profile.get('departed_last_seen_at')
+                              if preserve_departure else profile.get('roster_seen_at')) or now}})
         # Includes profiles that are returning now, before refreshing their clock.
         await self.expire_departed_replacements(guild_id, now=now)
         for member in members:
@@ -280,11 +285,13 @@ class StrikeService:
                        'current_clan_tag': clan, 'player_name': member.get('name') or player,
                        'roster_seen_at': now, 'roster_observed_at': now}
             update = {'$set': changes}
-            if prior.get('current_clan_tag') and prior['current_clan_tag'] != clan:
+            if prior.get('departed_clan_tag') == clan:
+                update['$unset'] = {'departed_clan_tag': '', 'departed_last_seen_at': ''}
+            elif (prior.get('current_clan_tag') and prior['current_clan_tag'] != clan
+                  and (not prior.get('departed_clan_tag') or prior.get('departed_clan_tag') not in (
+                      prior.get('replacement_clan_tag'), prior.get('filler_clan_tag')))):
                 changes.update({'departed_clan_tag': prior['current_clan_tag'],
                                 'departed_last_seen_at': prior.get('roster_seen_at') or now})
-            elif prior.get('departed_clan_tag') == clan:
-                update['$unset'] = {'departed_clan_tag': '', 'departed_last_seen_at': ''}
             if isinstance(member.get('weight'), int) and not isinstance(member['weight'], bool) and member['weight'] > 0:
                 changes['weight'] = member['weight']
             th = member.get('town_hall', member.get('townHallLevel'))
@@ -591,7 +598,8 @@ class StrikeService:
         if matching and (not isinstance(recruit_weight, int) or isinstance(recruit_weight, bool)
                          or not 0 < recruit_weight <= 500000):
             raise ValueError('Enter a positive recruit weight.')
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(minutes=30)
         query = {'guild_id': int(guild_id)}
         if town_hall is not None:
             query['town_hall'] = town_hall
@@ -611,11 +619,10 @@ class StrikeService:
             clan_filter = query.pop('current_clan_tag')
             query['$or'] = [
                 {'current_clan_tag': clan_filter},
-                {'current_clan_tag': None, 'departed_clan_tag': clan_filter,
-                 'departed_last_seen_at': {'$gte': datetime.now(timezone.utc) - REPLACEMENT_GRACE}},
+                {'departed_clan_tag': clan_filter,
+                 'departed_last_seen_at': {'$gte': now - REPLACEMENT_GRACE}},
             ]
         profiles = await self.mongo.strike_profiles.find(query).to_list(length=None)
-        now = datetime.now(timezone.utc)
         rows = []
         player_tags = [profile['player_tag'] for profile in profiles]
         counts = {}
@@ -628,8 +635,20 @@ class StrikeService:
             ])
             counts = {row['_id']: row['count'] for row in await cursor.to_list(length=None)}
         for profile in profiles:
-            departed = not profile.get('current_clan_tag') and bool(profile.get('departed_clan_tag'))
-            current_clan = profile.get('current_clan_tag') or profile.get('departed_clan_tag')
+            old_clan = profile.get('departed_clan_tag')
+            marked_departure = old_clan and old_clan in (
+                profile.get('replacement_clan_tag'), profile.get('filler_clan_tag'))
+            departed = bool(not matching and old_clan and
+                            profile.get('current_clan_tag') != old_clan and
+                            (marked_departure or not profile.get('current_clan_tag')))
+            # Reads must not expose an overdue original-clan mark merely because
+            # the current family clan matched. Durable cleanup remains sync-owned.
+            if (departed and isinstance(profile.get('departed_last_seen_at'), datetime)
+                    and utc(profile['departed_last_seen_at']) < now - REPLACEMENT_GRACE):
+                continue
+            current_clan = old_clan if departed else profile.get('current_clan_tag')
+            if clan_tag and current_clan != chosen:
+                continue
             marked_clan = profile.get('replacement_clan_tag')
             marked = bool(profile.get('replacement_listed') and marked_clan == current_clan)
             legacy_filler = bool(profile.get('filler') and profile.get('filler_clan_tag') == current_clan)
@@ -837,7 +856,7 @@ class StrikeService:
                                      'war_end': ended, 'missed_attacks': missed,
                                      'reason': reason})
                 continue
-            kind = 'exempt' if (missed or check_all) and exemption else ('strike' if missed == 2 else ('missed' if missed == 1 else 'completed'))
+            kind = 'exempt' if missed and exemption else ('strike' if missed == 2 else ('missed' if missed == 1 else 'completed'))
             rows.append({'_id': row_id,
                          'guild_id': int(guild_id), 'player_tag': player,
                          'member_id': owner, 'link_status': 'linked' if owner is not None else 'unlinked',
@@ -976,7 +995,7 @@ class StrikeService:
                 return True
             count = int(profile.get('streak_count', 0))
             reason = None
-            if row['kind'] != 'exempt':
+            if row['kind'] != 'exempt' and not row.get('exemption'):
                 count = count + 1 if row['missed_attacks'] == 0 else 0
                 if count == 6:
                     reason = 'Reset by streak (6 wars played)'

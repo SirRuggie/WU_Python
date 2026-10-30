@@ -39,6 +39,8 @@ def matches(row, query):
                     return False
                 if op == '$nin' and actual in target:
                     return False
+                if op == '$ne' and actual == target:
+                    return False
                 if op in ('$gt', '$gte', '$lt', '$lte'):
                     if actual is None:
                         return False
@@ -57,6 +59,17 @@ class Cursor:
     async def to_list(self, length=None):
         return self.rows
 
+    def sort(self, *args):
+        return self
+
+    def skip(self, count):
+        self.rows = self.rows[count:]
+        return self
+
+    def limit(self, count):
+        self.rows = self.rows[:count]
+        return self
+
 
 class Collection:
     def __init__(self):
@@ -64,6 +77,9 @@ class Collection:
 
     def find(self, query, projection=None):
         return Cursor([row for row in self.rows.values() if matches(row, query)])
+
+    async def count_documents(self, query):
+        return len([row for row in self.rows.values() if matches(row, query)])
 
     async def find_one(self, query, projection=None):
         return next((deepcopy(row) for row in self.rows.values() if matches(row, query)), None)
@@ -196,6 +212,12 @@ def test_fully_played_exempt_accounts_pause_streak(neutral):
                 'starts_at': NOW - timedelta(days=20), 'until': NOW, 'account_tags': [PLAYER]}
         await capture(db, store, 2)
         assert (await store.streak(GUILD, PLAYER))['count'] == 1
+        row = next(row for row in db.strike_records.rows.values() if row['war_key'] == war_key(war(2)))
+        assert row['kind'] == 'completed' and row['exemption'] == neutral
+        assert (await store.history(GUILD, status='all'))['items'] == []
+        assert (await store.history(GUILD, status='exempt'))['items'] == []
+        assert (await store.account_list(GUILD, status='all'))['items'] == []
+        assert await store.war_list(GUILD) == []
     asyncio.run(run())
 
 
@@ -448,4 +470,145 @@ def test_transfer_does_not_refresh_old_clan_priority_grace():
         assert profile['current_clan_tag'] == '#8GG8'
         assert profile['replacement_updated_by'] == 'system'
         assert profile['replacement_clear_reason'] == 'Left clan (48h)'
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('move', [False, True])
+def test_departed_mark_visible_under_original_clan_during_grace(move):
+    async def run():
+        db, store = setup()
+        other = '#8GG8'
+        db.clans.rows['other'] = {'_id': 'other', 'tag': other, 'type': 'FWA'}
+        start = datetime.now(timezone.utc) - timedelta(hours=6)
+        await store.sync_roster(GUILD, CLAN, [{'tag': PLAYER}], observed_at=start)
+        profile = db.strike_profiles.rows[f'{GUILD}:{PLAYER}']
+        profile.update(replacement_listed=True, replacement_clan_tag=CLAN, replacement_priority='high')
+        await store.sync_roster(GUILD, other if move else CLAN, [{'tag': PLAYER}] if move else [])
+        for options in ({}, {'clan_tag': CLAN}):
+            rows = await store.replacement(GUILD, **options)
+            assert len(rows) == 1
+            assert rows[0]['departed'] and rows[0]['replacement_listed']
+            assert rows[0]['last_seen_clan_tag'] == CLAN
+            assert rows[0]['current_clan_tag'] == other if move else not rows[0].get('current_clan_tag')
+        if move:
+            assert await store.replacement(GUILD, clan_tag=other) == []
+            # Leaving the destination must not replace X's original grace clock.
+            await store.sync_roster(GUILD, other, [])
+            assert profile['departed_clan_tag'] == CLAN
+            assert profile['departed_last_seen_at'] == start
+        await store.sync_roster(GUILD, CLAN, [{'tag': PLAYER}])
+        assert profile['replacement_listed'] and 'departed_clan_tag' not in profile
+        assert not (await store.replacement(GUILD, clan_tag=CLAN))[0]['departed']
+    asyncio.run(run())
+
+
+def test_direct_family_return_retains_original_mark():
+    async def run():
+        db, store = setup()
+        await store.sync_roster(GUILD, CLAN, [{'tag': PLAYER}])
+        profile = db.strike_profiles.rows[f'{GUILD}:{PLAYER}']
+        profile.update(replacement_listed=True, replacement_clan_tag=CLAN)
+        await store.sync_roster(GUILD, '#8GG8', [{'tag': PLAYER}])
+        await store.sync_roster(GUILD, CLAN, [{'tag': PLAYER}])
+        assert profile['replacement_listed'] and 'departed_clan_tag' not in profile
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('attacks', [0, 2])
+def test_owner_conflict_defers_only_disputed_account(attacks):
+    async def run():
+        db, store = setup()
+        other = '#YYY'
+        async def disputed(tags):
+            return PlayerOwners(owners={other: 10}, conflicts=(PLAYER,), unavailable=())
+        store.link_resolver = disputed
+        item = await capture(db, store, 1, attacks, apply=False)
+        item['members'].append({'tag': other, 'attacks': attacks})
+        result = await store.process_war(GUILD, item, official_capture=True)
+        assert result['deferred_count'] == 1
+        assert result['deferred_accounts'][0]['player_tag'] == PLAYER
+        assert result['applied'] == 1
+        assert result['strikes'] == (1 if attacks == 0 else 0)
+        assert {row['player_tag'] for row in db.strike_records.rows.values()} == {other}
+        assert (await store.streak(GUILD, other))['count'] == (1 if attacks == 2 else 0)
+    asyncio.run(run())
+
+
+def test_replacement_api_groups_family_move_under_original_clan():
+    import json
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, patch
+    from cwl_web import strikes as api
+    from cwl_web import app
+    from utils import clan_weights
+
+    async def run():
+        db, store = setup()
+        store.replacement = AsyncMock(return_value=[{
+            'player_tag': PLAYER, 'current_clan_tag': '#8GG8', 'departed': True,
+            'last_seen_clan_tag': CLAN, 'last_seen_at': NOW,
+            'replacement_priority': 'high', 'active_strikes': 0, 'weight_difference': None}])
+        @asynccontextmanager
+        async def mongo(request):
+            yield db
+        request = SimpleNamespace(method='GET', query={}, app={})
+        clans = [{'tag': CLAN, 'name': 'Original', 'is_fwa': True},
+                 {'tag': '#8GG8', 'name': 'Destination', 'is_fwa': True}]
+        with patch.object(api.shared, 'require_manage', AsyncMock()), \
+                patch.object(api.shared, 'mongo', mongo), \
+                patch.object(api, 'service', AsyncMock(return_value=store)), \
+                patch.object(api, 'clan_rows', AsyncMock(return_value=clans)), \
+                patch.object(app, '_store', return_value=object()), \
+                patch.object(clan_weights, 'overlay_accounts', return_value={'accounts': []}):
+            row = json.loads((await api.replacements(request)).text)['candidates'][0]
+        assert (row['clan_tag'], row['clan_name']) == (CLAN, 'Original')
+        assert (row['current_clan_tag'], row['current_clan_name']) == ('#8GG8', 'Destination')
+        assert row['departed']
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('elapsed,visible', [(timedelta(hours=48), True),
+                                            (timedelta(hours=48, microseconds=1), False)])
+def test_transferred_mark_read_grace_without_roster_sync(elapsed, visible):
+    from unittest.mock import patch
+    import utils.strike_store as module
+
+    class ClockMeta(type):
+        def __instancecheck__(self, item):
+            return isinstance(item, datetime)
+
+    class Clock(datetime, metaclass=ClockMeta):
+        calls = 0
+
+        @classmethod
+        def now(cls, tz=None):
+            cls.calls += 1
+            return NOW + elapsed
+
+    async def run():
+        db, store = setup()
+        other = '#8GG8'
+        db.clans.rows['other'] = {'_id': 'other', 'tag': other, 'type': 'FWA'}
+        await store.sync_roster(GUILD, CLAN, [{'tag': PLAYER}], observed_at=NOW)
+        profile = db.strike_profiles.rows[f'{GUILD}:{PLAYER}']
+        profile.update(replacement_listed=True, replacement_clan_tag=CLAN,
+                       replacement_priority='high')
+        await store.sync_roster(GUILD, other, [{'tag': PLAYER}], observed_at=NOW + timedelta(hours=1))
+        before = deepcopy(profile)
+        # No sync or cleanup succeeds after the transfer. API reads stay read-only.
+        with patch.object(module, 'datetime', Clock):
+            for options, expected in [({}, visible), ({'clan_tag': CLAN}, visible),
+                                      ({'clan_tag': other}, False)]:
+                Clock.calls = 0
+                rows = await store.replacement(GUILD, **options)
+                assert bool(rows) == expected
+                assert Clock.calls == 1
+                if rows:
+                    assert rows[0]['departed'] and rows[0]['last_seen_clan_tag'] == CLAN
+        assert profile == before
+        # Eventual cleanup owns the durable audit, not a read request.
+        await store.expire_departed_replacements(GUILD, now=NOW + elapsed)
+        assert bool(profile.get('replacement_listed')) == visible
+        if not visible:
+            assert profile['replacement_clear_reason'] == 'Left clan (48h)'
     asyncio.run(run())

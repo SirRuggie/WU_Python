@@ -31,6 +31,8 @@ type Candidate = {
   departed?: boolean
   last_seen_clan_tag?: string | null
   last_seen_clan_name?: string | null
+  current_clan_name?: string | null
+  current_clan_tag?: string | null
   last_seen_at?: string | null
   is_manual?: boolean
   is_filler?: boolean
@@ -606,6 +608,7 @@ export default function ReplacementWorkspace({
                                 'Unknown clan'
                               }
                               seenAt={item.last_seen_at}
+                              currentClan={item.current_clan_name || item.current_clan_tag}
                             />
                           )}
                         </div>
