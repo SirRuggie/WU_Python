@@ -8,11 +8,14 @@ is intentional Not Available, not permission to revive an older external value.
 def saved_sources(db, tags):
     if not tags:
         return {}
-    rows = db.execute('SELECT tag,weight,updated_at FROM clan_player_weights WHERE tag IN (' +
+    rows = db.execute('SELECT tag,weight,updated_at,last_clan_tag,last_clan_name FROM clan_player_weights WHERE tag IN (' +
                       ','.join('?' for _ in tags) + ')', tuple(tags)).fetchall()
     return {row['tag']: {'weight': row['weight'], 'source_name': 'Clan weights',
                          'source_modified_at': row['updated_at'],
-                         'source_checked_at': row['updated_at']} for row in rows}
+                         'source_checked_at': row['updated_at'],
+                         'clan_weight_clan_tag': row['last_clan_tag'],
+                         'clan_weight_clan_name': row['last_clan_name'],
+                         'clan_weight_saved_at': row['updated_at']} for row in rows}
 
 
 async def source_weights(store, provider, tags):

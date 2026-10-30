@@ -107,13 +107,19 @@ it("does not save or rewrite unsaved text when the top unit changes", async () =
   await click(button("Full"));
   expect(input().value).toBe("25,000");
   expect(input(1).value).toBe("12,000");
-  expect(rows()[0].textContent).toContain("= 25,000 · saved for future seasons");
-  expect(rows()[1].textContent).toContain("= 12,000 · saved for future seasons");
+  expect(rows()[0].textContent).toContain(
+    "= 25,000 · saved for future seasons",
+  );
+  expect(rows()[1].textContent).toContain(
+    "= 12,000 · saved for future seasons",
+  );
   expect(props.onSave).not.toHaveBeenCalled();
   expect(
     host.querySelectorAll(".weight-queue-unit-picker [aria-pressed]"),
   ).toHaveLength(2);
-  expect(host.querySelectorAll(".weight-queue-row [aria-pressed]")).toHaveLength(0);
+  expect(
+    host.querySelectorAll(".weight-queue-row [aria-pressed]"),
+  ).toHaveLength(0);
 });
 
 it("reports nonempty drafts and clears drafts and errors on reset without saving", async () => {
@@ -317,9 +323,71 @@ it("focus after Save skips clan-weight-managed rows", async () => {
     );
   }
   await act(async () => root.render(<Harness />));
-  await type(input(), "25000");
-  await click(button("Save", rows()[0]));
+  await type(
+    host.querySelector<HTMLInputElement>(
+      'input[aria-label="Loot for Player 0"]',
+    )!,
+    "25000",
+  );
+  await click(
+    button(
+      "Save",
+      rows().find((row) => row.textContent?.includes("Player 0"))!,
+    ),
+  );
   expect(document.activeElement?.getAttribute("aria-label")).toBe(
     "Loot for Player 2",
   );
+});
+
+import { DashboardPermissions } from "./DashboardPermissions";
+import { mergeRosterMetadata } from "./roster";
+it("keeps the FWA split and link through unavailable metadata and updates when known", async () => {
+  const member = {
+    ...accounts[0],
+    current_clan_tag: "#FWA",
+    current_clan_status: "current" as const,
+    current_fwa_clan_tag: "#FWA",
+    current_fwa_status: "current",
+  };
+  let snapshot = { revision: 1, accounts: [member], clans: [], undo: null };
+  const show = async () =>
+    act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <WeightQueue
+            accounts={snapshot.accounts}
+            busy={false}
+            onEdit={() => {}}
+            onSave={async () => true}
+            onRefresh={() => {}}
+          />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+  await show();
+  expect(host.textContent).toContain("Set in Clan weights ›");
+  expect(host.querySelector(".weight-queue-row input")).toBeNull();
+  const unknown = {
+    ...snapshot,
+    accounts: [
+      {
+        ...member,
+        current_fwa_clan_tag: null,
+        current_fwa_status: "unavailable",
+      },
+    ],
+  };
+  snapshot = mergeRosterMetadata(snapshot, unknown) as typeof snapshot;
+  await show();
+  expect(host.textContent).toContain("FWA players");
+  expect(host.textContent).toContain("Showing last known groups");
+  expect(host.querySelector(".weight-queue-row input")).toBeNull();
+  snapshot = mergeRosterMetadata(snapshot, {
+    ...unknown,
+    accounts: [{ ...unknown.accounts[0], current_fwa_status: "current" }],
+  }) as typeof snapshot;
+  await show();
+  expect(host.textContent).toContain("Other accounts · enter here");
+  expect(host.querySelector(".weight-queue-row input")).not.toBeNull();
 });

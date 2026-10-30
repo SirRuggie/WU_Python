@@ -313,6 +313,15 @@ function App() {
     setSignupStep(step);
   };
   const [savedSignupDirty, setSavedSignupDirty] = useState(false)
+  const [weightState, setWeightState] = useState({ count: 0, busy: false });
+  const [weightTarget, setWeightTarget] = useState({
+    player: entryTarget.weightPlayer,
+    clan: entryTarget.weightClan,
+  });
+  const [pendingWeightLeave, setPendingWeightLeave] = useState<
+    null | (() => void)
+  >(null);
+  const weightEditFocus = useRef<HTMLElement | null>(null);
   const [manageDirty, setManageDirty] = useState(false)
   const [strikeWorking, setStrikeWorking] = useState(false)
   const [replacementClan, setReplacementClan] = useState(entryTarget.replacementClan || '')
@@ -342,6 +351,13 @@ function App() {
     if (['strikes', 'replacements'].includes(view) && (manageDirty || strikeWorking)) {
       setPendingStrikeLeave({action: action || (() => {}), working: strikeWorking}); return false
     }
+    if (view === 'weight-trial') {
+      if (weightState.busy) return false
+      if (manageDirty) {
+        setPendingWeightLeave(() => action || (() => {}))
+        return false
+      }
+    }
     if (view === 'staff' && rosterBusy) return false
     if (view === 'signup' && (pending || signupBusy.current)) return false
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
@@ -349,7 +365,7 @@ function App() {
     if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
     if (view === 'publication' && publicationBusy) return false
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving publication or announcement changes?')
-    if ((isManagementArea(view) || ['manage','text-commands','clan-management','weight-trial','moderation','member-activity'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
+    if ((isManagementArea(view) || ['manage','text-commands','clan-management','moderation','member-activity'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
     if (view === 'reminders' && reminderDirty) return window.confirm('Leave without saving your reminder changes?')
     return true
   }
@@ -372,11 +388,33 @@ function App() {
     previousJourneyUser.current = session?.user.id || null
   }, [session?.user.id])
   const [activityVisit, setActivityVisit] = useState<number>(() => window.history.state?.wuDashboardIndex || 0)
-  const changeView = (next: View, filter = '', kind?: 'war'|'cwl', panel: 'register'|'saved' = 'register') => {
+  const changeView = (
+    next: View,
+    filter = "",
+    kind?: "war" | "cwl",
+    panel: "register" | "saved" = "register",
+    weights?: { player?: string; clan?: string },
+  ) => {
     if (navigation.current?.pending) return
     const proceed = () => {
       const destination = allowedView(next)
-      if (destination !== view || (destination === 'signup' && signupPanel !== panel)) navigation.current?.write({ view: destination, activityFilter: filter, activityKind: kind, ...(destination === 'signup' ? {signupPanel: panel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, !isTourReadOnly())
+      if (destination === "weight-trial")
+        setWeightTarget({ player: weights?.player, clan: weights?.clan });
+      if (destination !== view || (destination === "signup" && signupPanel !== panel))
+        navigation.current?.write(
+          {
+            view: destination,
+            ...(destination === "weight-trial"
+              ? { weightPlayer: weights?.player, weightClan: weights?.clan }
+              : {}),
+            activityFilter: filter,
+            activityKind: kind,
+            ...(destination === "signup" ? { signupPanel: panel } : {}),
+            season: seasonViews.has(destination) ? staffSeasonId : seasonId,
+            ...(destination === "publication" ? { step: publicationStep } : {}),
+          },
+          !isTourReadOnly(),
+        );
       setActivityVisit(window.history.state?.wuDashboardIndex || 0)
       if (destination !== view) setReplacementClan('')
       if (destination === 'signup') setSignupPanel(panel)
@@ -484,6 +522,7 @@ function App() {
       setActivitySearch(target.activityFilter || "");
       setActivityKind(target.activityKind);
       setReplacementClan(target.replacementClan || "");
+      setWeightTarget({ player: target.weightPlayer, clan: target.weightClan });
       const destination = navigationState.current.allowedView(target.view);
       if (target.season && seasonViews.has(destination))
         setSeasonId(target.season);
@@ -504,8 +543,22 @@ function App() {
     if (authState !== 'ready') return
     const destination = allowedView(view)
     if (destination !== view) setView(destination)
-    navigation.current?.write({ view: destination, ...(destination === "replacements" ? {replacementClan} : {}), activityFilter: activitySearch, activityKind, ...(destination === 'signup' ? {signupPanel} : {}), season: seasonViews.has(destination) ? staffSeasonId : seasonId, ...(destination === 'publication' ? {step: publicationStep} : {}) }, false)
-  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan])
+    navigation.current?.write(
+      {
+        view: destination,
+        ...(destination === "replacements" ? {replacementClan} : {}),
+        ...(destination === "weight-trial"
+          ? { weightPlayer: weightTarget.player, weightClan: weightTarget.clan }
+          : {}),
+        activityFilter: activitySearch,
+        activityKind,
+        ...(destination === "signup" ? { signupPanel } : {}),
+        season: seasonViews.has(destination) ? staffSeasonId : seasonId,
+        ...(destination === "publication" ? { step: publicationStep } : {}),
+      },
+      false,
+    );
+  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, weightTarget])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
@@ -738,6 +791,22 @@ function App() {
         }}
       />
     )}
+    {pendingWeightLeave && (
+      <ConfirmDialog
+        heading="Unsaved changes"
+        text={`You have ${weightState.count} unsaved weight${weightState.count === 1 ? "" : "s"}.`}
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        danger
+        returnFocus={() => weightEditFocus.current}
+        onCancel={() => setPendingWeightLeave(null)}
+        onConfirm={() => {
+          const action = pendingWeightLeave;
+          setPendingWeightLeave(null);
+          if (!weightState.busy) action();
+        }}
+      />
+    )}
     {pendingRosterLeave && <ConfirmDialog
       key={pendingRosterLeave.working ? 'working' : 'dirty'}
       heading={pendingRosterLeave.working ? 'Save in progress' : 'Unsaved changes'}
@@ -815,7 +884,23 @@ function App() {
         {view === 'tickets' && <TicketBrowser />}
         {(view === 'member-activity' || view === 'moderation') && <ModerationWorkspace onDirty={setManageDirty} />}
         {view === 'clan-management' && <ClanManagement onDirty={setManageDirty} />}
-        {view === 'weight-trial' && <WeightTrial onDirty={setManageDirty} />}
+        {view === "weight-trial" && (
+          <div
+            onFocusCapture={(event) => {
+              if (event.target instanceof HTMLInputElement)
+                weightEditFocus.current = event.target;
+            }}
+          >
+            <WeightTrial
+              onDirty={setManageDirty}
+              onState={setWeightState}
+              targetPlayer={weightTarget.player}
+              targetClan={weightTarget.clan}
+              seasonId={session.can_edit ? staffSeasonId : undefined}
+              onRoster={() => changeView("roster")}
+            />
+          </div>
+        )}
         {view === 'strikes' &&
           strikePermissions(session.dashboard_permissions, session.is_owner).view && (
             <StrikesWorkspace
@@ -1015,7 +1100,9 @@ function App() {
         {view === "roster" && session.can_edit && (
           <RosterWorkspace
             onPublication={draft => setFlowPublication({season: seasonId, draft})}
-            onClanWeights={() => changeView("weight-trial")}
+            onClanWeights={(player, clan) =>
+              changeView("weight-trial", "", undefined, "register", { player, clan })
+            }
             onFamilyClans={() => changeView("clan-management")}
             onBusy={setRosterBusy}
             onDirtySummary={setRosterDirtySummary}

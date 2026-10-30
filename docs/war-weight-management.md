@@ -30,10 +30,10 @@ Existing player-tag values, history, storage counts, and attribution are promote
 in place. The legacy `weight-trial` view/API and `clan_weight_trial` table names
 remain for compatibility; there is no copied or second weight ledger.
 
-Precedence: explicit staff override, then saved clan weight, then FWA Stats only
+Precedence: saved clan weight, then explicit staff override, then FWA Stats only
 for a tag with no saved row. A saved blank deliberately means Not Available and
 suppresses external fallback. The official source follows the player if they
-leave their clan. Only current members of family FWA clans can be edited here.
+leave their clan. Current FWA members can be edited from their clan; Find any player can update an existing saved row after the player leaves. It cannot create a saved row for a random non-member.
 
 Current roster reads, placement calculations, member account weights, refreshes,
 and replacement suggestions use the saved source. A changed saved weight bumps

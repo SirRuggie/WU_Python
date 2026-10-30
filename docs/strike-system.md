@@ -14,7 +14,10 @@ Implemented for the Warriors United Discord bot and its existing dashboard. This
 
 ## Streaks and departure grace — prompt 25 implementation
 
-For newly finalized official-API captures, a played war means the account was
+Eligible captures start with the official-API monitor deployed with prompt 22
+(2026-10-30 00:06), including captures made before the streak release that finalize
+after it. Already-finalized and imported wars remain excluded. For a newly
+finalized eligible capture, a played war means the account was
 in an ended regular-war lineup and used both attacks. Every second consecutive
 played war (2 and 4) clears the oldest active strike. At six played wars, all
 active strikes clear and the streak resets to zero. Missing one or both attacks
@@ -42,6 +45,8 @@ target is at least 44px. The current shared help default is **4 strikes**; promp
 23 will add the configurable setting and wire its value into the help. This
 batch does not add a settings editor or automated replacement.
 
+A move between family clans does not reset the streak or transfer a clan-specific
+replacement mark. Exemptions remain neutral even when both attacks were used.
 A confirmed departed account remains in Replacements during its 48-hour grace
 period with an explicit **Left clan** label and its last-seen clan/time. A stale
 roster alone is not labeled as a confirmed departure. After more than 48 hours
@@ -334,3 +339,32 @@ settings edits after a simulated 409. Visible enabled controls are at least 44px
 text is at least 12px and measured text contrast is at least 4.5:1. Representative
 phone history rows measure 53px versus 242px in the prior fixture (4.57× row
 density); this comparison excludes the page's shared header and controls.
+
+
+## Strike streaks release closure — 2026-10-30
+
+`strike-streaks-1`, PR #71, shipped frontend, isolated dashboard backend and bot at
+`1a4aae32eb5581162190fbc0954b9536bbc9187c`. Claude passed the read-only 360px
+production smoke (handoff 107): all eight help lines, Close, tracking summary and
+account list; no writes or test notifications. The public entry was
+`index-B5C-PdiQ.js`, SHA-256
+`e97e2bf2a4a7ef00bf75ad35016dc2f74bd800c97189aabd32b6dfe6aa9fcd44`.
+All 34 checked owning/shared assets matched the manifest. Final verification:
+4,903 backend tests, 21 skipped, 162 subtests; 957 frontend tests; TypeScript/build.
+
+Backup: `.local/strike-streaks-1-backup-20261030T145631Z` (SQLite and 12 Mongo
+archives). Protected state comparisons passed. Active strikes remained 3,607;
+zero explained clears and zero unexplained changes. The first bot pass reported
+25 clans, zero finalized wars and 10 behind. Backend startup, two consecutive
+config 200s and current-invocation journals passed. This is release evidence,
+not proof of live Discord delivery. The release's historical rollback target was
+`c494022e924994435496c3e4f0722eb781460380`; later releases supersede that target.
+Evidence is retained in `/tmp/wu-strike-streaks-release/` (`live.json`,
+`mongo-postcheck.json`, `strike-comparison.json`, `activation-fresh.log`).
+
+### Later — streak and departure display
+
+- Discord `/strikes replacements` still lacks the departed mover's “Left X” text.
+- After 48 hours but before the next sync, a mover's mark disappears from lists;
+  the next sync clears the stored mark. This display interval is accepted.
+- Put departure age inline with the label, such as “Left clan · 6 h ago”.

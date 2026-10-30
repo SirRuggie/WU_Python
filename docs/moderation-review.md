@@ -170,6 +170,10 @@ A save in the narrow interval after the final revision read and before the POST
 could still send a sample to the previously confirmed destination; there is no
 cross-service transaction covering Mongo and Discord.
 
+Historical accepted revision `91c94c3` passed **4,863 backend / 923 frontend**
+tests. Those counts describe that reviewed revision, not the later integrated
+release.
+
 Final integrated verification passed 4,863 backend tests, 21 skipped and 162
 subtests, plus 933 frontend tests, TypeScript/build. Clean final-tag frontend
 checks passed again; the tag differed only in three documentation files from
@@ -180,3 +184,59 @@ Release backups, protected-state comparisons, public hashes and runtime checks
 are recorded in the linked release record. Current-invocation journals were
 clean; the old bot's shutdown CancelledError was excluded from new-process
 readiness. No real Discord Send test has been performed by this release workflow.
+
+
+## Moderation polish follow-up
+
+History resolves unique moderator IDs through the existing Discord member adapter,
+with at most three concurrent requests and a three-second page budget. Names are
+cached per application and guild for 120 seconds (unknown results for 30 seconds),
+with a 256-entry bound. Unknown members remain visibly unknown; IDs are hover
+metadata. Sample previews render member names while retaining the real Discord
+payload used for delivery. Category toggles remember the last active destination
+mode in the current editor session. A fresh page with a saved Off category starts
+with Main because no prior mode is stored in the existing schema.
+
+A revision recheck that cancels a test before posting releases only its own rate
+claim. Sent and uncertain attempts retain the ten-second slot. The cancelled audit
+record remains. Older rate records need no migration; their existing expiry works.
+
+Avatar diagnosis: this endpoint reads archived Mongo bytes; it does not fetch a
+Discord avatar. Confirmed missing/empty/unsupported images now return 204 and are
+negatively cached for 30 seconds, bounded to 128 guild/event keys per application.
+Every request still checks current staff authorization before using the cache.
+Mongo and authorization outages remain genuine 503 responses. A simulated Mongo
+server-selection failure reproduces the actual helper's 503 conversion. This
+identifies a possible failure path, **not the proven cause of the three historical
+production 503s**; no production tracing or requests were performed for this
+follow-up. The client uses its existing initials fallback on an empty image.
+
+
+## Moderation polish release closure — 2026-10-30
+
+`moderation-polish-1`, PR #72, shipped frontend and isolated dashboard backend at
+`568d5689e94909d9123461ca7f0524144eca3f50`. The bot stayed at
+`1a4aae32eb5581162190fbc0954b9536bbc9187c` without a restart. Claude passed the
+read-only 360px smoke (handoff 108): history names, Log settings and saved status,
+with no saves or test sends. Public entry `index-BNw8xs6y.js`, SHA-256
+`ea437b05560fc1ad0f7e4024cb7a9fdea995227da8011a8e5fe253d1ed191e64`, and all 36
+checked owning/shared assets matched the manifest.
+
+Final integrated checks: 4,916 backend tests, 21 skipped, 162 subtests; 963 frontend
+tests; TypeScript/build. Sixty scratch release checks passed, including a mutation
+that removes the final runtime check. Backup:
+`.local/moderation-polish-1-backup-20261030T152118Z`. SQLite protected rows, 12 Mongo
+collection counts, raw moderation settings and effective destinations matched.
+Active strikes remained 3,607 with zero clears or unexplained changes. Backend
+cwd, two consecutive public config 200s and the final current-invocation journal
+passed after data reconciliation. The historical frontend/backend rollback was
+`1a4aae32eb5581162190fbc0954b9536bbc9187c`, with the bot unchanged; later releases
+supersede that target. Evidence remains in `/tmp/wu-moderation-polish-release/`
+(`live.json`, `mongo-postcheck.json`, `strike-comparison.json`).
+
+Smoke also found three transient avatar 503s among 11 first-load requests;
+19 individual refetches later returned 200. Initials remained usable. Historical
+logs recorded no underlying exception class, so the cause is not proven. Prompt
+36 tracks concurrency, class-only diagnostics and two display follow-ups; this
+release closure does not claim those 503s are fixed or that real Discord test
+messages were sent.

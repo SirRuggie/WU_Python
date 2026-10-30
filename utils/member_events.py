@@ -128,19 +128,26 @@ class MemberEventStore:
         if self.test_audit is None:
             raise RuntimeError("Member-event test audit storage is unavailable")
         rate_id = f"member-event-test-rate:{GUILD_ID}:{kind}"
+        audit_id = f"member-event-test:{uuid.uuid4().hex}"
         try:
             await self.test_audit.find_one_and_update(
                 {"_id": rate_id, "last_at": {"$lte": now - timedelta(seconds=10)}},
-                {"$set": {"last_at": now, "staff_id": staff_id}},
+                {"$set": {"last_at": now, "staff_id": staff_id, "audit_id": audit_id}},
                 upsert=True, return_document=ReturnDocument.AFTER,
             )
         except DuplicateKeyError:
             raise TestRateLimited("Wait 10 seconds before sending another test for this event.") from None
-        audit_id = f"member-event-test:{uuid.uuid4().hex}"
         await self.test_audit.insert_one({"_id": audit_id, "guild_id": GUILD_ID,
                                           "event_type": kind, "staff_id": staff_id,
                                           "at": now, "status": "attempting"})
         return audit_id
+
+    async def cancel_test(self, audit_id: str, *, kind: str, destination: str):
+        """Release only this unsent claim; never clear a newer caller's cooldown."""
+        await self.finish_test(audit_id, status="cancelled", destination=destination)
+        await self.test_audit.delete_one({
+            "_id": f"member-event-test-rate:{GUILD_ID}:{kind}", "audit_id": audit_id,
+        })
 
     async def finish_test(self, audit_id: str, *, status: str, destination: str):
         await self.test_audit.update_one(

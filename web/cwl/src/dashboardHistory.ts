@@ -4,7 +4,17 @@ import { cwlPaths } from "./staffLinks";
 import { managementPaths } from "./managementLinks";
 const staffPaths: Record<string, string> = { ...cwlPaths, ...managementPaths, "weight-trial": "/clan-weights" };
 const weightAliases = ["/weight", "/weights", "/weight-trial"];
-export type DashboardRoute = { replacementClan?: string; view: DashboardView; season: string; signupPanel?: "register" | "saved"; step?: "review" | "announce"; activityFilter?: string; activityKind?: "war" | "cwl" };
+export type DashboardRoute = {
+  replacementClan?: string;
+  view: DashboardView;
+  season: string;
+  weightPlayer?: string;
+  weightClan?: string;
+  signupPanel?: "register" | "saved";
+  step?: "review" | "announce";
+  activityFilter?: string;
+  activityKind?: "war" | "cwl";
+};
 export function dashboardTarget(search: string, pathname = '/'): DashboardRoute {
   pathname = pathname === '/' ? '/' : pathname.replace(/\/$/, '');
   const params = new URLSearchParams(search);
@@ -13,6 +23,16 @@ export function dashboardTarget(search: string, pathname = '/'): DashboardRoute 
   const requested = (saved ? "signup" : undefined) || (weightAliases.includes(pathname) ? "weight-trial" : pathView) || (params.get("view") === "signups" ? "signup" : params.get("view"));
   const value = requested === "manage-signups" ? "roster" : requested;
   return {
+    ...(value === "weight-trial"
+      ? {
+          weightPlayer: /^#[A-Z0-9]{1,20}$/i.test(params.get("player") || "")
+            ? params.get("player")!
+            : undefined,
+          weightClan: /^#[A-Z0-9]{1,20}$/i.test(params.get("clan") || "")
+            ? params.get("clan")!
+            : undefined,
+        }
+      : {}),
     ...(saved ? {signupPanel: "saved" as const} : {}),
     view: dashboardViews.includes(value as DashboardView)
       ? (value as DashboardView)
@@ -31,6 +51,10 @@ export function dashboardPath(route: DashboardRoute) {
   const path = staffPaths[route.view];
   const params = new URLSearchParams(path ? {} : { view: route.view });
   if (route.view === "replacements" && /^#[0289PYLQGRJCUV]{3,15}$/.test(route.replacementClan || "")) params.set("clan", route.replacementClan!);
+  if (route.view === "weight-trial") {
+    if (route.weightPlayer) params.set("player", route.weightPlayer);
+    if (route.weightClan) params.set("clan", route.weightClan);
+  }
   if (route.view === "publication" && route.step) params.set("step", route.step);
   if (route.season && seasonViews.has(route.view)) params.set("season", route.season);
   return `${path || "/"}${params.size ? `?${params}` : ""}`;

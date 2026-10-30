@@ -229,3 +229,21 @@ it('round-trips only a valid replacement clan and never carries it into other de
  expect(dashboardPath({ ...route, view: 'strikes' })).toBe('/clans/strikes');
  expect(dashboardTarget('?clan=%23Q2Y', '/clans/strikes').replacementClan).toBeUndefined();
 });
+
+it("keeps encoded clan/player weight targets across path roundtrips", () => {
+  const route = {
+    view: "weight-trial" as const,
+    season: "",
+    weightPlayer: "#P2Y",
+    weightClan: "#R2Y",
+  };
+  const path = dashboardPath(route);
+  expect(path).toBe("/clan-weights?player=%23P2Y&clan=%23R2Y");
+  expect(
+    dashboardTarget(path.slice(path.indexOf("?")), "/clan-weights"),
+  ).toEqual(route);
+  expect(
+    dashboardTarget("?player=https://evil.example&clan=bad", "/clan-weights")
+      .weightPlayer,
+  ).toBeUndefined();
+});

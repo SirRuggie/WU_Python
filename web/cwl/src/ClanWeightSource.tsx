@@ -4,17 +4,40 @@ import { useDashboardPermission } from "./DashboardPermissions";
 /** Use the app's guarded navigation, including when an editor has unsaved inputs. */
 export default function ClanWeightSource({
   onNavigate,
+  account,
 }: {
-  onNavigate?: () => void;
+  onNavigate?: (player?: string, clan?: string) => void;
+  account?: {
+    tag: string;
+    clan_weight_managed?: boolean;
+    clan_weight_clan_name?: string | null;
+    clan_weight_clan_tag?: string | null;
+    clan_weight_saved_at?: string | null;
+    current_fwa_clan_tag?: string | null;
+    current_fwa_status?: string;
+  };
 }) {
   const allowed = useDashboardPermission("clan_weights");
+  const params = new URLSearchParams();
+  if (account) params.set("player", account.tag);
+  if (account?.current_fwa_clan_tag)
+    params.set("clan", account.current_fwa_clan_tag);
   return (
     <div className="clan-weight-source">
+      {account?.current_fwa_status === "stale" && (
+        <span>Last known clan membership. Refresh to check again.</span>
+      )}
       {allowed ? (
         <>
-          <span>Weight comes from Clan weights</span>{" "}
+          <span>
+            {account?.clan_weight_saved_at
+              ? `Saved in ${account.clan_weight_clan_name || account.clan_weight_clan_tag} · ${new Date(account.clan_weight_saved_at).toLocaleDateString()}`
+              : account?.current_fwa_clan_tag && !account.clan_weight_managed
+                ? "Set this FWA player's weight in Clan weights"
+                : "Weight comes from Clan weights"}
+          </span>{" "}
           <a
-            href="/clan-weights"
+            href={`/clan-weights${params.size ? `?${params}` : ""}`}
             onClick={(event) => {
               if (
                 event.button !== 0 ||
@@ -26,13 +49,20 @@ export default function ClanWeightSource({
                 return;
               if (onNavigate) {
                 event.preventDefault();
-                onNavigate();
+                onNavigate(
+                  account?.tag,
+                  account?.current_fwa_clan_tag || undefined,
+                );
               }
             }}
           >
-            Open Clan weights →
+            {account?.current_fwa_clan_tag && !account.clan_weight_managed
+              ? "Set in Clan weights ›"
+              : "Open Clan weights →"}
           </a>
         </>
+      ) : account?.current_fwa_clan_tag && !account.clan_weight_managed ? (
+        "Set this FWA player’s weight in Clan weights. Ask a staff member with Clan weights access."
       ) : (
         "Weight comes from Clan weights. Ask a staff member with Clan weights access."
       )}

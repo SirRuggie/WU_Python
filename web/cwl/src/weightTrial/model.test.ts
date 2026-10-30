@@ -121,9 +121,55 @@ it("compares adjacent actual war positions and reacts to unsaved edits", () => {
 });
 
 it("labels persisted ordering as saved rather than current", () => {
-  const text = orderLabel({clan: {tag: "#R2Y", name: "Family"}, members: [], checked_at: "",
-    war_order: {"#P2Y": 1}, war_source: {state: "inWar", cached: true, captured_at: "2026-10-21T12:00:00Z"}});
+  const text = orderLabel({
+    clan: { tag: "#R2Y", name: "Family" },
+    members: [],
+    checked_at: "",
+    war_order: { "#P2Y": 1 },
+    war_source: {
+      state: "inWar",
+      cached: true,
+      captured_at: "2026-10-21T12:00:00Z",
+    },
+  });
   expect(text).toContain("Saved war lineup");
   expect(text).toContain("Check this matches the spreadsheet");
   expect(text).not.toContain("Current war");
+});
+
+it("normalizes equivalent loot forms and formats full weights without rounding writes", () => {
+  const blank = { storages: "5", loot: "", full: "" };
+  for (const text of ["35800", "35,800", "35.8k", "35.8K"]) {
+    expect(validateDraft(editDraft(blank, "loot", text))).toEqual({
+      storages: 5,
+      weight: 179000,
+    });
+  }
+  for (const text of ["3,58,00", "35.8001k", "1e5", "12cats"])
+    expect(() => validateDraft(editDraft(blank, "loot", text))).toThrow();
+});
+
+import { whole } from "./model";
+it("parses every one- and two-decimal k value in the accepted range exactly", () => {
+  for (const places of [1, 2]) {
+    const scale = 10 ** places;
+    for (let digits = 1; digits * (1000 / scale) <= 999999; digits++) {
+      const text = `${Math.floor(digits / scale)}.${String(digits % scale).padStart(places, "0")}k`;
+      expect(whole(text, 999999), text).toBe(digits * (1000 / scale));
+    }
+  }
+  for (const text of ["32.2k", "32.20k", "32.2000k", "32,200", "32200.00"])
+    expect(whole(text, 999999)).toBe(32200);
+  for (const text of [
+    "0",
+    "0.0001k",
+    "1.001",
+    "999.9991k",
+    "1000k",
+    "1e3",
+    "NaN",
+    "3,22k",
+    "999999999999999999k",
+  ])
+    expect(() => whole(text, 999999), text).toThrow();
 });

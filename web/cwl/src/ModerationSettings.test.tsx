@@ -235,3 +235,41 @@ it("keeps unsaved edits after a revision conflict", async () => {
   expect(host.textContent).toContain("Your edits are preserved");
   expect(host.textContent).toContain("Unsaved changes");
 });
+
+it("restores the last active mode despite a retained own channel", async () => {
+  const card = host.querySelector(".moderation-category-card")!;
+  const mode = card.querySelector<HTMLSelectElement>(
+    ".moderation-category-routing select",
+  )!;
+  const change = async (select: HTMLSelectElement, value: string) => {
+    await act(async () => {
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  };
+  await change(mode, "own");
+  await change(
+    card.querySelector<HTMLSelectElement>('[aria-label="Members channel"]')!,
+    "other",
+  );
+  const toggle = card.querySelector<HTMLInputElement>(
+    '[aria-label="Members logging"]',
+  )!;
+  await act(async () => toggle.click());
+  await act(async () => toggle.click());
+  expect(mode.value).toBe("own");
+  await change(mode, "main");
+  await act(async () => toggle.click());
+  await act(async () => toggle.click());
+  expect(mode.value).toBe("main");
+  expect(card.textContent).toContain("Uses main's channel");
+  await change(mode, "own");
+  expect(
+    card.querySelector<HTMLSelectElement>('[aria-label="Members channel"]')!
+      .value,
+  ).toBe("other");
+  await act(async () => button("Discard").click());
+  await act(async () => toggle.click());
+  await act(async () => toggle.click());
+  expect(mode.value).toBe("main");
+});
