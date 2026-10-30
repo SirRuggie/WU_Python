@@ -132,6 +132,9 @@ class StrikeTracking:
     async def defer_due(self, guild_id: int, clan_tag: str, *, now=None):
         """Back off source failures without losing the durable final deadline."""
         now = utc(now or datetime.now(timezone.utc))
+        await self.mongo.strike_tracking.update_one(
+            {'_id': self.key(guild_id, clan_tag)},
+            {'$set': {'retry_not_before': now + timedelta(minutes=2)}})
         rows = await self.mongo.strike_war_snapshots.find(
             {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
              'status': 'observing'}).to_list(length=None)
@@ -186,6 +189,24 @@ class StrikeTracking:
              '$setOnInsert': {'error_history': []}}, upsert=True)
         return token
 
+    async def failed_begin(self, guild_id: int, clan_tag: str, attempted_at):
+        """Record startup failure without replacing a newer overlapping scan."""
+        key = self.key(guild_id, clan_tag)
+        previous = await self.mongo.strike_tracking.find_one({'_id': key})
+        if previous and previous.get('last_started_at') and utc(previous['last_started_at']) > utc(attempted_at):
+            return
+        changes = {'guild_id': int(guild_id), 'clan_tag': tag(clan_tag),
+                   'last_checked_at': datetime.now(timezone.utc),
+                   'last_scan_status': 'needs_review', 'error': 'War processing failed'}
+        if previous is None:
+            try:
+                await self.mongo.strike_tracking.insert_one({'_id': key, **changes})
+            except DuplicateKeyError:
+                return
+        else:
+            await self.mongo.strike_tracking.update_one(
+                {'_id': key, 'scan_token': previous.get('scan_token')}, {'$set': changes})
+
     async def finish(self, guild_id: int, clan_tag: str, *, started_at: str,
                      regular_wars=0, cwl_wars=0, deferred_accounts=0,
                      skipped_wars=0, error: str | None = None,
@@ -225,9 +246,12 @@ class StrikeTracking:
         return await self.mongo.strike_tracking.find_one({'_id': key})
 
     async def pending(self, guild_id: int):
-        return await self.mongo.strike_tracking.find(
+        rows = await self.mongo.strike_tracking.find(
             {'guild_id': guild_id, 'retry_requested_at': {'$ne': None}},
-            {'clan_tag': 1, 'retry_requested_at': 1}).to_list(length=None)
+            {'clan_tag': 1, 'retry_requested_at': 1, 'retry_not_before': 1}).to_list(length=None)
+        now = datetime.now(timezone.utc)
+        return [row for row in rows if not row.get('retry_not_before')
+                or utc(row['retry_not_before']) <= now]
 
     async def consume_retry(self, guild_id: int, clan_tag: str, requested_at):
         await self.mongo.strike_tracking.update_one(

@@ -233,7 +233,7 @@ def entry(row, clans, profile=None):
                 or _OPPONENT_NAME_CACHE.get(row.get('opponent_tag'), (0, None))[1]
                 or row.get('opponent_tag'),
             'war_end': public(row['occurred_at']), 'expires_at': public(row.get('expires_at')),
-            'kind': 'cwl' if kind == 'cwl' else ('strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss')),
+            'kind': 'no_attack' if kind == 'no_attack' else ('cwl' if kind == 'cwl' else ('strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss'))),
             'source': row.get('source'),
             'source_label': ('Clash API' if row.get('capture_source') == 'clash_api' else
                              'ClashKing (import)' if row.get('import_id') or
@@ -436,6 +436,13 @@ async def remove(request):
     return web.json_response({'ok': True})
 
 
+async def no_attack_labels(request, tags):
+    rows = [{'opponent_tag': value,
+             'opponent_name': 'NO WAR' if value == '#2CYVV92R' else None} for value in tags]
+    await _enrich_war_names(request, rows, {})
+    return {row['opponent_tag']: row['opponent_name'] for row in rows}
+
+
 @endpoint
 async def settings(request):
     actor = await shared.identity(request)
@@ -464,12 +471,14 @@ async def settings(request):
                        'player_tags': row.get('account_tags') or [], 'resume_date': utc(row['until']).date().isoformat()})
     return web.json_response({'excluded_roles': [{'id': str(value), 'name': role_names.get(str(value), f'Role {value}')} for value in config['exempt_role_ids']],
                               'roles': roles, 'leaves': result, 'strike_limit': config['strike_limit'],
+                              'no_attack_opponents': config['no_attack_opponents'],
+                              'no_attack_names': await no_attack_labels(request, config['no_attack_opponents']),
                               'revision': config['revision']})
 
 
 @endpoint
 async def save_roles(request):
-    data = await body(request, {'role_ids', 'strike_limit', 'revision'})
+    data = await body(request, {'role_ids', 'strike_limit', 'revision', 'no_attack_opponents'})
     revision = number(data.get('revision'), 0, 2**53 - 1)
     limit = number(data['strike_limit'], 1, 20) if 'strike_limit' in data else None
     roles = data.get('role_ids')
@@ -488,9 +497,12 @@ async def save_roles(request):
         if set(roles) - selectable - retained:
             raise ValueError('A selected role is managed or no longer exists. Refresh the role list.')
         config = await ledger.set_exempt_roles(GUILD_ID, roles, int(actor['user_id']),
-                                               expected_revision=revision, strike_limit=limit)
+                                               expected_revision=revision, strike_limit=limit,
+                                               no_attack_opponents=data.get('no_attack_opponents'))
     return web.json_response({'ok': True, 'revision': config['revision'],
-                              'strike_limit': config['strike_limit']})
+                              'strike_limit': config['strike_limit'],
+                              'no_attack_opponents': config['no_attack_opponents'],
+                              'no_attack_names': await no_attack_labels(request, config['no_attack_opponents'])})
 
 
 @endpoint

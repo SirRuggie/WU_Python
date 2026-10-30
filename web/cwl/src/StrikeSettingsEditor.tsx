@@ -12,6 +12,8 @@ export type StrikeRole = {
 export type StrikeSettings = {
   revision: number;
   strike_limit: number;
+  no_attack_opponents?: string[];
+  no_attack_names?: Record<string, string>;
   excluded_roles: StrikeRole[];
   roles: StrikeRole[];
   leaves: {
@@ -35,6 +37,7 @@ export default function StrikeSettingsEditor({
 }) {
   const [roles, setRoles] = useState(settings.excluded_roles);
   const [limit, setLimit] = useState(String(settings.strike_limit));
+  const [opponents, setOpponents] = useState((settings.no_attack_opponents ?? []).join("\n"));
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
@@ -44,6 +47,7 @@ export default function StrikeSettingsEditor({
   const active = useRef(true);
   const writing = useRef(false);
   const dirty =
+    opponents !== (settings.no_attack_opponents ?? []).join("\n") ||
     limit !== String(settings.strike_limit) ||
     roles
       .map((role) => role.id)
@@ -83,13 +87,14 @@ export default function StrikeSettingsEditor({
     setError("");
     setSaved(false);
     try {
-      const receipt = await api<{ revision: number; strike_limit: number }>(
+      const receipt = await api<{ revision: number; strike_limit: number; no_attack_opponents: string[]; no_attack_names: Record<string,string> }>(
         "/strikes/settings/roles",
         "PUT",
         {
           revision: settings.revision,
           role_ids: roles.map((role) => role.id),
           strike_limit: Number(limit),
+          no_attack_opponents: opponents.split(/[\s,]+/).filter(Boolean),
         },
       );
       if (!active.current) return;
@@ -99,7 +104,10 @@ export default function StrikeSettingsEditor({
         revision: receipt.revision,
         strike_limit: receipt.strike_limit,
         excluded_roles: roles,
+        no_attack_opponents: receipt.no_attack_opponents,
+        no_attack_names: receipt.no_attack_names,
       });
+      setOpponents(receipt.no_attack_opponents.join("\n"));
       setSaved(true);
     } catch (cause) {
       if (!active.current) return;
@@ -128,6 +136,7 @@ export default function StrikeSettingsEditor({
       if (!active.current) return;
       setRoles(current.excluded_roles);
       setLimit(String(current.strike_limit));
+      setOpponents((current.no_attack_opponents ?? []).join("\n"));
       onSaved(current);
       setConflict(false);
       setError("");
@@ -178,6 +187,18 @@ export default function StrikeSettingsEditor({
         />
       </label>
       <p>Marks accounts at this many active strikes. No automatic action.</p>
+      <h3>No-attack opponents</h3>
+      <p>Wars against these clans never give strikes.</p>
+      {[...new Set(opponents.split(/[\s,]+/).filter(Boolean))].map((value) => (
+        <p key={value}>{settings.no_attack_names?.[value.toUpperCase()] || (value.toUpperCase() === "#2CYVV92R" ? "NO WAR" : "Name unavailable")} · {value}</p>
+      ))}
+      <label>
+        Opponent clan tags (one per line)
+        <textarea value={opponents} disabled={busy} onChange={(event) => {
+          setOpponents(event.target.value);
+          setSaved(false);
+        }} />
+      </label>
       <h3>Exempt roles</h3>
       <p>Members with these roles do not receive automatic war strikes.</p>
       <div className="strikes-role-list">

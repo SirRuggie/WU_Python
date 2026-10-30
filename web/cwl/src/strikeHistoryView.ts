@@ -34,7 +34,8 @@ export function isCwlRecord(item: { kind?: string | null; war_type?: string | nu
   return item.kind === 'cwl' || item.war_type === 'cwl' || item.source === 'cwl'
 }
 
-export function warSummary(war: { war_type?: string | null; strikes: number; one_missed: number; cwl_missed?: number }): string {
+export function warSummary(war: { no_attack?: number | boolean; war_type?: string | null; strikes: number; one_missed: number; cwl_missed?: number }): string {
+  if (war.no_attack) return '⊖ No-attack war (no strike)'
   return war.war_type === 'cwl'
     ? `CWL · ${war.cwl_missed ?? 0} missed · No strikes`
     : `${war.strikes} strikes · ${war.one_missed} one missed`

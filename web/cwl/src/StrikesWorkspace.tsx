@@ -52,7 +52,7 @@ export type Entry = {
   war_end?: string | null;
   expires_at?: string | null;
   exemption?: string | null;
-  kind: "strike" | "miss" | "completed" | "cwl";
+  kind: "strike" | "miss" | "completed" | "cwl" | "no_attack";
   source: "war" | "manual" | "cwl";
   source_label?: string | null;
   war_type?: "regular" | "cwl";
@@ -65,6 +65,7 @@ export type Entry = {
     | "removed"
     | "exempt"
     | "recorded"
+    | "no_attack"
     | "completed";
   reason?: string | null;
   removed_reason?: string | null;
@@ -106,6 +107,7 @@ type War = {
   missed_accounts: number;
   strikes: number;
   one_missed: number;
+  no_attack?: number | boolean;
   war_type?: "regular" | "cwl";
   cwl_missed?: number;
   source_label?: string | null;
@@ -1101,7 +1103,7 @@ export default function StrikesWorkspace({
                   {warMatchup(selectedWar.clan_name, selectedWar.opponent_name)}{" "}
                   · {dateText(selectedWar.war_end)} ·{" "}
                   {selectedWar.source_label || "Source unavailable"}
-                  {selectedWar.incomplete
+                  {selectedWar.no_attack ? " · ⊖ No-attack war (no strike)" : selectedWar.incomplete
                     ? " · Incomplete · No automatic strikes"
                     : " · All records"}
                 </span>
