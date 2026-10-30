@@ -41,7 +41,10 @@ section must never become a successful empty section.
 
 Clan Games remains the existing ClashPerk score provider through
 `utils/clan_games.py` and `cwl_web/todo_games.py`; missing scores stay unknown,
-not zero. This batch does not invent an official monthly-score endpoint.
+not zero. This is the remaining non-official Tasks score source, awaiting
+Ruggie's policy decision (Claude review 97). The policy explicitly names
+ClashKing; this acceptance does not decide whether to remove ClashPerk.
+This batch does not invent an official monthly-score endpoint.
 The repository has no official equivalent for the per-account seasonal scores
 required by Tasks; that is a source-capability assessment from this codebase,
 not a new exhaustive audit of the official developer API. See
@@ -67,15 +70,20 @@ later inventory finds an official-equivalent call, record a separate migration
 follow-up rather than widening this batch. Historical payload evidence in
 `docs/clashking-war-endpoints.md` and `docs/official-api-rollback.md` stays intact.
 
-## Verification and release gates
+## Verification and accepted merge closure
 
 `tests/test_tasks_official_api.py` runs real coc.py model parsing against fake
-HTTP methods with socket connections prohibited. It checks the established
+`client.http` methods with socket connections prohibited. It checks the established
 Tasks DTO values, group-to-war-tag calls, raid limits, error classifications,
 cache/coalescing contracts, shared dashboard authentication and the separate
 Clan Games source. A host-ban test rejects any `clashk.ing` text in
 `utils/todo_data.py`, including accidental reintroduction in comments. These
-fixtures establish local behavior, not live upstream freshness or delivery.
+fixtures establish local parsing behavior, not the client's configured host or
+live upstream freshness/delivery. The actual client-factory host guard is
+`tests/test_startup.py::test_game_client_uses_official_api`: it invokes
+`startup.create_clash_client()` and asserts the mocked `coc.Client` constructor's
+`base_url` equals `https://api.clashofclans.com/v1`. This is a configuration
+assertion, not a live HTTP request.
 
 On 2026-10-30, the release coordinator made an authorized read-only request
 using the dashboard environment's official token: `GET /v1/locations?limit=1`
@@ -85,7 +93,24 @@ confirms that dashboard credential was accepted from the tested host at that
 time. It does not establish a different bot credential's allowlist, endpoint
 coverage or future validity.
 
-Implementation is not deployment evidence. Full integration checks, detached
-360/1440 Tasks fixture review, Claude acceptance and Ruggie's direct backend
-release approval remain release gates. No real messages or application writes
-are required for the read-only smoke.
+Claude accepted `41cc56a3cd93d354451bd7a2e391b93ef90ebe3a` in handoff 97 on
+October 30, 2026, as a docs/tests batch with no runtime change. The executable
+AST of `utils/todo_data.py`, excluding docstrings, matched main; changes there
+are comments/docstrings only. Merge the accepted batch and this documentation
+clarification under the standing approval: no deployment, tag, service restart
+or production smoke is required for this closure.
+
+Recorded acceptance checks (not newly rerun full-suite claims): 4,853 backend
+tests passed, 21 skipped, 153 subtests; 924 frontend tests across 186 files;
+TypeScript and Vite build passed. Independent host-text and cache-buster
+mutations were killed. Evidence: `/tmp/wu-tasks-official-qa/reports/refute.md`.
+
+The exact accepted-commit build and detached port-8993 fixture passed normal,
+unavailable and Clan Games browser checks at 360×800 and 1440×1000, with no
+document overflow, page errors or unexpected writes. Its entry
+`index-zCmtmF3Z.js` SHA-256
+`9f28a7a1b9aebbe14da09d48a5b2f94f3ee42ea9b7b5668da11929d4b774b5a0`
+matched the frontend observed at that checkpoint. This is fixture evidence,
+not a new production activation; external images were intentionally blocked.
+Artifacts: `reports/delivery.md`, `delivery-browser-committed.log` and the
+self-contained `delivery-41cc56a/review.html` under the same QA directory.
