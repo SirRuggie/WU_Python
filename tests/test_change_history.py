@@ -111,7 +111,8 @@ def test_text_command_restore_keeps_name_and_uses_current_revision():
  async def run():
   from cwl_web import text_commands
   from test_text_commands import values
-  mongo=db();original=values();current={**original,'text':'New reply','revision':'current'}
+  mongo=db();original=values(delete_trigger=False)
+  current={**original,'text':'New reply','delete_trigger':True,'revision':'current'}
   target=NS(find_one=AsyncMock(return_value=current),update_one=AsyncMock(return_value=NS(matched_count=1)))
   @asynccontextmanager
   async def database(_):yield mongo
@@ -122,6 +123,7 @@ def test_text_command_restore_keeps_name_and_uses_current_revision():
   with patch.object(history,'mongo',database),patch.object(history,'require_manage',auth),patch.object(text_commands,'mongo',database),patch.object(text_commands,'require_manage',auth),patch.object(text_commands,'collection',return_value=target):
    result=json.loads((await history.restore(req)).text)
    assert result['text']==original['text'] and result['command']=='!cwl'
+   assert result['delete_trigger'] is False
    assert target.update_one.await_args.args[0]['revision']=='current'
    assert result['revision']!='current'
  asyncio.run(run())

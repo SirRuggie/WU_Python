@@ -29,8 +29,12 @@ def test_recipient_payload_allows_only_selected_recipient():
 def test_old_button_fingerprint_is_preserved():
  import hashlib,json
  row=core.validate(dict(command='!old',text='hello'))
- old={k:row.get(k) for k in core.FIELDS if k not in ('choose_recipient','recipient_ping')}
- assert core.fingerprint(row)==hashlib.sha256(json.dumps(old,sort_keys=True).encode()).hexdigest()[:16]
+ historical_fields=('command','enabled','text','title','description','image_url',
+                    'color','blocks','allow_pings')
+ old={key:row.get(key) for key in historical_fields}
+ expected=hashlib.sha256(json.dumps(old,sort_keys=True).encode()).hexdigest()[:16]
+ assert core.fingerprint(row)==expected
+ assert core.fingerprint({**row,'delete_trigger':False})==expected
  with pytest.raises(ValueError):core.validate(dict(command='!bad',text='hi',choose_recipient='yes'))
  with pytest.raises(ValueError):core.validate(dict(command='!bad',blocks=[{'type':'text','text':'x'*3990}],choose_recipient=True))
 

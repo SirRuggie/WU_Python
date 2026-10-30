@@ -3,6 +3,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp import web
+import hikari
 from pymongo.errors import DuplicateKeyError
 from utils import text_commands as core
 from cwl_web import text_commands as api
@@ -14,6 +15,13 @@ def values(**kwargs):
 
 def test_validation_and_payload():
     row=core.validate(values())
+    assert row['delete_trigger'] is True
+    assert core.validate(values(delete_trigger=False))['delete_trigger'] is False
+    for bad in ('true', 1, None):
+        with pytest.raises(ValueError): core.validate(values(delete_trigger=bad))
+    old_fingerprint=core.fingerprint({key:value for key,value in row.items() if key!='delete_trigger'})
+    assert core.fingerprint(row)==old_fingerprint
+    assert core.fingerprint({**row,'delete_trigger':False})==old_fingerprint
     assert core.command_name(' !CWL ')=='!cwl'
     for name in ('cwl','!','!cwl now','hello !cwl','!cwl\n!help','!'+('x'*33)):
         with pytest.raises(ValueError): core.command_name(name)
@@ -32,14 +40,19 @@ def test_validation_and_payload():
 def test_handler_exact_match_guild_bot_cooldown_and_same_channel():
     async def run():
         core._recent.clear()
-        target=NS(find_one=AsyncMock(return_value=core.validate(values())))
-        bot=NS(rest=NS(create_message=AsyncMock()))
-        event=NS(guild_id=core.GUILD_ID, channel_id=123, message=NS(author=NS(is_bot=False),content='!CWL',webhook_id=None))
+        target=NS(find_one=AsyncMock(return_value=core.validate(values())),
+                  update_one=AsyncMock())
+        bot=NS(rest=NS(create_message=AsyncMock(),delete_message=AsyncMock()))
+        event=NS(guild_id=core.GUILD_ID, channel_id=123,
+                 message=NS(id=555,author=NS(is_bot=False),content='!CWL',
+                            webhook_id=None))
         with patch.object(core,'collection',return_value=target):
             assert await core.handle(event,None,bot)
             assert bot.rest.create_message.await_args.args==(123,)
+            bot.rest.delete_message.assert_awaited_once_with(123,555)
             assert await core.handle(event,None,bot)
             assert bot.rest.create_message.await_count==1
+            assert bot.rest.delete_message.await_count==1
             event.channel_id=124;event.message.content='a !cwl'
             assert not await core.handle(event,None,bot)
             event.message.content='!cwl';event.message.author.is_bot=True
@@ -52,6 +65,92 @@ def test_handler_exact_match_guild_bot_cooldown_and_same_channel():
             assert not await core.handle(event,None,bot)
             assert target.find_one.await_args.args[0]['enabled'] is True
             assert bot.rest.create_message.await_count==1
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('recipient', [False, True])
+def test_trigger_cleanup_follows_successful_reply_and_records_outcome(recipient):
+    async def run():
+        core._recent.clear()
+        row={**core.validate(values(choose_recipient=recipient)),
+             '_id':f'{core.GUILD_ID}:!cwl','revision':'rev-1',
+             'last_delete_error':{'at':'old','channel_id':'123','reason':'prior'}}
+        operations=[]
+        async def send(*args, **kwargs): operations.append('reply')
+        async def delete(*args): operations.append('delete')
+        target=NS(find_one=AsyncMock(return_value=row),update_one=AsyncMock())
+        rest=NS(create_message=AsyncMock(side_effect=send),
+                delete_message=AsyncMock(side_effect=delete),
+                fetch_member=AsyncMock(return_value=NS(id=99)))
+        message='!cwl <@99>' if recipient else '!cwl'
+        event=NS(guild_id=core.GUILD_ID,channel_id=123,
+                 message=NS(id=555,content=message,author=NS(id=7,is_bot=False),
+                            webhook_id=None))
+        with patch.object(core,'collection',return_value=target),\
+             patch('utils.text_command_files.load_files',AsyncMock(return_value={})):
+            assert await core.handle(event,None,NS(rest=rest))
+            assert operations==['reply','delete']
+            rest.delete_message.assert_awaited_once_with(123,555)
+            assert target.update_one.await_args.args[0]=={
+                '_id':f'{core.GUILD_ID}:!cwl','revision':'rev-1'}
+            assert target.update_one.await_args.args[1]=={
+                '$unset':{'last_delete_error':''}}
+            assert await core.handle(event,None,NS(rest=rest))
+            assert operations==['reply','delete']  # Duplicate guard.
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('mode', ['off','reply_failed','disabled','unknown'])
+def test_trigger_cleanup_never_deletes_without_successful_opted_in_reply(mode):
+    async def run():
+        core._recent.clear()
+        row={**core.validate(values(delete_trigger=mode!='off')),
+             'revision':'rev-1'}
+        target=NS(find_one=AsyncMock(return_value=None if mode=='unknown' else row),
+                  update_one=AsyncMock())
+        rest=NS(create_message=AsyncMock(side_effect=RuntimeError('send failed')
+                                         if mode=='reply_failed' else None),
+                delete_message=AsyncMock())
+        event=NS(guild_id=core.GUILD_ID,channel_id=123,
+                 message=NS(id=555,content='!cwl',author=NS(id=7,is_bot=False),
+                            webhook_id=None))
+        if mode=='disabled':
+            row['enabled']=False
+            target.find_one.return_value=None  # Query includes enabled=True.
+        with patch.object(core,'collection',return_value=target),\
+             patch('utils.text_command_files.load_files',AsyncMock(return_value={})):
+            assert await core.handle(event,None,NS(rest=rest)) is (mode not in ('disabled','unknown'))
+        rest.delete_message.assert_not_awaited()
+        target.update_one.assert_not_awaited()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('failure', ['forbidden','not_found'])
+def test_trigger_cleanup_failure_is_status_only_and_not_found_clears(failure):
+    async def run():
+        core._recent.clear()
+        row={**core.validate(values()),'revision':'rev-1'}
+        error=(hikari.ForbiddenError if failure=='forbidden' else hikari.NotFoundError)(
+            url='https://discord.example/messages/555',headers={},raw_body=None)
+        target=NS(find_one=AsyncMock(return_value=row),update_one=AsyncMock())
+        rest=NS(create_message=AsyncMock(),delete_message=AsyncMock(side_effect=error))
+        event=NS(guild_id=core.GUILD_ID,channel_id=123,
+                 message=NS(id=555,content='!cwl',author=NS(id=7,is_bot=False),
+                            webhook_id=None))
+        with patch.object(core,'collection',return_value=target),\
+             patch('utils.text_command_files.load_files',AsyncMock(return_value={})):
+            assert await core.handle(event,None,NS(rest=rest))
+        rest.create_message.assert_awaited_once()
+        assert rest.delete_message.await_count==1
+        update=target.update_one.await_args.args[1]
+        if failure=='forbidden':
+            status=update['$set']['last_delete_error']
+            assert status['channel_id']=='123'
+            assert status['reason']=='Missing Manage Messages permission'
+            assert status['at'].endswith('+00:00')
+            assert 'discord.example' not in str(status)
+        else:
+            assert update=={'$unset':{'last_delete_error':''}}
     asyncio.run(run())
 
 
@@ -82,6 +181,43 @@ def test_api_create_duplicate_stale_edit_and_delete():
             with pytest.raises(web.HTTPConflict):await api.delete(req)
             auth.side_effect=web.HTTPForbidden()
             with pytest.raises(web.HTTPForbidden):await api.save(req)
+    asyncio.run(run())
+
+
+def test_delete_setting_save_history_and_runtime_error_are_separate():
+    async def run():
+        from contextlib import asynccontextmanager
+        from cwl_web import change_history
+        prior={**core.validate(values()),'revision':'old-revision',
+               'last_delete_error':{'at':'2026-10-30T00:00:00+00:00',
+                                    'channel_id':'123','reason':'Missing Manage Messages permission'}}
+        assert api.public({key:value for key,value in prior.items()
+                           if key not in ('delete_trigger','last_delete_error')})['delete_trigger'] is True
+        target=NS(find_one=AsyncMock(return_value=prior),
+                  update_one=AsyncMock(return_value=NS(matched_count=1)))
+        @asynccontextmanager
+        async def database(_): yield NS()
+        req=NS(method='PATCH',match_info={'name':'!cwl'},
+               json=AsyncMock(return_value={'values':values(delete_trigger=False),
+                                            'revision':'old-revision'}))
+        begin=AsyncMock(return_value='history-id')
+        finish=AsyncMock()
+        with patch.object(api,'require_manage',AsyncMock(return_value={'user_id':'owner'})),\
+             patch.object(api,'mongo',database),patch.object(api,'collection',return_value=target),\
+             patch.object(change_history,'begin',begin),\
+             patch.object(change_history,'finish',finish):
+            response=await api.save(req)
+        import json
+        saved=json.loads(response.text)
+        assert saved['delete_trigger'] is False
+        assert saved['last_delete_error']==prior['last_delete_error']
+        assert target.update_one.await_args.args[0]['revision']=='old-revision'
+        assert target.update_one.await_args.args[1]['$set']['delete_trigger'] is False
+        before_history=begin.await_args.args[3]
+        assert before_history['delete_trigger'] is True
+        assert 'last_delete_error' not in before_history
+        assert finish.await_args.args[2]['delete_trigger'] is False
+        assert 'last_delete_error' not in finish.await_args.args[2]
     asyncio.run(run())
 
 

@@ -79,10 +79,11 @@ export default function CommandTest({
     setError('')
     setUrl('')
     try {
+      const { last_delete_error: _lastDeleteError, ...values } = draft
       const result = await api<{ url: string }>(
         '/manage/text-command-test',
         'POST',
-        { values: draft, channel_id: channel, request_id: nonce.current },
+        { values, channel_id: channel, request_id: nonce.current },
       )
       setUrl(result.url)
       nonce.current = requestId()

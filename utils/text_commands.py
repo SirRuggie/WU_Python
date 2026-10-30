@@ -25,7 +25,9 @@ def command_name(value):
     return value.strip().lower()
 
 
-FIELDS = ('command','enabled','text','title','description','image_url','color','blocks','allow_pings','choose_recipient','recipient_ping')
+FIELDS = ('command', 'enabled', 'text', 'title', 'description', 'image_url',
+          'color', 'blocks', 'allow_pings', 'choose_recipient', 'recipient_ping',
+          'delete_trigger')
 
 
 def legacy_blocks(row):
@@ -52,8 +54,16 @@ def public_url(value, label, limit=1000):
 
 def validate(values, *, nested=False):
     if not isinstance(values,dict) or set(values)-set(FIELDS):raise ValueError('Check the command fields.')
-    result={'command':command_name(values.get('command')),'enabled':values.get('enabled',True),'allow_pings':values.get('allow_pings',False),'choose_recipient':values.get('choose_recipient',False),'recipient_ping':values.get('recipient_ping',False)}
-    if any(type(result[key]) is not bool for key in ('enabled','allow_pings','choose_recipient','recipient_ping')):raise ValueError('Choose whether the command and pings are enabled.')
+    result = {'command': command_name(values.get('command')),
+              'enabled': values.get('enabled', True),
+              'allow_pings': values.get('allow_pings', False),
+              'choose_recipient': values.get('choose_recipient', False),
+              'recipient_ping': values.get('recipient_ping', False),
+              'delete_trigger': values.get('delete_trigger', True)}
+    if any(type(result[key]) is not bool for key in
+           ('enabled', 'allow_pings', 'choose_recipient', 'recipient_ping',
+            'delete_trigger')):
+        raise ValueError('Choose whether the command and pings are enabled.')
     for key,limit in (('text',2000),('title',256),('description',4000),('image_url',1000)):
         value=values.get(key,'')
         if not isinstance(value,str) or len(value)>limit:raise ValueError(f'{key.replace("_"," ").title()} must be at most {limit} characters.')
@@ -183,7 +193,9 @@ def component_count(blocks):
 
 def fingerprint(row):
     import hashlib,json
-    fields = {key:row.get(key) for key in FIELDS if key not in ('choose_recipient','recipient_ping')}
+    # Trigger cleanup is not part of the sent reply or its interactive actions.
+    fields = {key:row.get(key) for key in FIELDS
+              if key not in ('choose_recipient','recipient_ping','delete_trigger')}
     if row.get('choose_recipient'):fields.update(choose_recipient=True,recipient_ping=True)
     return hashlib.sha256(json.dumps(fields,sort_keys=True).encode()).hexdigest()[:16]
 
@@ -250,6 +262,29 @@ def payload(row, file_data=None, *, recipient=None):
     return result
 
 
+async def record_delete_outcome(db, row, *, channel_id, error=None):
+    """Best-effort runtime status, scoped to the delivered command revision.
+
+    This metadata update never changes the editable revision or reply outcome.
+    """
+    selector = {'_id': f'{GUILD_ID}:{row["command"]}'}
+    selector['revision'] = row['revision'] if 'revision' in row else {'$exists': False}
+    if error is None:
+        update = {'$unset': {'last_delete_error': ''}}
+    else:
+        reason = ('Missing Manage Messages permission' if isinstance(error, hikari.ForbiddenError)
+                  else 'Delete failed (' + type(error).__name__[:48] + ')')
+        update = {'$set': {'last_delete_error': {
+            'at': datetime.now(timezone.utc).isoformat(),
+            'channel_id': str(int(channel_id)), 'reason': reason[:96],
+        }}}
+    try:
+        await collection(db).update_one(selector, update)
+    except Exception:
+        # The reply was delivered. A status write must not cause a resend.
+        log.warning('Could not record trigger deletion outcome', exc_info=True)
+
+
 async def handle(event, db, bot):
     message = event.message
     if int(event.guild_id) != GUILD_ID or message.author.is_bot or getattr(message, 'webhook_id', None):
@@ -314,14 +349,18 @@ async def handle(event, db, bot):
             return False
         from utils.text_command_files import load_files
         await bot.rest.create_message(event.channel_id, **payload(clean,await load_files(db,clean),recipient=recipient))
-        if recipient is not None:
+        if clean['delete_trigger']:
             try:
                 await bot.rest.delete_message(event.channel_id, message.id)
             except hikari.NotFoundError:
-                pass  # Already removed by the member or moderation.
-            except Exception:
+                await record_delete_outcome(db, row, channel_id=event.channel_id)
+            except Exception as error:
                 # Delivery succeeded. Never resend or lose the reply over cleanup.
                 log.warning('Trigger reply sent but original message could not be deleted; check Manage Messages permission', exc_info=True)
+                await record_delete_outcome(db, row, channel_id=event.channel_id,
+                                            error=error)
+            else:
+                await record_delete_outcome(db, row, channel_id=event.channel_id)
         return True
     except Exception:
         log.exception('Text command could not be delivered: %s', name)
