@@ -138,12 +138,23 @@ it('ignores a stale response after a newer filter read starts', async () => {
 
 it('shows kick and ban reasons and moderators in the compact history card', () => {
   hook.states[0] = [
-    { ...fixture, id: 'kick-1', event_type: 'kick', reason: 'Spam <script>', moderator_id: '987654321' },
+    { ...fixture, id: 'kick-1', event_type: 'kick', reason: 'Spam <script>', moderator_id: '987654321', moderator_name: '<b>Moderator & Name</b>' },
     { ...fixture, id: 'ban-1', event_type: 'ban', reason: null, moderator_id: null },
   ]
   const html = render()
   expect(html).toContain('Kicked')
   expect(html).toContain('Banned')
-  expect(html).toContain('by @987654321 · “Spam &lt;script&gt;”')
-  expect(html).toContain('by an unknown moderator · “No reason given”')
+  expect(html).toContain('title="987654321">&lt;b&gt;Moderator &amp; Name&lt;/b&gt;</span>')
+  expect(html.replace(/<[^>]+>/g, '')).not.toContain('987654321')
+  expect(html).toContain('an unknown moderator</span> · “No reason given”')
+})
+
+it('does not display archived raw-ID identity fallbacks', () => {
+  hook.states[0] = [{ ...fixture, display_name: fixture.user_id, username: fixture.user_id,
+    event_type: 'kick', moderator_id: '987654321', moderator_name: '987654321' }]
+  const visible = render().replace(/<[^>]+>/g, '')
+  expect(visible).toContain('Unknown member')
+  expect(visible).toContain('an unknown moderator')
+  expect(visible).not.toContain(fixture.user_id)
+  expect(visible).not.toContain('987654321')
 })

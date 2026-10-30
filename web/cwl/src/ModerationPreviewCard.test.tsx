@@ -50,7 +50,8 @@ it("renders component text safely and allows only Discord profile links", () => 
   expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   expect(html).toContain('href="https://discord.com/users/123456789"');
   expect(html).not.toContain('href="javascript:');
-  expect(html).toContain("@123456789");
+  expect(html).toContain('title="123456789">Unknown member</span>');
+  expect(html).not.toContain("@123456789");
   expect(html).toContain('dateTime="2024-06-01T12:00:00.000Z"');
   expect(html).toContain("Sample member avatar");
 });
@@ -74,6 +75,7 @@ it("renders the forum embed payload separately", () => {
   );
   expect(html).toContain("Forum starter");
   expect(html).toContain("Forum starter preview");
-  expect(html).toContain("@123456789");
+  expect(html).toContain('title="123456789">Unknown member</span>');
+  expect(html).not.toContain("@123456789");
   expect(html).toContain("&lt;script&gt;");
 });

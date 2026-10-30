@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 
 from aiohttp import web
@@ -56,8 +58,12 @@ async def listing(request):
             guild_id=GUILD_ID, query=q, kind=kind, start=start, end=end,
             before=before or None, limit=limit,
         )
-    response = web.json_response({"events": [public_event(row, api_prefix=PREFIX) for row in rows],
-                                  "next_cursor": cursor})
+    from .moderation_names import resolve_names
+    names = await resolve_names(request, [row.get("moderator_id") for row in rows])
+    payload = {"events": [{**public_event(row, api_prefix=PREFIX),
+                           "moderator_name": names.get(str(row.get("moderator_id")))} for row in rows],
+               "next_cursor": cursor}
+    response = web.json_response(payload)
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -67,10 +73,21 @@ async def avatar(request):
     row_id = request.match_info["event_id"]
     if not ID_PATTERN.fullmatch(row_id):
         raise web.HTTPNotFound()
+    # Authorization always runs, including cache hits. Cache only confirmed absence,
+    # never permission failures or Mongo outages, and never avatar bytes.
+    missing = request.app.setdefault('member_avatar_missing', OrderedDict())
+    key = (GUILD_ID, row_id)
+    now = time.monotonic()
+    if missing.get(key, 0) > now:
+        return web.Response(status=204, headers={"Cache-Control": "no-store"})
+    missing.pop(key, None)
     async with mongo(request) as db:
         row = await MemberEventStore(db.member_events).avatar(row_id, GUILD_ID)
     if not row or not row.get("avatar") or row.get("avatar_type") not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
-        raise web.HTTPNotFound()
+        missing[key] = time.monotonic() + 30
+        while len(missing) > 128:
+            missing.popitem(last=False)
+        return web.Response(status=204, headers={"Cache-Control": "no-store"})
     response = web.Response(body=bytes(row["avatar"]), content_type=row["avatar_type"])
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -202,7 +219,9 @@ async def settings(request):
     from utils.member_event_cards import build_card, build_forum_message, sample_row
     preview_cards = {kind: build_card(sample_row(kind)) for kind in EVENT_TYPES}
     forum_preview_cards = {kind: build_forum_message(sample_row(kind)) for kind in EVENT_TYPES}
-    response = web.json_response({**saved, "preview_cards": preview_cards,
+    sample = sample_row("kick")
+    preview_names = {sample["user_id"]: sample["display_name"], sample["moderator_id"]: "Sample moderator"}
+    response = web.json_response({**saved, "preview_names": preview_names, "preview_cards": preview_cards,
                                   "forum_preview_cards": forum_preview_cards, "channels": options,
                                   "channels_available": channels_available, "warning": warning})
     response.headers["Cache-Control"] = "no-store"
@@ -355,7 +374,7 @@ async def send_test(request):
         # Never send a sample for settings already known to be superseded.
         latest = await store.settings()
         if latest["revision"] != saved["revision"]:
-            await store.finish_test(audit_id, status="cancelled", destination=resolved["channel_id"])
+            await store.cancel_test(audit_id, kind=kind, destination=resolved["channel_id"])
             raise web.HTTPConflict(text="Member log settings changed. Reload before testing.")
         sample = sample_row(kind)
         sample["occurred_at"] = now
