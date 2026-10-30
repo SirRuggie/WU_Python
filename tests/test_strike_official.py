@@ -182,7 +182,7 @@ def test_no_active_capture_or_missing_final_makes_zero_strikes_and_review_row():
     async def run():
         owner = tracking()
         final = normalize(real_war('warEnded'), CLAN)
-        store = SimpleNamespace(process_war=AsyncMock())
+        store = SimpleNamespace(process_war=AsyncMock(return_value={'deferred_count': 0}))
         assert await _finish_official_war(owner, store, GUILD, final) == (0, 0, 0, 0)
         assert await owner.snapshot(GUILD, final) is None
         active = normalize(real_war('inWar', end=final['end_time']), CLAN)
@@ -202,7 +202,7 @@ def test_active_and_incomplete_final_never_post_and_pending_requires_complete_en
         owner = tracking()
         active = normalize(real_war('inWar'), CLAN)
         await owner.observe(GUILD, active)
-        store = SimpleNamespace(process_war=AsyncMock())
+        store = SimpleNamespace(process_war=AsyncMock(return_value={'deferred_count': 0}))
         assert await _finish_official_war(owner, store, GUILD, active) == (0, 0, 0, 0)
         assert await owner.pending_finals(GUILD, CLAN) == []
         final = {**active, 'state': 'warEnded', 'complete': False}
@@ -221,7 +221,7 @@ def test_removed_clan_snapshot_abandoned_once_and_cannot_reactivate():
         assert await owner.abandon_untracked(GUILD, set()) == set()
         assert await owner.due_clans(GUILD, now=active['end_time'] + timedelta(hours=1)) == set()
         final = {**active, 'state': 'warEnded'}
-        store = SimpleNamespace(process_war=AsyncMock())
+        store = SimpleNamespace(process_war=AsyncMock(return_value={'deferred_count': 0}))
         assert await _finish_official_war(owner, store, GUILD, final) == (0, 0, 0, 0)
         assert (await owner.snapshot(GUILD, final))['status'] == 'abandoned'
         store.process_war.assert_not_awaited()
@@ -265,6 +265,38 @@ def test_tracking_health_uses_latest_war_and_unknown_private_stale_fail_closed()
         owner.mongo.strike_records.rows['recent']['occurred_at'] = stale_end
         owner.mongo.strike_war_snapshots.rows[owner.snapshot_key(GUILD, recent)]['end_time'] = stale_end
         assert (await finish())['status'] == 'behind'
+    asyncio.run(run())
+
+
+def test_recent_incomplete_war_beats_older_recorded_war_for_health():
+    async def run():
+        owner = tracking()
+        now = datetime.now(timezone.utc)
+        await owner.mongo.strike_records.insert_one({
+            '_id': 'older-record', 'guild_id': GUILD, 'clan_tag': CLAN,
+            'source': 'war', 'occurred_at': now - timedelta(days=2)})
+        ended = now - timedelta(hours=1)
+        active = normalize(real_war('inWar', end=ended), CLAN)
+        await owner.observe(GUILD, active, now=ended - timedelta(minutes=5))
+        await owner.abandon_older(GUILD, CLAN, set(), now=ended + timedelta(minutes=2))
+        token = await owner.begin(GUILD, CLAN)
+        await owner.finish(GUILD, CLAN, started_at=token,
+                           current_war_state='notInWar')
+        # The recorded war is recent, and every other health flag is clear.
+        assert (await owner.rows(GUILD, [{'tag': CLAN}]))[0]['status'] == 'behind'
+    asyncio.run(run())
+
+
+def test_unknown_current_state_is_behind_even_with_recent_record():
+    async def run():
+        owner = tracking()
+        await owner.mongo.strike_records.insert_one({
+            '_id': 'recent-record', 'guild_id': GUILD, 'clan_tag': CLAN,
+            'source': 'war', 'occurred_at': datetime.now(timezone.utc) - timedelta(hours=1)})
+        token = await owner.begin(GUILD, CLAN)
+        await owner.finish(GUILD, CLAN, started_at=token,
+                           current_war_state='unknown')
+        assert (await owner.rows(GUILD, [{'tag': CLAN}]))[0]['status'] == 'behind'
     asyncio.run(run())
 
 
