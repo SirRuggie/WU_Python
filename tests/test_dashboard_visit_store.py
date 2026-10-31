@@ -63,3 +63,18 @@ def test_aggregate_unique_windows_staff_transition_and_zero_days(tmp_path):
     assert result['series'][0]['total']==0
     assert result['series'][-1]=={'day':'2026-11-01','total':1,'staff':0,'members':1}
     assert 'user_id' not in str(result)
+
+
+def test_visit_file_permissions_wal_and_connection_timeout(tmp_path):
+    import stat
+    path = tmp_path / 'visits.sqlite'
+    store = VisitStore(path)
+    for _ in range(2):
+        with store.tx() as db:
+            assert db.execute('PRAGMA journal_mode').fetchone()[0] == 'wal'
+            assert db.execute('PRAGMA busy_timeout').fetchone()[0] == 200
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        path.chmod(0o644)
+    with VisitStore(path).tx() as db:
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert db.execute('PRAGMA journal_mode').fetchone()[0] == 'wal'

@@ -41,7 +41,8 @@ class VisitCounter:
             return
         self.pending.add(key)
         try:
-            await asyncio.to_thread(self.store.record_session, user_id, at=at, is_staff=is_staff)
+            classification = is_staff() if callable(is_staff) else is_staff
+            await asyncio.to_thread(self.store.record_session, user_id, at=at, is_staff=classification)
             if day == self.day:
                 self.seen.add(key)
         except Exception:
@@ -59,7 +60,7 @@ async def record(request, session):
     try:
         await counter.record(
             session['user_id'], datetime.now(timezone.utc),
-            _owner(session) or bool(request_scopes(request, session['user_id'])),
+            lambda: _owner(session) or bool(request_scopes(request, session['user_id'])),
         )
     except Exception:
         counter.log_failure()

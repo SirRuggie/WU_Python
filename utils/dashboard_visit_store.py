@@ -2,6 +2,7 @@
 from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from contextlib import contextmanager
+import os
 import sqlite3
 import threading
 
@@ -30,6 +31,11 @@ class VisitStore:
     def tx(self):
         # This connection never enters the authoritative dashboard transaction.
         # Initialization is lazy so even a missing/unwritable file cannot break startup.
+        descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            os.fchmod(descriptor, 0o600)
+        finally:
+            os.close(descriptor)
         db = sqlite3.connect(self.path, timeout=0.2)
         db.row_factory = sqlite3.Row
         try:

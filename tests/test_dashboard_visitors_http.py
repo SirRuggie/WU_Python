@@ -137,3 +137,14 @@ class VisitorsHTTPTests(unittest.IsolatedAsyncioTestCase):
             await counter.record('300', first + timedelta(days=1), False)
             self.assertEqual(store.record_session.call_count, 3)
             self.assertEqual(len(counter.seen), 1)
+
+
+    async def test_cached_count_skips_staff_scope_lookup(self):
+        from types import SimpleNamespace
+        from cwl_web.visitors import record
+        request = SimpleNamespace(app=self.app)
+        session = {'user_id': '987654321', 'is_bot': False}
+        with patch('cwl_web.app._owner', return_value=False), patch('cwl_web.access_control.request_scopes', return_value=[]) as scopes:
+            await record(request, session)
+            await record(request, session)
+        scopes.assert_called_once_with(request, session['user_id'])
