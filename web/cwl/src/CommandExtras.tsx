@@ -1,17 +1,232 @@
-import DashboardIcon from './DashboardIcon'
-import {useState} from 'react'
-import {apiUpload} from './api'
-export type ReplyAction={kind:'reply';command:string}|{kind:'add_role'|'remove_role';role_id:string}
-export type RoleChoice={id:string;name:string}
-export type ActionItem={label:string;style?:number;action:ReplyAction}
-export type FileInfo={file_id:string;filename:string;size:number}
-export function HexColor({value,onChange,label='Card color'}:{value:string;onChange:(value:string)=>void;label?:string}){const valid=/^#[0-9a-f]{6}$/i.test(value);return <div className="command-color"><label>{label}<input type="color" value={valid?value:'#e2b332'} onChange={e=>onChange(e.target.value)}/></label><label>Hex color<input value={value} maxLength={7} required pattern="#[0-9a-fA-F]{6}" spellCheck={false} aria-invalid={!valid} placeholder="#E2B332" onChange={e=>onChange(e.target.value.startsWith('#')?e.target.value:'#'+e.target.value)}/></label></div>}
-export function FileUpload({value,onChange,onBusy}:{value:FileInfo;onChange:(value:FileInfo)=>void;onBusy:(busy:boolean)=>void}){
- const [error,setError]=useState(''),[uploading,setUploading]=useState(false)
- async function upload(file?:File){if(!file)return;if(!file.size||file.size>8*1024*1024){setError('Choose a file between 1 byte and 8 MB.');return}setError('');setUploading(true);onBusy(true);try{onChange(await apiUpload<FileInfo>('/manage/text-command-files?name='+encodeURIComponent(file.name),file))}catch(e){setError(e instanceof Error?e.message:'File upload failed.')}finally{setUploading(false);onBusy(false)}}
- return <div className="command-file"><label>{value.file_id?'Replace file':'Upload file'}<input type="file" disabled={uploading} onChange={e=>{void upload(e.target.files?.[0]);e.target.value=''}}/></label>{uploading?<p role="status">Uploading…</p>:value.file_id?<p><DashboardIcon name="attachment"/> {value.filename} · {value.size<1024?value.size+' B':(value.size/1024).toFixed(1)+' KB'}</p>:<small>Up to 8 MB total per reply. Files are sent to everyone who uses this command.</small>}{error&&<p role="alert">{error}</p>}</div>
+import RoleSelect from "./RoleSelect";
+import DashboardIcon from "./DashboardIcon";
+import { useState } from "react";
+import { apiUpload } from "./api";
+export type ReplyAction =
+  | { kind: "reply"; command: string }
+  | { kind: "add_role" | "remove_role"; role_id: string };
+export type RoleChoice = { id: string; name: string };
+export type ActionItem = { label: string; style?: number; action: ReplyAction };
+export type FileInfo = { file_id: string; filename: string; size: number };
+export function HexColor({
+  value,
+  onChange,
+  label = "Card color",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label?: string;
+}) {
+  const valid = /^#[0-9a-f]{6}$/i.test(value);
+  return (
+    <div className="command-color">
+      <label>
+        {label}
+        <input
+          type="color"
+          value={valid ? value : "#e2b332"}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
+      <label>
+        Hex color
+        <input
+          value={value}
+          maxLength={7}
+          required
+          pattern="#[0-9a-fA-F]{6}"
+          spellCheck={false}
+          aria-invalid={!valid}
+          placeholder="#E2B332"
+          onChange={(e) =>
+            onChange(
+              e.target.value.startsWith("#")
+                ? e.target.value
+                : "#" + e.target.value,
+            )
+          }
+        />
+      </label>
+    </div>
+  );
 }
-export function ActionFields({item,onChange,commands,roles=[],select=false}:{item:ActionItem;onChange:(item:ActionItem)=>void;commands:string[];roles?:RoleChoice[];select?:boolean}){
- const [search,setSearch]=useState('');const roleId=item.action.kind==='reply'?'':item.action.role_id
- return <><label>{select?'Option label':'Button label'}<input value={item.label} maxLength={80} onChange={e=>onChange({...item,label:e.target.value})}/></label><label>When clicked<select value={item.action.kind} onChange={e=>onChange({...item,action:e.target.value==='reply'?{kind:'reply',command:''}:{kind:e.target.value as 'add_role'|'remove_role',role_id:''}})}><option value="reply">Show a saved reply</option><option value="add_role">Give the clicking member a role</option><option value="remove_role">Remove a role from the clicking member</option></select></label>{item.action.kind==='reply'?<><label>Show saved reply<select value={item.action.command} onChange={e=>onChange({...item,action:{kind:'reply',command:e.target.value}})}><option value="">Choose a command</option>{commands.map(command=><option key={command} value={command}>{command}</option>)}</select></label><small>Only the person clicking sees the reply. Mentions do not ping.</small></>:<><label>Find a role<input type="search" value={search} placeholder="Type part of a role name" onChange={e=>setSearch(e.target.value)}/></label><label>Role<select value={roleId} onChange={e=>{if(item.action.kind!=='reply')onChange({...item,action:{...item.action,role_id:e.target.value}})}}><option value="">Choose a role</option>{roleId&&!roles.some(role=>role.id===roleId)&&<option value={roleId}>Unavailable role · {roleId}</option>}{roles.filter(role=>role.id===roleId||role.name.toLowerCase().includes(search.toLowerCase())).map(role=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label><small>Anyone can use this control for their own account. Changes are recorded. Only roles the bot can safely manage are listed.</small>{!roles.length&&<p role="status">No roles available. Check the bot’s Manage Roles permission and role position.</p>}</>}{!select&&<label>Button color<select value={item.style||1} onChange={e=>onChange({...item,style:Number(e.target.value)})}><option value={1}>Blue</option><option value={2}>Gray</option><option value={3}>Green</option><option value={4}>Red</option></select></label>}</>
+export function FileUpload({
+  value,
+  onChange,
+  onBusy,
+}: {
+  value: FileInfo;
+  onChange: (value: FileInfo) => void;
+  onBusy: (busy: boolean) => void;
+}) {
+  const [error, setError] = useState(""),
+    [uploading, setUploading] = useState(false);
+  async function upload(file?: File) {
+    if (!file) return;
+    if (!file.size || file.size > 8 * 1024 * 1024) {
+      setError("Choose a file between 1 byte and 8 MB.");
+      return;
+    }
+    setError("");
+    setUploading(true);
+    onBusy(true);
+    try {
+      onChange(
+        await apiUpload<FileInfo>(
+          "/manage/text-command-files?name=" + encodeURIComponent(file.name),
+          file,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "File upload failed.");
+    } finally {
+      setUploading(false);
+      onBusy(false);
+    }
+  }
+  return (
+    <div className="command-file">
+      <label>
+        {value.file_id ? "Replace file" : "Upload file"}
+        <input
+          type="file"
+          disabled={uploading}
+          onChange={(e) => {
+            void upload(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      {uploading ? (
+        <p role="status">Uploading…</p>
+      ) : value.file_id ? (
+        <p>
+          <DashboardIcon name="attachment" /> {value.filename} ·{" "}
+          {value.size < 1024
+            ? value.size + " B"
+            : (value.size / 1024).toFixed(1) + " KB"}
+        </p>
+      ) : (
+        <small>
+          Up to 8 MB total per reply. Files are sent to everyone who uses this
+          command.
+        </small>
+      )}
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+}
+export function ActionFields({
+  item,
+  onChange,
+  commands,
+  roles = [],
+  select = false,
+}: {
+  item: ActionItem;
+  onChange: (item: ActionItem) => void;
+  commands: string[];
+  roles?: RoleChoice[];
+  select?: boolean;
+}) {
+  const roleId = item.action.kind === "reply" ? "" : item.action.role_id;
+  return (
+    <>
+      <label>
+        {select ? "Option label" : "Button label"}
+        <input
+          value={item.label}
+          maxLength={80}
+          onChange={(e) => onChange({ ...item, label: e.target.value })}
+        />
+      </label>
+      <label>
+        When clicked
+        <select
+          value={item.action.kind}
+          onChange={(e) =>
+            onChange({
+              ...item,
+              action:
+                e.target.value === "reply"
+                  ? { kind: "reply", command: "" }
+                  : {
+                      kind: e.target.value as "add_role" | "remove_role",
+                      role_id: "",
+                    },
+            })
+          }
+        >
+          <option value="reply">Show a saved reply</option>
+          <option value="add_role">Give the clicking member a role</option>
+          <option value="remove_role">
+            Remove a role from the clicking member
+          </option>
+        </select>
+      </label>
+      {item.action.kind === "reply" ? (
+        <>
+          <label>
+            Show saved reply
+            <select
+              value={item.action.command}
+              onChange={(e) =>
+                onChange({
+                  ...item,
+                  action: { kind: "reply", command: e.target.value },
+                })
+              }
+            >
+              <option value="">Choose a command</option>
+              {commands.map((command) => (
+                <option key={command} value={command}>
+                  {command}
+                </option>
+              ))}
+            </select>
+          </label>
+          <small>
+            Only the person clicking sees the reply. Mentions do not ping.
+          </small>
+        </>
+      ) : (
+        <>
+          <RoleSelect
+            roles={roles}
+            value={roleId}
+            onChange={(id) => {
+              if (item.action.kind !== "reply")
+                onChange({ ...item, action: { ...item.action, role_id: id } });
+            }}
+          />
+          <small>
+            Anyone can use this control for their own account. Changes are
+            recorded. Only roles the bot can safely manage are listed.
+          </small>
+          {!roles.length && (
+            <p role="status">
+              No roles available. Check the bot’s Manage Roles permission and
+              role position.
+            </p>
+          )}
+        </>
+      )}
+      {!select && (
+        <label>
+          Button color
+          <select
+            value={item.style || 1}
+            onChange={(e) =>
+              onChange({ ...item, style: Number(e.target.value) })
+            }
+          >
+            <option value={1}>Blue</option>
+            <option value={2}>Gray</option>
+            <option value={3}>Green</option>
+            <option value={4}>Red</option>
+          </select>
+        </label>
+      )}
+    </>
+  );
 }

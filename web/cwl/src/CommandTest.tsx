@@ -1,66 +1,66 @@
-import { useEffect, useRef, useState } from 'react'
-import { api, ApiError } from './api'
-import ChannelCombobox from './ChannelCombobox'
-import type { AnnouncementChannel } from './announcements'
-import type { Command } from './CommandBuilder'
-const requestId = () => crypto.randomUUID().replaceAll('-', '').slice(0, 24)
+import { useEffect, useRef, useState } from "react";
+import { api, ApiError } from "./api";
+import ChannelCombobox from "./ChannelCombobox";
+import type { AnnouncementChannel } from "./announcements";
+import type { Command } from "./CommandBuilder";
+const requestId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 export default function CommandTest({
   draft,
   disabled,
   onBusy,
 }: {
-  draft: Command
-  disabled: boolean
-  onBusy?: (busy: boolean) => void
+  draft: Command;
+  disabled: boolean;
+  onBusy?: (busy: boolean) => void;
 }) {
-  const [channels, setChannels] = useState<AnnouncementChannel[]>([])
-  const [channel, setChannel] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [readError, setReadError] = useState('')
-  const [error, setError] = useState('')
-  const [url, setUrl] = useState('')
-  const [uncertain, setUncertain] = useState(false)
-  const [review, setReview] = useState(false)
+  const [channels, setChannels] = useState<AnnouncementChannel[]>([]);
+  const [channel, setChannel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [readError, setReadError] = useState("");
+  const [error, setError] = useState("");
+  const [url, setUrl] = useState("");
+  const [uncertain, setUncertain] = useState(false);
+  const [review, setReview] = useState(false);
   const nonce = useRef(requestId()),
     sending = useRef(false),
-    reading = useRef(false)
-  const alive = useRef(true)
+    reading = useRef(false);
+  const alive = useRef(true);
   useEffect(() => {
-    alive.current = true
+    alive.current = true;
     return () => {
-      alive.current = false
-    }
-  }, [])
+      alive.current = false;
+    };
+  }, []);
   useEffect(() => {
-    setReview(false)
-  }, [draft, channel])
+    setReview(false);
+  }, [draft, channel]);
   async function load() {
-    if (reading.current) return
-    reading.current = true
-    setLoading(true)
-    setReadError('')
+    if (reading.current) return;
+    reading.current = true;
+    setLoading(true);
+    setReadError("");
     try {
       const result = await api<{ channels: AnnouncementChannel[] }>(
-        '/manage/text-command-test-channels',
-      )
+        "/manage/text-command-test-channels",
+      );
       if (alive.current) {
-        setChannels(result.channels)
+        setChannels(result.channels);
         setChannel((current) =>
-          result.channels.some((row) => row.id === current) ? current : '',
-        )
+          result.channels.some((row) => row.id === current) ? current : "",
+        );
       }
     } catch (e) {
       if (alive.current) {
-        setChannels([])
-        setChannel('')
+        setChannels([]);
+        setChannel("");
         setReadError(
-          e instanceof Error ? e.message : 'Could not load channels.',
-        )
+          e instanceof Error ? e.message : "Could not load channels.",
+        );
       }
     } finally {
-      reading.current = false
-      if (alive.current) setLoading(false)
+      reading.current = false;
+      if (alive.current) setLoading(false);
     }
   }
   async function send() {
@@ -71,22 +71,28 @@ export default function CommandTest({
       !review ||
       !channels.some((row) => row.id === channel)
     )
-      return
-    sending.current = true
-    setBusy(true)
-    onBusy?.(true)
-    setReview(false)
-    setError('')
-    setUrl('')
+      return;
+    sending.current = true;
+    setBusy(true);
+    onBusy?.(true);
+    setReview(false);
+    setError("");
+    setUrl("");
     try {
-      const { last_delete_error: _lastDeleteError, ...values } = draft
+      const {
+        last_delete_error: _lastDeleteError,
+        use_count: _count,
+        last_used_at: _used,
+        last_outcome: _outcome,
+        ...values
+      } = draft;
       const result = await api<{ url: string }>(
-        '/manage/text-command-test',
-        'POST',
+        "/manage/text-command-test",
+        "POST",
         { values, channel_id: channel, request_id: nonce.current },
-      )
-      setUrl(result.url)
-      nonce.current = requestId()
+      );
+      setUrl(result.url);
+      nonce.current = requestId();
     } catch (e) {
       // Validation/authorization failures occur before a delivery claim. Other
       // failures can follow Discord accepting the post, so never replay blindly.
@@ -94,21 +100,21 @@ export default function CommandTest({
         !(
           e instanceof ApiError && [400, 401, 403, 404, 413].includes(e.status)
         ),
-      )
+      );
       setError(
-        e instanceof Error ? e.message : 'Delivery could not be confirmed.',
-      )
+        e instanceof Error ? e.message : "Delivery could not be confirmed.",
+      );
     } finally {
-      sending.current = false
-      setBusy(false)
-      onBusy?.(false)
+      sending.current = false;
+      setBusy(false);
+      onBusy?.(false);
     }
   }
   return (
     <details
       className="card command-test"
       onToggle={(e) => {
-        if (e.currentTarget.open && !channels.length) void load()
+        if (e.currentTarget.open && !channels.length) void load();
       }}
     >
       <summary>Test in Discord</summary>
@@ -119,7 +125,7 @@ export default function CommandTest({
       {loading && <p role="status">Loading channels…</p>}
       {readError && (
         <p role="alert">
-          {readError}{' '}
+          {readError}{" "}
           <button
             type="button"
             disabled={loading || busy}
@@ -145,13 +151,13 @@ export default function CommandTest({
           disabled={disabled || busy || uncertain || !channel}
           onClick={() => setReview(true)}
         >
-          {busy ? 'Sending…' : 'Review test'}
+          {busy ? "Sending…" : "Review test"}
         </button>
       )}
       {review && (
         <div className="command-test-review">
           <p>
-            Send <strong>{draft.command}</strong> to{' '}
+            Send <strong>{draft.command}</strong> to{" "}
             <strong>#{channels.find((row) => row.id === channel)?.name}</strong>
             ?
           </p>
@@ -183,9 +189,9 @@ export default function CommandTest({
           type="button"
           disabled={busy}
           onClick={() => {
-            nonce.current = requestId()
-            setUncertain(false)
-            setError('')
+            nonce.current = requestId();
+            setUncertain(false);
+            setError("");
           }}
         >
           I checked Discord — prepare a new test
@@ -193,12 +199,12 @@ export default function CommandTest({
       )}
       {url && (
         <p role="status">
-          Test sent.{' '}
+          Test sent.{" "}
           <a href={url} target="_blank" rel="noreferrer">
             Open in Discord ↗
           </a>
         </p>
       )}
     </details>
-  )
+  );
 }
