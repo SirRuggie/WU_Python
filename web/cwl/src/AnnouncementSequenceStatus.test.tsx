@@ -11,10 +11,10 @@ let host: HTMLDivElement,
   sequence: ImageSequence;
 const refresh = vi.fn(async () => {});
 const button = (text: string) =>
-  [...document.querySelectorAll("button")].reverse().find(
-    (button) => button.textContent === text,
-  )!;
-async function mount(canSend = true) {
+  [...document.querySelectorAll("button")]
+    .reverse()
+    .find((button) => button.textContent === text)!;
+async function mount(canSend = true, announcementSent = false) {
   await act(async () =>
     root.render(
       <AnnouncementSequenceStatus
@@ -22,6 +22,8 @@ async function mount(canSend = true) {
         pool="lazy"
         sequence={sequence}
         canSend={canSend}
+        announcementSent={announcementSent}
+        channelName="#lazy-cwl"
         onRefresh={refresh}
       />,
     ),
@@ -129,4 +131,49 @@ it("a late response after unmount does not refresh another season", async () => 
   await act(async () => root.render(null));
   await act(async () => finish({}));
   expect(refresh).not.toHaveBeenCalled();
+});
+
+it("shows the confirmed deleted-closing repost label", async () => {
+  sequence.status = "complete";
+  sequence.closing = {
+    request_id: "closing",
+    status: "posted",
+    error: "Reposted (old message was deleted)",
+  };
+  await mount();
+  expect(host.textContent).toContain("Reposted (old message was deleted)");
+  expect(api).not.toHaveBeenCalled();
+});
+
+it("requires an explicit no-ping review before continuing an unconfirmed sent announcement", async () => {
+  sequence.announcement_confirmed = false;
+  await mount(true, true);
+  expect(host.textContent).toContain("Announcement shows as sent");
+  await act(async () => button("Post clan images now").click());
+  expect(api).not.toHaveBeenCalled();
+  const dialog = document.querySelector("dialog")!;
+  expect(dialog.textContent).toContain(
+    "#lazy-cwl: 2 clan images then the closing note · No pings",
+  );
+  expect(
+    [...dialog.querySelectorAll("li")].map((node) => node.textContent),
+  ).toEqual(["Lazy.128", "Lazy.127"]);
+  await act(async () => button("Cancel").click());
+  expect(api).not.toHaveBeenCalled();
+  await act(async () => button("Post clan images now").click());
+  const confirm = button("Post clan images now");
+  await act(async () => {
+    confirm.click();
+    confirm.click();
+  });
+  expect(api).toHaveBeenCalledExactlyOnceWith(
+    "/seasons/1/manage-bridge/lazy/sequence/assume",
+    "POST",
+    {
+      sequence_id: "sequence",
+      version: 1,
+      channel_id: "channel",
+      confirm_no_pings: true,
+    },
+  );
 });

@@ -657,6 +657,15 @@ export default function ManageBridgeWorkspace({
                             seasonId={seasonId}
                             pool={pool}
                             sequence={entry.sequence}
+                            announcementSent={delivery?.status === "sent"}
+                            channelName={
+                              channels.find(
+                                (channel) =>
+                                  channel.id === entry.sequence?.channel_id,
+                              )?.name
+                                ? `#${channels.find((channel) => channel.id === entry.sequence?.channel_id)!.name}`
+                                : "the reviewed channel"
+                            }
                             canSend={canManage && !busy}
                             onRefresh={() => load(false)}
                           />

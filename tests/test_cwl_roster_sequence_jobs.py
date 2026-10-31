@@ -78,3 +78,26 @@ class SequenceJobTests(unittest.IsolatedAsyncioTestCase):
             await self.jobs.advance('a' * 24)
         queue.assert_not_awaited()
         self.assertEqual(self.images.sequence('a' * 24)['status'], 'stopped')
+
+    async def test_missing_message_needs_staff_assumption_then_only_images_and_closing(self):
+        bridge = self.bridge | {'receipt': self.bridge['receipt'] | {'message_id': None}}
+        with patch('cwl_web.roster_sequence_jobs.get_roster_send_status', AsyncMock(return_value=bridge)), \
+             patch('cwl_web.roster_sequence_jobs.queue_roster_send', AsyncMock()) as queue, \
+             patch('cwl_web.roster_sequence_jobs.SequenceTransport', return_value=self.transport):
+            await self.jobs.advance('a' * 24)
+            self.transport.image.assert_not_awaited()
+            job = self.images.sequence('a' * 24)
+            self.assertEqual(job['status'], 'stopped')
+            self.images.assume_announcement(job, bridge, '123456789012345679')
+            from utils.cwl_roster_image_store import ImageConflict
+            with self.assertRaises(ImageConflict):
+                self.images.assume_announcement(job, bridge, 'other')
+            await self.jobs.advance('a' * 24)
+            queue.assert_not_awaited()
+        self.transport.image.assert_awaited_once()
+        self.transport.closing.assert_awaited_once()
+        self.assertEqual(self.images.sequence('a' * 24)['status'], 'complete')
+        assumption = self.images.announcement_assumption('a' * 24)
+        self.assertEqual(assumption['actor_id'], '123456789012345679')
+        self.assertTrue(assumption['assumed_at'])
+        self.assertIsNone(self.images.sequence('a' * 24)['announcement_message_id'])

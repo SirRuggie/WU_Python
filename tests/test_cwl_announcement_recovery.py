@@ -126,3 +126,85 @@ class RecoveryHTTPTests(ManageBridgeTests):
         self.assertEqual(images.sequence('a'*24)['status'], 'ready')
         self.assertIsNone(images.closing_receipt('a'*24))
         self.assertTrue(all(call.args[1] == 'GET' for call in fake.call_args_list))
+
+    async def test_staff_assumption_requires_send_permission_and_never_queues_announcement(self):
+        from utils.cwl_roster_image_store import RosterImageStore
+        from utils.cwl_web_bridge import get_roster_send_status, mark_worker_alive
+        from cwl_web.manage_bridge import GUILD_ID
+        await self.bind()
+        await self.publish()
+        await mark_worker_alive(self.mongo, GUILD_ID)
+        state = await self.state()
+        channel = state['pools']['main']['channel_id']
+        sent = await self.call('POST', self.base + '/main/send', self.owner, json={
+            'version': 1, 'generation': state['generation'], 'channel_id': channel})
+        self.assertEqual(sent.status, 202, await sent.text())
+        await cwl_campaign.record_delivery(self.mongo, GUILD_ID, state['cycle'], {
+            'occurrence_id': cwl_campaign.occurrence_id(state['cycle'], 'roster', 'main'),
+            'status': 'sent', 'channel_id': int(channel), 'message_id': None})
+        storage = RosterImageStore(self.app['store'])
+        job = storage.pool_sequence(self.sid, 'main')
+        before = await get_roster_send_status(self.mongo, GUILD_ID, state['cycle'], 'main')
+        body = {'sequence_id': job['sequence_id'], 'version': 1,
+                'channel_id': channel, 'confirm_no_pings': True}
+        path = self.base + '/main/sequence/assume'
+        with patch('utils.cwl_web_bridge.queue_roster_send', AsyncMock(side_effect=AssertionError('Must never queue an announcement'))):
+            denied = await self.call('POST', path, self.member, json=body)
+            self.assertEqual(denied.status, 403)
+            allowed = await self.call('POST', path, self.owner, json=body)
+            self.assertEqual(allowed.status, 202, await allowed.text())
+            duplicate = await self.call('POST', path, self.owner, json=body)
+            self.assertEqual(duplicate.status, 409)
+        self.assertEqual(await get_roster_send_status(self.mongo, GUILD_ID, state['cycle'], 'main'), before)
+        self.assertEqual(storage.sequence(job['sequence_id'])['status'], 'ready')
+
+    async def test_concurrent_resend_posts_one_announcement_then_images_then_closing(self):
+        from types import SimpleNamespace
+        from cwl_web.manage_bridge import GUILD_ID
+        from cwl_web.roster_sequence_jobs import SequenceJobs
+        from utils import cwl_web_bridge
+        from utils.cwl_roster_image_store import RosterImageStore
+        from utils.cwl_roster_messages import clan_image_message, closing_message
+        await self.bind()
+        await self.publish()
+        await cwl_web_bridge.mark_worker_alive(self.mongo, GUILD_ID)
+        state = await self.state()
+        channel = state['pools']['main']['channel_id']
+        occurrence = cwl_campaign.occurrence_id(state['cycle'], 'roster', 'main')
+        receipt = {'occurrence_id': occurrence, 'status': 'sent', 'channel_id': channel,
+                   'message_id': RECEIPT['message_id']}
+        await cwl_campaign.record_delivery(self.mongo, GUILD_ID, state['cycle'], receipt)
+        plan = {'clans': [{'tag': '#AAA', 'request_id': 'b'*24, 'frozen': {
+            'name': 'Clan', 'league': 'Gold', 'season_label': 'October',
+            'payload': clan_image_message('Clan', '#AAA')}}],
+            'closing': {'request_id': 'c'*24, 'payload': closing_message()}}
+        async def deleted(*args, **kwargs):
+            await asyncio.sleep(0)
+            if '/messages/' in args[2]:
+                raise DiscordItemNotFound(10008)
+            return CHANNEL
+        body = {'version': 1, 'generation': state['generation'], 'channel_id': channel,
+                'deleted_message_id': RECEIPT['message_id'], 'confirm_resend': True}
+        with patch('cwl_web.announcement_recovery.discord', deleted), \
+             patch('cwl_web.roster_sequence_review.frozen_plan', AsyncMock(return_value=plan)):
+            responses = await asyncio.gather(*[
+                self.call('POST', self.base+'/main/send', self.owner, json=body) for _ in range(2)])
+        self.assertEqual(sorted(response.status for response in responses), [202, 409])
+        events = []
+        async def sender(*args, **kwargs):
+            events.append('announcement')
+            await cwl_campaign.record_delivery(self.mongo, GUILD_ID, state['cycle'], receipt | {'message_id': '123456789012345680'})
+            return True
+        await cwl_web_bridge.process_pending_roster_requests(self.mongo, sender, guild_id=GUILD_ID)
+        async def image(job, item):
+            self.assertEqual(item['frozen']['payload']['allowed_mentions'], {'parse': []})
+            events.append('image'); return '123456789012345681'
+        async def closing(job, item):
+            self.assertEqual(item['payload']['allowed_mentions'], {'parse': []})
+            events.append('closing'); return '123456789012345682'
+        jobs = SequenceJobs(self.app); jobs.authorized = AsyncMock(return_value=True)
+        sequence = RosterImageStore(self.app['store']).pool_sequence(self.sid, 'main')
+        with patch('cwl_web.roster_sequence_jobs.SequenceTransport', return_value=SimpleNamespace(image=image, closing=closing)):
+            await jobs.advance(sequence['sequence_id'])
+            await jobs.advance(sequence['sequence_id'])
+        self.assertEqual(events, ['announcement', 'image', 'closing'])

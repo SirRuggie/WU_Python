@@ -52,7 +52,7 @@ class SequenceWorker:
     async def _advance(self, sequence_id, *, resume=False):
         import json
         job = self.storage.sequence(sequence_id)
-        if not job or job['status'] != 'ready' or not job['announcement_message_id']:
+        if not job or job['status'] != 'ready' or not (job['announcement_message_id'] or self.storage.announcement_assumption(sequence_id)):
             return {'status': job['status'] if job else 'missing'}
         plan = json.loads(job['plan_json'])
         for item in plan['clans']:

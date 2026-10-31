@@ -9,12 +9,16 @@ export default function AnnouncementSequenceStatus({
   pool,
   sequence,
   canSend,
+  announcementSent = false,
+  channelName = "the reviewed channel",
   onRefresh,
 }: {
   seasonId: string;
   pool: Pool;
   sequence?: ImageSequence;
   canSend: boolean;
+  announcementSent?: boolean;
+  channelName?: string;
   onRefresh: () => Promise<void>;
 }) {
   const [confirm, setConfirm] = useState<{
@@ -22,6 +26,7 @@ export default function AnnouncementSequenceStatus({
     requestId: string;
     name: string;
   } | null>(null);
+  const [assumeReview, setAssumeReview] = useState(false);
   const [resumeReview, setResumeReview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -39,8 +44,14 @@ export default function AnnouncementSequenceStatus({
     if (!canSend) {
       setConfirm(null);
       setResumeReview(false);
+      setAssumeReview(false);
     }
   }, [canSend]);
+  useEffect(() => {
+    setAssumeReview(false);
+    setResumeReview(false);
+    setConfirm(null);
+  }, [sequence?.sequence_id, sequence?.version, sequence?.channel_id]);
   if (!sequence?.sequence_id || sequence.status === "not_started") return null;
   const sent = sequence.clans.filter((clan) => clan.status === "posted").length;
   const stopped = sequence.clans.find((clan) => clan.status !== "posted");
@@ -56,7 +67,7 @@ export default function AnnouncementSequenceStatus({
       ? { requestId: sequence.closing!.request_id, name: "closing note" }
       : null;
   async function action(
-    kind: "resume" | "recover",
+    kind: "resume" | "recover" | "assume",
     sequenceId: string,
     requestId?: string,
   ) {
@@ -69,13 +80,20 @@ export default function AnnouncementSequenceStatus({
       await api(
         `/seasons/${encodeURIComponent(seasonId)}/manage-bridge/${pool}/sequence/${kind}`,
         "POST",
-        kind === "resume"
-          ? { sequence_id: sequenceId }
-          : {
+        kind === "assume"
+          ? {
               sequence_id: sequenceId,
-              request_id: requestId,
-              confirm_duplicate: true,
-            },
+              version: sequence?.version,
+              channel_id: sequence?.channel_id,
+              confirm_no_pings: true,
+            }
+          : kind === "resume"
+            ? { sequence_id: sequenceId }
+            : {
+                sequence_id: sequenceId,
+                request_id: requestId,
+                confirm_duplicate: true,
+              },
       );
       if (mounted.current) await onRefresh();
     } catch (caught) {
@@ -131,6 +149,38 @@ export default function AnnouncementSequenceStatus({
             Resume
           </Button>
         ))}
+      {canSend &&
+        announcementSent &&
+        !sequence.announcement_confirmed &&
+        ["stopped", "awaiting_announcement"].includes(sequence.status) && (
+          <>
+            <p>
+              Announcement shows as sent, but its message couldn't be confirmed.
+            </p>
+            <Button disabled={busy} onClick={() => setAssumeReview(true)}>
+              Post clan images now
+            </Button>
+          </>
+        )}
+      {assumeReview && (
+        <ConfirmDialog
+          heading="Post clan images now"
+          text={`Posts to ${channelName}: ${sequence.clans.length} clan images then the closing note · No pings. The announcement will not be sent again.`}
+          confirmLabel="Post clan images now"
+          disabled={busy}
+          onCancel={() => setAssumeReview(false)}
+          onConfirm={() => {
+            setAssumeReview(false);
+            void action("assume", sequence.sequence_id!);
+          }}
+        >
+          <ol>
+            {sequence.clans.map((clan) => (
+              <li key={clan.tag}>{clan.name}</li>
+            ))}
+          </ol>
+        </ConfirmDialog>
+      )}
       {resumeReview && (
         <ConfirmDialog
           heading="Resume clan images"

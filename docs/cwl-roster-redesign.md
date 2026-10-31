@@ -632,3 +632,12 @@ A read-only check runs on the sent pool's Announcements view, with a rate-limite
 manual fallback. Confirm rechecks deletion, archives the old receipt and uses the
 current publication for the new announcement/images/closing sequence. Merely opening
 the page never posts. November is not automatically resent or migrated.
+
+Recovery clarification (Claude entry 164): a native sent occurrence with an unknown
+announcement message can be continued only through staff's explicit “Post clan
+images now” review. It lists the saved channel and clans and says no pings. A
+separate durable assumption receipt records the actor/time/native receipt; the
+announcement message ID remains unknown. The guarded continuation permits only
+images and closing, never queues another announcement, and rejects a second
+confirmation. The assumption receipt is retained on rollback with other additive
+sequence tables.

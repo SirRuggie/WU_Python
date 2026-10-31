@@ -79,7 +79,7 @@ def describe(storage, sid, pool):
     return {
         'sequence_id': sequence['sequence_id'] if sequence else None,
         'status': sequence['status'] if sequence else 'not_started',
-        'announcement_confirmed': bool(sequence and sequence['announcement_message_id']),
+        'announcement_confirmed': bool(sequence and (sequence['announcement_message_id'] or storage.announcement_assumption(sequence['sequence_id']))),
         'error': sequence['error'] if sequence else None,
         'version': sequence['target_version'] if sequence else publication[1]['version'] if publication else None,
         'channel_id': sequence['channel_id'] if sequence else None,
@@ -165,3 +165,29 @@ async def repair_closing(request):
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return web.json_response({'repost_queued': True}, status=202)
+
+
+async def assume_announcement(request):
+    from .app import _json, _sid
+    from .manage_bridge import _pool, _mongo
+    from .roster_image_posts import staff
+    from .server_management import GUILD_ID
+    from utils.cwl_web_bridge import get_roster_send_status
+    actor = staff(request, send=True)
+    body = await _json(request)
+    storage = RosterImageStore(request.app['store'])
+    sid, pool = _sid(request), _pool(request)
+    job = storage.pool_sequence(sid, pool)
+    _not_active(request, job)
+    if (set(body) != {'sequence_id', 'version', 'channel_id', 'confirm_no_pings'}
+            or body.get('confirm_no_pings') is not True or not job
+            or (body['sequence_id'], body['version'], body['channel_id']) !=
+               (job['sequence_id'], job['target_version'], job['channel_id'])):
+        raise web.HTTPConflict(text='Review the current channel and clan images first')
+    async with _mongo(request) as mongo:
+        bridge = await get_roster_send_status(mongo, GUILD_ID, job['cycle'], pool)
+    try:
+        storage.assume_announcement(job, bridge or {}, str(actor['user_id']))
+    except ImageConflict as exc:
+        raise web.HTTPConflict(text=str(exc)) from None
+    return web.json_response({'sequence': describe(storage, sid, pool)}, status=202)

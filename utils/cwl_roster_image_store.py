@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS roster_image_sequences (
  UNIQUE(season_id,pool), UNIQUE(cycle,pool)
 );
 
+CREATE TABLE IF NOT EXISTS roster_image_sequence_assumptions (
+ sequence_id TEXT PRIMARY KEY REFERENCES roster_image_sequences(sequence_id),
+ actor_id TEXT NOT NULL, assumed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ native_receipt_json TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS roster_image_sequence_closing (
  sequence_id TEXT PRIMARY KEY REFERENCES roster_image_sequences(sequence_id),
  request_id TEXT NOT NULL UNIQUE, channel_id TEXT NOT NULL,
@@ -255,7 +260,7 @@ class RosterImageStore:
         with self.store.tx() as db:
             row = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
                              (sequence_id,)).fetchone()
-            if not row or row['announcement_message_id'] or row['status'] != 'stopped':
+            if not row or self._announcement_allowed(db, row) or row['status'] != 'stopped':
                 raise ImageConflict('This sequence has already started; refresh its status')
             latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? '
                                 'AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1',
@@ -287,6 +292,37 @@ class RosterImageStore:
             row = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
                              (sequence_id,)).fetchone()
             return dict(row) if row else None
+
+    @staticmethod
+    def _announcement_allowed(db, row):
+        return bool(row['announcement_message_id'] or db.execute(
+            'SELECT 1 FROM roster_image_sequence_assumptions WHERE sequence_id=?',
+            (row['sequence_id'],),
+        ).fetchone())
+
+    def announcement_assumption(self, sequence_id):
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_sequence_assumptions WHERE sequence_id=?',
+                             (sequence_id,)).fetchone()
+            return dict(row) if row else None
+
+    def assume_announcement(self, expected, bridge, actor):
+        """Explicit staff continuation; no fabricated Discord ID or announcement queue."""
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                             (expected['sequence_id'],)).fetchone()
+            if not row or dict(row) != expected or row['status'] not in ('stopped', 'awaiting_announcement'):
+                raise ImageConflict('Sequence changed; review again')
+            receipt = bridge.get('receipt') or {}
+            if (bridge.get('status') != 'sent' or receipt.get('status') != 'sent'
+                    or receipt.get('occurrence_id') != f"{row['cycle']}|roster|{row['pool']}"
+                    or str(receipt.get('channel_id') or bridge.get('channel_id')) != row['channel_id']
+                    or row['announcement_message_id']):
+                raise ImageConflict('A sent announcement in this channel is required')
+            db.execute('INSERT INTO roster_image_sequence_assumptions(sequence_id,actor_id,native_receipt_json) VALUES(?,?,?)',
+                       (row['sequence_id'], actor, json.dumps(receipt, sort_keys=True)))
+            db.execute("UPDATE roster_image_sequences SET status='ready',actor_id=?,error=NULL,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?",
+                       (actor, row['sequence_id']))
 
     def confirm_sequence_announcement(self, sequence_id, bridge):
         """Unlock only from this job's matching, confirmed native receipt.
@@ -429,7 +465,7 @@ class RosterImageStore:
         with self.store.tx() as db:
             job = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
                              (sequence_id,)).fetchone()
-            if not job or job['status'] != 'stopped' or not job['announcement_message_id']:
+            if not job or job['status'] != 'stopped' or not self._announcement_allowed(db, job):
                 raise ImageConflict('Sequence changed; refresh before recovering')
             plan = json.loads(job['plan_json'])
             if plan['closing']['request_id'] == request_id:
@@ -469,7 +505,7 @@ class RosterImageStore:
         with self.store.tx() as db:
             changed = db.execute("UPDATE roster_image_sequences SET status='ready',resume_requested=1,"
                                  "actor_id=?,error=NULL,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=? "
-                                 "AND status='stopped' AND announcement_message_id IS NOT NULL",
+                                 "AND status='stopped' AND (announcement_message_id IS NOT NULL OR sequence_id IN (SELECT sequence_id FROM roster_image_sequence_assumptions))",
                                  (actor, sequence_id))
             if not changed.rowcount:
                 raise ImageConflict('Sequence changed; refresh before resuming')
@@ -483,7 +519,7 @@ class RosterImageStore:
     def resume_sequence(self, sequence_id):
         with self.store.tx() as db:
             db.execute("UPDATE roster_image_sequences SET status='ready',error=NULL,updated_at=CURRENT_TIMESTAMP "
-                       "WHERE sequence_id=? AND status='stopped' AND announcement_message_id IS NOT NULL",
+                       "WHERE sequence_id=? AND status='stopped' AND (announcement_message_id IS NOT NULL OR sequence_id IN (SELECT sequence_id FROM roster_image_sequence_assumptions))",
                        (sequence_id,))
 
     def repost_deleted_closing(self, sequence_id, message_id, actor):
@@ -522,7 +558,7 @@ class RosterImageStore:
             sequence = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
                                   (sequence_id,)).fetchone()
             if (not sequence or sequence['status'] != 'ready'
-                    or not sequence['announcement_message_id']):
+                    or not self._announcement_allowed(db, sequence)):
                 raise ImageConflict('Announcement sequence is not ready for the closing note')
             plan = json.loads(sequence['plan_json'])
             for item in plan.get('clans', []):
@@ -589,7 +625,7 @@ class RosterImageStore:
         sequence = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
                               (sequence_id,)).fetchone()
         if (not sequence or sequence['status'] != 'ready'
-                or not sequence['announcement_message_id']
+                or not self._announcement_allowed(db, sequence)
                 or (sequence['season_id'], sequence['pool'], sequence['target_version'],
                     sequence['channel_id']) != (sid, pool, version, channel)):
             raise ImageConflict('Announcement sequence is not ready for image delivery')
