@@ -187,7 +187,7 @@ const shots = process.env.WU_LAYOUT_SCREENSHOTS;
       assert.equal(await input.inputValue(), "");
       await input.fill("175");
       await capacity
-        .getByRole("button", { name: "Set in Clan settings" })
+        .getByRole("button", { name: "Set in Hosting clans" })
         .click();
       await dialog.waitFor();
       await dialog

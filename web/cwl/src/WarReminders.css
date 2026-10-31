@@ -188,3 +188,9 @@
   outline: 2px solid currentColor;
   outline-offset: 3px;
 }
+
+.war-reminders label:has(input[type="checkbox"]) {
+  min-height: 44px;
+  box-sizing: border-box;
+  align-items: center;
+}

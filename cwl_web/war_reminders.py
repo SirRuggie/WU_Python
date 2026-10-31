@@ -10,7 +10,7 @@ from aiohttp import web
 from utils import war_reminders as reminders
 from utils.war_reminder_store import SettingsConflict, WarReminderStore
 from .server_management import API, GUILD_ID, require_manage, mongo, discord
-from .manage_clans import tag, public as public_clan
+from .manage_clans import tag, public as public_clan, change_names
 from utils.war_reminder_health import health
 from .manage_operations import revision
 from .war_reminder_samples import test_messages
@@ -96,8 +96,9 @@ async def save(request):
         before = await store.get_settings(row['tag'])
         if body.get('revision') != revision(before):
             raise web.HTTPConflict(text='Reminders changed. Reload before saving.')
+        names = await change_names(request, actor, reminders.settings(before), config)
         try:
-            await store.save_settings(row['tag'], before, config, actor['user_id'], history_context=(row, actor))
+            await store.save_settings(row['tag'], before, config, actor['user_id'], history_context=(row, actor), history_names=names)
         except SettingsConflict:
             raise web.HTTPConflict(text='Reminders changed. Reload before saving.') from None
     return await read(request)

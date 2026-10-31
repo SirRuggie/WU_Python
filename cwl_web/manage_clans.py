@@ -131,7 +131,7 @@ async def change_names(request, actor, before, after):
     cache = {}
     roles = {str(role['id']): role.get('name') for role in actor.get('roles', [])}
     for field, value in after.items():
-        if field not in IDS or before.get(field) == value:
+        if field not in (*IDS, 'channel_id') or before.get(field) == value:
             continue
         labels = {}
         for side, identity in (('before', before.get(field)), ('after', value)):

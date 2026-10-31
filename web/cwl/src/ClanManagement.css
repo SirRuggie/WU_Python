@@ -333,3 +333,11 @@
   overflow: hidden;
   clip-path: inset(50%);
 }
+
+.clan-tabs[aria-label="Used by"] a {
+  color: #f4cd64;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 10px;
+}

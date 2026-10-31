@@ -1952,9 +1952,11 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     from .strikes import routes as strike_routes
     routes.extend(strike_routes)
     routes.extend(push_routes())
-    from . import war_reminders, staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, owner_prank
+    from . import war_reminders, staff_overview, clan_history, clan_usage, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, owner_prank
     app.cleanup_ctx.append(owner_prank.lifecycle)
-    for module in (war_reminders, staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, owner_prank):
+    from .clan_artwork_cleanup import lifecycle as clan_artwork_cleanup_lifecycle
+    app.cleanup_ctx.append(clan_artwork_cleanup_lifecycle)
+    for module in (war_reminders, staff_overview, clan_history, clan_usage, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, owner_prank):
         routes.extend(module.routes)
     manage_content.routes(app)
     routes.extend(issue_routes)

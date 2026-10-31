@@ -106,3 +106,72 @@ Route checks: 26 targeted frontend tests plus the App guard regression passed;
 full frontend 1,079 tests / 209 files passed. Five isolated backend route tests
 with 55 subtests passed. Final real-browser Back/Forward and layout checks remain
 part of the batch completion gate.
+
+## Completion checkpoint (shared layout gate still pending)
+
+History now renders confirmed field changes with frozen available Discord names,
+relative/exact timestamps and day grouping. Reminder changes carry a durable
+before-image and confirmed diff, including channel names on direct edits. Older
+snapshots remain explicitly labeled; absent historical names are never guessed.
+Reminder copy preserves each destination's channel and revision, reports partial
+results, and retains delivery receipts. Add first looks up a public clan roster;
+existing clans open, removed clans offer confirmed restore or fresh setup. Fresh
+setup clears reminder settings with their own captured revision; a concurrent
+change is retained and reported as a partial result. The checklist appears in the
+add flow, rather than duplicating navigation on every existing clan page.
+
+Usage links use active season lineup records and exact FWA membership, and open
+separately to preserve the current draft. Confirmed artwork replacements record
+cleanup work in the existing history owner. The backend retries owned,
+content-addressed clan-image deletion every five minutes, preserving currently
+referenced clan images and skipping foreign/static/FWA objects. Failed deletes
+remain pending across restarts. No images or Discord messages were changed by
+these mocked tests. If secondary history completion is unavailable, the save still
+succeeds and retains its before-image; cleanup is not falsely reported complete.
+
+Additional copy changes:
+
+| Before | After |
+| --- | --- |
+| Reminder overview / Settings history | Reminders / History |
+| Monitor your family's reminders and manage each clan in one place | Set up each clan and its war reminders. |
+| Not configured | Off |
+| Tracking battle day | War is on. Reminders are active. |
+| Settings saved before edit | Before this change |
+| Removal snapshots | Removed clans |
+| Each entry is a copy saved before an edit or removal… | Confirmed changes show what changed; older entries show saved settings. |
+| Add clan (immediate submission) | Look up clan → Found: name · member count → Add |
+| Clan added. Select it to finish its settings. | Review the setup checklist for this clan. |
+| silent existing-tag add | Already in the family · Open |
+| Build roster: Clan settings | Hosting clans |
+| Set in Clan settings / Set capacity in Clan settings first | Set in Hosting clans / Set capacity in Hosting clans first |
+
+Isolated browser fixture: 25 clans, 2 enabled and 23 off; 320, 360, 390 and
+1440px. No horizontal overflow; controls including checkbox labels have 44px
+height and at least 12px text. Clean Back/Forward works, dirty Back cancellation
+retains the edit, and both Remove and Send test confirmations cancel without a
+management write. The fixture's preview response is synthetic and cannot prove
+Discord delivery. The overview measures 4.02 screens at 360×800, compared with
+the audit's 14.1-screen prior layout (different synthetic data, not a production
+before/after benchmark). Screenshots and metrics: `/tmp/wu-family-layout/`.
+
+The per-pool classification regression shows Main outside 1→0 and Lazy outside
+1→0 when CWL/Unknown stored clans join the directory, with pools, assignments and
+locks unchanged. FWA-specific policy stays separate and covered by regressions.
+
+Mutations killed across the batch: default Reminders tab, native confirm, Send
+test without confirmation, raw leader ID, duplicate save bar, restored legacy
+write, copied channel, skipped copy revision, silent existing add, fresh setup
+retaining reminders, missing type warning, and keeping replaced artwork.
+
+Latest completed backend full run: 5,081 passed / 21 skipped / 162 subtests;
+latest frontend full run: 1,097 passed / 213 files; tsc/build and the war-reminder
+gate passed. A further backend run covers the final channel-history change.
+The shared `npm run test:layout` hit a timeout at
+`signup-card.browser.cjs:72` waiting for `.member-signup-success`. This blocks
+READY; the affected signup source/test/fixture are unchanged from the branch
+base. Do not treat the successful Family-specific browser checks as a substitute
+for resolving that shared gate. No deployment is authorized by this checkpoint.
+
+Current queue per Claude 149–150: Family 29 → Announcements with images 45 →
+carousel 44 → triggers 31 → 19. Clan Games remains on ClashPerk.

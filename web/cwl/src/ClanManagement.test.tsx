@@ -284,3 +284,25 @@ it.each([
     );
   },
 );
+
+it("warns about FWA consumers before committing a type change", async () => {
+  await open();
+  const select = [...host.querySelectorAll<HTMLSelectElement>("select")].find(
+    (el) => [...el.options].some((option) => option.value === "FWA"),
+  )!;
+  await act(async () => {
+    select.value = "FWA";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await click("Save");
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Clan weights and FWA strike rules",
+  );
+  expect(vi.mocked(api).mock.calls.some((call) => call[1] === "PATCH")).toBe(
+    false,
+  );
+  await click("Cancel");
+  expect(vi.mocked(api).mock.calls.some((call) => call[1] === "PATCH")).toBe(
+    false,
+  );
+});

@@ -65,7 +65,7 @@ class WarReminderStore:
     async def enabled_settings(self):
         return await self.settings.find({'enabled': True}).to_list(length=None)
 
-    async def save_settings(self, tag, before, values, actor, *, history_context=None):
+    async def save_settings(self, tag, before, values, actor, *, history_context=None, history_names=None):
         event_id = None
         if history_context is not None:
             from utils.clan_dashboard_history import audit
@@ -85,7 +85,7 @@ class WarReminderStore:
         if event_id:
             from utils.clan_dashboard_history import finish_change
             await finish_change(self.db, event_id,
-                                {key: previous.get(key) for key in values}, values)
+                                {key: previous.get(key) for key in values}, values, names=history_names)
 
     async def recent_deliveries(self, tag, limit=15):
         return await self.deliveries.find({'clan_tag': tag}, {'_id': 0}).sort('at', -1).limit(limit).to_list(length=limit)

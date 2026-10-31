@@ -13,6 +13,7 @@ import type { Clan } from "./clanManagement/types";
 import "./ClanManagement.css";
 import ClanHistory from "./ClanHistory";
 import AddClan from "./clanManagement/AddClan";
+import UsageLinks from "./clanManagement/UsageLinks";
 import WarReminders, { type ReminderEditor } from "./WarReminders";
 import ConfirmDialog from "./ConfirmDialog";
 type Directory = { clans: Clan[]; types: string[]; town_halls: string[] };
@@ -47,6 +48,7 @@ export default function ClanManagement({
   const [reminderChanges, setReminderChanges] = useState(0);
   const [reminderSummary, setReminderSummary] = useState("Loading…");
   const [sectionCollapsed, setSectionCollapsed] = useState(false);
+  const [setupTag, setSetupTag] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{
     text: string;
     resolve: (ok: boolean) => void;
@@ -231,6 +233,7 @@ export default function ClanManagement({
       return;
     ++editGeneration.current;
     setSectionCollapsed(false);
+    setSetupTag(null);
     setSection("Details");
     onNavigate?.({ tab: "clans", tag: row?.tag, section: "Details" });
     setSaved(row);
@@ -485,6 +488,7 @@ export default function ClanManagement({
                   )
                     return;
                   ++editGeneration.current;
+                  setSetupTag(clan.tag);
                   setSaved(clan);
                   setDraft({ ...clan });
                   setReminderDirty(false);
@@ -535,36 +539,39 @@ export default function ClanManagement({
                 >
                   ‹ All clans
                 </button>
-                <nav aria-label="Clan setup checklist" className="clan-tabs">
-                  {(
-                    [
-                      ["Clan type", "Details", !!draft.type],
-                      ["Leader role", "Roles", !!draft.leader_role_id],
-                      ["Channels", "Channels", !!draft.chat_channel_id],
+                <UsageLinks tag={draft.tag} revision={saved?.revision || ""} />
+                {setupTag === draft.tag && (
+                  <nav aria-label="Clan setup checklist" className="clan-tabs">
+                    {(
                       [
-                        "War reminders",
-                        "War reminders",
-                        reminderSummary.startsWith("On"),
-                      ],
-                    ] as const
-                  ).map(([label, target, complete]) => (
-                    <button
-                      key={label}
-                      disabled={disabled}
-                      onClick={() => {
-                        setSection(target);
-                        setSectionCollapsed(false);
-                        onNavigate?.({
-                          tab: "clans",
-                          tag: draft.tag,
-                          section: target,
-                        });
-                      }}
-                    >
-                      {complete ? "✓" : "✗"} {label}
-                    </button>
-                  ))}
-                </nav>
+                        ["Clan type", "Details", !!draft.type],
+                        ["Leader role", "Roles", !!draft.leader_role_id],
+                        ["Channels", "Channels", !!draft.chat_channel_id],
+                        [
+                          "War reminders",
+                          "War reminders",
+                          reminderSummary.startsWith("On"),
+                        ],
+                      ] as const
+                    ).map(([label, target, complete]) => (
+                      <button
+                        key={label}
+                        disabled={disabled}
+                        onClick={() => {
+                          setSection(target);
+                          setSectionCollapsed(false);
+                          onNavigate?.({
+                            tab: "clans",
+                            tag: draft.tag,
+                            section: target,
+                          });
+                        }}
+                      >
+                        {complete ? "✓" : "✗"} {label}
+                      </button>
+                    ))}
+                  </nav>
+                )}
                 <div className="page-head">
                   <div>
                     <h2 ref={headingRef} tabIndex={-1}>

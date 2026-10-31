@@ -76,3 +76,16 @@ def test_history_backup_failure_prevents_reminder_save(store, monkeypatch):
     with pytest.raises(RuntimeError):
         asyncio.run(value.save_settings('#P2Y', None, {}, '123', history_context=({'tag': '#P2Y'}, {'user_id': '123'})))
     value.settings.update_one.assert_not_awaited()
+
+
+def test_reminder_history_freezes_supplied_channel_names(store, monkeypatch):
+    from utils import clan_dashboard_history as history
+    value, _ = store
+    monkeypatch.setattr(history, 'audit', AsyncMock(return_value='event'))
+    finish = AsyncMock()
+    monkeypatch.setattr(history, 'finish_change', finish)
+    value.settings.update_one.return_value = NS(matched_count=1, upserted_id=None)
+    names = {'channel_id': {'before': 'Old war chat', 'after': 'New war chat'}}
+    asyncio.run(value.save_settings('#P2Y', {'version': 1}, {'channel_id': '123'}, 'staff',
+        history_context=({'tag': '#P2Y'}, {'user_id': 'staff'}), history_names=names))
+    assert finish.await_args.kwargs['names'] == names
