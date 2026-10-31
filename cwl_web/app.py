@@ -217,6 +217,8 @@ async def config(request):
 
 async def me(request):
     session = _require(request)
+    from .visitors import record
+    record(request, session)
     return web.json_response({"authenticated": True, "access_warning": request.get("access_warning"), "user": {"id": session["user_id"], "username": session["username"], "display_name": session["display_name"] or session["username"], "avatar_url": session["avatar_url"]}, "is_owner": _owner(session), "can_edit": _editor(request, session), "dashboard_permissions": list(PERMISSIONS) if _owner(session) else sorted(request_scopes(request, session["user_id"])), "csrf_token": session["csrf"]})
 
 
@@ -380,6 +382,8 @@ async def auth_callback(request):
         raise web.HTTPServiceUnavailable(text="Discord unavailable") from exc
     if not isinstance(user, dict) or not str(user.get("id", "")).isdigit() or not isinstance(guilds, list):
         _fail(401, "Invalid Discord identity")
+    if user.get("bot") is True:
+        _fail(403, "Human Discord account required")
     guild = next((g for g in guilds if isinstance(g, dict) and str(g.get("id")) == GUILD_ID), None)
     if guild is None:
         _fail(403, "Warriors United membership required")
@@ -1893,6 +1897,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(todo_lifecycle)
     from .clan_activity import setup as setup_clan_activity
     setup_clan_activity(app)
+    from .visitors import setup as setup_visitors
+    setup_visitors(app)
     from .war_detail import setup as setup_war_detail
     setup_war_detail(app)
     app.cleanup_ctx.append(push_lifecycle)
