@@ -40,7 +40,7 @@ async def fetch_battle_last_seen(http, player_tag, *, now=None):
 
 async def seed_players(store, fetch_last_online, *, force=False, sleep=asyncio.sleep, timeout=120):
     counts = {key: 0 for key in ('seeded', 'official_or_existing', 'unavailable', 'failed',
-                                 'non_200', 'timeout', 'already_attempted')}
+                                 'non_200', 'timeout', 'already_attempted', 'pending')}
     semaphore = asyncio.Semaphore(5)
     rows = await store.all_players()
 
@@ -83,6 +83,7 @@ async def seed_players(store, fetch_last_online, *, force=False, sleep=asyncio.s
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
         counts['timeout'] += len(pending)
+        counts['pending'] = len(pending)
         for task in pending:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

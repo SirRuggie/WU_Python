@@ -64,7 +64,7 @@ def test_worker_cancels_its_background_seed_on_shutdown(monkeypatch):
             return {'#A': '#CLAN'}
         async def raids(*args):
             return {}
-        async def hour(*args):
+        async def hour(*args, **kwargs):
             return {'success': 1, 'failure': 0}
         async def seed(store):
             seed_started.set()
@@ -105,7 +105,7 @@ def test_transient_index_failure_does_not_permanently_kill_worker(monkeypatch):
             return {}
         async def raids(*args):
             pass
-        async def stop(*args):
+        async def stop(*args, **kwargs):
             raise asyncio.CancelledError()
         async def no_sleep(delay):
             pass
@@ -117,4 +117,23 @@ def test_transient_index_failure_does_not_permanently_kill_worker(monkeypatch):
         with pytest.raises(asyncio.CancelledError):
             await polling.run(None, SimpleNamespace(get_player=None))
         assert len(attempts)==2
+    asyncio.run(scenario())
+
+
+def test_official_calls_share_a_one_per_second_budget():
+    from utils.player_activity_polling import PacedOfficialClient
+    async def scenario():
+        tick = [0.0]
+        calls = []
+        async def sleep(delay):
+            tick[0] += delay
+        async def read(value, **kwargs):
+            calls.append(tick[0])
+            return value
+        client = PacedOfficialClient(SimpleNamespace(get_clan=read, get_player=read, get_raid_log=read),
+                                     sleep=sleep, clock=lambda: tick[0])
+        await client.get_clan('#CLAN')
+        await client.get_raid_log('#CLAN', limit=8)
+        await client.get_player('#A')
+        assert calls==[0,1,2]
     asyncio.run(scenario())

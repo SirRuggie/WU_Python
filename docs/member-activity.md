@@ -26,8 +26,13 @@ Siege Sharer, Friend in Need and Sharing is Caring are excluded.
 The bot task takes a complete family roster sweep, then spreads player reads
 across an hour.125 players mean125 player calls/hour, one every28.8seconds;
 1000 mean1000/hour, one every3.6seconds. Catch-up is capped at one player request
-per second. Clan roster and raid reads add one each per family clan per sweep;
-they are sequential. Worker cancellation propagates, and stopping awaits cleanup.
+per second. Clan roster and raid reads add one each per family clan per sweep. A shared
+pacer caps this feature at one logical official API call/second, including clan
+reads; SDK transport retries retain the existing client retry/throttle policy.
+For125accounts in3fixture clans the budget is131logical calls/hour; for
+1000accounts and25estimated clans it is1050/hour, with the same1/second peak.
+The player schedule uses the remainder of the hour after clan reads, about
+28.8seconds or3.55seconds per player respectively. Worker cancellation propagates, and stopping awaits cleanup.
 Duplicate lifecycle starts do not create a second worker. No activity notification
 is sent. A failed clan roster sweep never marks anyone as having left.
 
@@ -95,8 +100,8 @@ five concurrent reads, a30second request timeout and a120second overall deadline
 Results are logged as seeded, existing/official, unavailable, non-200, timeout and
 failed counts. Attempt version/status are bounded fields on each player document.
 Completed attempts are not automatically repeated; the coordinator supports an
-explicit safe rerun. A canceled deadline leaves unattempted players eligible on
-restart; every write is conditional and cannot override official activity.
+explicit safe rerun. A canceled deadline leaves unattempted players eligible; pending batches resume
+after the next hourly sweep or on restart, while completed attempts remain skipped; every write is conditional and cannot override official activity.
 Bot shutdown cancels and awaits the seed and closes the HTTP session.
 
 Fixture evidence:125players over400days retained125documents (110250 BSON bytes,
