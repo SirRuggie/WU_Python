@@ -66,12 +66,15 @@ async def poll_hour(store, members, fetch_player, *, sleep=asyncio.sleep, clock=
 
 async def run(mongo, client):
     store = PlayerActivityStore(mongo)
-    await store.ensure_indexes()
+    indexes_ready = False
     seed_task = None
     try:
         while True:
             started = time.monotonic()
             try:
+                if not indexes_ready:
+                    await store.ensure_indexes()
+                    indexes_ready = True
                 members = await family_members(mongo, client)
                 await store.reconcile_membership(members)
                 await capture_raids(store, client, members.values())

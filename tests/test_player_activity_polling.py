@@ -85,3 +85,36 @@ def test_worker_cancels_its_background_seed_on_shutdown(monkeypatch):
             await task
         assert seed_stopped.is_set()
     asyncio.run(scenario())
+
+
+def test_transient_index_failure_does_not_permanently_kill_worker(monkeypatch):
+    import pytest
+    from utils import player_activity_polling as polling
+    async def scenario():
+        attempts = []
+        class Store:
+            def __init__(self, mongo):
+                pass
+            async def ensure_indexes(self):
+                attempts.append(1)
+                if len(attempts)==1:
+                    raise TimeoutError()
+            async def reconcile_membership(self, members):
+                pass
+        async def family(*args):
+            return {}
+        async def raids(*args):
+            pass
+        async def stop(*args):
+            raise asyncio.CancelledError()
+        async def no_sleep(delay):
+            pass
+        monkeypatch.setattr(polling, 'PlayerActivityStore', Store)
+        monkeypatch.setattr(polling, 'family_members', family)
+        monkeypatch.setattr(polling, 'capture_raids', raids)
+        monkeypatch.setattr(polling, 'poll_hour', stop)
+        monkeypatch.setattr(polling.asyncio, 'sleep', no_sleep)
+        with pytest.raises(asyncio.CancelledError):
+            await polling.run(None, SimpleNamespace(get_player=None))
+        assert len(attempts)==2
+    asyncio.run(scenario())

@@ -45,3 +45,14 @@ def test_newly_unlocked_units_count_after_an_existing_baseline():
     assert activity_changed(baseline({'heroes': []}), baseline({'heroes': [{'name': 'King', 'level': 1}]}))
     assert not activity_changed({'attackWins': 1}, baseline({'heroes': [{'name': 'King', 'level': 1}]}))
     assert not activity_changed(None, baseline({'heroes': [{'name': 'King', 'level': 1}]}))
+
+
+def test_malformed_tracked_counters_fail_without_changing_saved_state():
+    import pytest
+    previous = observe(None, {'attackWins': 1}, now=NOW)
+    for invalid in ({'attackWins': -1}, {'donations': '100'}, {'trophies': float('inf')},
+                    {'name': {'unsafe': 'object'}}, {'heroes': {'not': 'a list'}}):
+        with pytest.raises(ValueError):
+            observe(previous, invalid, now=NOW+timedelta(hours=1))
+        assert previous['baseline']['attackWins']==1
+        assert 'last_seen_at' not in previous

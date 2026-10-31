@@ -24,7 +24,18 @@ CHANGES = ('name', 'warPreference', 'builderBaseTrophies')
 def baseline(player: dict) -> dict:
     result = {key: player[key] for key in (*COUNTERS, *CHANGES, 'trophies')
               if key in player and player[key] is not None}
+    for key, value in result.items():
+        if key == 'name':
+            if not isinstance(value, str) or len(value) > 100:
+                raise ValueError('Invalid player name')
+        elif key == 'warPreference':
+            if type(value) is not bool and value not in ('in', 'out'):
+                raise ValueError('Invalid war preference')
+        elif type(value) is not int or value < 0:
+            raise ValueError('Invalid activity counter')
     for field in ('heroes', 'heroEquipment', 'troops', 'spells'):
+        if field in player and not isinstance(player[field], list):
+            raise ValueError('Invalid unit list')
         if isinstance(player.get(field), list):
             result['seen:' + field] = True
         for unit in player.get(field) or []:

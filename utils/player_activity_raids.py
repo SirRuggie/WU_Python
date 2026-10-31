@@ -27,6 +27,8 @@ async def capture_raids(store, client, clan_tags, *, now=None):
                 weekend = weekends.setdefault(key, {'end': end, 'attacks': {}})
                 for member in entry.members:
                     attacks = int(member.attack_count)
+                    if attacks < 0:
+                        raise ValueError('Invalid raid attack count')
                     player_clan = (member.tag, clan)
                     weekend['attacks'][player_clan] = max(
                         attacks, weekend['attacks'].get(player_clan, 0))
