@@ -155,3 +155,32 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
                        "VALUES(1,2,2,'staff','2026-10-30T01:00:00Z','',0,0,'[]')")
         self.assertEqual((await self.worker.advance('a' * 24))['status'], 'complete')
         self.assertEqual(self.images.receipt('1' * 24)['target_version'], 1)
+
+    async def test_explicit_duplicate_confirmation_recovers_only_uncertain_clan(self):
+        import json
+        self.confirm()
+        self.failure = TimeoutError('Response lost')
+        await self.worker.advance('a' * 24)
+        self.images.recover_sequence_message('a' * 24, '2' * 24, 'f' * 24, self.args['actor'])
+        frozen = json.loads(self.images.sequence('a' * 24)['plan_json'])['clans'][1]
+        self.assertEqual(frozen['frozen'], self.items[1]['frozen'])
+        self.assertEqual(self.images.receipt('2' * 24)['status'], 'uncertain')
+        self.failure = None
+        self.assertEqual((await self.worker.advance('a' * 24))['status'], 'complete')
+        self.assertEqual(self.sent, ['#AAA', '#BBB', '#BBB', '#CCC', '#DDD', 'closing'])
+        self.assertEqual(self.images.receipt('f' * 24)['status'], 'posted')
+
+    async def test_closing_recovery_retains_old_receipt_and_rejects_late_completion(self):
+        self.confirm()
+        original = self.transport.closing
+        self.transport.closing = AsyncMock(side_effect=TimeoutError())
+        self.assertEqual((await self.worker.advance('a' * 24))['status'], 'uncertain')
+        self.images.recover_sequence_message('a' * 24, 'e' * 24, 'f' * 24, self.args['actor'])
+        self.transport.closing = original
+        self.assertEqual((await self.worker.advance('a' * 24))['status'], 'complete')
+        active = self.images.closing_receipt('a' * 24)
+        old = self.images.finish_sequence_closing('a' * 24, expected_request_id='e' * 24,
+                                                 status='posted', message='999999999999999999')
+        self.assertEqual(old['status'], 'uncertain')
+        self.assertEqual(self.images.closing_receipt('a' * 24), active)
+        self.assertEqual(self.sent, ['#AAA', '#BBB', '#CCC', '#DDD', 'closing'])

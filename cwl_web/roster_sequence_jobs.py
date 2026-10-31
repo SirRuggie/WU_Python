@@ -111,6 +111,7 @@ async def lifecycle(app):
         yield
         return
     jobs = SequenceJobs(app)
+    app['roster_sequence_jobs'] = jobs
     async def loop():
         while True:
             try:

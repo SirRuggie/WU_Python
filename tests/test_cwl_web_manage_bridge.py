@@ -224,3 +224,24 @@ class SequenceSendTests(ManageBridgeTests):
                                    json={'sequence_id': job['sequence_id']})
         self.assertEqual(response.status, 409)
         self.assertEqual(storage.sequence(job['sequence_id'])['resume_requested'], 0)
+
+    async def test_duplicate_recovery_requires_explicit_confirmation_and_send_permission(self):
+        import json
+        storage, job = await self.stopped_sequence()
+        storage.resume_sequence(job['sequence_id'])
+        receipt, _ = storage.claim_sequence_closing(job['sequence_id'])
+        storage.finish_sequence_closing(job['sequence_id'], status='uncertain', error='Unknown')
+        path = self.base + '/main/sequence/recover'
+        body = {'sequence_id': job['sequence_id'], 'request_id': receipt['request_id'], 'confirm_duplicate': True}
+        denied = await self.call('POST', path, self.member, json=body)
+        self.assertEqual(denied.status, 403)
+        missing = await self.call('POST', path, self.owner, json=body | {'confirm_duplicate': False})
+        self.assertEqual(missing.status, 400)
+        self.assertEqual(storage.closing_receipt(job['sequence_id'])['status'], 'uncertain')
+        recovered = await self.call('POST', path, self.owner, json=body)
+        self.assertEqual(recovered.status, 202, await recovered.text())
+        new = storage.sequence(job['sequence_id'])
+        self.assertNotEqual(json.loads(new['plan_json'])['closing']['request_id'], receipt['request_id'])
+        self.assertEqual(new['resume_requested'], 1)
+        self.assertIsNone(storage.closing_receipt(job['sequence_id']))
+        self.assertEqual((await self.call('POST', path, self.owner, json=body)).status, 409)

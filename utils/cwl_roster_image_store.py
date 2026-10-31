@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS roster_image_sequence_closing (
  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS roster_image_sequence_closing_history (
+ request_id TEXT PRIMARY KEY, sequence_id TEXT NOT NULL,
+ receipt_json TEXT NOT NULL
+);
+
 """
 
 
@@ -321,6 +326,49 @@ class RosterImageStore:
             return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?',
                                    (request_id,)).fetchone())
 
+    def recover_sequence_message(self, sequence_id, request_id, new_request_id, actor):
+        """Explicit duplicate-warning confirmation; never called by the worker."""
+        if not re.fullmatch(r'[a-f0-9]{24}', new_request_id) or new_request_id == request_id:
+            raise ImageConflict('A fresh recovery request is required')
+        with self.store.tx() as db:
+            job = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                             (sequence_id,)).fetchone()
+            if not job or job['status'] != 'stopped' or not job['announcement_message_id']:
+                raise ImageConflict('Sequence changed; refresh before recovering')
+            plan = json.loads(job['plan_json'])
+            if plan['closing']['request_id'] == request_id:
+                receipt = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
+                                     (sequence_id,)).fetchone()
+                if not receipt or receipt['request_id'] != request_id or receipt['status'] not in ('sending', 'uncertain'):
+                    raise ImageConflict('Closing receipt changed; refresh before recovering')
+                db.execute('INSERT INTO roster_image_sequence_closing_history VALUES(?,?,?)',
+                           (request_id, sequence_id, json.dumps(dict(receipt))))
+                db.execute('DELETE FROM roster_image_sequence_closing WHERE sequence_id=?', (sequence_id,))
+                plan['closing']['request_id'] = new_request_id
+            else:
+                item = next((item for item in plan['clans'] if item['request_id'] == request_id), None)
+                receipt = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?',
+                                     (request_id,)).fetchone()
+                current = db.execute('SELECT request_id FROM roster_image_posts WHERE season_id=? '
+                                     'AND pool=? AND clan_tag=?',
+                                     (job['season_id'], job['pool'], item['tag'] if item else '')).fetchone()
+                if (not item or not receipt or receipt['status'] not in ('sending', 'uncertain')
+                        or not current or current['request_id'] != request_id or receipt['message_id']):
+                    raise ImageConflict('Image receipt changed; refresh before recovering')
+                db.execute("UPDATE roster_image_requests SET status='uncertain',updated_at=CURRENT_TIMESTAMP "
+                           'WHERE request_id=?', (request_id,))
+                db.execute("UPDATE roster_image_posts SET status='uncertain',updated_at=CURRENT_TIMESTAMP "
+                           'WHERE request_id=?', (request_id,))
+                item['request_id'] = new_request_id
+                item['confirm_duplicate'] = True
+            db.execute("UPDATE roster_image_sequences SET plan_json=?,actor_id=?,status='ready',"
+                       'resume_requested=1,error=NULL,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?',
+                       (json.dumps(plan, sort_keys=True, separators=(',', ':')), actor, sequence_id))
+            db.execute('INSERT INTO roster_audit(season_id,actor_id,action,after_json) VALUES(?,?,?,?)',
+                       (job['season_id'], actor, 'roster_sequence_duplicate_confirmed',
+                        json.dumps({'sequence_id': sequence_id, 'previous_request_id': request_id,
+                                    'request_id': new_request_id})))
+
     def request_sequence_resume(self, sequence_id, actor):
         with self.store.tx() as db:
             changed = db.execute("UPDATE roster_image_sequences SET status='ready',resume_requested=1,"
@@ -384,7 +432,7 @@ class RosterImageStore:
             return dict(db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
                                    (sequence_id,)).fetchone()), True
 
-    def finish_sequence_closing(self, sequence_id, *, status, message=None, error=None, retry_after=None):
+    def finish_sequence_closing(self, sequence_id, *, status, message=None, error=None, retry_after=None, expected_request_id=None):
         if status not in ('posted', 'failed', 'uncertain'):
             raise ImageConflict('Invalid closing-note result')
         if status == 'posted' and not re.fullmatch(r'\d{15,22}', str(message or '')):
@@ -392,6 +440,13 @@ class RosterImageStore:
         with self.store.tx() as db:
             row = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
                              (sequence_id,)).fetchone()
+            if expected_request_id is not None and (not row or row['request_id'] != expected_request_id):
+                archived = db.execute('SELECT receipt_json FROM roster_image_sequence_closing_history '
+                                      'WHERE request_id=? AND sequence_id=?',
+                                      (expected_request_id, sequence_id)).fetchone()
+                if archived:
+                    return json.loads(archived['receipt_json'])
+                raise ImageConflict('Closing attempt changed; do not overwrite its receipt')
             if not row:
                 raise ImageConflict('Closing note has not been claimed')
             if row['status'] != 'sending':

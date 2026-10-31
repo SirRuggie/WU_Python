@@ -77,6 +77,7 @@ class SequenceWorker:
                         job['season_id'], job['pool'], item['tag'], job['target_version'],
                         item['request_id'], 'post', job['channel_id'], None, item['frozen'],
                         job['actor_id'], sequence_id=sequence_id,
+                        confirm_duplicate=item.get('confirm_duplicate', False),
                     )
             except ImageConflict as exc:
                 return {'status': 'stopped', 'clan_tag': item['tag'], 'error': str(exc)}
@@ -117,21 +118,21 @@ class SequenceWorker:
             message = await self.transport.closing(job, plan['closing'])
             self._message_id(message)
         except asyncio.CancelledError:
-            self.storage.finish_sequence_closing(sequence_id, status='uncertain',
+            self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='uncertain',
                                                  error='Delivery interrupted; check Discord first')
             raise
         except SequenceRateLimit as exc:
-            self.storage.finish_sequence_closing(sequence_id, status='failed',
+            self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='failed',
                                                  error=str(exc), retry_after=exc.seconds)
             return {'status': 'rate_limited', 'step': 'closing', 'retry_after': exc.seconds}
         except SequenceRejected as exc:
-            self.storage.finish_sequence_closing(sequence_id, status='failed', error=str(exc))
+            self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='failed', error=str(exc))
             return {'status': 'stopped', 'step': 'closing', 'error': str(exc)}
         except Exception:
-            self.storage.finish_sequence_closing(sequence_id, status='uncertain',
+            self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='uncertain',
                                                  error='Delivery outcome unknown; check Discord first')
             return {'status': 'uncertain', 'step': 'closing'}
-        self.storage.finish_sequence_closing(sequence_id, status='posted', message=str(message))
+        self.storage.finish_sequence_closing(sequence_id, expected_request_id=receipt['request_id'], status='posted', message=str(message))
         return {'status': 'complete'}
 
     @staticmethod
