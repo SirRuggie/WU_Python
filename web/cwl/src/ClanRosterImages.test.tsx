@@ -43,6 +43,7 @@ beforeEach(() => {
   state.can = true;
   state.data = {
     published: { version: 1, published_at: "2026-10-28T12:00:00Z" },
+    destinations: { main: { channel_id: "123" } },
     last_publication: null,
     posts: [],
     clans: [
@@ -74,15 +75,29 @@ const render = () =>
 const button = (name: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent === name)!;
 const writes = () => vi.mocked(api).mock.calls.filter((c) => c[1] === "POST");
-it("opening and cancelling the run never sends; Confirm is guarded against double taps", async () => {
+const failedPost = () => {
+  state.data.posts = [
+    {
+      clan_tag: "#C2Y",
+      pool: "main",
+      status: "failed",
+      operation: "post",
+      channel_id: "123",
+      message_id: null,
+      posted_version: null,
+    },
+  ];
+};
+it("opening and cancelling the retry never sends; Confirm is guarded against double taps", async () => {
+  failedPost();
   await render();
   expect(writes()).toHaveLength(0);
-  await act(async () => button("Post Main").click());
+  await act(async () => button("Retry failed").click());
   expect(host.textContent).toContain("Post 1 clans to #rosters? No pings.");
   expect(writes()).toHaveLength(0);
   await act(async () => button("Cancel").click());
   expect(writes()).toHaveLength(0);
-  await act(async () => button("Post Main").click());
+  await act(async () => button("Retry failed").click());
   await act(async () => {
     button("Confirm").click();
     button("Confirm").click();
@@ -157,8 +172,9 @@ it("Test all asks for a test-only destination and confirmation; it only uses the
   expect(vi.mocked(api).mock.calls.some((c) => c[1] === "PUT")).toBe(false);
 });
 it("permission loss while confirming cancels the send", async () => {
+  failedPost();
   await render();
-  await act(async () => button("Post Main").click());
+  await act(async () => button("Retry failed").click());
   state.can = false;
   await render();
   expect(button("Confirm")).toBeUndefined();
@@ -256,9 +272,24 @@ it.each(["post", "update"])(
   },
 );
 
-it("ordinary Post does not assert duplicate consent", async () => {
+it("known failed Post retry does not assert duplicate consent", async () => {
+  failedPost();
   await render();
-  await act(async () => button("Post Main").click());
+  await act(async () => button("Retry failed").click());
   await act(async () => button("Confirm").click());
   expect(writes()[0][2]).not.toHaveProperty("confirm_duplicate");
+});
+
+it("new images follow announcements without a separate channel or Post control", async () => {
+  await render();
+  expect(button("Post Main")).toBeUndefined();
+  expect(button("Image channel")).toBeUndefined();
+  expect(button("Save channel")).toBeUndefined();
+  expect(host.textContent).toContain("Images follow the roster announcement");
+  expect(
+    vi
+      .mocked(api)
+      .mock.calls.some((call) => call[0] === "/roster-image-channels"),
+  ).toBe(false);
+  expect(writes()).toHaveLength(0);
 });

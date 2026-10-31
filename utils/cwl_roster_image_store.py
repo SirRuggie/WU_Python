@@ -585,7 +585,7 @@ class RosterImageStore:
                 raise ImageConflict('Previous clan is not confirmed; stop and check its status')
         raise ImageConflict('Clan is not part of the reviewed sequence')
 
-    def claim(self, sid, pool, clan, version, request_id, operation, channel, message, payload, actor, *, confirm_duplicate=False, sequence_id=None):
+    def claim(self, sid, pool, clan, version, request_id, operation, channel, message, payload, actor, *, confirm_duplicate=False, sequence_id=None, announcement_channel=None):
         """Atomic durable intent; no external call is made with the transaction held."""
         with self.store.tx() as db:
             prior = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()
@@ -618,6 +618,12 @@ class RosterImageStore:
             if operation == 'post' and sequence_id is not None:
                 self._check_sequence_image(db, sequence_id, sid, pool, clan, version,
                                            request_id, channel, payload)
+            elif operation == 'post' and announcement_channel is not None:
+                if announcement_channel != channel:
+                    raise ImageConflict('The announcement destination changed; review again')
+                sequence = db.execute('SELECT status FROM roster_image_sequences WHERE season_id=? AND pool=?', (sid, pool)).fetchone()
+                if sequence and sequence['status'] != 'complete':
+                    raise ImageConflict('Finish the announcement image sequence first')
             elif operation == 'post':
                 selected = db.execute('SELECT channel_id FROM roster_image_channels WHERE pool=?', (pool,)).fetchone()
                 if not selected or selected['channel_id'] != channel:

@@ -23,6 +23,16 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
         await self.publish()
         with self.app['store'].tx() as db:
             db.execute("INSERT INTO roster_image_channels(pool,channel_id,channel_name,configured_by) VALUES('main','123456789012345678','rosters','owner')")
+        from test_cwl_dashboard_integration import MemoryMongo
+        from utils import cwl_campaign
+        from cwl_web.manage_bridge import GUILD_ID
+        self.app['manage_bridge_mongo'] = MemoryMongo()
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES(?,'2026-11')", (self.sid,))
+        await cwl_campaign.record_delivery(self.app['manage_bridge_mongo'], GUILD_ID, '2026-11', {
+            'occurrence_id': cwl_campaign.occurrence_id('2026-11', 'roster', 'main'),
+            'status': 'sent', 'channel_id': '123456789012345678', 'message_id': '987654321098765400',
+        })
         self.path = f'/seasons/{self.sid}/roster-image-posts/%23C2Y'
         self.body = {'pool': 'main', 'version': 1, 'request_id': 'a' * 24}
         self.sent = []
@@ -93,6 +103,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             await self.republish()
             self.assertEqual((await self.send('/drop')).status, 200)
             self.assertEqual(self.sent[-1][0:2], ('PATCH', '/channels/123456789012345678/messages/987654321098765432'))
+            from utils import cwl_campaign
+            from cwl_web.manage_bridge import GUILD_ID
+            await cwl_campaign.record_delivery(self.app['manage_bridge_mongo'], GUILD_ID, '2026-11', {
+                'occurrence_id': cwl_campaign.occurrence_id('2026-11', 'roster', 'lazy'),
+                'status': 'sent', 'channel_id': '222222222222222222', 'message_id': '987654321098765401',
+            })
             self.body = self.body | {'pool': 'lazy', 'request_id': 'c' * 24}
             self.assertEqual((await self.send()).status, 200)
             self.assertEqual(self.sent[-1][0:2], ('POST', '/channels/222222222222222222/messages'))
@@ -516,3 +532,23 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 503)
             self.assertEqual((await response.json())['post']['status'], 'uncertain')
             self.assertEqual(len(self.sent), 1)
+
+    async def test_new_posts_ignore_retired_image_channel(self):
+        await self.setup_post()
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE roster_image_channels SET channel_id='222222222222222222'")
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            self.assertEqual((await self.send()).status, 200)
+        self.assertEqual(self.sent[0][1], '/channels/123456789012345678/messages')
+
+    async def test_new_posts_require_confirmed_announcement(self):
+        await self.setup_post()
+        from utils import cwl_campaign
+        from cwl_web.manage_bridge import GUILD_ID
+        await self.app['manage_bridge_mongo'].bot_config.update_one(
+            {'_id': cwl_campaign.cycle_id(GUILD_ID, '2026-11')},
+            {'$set': {'deliveries': [], 'sent_occurrences': []}},
+        )
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            self.assertEqual((await self.send()).status, 409)
+        self.assertEqual(self.sent, [])

@@ -47,6 +47,13 @@ async def posts(request):
         _season(db, sid)
     storage = store(request)
     result = storage.posts(sid)
+    from .roster_image_destination import new_post_destination
+    result['destinations'] = {}
+    for pool in ('main', 'lazy'):
+        try:
+            result['destinations'][pool] = {'channel_id': await new_post_destination(request, sid, pool)}
+        except web.HTTPException as exc:
+            result['destinations'][pool] = {'channel_id': None, 'reason': exc.text}
     publication = storage.publication(sid)
     result['clans'] = [] if publication is None else [{k: v for k, v in group.items() if k != 'accounts'} | {'count': len(group['accounts']), 'pages': (len(group['accounts']) + 14) // 15} for group in ordered_roster_clans(groups_for(publication)[2].values())]
     return web.json_response(result)
@@ -170,10 +177,13 @@ async def deliver(request):
         if not group or group['pool'] != pool:
             raise web.HTTPBadRequest(text='This clan is not in the published pool.')
     if operation == 'post':
-        channel_row = next((c for c in storage.channels() if c['pool'] == pool), None)
-        if not channel_row:
-            raise web.HTTPBadRequest(text='Choose an image channel first.')
-        channel, message_id = channel_row['channel_id'], None
+        if previous and previous['status'] in ('failed', 'uncertain'):
+            # Recovery of an older post stays in its original destination.
+            channel = previous['channel_id']
+        else:
+            from .roster_image_destination import new_post_destination
+            channel = await new_post_destination(request, sid, pool)
+        message_id = None
     else:
         if not previous or not previous['message_id']:
             raise web.HTTPConflict(text='No posted message to edit.')
@@ -198,7 +208,12 @@ async def deliver(request):
             raise web.HTTPBadRequest(text='This roster is too large to send.')
         images = await asyncio.gather(*(asyncio.to_thread(render, {'label': frozen['season_label']}, pub, group, page) for page in range(1, pages + 1)))
     try:
-        receipt, acquired = storage.claim(sid, pool, clan, version, nonce, operation, channel, message_id, frozen, actor['user_id'], confirm_duplicate=body.get('confirm_duplicate', False))
+        # Recheck after rendering; current announcement state may have changed.
+        if operation == 'post' and not (previous and previous['status'] in ('failed', 'uncertain')):
+            from .roster_image_destination import new_post_destination
+            if await new_post_destination(request, sid, pool) != channel:
+                raise ImageConflict('The announcement destination changed; review again')
+        receipt, acquired = storage.claim(sid, pool, clan, version, nonce, operation, channel, message_id, frozen, actor['user_id'], confirm_duplicate=body.get('confirm_duplicate', False), announcement_channel=channel if operation == 'post' else None)
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     if not acquired:
