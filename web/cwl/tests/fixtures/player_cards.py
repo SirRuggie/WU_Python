@@ -69,6 +69,12 @@ with app['store'].tx() as db:
     db.execute("INSERT INTO seasons(id,label,status,signup_open) VALUES (2,'October 2026','archived',0)")
     db.execute('INSERT INTO lineup(season_id,tag) SELECT 2,tag FROM lineup WHERE season_id=1')
     db.execute('INSERT INTO lineup_rules(season_id,tag,pool,capacity,min_weight,max_weight) SELECT 2,tag,pool,capacity,min_weight,max_weight FROM lineup_rules WHERE season_id=1')
+if os.environ.get('WU_TIMEZONE_FIXTURE') == '1':
+    zones = ['PST', 'EST', 'UTC+5:30', 'MOON', '', 'JST', 'GMT+1']
+    owners = sorted({str(505227988229554179 + n // 3) for n in range(len(players))})
+    app['roster_owner_nicknames'] = {'until': time.monotonic() + 86400,
+        'names': {owner: f"Owner {i:02} | {zones[i % len(zones)]} 🇺🇸" if zones[i % len(zones)] else f"Owner {i:02}"
+                  for i, owner in enumerate(owners)}}
 requests = []
 mode = {'fail': False, 'no_clan_permission': False, 'no_publish_permission': False, 'save_failure': False}
 baseline = None

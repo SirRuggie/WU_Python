@@ -74,7 +74,7 @@ it("keeps the TH-first headline, metadata, shared clan status and warning row in
   const body = card(record, null, 170001);
   expect([...body.children].map((row) => row.className)).toEqual([
     "player-card-top compare-player-top",
-    "player-card-meta compare-player-meta",
+    "compare-player-meta-line",
     "player-clan-status compare-player-location",
     "compare-player-tags",
   ]);
@@ -236,4 +236,28 @@ it("describes Compare checking as Checking location", () => {
     body.closest("article")?.classList.contains("compare-account-checking"),
   ).toBe(true);
   expect(body.querySelector(".player-in-clan-pill")).toBeNull();
+});
+
+it("shows a small label only for recognized owner zones", () => {
+  for (const [nickname, label] of [
+    ["Name | EST 🇺🇸", "EST"],
+    ["Name | MOON", null],
+    ["Name", null],
+  ] as const) {
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      <ComparePlayerCard
+        account={account}
+        clan={clan}
+        now={now}
+        published={null}
+        busy={false}
+        onDetails={() => {}}
+        ownerNickname={nickname}
+      />,
+    );
+    expect(host.querySelector(".compare-time-zone")?.textContent ?? null).toBe(
+      label,
+    );
+  }
 });

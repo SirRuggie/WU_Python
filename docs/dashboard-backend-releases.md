@@ -1,5 +1,80 @@
 # Dashboard backend releases
 
+## Member-activity-1 — October 31, 2026
+
+PR [#108](https://github.com/SirRuggie/WU_Python/pull/108), tag `member-activity-1`,
+backend/bot `44142ebffd648e0d5560e3002e5792715d4713fc`. Claude ACCEPT203 and
+read-only SMOKE206 passed. The first-hour checkpoint returned REVIEW for a seed
+overlap; the required seed-free follow-up passed at 19:21 per reviews209–211.
+
+The bot owns paced official-player observations, bounded raid membership evidence
+and a separate ClashKing observed-attack seed. Persistent activity has one owner;
+unresolved or quarantined wars have no TTL. Review holds require an authorized,
+audited, revision-checked staff resolution. No live test messages were sent.
+
+Accepted source validation:5,441 backend passed,19 skipped,221 subtests; four real
+isolated Mongo checks and22 killed mutations. Clean tagged build, archive hashes,
+network-blocked runtime imports in dashboard and bot venvs passed. The required
+war-reminder check passed212 backend and35 frontend tests, one skipped. BotPID514877
+and backendPID515068 passed startup/readiness; public entry `index-DAigbCmj.js`
+SHA256 `b3729886083302b9cb894e043ad8738e6a5811b66193528148c145abd35ff771`
+and affected strikes assets matched the immutable manifest. The later frontend-only
+outside-family-1 switch retained these backend/bot revisions and PIDs.
+
+Production Mongo8.0.36; unresolved snapshots older than30days:0. Backups restored
+and compared on a separate local mongod before enabling the three TTL indexes.
+The immediate expiry plan was810 explained rows dated July23–August2:578 expired
+strikes,179 exemptions,53 misses; zero war snapshots. Before/after backup, TTL and
+startup, active strikes stayed3560 across301 accounts;581profiles, exact streaks
+and274 replacement rows stayed identical. SQLite protected tables and all seven
+lineup cache rows matched. The16:41 midpoint observed6962 remaining ledger rows
+(exactly810 removed),18snapshots,581profiles,194activity documents, with protected
+metrics still identical and no current-invocation activity failures or tracebacks.
+At 17:22, the first-hour probe found 560 activity documents and a full sweep with
+560 successful reads and zero failures; protected metrics remained identical,
+public config returned 200, and neither service restarted. There were zero
+tracebacks and 53 membership CAS conflicts during the 17:21:47–49 seed overlap.
+Claude assessed the overlap as benign so far (209–211), requiring a subsequent
+sweep with no seed batch running before PASS. The first seed batch reported
+298 seeded, 213 unavailable, 50 timeouts and 50 pending; these are not final totals.
+At 18:21:08 the second full tracker report again had 560 successes and zero
+failures. The final seed batch finished at 18:21:21 with zero pending/retryable
+work; projected persisted statuses are 324 seeded, 234 unavailable and two
+accounts not requiring a seed. Current sources are 304 ClashKing, 22 official and
+234 unknown. The 122-minute follow-up retained exact protected state, 6962 ledger
+rows, 18 snapshots, 581 profiles and 560 activity documents, with no new CAS
+conflicts or tracebacks. Service PIDs and config health remained unchanged.
+At 19:21:08 the next full sweep completed with 560 successes and zero failures,
+following final seed completion at 18:21:21. There were zero new activity warnings,
+CAS conflicts or tracebacks; the lifetime 53 CAS warnings remain confined to the
+original seed overlap. Exact protected metrics and service identities still
+matched, expired-retention rows remaining were zero, and public config was 200.
+The seed-free gate is PASS. The legacy probe's 55 candidate warning lines are the
+53 historical CAS messages and two informational seed summaries containing
+`failed: 0`; the journal-aware follow-up separates these rather than erasing
+history. No bot or backend restart occurred before this gate closed.
+
+Durable SQLite backup: repository
+`.local/member-activity-1-backup-20261031T201407Z`; verified Mongo archives:
+`.local/member-activity-1-retention-20261031T201506Z` and the `-apply` sibling.
+Counts, hashes and collStats are retained there and under
+`/tmp/wu-activity-release/{live,retention-result,mongo-post,midpoint,rollback}.json`.
+
+Rollback preserves data: first stop the bot and remove only the three recorded TTL
+indexes to prevent further expiry; never restore a database over ongoing writes.
+Retain code rollback bot `248a5aadef133fd231dd6ab9243456b63d321772`, backend
+`56c9ab4613c7ec5c1d052e4de17c32837dca4a50`. At the current boundary preserve the
+independent Outside family frontend `26fc7dabd5cf535bf59f957db1c322e89b43c71c`.
+The prepared current-boundary code/index rollback is
+`"/nvme0n1-disk/Projects/Bot - Warriors United/.venv/bin/python" -I
+/tmp/wu-activity-release/rollback_current.py`; it guards revisions, clean bot,
+protected drop-ins, lease expiry and readiness, and never restores a database.
+The original activation rollback remains evidence for its earlier boundary.
+Current per-index inventory is `/tmp/wu-activity-release/rollback-current.json`.
+Final observation evidence is retained privately in repository
+`.local/member-activity-1-observation-20261031T232208Z`, including the original REVIEW, seed totals,
+third-hour protected-state comparison and explicit gate result.
+
 ## No-war-strikes-1 — October 30, 2026
 
 Released PR [#77](https://github.com/SirRuggie/WU_Python/pull/77), tag

@@ -1074,6 +1074,8 @@ async def roster(request):
             and account["current_clan_tag"] not in family
             and account["current_clan_tag"] not in hosting_tags
         )
+    from .roster_owner_names import enrich as enrich_owner_names
+    enrich_owner_names(request, result)
     return web.json_response(result)
 
 
@@ -1904,6 +1906,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(member_timing_lifecycle)
     app.cleanup_ctx.append(participation_sync_lifecycle)
     app.cleanup_ctx.append(_dashboard_accounts_lifecycle)
+    from .roster_owner_names import lifecycle as owner_nicknames_lifecycle
+    app.cleanup_ctx.append(owner_nicknames_lifecycle)
     from .account_display import lifecycle as account_display_lifecycle
     app.cleanup_ctx.append(account_display_lifecycle)
     app.cleanup_ctx.append(todo_lifecycle)
