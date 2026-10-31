@@ -46,3 +46,34 @@ def test_activity_read_keeps_the_existing_authorization_gate():
             handler.assert_not_called()
             assert deny.call_args.args[1]=='strikes_read'
     asyncio.run(run())
+
+
+def test_route_uses_public_weight_owner_and_preserves_rows_on_upstream_failure():
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+    from cwl_web import strikes
+    from cwl_web.providers import ProviderUnavailable
+    from utils import clan_weights
+    async def run():
+        @asynccontextmanager
+        async def mongo(request):
+            yield SimpleNamespace(player_activity=SimpleNamespace())
+        ledger = SimpleNamespace(activity_context=AsyncMock(return_value={
+            'profiles': [], 'records': [], 'clans':[{'tag':'#CLAN','name':'Family'}]}))
+        request = SimpleNamespace(app={'store':object(),'providers':object()})
+        activity=[{'tag':'#PYY','name':'Healthy','current_clan_tag':'#CLAN','last_seen_at':NOW}]
+        weights = AsyncMock(return_value={'#PYY':{'weight':149000}})
+        with patch.object(strikes.shared,'mongo',mongo), patch.object(strikes,'service',AsyncMock(return_value=ledger)), \
+             patch('utils.player_activity_store.PlayerActivityStore.all_players',AsyncMock(return_value=activity)), \
+             patch.object(clan_weights,'source_weights',weights), \
+             patch.object(clan_weights,'overlay_accounts',lambda store,payload: payload):
+            result=json.loads((await strikes.activity_accounts(request)).body)
+            assert result['accounts'][0]['weight']==149000
+            assert not result['weight_warning']
+            assert weights.call_args.args[2]==['#PYY']
+            weights.side_effect=ProviderUnavailable('fixture outage')
+            result=json.loads((await strikes.activity_accounts(request)).body)
+            assert len(result['accounts'])==1 and result['weight_warning']
+    asyncio.run(run())

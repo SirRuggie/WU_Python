@@ -13,9 +13,13 @@ vi.mock("./StrikesWorkspace", () => ({
   default: ({
     onDirty,
     onWorking,
+    activityState,
+    markedDefault,
   }: {
     onDirty: (dirty: boolean) => void;
     onWorking: (busy: boolean) => void;
+    activityState?: string;
+    markedDefault?: boolean;
   }) => {
     useEffect(() => {
       onDirty(true);
@@ -23,6 +27,9 @@ vi.mock("./StrikesWorkspace", () => ({
     }, [onDirty]);
     return (
       <>
+        <p>
+          Activity filter {activityState} marked {String(markedDefault)}
+        </p>
         <input aria-label="Unsaved strike" defaultValue="750" />
         <button onClick={() => onWorking(true)}>Begin save</button>
         <button onClick={() => onWorking(false)}>Finish save</button>
@@ -132,7 +139,7 @@ it("keeps a strike draft guarded when Discard history replay receives no popstat
     await act(async () => button("Home").click());
     await act(async () => button("Discard").click());
     expect(host.textContent).toContain("Home reached");
-    await act(async () => button("Strikes").click());
+    await act(async () => button("Strikes & replacements").click());
     expect(document.querySelector(".confirm-dialog")).toBeNull();
     expect(nativeConfirm).not.toHaveBeenCalled();
     expect(
@@ -144,11 +151,6 @@ it("keeps a strike draft guarded when Discard history replay receives no popstat
   }
 });
 
-vi.mock("./ReplacementWorkspace", () => ({
-  default: ({ initialClan }: { initialClan: string }) => (
-    <p>Replacement clan {initialClan}</p>
-  ),
-}));
 it("preserves the valid clan on a direct replacement route through auth canonicalization", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   history.replaceState(
@@ -179,7 +181,10 @@ it("preserves the valid clan on a direct replacement route through auth canonica
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
-    expect(host.textContent).toContain("Replacement clan #Q2Y");
+    expect(host.textContent).toContain(
+      "Activity filter clans=%23Q2Y&marked=1 marked true",
+    );
+    expect(location.pathname).toBe("/replacements");
     expect(new URLSearchParams(location.search).get("clan")).toBe("#Q2Y");
   } finally {
     await act(async () => root.unmount());

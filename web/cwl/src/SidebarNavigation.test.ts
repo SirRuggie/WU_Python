@@ -102,8 +102,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
   ).toEqual([
     "Family clans",
     "Clan weights",
-    "Strikes",
-    "Replacements",
+    "Strikes & replacements",
     "FWA tools",
   ]);
   expect(
@@ -126,7 +125,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
       (item) => `${item.view}:${item.step || item.signupPanel || ""}`,
     ),
   );
-  expect(destinations).toHaveLength(33);
+  expect(destinations).toHaveLength(32);
   expect(new Set(destinations).size).toBe(destinations.length);
   const html = markup("home", [], true);
   expect(html.indexOf("Staff overview")).toBeLessThan(
@@ -143,9 +142,9 @@ it("preserves each permission list and hides empty groups or unauthorized direct
   const cases: Array<[string, string[]]> = [
     ["clans", ["clan-management"]],
     ["clan_weights", ["weight-trial"]],
-    ["strikes", ["strikes", "replacements"]],
-    ["strikes_add", ["strikes", "replacements"]],
-    ["strikes_remove", ["strikes", "replacements"]],
+    ["strikes", ["strikes"]],
+    ["strikes_add", ["strikes"]],
+    ["strikes_remove", ["strikes"]],
     ["member_roles", ["moderation", "members-settings"]],
     ["recruitment", ["applications-settings"]],
     ["tickets", ["tickets", "applications-settings"]],

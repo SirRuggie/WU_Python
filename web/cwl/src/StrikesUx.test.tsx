@@ -16,6 +16,7 @@ vi.mock("./api", async (original) => ({
 vi.mock("./StrikeTrackingStatus", () => ({ default: () => null }));
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {
+  history.replaceState({}, "", "/strikes");
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.useFakeTimers();
   sessionStorage.clear();
@@ -159,74 +160,43 @@ it("uses its successful revision receipt for the next save without a racing sett
   expect(transport.mock.calls[1][2].revision).toBe(9);
   expect(transport.mock.calls).toHaveLength(2);
 });
-it("renders full-population summaries and queries pages and action chips on the server, then clears protected data on authorization loss", async () => {
-  const replacement = vi.fn();
-  transport.mockImplementation(async (path: string) => {
-    if (path.startsWith("/strikes/accounts"))
-      return {
-        total: 300,
-        strike_limit: 7,
-        summary: { over_limit: 37, new_this_week: 19 },
-        clans: [],
-        accounts: [
-          {
-            player_tag: "#P2Y",
-            player_name: "Aspen",
-            current_clan_name: "Oak",
-            current_clan_tag: "#Q2Y",
-            active_strikes: 7,
-            total_strikes: 28,
-            over_limit: true,
-          },
-        ],
-      };
-    if (path.startsWith("/strikes/members")) return { members: [] };
-    throw Error(path);
+it("loads the family once, filters locally and clears protected data on authorization loss", async () => {
+  transport.mockResolvedValue({
+    clans: [],
+    accounts: [
+      {
+        player_tag: "#P2Y",
+        player_name: "Aspen",
+        active_strikes: 7,
+        total_strikes: 28,
+        status: "risk",
+        quiet_days: null,
+        marked_for_replacement: true,
+      },
+    ],
   });
   await render(
     <StrikesWorkspace
       permissions={["strikes_remove"]}
       isOwner={false}
       userId="1"
-      onFindReplacement={replacement}
     />,
   );
   await settle();
-  expect(host.textContent).toContain("37 over limit · 19 new this week");
-  expect(host.textContent).toContain("Limit reached (7)");
-  const link = host.querySelector<HTMLAnchorElement>(
-    'a[href*="replacements"]',
-  )!;
-  expect(link.getAttribute("href")).toBe(
-    "/clans/replacements?clan=%23Q2Y&tag=%23P2Y&from=strikes",
-  );
-  await act(async () => link.click());
-  expect(replacement).toHaveBeenCalledWith("#Q2Y", "#P2Y");
-  await click("Next");
+  expect(host.textContent).toContain("1 at risk · 0 watch · 0 active");
+  expect(host.textContent).toContain("Aspen");
+  await input('input[type="search"]', "No match");
   await settle();
-  expect(transport.mock.calls.at(-1)![0]).toContain("offset=25");
-  await click("Over limit");
-  await settle();
-  expect(transport.mock.calls.at(-1)![0]).toContain("action=over_limit");
-  expect(transport.mock.calls.at(-1)![0]).toContain("offset=0");
-  await input(
-    'input[placeholder="Name, tag or Discord ID"]',
-    "Not on loaded page",
-  );
-  await settle();
+  expect(host.textContent).not.toContain("Aspen");
   expect(
-    transport.mock.calls.some(
-      (call) =>
-        String(call[0]).startsWith("/strikes/accounts?") &&
-        new URL(String(call[0]), "https://test").searchParams.get("query") ===
-          "Not on loaded page",
+    transport.mock.calls.filter((call) =>
+      String(call[0]).startsWith("/strikes/accounts"),
     ),
-  ).toBe(true);
+  ).toHaveLength(1);
   await act(async () =>
     window.dispatchEvent(new Event("dashboard-access-changed")),
   );
   expect(host.textContent).not.toContain("Aspen");
-  expect(host.textContent).not.toContain("37 over limit");
 });
 it.each([
   ["active", "strike", "Active"],
@@ -440,8 +410,6 @@ it("paginates 28 detail records independently of the account page, retains filte
     />,
   );
   await settle();
-  await click("Next");
-  await settle();
   await act(async () =>
     host.querySelector<HTMLButtonElement>("[data-strike-player]")!.click(),
   );
@@ -481,7 +449,9 @@ it("paginates 28 detail records independently of the account page, retains filte
   expect(transport.mock.calls.at(-1)![0]).toContain("offset=25");
   await click("← Players");
   await settle();
-  expect(transport.mock.calls.at(-1)![0]).toContain("offset=25");
+  expect(transport.mock.calls.at(-1)![0]).toBe(
+    "/strikes/accounts?activity=true",
+  );
 });
 it("finds wars beyond the first page and discloses incomplete upstream name search", async () => {
   transport.mockImplementation(async (path: string) =>
@@ -564,7 +534,7 @@ it("does not expose retired opponent exclusions", async () => {
   expect(host.querySelector("textarea")).toBeNull();
 });
 it.each([1, 6, 7, 8])(
-  "labels the strike limit correctly at %s",
+  "shows the active strike count correctly at %s",
   async (count) => {
     transport.mockImplementation(async (path: string) =>
       path.startsWith("/strikes/accounts")
@@ -593,10 +563,8 @@ it.each([1, 6, 7, 8])(
       />,
     );
     await settle();
-    const label =
-      host.querySelector(".strike-account-action")?.textContent?.trim() || "";
-    expect(label).toBe(
-      count < 7 ? "" : count === 7 ? "Limit reached (7)" : "Over limit (7)",
+    expect(host.querySelector(".strike-activity-count")?.textContent).toContain(
+      `${count} ${count === 1 ? "strike" : "strikes"}`,
     );
   },
 );
@@ -632,11 +600,7 @@ it.each([1, 3])(
       />,
     );
     await settle();
-    expect(countText(host.querySelector(".strikes-list-head"))).toMatch(
-      new RegExp(
-        "\\b" + `${count} ${count === 1 ? "account" : "accounts"}` + "\\b",
-      ),
-    );
+    expect(host.querySelectorAll("[data-strike-player]")).toHaveLength(1);
     await act(async () =>
       host.querySelector<HTMLButtonElement>("[data-strike-player]")!.click(),
     );
@@ -648,7 +612,9 @@ it.each([1, 3])(
     );
     expect(countText(host)).toMatch(
       new RegExp(
-        "\\b" + `${count} total ${count === 1 ? "strike" : "strikes"}` + "\\b",
+        "\\b" +
+          `${count} ${count === 1 ? "strike" : "strikes"} in the last 90 days` +
+          "\\b",
       ),
     );
   },

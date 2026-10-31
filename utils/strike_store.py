@@ -595,7 +595,7 @@ class StrikeService:
 
     async def account_list(self, guild_id: int, *, query=None, clan_tag=None,
                            status='active', limit=25, skip=0, action='all') -> dict:
-        """One row per account, with active and lifetime strike counts."""
+        """One row per account, with active and retained 90-day strike counts."""
         if status not in ('active', 'all'):
             raise ValueError('Choose active or all accounts.')
         if action not in ('all', 'over_limit', 'new_this_week'):

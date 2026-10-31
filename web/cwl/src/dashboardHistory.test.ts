@@ -323,12 +323,12 @@ it("round-trips only a valid replacement clan and never carries it into other de
     season: "",
     replacementClan: "#Q2Y",
   });
-  expect(dashboardPath(route)).toBe("/clans/replacements?clan=%23Q2Y");
+  expect(dashboardPath(route)).toBe("/replacements?clan=%23Q2Y");
   expect(
     dashboardTarget("?clan=https://evil.test", "/clans/replacements")
       .replacementClan,
   ).toBeUndefined();
-  expect(dashboardPath({ ...route, view: "strikes" })).toBe("/clans/strikes");
+  expect(dashboardPath({ ...route, view: "strikes" })).toBe("/strikes");
   expect(
     dashboardTarget("?clan=%23Q2Y", "/clans/strikes").replacementClan,
   ).toBeUndefined();

@@ -52,7 +52,6 @@ const ArrivalCheck = lazy(() => import('./ArrivalCheck'))
 const StaffOverview = lazy(() => import('./StaffOverview'))
 const ClanManagement = lazy(() => import('./ClanManagement'))
 const StrikesWorkspace = lazy(() => import('./StrikesWorkspace'))
-const ReplacementWorkspace = lazy(() => import('./ReplacementWorkspace'))
 const TextCommands = lazy(() => import('./TextCommands'))
 const AccessSettings = lazy(() => import('./AccessSettings'))
 const DashboardIssues = lazy(() => import('./DashboardIssues'))
@@ -179,7 +178,7 @@ function App() {
   }, [session?.user.id])
   useEffect(() => {
     if (!session) return
-    const allowed = visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === view))
+    const allowed = visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === (view === 'replacements' ? 'strikes' : view)))
     if (!allowed) { setView('home'); setCwlDirty(false); setNotice({kind:'error', text:'You don’t have access to that page. Choose an available page.'}) }
   }, [session, view])
 
@@ -336,6 +335,7 @@ function App() {
   );
   const [replacementTag, setReplacementTag] = useState(entryTarget.replacementTag || "");
   const [strikeTag, setStrikeTag] = useState(entryTarget.strikeTag || "");
+  const [strikeFilterState, setStrikeFilterState] = useState(entryTarget.strikeState || "");
   const [flowFrom, setFlowFrom] = useState(entryTarget.flowFrom);
   const [replacementClan, setReplacementClan] = useState(entryTarget.replacementClan || '')
   const [pendingStrikeLeave, setPendingStrikeLeave] = useState<null | {action: () => void; working: boolean}>(null)
@@ -391,7 +391,7 @@ function App() {
   }
   const allowedView = (next: View): View => {
     if (!session) return 'home'
-    return visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === next))
+    return visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === (next === "replacements" ? "strikes" : next)))
       || (next === 'manage' && session.is_owner)
       || (next === 'member-activity' && visibleNavigationSections(session.can_edit, session.is_owner, session.dashboard_permissions || []).some(section => section.items.some(item => item.view === 'moderation'))) ? next : 'home'
   }
@@ -440,7 +440,7 @@ function App() {
           !isTourReadOnly(),
         );
       setActivityVisit(window.history.state?.wuDashboardIndex || 0)
-      if (destination !== view) { setReplacementClan(''); setReplacementTag(''); setStrikeTag(''); setFlowFrom(undefined); }
+      if (destination !== view) { setReplacementClan(''); setReplacementTag(''); setStrikeTag(''); setStrikeFilterState(''); setFlowFrom(undefined); }
       if (destination === 'signup') setSignupPanel(panel)
       setActivitySearch(filter)
       setActivityKind(kind)
@@ -460,19 +460,6 @@ function App() {
     window.addEventListener('keydown', shortcut)
     return () => window.removeEventListener('keydown', shortcut)
   })
-  const returnStrikeFlow = (destination: 'strikes' | 'replacements') => {
-    if (navigation.current?.pending || allowedView(destination) !== destination) return;
-    const proceed = () => {
-      const clan = destination === 'replacements' ? String(flowMemory.replacements.get('clan') || '') : '';
-      navigation.current?.write({view:destination,season:'',replacementClan:clan}, true);
-      setReplacementClan(clan);
-      setReplacementTag('');
-      setStrikeTag('');
-      setFlowFrom(undefined);
-      acceptRoute(destination);
-    };
-    if (canLeave(proceed)) proceed();
-  };
   const openPublication = (step: 'review' | 'announce') => {
     if (navigation.current?.pending || (view === 'publication' && publicationStep === step)) return
     const proceed = () => {
@@ -564,6 +551,7 @@ function App() {
       setReplacementClan(target.replacementClan || "");
       setReplacementTag(target.replacementTag || "");
       setStrikeTag(target.strikeTag || "");
+      setStrikeFilterState(target.strikeState || "");
       setFlowFrom(target.flowFrom);
       setWeightTarget({ player: target.weightPlayer, clan: target.weightClan });
       const destination = navigationState.current.allowedView(target.view);
@@ -594,6 +582,7 @@ function App() {
         ...(destination === "weight-trial"
           ? { weightPlayer: weightTarget.player, weightClan: weightTarget.clan }
           : {}),
+        ...(["strikes", "replacements"].includes(destination) ? {strikeState: strikeFilterState} : {}),
         activityFilter: activitySearch,
         activityKind,
         ...(destination === "signup" ? { signupPanel } : {}),
@@ -602,7 +591,7 @@ function App() {
       },
       false,
     );
-  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, flowFrom, weightTarget, familyRoute])
+  }, [view, signupPanel, seasonId, publicationStep, authState, session, activitySearch, activityKind, replacementClan, replacementTag, strikeTag, strikeFilterState, flowFrom, weightTarget, familyRoute])
   const run = async (action: () => Promise<unknown>, success: string, refresh: () => Promise<unknown>) => {
     setPending(true); setNotice(null)
     try { await action(); await refresh(); setNotice({ kind: 'success', text: success }) }
@@ -901,7 +890,7 @@ function App() {
     {menuOpen && <button className="scrim" tabIndex={-1} aria-hidden="true" aria-label="Close menu" onClick={() => setMenuOpen(false)} />}
     {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
     <div className="workspace" inert={mobile && menuOpen}>
-      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : view === 'strikes' ? 'Strikes' : view === 'replacements' ? 'Replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}</header>
+      <header className="topbar"><button ref={triggerRef} className="menu-open" aria-label="Open menu" aria-controls="dashboard-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><span aria-hidden="true">☰</span><span>Menu</span></button><div><span className="crumb">{navigationSection(view) || 'Dashboard'}</span><strong>{view === 'issues' ? 'Dashboard issues' : view === 'image-gallery' ? 'Image gallery' : view === 'tickets' ? 'Tickets' : (view === 'member-activity' || view === 'moderation') ? 'Moderation' : view === 'staff-overview' ? 'Staff overview' : isManagementArea(view) ? managementAreas[view].title : view === 'weight-trial' ? 'Clan weights' : view === 'clan-management' ? 'Family clans' : (view === 'strikes' || view === 'replacements') ? 'Strikes & replacements' : view === 'text-commands' ? 'Command triggers' : view === 'manage' ? 'Server management' : view === 'home' ? 'Dashboard' : view === 'search' ? 'Search' : view === 'wars' ? 'Wars' : view === 'events' ? 'Events' : view === 'todo' ? 'Tasks' : view === 'signup' ? signupPanel === 'saved' ? 'My signups' : 'Sign up' : view === 'assignments' ? 'My clan assignments' : view === 'declaration' ? 'Declaration check' : view === 'roster' ? 'Build roster' : view === 'reminders' ? 'Messages & reminders' : view === 'publication' ? navigationLabel(view, publicationStep) : view === 'participation' ? 'Results & participation' : view === 'bonuses' ? 'Bonus review' : view === 'staff' ? 'Seasons' : view === 'exports' ? 'Exports & history' : 'Staff access'}</strong></div>{mobile ? <AccountMenu user={session.user} onSignOut={signOut} variant="avatar" disabled={pending} replayPrank={prankReplayAvailable ? () => setPrankReplaySignal(value => value + 1) : undefined} /> : <AccountIdentity user={session.user} />}</header>
       <main id="dashboard-main" tabIndex={-1} aria-label={navigationLabel(view, publicationStep)}>
         {["roster", "publication", "declaration"].includes(view) && (
           <StaffDetailsHost
@@ -961,68 +950,37 @@ function App() {
             />
           </div>
         )}
-        {view === 'strikes' &&
+        {['strikes', 'replacements'].includes(view) &&
           strikePermissions(session.dashboard_permissions, session.is_owner).view && (
             <StrikesWorkspace
               onWorking={setStrikeWorking}
               memory={flowMemory.strikes}
-              targetTag={strikeTag}
-              onBack={flowFrom === 'replacements' ? () => returnStrikeFlow('replacements') : undefined}
-              onFindReplacement={(clan, tag) => {
-                if (
-                  navigation.current?.pending ||
-                  allowedView('replacements') !== 'replacements'
-                )
-                  return
-                const proceed = () => {
-                  flowMemory.strikes.set('scroll', window.scrollY);
-                  navigation.current?.write(
-                    { view: 'replacements', season: '', replacementClan: clan, replacementTag: tag, flowFrom: 'strikes' },
-                    true,
-                  )
-                  setActivityVisit(window.history.state?.wuDashboardIndex || 0)
-                  setReplacementClan(clan)
-                  setReplacementTag(tag)
-                  setFlowFrom("strikes")
-                  acceptRoute('replacements')
-                }
-                if (canLeave(proceed)) proceed()
+              targetTag={view === 'replacements' ? replacementTag : strikeTag}
+              activityState={strikeFilterState || (view === 'replacements' && replacementClan ? new URLSearchParams({clans:replacementClan, marked:'1'}).toString() : '')}
+              markedDefault={view === 'replacements'}
+              onActivityState={(state,push) => {
+                if (navigation.current?.pending) return;
+                navigation.current?.write({view: view as 'strikes'|'replacements', season:'', strikeState:state},push);
+                setActivityVisit(window.history.state?.wuDashboardIndex || 0);
+                setStrikeFilterState(state);
+              }}
+              onAccountRoute={(tag) => {
+                if (navigation.current?.pending) return;
+                const state = strikeFilterState || (view === 'replacements' ? new URLSearchParams({marked:'1', ...(replacementClan ? {clans:replacementClan} : {})}).toString() : '');
+                navigation.current?.write({view:'strikes',season:'',strikeTag:tag,strikeState:state},true);
+                setActivityVisit(window.history.state?.wuDashboardIndex || 0);
+                setStrikeFilterState(state); setStrikeTag(tag); setReplacementTag(''); acceptRoute('strikes');
+              }}
+              onFindReplacement={(clan) => {
+                const state = new URLSearchParams({clans:clan, marked:'1'}).toString();
+                navigation.current?.write({view:'strikes',season:'',strikeState:state},true);
+                setActivityVisit(window.history.state?.wuDashboardIndex || 0);
+                setStrikeFilterState(state);setStrikeTag('');acceptRoute('strikes');
               }}
               onDirty={setManageDirty}
               permissions={session.dashboard_permissions || []}
               isOwner={session.is_owner}
               userId={session.user.id}
-            />
-          )}
-        {view === 'replacements' &&
-          strikePermissions(session.dashboard_permissions, session.is_owner).view && (
-            <ReplacementWorkspace
-              onWorking={setStrikeWorking}
-              initialClan={replacementClan}
-              initialTag={replacementTag}
-              memory={flowMemory.replacements}
-              onBack={flowFrom === 'strikes' ? () => returnStrikeFlow('strikes') : undefined}
-              onHistory={(tag) => {
-                if (navigation.current?.pending || allowedView('strikes') !== 'strikes') return;
-                const proceed = () => {
-                  flowMemory.replacements.set('scroll', window.scrollY);
-                  navigation.current?.write({view:'strikes',season:'',strikeTag:tag,flowFrom:'replacements'}, true);
-                  setStrikeTag(tag);
-                  setFlowFrom('replacements');
-                  acceptRoute('strikes');
-                };
-                if (canLeave(proceed)) proceed();
-              }}
-              onClanChange={(clan) => {
-                setReplacementClan(clan)
-                navigation.current?.write(
-                  { view: 'replacements', season: '', replacementClan: clan, replacementTag, flowFrom },
-                  false,
-                )
-              }}
-              onDirty={setManageDirty}
-              permissions={session.dashboard_permissions || []}
-              isOwner={session.is_owner}
             />
           )}
         {view === 'text-commands' && <TextCommands onDirty={setManageDirty} />}

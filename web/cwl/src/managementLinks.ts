@@ -2,8 +2,8 @@
 export const managementPaths: Record<string, string> = {
   "staff-overview": "/staff",
   "clan-management": "/clans",
-  strikes: "/clans/strikes",
-  replacements: "/clans/replacements",
+  strikes: "/strikes",
+  replacements: "/replacements",
   "members-settings": "/server/members",
   "member-activity": "/server/moderation",
   moderation: "/server/moderation",

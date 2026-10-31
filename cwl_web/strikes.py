@@ -341,7 +341,25 @@ async def activity_accounts(request):
         activity = await PlayerActivityStore(db).all_players()
         context = await ledger.activity_context(GUILD_ID, [row['tag'] for row in activity])
     rows = family_activity_rows(activity, **context)
+    weight_warning = None
+    if rows:
+        from utils.clan_weights import source_weights, overlay_accounts
+        try:
+            async with asyncio.timeout(8):
+                weights = await source_weights(request.app['store'], request.app['providers'],
+                                               [row['player_tag'] for row in rows])
+            effective = overlay_accounts(request.app['store'], {'accounts': [
+                {'tag': row['player_tag'], 'war_weight': (weights.get(row['player_tag']) or {}).get('weight')}
+                for row in rows]})
+            indexed = {row['tag']: row['war_weight'] for row in effective['accounts']}
+            for row in rows:
+                row['weight'] = indexed.get(row['player_tag'])
+        except (ProviderUnavailable, TimeoutError):
+            weight_warning = 'Current weights are unavailable. Showing saved weights where known.'
+    identity_warning = ('Some Discord names are unavailable. Search those members by Discord ID, player name or tag.'
+                        if any(row.get('discord_id') and not row.get('discord_name') for row in rows) else None)
     return web.json_response(public({'accounts': rows, 'total': len(rows),
+                                    'weight_warning': weight_warning, 'identity_warning': identity_warning,
                                     'clans': [{'tag': row['tag'], 'name': row.get('name') or row['tag']}
                                               for row in context['clans']]}))
 
