@@ -119,6 +119,7 @@ class MongoClient(AsyncMongoClient):
         # schedule document if the two ever shared a collection.
         self.cwl_reminder = collection_for(self, "cwl_reminder", routes=routes)
         self.cwl_pending_reminders = collection_for(self, "cwl_pending_reminders", routes=routes)
+        self.fwa_war_plans = collection_for(self, "fwa_war_plans", routes=routes)
         self.fwa_points = collection_for(self, "fwa_points", routes=routes)
         # Bounded discovery data for /todo. History/candidate rows and watches
         # both carry BSON-date TTL anchors; utils/clan_history.py owns indexes.

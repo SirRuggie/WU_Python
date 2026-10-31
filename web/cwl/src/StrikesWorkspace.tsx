@@ -59,7 +59,7 @@ export type Entry = {
   war_end?: string | null;
   expires_at?: string | null;
   exemption?: string | null;
-  kind: "strike" | "miss" | "completed" | "cwl" | "no_attack";
+  kind: "strike" | "miss" | "completed" | "cwl" | "no_attack" | "mismatch";
   source: "war" | "manual" | "cwl";
   source_label?: string | null;
   war_type?: "regular" | "cwl";
@@ -73,8 +73,10 @@ export type Entry = {
     | "exempt"
     | "recorded"
     | "no_attack"
+    | "mismatch"
     | "completed";
   reason?: string | null;
+  war_plan_reason?: string | null;
   removed_reason?: string | null;
 };
 type Overview = {
@@ -115,6 +117,8 @@ type War = {
   strikes: number;
   one_missed: number;
   no_attack?: number | boolean;
+  mismatch?: number | boolean;
+  war_plan_reason?: string | null;
   war_type?: "regular" | "cwl";
   cwl_missed?: number;
   source_label?: string | null;
@@ -1100,6 +1104,7 @@ export default function StrikesWorkspace({
                     One attack missed (no strike)
                   </option>
                   <option value="cwl">CWL miss (no strike)</option>
+                  <option value="mismatch">Mismatch war (no strike)</option>
                   <option value="exempt">Exempt (no strike)</option>
                   <option value="all">Everything</option>
                 </select>
@@ -1181,12 +1186,15 @@ export default function StrikesWorkspace({
                     )}{" "}
                     · {dateText(selectedWar.war_end)} ·{" "}
                     {selectedWar.source_label || "Source unavailable"}
-                    {selectedWar.no_attack
+                    {selectedWar.mismatch
+                      ? " · ⊖ Mismatch war (no strike)"
+                      : selectedWar.no_attack
                       ? " · ⊖ No-attack war (no strike)"
                       : selectedWar.incomplete
                         ? " · Incomplete · No automatic strikes"
                         : " · All records"}
                   </span>
+                  {selectedWar.war_plan_reason && <span>{selectedWar.war_plan_reason}</span>}
                   <button onClick={clearWar}>Clear war</button>
                 </div>
               )}

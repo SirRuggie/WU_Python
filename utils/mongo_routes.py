@@ -54,6 +54,7 @@ DEFAULT_ROUTES = MappingProxyType({
     'lazy_cwl_lists': Namespace("settings", 'lazy_cwl_lists'),
     'cwl_reminder': Namespace("settings", 'cwl_reminder'),
     'cwl_pending_reminders': Namespace("settings", 'cwl_pending_reminders'),
+    'fwa_war_plans': Namespace("settings", 'fwa_war_plans'),
     'fwa_points': Namespace("settings", 'fwa_points'),
     'player_clan_candidates': Namespace("settings", 'player_clan_candidates'),
     'player_clan_watches': Namespace("settings", 'player_clan_watches'),

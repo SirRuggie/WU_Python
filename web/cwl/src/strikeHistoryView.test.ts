@@ -67,3 +67,7 @@ it("uses complete singular nouns and a no-attack label", () => {
     "⊖ No-attack war (no strike)",
   );
 });
+
+it("summarizes a mismatch without disguising it as a normal war", () => {
+  expect(warSummary({strikes: 0, one_missed: 0, mismatch: true})).toBe("⊖ Mismatch war (no strike)");
+});

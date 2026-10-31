@@ -233,6 +233,7 @@ it.each([
   ["expired", "strike", "Expired"],
   ["removed", "strike", "Removed"],
   ["recorded", "miss", "One attack missed (no strike)"],
+  ["mismatch", "mismatch", "Mismatch war (no strike)"],
   ["recorded", "no_attack", "No-attack war (no strike)"],
   ["recorded", "cwl", "CWL miss (no strike)"],
   ["exempt", "strike", "Exempt (no strike)"],

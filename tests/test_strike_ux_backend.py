@@ -310,11 +310,11 @@ def test_new_week_ignores_removed_expired_old_and_future_rows():
     run(scenario())
 
 
-@pytest.mark.parametrize('wanted', ['active', 'expired', 'removed', 'missed', 'exempt', 'completed', 'cwl'])
+@pytest.mark.parametrize('wanted', ['active', 'expired', 'removed', 'missed', 'exempt', 'completed', 'cwl', 'mismatch'])
 def test_history_status_precedence_and_stable_paging(wanted):
     async def scenario():
         db, store = setup()
-        for kind in ('strike', 'cwl', 'missed', 'exempt', 'completed'):
+        for kind in ('strike', 'cwl', 'missed', 'exempt', 'completed', 'mismatch'):
             for revoked in (False, True):
                 for expired in (False, True):
                     identity = f'{kind}-{revoked}-{expired}'

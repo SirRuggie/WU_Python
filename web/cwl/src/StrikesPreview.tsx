@@ -8,6 +8,19 @@ import "./style.css";
 const now = new Date().toISOString();
 const entries: Entry[] = [
   {
+    id: "mismatch",
+    player_tag: "#P22ABC",
+    player_name: "CastleFox",
+    war_end: now,
+    opponent_name: "Mismatch opponent",
+    source: "war",
+    kind: "mismatch",
+    status: "mismatch",
+    source_label: "Clash API",
+    war_key: "mismatch-war",
+    reason: "Mismatch war (no strike)",
+  },
+  {
     id: "no-attack",
     player_tag: "#P22ABC",
     player_name: "CastleFox",
@@ -105,6 +118,12 @@ for (const entry of entries) {
   ).toISOString();
 }
 const wars = [
+  {
+    war_key: "mismatch-war", clan_tag: "#FWA", clan_name: "Warriors United FWA",
+    opponent_tag: "#MISMATCH", opponent_name: "Mismatch opponent", war_end: now,
+    missed_accounts: 1, strikes: 0, one_missed: 0, mismatch: true,
+    source_label: "Clash API",
+  },
   {
     war_key: "war-fwa-edrag",
     clan_tag: "#FWA",
@@ -473,6 +492,7 @@ window.fetch = async (input, init) => {
           item.war_key === url.searchParams.get("war_key")) &&
         (!url.searchParams.get("query")?.startsWith("#") ||
           item.player_tag === url.searchParams.get("query")) &&
+        (url.searchParams.get("status") !== "mismatch" || item.kind === "mismatch") &&
         (url.searchParams.get("status") !== "strikes" ||
           item.kind === "strike"),
     );

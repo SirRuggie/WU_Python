@@ -76,11 +76,13 @@ export function isCwlRecord(item: {
 
 export function warSummary(war: {
   no_attack?: number | boolean;
+  mismatch?: number | boolean;
   war_type?: string | null;
   strikes: number;
   one_missed: number;
   cwl_missed?: number;
 }): string {
+  if (war.mismatch) return "⊖ Mismatch war (no strike)";
   if (war.no_attack) return "⊖ No-attack war (no strike)";
   return war.war_type === "cwl"
     ? `CWL · ${war.cwl_missed ?? 0} missed · No strikes`

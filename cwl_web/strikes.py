@@ -234,7 +234,7 @@ def entry(row, clans, profile=None):
                 or _OPPONENT_NAME_CACHE.get(row.get('opponent_tag'), (0, None))[1]
                 or row.get('opponent_tag'),
             'war_end': public(row['occurred_at']), 'expires_at': public(row.get('expires_at')),
-            'kind': 'no_attack' if kind == 'no_attack' else ('cwl' if kind == 'cwl' else ('strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss'))),
+            'kind': kind if kind in ('no_attack', 'mismatch') else ('cwl' if kind == 'cwl' else ('strike' if kind == 'strike' else ('completed' if kind == 'completed' else 'miss'))),
             'source': row.get('source'),
             'source_label': ('Clash API' if row.get('capture_source') == 'clash_api' else
                              'ClashKing (import)' if row.get('import_id') or
@@ -242,6 +242,7 @@ def entry(row, clans, profile=None):
                              'ClashKing (legacy)' if row.get('source') in ('war', 'cwl') else None),
             'status': 'recorded' if row.get('status') == 'missed' else row.get('status'),
             'missed_attacks': row.get('missed_attacks'), 'reason': row.get('reason'),
+            'war_plan_reason': row.get('war_plan_reason'),
             'exemption': row.get('exemption'), 'removed_reason': row.get('revoke_reason')}
 
 
