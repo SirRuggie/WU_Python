@@ -77,6 +77,9 @@ class WarPlanStore:
                 return None, 'War plan unclear'
             if any(instant(row['posted_at']) > ended or row.get('outcome') not in OUTCOMES for row in rows):
                 return None, 'War plan unclear'
+            starts = {instant(row['preparation_start']) for row in rows}
+            if len(starts) != 1 or any(instant(row['posted_at']) < instant(row['preparation_start']) for row in rows):
+                return None, 'War plan unclear'
             rows.sort(key=lambda row: instant(row['posted_at']), reverse=True)
             latest = rows[0]
             tied = [row for row in rows if instant(row['posted_at']) == instant(latest['posted_at'])]

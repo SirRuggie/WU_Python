@@ -88,7 +88,7 @@ def test_latest_confirmed_correction_wins_and_rename_uses_tag():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('change', ['late', 'unbound', 'opponent', 'tie'])
+@pytest.mark.parametrize('change', ['late', 'unbound', 'opponent', 'tie', 'start', 'early'])
 def test_unclear_receipts_never_suppress(change):
     async def run():
         _, service, store = fixture()
@@ -96,8 +96,10 @@ def test_unclear_receipts_never_suppress(change):
         overrides = {'posted_at': current['end_time']+timedelta(seconds=1)} if change == 'late' else {}
         if change == 'unbound': overrides['bound'] = False
         if change == 'opponent': overrides['opponent_tag'] = '#999'
+        if change == 'early': overrides['posted_at'] = current['end_time']-timedelta(days=3)
         await record(store, current, **overrides)
         if change == 'tie': await record(store, current, 'win', message=2)
+        if change == 'start': await record(store, current, message=2, preparation_start=current['end_time']-timedelta(days=1))
         assert await store.outcome(GUILD, current) == (None, 'War plan unclear')
         assert (await service.process_war(GUILD, current))['strikes'] == 1
     asyncio.run(run())
