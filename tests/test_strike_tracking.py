@@ -154,3 +154,46 @@ def test_tracking_retry_requires_write_scope_and_registered_clan(monkeypatch):
     assert json.loads(response.text)['retry_pending'] is True
     assert requested == [('strikes_add', True)]
     assert len(asyncio.run(tracking.pending(api.GUILD_ID))) == 1
+
+
+def test_expired_incomplete_is_quarantined_without_a_past_ttl_and_resolution_is_audited():
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from tests.test_strike_streaks import setup, war, GUILD
+    from utils.strike_store import war_key, StrikeConflict
+    async def run():
+        db, ledger=setup(); tracking=StrikeTracking(db)
+        now=datetime.now(timezone.utc)
+        old={**war(1),'end_time':now-timedelta(days=100),'state':'inWar'}
+        await tracking.observe(GUILD,old,now=now-timedelta(days=101))
+        await tracking.incomplete(GUILD,old,'Missing final data',now=now)
+        row=await db.strike_war_snapshots.find_one({'war_key':war_key(old)})
+        assert row['manual_review_required'] and 'purge_after' not in row
+        with __import__('pytest').raises(StrikeConflict):
+            await tracking.resolve_review(GUILD+1,row['war_key'],row['review_revision'],'Wrong guild',123,now=now)
+        with __import__('pytest').raises(StrikeConflict):
+            await tracking.resolve_review(GUILD,row['war_key'],row['review_revision']+1,'Stale revision',123,now=now)
+        receipt=await tracking.resolve_review(GUILD,row['war_key'],row['review_revision'],'Reviewed old war',123,now=now)
+        saved=await db.strike_war_snapshots.find_one({'war_key':row['war_key']})
+        assert saved['status']=='resolved' and not saved['manual_review_required']
+        assert saved['purge_after']==now+timedelta(days=30) and saved['review_resolution']==receipt
+        assert receipt['reason']=='Reviewed old war' and receipt['actor_id']==123
+        assert not await tracking.incomplete_wars(GUILD)
+        from extensions.commands.strikes import _finish_official_war
+        assert await _finish_official_war(tracking,ledger,GUILD,{**old,'state':'warEnded'}) == (0,0,0,0)
+    asyncio.run(run())
+
+
+def test_observe_and_quarantine_remove_stale_purge_dates():
+    from tests.test_strike_streaks import setup, war, GUILD
+    async def run():
+        db, ledger=setup();tracking=StrikeTracking(db);sample=war(1)
+        await tracking.observe(GUILD,sample)
+        key=tracking.snapshot_key(GUILD,sample)
+        await db.strike_war_snapshots.update_one({'_id':key},{'$set':{'purge_after':datetime.now(timezone.utc)}})
+        await tracking.observe(GUILD,sample)
+        assert 'purge_after' not in (await db.strike_war_snapshots.find_one({'_id':key}))
+        await db.strike_war_snapshots.update_one({'_id':key},{'$set':{'purge_after':datetime.now(timezone.utc)}})
+        await tracking.quarantine_old(GUILD,sample)
+        assert 'purge_after' not in (await db.strike_war_snapshots.find_one({'_id':key}))
+    asyncio.run(run())

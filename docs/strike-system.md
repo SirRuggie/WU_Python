@@ -555,3 +555,36 @@ more strikes, manual marks first in Top 10 with weights, collapsed summaries,
 present-only Town Hall choices, no missing row weights, and recruit matches
 below Match. No 4xx/5xx or horizontal overflow appeared. Nothing was marked,
 edited or saved; this is not proof of live Discord delivery.
+
+
+## Bounded activity and strike-history retention (prompt54 PR A)
+
+See [member activity](member-activity.md) for the official API signal list,
+hourly rate, bounded player documents, raid evidence rules and rollout gate.
+Strike records receive a dedicated `purge_after` 90 days after war end/manual
+creation. Finalized snapshots retain 30 days; incomplete placeholders retain 90
+days. Unresolved review wars never TTL, and resolved audit snapshots retain 30
+days from staff resolution. Existing active expiry remains 60 days.
+Current streak count and war watermark remain on strike_profiles, independently
+of retained history. Replacement notes/marks, settings, leave and exempt roles
+are never TTL collections. Imports remain restricted to 60 days; direct ingestion
+rejects war data beyond 90 days so purged history cannot reappear.
+
+TTL indexes are created only by the explicit backup-and-restore migration,
+not startup. Before the approved production migration, stop the strike writers
+for a consistent backup/restore and verification window, retain the local dump,
+and record protected counts/streaks/eligibility and collStats before and after.
+The maintenance command aborts if pending streak receipts remain. Resume the
+writers only after verification, then inspect the first-hour activity logs.
+These are release requirements; fixture tests are not production backup proof.
+
+
+### Quarantined war resolution
+
+`POST /api/cwl/strikes/tracking/resolve` requires the existing `strikes` manage
+grant and CSRF protection. It takes `war_key`, displayed `review_revision` as
+`revision`, and a nonempty reason of at most 500 characters. A CAS permits one
+resolution and returns 409 for a stale/already-resolved request. The snapshot
+records actor, reason, time and the new revision, clears the hold, and retains the
+audit receipt for 30 days from resolution. It does not invent or import a missing
+strike. PR A supplies the backend action; PR B adds the button to Find war.

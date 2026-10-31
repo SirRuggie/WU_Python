@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import math
 import logging
 import traceback
@@ -23,6 +23,7 @@ from utils.constants import WARRIORS_UNITED_GUILD_ID
 from utils.mongo import MongoClient
 from utils.strike_store import STRIKE_DAYS, StrikeService, tag, utc
 from utils.strike_tracking import StrikeTracking
+from utils.strike_retention_policy import RECORD_DAYS
 from utils.strike_official import normalize as normalize_official_war
 from utils.replacement_filters import parse_weight, compact_weight
 from cwl_web.providers import LiveProviders, ProviderUnavailable
@@ -682,7 +683,7 @@ async def _finish_official_war(tracking, store, guild_id, war):
         # monitor was deployed. Do not report or backfill that historical gap.
         return 0, 0, 0, 0
     snapshot = await tracking.observe(guild_id, war)
-    if snapshot.get('status') in ('finalized', 'incomplete', 'abandoned'):
+    if snapshot.get('status') in ('finalized', 'incomplete', 'abandoned', 'resolved'):
         return 0, 0, 0, 0
     if not snapshot.get('seen_active'):
         # An already-ended war first seen at startup belongs to the old gap.
@@ -691,6 +692,9 @@ async def _finish_official_war(tracking, store, guild_id, war):
     if not war['complete']:
         # A final response can briefly lack a full roster; the persisted final
         # remains due for another official fetch before the next war replaces it.
+        return 0, 0, 0, 1
+    if war['type'] in ('regular', 'cwl') and utc(war['end_time']) < datetime.now(timezone.utc) - timedelta(days=RECORD_DAYS):
+        await tracking.quarantine_old(guild_id, war)
         return 0, 0, 0, 1
     if war['type'] == 'regular' and war['attacks_per_member'] == 2:
         result = await store.process_war(guild_id, war, official_capture=True)

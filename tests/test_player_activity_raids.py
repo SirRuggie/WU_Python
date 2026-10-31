@@ -1,0 +1,140 @@
+import asyncio
+from datetime import timedelta
+from types import SimpleNamespace as NS
+
+from datetime import datetime, timezone
+NOW = datetime(2026,11,2,7,tzinfo=timezone.utc)
+from tests.test_player_activity_store import ActivityCollection, PLAYER, CLAN
+from utils.player_activity_store import PlayerActivityStore
+from utils.player_activity_raids import capture_raids
+
+
+def test_family_move_attack_and_observed_skip_but_never_historical_skip():
+    async def run():
+        collection = ActivityCollection()
+        store = PlayerActivityStore(NS(player_activity=collection))
+        other = '#8GG8'
+        for tag in (PLAYER, other):
+            await store.record({'tag': tag, 'attackWins': 1}, CLAN, now=NOW-timedelta(hours=2))
+        await store.reconcile_membership({PLAYER: CLAN, other: CLAN}, now=NOW-timedelta(minutes=30))
+        await store.reconcile_membership({PLAYER: '#8GG8', other: CLAN}, now=NOW+timedelta(minutes=30))
+        async def raid(clan, limit):
+            return [NS(end_time=NOW, members=[NS(tag=PLAYER, attack_count=3 if clan=='#8GG8' else 2)]),
+                    NS(end_time=NOW-timedelta(days=7), members=[])]
+        result = await capture_raids(store, NS(get_raid_log=raid), [CLAN, '#8GG8'], now=NOW+timedelta(minutes=30))
+        assert result['complete']
+        assert (await store.get(PLAYER))['raid_weekends'][-1]['attacked']
+        assert (await store.get(PLAYER))['raid_weekends'][-1]['attacks'] == 5
+        skipped = (await store.get(other))['raid_weekends']
+        assert len(skipped)==1 and not skipped[0]['attacked']
+        async def partial(clan, limit):
+            if clan==CLAN:
+                raise TimeoutError()
+            return [NS(end_time=NOW+timedelta(days=7), members=[])]
+        await capture_raids(store, NS(get_raid_log=partial), [CLAN, '#8GG8'], now=NOW+timedelta(days=8))
+        assert (await store.get(other))['raid_weekends']==skipped
+    asyncio.run(run())
+
+
+def test_entire_family_without_raid_entries_can_have_an_observed_skip():
+    from datetime import datetime, timezone
+    async def run():
+        end = datetime(2026, 11, 2, 7, tzinfo=timezone.utc)
+        store = PlayerActivityStore(NS(player_activity=ActivityCollection()))
+        await store.record({'tag': PLAYER, 'attackWins': 1}, CLAN, now=end-timedelta(hours=2))
+        await store.reconcile_membership({PLAYER: CLAN}, now=end-timedelta(minutes=30))
+        await store.reconcile_membership({PLAYER: CLAN}, now=end+timedelta(minutes=30))
+        async def empty(*args, **kwargs):
+            return []
+        await capture_raids(store, NS(get_raid_log=empty), [CLAN], now=end+timedelta(minutes=30))
+        rows = (await store.get(PLAYER))['raid_weekends']
+        assert rows == [{'weekend_id': end.isoformat(), 'attacked': False, 'attacks': 0}]
+    asyncio.run(run())
+
+
+def test_raid_failure_is_incomplete_and_straddle_guard_is_required():
+    async def run():
+        store=PlayerActivityStore(NS(player_activity=ActivityCollection()))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW-timedelta(days=1))
+        await store.reconcile_membership({PLAYER:CLAN},now=NOW-timedelta(minutes=30))
+        await store.reconcile_membership({PLAYER:CLAN},now=NOW+timedelta(minutes=30))
+        async def failed(*args,**kwargs): raise TimeoutError()
+        result=await capture_raids(store,NS(get_raid_log=failed),[CLAN],now=NOW+timedelta(minutes=30))
+        assert not result['complete']
+        assert (await store.get(PLAYER))['raid_weekends']==[]
+        assert not (await store.get(PLAYER)).get('raid_checked_weekends')
+        await store.reconcile_membership({PLAYER:CLAN},now=NOW+timedelta(hours=1,minutes=30))
+        async def empty(*args,**kwargs): return []
+        await capture_raids(store,NS(get_raid_log=empty),[CLAN],now=NOW+timedelta(hours=1,minutes=30))
+        assert (await store.get(PLAYER))['raid_weekends'][-1]['attacked'] is False
+    asyncio.run(run())
+
+
+def test_completed_weekend_is_not_read_or_rewritten_every_hour():
+    async def run():
+        class CountCollection(ActivityCollection):
+            writes=0
+            async def update_one(self,*args,**kwargs):
+                self.writes+=1;return await super().update_one(*args,**kwargs)
+        collection=CountCollection();store=PlayerActivityStore(NS(player_activity=collection))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW-timedelta(hours=2))
+        calls=[]
+        async def raids(*args,**kwargs): calls.append(1);return [NS(end_time=NOW,members=[NS(tag=PLAYER,attack_count=6)])]
+        await capture_raids(store,NS(get_raid_log=raids),[CLAN],now=NOW+timedelta(minutes=30))
+        before=collection.writes
+        result=await capture_raids(store,NS(get_raid_log=raids),[CLAN],now=NOW+timedelta(hours=1))
+        assert len(calls)==1 and collection.writes==before and result['writes']==0
+    asyncio.run(run())
+
+
+@__import__('pytest').mark.parametrize('minute',[15,30,59])
+def test_real_sweep_order_defers_skip_until_next_reconcile_brackets_end(minute):
+    async def run():
+        store=PlayerActivityStore(NS(player_activity=ActivityCollection()))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW-timedelta(days=1))
+        async def empty(*args,**kwargs): return []
+        before=NOW-timedelta(hours=1)+timedelta(minutes=minute)
+        await store.reconcile_membership({PLAYER:CLAN},now=before)
+        await capture_raids(store,NS(get_raid_log=empty),[CLAN],now=before+timedelta(hours=1))
+        row=await store.get(PLAYER)
+        assert row['raid_weekends']==[] and NOW.isoformat() not in row.get('raid_checked_weekends',[])
+        # Same order as run(): reconcile, poll for an hour, then capture.
+        await store.reconcile_membership({PLAYER:CLAN},now=before+timedelta(hours=1))
+        await capture_raids(store,NS(get_raid_log=empty),[CLAN],now=before+timedelta(hours=2))
+        row=await store.get(PLAYER)
+        assert row['raid_weekends'][-1]['attacked'] is False
+        assert NOW.isoformat() in row['raid_checked_weekends']
+    asyncio.run(run())
+
+
+def test_archived_observed_clan_is_read_and_failed_logs_are_rate_limited(caplog):
+    from utils import player_activity_raids as raids
+    async def run():
+        raids._failure_logs.clear()
+        store=PlayerActivityStore(NS(player_activity=ActivityCollection()))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW-timedelta(days=1))
+        await store.reconcile_membership({PLAYER:CLAN},now=NOW-timedelta(minutes=30))
+        await store.reconcile_membership({PLAYER:'#8GG8'},now=NOW+timedelta(minutes=30))
+        calls=[]
+        async def read(clan,**kwargs):
+            calls.append(clan)
+            if clan==CLAN:raise TimeoutError()
+            return []
+        for _ in range(2):
+            result=await capture_raids(store,NS(get_raid_log=read),['#8GG8'],now=NOW+timedelta(hours=1))
+            assert not result['complete']
+        assert CLAN in calls and (await store.get(PLAYER))['raid_weekends']==[]
+        assert sum(CLAN in record.message and 'weekend=' in record.message for record in caplog.records)==1
+    asyncio.run(run())
+
+
+def test_legacy_unbracketed_membership_never_invents_a_skip():
+    async def run():
+        collection=ActivityCollection();store=PlayerActivityStore(NS(player_activity=collection))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW-timedelta(days=1))
+        collection.rows[PLAYER].update(family_since=NOW-timedelta(days=1),
+            previous_roster_at=NOW+timedelta(minutes=30),last_roster_at=NOW+timedelta(hours=1))
+        async def empty(*args,**kwargs):return []
+        await capture_raids(store,NS(get_raid_log=empty),[CLAN],now=NOW+timedelta(hours=1))
+        assert (await store.get(PLAYER))['raid_weekends']==[]
+    asyncio.run(run())

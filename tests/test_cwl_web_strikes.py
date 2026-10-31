@@ -152,3 +152,29 @@ def test_preview_api_separates_deferred_accounts_from_skipped_wars():
     assert result['incomplete_wars'] == 1
     assert result['coverage'][0]['deferred_accounts'] == 1
     assert result['coverage'][0]['processing_skipped_wars'] == 1
+
+
+def test_quarantine_resolution_keeps_manage_permission_and_revision_boundary():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+    from contextlib import asynccontextmanager
+    from aiohttp import web
+    import pytest
+    async def run():
+        request=SimpleNamespace(method='POST')
+        denied=AsyncMock(side_effect=web.HTTPForbidden())
+        with patch.object(strikes.shared,'require_manage',denied):
+            with pytest.raises(web.HTTPForbidden):await strikes.tracking_resolve(request)
+            assert denied.call_args.args[1]=='strikes' and denied.call_args.kwargs['write'] is True
+        @asynccontextmanager
+        async def mongo(request):yield object()
+        resolver=AsyncMock(return_value={'actor_id':123,'reason':'Reviewed','revision':2})
+        with patch.object(strikes.shared,'require_manage',AsyncMock()), \
+             patch.object(strikes.shared,'identity',AsyncMock(return_value={'user_id':'123'})), \
+             patch.object(strikes.shared,'mongo',mongo), \
+             patch.object(strikes,'body',AsyncMock(return_value={'war_key':'war','revision':1,'reason':'Reviewed'})), \
+             patch.object(strikes,'StrikeTracking',return_value=SimpleNamespace(resolve_review=resolver)):
+            result=await strikes.tracking_resolve(request)
+            assert result.status==200
+            resolver.assert_awaited_once_with(strikes.GUILD_ID,'war',1,'Reviewed',123)
+    asyncio.run(run())
