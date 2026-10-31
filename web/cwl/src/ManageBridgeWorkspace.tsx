@@ -840,7 +840,7 @@ export default function ManageBridgeWorkspace({
                 roles.items.find((role) => role.id === id)?.name ||
                 `Role ${id}`,
             ),
-            clans: bridge.pools[pool].sequence?.clans,
+            clans: bridge.pools[pool].sequence?.published_clans,
             preview: preview(pool),
           }))}
           onCancel={() => setSendReview(null)}

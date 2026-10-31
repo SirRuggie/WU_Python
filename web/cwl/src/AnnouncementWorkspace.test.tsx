@@ -339,3 +339,11 @@ it("a test-send guard closes the confirmation and explains why nothing was sent"
   expect(host.textContent).toContain("Test not sent:");
   expect(api.mock.calls.some((c) => c[1])).toBe(false);
 });
+
+it('normal review lists the current publication in order, not a stale frozen plan', async()=>{
+ bridge.pools.main.sequence={sequence_id:'old',status:'stopped',announcement_confirmed:false,error:null,version:1,channel_id:channels[0].id,closing:null,clans:[{tag:'#OLD',name:'Old clan',pages:1,status:'pending'}],published_clans:[{tag:'#NEW1',name:'Current first',pages:1,status:'not_started'},{tag:'#NEW2',name:'Current second',pages:2,status:'not_started'}]};
+ await mount();await click('Review and send');
+ const text=document.querySelector('.announcement-send-review')!.textContent!;
+ expect(text).toContain('Current first');expect(text).toContain('Current second');expect(text.indexOf('Current first')).toBeLessThan(text.indexOf('Current second'));expect(text).not.toContain('Old clan');
+ await click('Cancel');expect(api.mock.calls.some(c=>c[1]==='POST'&&c[0].endsWith('/send'))).toBe(false);
+})

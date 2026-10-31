@@ -119,7 +119,15 @@ export default function ClanRosterImages({
     }
   }
   function open(jobs: ImageJob[], text: string) {
-    if (canSend && !running.current && jobs.length) setConfirm({ jobs, text });
+    if (canSend && !running.current && jobs.length)
+      setConfirm({
+        jobs,
+        text:
+          jobs[0]?.operation === "test"
+            ? text
+            : text +
+              " The closing note will also be checked; if Discord confirms it was deleted, it will be reposted without pings.",
+      });
   }
   return (
     <section className="roster-image-posting roster-ui">

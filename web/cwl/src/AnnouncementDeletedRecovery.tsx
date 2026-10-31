@@ -19,6 +19,8 @@ type Props = {
   onQueued: () => void;
 };
 export default function AnnouncementDeletedRecovery(props: Props) {
+  const [deleted, setDeleted] = useState<string | null>(null);
+  const checked = useRef({ identity: "", at: 0 });
   const [review, setReview] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -39,7 +41,15 @@ export default function AnnouncementDeletedRecovery(props: Props) {
   useEffect(() => {
     setReview(null);
     setNotice("");
-  }, [identity, props.allowed]);
+    setDeleted(null);
+  }, [identity]);
+  useEffect(() => {
+    if (!props.allowed) setReview(null);
+  }, [props.allowed]);
+  useEffect(() => {
+    if (props.allowed && !busy && checked.current.identity !== identity)
+      void check();
+  }, [identity, props.allowed, busy]);
   const valid = (captured: string) =>
     alive.current &&
     latest.current.allowed &&
@@ -47,6 +57,12 @@ export default function AnnouncementDeletedRecovery(props: Props) {
   const base = `/seasons/${encodeURIComponent(props.seasonId)}/manage-bridge/${props.pool}`;
   const check = async () => {
     if (running.current || !props.allowed) return;
+    if (
+      checked.current.identity === identity &&
+      Date.now() - checked.current.at < 30000
+    )
+      return;
+    checked.current = { identity, at: Date.now() };
     running.current = true;
     setBusy(true);
     setNotice("");
@@ -58,8 +74,11 @@ export default function AnnouncementDeletedRecovery(props: Props) {
       if (!valid(captured)) return;
       if (result.deleted) {
         reviewedIdentity.current = captured;
-        setReview(result.message_id);
-      } else setNotice("The announcement still exists in Discord.");
+        setDeleted(result.message_id);
+      } else {
+        setDeleted(null);
+        setNotice("The announcement still exists in Discord.");
+      }
     } catch (error) {
       if (valid(captured))
         setNotice(
@@ -116,6 +135,17 @@ export default function AnnouncementDeletedRecovery(props: Props) {
       <Button disabled={!props.allowed || busy} onClick={() => void check()}>
         Check posted message
       </Button>
+      {deleted && (
+        <>
+          <p role="status">Previous post was deleted</p>
+          <Button
+            disabled={!props.allowed || busy}
+            onClick={() => setReview(deleted)}
+          >
+            Send again
+          </Button>
+        </>
+      )}
       {notice && <p role="status">{notice}</p>}
       {review && props.allowed && (
         <AnnouncementSendReview

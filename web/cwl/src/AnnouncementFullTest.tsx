@@ -115,7 +115,13 @@ export default function AnnouncementFullTest({
         label="Full test channel"
         channels={channels}
         value={channel}
-        disabled={!allowed || busy || active}
+        disabled={
+          !allowed ||
+          busy ||
+          active ||
+          !!pendingRequest.current ||
+          job?.status === "uncertain"
+        }
         onChange={setChannel}
       />
       <button

@@ -11,7 +11,7 @@ let host: HTMLDivElement,
   sequence: ImageSequence;
 const refresh = vi.fn(async () => {});
 const button = (text: string) =>
-  [...document.querySelectorAll("button")].find(
+  [...document.querySelectorAll("button")].reverse().find(
     (button) => button.textContent === text,
   )!;
 async function mount(canSend = true) {
@@ -73,6 +73,9 @@ afterEach(async () => {
 it("resumes a known failure once and names the stopping clan", async () => {
   await mount();
   expect(host.textContent).toContain("Stopped at Lazy.127");
+  await act(async () => button("Resume").click());
+  expect(api).not.toHaveBeenCalled();
+  expect(document.querySelector("dialog")?.textContent).toContain("Lazy.127");
   await act(async () => {
     button("Resume").click();
     button("Resume").click();
@@ -121,6 +124,7 @@ it("a late response after unmount does not refresh another season", async () => 
       }),
   );
   await mount();
+  await act(async () => button("Resume").click());
   await act(async () => button("Resume").click());
   await act(async () => root.render(null));
   await act(async () => finish({}));

@@ -25,9 +25,9 @@ async function mount(allowed = true) {
   await act(async () => root.render(<Recovery {...props} allowed={allowed} />));
 }
 async function click(text: string) {
-  const button = [...document.querySelectorAll("button")].find((button) =>
-    button.textContent?.includes(text),
-  );
+  const button = [...document.querySelectorAll("button")]
+    .filter((button) => button.textContent?.includes(text))
+    .at(-1);
   expect(button).toBeTruthy();
   await act(async () => button!.click());
 }
@@ -41,13 +41,17 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.restoreAllMocks();
 });
 it("checks read-only and requires explicit ping-again confirmation", async () => {
   api
     .mockResolvedValueOnce({ deleted: true, message_id: "987654321098765432" })
     .mockResolvedValue({});
   await mount();
-  await click("Check posted");
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(document.querySelector("dialog")).toBeNull();
+  expect(host.textContent).toContain("Previous post was deleted");
+  await click("Send again");
   expect(api).toHaveBeenCalledTimes(1);
   expect(document.body.textContent).toContain("Earlier image posts stay");
   expect(document.body.textContent).toContain("Lazy.128");
@@ -71,9 +75,11 @@ it("cancel or existing message never sends", async () => {
     message_id: "987654321098765432",
   });
   await mount();
-  await click("Check posted");
+  await click("Send again");
   await click("Cancel");
   expect(api).toHaveBeenCalledTimes(1);
+  const now = Date.now();
+  vi.spyOn(Date, "now").mockReturnValue(now + 31000);
   api.mockResolvedValueOnce({ deleted: false });
   await click("Check posted");
   expect(document.body.textContent).toContain("still exists");

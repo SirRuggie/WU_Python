@@ -91,7 +91,10 @@ it("queues only after confirmation and preserves identity on an ambiguous HTTP r
   await click("Test full post");
   await click("Send full test");
   const first = api.mock.calls[0][2];
+  expect(host.querySelector<HTMLInputElement>("input")!.disabled).toBe(true);
+  expect(host.querySelector<HTMLInputElement>("input")!.value).toContain("test-room");
   await click("Test full post");
+  expect(document.querySelector("dialog")?.textContent).toContain("#test-room");
   await click("Send full test");
   expect(api.mock.calls[1][2]).toEqual(first);
   expect(first).toMatchObject({

@@ -22,6 +22,7 @@ export default function AnnouncementSequenceStatus({
     requestId: string;
     name: string;
   } | null>(null);
+  const [resumeReview, setResumeReview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const running = useRef(false);
@@ -35,7 +36,10 @@ export default function AnnouncementSequenceStatus({
     };
   }, []);
   useEffect(() => {
-    if (!canSend) setConfirm(null);
+    if (!canSend) {
+      setConfirm(null);
+      setResumeReview(false);
+    }
   }, [canSend]);
   if (!sequence?.sequence_id || sequence.status === "not_started") return null;
   const sent = sequence.clans.filter((clan) => clan.status === "posted").length;
@@ -94,10 +98,14 @@ export default function AnnouncementSequenceStatus({
           : sequence.status === "awaiting_announcement"
             ? "Images wait for the announcement to be confirmed"
             : sequence.status === "stopped"
-              ? `Stopped at ${stopped?.name || "closing note"}`
+              ? sequence.announcement_confirmed
+                ? `Stopped at ${stopped?.name || "closing note"}`
+                : "Stopped before the announcement was confirmed"
               : `Posting clan images · ${sent} of ${sequence.clans.length}`}
       </p>
-      {sequence.status === "complete" && sequence.closing?.error && <p>{sequence.closing.error}</p>}
+      {sequence.status === "complete" && sequence.closing?.error && (
+        <p>{sequence.closing.error}</p>
+      )}
       {sequence.status === "stopped" && sequence.error && (
         <p className="notice error">{sequence.error}</p>
       )}
@@ -119,13 +127,22 @@ export default function AnnouncementSequenceStatus({
             Check first
           </Button>
         ) : (
-          <Button
-            disabled={busy}
-            onClick={() => void action("resume", sequence.sequence_id!)}
-          >
+          <Button disabled={busy} onClick={() => setResumeReview(true)}>
             Resume
           </Button>
         ))}
+      {resumeReview && (
+        <ConfirmDialog
+          heading="Resume clan images"
+          text={`Continue with ${stopped?.name || "the closing note"}? The announcement will not be posted or pinged again.`}
+          confirmLabel="Resume"
+          onCancel={() => setResumeReview(false)}
+          onConfirm={() => {
+            setResumeReview(false);
+            void action("resume", sequence.sequence_id!);
+          }}
+        />
+      )}
       {confirm && (
         <ConfirmDialog
           heading="Check Discord first"
