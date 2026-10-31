@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS roster_image_sequences (
  plan_json TEXT NOT NULL,
  status TEXT NOT NULL DEFAULT 'awaiting_announcement'
    CHECK(status IN ('awaiting_announcement','ready','stopped','complete')),
- announcement_message_id TEXT,
+ announcement_message_id TEXT, error TEXT,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  UNIQUE(season_id,pool), UNIQUE(cycle,pool)
@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS roster_image_sequence_closing (
 
 def migrate(db):
     """Extend the existing CHECK constraint without changing saved delivery data."""
+    if 'error' not in {row[1] for row in db.execute('PRAGMA table_info(roster_image_sequences)')}:
+        db.execute('ALTER TABLE roster_image_sequences ADD COLUMN error TEXT')
     sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='roster_image_posts'").fetchone()['sql']
     if "'dismissed'" in sql:
         return
@@ -135,6 +137,18 @@ class RosterImageStore:
             return dict(db.execute(
                 'SELECT * FROM roster_image_sequences WHERE sequence_id=?', (sequence_id,),
             ).fetchone())
+
+    def pending_sequences(self):
+        with self.store.tx() as db:
+            return [dict(row) for row in db.execute(
+                "SELECT * FROM roster_image_sequences WHERE status IN ('awaiting_announcement','ready') "
+                'ORDER BY created_at,sequence_id')]
+
+    def stop_sequence(self, sequence_id, error):
+        with self.store.tx() as db:
+            db.execute("UPDATE roster_image_sequences SET status='stopped',error=?,"
+                       "updated_at=CURRENT_TIMESTAMP WHERE sequence_id=? AND status!='complete'",
+                       (error, sequence_id))
 
     def sequence(self, sequence_id):
         with self.store.tx() as db:
@@ -278,7 +292,7 @@ class RosterImageStore:
 
     def resume_sequence(self, sequence_id):
         with self.store.tx() as db:
-            db.execute("UPDATE roster_image_sequences SET status='ready',updated_at=CURRENT_TIMESTAMP "
+            db.execute("UPDATE roster_image_sequences SET status='ready',error=NULL,updated_at=CURRENT_TIMESTAMP "
                        "WHERE sequence_id=? AND status='stopped' AND announcement_message_id IS NOT NULL",
                        (sequence_id,))
 
