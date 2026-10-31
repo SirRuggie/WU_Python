@@ -1,5 +1,73 @@
 # Dashboard backend releases
 
+## Strikes-activity-1 — October 31, 2026
+
+PR [#109](https://github.com/SirRuggie/WU_Python/pull/109), tag `strikes-activity-1`,
+revision `df1ef46ea683dbfa3ca8c8f2c399e7b3fd2fb95a`. Claude accepted runtime
+`4aee816` in214; `cdf8d8c` adds the requested limitations. A's seed-free
+observation passed before activation, and A release docs PR113 merged first.
+Bot, backend and external immutable frontend activated at19:35:53EDT.
+Bot PID667192 and backend PID667517 passed two readiness samples; runtime imports,
+startup journals, exact protected state and public assets passed.
+
+The first backfill completed by19:39:12:25/25clans,178cached wars, no failed
+clans,560/560player documents on version3. Collection585documents/3,834,464bytes
+(3.657MiB versus the approximately10MiB estimate):560players and25derived clan
+caches. Protected state stayed3,560active strikes/301accounts/581profiles/
+274eligible replacement rows, with identical streaks. No TTL indexes changed.
+A read-only probe using the dashboard environment resolved512Discord IDs and
+479names across563roster accounts;1,448directory members were read. No test
+messages or notification delivery were attempted. An initial probe omitted the
+dashboard environment and reported an empty cache; the configured repeat above
+supersedes that diagnostic result.
+
+Validation before release:5,489guarded backend tests/26skips/221subtests,
+1,179frontend tests, TypeScript/build,76focused backend cases, five real Mongo
+checks, eight mutation kills, and all seven integrated layout stages. Narrow/wide
+fixture screenshots and79measurements were reviewed. Known limitations remain:
+a moved player's old-clan unread war can carry a chain; sampled FWA history had
+unknown October20–29coverage. See member-activity.md; these are accepted gaps.
+
+Mongo archives were restored and checked in isolated Mongo. Actual SQLite backup
+and integrity/count verification are retained under repository
+`.local/member-activity-page-1-backup-20261031T232958Z`; Mongo evidence is under
+`.local/member-activity-page-1-mongo-20261031T225930Z`. SQLite protected tables,
+lineup cache and unrelated service drop-ins were unchanged. The initial helper
+CLI was a no-op; explicit `data.backup()` produced the verified fresh backup
+before activation. Release evidence:
+`/tmp/wu-activity-page-release/{live.json,activation.log,backup-result.json,
+first-backfill.json,name-coverage.json,name-coverage-observed.log}`.
+
+Public entry `index-8-BLJHk9.js` SHA256
+`bd4d06a5533d7bac76817f82ff9677466e6e1efa224ffd2622a48a120dde9fed`;
+Strikes JS `StrikesWorkspace-D-cuRiXo.js` SHA256
+`38572a5d62e9fd95e4b06640dfdd82d12e579615facb6211e89c80c91473c673`;
+Strikes CSS `StrikesWorkspace-DmM9-KnT.css` SHA256
+`f3e1bd23e4421366cbf82bfc54d2a4d5566105b69057c06e4d752ea39cc92116`.
+All matched the immutable tagged manifest after the atomic switch.
+
+Rollback retains bot/backend `44142eb` and independent frontend `26fc7da`.
+Use the guarded `/tmp/wu-activity-page-release/activate.py rollback` only for an
+actual rollback: stop bot, export/hash/read back the derived clan caches, delete
+only exact kind/ID/revision matches, downgrade, then lease/readiness gates.
+Player-shaped documents are refused. Preserve player recent_wars, TTL indexes
+and all protected data; do not restore the database. The full coordinator was
+rehearsed with isolated real Mongo: two caches removed, two player documents
+unchanged, old A reader saw no metadata. No rollback was executed.
+
+Claude read-only production smoke220 **PASSED** at360/1440: activity rows and
+search populated, no overflow or list loop, only GET requests in the observed
+flow. One console503 had no identified source. Tracking initially showed four
+clans needing review; a later read-only query showed six behind, two with
+unresolved accounts (2 and5), zero skipped wars and zero quarantined snapshots.
+These counts are time dependent; no Retry or resolve was pressed. A separate
+45-second diagnostic read found287unique linked owners and16quarantined
+ownership conflicts, which are distinct from quarantined wars. Poppa had no
+matching current directory display name; this does not establish the absence
+of links under another nickname. PR112 subsequently activated with the B bot
+unchanged; its smoke and documentation are tracked separately.
+
+
 ## Member-activity-1 — October 31, 2026
 
 PR [#108](https://github.com/SirRuggie/WU_Python/pull/108), tag `member-activity-1`,
