@@ -40,7 +40,6 @@ class PlayerActivityStore:
                 "tracking_started_at",
                 "raid_weekends",
                 "recent_wars",
-                "recent_wars_complete",
                 "updated_at",
                 "baseline.townHallLevel",
             )
@@ -232,7 +231,7 @@ class PlayerActivityStore:
         raise RuntimeError('Raid activity changed concurrently')
 
     async def save_recent_wars(
-        self, player_tag, observations, *, complete, version, now=None
+        self, player_tag, observations, *, version, now=None
     ):
         from utils.player_activity_history import recent_wars
 
@@ -243,10 +242,9 @@ class PlayerActivityStore:
                 return False  # No extra document solely for historical data.
             fields = {
                 "recent_wars": recent_wars(row.get("recent_wars", []), observations),
-                "recent_wars_complete": bool(complete),
             }
             if (
-                all(row.get(key) == value for key, value in fields.items())
+                recent_wars([], row.get("recent_wars", [])) == fields["recent_wars"]
                 and row.get("recent_wars_version") == version
             ):
                 return False
@@ -254,7 +252,7 @@ class PlayerActivityStore:
             fields["recent_wars_version"] = version
             result = await self.collection.update_one(
                 {"_id": row["_id"], "revision": row["revision"]},
-                {"$set": fields, "$inc": {"revision": 1}},
+                {"$set": fields, "$unset": {"recent_wars_complete": ""}, "$inc": {"revision": 1}},
             )
             if result.matched_count:
                 return True
@@ -278,7 +276,7 @@ class PlayerActivityStore:
                     "clan_tag": clan,
                     "history_checked_at": now,
                 },
-                "$unset": {"left_at": ""},
+                "$unset": {"left_at": "", "status": "", "next_retry_at": ""},
                 "$inc": {"revision": 1},
             },
             upsert=True,
@@ -293,23 +291,10 @@ class PlayerActivityStore:
                     {"_id": row["_id"]}, {"$set": {"left_at": now}}
                 )
 
-    async def history_report(self, clans):
-        from utils.player_activity_history import HISTORY_VERSION
-
-        states = {row["clan_tag"]: row for row in await self.history_clans()}
-        pending = [
-            clan
-            for clan in clans
-            if states.get(clan, {}).get("status") != "complete"
-            or states.get(clan, {}).get("version") != HISTORY_VERSION
-            or states.get(clan, {}).get("left_at")
-        ]
-        return {
-            "complete": not pending,
-            "pending_clans": pending,
-            "stuck_clans": [
-                clan
-                for clan in pending
-                if states.get(clan, {}).get("failed_attempts", 0) >= 3
-            ],
-        }
+    async def history_report(self):
+        """Page needs only clan tags with failed reads, never cached lineups."""
+        rows = await self.collection.find(
+            {"kind": "history_clan", "failed_attempts": {"$gt": 0}},
+            {"_id": 0, "clan_tag": 1},
+        ).to_list(length=None)
+        return [row["clan_tag"] for row in rows]

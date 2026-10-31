@@ -234,7 +234,8 @@ async def fetch_history_report(clan_tag: str, days: int = 60, *, session=None) -
                         found[f"{war['clan_tag']}:{war['opponent_tag']}:{war['end_time'].isoformat()}"] = war
                 except (ValueError, KeyError, TypeError) as error:
                     skipped.append({'end_time': str(raw.get('endTime', 'unknown')),
-                                    'reason': str(error)})
+                                    'reason': str(error),
+                                    'ignored': bool(raw.get('tag') or raw.get('type', raw.get('warType')) not in (None, 'regular', 'random') or 'not a regular war' in str(error).lower())})
                     continue
             if len(raw_wars) < 100 or page_oldest is None or page_oldest >= before:
                 break

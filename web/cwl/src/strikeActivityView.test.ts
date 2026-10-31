@@ -183,3 +183,11 @@ it("Include 1–2 strikes respects the owner's explicit low eligibility", () => 
     }),
   ).toEqual([]);
 });
+
+
+it("keeps the Left clan chip while activity is unavailable", () => {
+  const labels = activityChips({...healthy, left_clan:true, activity_unavailable:true,
+    quiet_days:40}).map(chip => chip.label);
+  expect(labels).toContain("Left clan");
+  expect(labels.some(label => label.startsWith("Quiet"))).toBe(false);
+});

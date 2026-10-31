@@ -500,7 +500,7 @@ export default function StrikeActivityRoster({
                 Clear selection
               </button>
               {selectable.length > 50 && (
-                <small>Filter to 50 or fewer accounts for Select all.</small>
+                <small>Filter to 50 or fewer to select all.</small>
               )}
             </>
           )}

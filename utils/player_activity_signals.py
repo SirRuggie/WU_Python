@@ -37,6 +37,9 @@ def activity_signals(
     )
     regular = {}
     for row in activity.get("recent_wars", []):
+        if row.get("unusable"):
+            regular[row["war_key"]] = row
+            continue
         used, available = row.get("attacks_used"), row.get("attacks_available")
         if (
             row.get("war_key")
@@ -72,23 +75,20 @@ def activity_signals(
         if row.get("kind") not in ("mismatch", "exempt", "no_attack", "cwl")
         and not row.get("exemption")
         and not row.get("neutral")
-        and type(row.get("missed_attacks")) is int
-        and 0 <= row["missed_attacks"] <= 2
+        and (row.get("unusable") or (type(row.get("missed_attacks")) is int
+             and 0 <= row["missed_attacks"] <= 2))
     ]
     wars = sorted(eligible, key=lambda row: stamp(row["occurred_at"]), reverse=True)[
         :14
     ]
     consecutive = 0
     for row in wars:
-        if row["missed_attacks"] != 2:
+        if row.get("unusable") or row["missed_attacks"] != 2:
             break
         consecutive += 1
-    history_complete = activity.get("recent_wars_complete", True)
-    if not history_complete:
-        consecutive = 0
-    missed = sum(row["missed_attacks"] for row in wars)
+    missed = sum(row.get("missed_attacks", 0) for row in wars)
     raid_skips = skipped_weekends(activity.get("raid_weekends", []), now)
-    latest_missed = bool(wars and wars[0]["missed_attacks"] > 0)
+    latest_missed = bool(wars and wars[0].get("missed_attacks", 0) > 0)
     risk = (
         active_strikes >= 3
         or consecutive >= 3
@@ -109,10 +109,9 @@ def activity_signals(
         "tracking_started_at": activity.get("tracking_started_at"),
         "quiet_days": quiet,
         "activity_tracking_behind": not tracking_fresh,
-        "war_history_incomplete": not history_complete,
         "missed_attacks": missed,
-        "observed_attacks": len(wars) * 2,
-        "observed_wars": len(wars),
+        "observed_attacks": sum(not row.get("unusable") for row in wars) * 2,
+        "observed_wars": sum(not row.get("unusable") for row in wars),
         "no_attack_wars": consecutive,
         "skipped_raid_weekends": raid_skips,
     }

@@ -90,10 +90,9 @@ import rows cannot establish a streak. The bounded historical backfill reads ful
 lineups through the existing60-day ClashKing import reader and stores fourteen
 war summaries in the existing player document. Monitored captures win duplicate
 keys; mismatch, exempt and no-attack observations neither count nor break the
-chain. Partial reads and unknown/neutral FWA plans are omitted. No strike ledger,
+chain. No-plan FWA wars count normally; mismatch plans are neutral. Non-regular wars are ignored. No strike ledger,
 streak or replacement mark is written by this backfill. Per-clan retries preserve healthy caches; canceled runs consume no attempts.
-Three failures expose a stuck clan tag and retry after six hours. Incomplete
-history cannot establish a missed-war chain. Three concurrent clans, 120 seconds
+Three failures expose a stuck clan tag and retry after six hours. Unusable observations stop only their own clan members’ chains at that point. Three concurrent clans, 120 seconds
 per clan and 600 seconds per run bound the job.
 
 The newest daily tracker timestamp controls freshness. Older than36hours pauses
@@ -140,3 +139,21 @@ screenshots at 360/1440 were visually inspected; the browser asserts all 26
 selected accounts, including the next page, are listed. Five isolated real-Mongo
 checks and 48 focused activity regressions pass. The network-isolated full backend
 result is recorded in the final handoff and evidence directory.
+
+
+### Prompt60 simplification
+
+Daily clan refresh replaces permanent completion and page-wide flags. No-plan FWA
+wars count; friendly/CWL wars are ignored. Failed reads and malformed lineups add
+local chain stops, which a later daily refresh removes. The only page warning
+names affected clans; healthy rows retain their own known history. Page reads
+project failed clan tags without fetching cached lineups. Old completion/status
+fields are retired on the version-3 write. UTC normalization prevents unchanged
+BSON-naive rows from acquiring new revisions hourly.
+
+Identity rows return from cache immediately. One background refresh updates bulk
+links and Discord names, with an eight-second budget and a two-minute failure
+cooldown; requests never queue behind it. A warm cache stays usable during an
+outage. Empty names cache shows a warning. Select all is disabled above fifty
+accounts with a visible filter instruction; Vitest checks all twenty-six names
+and the Left clan chip. Scheduler tests pin the clock away from month boundaries.

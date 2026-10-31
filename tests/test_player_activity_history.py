@@ -60,7 +60,8 @@ def test_partial_history_and_neutral_plan_never_invent_misses_or_receipt():
         fetch = AsyncMock(side_effect=RuntimeError("fixture outage"))
         await backfill_recent_wars(db, fetch=fetch, now=NOW)
         row = await store.get(PLAYER)
-        assert not row["recent_wars"] and not row["recent_wars_complete"]
+        assert row["recent_wars"][0]["unusable"]
+        assert "recent_wars_complete" not in row
         fetch.side_effect = None
         fetch.return_value = {"wars": [war(1, 0)]}
         with patch(
@@ -91,7 +92,7 @@ def test_history_storage_cas_retries_preserve_concurrent_official_fields():
                 return await super().update_one(q,u,upsert)
         collection=Racing();store=PlayerActivityStore(SimpleNamespace(player_activity=collection))
         await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
-        await store.save_recent_wars(PLAYER,[{'war_key':'w','occurred_at':NOW,'attacks_used':2,'attacks_available':2}],complete=True,version=1,now=NOW)
+        await store.save_recent_wars(PLAYER,[{'war_key':'w','occurred_at':NOW,'attacks_used':2,'attacks_available':2}],version=1,now=NOW)
         row=await store.get(PLAYER)
         assert row['last_seen_source']=='clash_api' and len(row['recent_wars'])==1
     asyncio.run(run())
@@ -126,6 +127,7 @@ def test_one_clan_failure_does_not_exhaust_players_or_refetch_healthy_clans():
         await db.clans.insert_one({"_id": "other", "tag": other, "type": "War"})
         store = PlayerActivityStore(db)
         await store.record({"tag": PLAYER, "attackWins": 1}, CLAN, now=NOW)
+        await store.record({'tag':'#PQL','attackWins':1}, other, now=NOW)
         calls = []
         recovered = False
 
@@ -148,22 +150,24 @@ def test_one_clan_failure_does_not_exhaust_players_or_refetch_healthy_clans():
         for hour in (0, 1, 2):
             await backfill_recent_wars(db, fetch=fetch, now=NOW + timedelta(hours=hour))
         row = await store.get(PLAYER)
-        assert not row["recent_wars_complete"] and "recent_wars_attempts" not in row
+        assert "recent_wars_complete" not in row and "recent_wars_attempts" not in row
         signals = activity_signals(row, [], now=NOW + timedelta(hours=2))
         assert (
             signals["missed_attacks"] == 6
-            and signals["no_attack_wars"] == 0
-            and signals["status"] != "risk"
+            and signals["no_attack_wars"] == 3
         )
+        affected = await store.get('#PQL')
+        assert activity_signals(affected, [], now=NOW)['no_attack_wars'] == 0
+        assert any(w.get('unusable') for w in affected['recent_wars'])
+        assert not any(w.get('unusable') for w in row['recent_wars'])
         assert calls.count(CLAN) == 1 and calls.count(other) == 3
-        report = await store.history_report([CLAN, other])
-        assert report["stuck_clans"] == [other]
+        report = await store.history_report()
+        assert report == [other]
         recovered = True
         await backfill_recent_wars(db, fetch=fetch, now=NOW + timedelta(hours=9))
         row = await store.get(PLAYER)
         assert (
-            row["recent_wars_complete"]
-            and calls.count(CLAN) == 1
+            calls.count(CLAN) == 1
             and calls.count(other) == 4
         )
         assert (
@@ -201,12 +205,11 @@ def test_restart_does_not_charge_clan_failure_and_can_resume(monkeypatch):
         for _ in range(3):
             with pytest.raises(asyncio.CancelledError):
                 await backfill_recent_wars(db, fetch=cancel, now=NOW)
-        state = (await store.history_clans())[0]
-        assert state.get("failed_attempts", 0) == 0 and state["status"] == "pending"
+        assert not await store.history_clans()
         await backfill_recent_wars(
             db, fetch=AsyncMock(return_value={"wars": [war(1, 2)]}), now=NOW
         )
-        assert (await store.get(PLAYER))["recent_wars_complete"]
+        assert not (await store.get(PLAYER))["recent_wars"][0].get("unusable")
 
     asyncio.run(run())
 
@@ -246,4 +249,47 @@ def test_exempt_observation_cannot_return_after_ledger_purge():
             == 0
         )
 
+    asyncio.run(run())
+
+
+def test_daily_refresh_heals_gap_and_local_unusable_war_stops_chain():
+    from utils.player_activity_signals import activity_signals
+    async def run():
+        db,_=setup();db.player_activity=ActivityCollection();db.fwa_war_plans=Collection()
+        db.clans.rows['clan']['type']='War'
+        store=PlayerActivityStore(db)
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
+        known = [{**war(n,0), "end_time": NOW-timedelta(days=n)} for n in (1,3,5)]
+        fetch=AsyncMock(return_value={'wars':known,
+             'skipped':[{'end_time':(NOW-timedelta(days=2)).isoformat(),'reason':'malformed lineup'}]})
+        await backfill_recent_wars(db,fetch=fetch,now=NOW)
+        result=activity_signals(await store.get(PLAYER),[],now=NOW)
+        assert result['no_attack_wars']==1 and result['missed_attacks']==6
+        fetch.return_value={'wars':known+[{**war(2,2), 'end_time': NOW-timedelta(days=2)}]}
+        await backfill_recent_wars(db,fetch=fetch,now=NOW+timedelta(days=1))
+        assert fetch.await_count==2
+        row=await store.get(PLAYER)
+        assert not any(w.get('unusable') for w in row['recent_wars'])
+        assert activity_signals(row,[],now=NOW+timedelta(days=1))['no_attack_wars']==1
+        revision=row['revision']
+        await backfill_recent_wars(db,fetch=fetch,now=NOW+timedelta(days=1,hours=1))
+        assert fetch.await_count==2 and (await store.get(PLAYER))['revision']==revision
+    asyncio.run(run())
+
+
+def test_fwa_no_plan_counts_and_non_regular_wars_are_ignored():
+    from utils.player_activity_signals import activity_signals
+    async def run():
+        for outcome, expected in ((None,2),('win',2),('mismatch',0)):
+            db,_=setup();db.player_activity=ActivityCollection();db.fwa_war_plans=Collection()
+            store=PlayerActivityStore(db)
+            await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
+            fetch=AsyncMock(return_value={'wars':[war(1,0),{**war(2,0),'type':'friendly'},
+                     {**war(3,0),'type':'cwl'}], 'skipped':[
+                     {'reason':'not a regular war','ignored':True,'end_time':NOW.isoformat()}]})
+            with patch('utils.player_activity_history.WarPlanStore.outcome',AsyncMock(return_value=(outcome,None))):
+                await backfill_recent_wars(db,fetch=fetch,now=NOW)
+            row=await store.get(PLAYER)
+            assert len(row['recent_wars'])==1 and not await store.history_report()
+            assert activity_signals(row,[],now=NOW)['missed_attacks']==expected
     asyncio.run(run())

@@ -138,3 +138,13 @@ it("partial failure shows server counts and retains the failed account", async (
   expect(host.textContent).toContain("Not completed or unconfirmed: Other");
   expect(remaining).toHaveBeenCalledWith([other.player_tag]);
 });
+
+
+it("lists all 26 accounts including the account beyond the first page", async () => {
+  const rows = Array.from({length:26}, (_, n) => ({...row,
+    player_tag:`#P${n}`, player_name:`Selected ${n}`}));
+  await act(async () => root.render(<StrikeBulkMark rows={rows} onSaved={vi.fn()} onBusy={vi.fn()} />));
+  const list = host.querySelector('[aria-label="Selected accounts"]')!;
+  expect(list.querySelectorAll("li")).toHaveLength(26);
+  expect(list.textContent).toContain("Selected 25");
+});

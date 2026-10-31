@@ -190,22 +190,26 @@ ago), never use the stored list length. The unified page does not expose or coun
 `active_days`; its activity signals use last-seen timestamps and raid/war evidence.
 
 
-### Bounded historical war activity (PR B, prompt58)
+### Bounded historical war activity (PR B)
 
-The tracker owns a cancellable full-lineup backfill using the existing ClashKing
-historical war import reader (last 60 days). The activity storage owner retains
-one player document with fourteen recent war summaries, plus one bounded cache
-document per clan in the same collection. Clan caches contain at most sixty wars;
-all player readers exclude these metadata documents. Inactive clan caches receive
-`left_at` and use the existing 90-day TTL. No new collection or index is required.
+The tracker re-reads each active clan's last 60 days once a day, with at most
+three concurrent reads, 120 seconds per clan and 600 seconds per job. The activity
+storage owner retains one player document with fourteen recent observations and
+one clan cache of at most sixty wars. Player readers exclude clan metadata;
+inactive caches use the existing 90-day departure TTL. No new collection or index
+is required. Version 3 replaces old completion/status fields on the next write.
 
-Attempts and completion belong to each clan. A cancellation or restart does not
-consume an attempt. Failed clans retry after five and ten minutes; three failures
-show the clan tag as stuck and retry after six hours. Healthy caches remain usable,
-and a new player refreshes only their clan when its cache predates their tracking.
-Incomplete history exposes known totals but cannot establish a missed-war chain.
-Neutral observations remain neutral after ledger retention removes their source.
-Three concurrent clan reads, 120 seconds per clan and 600 seconds per run bound
-requests. Conditional player writes preserve official observations and never
-refresh the live tracker timestamp. No strike records, streaks or replacement
-marks are modified. Measure cache and player collStats during approved rollout.
+No-plan FWA wars count normally; only a matching Mismatch plan is neutral.
+Friendly and CWL wars are ignored. Failed reads and malformed lineups stop only
+the affected current clan members' consecutive chains at their observation time;
+they never count as misses. A daily refresh heals these markers. Known wars still
+contribute totals, and monitored records win duplicate war keys. Exempt and
+revoked observations remain neutral after ledger retention.
+
+Failures retry after five and ten minutes, then every six hours, without charging
+canceled jobs. Healthy caches are reused during another clan's outage. A new
+account may refresh its own older clan cache. One small clan receipt records the
+next read time; unchanged player observations do not write, including when the
+Mongo client returns naive UTC datetimes. Live tracker timestamps, strikes,
+streaks and replacement marks are never refreshed by historical reads. Page
+metadata reads project only failed clan tags. Measure collStats during rollout.

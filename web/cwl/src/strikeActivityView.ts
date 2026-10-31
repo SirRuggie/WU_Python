@@ -25,7 +25,6 @@ export type ActivityAccount = {
   quiet_days: number | null;
   activity_unavailable?: boolean;
   activity_tracking_behind?: boolean;
-  war_history_incomplete?: boolean;
   replacement_note?: string;
   last_seen_at?: string | null;
   last_seen_source?: string | null;
@@ -189,8 +188,7 @@ export function activityChips(row: ActivityAccount): ActivityChip[] {
         label: `Missed ${row.missed_attacks} of ${row.observed_attacks} war attacks`,
         tone: "warn",
       });
-    if(row.war_history_incomplete)chips.push({label:"War history incomplete",tone:"neutral"});
-    if (!row.war_history_incomplete && row.no_attack_wars > 0)
+    if (row.no_attack_wars > 0)
       chips.push({
         label: `Didn't attack in their last ${row.no_attack_wars} ${row.no_attack_wars === 1 ? "war" : "wars"}`,
         tone: "bad",

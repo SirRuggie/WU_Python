@@ -160,14 +160,25 @@ def test_clan_cache_is_not_a_player_and_retirement_preserves_cache():
                                             'wars': []}, now=NOW)
         assert [row['_id'] for row in await store.all_players()] == [PLAYER]
         assert [row['tag'] for row in await store.overview()] == [PLAYER]
-        assert not (await store.history_report([CLAN]))['complete']
-        await store.save_history_clan(CLAN, {'status': 'complete', 'version': 2,
-                                            'wars': []}, now=NOW)
-        assert (await store.history_report([CLAN]))['complete']
+        assert await store.history_report() == []
         await store.reconcile_membership({PLAYER: CLAN}, now=NOW)
         assert not (await store.history_clans())[0].get('left_at')
         await store.retire_history_clans(set(), now=NOW)
         assert (await store.history_clans())[0]['left_at'] == NOW
-        assert not (await store.history_report([CLAN]))['complete']
         assert len(await store.all_players()) == 1
+    asyncio.run(run())
+
+
+def test_naive_bson_war_timestamps_do_not_rewrite_unchanged_rows():
+    async def run():
+        collection=ActivityCollection();store=PlayerActivityStore(SimpleNamespace(player_activity=collection))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
+        observation={'war_key':'known','occurred_at':NOW,'attacks_used':0,'attacks_available':2}
+        await store.save_recent_wars(PLAYER,[observation],version=3,now=NOW)
+        revision=(await store.get(PLAYER))['revision']
+        collection.rows[PLAYER]['recent_wars'][0]['occurred_at']=NOW.replace(tzinfo=None)
+        for hour in (1,2,3):
+            assert not await store.save_recent_wars(PLAYER,[observation],version=3,
+                                                   now=NOW+timedelta(hours=hour))
+            assert (await store.get(PLAYER))['revision']==revision
     asyncio.run(run())

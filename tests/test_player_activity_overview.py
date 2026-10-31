@@ -20,7 +20,7 @@ def no_external_link_reads(monkeypatch):
     monkeypatch.setattr(
         "utils.player_activity_store.PlayerActivityStore.history_report",
         AsyncMock(
-            return_value={"complete": True, "pending_clans": [], "stuck_clans": []}
+            return_value=[]
         ),
     )
 
@@ -189,16 +189,11 @@ def test_activity_outage_preserves_strike_rows_and_directory_names_without_profi
             assert len(result['accounts'])==1 and result['activity_warning'].startswith('Activity unavailable')
             row=result['accounts'][0]
             assert row['activity_unavailable'] and row['quiet_days'] is None and not row['observed_attacks']
-            assert row['discord_name']=='Real display name' and not result['identity_warning']
-            directory.assert_awaited_once()
-            directory.side_effect=__import__('aiohttp').web.HTTPServiceUnavailable()
+            assert row['discord_name'] is None and result['identity_warning']
+            await request.app['activity_identity_cache']['task']
             result=json.loads((await strikes.activity_accounts(request)).body)
-            assert result['identity_warning'] and len(result['accounts'])==1
-            directory.side_effect=None
-            for malformed in ([{'user':{'id':'123456789012345678'}}], {'not':'a directory'}, [None]):
-                directory.return_value=malformed
-                result=json.loads((await strikes.activity_accounts(request)).body)
-                assert result['identity_warning'] and len(result['accounts'])==1
+            assert result['accounts'][0]['discord_name']=='Real display name' and not result['identity_warning']
+            directory.assert_awaited_once()
     asyncio.run(run())
 
 
@@ -215,18 +210,23 @@ def test_action_filters_use_configured_limit_and_only_new_active_strikes():
     assert not row['over_limit'] and row['new_this_week']
 
 
-def test_production_profile_without_member_id_gets_cached_bulk_link_identity():
+def test_production_profile_without_member_id_gets_cached_bulk_link_identity(monkeypatch):
     import asyncio
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    from cwl_web.strike_activity_identity import account_owners
+    from cwl_web.strike_activity_identity import account_identities
+    from cwl_web import manage_roles
     from utils import recruit_links
     async def run():
         request=SimpleNamespace(app={})
         recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={'#PYY':'123456789012345678'})
-        first=await account_owners(request,['#PYY'])
-        assert first.owners['#PYY']=='123456789012345678'
-        assert await account_owners(request,['#PYY']) is first
+        monkeypatch.setattr(manage_roles, 'searchable_members', AsyncMock(return_value=[
+            {'nick':'Display','user':{'id':'123456789012345678'}}]))
+        first, empty=await account_identities(request,['#PYY'])
+        assert first == {} and empty
+        await request.app['activity_identity_cache']['task']
+        cached, empty=await account_identities(request,['#PYY'])
+        assert cached['#PYY']=={'discord_id':'123456789012345678','discord_name':'Display'} and not empty
         recruit_links.resolve_players.assert_awaited_once_with(['#PYY'])
     asyncio.run(run())
 
@@ -250,3 +250,40 @@ def test_page_freshness_and_left_members_never_invent_quiet_risk():
         ]
         assert row["quiet_days"] is None and row["status"] == "active"
         assert row["left_clan"] is left
+
+
+def test_page_does_not_wait_for_names_and_failure_refresh_is_cached(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from contextlib import asynccontextmanager
+    from cwl_web import strikes
+    from utils import clan_weights, recruit_links
+    async def run():
+        blocked=asyncio.Event()
+        async def slow(*args):
+            await blocked.wait()
+            raise RuntimeError('name provider offline')
+        recruit_links.resolve_players.side_effect=slow
+        request=SimpleNamespace(app={'store':object(),'providers':object()})
+        ledger=SimpleNamespace(activity_context=AsyncMock(return_value={
+            'profiles':[{'player_tag':'#PYY','current_clan_tag':'#CLAN'}],
+            'records':[], 'clans':[{'tag':'#CLAN'}]}))
+        @asynccontextmanager
+        async def mongo(request):yield SimpleNamespace(player_activity=object())
+        monkeypatch.setattr(strikes.shared,'mongo',mongo)
+        monkeypatch.setattr(strikes,'service',AsyncMock(return_value=ledger))
+        monkeypatch.setattr('utils.player_activity_store.PlayerActivityStore.overview',AsyncMock(return_value=[]))
+        monkeypatch.setattr(clan_weights,'source_weights',AsyncMock(return_value={}))
+        monkeypatch.setattr(clan_weights,'overlay_accounts',lambda store,payload:payload)
+        for _ in range(3):
+            response=await asyncio.wait_for(strikes.activity_accounts(request),.1)
+            assert json.loads(response.body)['identity_warning']
+        await asyncio.sleep(0)
+        assert recruit_links.resolve_players.await_count==1, repr(request.app)
+        blocked.set()
+        await request.app['activity_identity_cache']['task']
+        for _ in range(3):
+            await asyncio.wait_for(strikes.activity_accounts(request),.1)
+        assert recruit_links.resolve_players.await_count==1
+    asyncio.run(run())
