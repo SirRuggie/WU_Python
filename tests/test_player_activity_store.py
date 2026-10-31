@@ -149,3 +149,24 @@ def test_membership_retries_one_seed_revision_race_and_preserves_boundary():
         assert c.raced and row['seed_status']=='seeded'
         assert end.isoformat() in row['raid_membership_ends']
     asyncio.run(run())
+
+
+def test_clan_cache_is_not_a_player_and_retirement_preserves_cache():
+    async def run():
+        c = ActivityCollection()
+        store = PlayerActivityStore(SimpleNamespace(player_activity=c))
+        await store.record({'tag': PLAYER, 'attackWins': 1}, CLAN, now=NOW)
+        await store.save_history_clan(CLAN, {'status': 'complete', 'version': 1,
+                                            'wars': []}, now=NOW)
+        assert [row['_id'] for row in await store.all_players()] == [PLAYER]
+        assert [row['tag'] for row in await store.overview()] == [PLAYER]
+        assert not (await store.history_report([CLAN]))['complete']
+        await store.save_history_clan(CLAN, {'status': 'complete', 'version': 2,
+                                            'wars': []}, now=NOW)
+        assert (await store.history_report([CLAN]))['complete']
+        await store.reconcile_membership({PLAYER: CLAN}, now=NOW)
+        assert not (await store.history_clans())[0].get('left_at')
+        await store.retire_history_clans(set(), now=NOW)
+        assert (await store.history_clans())[0]['left_at'] == NOW
+        assert len(await store.all_players()) == 1
+    asyncio.run(run())

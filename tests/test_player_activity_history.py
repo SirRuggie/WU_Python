@@ -175,6 +175,10 @@ def test_one_clan_failure_does_not_exhaust_players_or_refetch_healthy_clans():
         await store.record({"tag": "#PQQ", "attackWins": 1}, CLAN, now=NOW)
         await backfill_recent_wars(db, fetch=fetch, now=NOW + timedelta(hours=9))
         assert calls.count(CLAN) == 1 and calls.count(other) == 4
+        await store.record({"tag": "#PQR", "attackWins": 1}, CLAN,
+                           now=NOW + timedelta(hours=10))
+        await backfill_recent_wars(db, fetch=fetch, now=NOW + timedelta(hours=10))
+        assert calls.count(CLAN) == 2 and calls.count(other) == 4
 
     asyncio.run(run())
 
