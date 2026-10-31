@@ -85,6 +85,24 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 201)
         return (await response.json())["id"]
 
+    async def test_roster_owner_nicknames_obey_permissions_and_do_not_require_cache(self):
+        sid = await self.season()
+        uid = "100"
+        response = await self.call("POST", f"/seasons/{sid}/signups", self.member,
+            json={"pool":"main","accounts":[{"tag":"#P2Y","prefer_crystal_1_or_lower":False}]})
+        self.assertEqual(response.status,200)
+        # A pending refresh must not delay the roster; the fixture has no names.
+        self.app['roster_owner_nicknames']={'until':time.monotonic()+120,'names':{}}
+        response = await self.call("GET",f"/seasons/{sid}/roster",self.owner)
+        self.assertEqual(response.status,200)
+        self.assertEqual((await response.json())['owner_nicknames'],{})
+        self.app['roster_owner_nicknames']['names']={uid:'Owner | EST 🇺🇸','999':'Unrelated | UTC'}
+        response = await self.call("GET",f"/seasons/{sid}/roster",self.owner)
+        self.assertEqual((await response.json())['owner_nicknames'],{uid:'Owner | EST 🇺🇸'})
+        response = await self.call("GET",f"/seasons/{sid}/roster",self.member)
+        self.assertEqual(response.status,403)
+        self.assertNotIn('owner_nicknames',await response.json())
+
     async def test_fwa_is_lazy_only_based_on_current_clan_not_historical_clan(self):
         sid = await self.season()
         self.providers.family_clans = AsyncMock(return_value={"clans": [{"tag": "#R2Y", "name": "Family", "type": "FWA"}]})
