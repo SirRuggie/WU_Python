@@ -35,7 +35,11 @@ async def capture_binding(client, clan, opponent_name):
                       preparation_start=instant(war.preparation_start_time.time),
                       war_end=instant(war.end_time.time))
         # A rep can type the next opponent while the old war is still running.
-        if str(war.opponent.name).strip().casefold() != opponent_name.strip().casefold():
+        supplied = ' '.join(opponent_name.split()).casefold()
+        actual = ' '.join(str(war.opponent.name).split()).casefold()
+        matches = (clan_tag(supplied) == result['opponent_tag']
+                   if supplied.startswith('#') else supplied == actual)
+        if not matches:
             return {**result, 'binding_reason': 'War plan unclear'}
         if result['preparation_start'] >= result['war_end']:
             return {**result, 'binding_reason': 'War plan unclear'}
@@ -73,6 +77,8 @@ class WarPlanStore:
             if not rows:
                 return None, 'War plan not found'
             opponent = clan_tag(war['opponent_tag'])
+            if any(row.get('bound') and row.get('opponent_tag') == opponent for row in rows):
+                rows = [row for row in rows if row.get('bound')]
             if any(not row.get('bound') or row.get('opponent_tag') != opponent for row in rows):
                 return None, 'War plan unclear'
             if any(instant(row['posted_at']) > ended or row.get('outcome') not in OUTCOMES for row in rows):

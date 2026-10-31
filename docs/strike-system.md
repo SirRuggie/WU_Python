@@ -437,13 +437,13 @@ observed duplicate. No row is inserted by that excluded selection.
 
 ## No-attack opponents and reviewed correction (prompt 40)
 
-The shared strike settings default to opponent tag `#2CYVV92R` (NO WAR). Staff
-can replace the list in Settings using the same revision check as the strike
-limit and exempt roles. An explicit empty list disables this rule. Regular
-scanner finals and ClashKing previews/imports use the same tag comparison;
-clan display names never decide eligibility. Neutral rows remain in history and
-Find war, with no strike and no streak event. Missing account links or Discord
-roles cannot turn a neutral war into a strike or block recording it.
+The opponent exclusion was retired by prompt49. NO WAR now follows normal strike
+rules. The old list is cleared during release; existing history and the50 removed
+strikes remain untouched. FWA mismatch wars instead use confirmed war-plan receipts
+scoped to the strike guild. Exact clan/opponent tags and war end identify the war;
+only bound receipts participate when a matching bound receipt exists. Mismatch
+wars are streak-neutral. Missing or ambiguous plans and non-FWA clans use normal
+rules. The mismatch history filter is accepted by both the route and storage.
 
 Scanner failures defer due work and queued staff retries for two minutes; failed
 requests are retained, while successful scans consume only their matching

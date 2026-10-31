@@ -21,9 +21,11 @@ collection selection/indexing and receipt matching owned by WarPlanStore.
 
 At finalization, lookup is exact guild + clan tag + war end, and every candidate
 must have the same opponent tag and a consistent preparation start. Posts before
-preparation or after the end, unbound candidates, conflicting opponents/start
+preparation or after the end, conflicting bound opponents/start
 windows and tied latest conflicting outcomes give normal strikes with an explicit
-reason. Otherwise the latest confirmed correction wins. Renaming the opponent
+reason. Unbound receipts are ignored when a matching bound receipt exists. Typed opponent
+names normalize whitespace/case on both sides; an explicit tag takes precedence.
+Receipts are scoped to the strike guild. Otherwise the latest confirmed correction wins. Renaming the opponent
 after posting does not affect the tag match. Missing receipts use `War plan not
 found`; unavailable/malformed reads use `War plan check failed`; ambiguity uses
 `War plan unclear`. Historical wars without receipts count normally.
@@ -39,6 +41,8 @@ are never relabeled or reprocessed. CWL, expiry, leave/exemption behavior, thres
 permissions and request idempotency remain intact.
 
 Find war and History show Mismatch war (no strike), an icon, and the plan reason.
+The initial review missed an HTTP whitelist rejection for the mismatch filter;
+the correction adds the status to the route and an HTTP-level regression.
 The status filter supports mismatch without discarding pagination/search context.
 Synthetic 360/1440 browser checks cover history and filtering; no live posts/DMs
 were sent during validation. Existing command template tests preserve content and

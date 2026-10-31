@@ -182,3 +182,24 @@ def test_changed_mismatch_preview_requires_new_review():
         assert result['applied'] == 0 and not db.strike_records.rows
         assert result['deferred_accounts'][0]['reason'] == 'War plan changed; create a new preview'
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('typed', ['  ENEMY   CLAN ', '#8gg8'])
+def test_binding_normalizes_name_or_uses_explicit_tag(typed):
+    async def run():
+        end = war(0)['end_time']
+        current = SimpleNamespace(state='inWar', opponent=SimpleNamespace(tag='#8GG8', name='Enemy  Clan'),
+            preparation_start_time=SimpleNamespace(time=end-timedelta(days=2)), end_time=SimpleNamespace(time=end))
+        result = await capture_binding(SimpleNamespace(get_clan_war=AsyncMock(return_value=current)), CLAN, typed)
+        assert result['bound']
+    asyncio.run(run())
+
+
+def test_unbound_next_opponent_does_not_shadow_bound_receipt():
+    async def run():
+        _, _, store = fixture()
+        current = war(0)
+        await record(store, current)
+        await record(store, current, 'win', message=2, bound=False, opponent_tag='#999')
+        assert await store.outcome(GUILD, current) == ('mismatch', 'Confirmed war plan used')
+    asyncio.run(run())

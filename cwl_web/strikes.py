@@ -252,7 +252,7 @@ async def overview(request):
     if len(query) > 80:
         raise ValueError('Use a shorter name or tag.')
     status = request.query.get('status') or 'strikes'
-    if status not in ('strikes', 'all', 'active', 'expired', 'removed', 'exempt', 'recorded', 'cwl'):
+    if status not in ('strikes', 'all', 'active', 'expired', 'removed', 'exempt', 'recorded', 'cwl', 'mismatch'):
         raise ValueError('Choose a history status.')
     if status == 'recorded':
         status = 'missed'

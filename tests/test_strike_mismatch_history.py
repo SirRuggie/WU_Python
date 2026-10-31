@@ -26,3 +26,29 @@ def test_mismatch_record_is_streak_neutral_and_exposes_reason():
         assert adapted['war_plan_reason'] == 'Confirmed war plan used'
         assert (await capture(db, service, 2))['deferred_count'] == 0
     asyncio.run(run())
+
+
+def test_overview_http_accepts_mismatch_filter():
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, patch
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    from cwl_web import strikes as api
+    async def run():
+        db, ledger, _ = fixture()
+        ledger.history = AsyncMock(return_value={'items': [], 'total': 0})
+        @asynccontextmanager
+        async def mongo(request):
+            yield db
+        app = web.Application()
+        app.router.add_get('/overview', api.overview)
+        with patch.object(api.shared, 'require_manage', AsyncMock()), \
+                patch.object(api.shared, 'mongo', mongo), \
+                patch.object(api, 'service', AsyncMock(return_value=ledger)), \
+                patch.object(api, 'clan_rows', AsyncMock(return_value=[])):
+            async with TestClient(TestServer(app)) as client:
+                response = await client.get('/overview?status=mismatch')
+                assert response.status == 200, await response.text()
+                assert (await response.json())['entries'] == []
+                assert ledger.history.await_args.kwargs['status'] == 'mismatch'
+    asyncio.run(run())
