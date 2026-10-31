@@ -572,6 +572,27 @@ class StrikeService:
         row = await self.mongo.strike_leaves.find_one({'_id': f'{int(guild_id)}:{int(member_id)}'})
         return (row or {}).get('revision', 0)
 
+    async def activity_context(self, guild_id, activity_tags):
+        """Bounded family snapshot for the read-only activity overview."""
+        clans = await self.mongo.clans.find({}, {'tag': 1, 'name': 1}).to_list(length=None)
+        family = [row['tag'] for row in clans if row.get('tag')]
+        players = [tag(value) for value in activity_tags]
+        now = datetime.now(timezone.utc)
+        profiles = await self.mongo.strike_profiles.find({
+            'guild_id': int(guild_id), '$or': [{'current_clan_tag': {'$in': family}},
+                                              {'player_tag': {'$in': players}},
+                                              {'departed_clan_tag': {'$in': family},
+                                               'departed_last_seen_at': {'$gte': now-timedelta(days=90)}}]}).to_list(length=None)
+        players = list(set(players) | {row['player_tag'] for row in profiles})
+        now = datetime.now(timezone.utc)
+        records = await self.mongo.strike_records.find({
+            'guild_id': int(guild_id), 'player_tag': {'$in': players},
+            '$or': [{'occurred_at': {'$gte': now-timedelta(days=90)}},
+                    {'kind': 'strike', 'expires_at': {'$gt': now}}]},
+            {'player_tag': 1, 'war_key': 1, 'kind': 1, 'source': 1, 'war_type': 1,
+             'occurred_at': 1, 'missed_attacks': 1, 'expires_at': 1, 'revoked_at': 1}).to_list(length=None)
+        return {'profiles': profiles, 'records': records, 'clans': clans}
+
     async def account_list(self, guild_id: int, *, query=None, clan_tag=None,
                            status='active', limit=25, skip=0, action='all') -> dict:
         """One row per account, with active and lifetime strike counts."""

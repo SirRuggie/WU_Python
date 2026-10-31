@@ -298,6 +298,8 @@ async def overview(request):
 
 @endpoint
 async def accounts(request):
+    if request.query.get('activity') == 'true':
+        return await activity_accounts(request)
     query = request.query.get('query', '').strip()
     if len(query) > 80:
         raise ValueError('Use a shorter account search.')
@@ -329,6 +331,19 @@ async def accounts(request):
     return web.json_response({'accounts': entries, 'total': result['total'],
                               'clans': clans, 'limit': limit, 'offset': offset,
                               'summary': result['summary'], 'strike_limit': result['strike_limit']})
+
+
+async def activity_accounts(request):
+    from utils.player_activity_store import PlayerActivityStore
+    from utils.player_activity_overview import family_activity_rows
+    async with shared.mongo(request) as db:
+        ledger = await service(request, db)
+        activity = await PlayerActivityStore(db).all_players()
+        context = await ledger.activity_context(GUILD_ID, [row['tag'] for row in activity])
+    rows = family_activity_rows(activity, **context)
+    return web.json_response(public({'accounts': rows, 'total': len(rows),
+                                    'clans': [{'tag': row['tag'], 'name': row.get('name') or row['tag']}
+                                              for row in context['clans']]}))
 
 
 async def _enrich_war_names(request, rows, clan_names, *, budget=8):
