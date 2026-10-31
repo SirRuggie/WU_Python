@@ -53,3 +53,9 @@ staff state change between them can still make archive fail after native reopen.
 This narrow staff-driven race remains accepted, rather than an atomicity guarantee.
 Release does not initiate a send: November remains unchanged until staff explicitly
 choose Review and send or Send again.
+
+Integrated release verification after main 28e37f0: 5,313 backend tests passed
+(21 skipped, 221 subtests); 1,135 frontend tests passed; TypeScript/build passed.
+The synthetic two-pool browser sequence and deleted-message/frozen retry checks
+passed at 360/1440, with no page errors. Complete layout verification is recorded
+in the release handoff before activation.
