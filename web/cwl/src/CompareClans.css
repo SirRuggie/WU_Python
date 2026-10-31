@@ -465,3 +465,25 @@
   white-space: nowrap;
   border: 0;
 }
+
+.compare-player-meta-line {
+  padding-right: 36px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.compare-player-meta-line .player-card-meta {
+  padding-right: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.compare-time-zone {
+  flex: none;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--roster-text-muted);
+}

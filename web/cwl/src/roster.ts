@@ -49,6 +49,7 @@ export type RosterClan = {
 };
 export type RosterUndo = { id: number; label: string; revision: number };
 export type RosterSnapshot = {
+  owner_nicknames?: Record<string, string>;
   metadata_updating?: boolean;
   revision: number;
   accounts: RosterAccount[];
@@ -61,6 +62,7 @@ export type AutoPreview = {
   unassigned: { tag: string; reason: string }[];
 };
 export type RosterSort =
+  | "time_zone"
   | "name"
   | "town_hall_asc"
   | "town_hall_desc"
@@ -156,6 +158,7 @@ export function mergeRosterMetadata(
   return {
     ...current,
     metadata_updating: incoming.metadata_updating,
+    owner_nicknames: incoming.owner_nicknames ?? current.owner_nicknames,
     accounts: current.accounts.map((account) => {
       const live = accounts.get(account.tag);
       return live

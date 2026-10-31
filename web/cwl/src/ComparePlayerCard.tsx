@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { ownerTimeZone } from "./compareTimeZone";
 import "./PlayerCard.css";
 import PlayerClanStatus, { playerClanStatus } from "./PlayerClanStatus";
 import TownHallIcon from "./TownHallIcon";
@@ -18,6 +19,7 @@ import type { PublishedComparisonAccount } from "./useComparisonLocations";
 
 type Props = {
   account: RosterAccount;
+  ownerNickname?: string;
   clan: RosterClan;
   record?: ComparisonLocation;
   now: number;
@@ -27,6 +29,7 @@ type Props = {
 };
 export default function ComparePlayerCard({
   account,
+  ownerNickname,
   clan,
   record,
   now,
@@ -35,6 +38,7 @@ export default function ComparePlayerCard({
   onDetails,
 }: Props) {
   const id = useId();
+  const zone = ownerTimeZone(ownerNickname);
   const location = comparisonLocation(record, clan.tag, now, clan.name);
   const status = playerClanStatus(
     clan.tag,
@@ -54,7 +58,7 @@ export default function ComparePlayerCard({
         type="button"
         className="player-card-body compare-player-body"
         aria-label={`Details for ${account.player_name}`}
-        aria-describedby={`${id}-weight ${id}-meta ${id}-location${outsideRange || outsideFamily ? ` ${id}-tags` : ""}${note ? ` ${id}-note` : ""}`}
+        aria-describedby={`${id}-weight ${id}-meta ${id}-location${zone?.offsetMinutes != null ? ` ${id}-timezone` : ""}${outsideRange || outsideFamily ? ` ${id}-tags` : ""}${note ? ` ${id}-note` : ""}`}
         disabled={busy}
         onClick={onDetails}
       >
@@ -78,11 +82,22 @@ export default function ComparePlayerCard({
             </strong>
           )}
         </span>
-        <PlayerCardMeta
-          account={account}
-          id={`${id}-meta`}
-          className="compare-player-meta"
-        />
+        <span className="compare-player-meta-line">
+          <PlayerCardMeta
+            account={account}
+            id={`${id}-meta`}
+            className="compare-player-meta"
+          />
+          {zone?.offsetMinutes != null && (
+            <span
+              id={`${id}-timezone`}
+              className="compare-time-zone"
+              aria-label={`Time zone ${zone.label}`}
+            >
+              {zone.label}
+            </span>
+          )}
+        </span>
         <PlayerClanStatus
           id={`${id}-location`}
           className="compare-player-location"

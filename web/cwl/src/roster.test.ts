@@ -64,3 +64,13 @@ it('preserves last known split through unknown polls and replaces it with fresh 
   const loaded = mergeRosterMetadata({...before,accounts:[unavailable]},before);
   expect(usesClanWeights(loaded.accounts[0])).toBe(true);
 });
+
+
+it('merges owner names as display metadata while preserving saved placements',()=>{
+ const current={revision:3,accounts,clans,undo:null};
+ const incoming={...current,owner_nicknames:{'1':'Owner | EST'},accounts:[]};
+ const result=mergeRosterMetadata(current,incoming);
+ expect(result.owner_nicknames).toEqual({'1':'Owner | EST'});
+ expect(result.accounts[0].assigned_clan_tag).toBe(current.accounts[0].assigned_clan_tag);
+ expect(result.revision).toBe(3);
+});

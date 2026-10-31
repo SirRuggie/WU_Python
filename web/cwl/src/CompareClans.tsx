@@ -52,6 +52,7 @@ const playerSortOptions: { value: RosterSort; label: string }[] = [
   { value: "weight_desc", label: "Weight: high to low" },
   { value: "weight_asc", label: "Weight: low to high" },
   { value: "name", label: "Name A–Z" },
+  { value: "time_zone", label: "Time zone" },
 ];
 export default function CompareClans({
   memory,
@@ -145,7 +146,7 @@ export default function CompareClans({
 
   const detailsOrderKey = visibleClans
     .flatMap((tag) =>
-      compareClanAccounts(roster.accounts, tag, sort)
+      compareClanAccounts(roster.accounts, tag, sort, roster.owner_nicknames)
         .filter((account) => matchesTownHall(account.town_hall, townHalls))
         .map((account) => account.tag),
     )
@@ -486,6 +487,7 @@ export default function CompareClans({
                   roster.accounts,
                   clanTag,
                   sort,
+                  roster.owner_nicknames,
                 ).filter((account) =>
                   matchesTownHall(account.town_hall, townHalls),
                 );
@@ -552,6 +554,9 @@ export default function CompareClans({
                           <ComparePlayerCard
                             key={account.tag}
                             account={account}
+                            ownerNickname={
+                              roster.owner_nicknames?.[account.user_id]
+                            }
                             clan={clan}
                             record={locations[account.tag]}
                             now={now}

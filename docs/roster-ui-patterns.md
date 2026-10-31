@@ -272,3 +272,25 @@ Crop art above alpha 60 and size by height, with aspect-aware text padding; wide
 Member navigation uses unique labelled icons; staff icon changes are limited to the CWL group. Member page pills are unnumbered; the signup wizard alone uses steps 1–3, with one large gold active card and compact inactive captions. Official Fan Kit Villager assets 52545/52538/52543 appear only on the current step, using alpha-cropped 340px WebP files. One local-time season line replaces member-only Draft and repeated season labels; staff pages retain their statuses.
 
 Pool cards remain full keyboard/touch buttons. Review Change actions preserve eligible selections; switching to Main lists FWA/otherwise ineligible accounts removed from the unsaved selection. No automatic submit. Help is a footer menu row; profile/mobile avatar open a React Aria account menu with a separated Sign out action. The real-page tour retains its non-GET guard and whole-block targets.
+
+
+## Compare: Time zone sort
+
+Compare can sort each clan west to east from the owner's Discord nickname. The
+parser uses text after the last ` | `, removes flag emoji and trims it. Explicit
+UTC/GMT offsets support hours and minutes; recognized abbreviations use their
+literal standard/daylight offset, without seasonal inference. CST means US
+Central, IST India, AST Atlantic and BST British. EASTERN/CENTRAL/PACIFIC/MOUNTAIN
+mean their US standard offsets. Unknown text groups alphabetically after known
+zones; owners with no zone come last. Within a zone, owner nicknames then user IDs
+keep accounts together, with weight descending inside an owner. Assignments and
+other sorts do not change.
+
+Only recognized zones get a compact card label; unknown or missing zones add no
+label. The cached owner-nickname map is keyed by the roster user ID. A cold or
+failed directory lookup does not delay the roster; one bounded background refresh
+warms the cache and failures have a two-minute cooldown. The existing bounded
+metadata refresh merges owner names without replacing assignments or drafts. Normal roster permissions
+apply, and only owners present in that roster appear in the response. No signup,
+assignment, nickname or Discord write is performed. Release verification records
+counts of family owners with known, unknown and missing zones.
