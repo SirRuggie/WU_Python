@@ -110,3 +110,31 @@ def test_unresolved_survives_real_ttl_and_restore_is_separate(tmp_path):
             source.drop_database(name)
             if recovery:
                 restore.drop_database(recovery)
+
+
+def test_real_quarantine_resolution_is_cas_audited_and_releases_the_hold():
+    from utils.strike_tracking import StrikeTracking
+    from utils.strike_store import StrikeConflict
+    from tests.test_strike_streaks import war, GUILD
+    async def run():
+        client=AsyncMongoClient(local_uri())
+        name='wu_activity_fixture_'+uuid4().hex
+        tracking=StrikeTracking(SimpleNamespace(strike_war_snapshots=client[name].strike_war_snapshots))
+        now=datetime.now(timezone.utc)
+        sample={**war(1),'end_time':now-timedelta(days=100),'state':'inWar'}
+        try:
+            await tracking.observe(GUILD,sample,now=now-timedelta(days=101))
+            await tracking.incomplete(GUILD,sample,'Expired final needs review',now=now)
+            row=await client[name].strike_war_snapshots.find_one({})
+            assert row['manual_review_required'] and 'purge_after' not in row
+            receipt=await tracking.resolve_review(GUILD,row['war_key'],row['review_revision'],'Staff verified resolution',123,now=now)
+            row=await client[name].strike_war_snapshots.find_one({})
+            assert not row['manual_review_required'] and row['status']=='resolved'
+            assert row['purge_after'].replace(tzinfo=timezone.utc)==(now+timedelta(days=30)).replace(microsecond=now.microsecond//1000*1000)
+            assert row['review_resolution']['reason']==receipt['reason']
+            with pytest.raises(StrikeConflict):
+                await tracking.resolve_review(GUILD,row['war_key'],1,'Duplicate',123,now=now)
+        finally:
+            await client.drop_database(name)
+            await client.close()
+    asyncio.run(run())

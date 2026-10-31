@@ -6,7 +6,7 @@ import uuid
 
 from pymongo.errors import DuplicateKeyError
 
-from utils.strike_store import tag, utc, war_key
+from utils.strike_store import tag, utc, war_key, StrikeConflict
 from utils.strike_retention import snapshot_purge_after
 
 RECENT = timedelta(minutes=25)
@@ -58,7 +58,7 @@ class StrikeTracking:
         now = utc(now or datetime.now(timezone.utc))
         key = self.snapshot_key(guild_id, war)
         existing = await self.mongo.strike_war_snapshots.find_one({'_id': key})
-        if existing and existing.get('status') in ('finalized', 'incomplete', 'abandoned'):
+        if existing and existing.get('status') in ('finalized', 'incomplete', 'abandoned', 'resolved'):
             return existing
         active = war['state'] in ('preparation', 'inWar')
         ended = utc(war['end_time'])
@@ -94,21 +94,47 @@ class StrikeTracking:
 
     async def incomplete(self, guild_id: int, war: dict, reason: str, *, now=None):
         now = utc(now or datetime.now(timezone.utc))
+        purge = snapshot_purge_after({'end_time': war['end_time'], 'status': 'incomplete'})
+        if purge <= now:
+            return await self.quarantine_old(guild_id, war, now=now, reason=reason)
         await self.mongo.strike_war_snapshots.update_one(
             {'_id': self.snapshot_key(guild_id, war), 'status': 'observing'},
             {'$set': {'war': war, 'status': 'incomplete', 'incomplete_at': now,
                       'incomplete_reason': reason, 'next_check_at': None,
-                      'purge_after': snapshot_purge_after({'end_time': war['end_time'], 'status': 'incomplete'}),
-                      'updated_at': now}})
+                      'purge_after': purge, 'updated_at': now}})
 
-    async def quarantine_old(self, guild_id, war, *, now=None):
-        """Keep an unresolved observation visible without retrying it forever."""
+    async def quarantine_old(self, guild_id, war, *, now=None, reason=None):
+        """Keep unresolved evidence visible and held until an audited staff action."""
         now = utc(now or datetime.now(timezone.utc))
         await self.mongo.strike_war_snapshots.update_one(
             {'_id': self.snapshot_key(guild_id, war), 'status': 'observing'},
             {'$set': {'status': 'incomplete', 'manual_review_required': True,
-                      'incomplete_reason': 'Outside retention window: staff review required',
-                      'next_check_at': None, 'updated_at': now}, '$unset': {'purge_after': ''}})
+                      'incomplete_reason': reason or 'Outside retention window: staff review required',
+                      'next_check_at': None, 'updated_at': now},
+             '$unset': {'purge_after': ''}, '$inc': {'review_revision': 1}})
+
+    async def resolve_review(self, guild_id, key, revision, reason, actor_id, *, now=None):
+        """Resolve the hold, not the missing strike; preserve a bounded audit receipt."""
+        if (not isinstance(key, str) or not 1 <= len(key) <= 256
+                or any(ord(char) < 32 for char in key)):
+            raise ValueError('Choose a quarantined war.')
+        if type(revision) is not int or revision < 0:
+            raise ValueError('Refresh the review revision.')
+        if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 500:
+            raise ValueError('Enter a review reason (1–500 characters).')
+        now = utc(now or datetime.now(timezone.utc))
+        receipt = {'actor_id': int(actor_id), 'reason': reason.strip(), 'resolved_at': now,
+                   'revision': revision+1}
+        result = await self.mongo.strike_war_snapshots.update_one(
+            {'guild_id': int(guild_id), 'war_key': key, 'manual_review_required': True,
+             'review_revision': revision if revision else {'$in': [None, 0]}},
+            {'$set': {'manual_review_required': False, 'status': 'resolved', 'resolved_at': now,
+                      'review_resolution': receipt, 'next_check_at': None, 'updated_at': now,
+                      'purge_after': snapshot_purge_after({'status': 'resolved', 'resolved_at': now})},
+             '$inc': {'review_revision': 1}})
+        if not result.matched_count:
+            raise StrikeConflict('Review changed or was already resolved. Refresh it.')
+        return receipt
 
     async def abandon_older(self, guild_id: int, clan_tag: str, current_keys=(), *, now=None):
         now = utc(now or datetime.now(timezone.utc))
@@ -189,6 +215,8 @@ class StrikeTracking:
                  'war_end': row['end_time'], 'war_type': row['war'].get('type'),
                  'missed_accounts': 0, 'strikes': 0, 'one_missed': 0,
                  'cwl_missed': 0, 'incomplete': True,
+                 'manual_review_required': bool(row.get('manual_review_required')),
+                 'review_revision': row.get('review_revision', 0),
                  'review_message': row.get('incomplete_reason') or
                     'War ended before final check: review in Find war',
                  'source_label': 'Clash API'} for row in rows]

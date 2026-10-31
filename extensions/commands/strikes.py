@@ -683,7 +683,7 @@ async def _finish_official_war(tracking, store, guild_id, war):
         # monitor was deployed. Do not report or backfill that historical gap.
         return 0, 0, 0, 0
     snapshot = await tracking.observe(guild_id, war)
-    if snapshot.get('status') in ('finalized', 'incomplete', 'abandoned'):
+    if snapshot.get('status') in ('finalized', 'incomplete', 'abandoned', 'resolved'):
         return 0, 0, 0, 0
     if not snapshot.get('seen_active'):
         # An already-ended war first seen at startup belongs to the old gap.

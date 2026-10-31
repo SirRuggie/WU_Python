@@ -86,6 +86,11 @@ async def family_members(mongo, client):
         except Exception:
             complete = False
             log.warning('Player activity clan roster unavailable: %s', clan_tag)
+            try:
+                for player, last_clan in (await PlayerActivityStore(mongo).known_members(clan_tag)).items():
+                    members.setdefault(player, last_clan)
+            except Exception:
+                log.warning('Player activity saved roster unavailable: %s', clan_tag)
     if not members:
         complete = False
         log.warning('Player activity family roster is empty; departures suppressed')

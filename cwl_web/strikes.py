@@ -1015,8 +1015,19 @@ async def tracking_retry(request):
                               'retry_requested_at': public(row['retry_requested_at'])}, status=202)
 
 
+@endpoint(scope='strikes')
+async def tracking_resolve(request):
+    data = await body(request, {'war_key', 'revision', 'reason'})
+    actor = await shared.identity(request)
+    async with shared.mongo(request) as db:
+        receipt = await StrikeTracking(db).resolve_review(GUILD_ID, data.get('war_key'),
+            data.get('revision'), data.get('reason'), int(actor['user_id']))
+    return web.json_response(public({'resolved': True, 'receipt': receipt}))
+
+
 routes = [web.get(API + '/tracking', tracking_status),
           web.post(API + '/tracking/retry', tracking_retry),
+          web.post(API + '/tracking/resolve', tracking_resolve),
           web.get(API + '/overview', overview), web.get(API + '/accounts', accounts),
           web.get(API + '/wars', wars),
           web.get(API + '/members', members), web.get(API + '/targets', targets),

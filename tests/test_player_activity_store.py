@@ -88,3 +88,25 @@ def test_membership_cas_loss_is_logged_without_claiming_success(caplog):
         assert not (await store.get(PLAYER)).get('left_at')
         assert 'membership CAS conflict' in caplog.text
     asyncio.run(run())
+
+
+def test_unchanged_hourly_poll_and_membership_only_write_daily_or_at_boundary():
+    async def run():
+        class CountCollection(ActivityCollection):
+            writes=0
+            async def update_one(self,*args,**kwargs):
+                self.writes+=1;return await super().update_one(*args,**kwargs)
+            async def replace_one(self,*args,**kwargs):
+                self.writes+=1;return await super().replace_one(*args,**kwargs)
+        collection=CountCollection();store=PlayerActivityStore(SimpleNamespace(player_activity=collection))
+        payload={'tag':PLAYER,'attackWins':1}
+        await store.record(payload,CLAN,now=NOW)
+        await store.reconcile_membership({PLAYER:CLAN},now=NOW)
+        writes=collection.writes
+        for hour in range(1,5):
+            await store.reconcile_membership({PLAYER:CLAN},now=NOW+timedelta(hours=hour))
+            assert not await store.record(payload,CLAN,now=NOW+timedelta(hours=hour))
+        assert collection.writes==writes
+        assert await store.record(payload,CLAN,now=NOW+timedelta(days=1))
+        assert await store.record({**payload,'attackWins':2},CLAN,now=NOW+timedelta(days=1,hours=1))
+    asyncio.run(run())

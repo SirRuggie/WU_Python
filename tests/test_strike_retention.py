@@ -106,3 +106,9 @@ def test_old_unresolved_final_is_quarantined_and_next_war_still_processes():
         assert await _finish_official_war(tracking,ledger,GUILD,war(2))==(1,0,0,0)
         ledger.process_war.assert_awaited_once()
     asyncio.run(run())
+
+
+def test_review_hold_overrides_every_terminal_purge_policy():
+    from utils.strike_retention import snapshot_purge_after
+    for status in ('incomplete','finalized','abandoned','resolved'):
+        assert snapshot_purge_after({'end_time':NOW,'resolved_at':NOW,'status':status,'manual_review_required':True}) is None

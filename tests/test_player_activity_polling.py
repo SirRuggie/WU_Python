@@ -186,3 +186,40 @@ def test_incomplete_roster_never_marks_left_but_polls_healthy_and_reads_all_clan
         with pytest.raises(asyncio.CancelledError): await polling.run(None,SimpleNamespace(get_player=None))
         assert seen==['poll','raids']
     asyncio.run(scenario())
+
+
+def test_failed_clan_members_are_polled_from_last_known_storage_owner():
+    from utils.player_activity_polling import family_members
+    from tests.test_player_activity_store import ActivityCollection, PLAYER, CLAN
+    from utils.player_activity_store import PlayerActivityStore
+    from types import SimpleNamespace as NS
+    async def run():
+        collection=ActivityCollection()
+        store=PlayerActivityStore(NS(player_activity=collection))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN)
+        class Cursor:
+            async def to_list(self,length=None):return [{'tag':CLAN}]
+        mongo=NS(clans=NS(find=lambda *args:Cursor()),player_activity=collection)
+        async def broken(*args,**kwargs):raise TimeoutError()
+        sweep=await family_members(mongo,NS(get_clan=broken))
+        assert sweep.members=={PLAYER:CLAN} and not sweep.complete
+        seen=[]
+        async def player(value):seen.append(value);return {'tag':value,'attackWins':2}
+        await poll_hour(store,sweep.members,player,sleep=lambda _:__import__('asyncio').sleep(0),duration=0)
+        assert seen==[PLAYER] and (await store.get(PLAYER))['last_seen_source']=='clash_api'
+    asyncio.run(run())
+
+
+def test_missing_and_empty_roster_responses_never_authorize_departures():
+    from utils.player_activity_polling import family_members
+    from types import SimpleNamespace as NS
+    from tests.test_player_activity_store import ActivityCollection, CLAN, PLAYER
+    async def run():
+        class Cursor:
+            async def to_list(self,length=None):return [{'tag':CLAN}]
+        mongo=NS(clans=NS(find=lambda *args:Cursor()),player_activity=ActivityCollection())
+        for count,players in ((1,[]),(2,[NS(tag=PLAYER)]),(0,[])):
+            async def clan(*args,**kwargs):return NS(tag=CLAN,member_count=count,members=players)
+            sweep=await family_members(mongo,NS(get_clan=clan))
+            assert not sweep.complete and not sweep.members
+    asyncio.run(run())

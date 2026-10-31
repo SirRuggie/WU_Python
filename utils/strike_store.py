@@ -750,8 +750,18 @@ class StrikeService:
         limit, skip = max(1, min(100, int(limit))), max(0, int(skip))
         names = clan_names or {}
         retained, total = [], 0
+        review_query = {'guild_id': int(guild_id), 'manual_review_required': True}
+        if clan_tag:
+            review_query['clan_tag'] = tag(clan_tag)
+        reviews = {row['war_key']: row for row in await self.mongo.strike_war_snapshots.find(
+            review_query).to_list(length=None)} if include_incomplete else {}
         def accept(row):
             nonlocal total
+            if row['war_key'] in reviews:
+                review = reviews[row['war_key']]
+                row.update(incomplete=True, manual_review_required=True,
+                           review_revision=review.get('review_revision', 0),
+                           review_message=review.get('incomplete_reason') or 'Staff review required')
             row['clan_name'] = names.get(row.get('clan_tag')) or row.get('clan_name') or row.get('clan_tag')
             if search and search not in ' '.join(str(value or '') for value in (
                     row.get('clan_tag'), row.get('clan_name'), row.get('opponent_tag'),

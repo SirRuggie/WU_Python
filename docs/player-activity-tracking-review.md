@@ -2,7 +2,8 @@
 
 This backend batch adds official-API player activity capture, a bounded raid
 summary, one-time attack-history seed and explicit strike-retention migration.
-It adds no Discord command, public write route, notification or mention output.
+It adds no Discord command, notification or mention output. Prompt 56 adds one
+explicit staff-only, CSRF- and revision-protected quarantine resolution action.
 The existing Discord/API client and collection routes are reused. Domain logic
 lives in utils; extensions/tasks owns lifecycle only.
 
@@ -87,3 +88,12 @@ Discord test, notification or production migration was performed.
 A quarantined old war remains a streak blocker until an explicit staff-reviewed
 resolution clears the hold. Quarantine changes its retry state, not its effect on
 newer streak credit; a regression covers both sides of that resolution.
+
+
+Prompt 56 adds real-run-order raid tests at :15/:30/:59, durable bracket evidence,
+archived-clan reads, last-known roster polling, rate-limited failure logs and
+daily/no-change write suppression. Old review wars always remain visible even
+when incident rows exist. The actual resolution owner checks guild/revision and
+retains a bounded audit receipt; real Mongo exercises stale resolution rejection
+and the new 30-day audit date. PR B supplies the review button. Final counts and
+mutation table are in the next READY, superseding the earlier review snapshots.

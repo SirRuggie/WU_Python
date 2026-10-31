@@ -630,8 +630,12 @@ def test_quarantined_old_capture_keeps_streak_blocker_until_staff_resolution():
         snapshot=next(row for row in db.strike_war_snapshots.rows.values() if row['war_key']==war_key(war(1)))
         assert snapshot['manual_review_required'] and 'purge_after' not in snapshot
         # An explicit reviewed resolution releases the hold, not age or a TTL.
-        await db.strike_war_snapshots.update_one({'_id':snapshot['_id']},
-            {'$set':{'status':'finalized'},'$unset':{'manual_review_required':''}})
+        receipt = await StrikeTracking(db).resolve_review(GUILD, snapshot['war_key'],
+            snapshot['review_revision'], 'Reviewed missing war; release the hold', 456)
+        assert receipt['actor_id'] == 456
+        assert snapshot['purge_after'] > datetime.now(timezone.utc)
+        with pytest.raises(__import__('utils.strike_store', fromlist=['StrikeConflict']).StrikeConflict):
+            await StrikeTracking(db).resolve_review(GUILD, snapshot['war_key'], 1, 'Duplicate', 456)
         await ledger.process_war(GUILD, war(2), official_capture=True)
         assert (await ledger.streak(GUILD, PLAYER))['count'] == 1
     asyncio.run(run())

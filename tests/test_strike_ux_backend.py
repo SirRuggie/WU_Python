@@ -721,3 +721,17 @@ def test_http_settings_reject_retired_opponent_field_before_storage():
             assert 'Unknown field' in error.value.text
             identity.assert_not_called()
     run(scenario())
+
+
+def test_quarantine_is_visible_even_when_saved_incidents_exist():
+    async def scenario():
+        db, ledger=setup()
+        await db.strike_records.insert_one(record('saved',source='war',war_key='review-war',clan_tag='#Q2Y'))
+        db.strike_war_snapshots.rows={'review':{'_id':'review','guild_id':1,'war_key':'review-war',
+            'clan_tag':'#Q2Y','status':'incomplete','manual_review_required':True,'review_revision':3,
+            'incomplete_reason':'Staff review needed','end_time':NOW,'war':{'opponent_name':'Opponent'}}}
+        result=await ledger.war_page(1)
+        rows=[row for row in result['items'] if row['war_key']=='review-war']
+        assert len(rows)==1 and rows[0]['manual_review_required'] and rows[0]['review_revision']==3
+        assert rows[0]['review_message']=='Staff review needed'
+    run(scenario())

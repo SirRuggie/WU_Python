@@ -12,6 +12,8 @@ def record_purge_after(row):
 def snapshot_purge_after(row):
     if row.get('manual_review_required'):
         return None
+    if row.get('status') == 'resolved':
+        return stamp(row['resolved_at']) + timedelta(days=SNAPSHOT_DAYS)
     if row.get('status') == 'finalized':
         return stamp(row['end_time']) + timedelta(days=SNAPSHOT_DAYS)
     if row.get('status') in ('incomplete', 'abandoned'):

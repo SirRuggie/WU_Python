@@ -184,3 +184,11 @@ def test_recovery_command_verifies_backup_before_any_insert(tmp_path):
     with pytest.raises(RuntimeError, match='Backup verification'):
         restore_backup(tmp_path/'backup', restore)
     assert set(restore.databases) == before
+
+
+def test_process_identity_alias_cannot_restore_on_source_even_with_different_endpoints():
+    from tools.maintenance.strike_retention import verify_separate_server
+    source=Client();restore=Client(restore=True)
+    restore.admin=source.admin
+    with pytest.raises(ValueError,match='source process'):
+        verify_separate_server(source,restore)

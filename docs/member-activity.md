@@ -156,3 +156,30 @@ The activity collection adds only one bounded document per current or recently
 departed player. A representative full baseline is about 7.8 KB (174 keys), so 1000 players
 add roughly 8 MB before indexes/storage overhead. Actual collStats before/after
 govern rollout size; the 882-byte minimal fixture is not a capacity estimate.
+
+
+### Raid evidence and low-churn polling (prompt 56)
+
+A successful roster sweep records a compact bracket around the Monday 07:00 UTC
+weekend end. This evidence persists even if raid logs fail until a later sweep.
+Reading an empty log before the bracket exists never finalizes a skip. Completed
+log reads and checked attack/skip evidence are separate bounded lists: historical
+unknowns remain unknown without causing repeated backfill requests. Clan-history
+metadata keeps at most nine week identities (eight ended plus the upcoming end)
+and includes previously observed, subsequently archived clans in raid reads. An
+unread clan keeps the result incomplete. Failures log clan/weekend at most hourly.
+
+During complete sweeps, the store keeps the latest roster observation in bounded
+process memory and persists membership daily, on actual moves/departures/returns,
+and when a raid-end bracket is first proven. Restarting without a sufficiently
+recent observation leaves that weekend unknown. Unchanged player baselines write
+`updated_at` at most daily; real counter changes still persist promptly. Failed
+clan reads poll last-known active members through the independent player endpoint,
+without authorizing departures. No per-hour history documents are introduced.
+
+Codex's real lane uses MongoDB **7.0.41**, confirmed by `buildInfo` and the local
+binary. Claude's independent refuter used **8.0.32** (handoff 201). Production's
+version has not been read for this development proof; record it during the approved
+release before enabling any migration. The full baseline plus bounded raid/clan
+metadata remains roughly 8–10 MB per 1000 players before storage/index overhead;
+actual release collStats governs sizing.
