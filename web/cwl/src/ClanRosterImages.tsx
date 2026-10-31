@@ -1,3 +1,4 @@
+import { DISCORD_GUILD_ID } from "./discordGuild";
 import { useEffect, useRef, useState } from "react";
 import { api, type Pool } from "./api";
 import { useDashboardPermission } from "./DashboardPermissions";
@@ -300,7 +301,7 @@ export default function ClanRosterImages({
                             <a
                               target="_blank"
                               rel="noopener noreferrer"
-                              href={`https://discord.com/channels/644963518025826315/${post.channel_id}/${post.message_id}`}
+                              href={`https://discord.com/channels/${DISCORD_GUILD_ID}/${post.channel_id}/${post.message_id}`}
                             >
                               View in Discord ↗
                             </a>
@@ -402,6 +403,7 @@ export default function ClanRosterImages({
           )}
           {canSend && testAll && (
             <RosterImagesTestPanel
+              canSend={canSend}
               data={data}
               channels={channels}
               busy={busy}

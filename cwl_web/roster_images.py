@@ -55,8 +55,9 @@ async def image(request):
     return web.Response(body=data,content_type='image/png',headers={'Cache-Control':'private, no-store','Content-Disposition':f'inline; filename="roster-{group["tag"][1:]}-v{pub["version"]}-{page}.png"'})
 
 async def send_test(request):
-    from .app import _require,_json,_sid,_store,_audit
-    actor=_require(request,'editor');body=await _json(request);sid=_sid(request)
+    from .app import _json,_sid,_store
+    from .roster_image_posts import staff
+    actor=staff(request, send=True);body=await _json(request);sid=_sid(request)
     if set(body)!={'version','channel_id','request_id'}:raise web.HTTPBadRequest(text='Choose a test channel.')
     channel=body['channel_id'];nonce=body['request_id']
     if not isinstance(channel,str) or not re.fullmatch(r'\d{15,22}',channel) or not isinstance(nonce,str) or not re.fullmatch(r'[a-f0-9]{24}',nonce):raise web.HTTPBadRequest(text='Choose a test channel.')
@@ -74,7 +75,6 @@ async def send_test(request):
             if old['url']:return web.json_response({'url':old['url']})
             raise web.HTTPConflict(text='Test delivery is unconfirmed. Check Discord before sending again.')
         db.execute('INSERT INTO roster_test_messages(id,season_id,pool,channel_id,actor_id) VALUES (?,?,?,?,?)',(key,sid,group['pool'],channel,actor['user_id']))
-        _audit(db,sid,group['tag'],actor['user_id'],'roster_image_test',None,{'channel_id':channel,'version':pub['version']})
     form=FormData()
     payload = {**clan_image_message(group['name'], group['tag'], test=True),
                'nonce': nonce, 'enforce_nonce': True,

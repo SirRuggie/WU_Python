@@ -43,10 +43,16 @@ export default function useAnnouncementTestChannel(allowed: boolean) {
         "Reload the saved test channel before making this the default.",
       );
     const current = generation.current;
-    const value = await api<Setting>(path, "PUT", {
+    let value: Setting;
+    try {
+      value = await api<Setting>(path, "PUT", {
       channel_id: channel,
       expected_revision: setting.revision,
-    });
+      });
+    } catch (e) {
+      if (current === generation.current) setError((e as Error).message);
+      throw e;
+    }
     if (current !== generation.current)
       throw new Error("Test channel view changed; review again.");
     setSetting(value);

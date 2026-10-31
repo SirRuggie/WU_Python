@@ -8,6 +8,7 @@ import type { AnnouncementChannel } from "./announcements";
 import type { ImageData, ImageJob } from "./rosterImagePosting";
 
 export default function RosterImagesTestPanel({
+  canSend,
   data,
   channels,
   busy,
@@ -16,6 +17,7 @@ export default function RosterImagesTestPanel({
   onClose,
   onConfirm,
 }: {
+  canSend: boolean;
   data: ImageData;
   channels: AnnouncementChannel[];
   busy: boolean;
@@ -28,7 +30,7 @@ export default function RosterImagesTestPanel({
     beforeSend?: () => Promise<void>,
   ) => void;
 }) {
-  const destination = useAnnouncementTestChannel(true);
+  const destination = useAnnouncementTestChannel(canSend);
   const { channel, setChannel } = destination;
   const trigger = useRef(document.activeElement as HTMLElement | null);
   return (
@@ -39,7 +41,7 @@ export default function RosterImagesTestPanel({
       footer={
         <Button
           variant="primary"
-          disabled={busy || !channel || !data.published || !data.clans.length}
+          disabled={!canSend || busy || !channel || !data.published || !data.clans.length}
           onClick={() =>
             onConfirm(
               data.clans.map((clan) => ({
@@ -66,7 +68,7 @@ export default function RosterImagesTestPanel({
       />
       <TestChannelDefault
         checked={destination.makeDefault}
-        disabled={busy || !true}
+        disabled={busy || !canSend}
         error={destination.error}
         onChange={destination.setMakeDefault}
         onReload={destination.reload}

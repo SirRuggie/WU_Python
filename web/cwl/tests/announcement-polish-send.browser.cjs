@@ -2,7 +2,7 @@ const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const port = Number(process.argv[2]);
-assert(port >= 8900 && port <= 8999);
+assert(port > 0 && port <= 65535 && port !== 8767);
 const base = `http://127.0.0.1:${port}`,
   out = process.env.WU_POLISH_EVIDENCE || "/tmp/wu-announcement-polish";
 (async () => {
@@ -23,6 +23,7 @@ const base = `http://127.0.0.1:${port}`,
     await page.goto(base + "/?view=publication&step=announce&season=1");
     await page.getByRole("button", { name: "Open local test session" }).click();
     await page.locator(".announcement-pool-card").first().waitFor();
+    fs.mkdirSync(out, { recursive: true });
     const before = await (
       await context.request.get(base + "/api/cwl/seasons/1/manage-bridge")
     ).json();

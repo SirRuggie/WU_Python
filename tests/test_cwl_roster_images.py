@@ -32,12 +32,14 @@ class RosterImageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.call('GET',path+'/%23C2Y.png?page=2',self.owner)).status,400)
     async def test_test_send_no_pings_deduplicated_and_channel_guard(self):
         await self.publish();path=f'/seasons/{self.sid}/roster-images/%23C2Y/test'
+        before_audit = self.app['store'].one('SELECT COUNT(*) AS n FROM roster_audit')['n']
         body={'channel_id':'123456789012345678','request_id':'a'*24,'version':1}
         mock=AsyncMock(side_effect=[{'guild_id':str(GUILD_ID),'type':0},{'id':'987654321098765432'},{'guild_id':str(GUILD_ID),'type':0}])
         with patch('cwl_web.roster_images.discord',mock):
             first=await self.call('POST',path,self.owner,json=body);self.assertEqual(first.status,200)
             second=await self.call('POST',path,self.owner,json=body);self.assertEqual(second.status,200)
             self.assertEqual(await first.json(),await second.json())
+        self.assertEqual(self.app['store'].one('SELECT COUNT(*) AS n FROM roster_audit')['n'], before_audit)
         self.assertEqual(sum(c.args[1]=='POST' for c in mock.call_args_list),1)
         form=mock.call_args_list[1].kwargs['data']
         payload=json.loads(form._fields[0][2]);self.assertEqual(payload['allowed_mentions'],{'parse':[], 'roles':[]})

@@ -307,7 +307,7 @@ async def test_announcement(request):
         if item.get('buttons'):
             item['buttons'][0]['url'] = body['roster_url']
         else:
-            item['buttons'] = [{'label':'CWL Rosters','url':body['roster_url']}]
+            item['buttons'] = [{'label':'CWL Rosters','url':body['roster_url'],'emoji':'📋'}]
         try:
             components = await cwl_campaign.render_message(loaded,'roster',pool,preview=True)
         except ValueError as exc:

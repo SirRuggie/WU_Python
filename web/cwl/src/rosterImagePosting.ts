@@ -1,3 +1,4 @@
+import { DISCORD_GUILD_ID } from "./discordGuild";
 import { ApiError, api, type Pool } from "./api";
 import { publicationDate } from "./publicationStatus";
 export type ImageClan = {
@@ -260,7 +261,7 @@ export async function runImageJobs(
             post?.message_id &&
             /^\d+$/.test(post.channel_id) &&
             /^\d+$/.test(post.message_id)
-              ? `https://discord.com/channels/644963518025826315/${post.channel_id}/${post.message_id}`
+              ? `https://discord.com/channels/${DISCORD_GUILD_ID}/${post.channel_id}/${post.message_id}`
               : null;
           options.delivered?.(result?.url || result?.message_url || url);
           options.progress(
