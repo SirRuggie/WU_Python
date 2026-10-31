@@ -213,3 +213,17 @@ next read time; unchanged player observations do not write, including when the
 Mongo client returns naive UTC datetimes. Live tracker timestamps, strikes,
 streaks and replacement marks are never refreshed by historical reads. Page
 metadata reads project only failed clan tags. Measure collStats during rollout.
+
+#### Known history limitations at member-activity-page release
+
+A player who moved clans can carry a known-war chain across an unreadable war in
+their old clan: unusable markers apply to current clan members. Claude accepted
+this rare, read-only limitation in review214; it does not write strikes or change
+streaks. Monitored observations gradually replace imported history.
+
+Claude's read-only ClashKing sample found the newest stored war on October19 for
+two FWA-style clans, while official monitoring began October30. October20–29 can
+therefore be unknown, and known-war chains may cross that interval until newer
+monitored wars replace it. No missing activity is invented or written. The live
+sample returned only ended wars across three family clans; this does not prove
+complete historical coverage.
