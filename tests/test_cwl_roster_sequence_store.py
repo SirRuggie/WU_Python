@@ -86,3 +86,82 @@ class SequenceStoreTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.images.prepare_sequence(**(self.args | {'plan': {'png': b'PNG'}}))
         self.assertIsNone(self.images.sequence('a' * 24))
+
+    def image_plan(self):
+        frozen = {'payload': {'content': '**Clan**', 'allowed_mentions': {'parse': []}},
+                  'name': 'Clan', 'league': 'Gold', 'season_label': 'November'}
+        self.args['plan'] = {'clans': [
+            {'tag': '#AAA', 'request_id': 'b' * 24, 'frozen': frozen},
+            {'tag': '#BBB', 'request_id': 'c' * 24, 'frozen': frozen},
+        ]}
+        self.images.prepare_sequence(**self.args)
+        return frozen
+
+    def claim_image(self, tag, request_id, frozen):
+        return self.images.claim(1, 'lazy', tag, 1, request_id, 'post',
+                                 self.args['channel'], None, frozen, self.args['actor'],
+                                 sequence_id='a' * 24)
+
+    def test_image_claim_requires_announcement_and_every_earlier_clan_confirmed(self):
+        frozen = self.image_plan()
+        with self.assertRaises(ImageConflict):
+            self.claim_image('#AAA', 'b' * 24, frozen)
+        self.images.confirm_sequence_announcement('a' * 24, self.bridge)
+        with self.assertRaises(ImageConflict):
+            self.claim_image('#BBB', 'c' * 24, frozen)
+        first, acquired = self.claim_image('#AAA', 'b' * 24, frozen)
+        self.assertTrue(acquired)
+        # Concurrent claim/restart returns the same in-flight receipt, never permission to send twice.
+        self.images = RosterImageStore(Store(self.path))
+        self.assertFalse(self.claim_image('#AAA', 'b' * 24, frozen)[1])
+        for status in ('failed', 'uncertain'):
+            self.images.finish(first, status, error='Fixture failure')
+            with self.subTest(status=status), self.assertRaises(ImageConflict):
+                self.claim_image('#BBB', 'c' * 24, frozen)
+        self.images.finish(first, 'posted', '123456789012345680')
+        second, acquired = self.claim_image('#BBB', 'c' * 24, frozen)
+        self.assertTrue(acquired)
+        self.assertEqual(second['channel_id'], self.args['channel'])
+        self.assertEqual(self.images.channels(), [])  # No separate image-channel setting required.
+
+    def test_image_claim_rejects_changed_frozen_payload_and_unreviewed_clan(self):
+        frozen = self.image_plan()
+        self.images.confirm_sequence_announcement('a' * 24, self.bridge)
+        for tag, request_id, payload in [('#AAA', 'd' * 24, frozen),
+                                         ('#AAA', 'b' * 24, frozen | {'name': 'Changed'}),
+                                         ('#CCC', 'd' * 24, frozen)]:
+            with self.subTest(tag=tag, request_id=request_id), self.assertRaises(ImageConflict):
+                self.claim_image(tag, request_id, payload)
+        self.assertIsNone(self.images.receipt('b' * 24))
+
+    def test_closing_waits_for_last_clan_and_restart_never_claims_it_twice(self):
+        from utils.cwl_roster_messages import closing_message
+        frozen = {'name': 'Clan', 'payload': {'allowed_mentions': {'parse': []}}}
+        self.args['plan'] = {'clans': [
+            {'tag': '#AAA', 'request_id': 'b' * 24, 'frozen': frozen}],
+            'closing': {'request_id': 'd' * 24, 'payload': closing_message()}}
+        self.images.prepare_sequence(**self.args)
+        with self.assertRaises(ImageConflict):
+            self.images.claim_sequence_closing('a' * 24)
+        self.images.confirm_sequence_announcement('a' * 24, self.bridge)
+        with self.assertRaises(ImageConflict):
+            self.images.claim_sequence_closing('a' * 24)
+        image, _ = self.claim_image('#AAA', 'b' * 24, frozen)
+        self.images.finish(image, 'posted', '123456789012345680')
+        closing, acquired = self.images.claim_sequence_closing('a' * 24)
+        self.assertTrue(acquired)
+        self.assertEqual(json.loads(closing['payload_json'])['allowed_mentions'], {'parse': []})
+        reopened = RosterImageStore(Store(self.path))
+        self.assertFalse(reopened.claim_sequence_closing('a' * 24)[1])
+        result = reopened.finish_sequence_closing('a' * 24, status='posted', message='123456789012345681')
+        self.assertEqual(reopened.sequence('a' * 24)['status'], 'complete')
+        self.assertEqual(reopened.finish_sequence_closing('a' * 24, status='failed', error='stale worker'), result)
+        self.assertFalse(reopened.claim_sequence_closing('a' * 24)[1])
+
+    def test_even_frozen_image_plan_cannot_enable_mentions(self):
+        frozen = {'payload': {'allowed_mentions': {'parse': ['roles']}}}
+        self.args['plan'] = {'clans': [{'tag': '#AAA', 'request_id': 'b' * 24, 'frozen': frozen}]}
+        self.images.prepare_sequence(**self.args)
+        self.images.confirm_sequence_announcement('a' * 24, self.bridge)
+        with self.assertRaises(ImageConflict):
+            self.claim_image('#AAA', 'b' * 24, frozen)

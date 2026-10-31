@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS roster_image_sequences (
  UNIQUE(season_id,pool), UNIQUE(cycle,pool)
 );
 
+CREATE TABLE IF NOT EXISTS roster_image_sequence_closing (
+ sequence_id TEXT PRIMARY KEY REFERENCES roster_image_sequences(sequence_id),
+ request_id TEXT NOT NULL UNIQUE, channel_id TEXT NOT NULL,
+ payload_json TEXT NOT NULL, message_id TEXT,
+ status TEXT NOT NULL CHECK(status IN ('sending','posted','failed','uncertain')),
+ error TEXT, retry_after REAL,
+ updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 """
 
 
@@ -244,7 +253,91 @@ class RosterImageStore:
                        (sid, clan, actor, 'roster_image_dismiss', json.dumps(dict(row)), json.dumps(updated)))
             return updated
 
-    def claim(self, sid, pool, clan, version, request_id, operation, channel, message, payload, actor, *, confirm_duplicate=False):
+    def claim_sequence_closing(self, sequence_id):
+        """Claim the final note only after all images are durably confirmed."""
+        with self.store.tx() as db:
+            prior = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
+                               (sequence_id,)).fetchone()
+            if prior:
+                return dict(prior), False
+            sequence = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                                  (sequence_id,)).fetchone()
+            if (not sequence or sequence['status'] != 'ready'
+                    or not sequence['announcement_message_id']):
+                raise ImageConflict('Announcement sequence is not ready for the closing note')
+            plan = json.loads(sequence['plan_json'])
+            for item in plan.get('clans', []):
+                receipt = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?',
+                                     (item.get('request_id'),)).fetchone()
+                if (not receipt or receipt['status'] != 'posted' or not receipt['message_id']
+                        or (receipt['season_id'], receipt['pool'], receipt['clan_tag'],
+                            receipt['target_version'], receipt['channel_id'])
+                        != (sequence['season_id'], sequence['pool'], item.get('tag'),
+                            sequence['target_version'], sequence['channel_id'])):
+                    raise ImageConflict('A clan image is not confirmed; stop before the closing note')
+            closing = plan.get('closing') or {}
+            if (not re.fullmatch(r'[a-f0-9]{24}', closing.get('request_id', ''))
+                    or not isinstance(closing.get('payload'), dict)
+                    or closing['payload'].get('allowed_mentions') != {'parse': []}):
+                raise ImageConflict('Closing note is missing from the reviewed sequence')
+            db.execute(
+                'INSERT INTO roster_image_sequence_closing(sequence_id,request_id,channel_id,'
+                "payload_json,status) VALUES(?,?,?,?,'sending')",
+                (sequence_id, closing['request_id'], sequence['channel_id'],
+                 json.dumps(closing['payload'], sort_keys=True)),
+            )
+            return dict(db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
+                                   (sequence_id,)).fetchone()), True
+
+    def finish_sequence_closing(self, sequence_id, *, status, message=None, error=None, retry_after=None):
+        if status not in ('posted', 'failed', 'uncertain'):
+            raise ImageConflict('Invalid closing-note result')
+        if status == 'posted' and not re.fullmatch(r'\d{15,22}', str(message or '')):
+            raise ImageConflict('A confirmed closing message ID is required')
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
+                             (sequence_id,)).fetchone()
+            if not row:
+                raise ImageConflict('Closing note has not been claimed')
+            if row['status'] != 'sending':
+                return dict(row)
+            db.execute('UPDATE roster_image_sequence_closing SET status=?,message_id=?,error=?,'
+                       'retry_after=?,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?',
+                       (status, str(message) if message else None, error, retry_after, sequence_id))
+            db.execute('UPDATE roster_image_sequences SET status=?,updated_at=CURRENT_TIMESTAMP '
+                       'WHERE sequence_id=?',
+                       ('complete' if status == 'posted' else 'stopped', sequence_id))
+            return dict(db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
+                                   (sequence_id,)).fetchone())
+
+    def _check_sequence_image(self, db, sequence_id, sid, pool, clan, version,
+                              request_id, channel, payload):
+        """Check ordering and destination inside the image-receipt transaction."""
+        sequence = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                              (sequence_id,)).fetchone()
+        if (not sequence or sequence['status'] != 'ready'
+                or not sequence['announcement_message_id']
+                or (sequence['season_id'], sequence['pool'], sequence['target_version'],
+                    sequence['channel_id']) != (sid, pool, version, channel)):
+            raise ImageConflict('Announcement sequence is not ready for image delivery')
+        if payload.get('payload', {}).get('allowed_mentions') != {'parse': []}:
+            raise ImageConflict('Sequence image messages must not allow mentions')
+        items = json.loads(sequence['plan_json']).get('clans', [])
+        for item in items:
+            if item.get('tag') == clan:
+                if item.get('request_id') != request_id or item.get('frozen') != payload:
+                    raise ImageConflict('Image does not match the frozen sequence review')
+                return
+            receipt = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?',
+                                 (item.get('request_id'),)).fetchone()
+            if (not receipt or receipt['status'] != 'posted' or not receipt['message_id']
+                    or (receipt['season_id'], receipt['pool'], receipt['clan_tag'],
+                        receipt['target_version'], receipt['channel_id'])
+                    != (sid, pool, item.get('tag'), version, channel)):
+                raise ImageConflict('Previous clan is not confirmed; stop and check its status')
+        raise ImageConflict('Clan is not part of the reviewed sequence')
+
+    def claim(self, sid, pool, clan, version, request_id, operation, channel, message, payload, actor, *, confirm_duplicate=False, sequence_id=None):
         """Atomic durable intent; no external call is made with the transaction held."""
         with self.store.tx() as db:
             prior = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()
@@ -274,7 +367,10 @@ class RosterImageStore:
                 if (operation == 'drop') == (old['status'] == 'dropped'):
                     return dict(old), False
             # Recheck the saved destination after asynchronous render/validation.
-            if operation == 'post':
+            if operation == 'post' and sequence_id is not None:
+                self._check_sequence_image(db, sequence_id, sid, pool, clan, version,
+                                           request_id, channel, payload)
+            elif operation == 'post':
                 selected = db.execute('SELECT channel_id FROM roster_image_channels WHERE pool=?', (pool,)).fetchone()
                 if not selected or selected['channel_id'] != channel:
                     raise ImageConflict('The image channel changed. Review the destination again.')
