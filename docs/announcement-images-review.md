@@ -46,3 +46,10 @@ Scratch setup fixes corrected working-directory paths and the native-delivery te
 fixture (complete its pending request before testing resend). The first explicit
 send-gate mutation survived due to the separate generic route gate; the added
 boundary test verifies the explicit gate independently and kills that mutation.
+
+Claude entry 173 accepted the recovery fix after a diff check. Residual risk:
+the archive preflight and archive run in separate transactions; a concurrent
+staff state change between them can still make archive fail after native reopen.
+This narrow staff-driven race remains accepted, rather than an atomicity guarantee.
+Release does not initiate a send: November remains unchanged until staff explicitly
+choose Review and send or Send again.
