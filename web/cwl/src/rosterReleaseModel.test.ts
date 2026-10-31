@@ -144,14 +144,17 @@ describe("roster release filter model", () => {
 
   it("includes both 172k and 179k, excludes adjacent weights and missing", () => {
     const boundaryRows = [171999, 172000, 179000, 179001, null].map(
-      (weight, index) => account(`#BOUNDARY${index}`, { effective_weight: weight }),
+      (weight, index) =>
+        account(`#BOUNDARY${index}`, { effective_weight: weight }),
     );
     const result = deriveRosterRelease(
       boundaryRows,
       [],
       filters({ minWeight: 172000, maxWeight: 179000 }),
     );
-    expect(result.matches.map((row) => row.effective_weight)).toEqual([172000, 179000]);
+    expect(result.matches.map((row) => row.effective_weight)).toEqual([
+      172000, 179000,
+    ]);
   });
 
   it("facets each section against every other active section", () => {
@@ -326,7 +329,10 @@ describe("roster release selection and preferences", () => {
       account(`#${index}`, { kept: index % 4 === 0 }),
     );
     expect(quickSelectRosterMatches(ordered, 15)).toEqual(
-      ordered.filter((row) => !row.kept).slice(0, 15).map((row) => row.tag),
+      ordered
+        .filter((row) => !row.kept)
+        .slice(0, 15)
+        .map((row) => row.tag),
     );
     expect(quickSelectRosterMatches(ordered, 30)).toHaveLength(25);
     expect(quickSelectRosterMatches(ordered.slice(0, 12), 30)).toHaveLength(9);
@@ -394,4 +400,34 @@ it("advances past an oversized loaded group with one Load more action", () => {
   expect(
     progressiveRosterReleaseAccounts(rows, first.nextCount, true).visible,
   ).toHaveLength(121);
+});
+
+it("counts and filters outside family using only the shared outside-family-and-hosts flag", () => {
+  const rows = [
+    account("#OUT", { outside_family_and_hosts: true, kept: false }),
+    account("#IN", { outside_family_and_hosts: false, kept: true }),
+    account("#UNKNOWN"),
+  ];
+  const all = deriveRosterRelease(rows, clans, filters());
+  expect(all.facets.status.outside_family).toBe(1);
+  const selected = deriveRosterRelease(
+    rows,
+    clans,
+    filters({ statuses: ["outside_family"] }),
+  );
+  expect(selected.matches.map((row) => row.tag)).toEqual(["#OUT"]);
+  expect(
+    deriveRosterRelease(
+      rows,
+      clans,
+      filters({ statuses: ["outside_family", "locked"] }),
+    ).matches.map((row) => row.tag),
+  ).toEqual(["#OUT", "#IN"]);
+  expect(
+    deriveRosterRelease(
+      rows,
+      clans,
+      filters({ statuses: ["outside_family"], townHalls: [15] }),
+    ).matches,
+  ).toEqual([]);
 });
