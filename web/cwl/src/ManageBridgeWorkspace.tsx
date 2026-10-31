@@ -670,7 +670,10 @@ export default function ManageBridgeWorkspace({
                                 items.filter((item) => item !== pool),
                               )
                             }
-                            messageUrl={delivery?.message_url}
+                            messageUrl={
+                              entry.sequence?.message_url ||
+                              delivery?.message_url
+                            }
                             announcementSent={delivery?.status === "sent"}
                             channelName={
                               channels.find(
@@ -737,29 +740,28 @@ export default function ManageBridgeWorkspace({
                           )}
                         </>
                       }
-          tests={
-            <AnnouncementFullTest
-              key={`${seasonId}:${pool}`}
-              seasonId={seasonId}
-              pool={pool}
-              version={bridge.published_version}
-              generation={bridge.generation || ""}
-              draft={drafts[pool]}
-              channels={channels}
-              allowed={
-                canManage &&
-                !busy &&
-                !loading &&
-                !bridgeError &&
-                !channelsError &&
-                draftGeneration === bridge.generation
-              }
-              clanNames={(
-                entry.sequence?.published_clans || []
-              ).map((clan) => clan.name)}
-            />
-          }
-
+                      tests={
+                        <AnnouncementFullTest
+                          key={`${seasonId}:${pool}`}
+                          seasonId={seasonId}
+                          pool={pool}
+                          version={bridge.published_version}
+                          generation={bridge.generation || ""}
+                          draft={drafts[pool]}
+                          channels={channels}
+                          allowed={
+                            canManage &&
+                            !busy &&
+                            !loading &&
+                            !bridgeError &&
+                            !channelsError &&
+                            draftGeneration === bridge.generation
+                          }
+                          clanNames={(
+                            entry.sequence?.published_clans || []
+                          ).map((clan) => clan.name)}
+                        />
+                      }
                       enabled={entry.enabled}
                       changed={unsaved(pool)}
                       editable={canManage}

@@ -30,6 +30,14 @@ export default function SingleClanRosterTest({
 }) {
   const sending = useRef(false);
   const canManage = useDashboardPermission("cwl_send");
+  const identity = useRef("");
+  identity.current = `${seasonId}:${version}`;
+  useEffect(
+    () => () => {
+      identity.current = "";
+    },
+    [],
+  );
   const permission = useRef(canManage);
   permission.current = canManage;
   const [data, setData] = useState<Data | null>(null),
@@ -92,6 +100,7 @@ export default function SingleClanRosterTest({
       return;
     const release = acquire();
     if (!release) return;
+    const reviewedIdentity = identity.current;
     sending.current = true;
     setConfirmTest(false);
     setBusy(true);
@@ -105,7 +114,7 @@ export default function SingleClanRosterTest({
     setNonce(id);
     try {
       await destination.saveDefault();
-      if (!permission.current) return;
+      if (!permission.current || identity.current !== reviewedIdentity) return;
       const result = await api<{ url: string }>(
         `${path}/${encodeURIComponent(tag)}/test`,
         "POST",

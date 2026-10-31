@@ -24,6 +24,7 @@ async function mount(canSend = true, announcementSent = false) {
         canSend={canSend}
         announcementSent={announcementSent}
         channelName="#lazy-cwl"
+        messageUrl="https://discord.com/channels/644963518025826315/123456789012345678/123456789012345679"
         onRefresh={refresh}
       />,
     ),

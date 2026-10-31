@@ -242,3 +242,11 @@
   height: 18px;
   flex: none;
 }
+.announcement-result-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #f1d378;
+  text-decoration: underline;
+  font-size: 14px;
+}

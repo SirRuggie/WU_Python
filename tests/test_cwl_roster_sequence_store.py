@@ -179,6 +179,17 @@ class SequenceStoreTests(unittest.TestCase):
         self.assertEqual([clan['name'] for clan in state['clans']], ['Old clan'])
         self.assertEqual([clan['name'] for clan in state['published_clans']], ['Lazy.128'])
 
+    def test_status_link_uses_confirmed_sequence_receipt(self):
+        from cwl_web.roster_sequence_review import describe
+        for item in self.args['plan']['clans']:
+            item['request_id'] = 'b' * 24
+        self.images.prepare_sequence(**self.args)
+        self.assertIsNone(describe(self.images, 1, 'lazy')['message_url'])
+        self.images.confirm_sequence_announcement('a' * 24, self.bridge)
+        state = describe(self.images, 1, 'lazy')
+        self.assertTrue(state['message_url'].endswith('/' + str(self.bridge['receipt']['message_id'])))
+        self.assertIn('/' + str(self.bridge['receipt']['channel_id']) + '/', state['message_url'])
+
     def test_explicit_deleted_announcement_archive_is_replay_safe(self):
         self.images.prepare_sequence(**self.args)
         message = '987654321098765432'

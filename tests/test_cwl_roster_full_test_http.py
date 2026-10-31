@@ -45,6 +45,16 @@ class FullTestHTTPTests(ManageBridgeTests):
         jobs.poll()
         await asyncio.gather(*list(jobs.tasks.values()))
         self.assertEqual(len(sent), 3)
+        from utils import cwl_campaign
+        from cwl_web.manage_bridge import GUILD_ID
+        import copy
+        production = copy.deepcopy(await cwl_campaign.load_campaign(self.mongo, GUILD_ID, '2026-10'))
+        variant = production['campaign']['messages']['roster']['variants']['main']
+        variant['body'] = body['body']
+        variant['buttons'][0]['url'] = body['roster_url']
+        components = await cwl_campaign.render_message(production, 'roster', 'main', preview=False)
+        self.assertEqual(sent[0]['components'], [component.build()[0] for component in components])
+        self.assertEqual(sent[0]['flags'], 32768)
         self.assertNotIn('TEST', json.dumps(sent, ensure_ascii=False))
         self.assertTrue(sent[1]['content'].startswith('**'))
         self.assertTrue(sent[2]['content'].startswith('Can'))

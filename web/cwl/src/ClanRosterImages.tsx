@@ -475,7 +475,12 @@ export default function ClanRosterImages({
             /^https:\/\/discord\.com\/channels\/\d+\/\d+\/\d+$/.test(
               result.url,
             ) && (
-              <a href={result.url} target="_blank" rel="noreferrer">
+              <a
+                className="announcement-result-link"
+                href={result.url}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Open in Discord
               </a>
             )}

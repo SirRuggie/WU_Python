@@ -25,9 +25,7 @@ export default function AnnouncementEditor({
   onSave,
   onTestChannel,
   onTest,
-  fullTest,
 }: {
-  fullTest?: ReactNode;
   pool: Pool;
   trigger: HTMLElement | null;
   draft: AnnouncementDraft;
@@ -136,7 +134,6 @@ export default function AnnouncementEditor({
             </a>
           )}
         </details>
-        {fullTest}
       </div>
     </ActionPanel>
   );

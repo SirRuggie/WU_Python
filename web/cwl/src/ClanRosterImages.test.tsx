@@ -22,12 +22,12 @@ vi.mock("./ActionPanel", () => ({
   ),
 }));
 vi.mock("./ConfirmDialog", () => ({
-  default: ({ text, onCancel, onConfirm, children }: any) => (
+  default: ({ text, onCancel, onConfirm, children, confirmLabel = "Confirm", hideCancel = false }: any) => (
     <div role="dialog">
       {text}
       {children}
-      <button onClick={onCancel}>Cancel</button>
-      <button onClick={onConfirm}>Confirm</button>
+      {!hideCancel && <button onClick={onCancel}>Cancel</button>}
+      <button onClick={onConfirm}>{confirmLabel}</button>
     </div>
   ),
 }));
@@ -221,6 +221,9 @@ it.each(["post", "update", "drop"])(
       expect(writes()[0][2]).toHaveProperty("confirm_duplicate", true);
     else expect(writes()[0][2]).not.toHaveProperty("confirm_duplicate");
     if (operation !== "post") expect(writes()[0][0]).toContain("/update");
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain("Images updated · 1 clan messages");
+    expect(button("Close")).toBeDefined();
+    expect(button("Confirm")).toBeUndefined();
   },
 );
 

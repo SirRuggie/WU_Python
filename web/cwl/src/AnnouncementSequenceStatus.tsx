@@ -151,7 +151,7 @@ export default function AnnouncementSequenceStatus({
           }
           text={
             sequence.status === "complete"
-              ? `Done · ${sequence.announcement_confirmed ? "1 announcement, " : ""}${sent} clan images and the closing note posted to ${channelName}${sequence.announcement_confirmed ? "" : " · announcement confirmation unavailable"}`
+              ? `Done · ${messageUrl ? "1 announcement, " : ""}${sent} clan images and the closing note posted to ${channelName}${messageUrl ? "" : " · announcement confirmation unavailable"}`
               : sequence.status === "stopped"
                 ? `Stopped at ${stopped?.name || "closing note"}. ${sequence.error || "Review before continuing."}`
                 : `Posting ${sent} of ${sequence.clans.length} clan images to ${channelName}…`
@@ -165,7 +165,12 @@ export default function AnnouncementSequenceStatus({
             /^https:\/\/discord\.com\/channels\/\d+\/\d+\/\d+$/.test(
               messageUrl,
             ) && (
-              <a href={messageUrl} target="_blank" rel="noreferrer">
+              <a
+                className="announcement-result-link"
+                href={messageUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Open in Discord
               </a>
             )}

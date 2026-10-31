@@ -48,6 +48,8 @@ export default function AnnouncementFullTest({
   const running = useRef(false);
   const pendingRequest = useRef<Record<string, unknown> | null>(null);
   const alive = useRef(true);
+  const identity = useRef("");
+  identity.current = `${seasonId}:${pool}:${version}:${generation}`;
   const base = `/seasons/${encodeURIComponent(seasonId)}/manage-bridge/${pool}/test-full`;
   useEffect(() => {
     alive.current = true;
@@ -67,6 +69,10 @@ export default function AnnouncementFullTest({
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      if (document.visibilityState === "hidden") {
+        timer = setTimeout(poll, 2000);
+        return;
+      }
       try {
         const result = await api<{ test: TestState }>(
           `${base}/${job.request_id}`,
@@ -87,6 +93,7 @@ export default function AnnouncementFullTest({
   }, [allowed, base, job?.request_id, job?.status]);
   async function send() {
     if (!allowed || !version || !channel || running.current) return;
+    const reviewedIdentity = identity.current;
     running.current = true;
     setBusy(true);
     setReview(false);
@@ -102,7 +109,12 @@ export default function AnnouncementFullTest({
       };
     try {
       await destination.saveDefault();
-      if (!alive.current || !permission.current) return;
+      if (
+        !alive.current ||
+        !permission.current ||
+        reviewedIdentity !== identity.current
+      )
+        return;
       const result = await api<{ test: TestState }>(
         base,
         "POST",
@@ -214,7 +226,12 @@ export default function AnnouncementFullTest({
             /^https:\/\/discord\.com\/channels\/\d+\/\d+\/\d+$/.test(
               job.message_url,
             ) && (
-              <a href={job.message_url} target="_blank" rel="noreferrer">
+              <a
+                className="announcement-result-link"
+                href={job.message_url}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Open in Discord
               </a>
             )}
