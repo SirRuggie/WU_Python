@@ -253,12 +253,47 @@ class RosterImageStore:
                        (sid, clan, actor, 'roster_image_dismiss', json.dumps(dict(row)), json.dumps(updated)))
             return updated
 
-    def claim_sequence_closing(self, sequence_id):
+    def retry_sequence_image(self, sequence_id, request_id):
+        """Reclaim only a known rejection, preserving the frozen body and nonce."""
+        with self.store.tx() as db:
+            receipt = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?',
+                                 (request_id,)).fetchone()
+            if not receipt or receipt['status'] != 'failed':
+                raise ImageConflict('Only a confirmed rejection can be retried automatically')
+            payload = json.loads(receipt['payload_json'])
+            self._check_sequence_image(db, sequence_id, receipt['season_id'], receipt['pool'],
+                                       receipt['clan_tag'], receipt['target_version'], request_id,
+                                       receipt['channel_id'], payload)
+            current = db.execute('SELECT request_id FROM roster_image_posts WHERE season_id=? '
+                                 'AND pool=? AND clan_tag=?',
+                                 (receipt['season_id'], receipt['pool'], receipt['clan_tag'])).fetchone()
+            if not current or current['request_id'] != request_id:
+                raise ImageConflict('A newer image action replaced this receipt')
+            db.execute("UPDATE roster_image_requests SET status='sending',error=NULL,retry_after=NULL,"
+                       'updated_at=CURRENT_TIMESTAMP WHERE request_id=?', (request_id,))
+            db.execute("UPDATE roster_image_posts SET status='sending',error=NULL,"
+                       'updated_at=CURRENT_TIMESTAMP WHERE request_id=?', (request_id,))
+            return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?',
+                                   (request_id,)).fetchone())
+
+    def resume_sequence(self, sequence_id):
+        with self.store.tx() as db:
+            db.execute("UPDATE roster_image_sequences SET status='ready',updated_at=CURRENT_TIMESTAMP "
+                       "WHERE sequence_id=? AND status='stopped' AND announcement_message_id IS NOT NULL",
+                       (sequence_id,))
+
+    def claim_sequence_closing(self, sequence_id, *, retry_failed=False):
         """Claim the final note only after all images are durably confirmed."""
         with self.store.tx() as db:
             prior = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
                                (sequence_id,)).fetchone()
             if prior:
+                if retry_failed and prior['status'] == 'failed':
+                    db.execute("UPDATE roster_image_sequence_closing SET status='sending',error=NULL,"
+                               'retry_after=NULL,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?',
+                               (sequence_id,))
+                    return dict(db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
+                                           (sequence_id,)).fetchone()), True
                 return dict(prior), False
             sequence = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
                                   (sequence_id,)).fetchone()
