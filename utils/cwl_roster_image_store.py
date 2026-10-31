@@ -161,7 +161,7 @@ class RosterImageStore:
                 or not isinstance(actor, str) or not actor
                 or not isinstance(plan, list) or len(plan) < 2):
             raise ImageConflict('Invalid full-test review')
-        if any(not isinstance(step, dict) or step.get('payload', {}).get('allowed_mentions') != {'parse': []}
+        if any(not isinstance(step, dict) or step.get('payload', {}).get('allowed_mentions') != {'parse': [], 'roles': []}
                for step in plan):
             raise ImageConflict('Every test message must disable mentions')
         frozen = json.dumps(plan, sort_keys=True, separators=(',', ':'), allow_nan=False)

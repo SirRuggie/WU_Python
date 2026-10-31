@@ -20,10 +20,12 @@ def test_external_names_cannot_inject_formatting_mentions_or_lines():
     assert message['allowed_mentions'] == {'parse': []}
 
 
-def test_closing_and_test_copies_never_ping():
-    for message in (closing_message(), closing_message(test=True), clan_image_message('Example', '#P2Y', test=True)):
-        assert message['allowed_mentions'] == {'parse': []}
-    closing = closing_message()
-    assert closing['content'] == "Can't find your name? Check My assignments."
-    assert closing['components'][0]['components'][0]['url'] == ASSIGNMENTS_URL
-    assert closing_message(test=True)['content'].startswith('TEST · ')
+def test_test_payloads_match_production_except_explicit_no_ping_policy():
+    for production, test in ((closing_message(), closing_message(test=True)),
+                             (clan_image_message('Example', '#P2Y'), clan_image_message('Example', '#P2Y', test=True))):
+        assert test['allowed_mentions'] == {'parse': [], 'roles': []}
+        assert {k:v for k,v in test.items() if k != 'allowed_mentions'} == {
+            k:v for k,v in production.items() if k != 'allowed_mentions'}
+        assert 'TEST' not in str(test)
+    assert closing_message()['content'] == "Can't find your name? Check My assignments."
+    assert closing_message()['components'][0]['components'][0]['url'] == ASSIGNMENTS_URL

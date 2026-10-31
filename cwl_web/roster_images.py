@@ -4,7 +4,7 @@ import json
 import math
 import re
 from utils.cwl_roster_order import ordered_roster_clans
-from urllib.parse import quote
+from utils.cwl_roster_messages import clan_image_message
 from aiohttp import web, FormData
 from .server_management import discord, GUILD_ID, DiscordDeliveryUncertain
 
@@ -76,7 +76,10 @@ async def send_test(request):
         db.execute('INSERT INTO roster_test_messages(id,season_id,pool,channel_id,actor_id) VALUES (?,?,?,?,?)',(key,sid,group['pool'],channel,actor['user_id']))
         _audit(db,sid,group['tag'],actor['user_id'],'roster_image_test',None,{'channel_id':channel,'version':pub['version']})
     form=FormData()
-    payload={'content':f'TEST · {group["name"]} · {season["label"]} · Roster v{pub["version"]}', 'allowed_mentions':{'parse':[]},'nonce':nonce,'enforce_nonce':True,'components':[{'type':1,'components':[{'type':2,'style':5,'label':'Open clan','url':f'https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(group["tag"],safe="")}'}]}]}
+    payload = {**clan_image_message(group['name'], group['tag'], test=True),
+               'nonce': nonce, 'enforce_nonce': True,
+               'attachments': [{'id': i, 'filename': f'roster-{group["tag"][1:]}-{i+1}.png'}
+                               for i in range(len(images))]}
     form.add_field('payload_json',json.dumps(payload))
     for i,data in enumerate(images):form.add_field(f'files[{i}]',data,filename=f'roster-{group["tag"][1:]}-{i+1}.png',content_type='image/png')
     try:

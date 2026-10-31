@@ -70,7 +70,7 @@ class SequenceTransport:
 
     @staticmethod
     def _payload(frozen, nonce):
-        if frozen.get('allowed_mentions') != {'parse': []}:
+        if frozen.get('allowed_mentions') not in ({'parse': []}, {'parse': [], 'roles': []}):
             raise SequenceRejected('Sequence messages must not allow mentions')
         return {**frozen, 'nonce': nonce, 'enforce_nonce': True}
 

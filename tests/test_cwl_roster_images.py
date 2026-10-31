@@ -40,8 +40,8 @@ class RosterImageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await first.json(),await second.json())
         self.assertEqual(sum(c.args[1]=='POST' for c in mock.call_args_list),1)
         form=mock.call_args_list[1].kwargs['data']
-        payload=json.loads(form._fields[0][2]);self.assertEqual(payload['allowed_mentions'],{'parse':[]})
-        self.assertTrue(payload['content'].startswith('TEST'))
+        payload=json.loads(form._fields[0][2]);self.assertEqual(payload['allowed_mentions'],{'parse':[], 'roles':[]})
+        self.assertFalse(payload['content'].startswith('TEST')); self.assertTrue(payload['content'].startswith('**'))
         with patch('cwl_web.roster_images.discord',AsyncMock(return_value={'guild_id':'other','type':0})):
             self.assertEqual((await self.call('POST',path,self.owner,json=body|{'request_id':'b'*24})).status,400)
     def test_render_splits_fifteen_per_image(self):

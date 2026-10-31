@@ -58,7 +58,6 @@ async def prepare(request):
             raise web.HTTPConflict(text='Message settings changed; review the test again')
         item = loaded['campaign']['messages']['roster']['variants'][pool]
         item['body'] = body['body']
-        item['title'] = 'TEST · ' + item['title']
         if item.get('buttons'):
             item['buttons'][0]['url'] = body['roster_url']
         else:
@@ -70,7 +69,7 @@ async def prepare(request):
     frozen = await frozen_plan(request, sid, pool, body['version'])
     plan = [{'kind': 'announcement', 'payload': {
         'components': [component.build()[0] for component in components],
-        'flags': 32768, 'allowed_mentions': {'parse': []},
+        'flags': 32768, 'allowed_mentions': {'parse': [], 'roles': []},
     }}]
     for clan in frozen['clans']:
         payload = clan_image_message(clan['name'], clan['tag'], test=True)

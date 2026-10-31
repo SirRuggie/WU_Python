@@ -12,7 +12,7 @@ class FullTestStoreTests(unittest.TestCase):
     def prepare(self):
         self.test_args = dict(request_id='f' * 24, sid=1, pool='lazy', version=1,
             channel='123456789012345678', actor='staff', plan=[
-                {'kind': kind, 'payload': {'content': 'TEST · ' + kind, 'allowed_mentions': {'parse': []}}}
+                {'kind': kind, 'payload': {'content': kind, 'allowed_mentions': {'parse': [], 'roles': []}}}
                 for kind in ('announcement', 'image', 'closing')])
         return self.images.prepare_test_sequence(**self.test_args)
 

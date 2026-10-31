@@ -321,7 +321,7 @@ async def test_announcement(request):
         db.execute('INSERT INTO roster_test_messages(id,season_id,pool,channel_id,actor_id) VALUES (?,?,?,?,?)',(key,sid,pool,channel,actor['user_id']))
     message = await discord(request,'POST',f'/channels/{channel}/messages',json={
         'components':[component.build()[0] for component in components], 'flags':32768,
-        'allowed_mentions':{'parse':[]}, 'nonce':nonce,'enforce_nonce':True})
+        'allowed_mentions':{'parse':[], 'roles':[]}, 'nonce':nonce,'enforce_nonce':True})
     url = f'https://discord.com/channels/{GUILD_ID}/{channel}/{message["id"]}'
     with _store(request).tx() as db:
         db.execute('UPDATE roster_test_messages SET url=? WHERE id=?',(url,key))
