@@ -37,3 +37,27 @@ def test_invalid_visit_data_never_writes(tmp_path):
     with pytest.raises(ValueError):visits.record('bad',day=date.today(),at=datetime.now(timezone.utc),is_staff=False)
     with pytest.raises(ValueError):visits.record('123',day=date.today(),at=datetime.now(timezone.utc),is_staff='false')
     assert not store.rows('SELECT * FROM visit_days')
+
+
+def test_local_day_dst_and_retention(tmp_path):
+    store = Store(str(tmp_path/'visits.sqlite')); visits = VisitStore(store)
+    visits.record_session('123', at=datetime(2026,11,1,5,30,tzinfo=timezone.utc), is_staff=False)
+    assert not visits.record_session('123', at=datetime(2026,11,1,6,30,tzinfo=timezone.utc), is_staff=True)
+    assert store.one('SELECT day FROM visit_days')['day'] == '2026-11-01'
+    for age in (89,90):
+        day=date(2026,11,1)-timedelta(days=age)
+        visits.record(str(age),day=day,at=datetime(2026,8,1,tzinfo=timezone.utc),is_staff=False)
+    VisitStore(store).prune(date(2026,11,1))
+    assert {row['user_id'] for row in store.rows('SELECT user_id FROM visit_days')} == {'123','89'}
+
+
+def test_aggregate_unique_windows_staff_transition_and_zero_days(tmp_path):
+    store=Store(str(tmp_path/'visits.sqlite')); visits=VisitStore(store); today=date(2026,11,1)
+    for user,age,staff in [('123',0,False),('123',1,True),('456',6,False),('789',7,True),('999',30,False)]:
+        visits.record(user,day=today-timedelta(days=age),at=datetime(2026,11,1,tzinfo=timezone.utc),is_staff=staff)
+    result=visits.aggregates(today)
+    assert result['windows']=={'1':{'total':1,'staff':0,'members':1},'7':{'total':2,'staff':1,'members':1},'30':{'total':3,'staff':2,'members':1}}
+    assert len(result['series'])==30
+    assert result['series'][0]['total']==0
+    assert result['series'][-1]=={'day':'2026-11-01','total':1,'staff':0,'members':1}
+    assert 'user_id' not in str(result)
