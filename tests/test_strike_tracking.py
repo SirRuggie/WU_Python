@@ -208,7 +208,8 @@ def test_review_resolution_requires_an_actual_review_hold():
         sample = war(1)
         await tracking.observe(GUILD, sample)
         row = await db.strike_war_snapshots.find_one({'_id': tracking.snapshot_key(GUILD, sample)})
-        row['review_revision'] = 1
+        await db.strike_war_snapshots.update_one({'_id': row['_id']}, {'$set': {'review_revision': 1}})
+        row = await db.strike_war_snapshots.find_one({'_id': row['_id']})
         before = __import__('copy').deepcopy(row)
         with __import__('pytest').raises(StrikeConflict):
             await tracking.resolve_review(GUILD, row['war_key'], 1, 'No hold exists', 123)
