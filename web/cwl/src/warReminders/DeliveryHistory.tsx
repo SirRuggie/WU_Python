@@ -1,5 +1,13 @@
 import { timeLabel, type ReminderData } from "./types";
 
+const statuses: Record<string, string> = {
+  sent: "✓ Sent",
+  failed: "! Failed",
+  skipped: "– Skipped",
+  uncertain: "? Uncertain",
+  sending: "? Delivery unconfirmed",
+};
+
 export default function DeliveryHistory({
   data,
   enabled,
@@ -44,9 +52,10 @@ export default function DeliveryHistory({
                   <small>{new Date(receipt.at).toLocaleString()}</small>
                 </div>
                 <span>
-                  {receipt.status === "sending"
-                    ? "Delivery unconfirmed"
-                    : receipt.status}
+                  {statuses[receipt.status] || "? Unknown delivery status"}
+                  {receipt.status === "skipped" && receipt.detail
+                    ? ` · ${receipt.detail}`
+                    : ""}
                 </span>
                 {(receipt.urls?.length
                   ? receipt.urls
@@ -54,11 +63,19 @@ export default function DeliveryHistory({
                     ? [receipt.url]
                     : []
                 ).map((url, part) => (
-                  <a key={url} href={url} target="_blank" rel="noreferrer">
+                  <a
+                    className="war-delivery-link"
+                    key={url}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     View{part ? ` part ${part + 1}` : ""} ↗
                   </a>
                 ))}
-                {receipt.detail && <p>{receipt.detail}</p>}
+                {receipt.detail && receipt.status !== "skipped" && (
+                  <p>{receipt.detail}</p>
+                )}
               </article>
             ))}
           </div>

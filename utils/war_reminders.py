@@ -148,3 +148,20 @@ def sample(clan, event):
                 members=[dict(tag='#SAMPLE1', name='Shield Bearer', position=1, th=18, used=0),
                          dict(tag='#SAMPLE2', name='Night Archer', position=7, th=17, used=1),
                          dict(tag='#SAMPLE3', name='Iron Guardian', position=12, th=16, used=0, sample_unlinked=True)])
+
+COPY_FIELDS = frozenset({'minutes', 'audience', 'war_started', 'enabled'})
+
+
+def copied_settings(source, target, fields):
+    """Copy selected behavior, keeping each destination's own channel."""
+    if not isinstance(fields, list) or not fields or any(
+        not isinstance(field, str) or field not in COPY_FIELDS for field in fields
+    ) or len(fields) != len(set(fields)):
+        raise ValueError('Choose reminder fields to copy. Channels cannot be copied.')
+    result = settings(target)
+    source = settings(source)
+    for field in fields:
+        result[field] = source[field]
+    if not result['channel_id']:
+        result['enabled'] = False
+    return validate(result)

@@ -175,7 +175,7 @@ def test_ensure_clan_tag_index_duplicate_key_logs_error_and_continues(monkeypatc
     _reset_clan_tag_index_state()
 
 
-def test_repeat_add_clan_upserts_instead_of_duplicating(monkeypatch):
+def test_retired_add_clan_does_not_create_or_duplicate_records(monkeypatch):
     """docs/mongodb-refactor.md section 4: add the same tag twice, assert
     clan_data holds exactly one document for that tag."""
     _reset_clan_tag_index_state()
@@ -197,6 +197,7 @@ def test_repeat_add_clan_upserts_instead_of_duplicating(monkeypatch):
     asyncio.run(handler(ctx=ctx2, coc_client=coc_client, mongo=mongo))
 
     matching = [doc for doc in mongo.clans.documents.values() if doc.get("tag") == "#ABC123"]
-    assert len(matching) == 1
-    assert len(mongo.history.documents) == 1  # Only the new clan needs an add snapshot.
+    assert len(matching) == 0
+    assert len(mongo.history.documents) == 0
+    assert "Edit this on the dashboard" in ctx1.responded[0][0][0]
     _reset_clan_tag_index_state()

@@ -69,7 +69,6 @@ class ProviderUnavailable(Exception):
     pass
 
 
-FAMILY_TYPES = ("FWA", "Tactical", "Flexible Fun", "Competitive")
 WEIGHTS_URL = "https://www.fwastats.com/Weights.json"
 WEIGHTS_CACHE_SECONDS = 15 * 60
 WEIGHTS_MAX_BYTES = 8 * 1024 * 1024
@@ -93,8 +92,8 @@ class LiveProviders:
         try:
             collection = collection_for(client, "clans", routes=self.routes)
             cursor = collection.find(
-                {"type": {"$in": list(FAMILY_TYPES)}},
-                {"_id": 0, "tag": 1, "name": 1, "type": 1},
+                {"archived": {"$ne": True}, "removed": {"$ne": True}},
+                {"_id": 0, "tag": 1, "name": 1, "type": 1, "archived": 1, "removed": 1},
                 max_time_ms=5000,
             )
             docs = await cursor.to_list(length=201)
@@ -106,7 +105,7 @@ class LiveProviders:
             await client.close()
         result = {}
         for doc in docs:
-            if not isinstance(doc, dict) or doc.get("type") not in FAMILY_TYPES:
+            if not isinstance(doc, dict) or doc.get("archived") or doc.get("removed"):
                 continue
             try:
                 value = tag(doc.get("tag"))
@@ -115,7 +114,7 @@ class LiveProviders:
             name = doc.get("name")
             if not isinstance(name, str) or not name.strip():
                 continue
-            result[value] = {"tag": value, "name": name.strip(), "type": doc["type"]}
+            result[value] = {"tag": value, "name": name.strip(), "type": doc.get("type") if isinstance(doc.get("type"), str) else "Unknown"}
         if not result:
             raise ProviderUnavailable("No eligible family clans found in bot directory")
         return {"source": "bot_mongo", "status": "ok", "checked_at": datetime.now(timezone.utc).isoformat(),

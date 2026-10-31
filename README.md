@@ -114,7 +114,7 @@ have been removed.
 
 | Command | Description |
 | --- | --- |
-| `/clan dashboard` | Open clan administration, FWA tools, and image uploads. |
+| `/clan dashboard` | Retired for clan editing. Use Dashboard → Family clans; View Clan List and Manage FWA Data remain available. |
 | `/clan info` | View information about every family clan. |
 | `/clan list` | Pick a clan to view or assign to a recruit. |
 | `/fwa bases` | Select and display an FWA base layout. |

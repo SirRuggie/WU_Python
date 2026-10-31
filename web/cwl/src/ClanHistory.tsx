@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import HistoryTime from "./clanManagement/HistoryTime";
 
 type Event = {
   id: string;
@@ -10,24 +11,32 @@ type Event = {
   clan: Record<string, string>;
   can_restore: boolean;
   present: boolean;
+  display?: Record<string, string>;
+  reminder_snapshot?: { field: string; value: string }[];
+  changes?: { field: string; before: string; after: string }[];
 };
 type History = { events: Event[]; more: boolean };
 const fields: Record<string, string> = {
   type: "Clan type",
   th_requirements: "Minimum Town Hall",
-  leader_id: "Leader ID",
-  leader_role_id: "Leader role ID",
-  role_id: "Clan role ID",
-  chat_channel_id: "Chat channel ID",
-  announcement_id: "Announcement channel ID",
-  rules_channel_id: "Rules channel ID",
-  leadership_channel_id: "Leadership channel ID",
-  thread_id: "Thread ID",
+  leader_id: "Leader",
+  leader_role_id: "Leader role",
+  role_id: "Clan role",
+  chat_channel_id: "Chat channel",
+  announcement_id: "Announcement channel",
+  rules_channel_id: "Rules channel",
+  leadership_channel_id: "Leadership channel",
+  thread_id: "Thread",
   profile: "Profile link",
   logo: "Logo link",
   banner: "Banner link",
   emoji: "Clan emoji",
 };
+function day(at: string | null) {
+  return at && Number.isFinite(Date.parse(at))
+    ? new Date(at).toLocaleDateString(undefined, { dateStyle: "long" })
+    : "Date unavailable";
+}
 export default function ClanHistory({
   onRestored,
 }: {
@@ -92,7 +101,7 @@ export default function ClanHistory({
     <section aria-label="Clan settings history" className="clan-history">
       <div className="page-head">
         <div>
-          <h2>Settings history & recovery</h2>
+          <h2>History</h2>
           <p>Review earlier clan settings or restore a removed clan.</p>
         </div>
         <button
@@ -126,15 +135,18 @@ export default function ClanHistory({
               setPage(0);
             }}
           >
-            <option value="all">All saved settings</option>
-            <option value="removed">Removal snapshots</option>
+            <option value="all">All changes</option>
+            <option value="settings">Clan settings</option>
+            <option value="reminders">War reminders</option>
+            <option value="added">Added clans</option>
+            <option value="restored">Restored clans</option>
+            <option value="removed">Removed clans</option>
           </select>
         </label>
       </div>
       <p className="small">
-        Each entry is a copy saved before an edit or removal, not confirmation
-        that the change finished. For war reminder sends, open the clan’s War
-        reminders and expand Delivery history.
+        Confirmed changes show what changed; older entries show saved settings.
+        For reminder sends, open War reminders and expand Delivery history.
       </p>
       {error && (
         <p className="notice error" role="alert">
@@ -158,102 +170,126 @@ export default function ClanHistory({
         </div>
       ) : (
         <div className="clan-history-list">
-          {data.events.map((event) => (
-            <article className="card" key={event.id}>
-              <div className="clan-history-heading">
-                <div>
-                  <h3>{event.clan.name}</h3>
-                  <span className="small">{event.clan.tag}</span>
+          {data.events.map((event, index) => (
+            <div key={event.id}>
+              {(index === 0 ||
+                day(event.at) !== day(data.events[index - 1].at)) && (
+                <h3>{day(event.at)}</h3>
+              )}
+              <article className="card">
+                <div className="clan-history-heading">
+                  <div>
+                    <h3>{event.clan.name}</h3>
+                    <span className="small">{event.clan.tag}</span>
+                  </div>
+                  <span className="pill">{event.source}</span>
                 </div>
-                <span className="pill">{event.source}</span>
-              </div>
-              <p>
-                <strong>{event.action}</strong>
-              </p>
-              <p className="small">
-                {event.actor} ·{" "}
-                {event.at
-                  ? new Date(event.at).toLocaleString()
-                  : "Date unavailable"}
-              </p>
-              <details>
-                <summary>View saved settings</summary>
-                <dl className="clan-history-values">
-                  {Object.entries(fields)
-                    .filter(([key]) => event.clan[key])
-                    .map(([key, label]) => (
-                      <div key={key}>
-                        <dt>{label}</dt>
-                        <dd>{event.clan[key]}</dd>
+                <p>
+                  <strong>{event.action}</strong>
+                </p>
+                <div className="small">
+                  By {event.actor} · <HistoryTime at={event.at} />
+                </div>
+                {event.changes?.map((change) => (
+                  <p key={change.field}>
+                    {change.field}: {change.before || "Not set"} →{" "}
+                    {change.after || "Not set"}
+                  </p>
+                ))}
+                <details>
+                  <summary>
+                    {event.changes?.length
+                      ? "View settings before this change"
+                      : "Settings before this change · View"}
+                  </summary>
+                  <dl className="clan-history-values">
+                    {Object.entries(fields)
+                      .filter(([key]) => event.clan[key])
+                      .map(([key, label]) => (
+                        <div key={key}>
+                          <dt>{label}</dt>
+                          <dd>
+                            {event.display?.[key] ||
+                              (key.endsWith("_id")
+                                ? "Name not recorded"
+                                : event.clan[key])}
+                          </dd>
+                        </div>
+                      ))}
+                    {event.reminder_snapshot?.map((setting) => (
+                      <div key={`reminder-${setting.field}`}>
+                        <dt>{setting.field}</dt>
+                        <dd>{setting.value}</dd>
                       </div>
                     ))}
-                </dl>
-              </details>
-              {event.can_restore ? (
-                <>
-                  <button
-                    className="primary"
-                    disabled={busy}
-                    onClick={() => {
-                      setReview(event.id);
-                      setConfirmTag("");
-                    }}
-                  >
-                    Review restore
-                  </button>
-                  {review === event.id && (
-                    <form
-                      className="clan-restore"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void restore(event);
+                  </dl>
+                </details>
+                {event.can_restore ? (
+                  <>
+                    <button
+                      className="primary"
+                      disabled={busy}
+                      onClick={() => {
+                        setReview(event.id);
+                        setConfirmTag("");
                       }}
                     >
-                      <h4>Restore {event.clan.name}?</h4>
-                      <p>
-                        Restores this clan’s saved settings. Check that its
-                        roles, channels and image links still exist.
-                      </p>
-                      <p className="small">
-                        CWL rosters and Discord members are not changed.
-                      </p>
-                      <label>
-                        Type {event.clan.tag} to confirm
-                        <input
-                          autoComplete="off"
-                          value={confirmTag}
-                          disabled={busy}
-                          onChange={(e) => setConfirmTag(e.target.value)}
-                        />
-                      </label>
-                      <div className="clan-tabs">
-                        <button
-                          className="primary"
-                          disabled={busy || confirmTag !== event.clan.tag}
-                        >
-                          {busy ? "Restoring…" : "Restore clan"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => setReview("")}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </>
-              ) : event.present ? (
-                <p className="small">
-                  Clan is active · current settings are kept.
-                </p>
-              ) : (
-                <p className="small">
-                  View only · use the latest removal snapshot to restore.
-                </p>
-              )}
-            </article>
+                      Review restore
+                    </button>
+                    {review === event.id && (
+                      <form
+                        className="clan-restore"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void restore(event);
+                        }}
+                      >
+                        <h4>Restore {event.clan.name}?</h4>
+                        <p>
+                          Restores this clan’s saved settings. Check that its
+                          roles, channels and image links still exist.
+                        </p>
+                        <p className="small">
+                          CWL rosters and Discord members are not changed.
+                        </p>
+                        <label>
+                          Type {event.clan.tag} to confirm
+                          <input
+                            autoComplete="off"
+                            value={confirmTag}
+                            disabled={busy}
+                            onChange={(e) => setConfirmTag(e.target.value)}
+                          />
+                        </label>
+                        <div className="clan-tabs">
+                          <button
+                            className="primary"
+                            disabled={busy || confirmTag !== event.clan.tag}
+                          >
+                            {busy ? "Restoring…" : "Restore clan"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setReview("")}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </>
+                ) : event.present ? (
+                  <p className="small">
+                    Clan is active · current settings are kept.
+                  </p>
+                ) : (
+                  <p className="small">
+                    View only · use the latest removal snapshot to restore.
+                  </p>
+                )}
+              </article>
+            </div>
           ))}
         </div>
       )}

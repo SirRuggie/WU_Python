@@ -110,27 +110,67 @@
   }
 }
 
-.clan-mobile-switch {
+.clan-mobile-switch,
+.clan-all-link,
+.clan-section-toggle {
   display: none;
 }
+.clan-danger-zone {
+  border: 1px solid #e17878;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 24px;
+}
+.clan-danger-zone h3 {
+  color: #ffb1b1;
+  margin-top: 0;
+}
+.clan-danger-zone .danger-link {
+  color: #ffb1b1;
+}
+.clan-editor {
+  min-width: 0;
+}
 @media (max-width: 800px) {
-  .clan-mobile-switch {
-    display: block;
-    width: 100%;
-    text-align: left;
-  }
-  .clan-picker-closed {
+  .clan-detail-open > aside {
     display: none;
   }
-  .clan-mobile-switch[aria-expanded="true"] {
+  .clan-layout:not(.clan-detail-open) > section {
+    display: none;
+  }
+  .clan-all-link {
+    display: block;
     margin-bottom: 12px;
   }
-}
-
-@media (max-width: 800px) {
   .clan-tabs[aria-label="Clan settings"] {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: none;
+  }
+  .clan-section-card {
+    margin-top: 12px;
+    border: 1px solid #505766;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .clan-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    border-radius: 0;
+    padding: 12px;
+  }
+  .clan-section-toggle span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    color: #c3cee0;
+    font-size: 12px;
+  }
+  .clan-section-card > [role="tabpanel"]:not([hidden]) {
+    padding: 12px;
   }
 }
 
@@ -259,6 +299,45 @@
 }
 
 /* Focused controls must remain visible above the sticky save bar. */
-.clan-management :is(input,select,button,summary,[tabindex]) { scroll-margin-block: 90px 150px; }
-@media(max-height:600px) { .clan-actions { position:static; } }
-@media(prefers-reduced-motion:reduce) { .clan-management *, .clan-management *::before, .clan-management *::after { scroll-behavior:auto!important;animation:none!important;transition:none!important; } }
+.clan-management :is(input, select, button, summary, [tabindex]) {
+  scroll-margin-block: 90px 150px;
+}
+@media (max-height: 600px) {
+  .clan-actions {
+    position: static;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clan-management *,
+  .clan-management *::before,
+  .clan-management *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.clan-leader-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.clan-leader-identity img {
+  border-radius: 50%;
+}
+/* Only the focused channel picker shows its keyboard tip; all remain described. */
+.clan-management .channel-combobox:not(:focus-within) .channel-picker-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.clan-tabs[aria-label="Used by"] a {
+  color: #f4cd64;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 10px;
+}

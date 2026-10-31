@@ -95,7 +95,15 @@ export default function ReminderOverview({
     ),
     ids = new Set(names.keys());
   const rows = data?.clans || [],
-    visible = visibleRows(rows.filter(row => !category || clanCategory(row.clan.type) === category), query, filter, names, channelsReady);
+    visible = visibleRows(
+      rows.filter(
+        (row) => !category || clanCategory(row.clan.type) === category,
+      ),
+      query,
+      filter,
+      names,
+      channelsReady,
+    );
   const attention = rows.filter(
     (row) => rowHealth(row, ids, channelsReady).category === "attention",
   ).length;
@@ -144,7 +152,13 @@ export default function ReminderOverview({
           <button onClick={onRetryChoices}>Retry channel names</button>
         </p>
       )}
-      {data && <ClanCategories clans={rows.map(row => row.clan)} value={category} onChange={setCategory} />}
+      {data && (
+        <ClanCategories
+          clans={rows.map((row) => row.clan)}
+          value={category}
+          onChange={setCategory}
+        />
+      )}
       {!data ? (
         <p role="status">
           {error
@@ -226,15 +240,15 @@ export default function ReminderOverview({
           ) : (
             <table className="overview-table">
               <caption className="overview-sr-only">
-                Saved family war reminder settings and latest scheduled
-                outcome. Test messages are excluded.
+                Saved family war reminder settings and latest scheduled outcome.
+                Test messages are excluded.
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Clan</th>
                   <th scope="col">Reminders</th>
                   <th scope="col">Channel &amp; schedule</th>
-                  <th scope="col">Latest scheduled outcome</th>
+                  <th scope="col">Last reminder</th>
                   <th scope="col">
                     <span className="overview-sr-only">Actions</span>
                   </th>
@@ -245,12 +259,40 @@ export default function ReminderOverview({
                   const state = rowHealth(row, ids, channelsReady),
                     issue = destinationIssue(row, ids, channelsReady),
                     config = row.settings;
+                  if (!config.enabled && state.category !== "attention") {
+                    return (
+                      <tr key={row.clan.tag} className="overview-off-row">
+                        <td colSpan={5}>
+                          <div className="overview-off-line">
+                            <strong title={row.clan.name}>
+                              {row.clan.name}
+                            </strong>
+                            <span>
+                              {clanCategory(row.clan.type) || "Type not set"} ·
+                              Off
+                            </span>
+                            <button
+                              ref={(el) => {
+                                if (el) buttons.current.set(row.clan.tag, el);
+                                else buttons.current.delete(row.clan.tag);
+                              }}
+                              aria-label={`Set up reminders for ${row.clan.name}`}
+                              onClick={() => onOpen(row.clan)}
+                            >
+                              Set up ›
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
                   return (
                     <tr key={row.clan.tag}>
                       <th scope="row">
                         <strong>{row.clan.name}</strong>
                         <small>
-                          {row.clan.tag} · {clanCategory(row.clan.type) || "Type not set"}
+                          {row.clan.tag} ·{" "}
+                          {clanCategory(row.clan.type) || "Type not set"}
                         </small>
                       </th>
                       <td>
@@ -309,7 +351,7 @@ export default function ReminderOverview({
                           className="overview-mobile-label"
                           aria-hidden="true"
                         >
-                          Latest scheduled outcome
+                          Last reminder
                         </span>
                         <span>
                           {row.last_delivery
@@ -336,7 +378,8 @@ export default function ReminderOverview({
                           aria-label={`${issue ? "Review destination" : "Manage reminders"} for ${row.clan.name} ${row.clan.tag}`}
                           onClick={() => onOpen(row.clan)}
                         >
-                          {issue ? "Review destination" : "Manage reminders"} <span aria-hidden="true">→</span>
+                          {issue ? "Review destination" : "Manage reminders"}{" "}
+                          <span aria-hidden="true">→</span>
                         </button>
                       </td>
                     </tr>

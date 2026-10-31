@@ -86,7 +86,7 @@ export default function DeclarationClan({
             }
           }}
         >
-          Clan settings ›
+          Hosting clans ›
         </a>
       )}
       {open && (

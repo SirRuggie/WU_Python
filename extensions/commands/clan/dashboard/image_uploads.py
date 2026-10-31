@@ -1,9 +1,4 @@
-"""Native Discord uploads for clan and FWA dashboard images.
-
-The dashboard's older image controls accept URLs or point people to slash
-commands. These handlers use Discord's native file-upload modal and still
-write the same Mongo fields, so every existing reader keeps working.
-"""
+"""Native FWA image uploads; retired clan upload controls are read-only."""
 
 from __future__ import annotations
 
@@ -38,7 +33,6 @@ from utils.media_store import (
     FWA_WAR_BASE_NAME,
     MediaStore,
     MediaStoreError,
-    clan_folder,
     fwa_base_folder,
 )
 from utils.media_urls import DETAIL, GALLERY, THUMBNAIL, optimized
@@ -202,6 +196,10 @@ def _attachment_url(attachment: dict[str, Any]) -> str | None:
 
 
 async def _open(ctx: Any, action_id: str, mongo: MongoClient, kind: str) -> None:
+    if kind == "clan":
+        from .read_only_clan import show_clan
+        await show_clan(ctx, mongo, action_id)
+        return
     parsed = _parse_target(kind, action_id)
     identity = _identity(ctx)
     label = "Clan Management" if kind == "clan" else "FWA Representative"
@@ -213,36 +211,18 @@ async def _open(ctx: Any, action_id: str, mongo: MongoClient, kind: str) -> None
         return
     slot, key = parsed
     guild_id, owner_id, source_channel_id, source_message_id = identity
-    if kind == "clan":
-        current = await mongo.clans.find_one({"tag": key})
-        if current is None:
-            await ctx.respond("❌ That clan no longer exists. No upload was opened.", ephemeral=True)
-            return
-        old_value = current.get(slot)
-        clan_name = str(current.get("name") or key.lstrip("#"))
-        clan_id = current.get("_id")
-    else:
-        # get_fwa_data creates the one configuration document when absent. This
-        # keeps the subsequent compare-and-set update safe from an upsert race.
-        from extensions.commands.clan.dashboard.fwa_data import get_fwa_data
+    from extensions.commands.clan.dashboard.fwa_data import get_fwa_data, _management_token
 
-        current = await get_fwa_data(mongo)
-        old_value = current.get(f"{slot}_base_images", {}).get(key)
-        clan_name = None
-        clan_id = None
-    manage_token = None
-    if kind == "fwa":
-        # Managed FWA panels carry their Home control on the source message.
-        # Legacy clan uploads deliberately have no management provenance.
-        from extensions.commands.clan.dashboard.fwa_data import _management_token
-        manage_token = _management_token(ctx)
+    current = await get_fwa_data(mongo)
+    old_value = current.get(f"{slot}_base_images", {}).get(key)
+    manage_token = _management_token(ctx)
     token = secrets.token_urlsafe(18)
     _prune_pending()
     _PENDING[token] = (time.monotonic(), UploadTarget(
         kind=kind, slot=slot, key=key, old_value=old_value,
         guild_id=guild_id, owner_id=owner_id,
         source_channel_id=source_channel_id, source_message_id=source_message_id,
-        clan_name=clan_name, clan_id=clan_id, manage_token=manage_token,
+        manage_token=manage_token,
     ))
     _prune_pending()
     title = f"Upload {slot.title()} image"
@@ -256,10 +236,11 @@ async def _open(ctx: Any, action_id: str, mongo: MongoClient, kind: str) -> None
     )
 
 
-@register_action("clan_image_upload", opens_modal=True, no_return=True, preload_state=False)
+@register_action("clan_image_upload", no_return=True, preload_state=False)
 @lightbulb.di.with_di
 async def clan_image_upload(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any) -> None:
-    await _open(ctx, action_id, mongo, "clan")
+    from .read_only_clan import show_clan
+    await show_clan(ctx, mongo, action_id)
 
 
 @register_action("fwa_image_upload", opens_modal=True, no_return=True, preload_state=False)
@@ -278,15 +259,7 @@ def _consume(token: str) -> UploadTarget | None:
 
 async def _persist(target: UploadTarget, mongo: MongoClient, url: str) -> bool:
     if target.kind == "clan":
-        from utils.clan_dashboard_history import audit
-        row = await mongo.clans.find_one({"_id": target.clan_id, "tag": target.key})
-        if not row:
-            return False
-        await audit(mongo, {'user_id':str(target.owner_id), 'source':'Discord'}, 'before_edit', row)
-        result = await mongo.clans.update_one(
-            {"_id": target.clan_id, "tag": target.key, target.slot: target.old_value},
-            {"$set": {target.slot: url}},
-        )
+        return False
     else:
         field = f"{target.slot}_base_images.{target.key}"
         result = await mongo.fwa_data.update_one(
@@ -340,6 +313,9 @@ async def dashboard_image_submit(
     if not _role_present(ctx):
         await _edit(interaction, _problem_panel(f"{label} role required."))
         return
+    if target.kind == "clan":
+        await _edit(interaction, _problem_panel("Clan editing moved to Dashboard → Family clans. Nothing was changed."))
+        return
     if _parse_target(target.kind, f"{target.slot}:{target.key}") is None:
         await _edit(interaction, _problem_panel("That image target is no longer supported."))
         return
@@ -350,27 +326,10 @@ async def dashboard_image_submit(
     if url is None:
         await _edit(interaction, _problem_panel("Discord did not return a valid image under 10 MB. Nothing was changed.", target))
         return
-    # Recheck that a clan target still exists before allocating an R2 object.
-    # A Mongo outage here is distinct from a failed image download and must not
-    # claim that a later save was attempted.
-    current_clan = None
-    try:
-        if target.kind == "clan":
-            current_clan = await mongo.clans.find_one({"tag": target.key})
-    except Exception:
-        LOG.exception("dashboard image target lookup failed kind=%s key=%s", target.kind, target.key)
-        await _edit(interaction, _problem_panel("I could not verify that target. Nothing was changed; try again shortly.", target))
-        return
-    if target.kind == "clan" and current_clan is None:
-        await _edit(interaction, _problem_panel("That clan no longer exists. Nothing was changed.", target))
-        return
     try:
         data = await asyncio.to_thread(download_image_blocking, url)
-        folder = (
-            clan_folder(str(current_clan.get("name") or target.clan_name or target.key.lstrip("#")))
-            if target.kind == "clan" else fwa_base_folder(target.key)
-        )
-        name = target.slot if target.kind == "clan" else (FWA_WAR_BASE_NAME if target.slot == "war" else FWA_ACTIVE_BASE_NAME)
+        folder = fwa_base_folder(target.key)
+        name = FWA_WAR_BASE_NAME if target.slot == "war" else FWA_ACTIVE_BASE_NAME
         uploaded_url = await media.upload_bytes(data, folder=folder, name=name)
     except (requests.RequestException, asyncio.TimeoutError, ValueError, OSError, MediaStoreError):
         await _edit(interaction, _problem_panel("I could not validate and store that image. Nothing was changed; try again shortly.", target))

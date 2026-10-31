@@ -76,7 +76,7 @@ it("Build loads draft state; signup warning and Fix remain in the header on ever
     for (const label of [
       "Accounts & signups",
       "Compare clans",
-      "Clan settings",
+      "Hosting clans",
       "Missing weights",
     ]) {
       const tab = [
