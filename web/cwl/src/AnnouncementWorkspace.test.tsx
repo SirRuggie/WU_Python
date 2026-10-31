@@ -222,9 +222,18 @@ it("offers Retry only for the ready failed pool and never for sent or uncertain"
   bridge.pools.main.delivery = { status: "sent" };
   bridge.pools.lazy.delivery = { status: "failed" };
   await mount();
-  expect(host.querySelectorAll(".announcement-pool-card button")).toHaveLength(
-    5,
-  );
+  const cards = host.querySelectorAll(".announcement-pool-card");
+  expect(cards[0].textContent).toContain("Check posted message");
+  expect(
+    [...cards[0].querySelectorAll("button")].some(
+      (button) => button.textContent === "Retry",
+    ),
+  ).toBe(false);
+  expect(
+    [...cards[1].querySelectorAll("button")].filter(
+      (button) => button.textContent === "Retry",
+    ),
+  ).toHaveLength(1);
   await click("Review and send");
   expect(
     document.querySelectorAll(".announcement-send-review section"),
@@ -330,3 +339,51 @@ it("a test-send guard closes the confirmation and explains why nothing was sent"
   expect(host.textContent).toContain("Test not sent:");
   expect(api.mock.calls.some((c) => c[1])).toBe(false);
 });
+
+it("normal review lists the current publication in order, not a stale frozen plan", async () => {
+  bridge.pools.main.sequence = {
+    sequence_id: "old",
+    status: "stopped",
+    announcement_confirmed: false,
+    error: null,
+    version: 1,
+    channel_id: channels[0].id,
+    closing: null,
+    clans: [{ tag: "#OLD", name: "Old clan", pages: 1, status: "pending" }],
+    published_clans: [
+      { tag: "#NEW1", name: "Current first", pages: 1 },
+      { tag: "#NEW2", name: "Current second", pages: 2 },
+    ],
+  };
+  await mount();
+  await click("Review and send");
+  const text = document.querySelector(
+    ".announcement-send-review",
+  )!.textContent!;
+  expect(text).toContain("Current first");
+  expect(text).toContain("Current second");
+  expect(text.indexOf("Current first")).toBeLessThan(
+    text.indexOf("Current second"),
+  );
+  expect(text).not.toContain("Old clan");
+  await click("Cancel");
+  expect(
+    api.mock.calls.some((c) => c[1] === "POST" && c[0].endsWith("/send")),
+  ).toBe(false);
+});
+
+it.each([null, { status: "failed" } as const])(
+  "per-pool Send/Retry opens review without writing (%s)",
+  async (delivery) => {
+    bridge.pools.main.delivery = { status: "sent" };
+    bridge.pools.lazy.delivery = delivery;
+    await mount();
+    await click(delivery ? "Retry" : "Send");
+    expect(
+      document.querySelectorAll(".announcement-send-review section"),
+    ).toHaveLength(1);
+    expect(api.mock.calls.filter((c) => c[1] === "POST")).toHaveLength(0);
+    await click("Cancel");
+    expect(api.mock.calls.filter((c) => c[1] === "POST")).toHaveLength(0);
+  },
+);
