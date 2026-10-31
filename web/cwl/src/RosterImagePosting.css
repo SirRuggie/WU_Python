@@ -1,5 +1,6 @@
 .roster-image-posting {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .roster-image-posting .image-pool {

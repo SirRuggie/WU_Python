@@ -76,11 +76,13 @@ with app['store'].tx() as db:
             campaign['signup_deadline'] = {'at': deadline.isoformat()}
             key = cycle_id(GUILD_ID, '2026-10' if sid == 1 else f'2026-{sid + 3:02}')
             if sid == 1:
-                campaign['signup_deadline'] = {'at': '2026-10-29T17:00:00-04:00'}
+                # Deliberately stale, unbound campaign; never depend on today's calendar date.
+                campaign['signup_deadline'] = {'at': (now - timedelta(days=1)).isoformat()}
             mongo.bot_config.documents[key] = {'_id': key, 'campaign': campaign}
             db.execute('INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES(?,?)', (sid, cycle))
     wrong = default_campaign()
-    wrong['signup_deadline'] = {'at': '2026-11-29T17:00:00-05:00'}
+    # The bound campaign must remain open whenever the isolated suite is run.
+    wrong['signup_deadline'] = {'at': (now + timedelta(days=30)).isoformat()}
     mongo.bot_config.documents[cycle_id(GUILD_ID, '2026-11')] = {'_id': cycle_id(GUILD_ID, '2026-11'), 'campaign': wrong}
     for sid in (4, 5):
         db.execute('INSERT INTO roster_publications(id,season_id,version,revision,published_by,published_at,joining_instructions,assigned_count,unassigned_count,clans_json,withdrawn_at) VALUES(?,?,1,0,?,?,?,1,2,?,?)',
