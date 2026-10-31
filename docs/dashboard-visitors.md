@@ -52,6 +52,4 @@ The isolated signup-card browser harness now awaits its background account
 snapshot rather than forcing loading data to settled; its all-signed assertion is
 preserved. A stale migration column expectation was updated for is_bot=0 on old
 sessions. Scratch setup corrections used the correct loopback namespace, working
-directory and WU_FIXTURE_BACKEND environment. No production data was used.
-
-Entry 173 release corrections pin WAL, the 200 ms busy timeout and mode 0600 in tests. Repeat cached visits skip staff scope resolution as well as visit database work. Owner browser verification at 360/1440 used synthetic data, with an accessible daily table and no overflow.
+directory and WU_FIXTURE_BACKEND environment. No production data was used. Entry 173 release corrections pin WAL, the 200 ms busy timeout and mode 0600 in tests. Repeat cached visits skip staff scope resolution as well as visit database work. Owner browser verification at 360/1440 used synthetic data, with an accessible daily table and no overflow.
