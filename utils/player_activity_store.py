@@ -15,6 +15,15 @@ class PlayerActivityStore:
         # TTL creation is reserved for the backup-verified retention migration.
         await self.collection.create_index('current_clan_tag', name='activity_family_clan')
 
+    async def all_players(self):
+        return await self.collection.find({}).to_list(length=None)
+
+    async def mark_seed_attempt(self, player_tag, status, version):
+        await self.collection.update_one(
+            {'_id': tag(player_tag)},
+            {'$set': {'seed_job_version': version, 'seed_status': status,
+                      'seed_attempted_at': datetime.now(timezone.utc)}, '$inc': {'revision': 1}})
+
     async def get(self, player_tag):
         return await self.collection.find_one({'_id': tag(player_tag)})
 

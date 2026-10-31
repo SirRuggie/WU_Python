@@ -19,6 +19,7 @@ def test_excluded_and_partial_fields():
     assert not activity_changed(old, baseline({'trophies': 4950, 'donationsReceived': 20}))
     assert not activity_changed(old, baseline({'attackWins': 2}))
     assert activity_changed({'trophies': 5000}, {'trophies': 5001})
+    assert activity_changed({'trophies': 4999}, {'trophies': 5000})
     assert not activity_changed({'trophies': 5100}, {'trophies': 5000})
     assert not activity_changed({}, {'attackWins': 5})
 
@@ -38,3 +39,9 @@ def test_400_days_state_remains_bounded():
         state = observe(state, {'attackWins': day}, now=NOW + timedelta(days=day))
     assert len(state['active_days']) == 30
     assert state['active_days'][0] == (NOW + timedelta(days=370)).date().isoformat()
+
+
+def test_newly_unlocked_units_count_after_an_existing_baseline():
+    assert activity_changed(baseline({'heroes': []}), baseline({'heroes': [{'name': 'King', 'level': 1}]}))
+    assert not activity_changed({'attackWins': 1}, baseline({'heroes': [{'name': 'King', 'level': 1}]}))
+    assert not activity_changed(None, baseline({'heroes': [{'name': 'King', 'level': 1}]}))

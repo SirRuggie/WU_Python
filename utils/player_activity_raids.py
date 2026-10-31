@@ -27,15 +27,17 @@ async def capture_raids(store, client, clan_tags, *, now=None):
                 weekend = weekends.setdefault(key, {'end': end, 'attacks': {}})
                 for member in entry.members:
                     attacks = int(member.attack_count)
-                    weekend['attacks'][member.tag] = max(
-                        attacks, weekend['attacks'].get(member.tag, 0))
+                    player_clan = (member.tag, clan)
+                    weekend['attacks'][player_clan] = max(
+                        attacks, weekend['attacks'].get(player_clan, 0))
         except Exception:
             complete = False
-    rows = await store.collection.find({}).to_list(length=None)
+    rows = await store.all_players()
     writes = 0
     for key, weekend in weekends.items():
         for row in rows:
-            attacks = weekend['attacks'].get(row['_id'], 0)
+            attacks = sum(count for (player, clan), count in weekend['attacks'].items()
+                          if player == row['_id'])
             previous = row.get('previous_roster_at')
             latest = row.get('last_roster_at')
             since = row.get('family_since')

@@ -16,7 +16,7 @@ from bson import json_util
 from pymongo import MongoClient
 
 from utils.mongo_routes import load_routes
-from utils.strike_retention import record_purge_after, snapshot_purge_after
+from utils.strike_retention import validate_record_retention, snapshot_purge_after
 
 COLLECTIONS = ('strike_records', 'strike_war_snapshots', 'strike_profiles')
 
@@ -56,7 +56,7 @@ def migrate(client, routes, destination, *, apply=False):
             raise RuntimeError('Pending streak receipts must finish before retention migration')
         manifest['restored'] = True
         if apply:
-            for name, calculate in (('strike_records', record_purge_after),
+            for name, calculate in (('strike_records', validate_record_retention),
                                     ('strike_war_snapshots', snapshot_purge_after)):
                 route = routes[name]
                 collection = client[route.database][route.collection]

@@ -25,6 +25,8 @@ def baseline(player: dict) -> dict:
     result = {key: player[key] for key in (*COUNTERS, *CHANGES, 'trophies')
               if key in player and player[key] is not None}
     for field in ('heroes', 'heroEquipment', 'troops', 'spells'):
+        if isinstance(player.get(field), list):
+            result['seen:' + field] = True
         for unit in player.get(field) or []:
             if isinstance(unit, dict) and unit.get('name') and isinstance(unit.get('level'), int):
                 result[f"{field}:{unit.get('village', 'home')}:{unit['name']}"] = unit['level']
@@ -40,6 +42,10 @@ def activity_changed(previous: dict | None, current: dict) -> bool:
         return False
     for key, value in current.items():
         if key not in previous:
+            if (key.startswith(('heroes:', 'heroEquipment:', 'troops:', 'spells:'))
+                    and previous.get('seen:' + key.split(':', 1)[0])
+                    and isinstance(value, int) and value > 0):
+                return True
             continue
         old = previous[key]
         if key in CHANGES:
@@ -48,7 +54,7 @@ def activity_changed(previous: dict | None, current: dict) -> bool:
         elif (isinstance(value, (int, float)) and not isinstance(value, bool)
               and isinstance(old, (int, float)) and not isinstance(old, bool)
               and value > old):
-            if key != 'trophies' or old >= 5000:
+            if key != 'trophies' or value >= 5000:
                 return True
     return False
 

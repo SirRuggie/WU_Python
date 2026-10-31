@@ -18,11 +18,12 @@ def test_family_move_attack_and_observed_skip_but_never_historical_skip():
         await store.reconcile_membership({PLAYER: CLAN, other: CLAN}, now=NOW-timedelta(minutes=30))
         await store.reconcile_membership({PLAYER: '#8GG8', other: CLAN}, now=NOW+timedelta(minutes=30))
         async def raid(clan, limit):
-            return [NS(end_time=NOW, members=[NS(tag=PLAYER, attack_count=5)] if clan=='#8GG8' else []),
+            return [NS(end_time=NOW, members=[NS(tag=PLAYER, attack_count=3 if clan=='#8GG8' else 2)]),
                     NS(end_time=NOW-timedelta(days=7), members=[])]
         result = await capture_raids(store, NS(get_raid_log=raid), [CLAN, '#8GG8'], now=NOW+timedelta(minutes=30))
         assert result['complete']
         assert (await store.get(PLAYER))['raid_weekends'][-1]['attacked']
+        assert (await store.get(PLAYER))['raid_weekends'][-1]['attacks'] == 5
         skipped = (await store.get(other))['raid_weekends']
         assert len(skipped)==1 and not skipped[0]['attacked']
         async def partial(clan, limit):

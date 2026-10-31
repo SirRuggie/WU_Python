@@ -5,7 +5,7 @@ observation initializes a baseline; it does not claim the player was active.
 Subsequent increases in attack wins, donations, experience, town hall, unit levels
 (heroes, equipment, troops, spells) or the achievements below mark activity.
 Name, war preference and builder-base trophy changes also count. Trophy increases
-count only when the previous value was at least5000. Decreases, season resets,
+count only when the new value is at least5000, including crossing that threshold. Decreases, season resets,
 donations received and war achievements do not count. Failed/partial reads do not
 clear baselines, and stale responses cannot replace a newer observation.
 

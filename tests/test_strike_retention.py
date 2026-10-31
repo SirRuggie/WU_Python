@@ -33,3 +33,11 @@ def test_purge_dates_and_persistent_streak_active_count_invariance():
         assert snapshot_purge_after({'end_time': NOW}) == NOW + timedelta(days=30)
         assert record_purge_after({'occurred_at': NOW}) == NOW + timedelta(days=90)
     asyncio.run(run())
+
+
+def test_legacy_extended_active_expiry_blocks_retention():
+    import pytest
+    from utils.strike_retention import validate_record_retention
+    with pytest.raises(ValueError, match='expiry exceeds retention'):
+        validate_record_retention({'kind': 'strike', 'occurred_at': NOW,
+                                   'expires_at': NOW+timedelta(days=120)})
