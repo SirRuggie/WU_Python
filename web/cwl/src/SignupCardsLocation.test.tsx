@@ -25,12 +25,14 @@ const accounts = [
 let root: Root, host: HTMLDivElement;
 let published = false,
   partial = false,
-  empty = false;
+  empty = false,
+  unplaced = false;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   published = false;
   partial = false;
   empty = false;
+  unplaced = false;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -52,7 +54,9 @@ beforeEach(() => {
               : signups.map((s, i) => ({
                   ...s,
                   assigned_clan_tag:
-                    published && (!partial || i === 0) ? "#CLAN" : null,
+                    published && !unplaced && (!partial || i === 0)
+                      ? "#CLAN"
+                      : null,
                   assigned_clan_name: "Fixture clan",
                 })),
           }),
@@ -94,6 +98,9 @@ it("preserves the empty assignment card", async () => {
   );
   expect(host.textContent).toContain("You haven't signed up any accounts yet.");
   expect(host.textContent).not.toContain("Not published yet");
+  expect(host.querySelector(".member-signup-refresh")?.textContent).toBe(
+    "Refresh",
+  );
 });
 it.each([true, false])(
   "saved summary lists every signup and gates remaining action, open=%s",
@@ -239,4 +246,21 @@ it("keeps saved accounts and exposes a publication read failure without claiming
   expect(host.textContent).not.toContain(
     "Your published clan assignments are ready",
   );
+});
+
+it("distinguishes a publication with no placements for this member", async () => {
+  published = true;
+  unplaced = true;
+  await act(async () =>
+    root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
+  );
+  expect(host.textContent).toContain(
+    "Published · your accounts are waiting for a clan",
+  );
+  expect(host.textContent).not.toContain("Not published yet");
+  expect(host.textContent).toContain("2 accounts signed up");
+  expect(host.querySelector('a[href="/my-signups"]')).not.toBeNull();
+  expect(
+    host.querySelector(".member-unpublished-status button")?.textContent,
+  ).toBe("Refresh");
 });

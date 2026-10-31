@@ -130,14 +130,23 @@ export default function MemberAssignments({
                 ) : (
                   <p>Signups are closed.</p>
                 )}
-                <button onClick={() => void load()}>Refresh</button>
+                <button
+                  className="member-signup-refresh"
+                  onClick={() => void load()}
+                >
+                  Refresh
+                </button>
               </section>
             </div>
           )}
           {data.accounts.length > 0 && assignedGroups === 0 && (
             <section className="card member-unpublished-status">
-              <strong>Not published yet</strong>
-              {memberDateLines(season, false, Date.now())
+              <strong>
+                {data.published
+                  ? "Published · your accounts are waiting for a clan"
+                  : "Not published yet"}
+              </strong>
+              {memberDateLines(season, !!data.published, Date.now())
                 .slice(-1)
                 .map((line) => (
                   <p key={line}>{line}</p>

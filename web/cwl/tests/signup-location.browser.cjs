@@ -109,6 +109,20 @@ fs.mkdirSync(out, { recursive: true });
               box.y >= 0 && box.y + box.height <= (width === 360 ? 800 : 1000),
               JSON.stringify(box),
             );
+            if (width === 1440) {
+              const title = await page
+                .locator(".member-status-line strong")
+                .boundingBox();
+              const version = await page
+                .locator(".member-status-line p")
+                .boundingBox();
+              assert(
+                Math.abs(
+                  title.y + title.height / 2 - (version.y + version.height / 2),
+                ) < 3,
+                "Desktop title and version must be inline",
+              );
+            }
             results.push({ width, openClan: box });
           } else
             assert.match(
@@ -128,6 +142,38 @@ fs.mkdirSync(out, { recursive: true });
           fullPage: true,
         });
       }
+      await page.request.get(base + "/qa/scenario?season=4");
+      const waitingRoute = async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        body.accounts = body.accounts.map((account) => ({
+          ...account,
+          assigned_clan_tag: null,
+          assigned_clan_name: null,
+        }));
+        await route.fulfill({ response, json: body });
+      };
+      await page.route("**/my-assignments", waitingRoute);
+      await page.goto(base + "/assignments");
+      await page
+        .getByText("Published · your accounts are waiting for a clan", {
+          exact: true,
+        })
+        .waitFor();
+      assert.match(
+        await page.locator(".member-unpublished-status").innerText(),
+        /2 accounts signed up/,
+      );
+      assert.equal(
+        await page.getByText("Not published yet", { exact: true }).count(),
+        0,
+      );
+      await page.screenshot({
+        path: path.join(out, `assignments-waiting-${width}.png`),
+        fullPage: true,
+      });
+      await page.unroute("**/my-assignments", waitingRoute);
+      await page.request.get(base + "/qa/scenario?season=1");
       await page.goto(base + "/my-signups");
       await page.locator(".member-signup-remaining button").click();
       await page.locator(".pool-choice-grid").waitFor();

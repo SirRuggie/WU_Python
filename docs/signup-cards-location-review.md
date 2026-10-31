@@ -7,7 +7,7 @@ without action buttons after signup closes. The published-ready sentence links
 to My clan. Home retains its existing behavior.
 
 My clan assignments no longer fetches linked accounts or renders signup status
-cards. With saved accounts but no assigned clans it shows Not published yet,
+cards. With saved accounts but no assigned clans and no publication it shows Not published yet,
 the existing placement-date guidance, a signed-up count, My signups and Refresh.
 Published assignments retain joining instructions, publication status, counts
 (including awaiting placement) and clan cards. Empty signups retain their existing
@@ -25,7 +25,8 @@ External account names remain React text, and game links retain the existing
 encoded tag helper and noreferrer. No HTML rendering or mention handling was added.
 
 The existing saved-account editor, withdrawal/pool-change policy, confirmation,
-permission, dirty-navigation and save paths are unchanged. The new controls only
+permission and save paths are unchanged. The remaining-account action now resets
+the registration form only after guarded navigation succeeds. The new controls only
 navigate or refresh reads: no automatic saves, retries of writes, selection edits,
 or notification calls. Joining-instructions content/editor, Home, backend,
 moderation and other seasons/pools are unchanged. Existing App regression suites
@@ -61,3 +62,19 @@ Four states at both widths were captured and visually inspected. Fixture dates
 exercise the existing late-placement guidance; unit tests also cover the future
 placement-date line. The 8914 preview serves `index-D9Eoul6Y.js`, SHA256
 `a0dcc3faa628166e33d103aa4c31a28cf2f72c08f9e8c9bfdaab9255eb7e8621`.
+
+
+## Prompt 53 rework
+
+The desktop publication title and version remain inline; stacking is restricted
+to widths at or below 650px. Empty signup cards retain the underlined Refresh
+control. A publication with all of this member's accounts unplaced now says
+“Published · your accounts are waiting for a clan”, retaining the signed-up count,
+My signups link and Refresh. Published state suppresses unpublished date guidance.
+
+The navigation regression stages a pool edit, refuses the remaining-account
+switch, then cancels that edit and opens Sign up through its normal navigation.
+It verifies that the previously chosen Lazy CWL form and account step survive,
+with no writes. The browser gate additionally checks desktop title/version
+alignment and captures published-but-waiting at both viewport widths using only
+an intercepted synthetic fixture response.

@@ -370,11 +370,13 @@
   outline: 2px solid #f2d892;
   outline-offset: 4px;
 }
-.member-assignments .member-status-line > div {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-}
-.member-assignments .member-status-line p {
-  margin: 0;
+@media (max-width: 650px) {
+  .member-assignments .member-status-line > div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+  .member-assignments .member-status-line p {
+    margin: 0;
+  }
 }

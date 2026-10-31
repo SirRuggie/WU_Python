@@ -499,9 +499,10 @@ function App() {
     proceed()
   }
   const changeSignupPanel = (panel: 'register'|'saved') => {
-    if (navigation.current?.pending || pending || (panel !== signupPanel && !canLeave())) return
+    if (navigation.current?.pending || pending || (panel !== signupPanel && !canLeave())) return false
     if (panel !== signupPanel) navigation.current?.write({view:'signup', season:'', signupPanel:panel}, true)
     setSignupPanel(panel); setReview(false); setCompletion(null)
+    return true
   }
   const tourBackPending = useRef(false);
   const navigationState = useRef({ canLeave, allowedView, currentIndex: activityVisit });
@@ -1094,7 +1095,7 @@ function App() {
                   signups={existing}
                   accounts={loadingData || accountError ? null : accounts}
                   season={season}
-                  onRemaining={() => { changeSignupPanel('register'); setSignupStep(1); setPool(null) }}
+                  onRemaining={() => { if (changeSignupPanel('register')) { setSignupStep(1); setPool(null) } }}
                   onAssignments={() => changeView('assignments')}
                 />}
                 <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={season.signup_open && season.status === 'draft'} busy={pending || loadingData} canMove={!loadingData && !accountError} headingRef={registeredHeadingRef} onDirty={setSavedSignupDirty} onSave={saveSavedSignups} onWithdraw={rows => void withdraw(rows)} onRefreshAccounts={retrySignupRead}/>
