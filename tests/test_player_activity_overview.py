@@ -132,3 +132,37 @@ def test_activity_overview_projects_out_the_large_unit_baseline():
     assert query=={} and fields['baseline.townHallLevel']==1
     assert 'baseline' not in fields and 'active_days' not in fields
     assert fields['raid_weekends']==1 and fields['last_seen_at']==1
+
+
+def test_activity_outage_preserves_strike_rows_and_directory_names_without_profile_name():
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+    from pymongo.errors import PyMongoError
+    from cwl_web import strikes, manage_roles
+    from utils import clan_weights
+    async def run():
+        @asynccontextmanager
+        async def mongo(request):
+            yield SimpleNamespace(player_activity=SimpleNamespace())
+        profile={'player_tag':'#PYY','current_clan_tag':'#CLAN','member_id':123456789012345678}
+        ledger=SimpleNamespace(activity_context=AsyncMock(return_value={'profiles':[profile], 'records':[],
+            'clans':[{'tag':'#CLAN','name':'Family'}]}))
+        request=SimpleNamespace(app={'store':object(),'providers':object()})
+        directory=AsyncMock(return_value=[{'nick':'Real display name','user':{'id':'123456789012345678','username':'fixture'}}])
+        with patch.object(strikes.shared,'mongo',mongo), patch.object(strikes,'service',AsyncMock(return_value=ledger)), \
+             patch('utils.player_activity_store.PlayerActivityStore.overview',AsyncMock(side_effect=PyMongoError('isolated outage'))), \
+             patch.object(manage_roles,'searchable_members',directory), \
+             patch.object(clan_weights,'source_weights',AsyncMock(return_value={})), \
+             patch.object(clan_weights,'overlay_accounts',lambda store,payload:payload):
+            result=json.loads((await strikes.activity_accounts(request)).body)
+            assert len(result['accounts'])==1 and result['activity_warning'].startswith('Activity unavailable')
+            row=result['accounts'][0]
+            assert row['activity_unavailable'] and row['quiet_days'] is None and not row['observed_attacks']
+            assert row['discord_name']=='Real display name' and not result['identity_warning']
+            directory.assert_awaited_once()
+            directory.side_effect=__import__('aiohttp').web.HTTPServiceUnavailable()
+            result=json.loads((await strikes.activity_accounts(request)).body)
+            assert result['identity_warning'] and len(result['accounts'])==1
+    asyncio.run(run())

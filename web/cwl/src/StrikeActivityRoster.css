@@ -315,3 +315,11 @@
     font-size: 12px;
   }
 }
+
+.strike-activity-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #c9c6bd;
+}

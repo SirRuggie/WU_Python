@@ -12,6 +12,7 @@ import uuid
 from types import SimpleNamespace
 
 from aiohttp import web
+from pymongo.errors import PyMongoError
 
 from . import server_management as shared
 from .providers import ProviderUnavailable, tag
@@ -338,9 +339,32 @@ async def activity_accounts(request):
     from utils.player_activity_overview import family_activity_rows
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        activity = await PlayerActivityStore(db).overview()
+        activity_warning = None
+        try:
+            activity = await PlayerActivityStore(db).overview()
+        except PyMongoError:
+            activity = []
+            activity_warning = 'Activity unavailable. Strike rows remain available.'
         context = await ledger.activity_context(GUILD_ID, [row['tag'] for row in activity])
     rows = family_activity_rows(activity, **context)
+    if activity_warning:
+        for row in rows:
+            row.update(activity_unavailable=True, quiet_days=None, missed_attacks=0, observed_attacks=0,
+                       no_attack_wars=0, skipped_raid_weekends=0)
+    elif rows and all(row.get('activity_tracking_behind') for row in rows):
+        activity_warning = 'Activity tracking is behind. Quiet indicators are paused.'
+    if any(row.get('discord_id') for row in rows):
+        from .manage_roles import searchable_members
+        try:
+            async with asyncio.timeout(8):
+                directory = await searchable_members(request)
+            names = {str(item['user']['id']): display_member(item)['name'] for item in directory
+                     if isinstance(item.get('user'), dict) and item['user'].get('id')}
+            for row in rows:
+                if row.get('discord_id'):
+                    row['discord_name'] = names.get(row['discord_id'])
+        except (ProviderUnavailable, TimeoutError, aiohttp.ClientError, web.HTTPException):
+            pass
     weight_warning = None
     if rows:
         from utils.clan_weights import source_weights, overlay_accounts
@@ -365,6 +389,7 @@ async def activity_accounts(request):
                         if any(row.get('discord_id') and not row.get('discord_name') for row in rows) else None)
     return web.json_response(public({'accounts': rows, 'total': len(rows),
                                     'weight_warning': weight_warning, 'identity_warning': identity_warning,
+                                    'activity_warning': activity_warning,
                                     'clans': [{'tag': row['tag'], 'name': row.get('name') or row['tag']}
                                               for row in context['clans']]}))
 

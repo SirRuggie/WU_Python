@@ -48,6 +48,7 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
                        'total_strikes': sum(row.get('kind') == 'strike' for row in by_record[player]),
                        'discord_id': str(profile['member_id']) if profile.get('member_id') else None,
                        'discord_name': profile.get('discord_name'), 'priority': priority,
+                       'replacement_note': profile.get('replacement_note') or '',
                        'marked_for_replacement': (marked or filler or active>=3) if replacements is None else bool(replacement and (marked or filler or active>=3)),
                        'replacement_eligible_low': bool(replacement and active in (1, 2)),
                        'revision': profile.get('revision', 0), **signals})

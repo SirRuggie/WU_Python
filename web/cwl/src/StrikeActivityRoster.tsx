@@ -29,6 +29,7 @@ type Response = {
   clans: { tag: string; name: string }[];
   weight_warning?: string;
   identity_warning?: string;
+  activity_warning?: string;
 };
 const sortNames: Record<ActivitySort, string> = {
   status: "Status",
@@ -354,6 +355,9 @@ export default function StrikeActivityRoster({
           {data.accounts.length ? " Showing the last loaded activity." : ""}
         </p>
       )}
+      {data.activity_warning && (
+        <p className="notice error">{data.activity_warning}</p>
+      )}
       {data.weight_warning && (
         <p className="notice error">{data.weight_warning}</p>
       )}
@@ -405,6 +409,14 @@ export default function StrikeActivityRoster({
                 {row.active_strikes === 1 ? "strike" : "strikes"}
               </span>
             </span>
+            {row.replacement_note && (
+              <span
+                className="strike-activity-note"
+                title={row.replacement_note}
+              >
+                {row.replacement_note}
+              </span>
+            )}
             <span className="strike-activity-chips">
               {activityChips(row).map((chip) => (
                 <span

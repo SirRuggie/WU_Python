@@ -592,7 +592,8 @@ class StrikeService:
             '$or': [{'occurred_at': {'$gte': now-timedelta(days=90)}},
                     {'kind': 'strike', 'expires_at': {'$gt': now}}]},
             {'player_tag': 1, 'war_key': 1, 'kind': 1, 'source': 1, 'war_type': 1,
-             'occurred_at': 1, 'missed_attacks': 1, 'expires_at': 1, 'revoked_at': 1}).to_list(length=None)
+             'occurred_at': 1, 'missed_attacks': 1, 'expires_at': 1, 'revoked_at': 1,
+             'capture_source': 1, 'import_id': 1, 'exemption': 1}).to_list(length=None)
         return {'profiles': profiles, 'records': records, 'clans': clans,
                 'replacements': await self.replacement(guild_id, limit=None)}
 

@@ -20,6 +20,9 @@ export type ActivityAccount = {
   departed_at?: string | null;
   status: ActivityStatus;
   quiet_days: number | null;
+  activity_unavailable?: boolean;
+  activity_tracking_behind?: boolean;
+  replacement_note?: string;
   last_seen_at?: string | null;
   last_seen_source?: string | null;
   tracking_started_at?: string | null;
@@ -146,8 +149,12 @@ export type ActivityChip = {
 };
 export function activityChips(row: ActivityAccount): ActivityChip[] {
   const chips: ActivityChip[] = [];
+  if (row.activity_unavailable)
+    return [{ label: "Activity unavailable", tone: "neutral" }];
   const seed = row.last_seen_source === "clashking_seed" ? " (ClashKing)" : "";
-  if (row.quiet_days === null || !row.last_seen_at) {
+  if (row.activity_tracking_behind) {
+    chips.push({ label: "Activity tracking is behind", tone: "neutral" });
+  } else if (row.quiet_days === null || !row.last_seen_at) {
     const date = row.tracking_started_at && new Date(row.tracking_started_at);
     const label =
       date && Number.isFinite(date.getTime())

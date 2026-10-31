@@ -100,3 +100,28 @@ it("client filtering sorting and counts apply to the current filtered rows", () 
     }),
   ).toEqual([risk, watch]);
 });
+
+it("unavailable and stale activity never renders Quiet or invented activity", () => {
+  expect(
+    activityChips({
+      ...healthy,
+      activity_unavailable: true,
+      quiet_days: 20,
+      missed_attacks: 4,
+    }),
+  ).toEqual([{ label: "Activity unavailable", tone: "neutral" }]);
+  const stale = activityChips({
+    ...healthy,
+    activity_tracking_behind: true,
+    quiet_days: 20,
+  });
+  expect(
+    stale.some((chip) => chip.label === "Activity tracking is behind"),
+  ).toBe(true);
+  expect(
+    stale.some(
+      (chip) =>
+        chip.label.includes("Quiet") || chip.label.includes("Not seen since"),
+    ),
+  ).toBe(false);
+});
