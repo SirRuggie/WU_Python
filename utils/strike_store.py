@@ -3,6 +3,7 @@
 Expiry affects active counts. Backup-gated retention removes history after90 days. Automatic
 writes use a deterministic primary key, so concurrent scans cannot double count.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
@@ -384,7 +385,6 @@ class StrikeService:
                 continue
         await self.expire_departed_replacements(guild_id, now=now)
 
-
     async def add_manual(self, guild_id: int, player_tag: str, reason: str, actor_id: int,
                          *, member_id=None, clan_tag=None, player_name=None, request_id=None) -> dict:
         reason = str(reason or '').strip()
@@ -571,6 +571,26 @@ class StrikeService:
     async def leave_revision(self, guild_id: int, member_id: int) -> int:
         row = await self.mongo.strike_leaves.find_one({'_id': f'{int(guild_id)}:{int(member_id)}'})
         return (row or {}).get('revision', 0)
+
+    async def history_exclusions(self, guild_id, players):
+        """Neutral dispositions must survive later expiry of the ledger row."""
+        rows = await self.mongo.strike_records.find(
+            {
+                "guild_id": int(guild_id),
+                "player_tag": {"$in": list(players)},
+                "source": "war",
+            },
+            {"player_tag": 1, "war_key": 1, "kind": 1, "exemption": 1, "revoked_at": 1},
+        ).to_list(length=None)
+        excluded = {}
+        for row in rows:
+            if row.get("war_key") and (
+                row.get("kind") in ("mismatch", "exempt", "no_attack")
+                or row.get("exemption")
+                or row.get("revoked_at")
+            ):
+                excluded.setdefault(row["player_tag"], set()).add(row["war_key"])
+        return excluded
 
     async def activity_context(self, guild_id, activity_tags):
         """Bounded family snapshot for the read-only activity overview."""

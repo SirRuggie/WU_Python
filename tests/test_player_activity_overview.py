@@ -6,11 +6,23 @@ from tests.test_player_activity_signals import NOW
 from utils.player_activity_overview import family_activity_rows
 from cwl_web.strikes import public
 
+
 @pytest.fixture(autouse=True)
 def no_external_link_reads(monkeypatch):
     from unittest.mock import AsyncMock
     from utils import recruit_links
-    monkeypatch.setattr(recruit_links,'resolve_players',AsyncMock(return_value=recruit_links.PlayerOwners()))
+
+    monkeypatch.setattr(
+        recruit_links,
+        "resolve_players",
+        AsyncMock(return_value=recruit_links.PlayerOwners()),
+    )
+    monkeypatch.setattr(
+        "utils.player_activity_store.PlayerActivityStore.history_report",
+        AsyncMock(
+            return_value={"complete": True, "pending_clans": [], "stuck_clans": []}
+        ),
+    )
 
 
 def test_family_with_zero_strikes_and_departed_accounts_is_visible():
@@ -133,12 +145,20 @@ def test_activity_overview_projects_out_the_large_unit_baseline():
     from types import SimpleNamespace
     from unittest.mock import Mock, AsyncMock
     from utils.player_activity_store import PlayerActivityStore
-    collection=SimpleNamespace(find=Mock(return_value=SimpleNamespace(to_list=AsyncMock(return_value=[]))))
-    asyncio.run(PlayerActivityStore(SimpleNamespace(player_activity=collection)).overview())
-    query, fields=collection.find.call_args.args
-    assert query=={} and fields['baseline.townHallLevel']==1
-    assert 'baseline' not in fields and 'active_days' not in fields
-    assert fields['raid_weekends']==1 and fields['last_seen_at']==1
+
+    collection = SimpleNamespace(
+        find=Mock(return_value=SimpleNamespace(to_list=AsyncMock(return_value=[])))
+    )
+    asyncio.run(
+        PlayerActivityStore(SimpleNamespace(player_activity=collection)).overview()
+    )
+    query, fields = collection.find.call_args.args
+    assert (
+        query == {"kind": {"$ne": "history_clan"}}
+        and fields["baseline.townHallLevel"] == 1
+    )
+    assert "baseline" not in fields and "active_days" not in fields
+    assert fields["raid_weekends"] == 1 and fields["last_seen_at"] == 1
 
 
 def test_activity_outage_preserves_strike_rows_and_directory_names_without_profile_name():
@@ -209,3 +229,24 @@ def test_production_profile_without_member_id_gets_cached_bulk_link_identity():
         assert await account_owners(request,['#PYY']) is first
         recruit_links.resolve_players.assert_awaited_once_with(['#PYY'])
     asyncio.run(run())
+
+
+def test_page_freshness_and_left_members_never_invent_quiet_risk():
+    for left in (False, True):
+        activity = [
+            {
+                "tag": "#PYY",
+                "current_clan_tag": "#CLAN" if not left else None,
+                "left_at": NOW if left else None,
+                "last_seen_at": NOW - timedelta(days=40),
+                "updated_at": NOW if left else NOW - timedelta(hours=37),
+            }
+        ]
+        profiles = (
+            [{"player_tag": "#PYY", "departed_clan_tag": "#CLAN"}] if left else []
+        )
+        row = family_activity_rows(activity, profiles, [], [{"tag": "#CLAN"}], now=NOW)[
+            0
+        ]
+        assert row["quiet_days"] is None and row["status"] == "active"
+        assert row["left_clan"] is left

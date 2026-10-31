@@ -31,6 +31,7 @@ type Response = {
   weight_warning?: string;
   identity_warning?: string;
   activity_warning?: string;
+  history_warning?: string;
 };
 const sortNames: Record<ActivitySort, string> = {
   status: "Status",
@@ -441,6 +442,7 @@ export default function StrikeActivityRoster({
           {data.accounts.length ? " Showing the last loaded activity." : ""}
         </p>
       )}
+      {data.history_warning && <p className="notice error">{data.history_warning}</p>}
       {data.activity_warning && (
         <p className="notice error">{data.activity_warning}</p>
       )}

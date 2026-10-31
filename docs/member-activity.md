@@ -192,14 +192,20 @@ ago), never use the stored list length. The unified page does not expose or coun
 
 ### Bounded historical war activity (PR B, prompt58)
 
-The tracker owns a cancellable one-time full-lineup backfill using the existing
-ClashKing historical war import reader (last60days). It writes only existing
-player_activity documents: fourteen known recent_wars summaries, a bounded version
-receipt and at most three attempts per player. Each summary carries war_key,
-occurred_at, attacks_used and attacks_available. Three concurrent clan reads,
-120seconds per clan and600seconds per run bound requests. Partial/unknown lineups
-and unconfirmed or neutral FWA plans contribute nothing; failure leaves the
-completion receipt unset. CAS preserves concurrent official observations and
-never refreshes the live tracker timestamp. No strike records, streaks or
-replacement marks are modified. Fourteen summaries add roughly4KB/player
-before storage/index overhead; measure collStats during the approved PR B rollout.
+The tracker owns a cancellable full-lineup backfill using the existing ClashKing
+historical war import reader (last 60 days). The activity storage owner retains
+one player document with fourteen recent war summaries, plus one bounded cache
+document per clan in the same collection. Clan caches contain at most sixty wars;
+all player readers exclude these metadata documents. Inactive clan caches receive
+`left_at` and use the existing 90-day TTL. No new collection or index is required.
+
+Attempts and completion belong to each clan. A cancellation or restart does not
+consume an attempt. Failed clans retry after five and ten minutes; three failures
+show the clan tag as stuck and retry after six hours. Healthy caches remain usable,
+and a new player refreshes only their clan when its cache predates their tracking.
+Incomplete history exposes known totals but cannot establish a missed-war chain.
+Neutral observations remain neutral after ledger retention removes their source.
+Three concurrent clan reads, 120 seconds per clan and 600 seconds per run bound
+requests. Conditional player writes preserve official observations and never
+refresh the live tracker timestamp. No strike records, streaks or replacement
+marks are modified. Measure cache and player collStats during approved rollout.

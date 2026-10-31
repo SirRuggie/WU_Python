@@ -81,3 +81,26 @@ def test_partial_attack_breaks_no_attack_chain_and_raid_skip_is_watch():
     assert row['no_attack_wars']==1 and row['status']=='watch' and row['missed_attacks']==5
     row=activity_signals({'raid_weekends':[{'weekend_id':latest_raid_end(NOW).isoformat(),'attacked':False}]},[],now=NOW)
     assert row['status']=='watch'
+
+
+def test_revoked_wars_are_neutral_and_incomplete_history_cannot_chain():
+    rows = [
+        {
+            "war_key": str(n),
+            "occurred_at": NOW - timedelta(days=n),
+            "source": "war",
+            "capture_source": "clash_api",
+            "kind": "strike",
+            "missed_attacks": 2,
+            **({"revoked_at": NOW} if n == 1 else {}),
+        }
+        for n in range(4)
+    ]
+    result = activity_signals({}, rows, now=NOW)
+    assert result["observed_wars"] == 3 and result["no_attack_wars"] == 3
+    result = activity_signals({"recent_wars_complete": False}, rows, now=NOW)
+    assert (
+        result["war_history_incomplete"]
+        and result["no_attack_wars"] == 0
+        and result["status"] != "risk"
+    )

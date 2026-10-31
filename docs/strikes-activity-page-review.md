@@ -91,8 +91,10 @@ lineups through the existing60-day ClashKing import reader and stores fourteen
 war summaries in the existing player document. Monitored captures win duplicate
 keys; mismatch, exempt and no-attack observations neither count nor break the
 chain. Partial reads and unknown/neutral FWA plans are omitted. No strike ledger,
-streak or replacement mark is written by this backfill. Three attempts per player,
-three concurrent clans,120seconds per clan and600seconds per run bound the job.
+streak or replacement mark is written by this backfill. Per-clan retries preserve healthy caches; canceled runs consume no attempts.
+Three failures expose a stuck clan tag and retry after six hours. Incomplete
+history cannot establish a missed-war chain. Three concurrent clans, 120 seconds
+per clan and 600 seconds per run bound the job.
 
 The newest daily tracker timestamp controls freshness. Older than36hours pauses
 Quiet and its badge contribution. An unavailable activity collection retains

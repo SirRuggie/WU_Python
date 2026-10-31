@@ -1,4 +1,5 @@
 """Authenticated dashboard for the same account ledger used by Discord."""
+
 from __future__ import annotations
 
 import asyncio
@@ -24,7 +25,6 @@ from utils.replacement_filters import parse_weight, compact_weight
 API = '/api/cwl/strikes'
 GUILD_ID = shared.GUILD_ID
 _OPPONENT_NAME_CACHE = {}
-
 
 
 def endpoint(fn=None, *, scope=None):
@@ -337,6 +337,7 @@ async def accounts(request):
 async def activity_accounts(request):
     from utils.player_activity_store import PlayerActivityStore
     from utils.player_activity_overview import family_activity_rows
+
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
         activity_warning = None
@@ -344,78 +345,159 @@ async def activity_accounts(request):
             activity = await PlayerActivityStore(db).overview()
         except PyMongoError:
             activity = []
-            activity_warning = 'Activity unavailable. Strike rows remain available.'
-        context = await ledger.activity_context(GUILD_ID, [row['tag'] for row in activity])
+            activity_warning = "Activity unavailable. Strike rows remain available."
+        context = await ledger.activity_context(
+            GUILD_ID, [row["tag"] for row in activity]
+        )
+        history_warning = None
+        try:
+            history = await PlayerActivityStore(db).history_report(
+                [row["tag"] for row in context["clans"]]
+            )
+            if not history["complete"]:
+                for row in activity:
+                    row["recent_wars_complete"] = False
+                history_warning = (
+                    "War history incomplete. Waiting for clans: "
+                    + ", ".join(history["pending_clans"])
+                )
+                if history["stuck_clans"]:
+                    history_warning += " · Retry delayed: " + ", ".join(
+                        history["stuck_clans"]
+                    )
+        except PyMongoError:
+            for row in activity:
+                row["recent_wars_complete"] = False
+            history_warning = (
+                "War history status unavailable. Consecutive-war indicators are paused."
+            )
     rows = family_activity_rows(activity, **context)
     if activity_warning:
         for row in rows:
-            row.update(activity_unavailable=True, quiet_days=None, missed_attacks=0, observed_attacks=0,
-                       no_attack_wars=0, skipped_raid_weekends=0)
-    elif rows and all(row.get('activity_tracking_behind') for row in rows):
-        activity_warning = 'Activity tracking is behind. Quiet indicators are paused.'
+            row.update(
+                activity_unavailable=True,
+                quiet_days=None,
+                missed_attacks=0,
+                observed_attacks=0,
+                no_attack_wars=0,
+                skipped_raid_weekends=0,
+            )
+    elif rows and all(row.get("activity_tracking_behind") for row in rows):
+        activity_warning = "Activity tracking is behind. Quiet indicators are paused."
     link_warning = False
     if rows:
         from .strike_activity_identity import account_owners
+
         try:
-            owners = await account_owners(request, [row['player_tag'] for row in rows])
+            owners = await account_owners(request, [row["player_tag"] for row in rows])
             link_warning = bool(owners.unavailable or owners.conflicts)
             for row in rows:
-                if row['player_tag'] in owners.conflicts:
-                    row['discord_id'] = None
-                    row['discord_name'] = None
-                elif row['player_tag'] in owners.owners:
-                    row['discord_id'] = str(owners.owners[row['player_tag']])
+                if row["player_tag"] in owners.conflicts:
+                    row["discord_id"] = None
+                    row["discord_name"] = None
+                elif row["player_tag"] in owners.owners:
+                    row["discord_id"] = str(owners.owners[row["player_tag"]])
         except (RuntimeError, ValueError, TimeoutError):
             link_warning = True
-    if any(row.get('discord_id') for row in rows):
+    if any(row.get("discord_id") for row in rows):
         from .manage_roles import searchable_members
+
         try:
             async with asyncio.timeout(8):
                 directory = await searchable_members(request)
             if not isinstance(directory, list):
-                raise ProviderUnavailable('Member directory is incomplete')
+                raise ProviderUnavailable("Member directory is incomplete")
             names = {}
             for item in directory:
-                user = item.get('user') if isinstance(item, dict) else None
-                if not isinstance(user, dict) or not user.get('id'):
+                user = item.get("user") if isinstance(item, dict) else None
+                if not isinstance(user, dict) or not user.get("id"):
                     continue
-                name = next((value.strip()[:100] for value in
-                             (item.get('nick'), user.get('global_name'), user.get('username'))
-                             if isinstance(value, str) and value.strip()), None)
+                name = next(
+                    (
+                        value.strip()[:100]
+                        for value in (
+                            item.get("nick"),
+                            user.get("global_name"),
+                            user.get("username"),
+                        )
+                        if isinstance(value, str) and value.strip()
+                    ),
+                    None,
+                )
                 if name:
-                    names[str(user['id'])] = name
+                    names[str(user["id"])] = name
             for row in rows:
-                if row.get('discord_id'):
-                    row['discord_name'] = names.get(row['discord_id'])
-        except (ProviderUnavailable, TimeoutError, aiohttp.ClientError, web.HTTPException, ValueError, TypeError, KeyError):
+                if row.get("discord_id"):
+                    row["discord_name"] = names.get(row["discord_id"])
+        except (
+            ProviderUnavailable,
+            TimeoutError,
+            aiohttp.ClientError,
+            web.HTTPException,
+            ValueError,
+            TypeError,
+            KeyError,
+        ):
             pass
     weight_warning = None
     if rows:
         from utils.clan_weights import source_weights, overlay_accounts
+
         weights = {}
         try:
             async with asyncio.timeout(8):
-                weights = await source_weights(request.app['store'], request.app['providers'],
-                                               [row['player_tag'] for row in rows])
+                weights = await source_weights(
+                    request.app["store"],
+                    request.app["providers"],
+                    [row["player_tag"] for row in rows],
+                )
             if not isinstance(weights, dict):
-                raise ProviderUnavailable('Invalid weight snapshot')
+                raise ProviderUnavailable("Invalid weight snapshot")
         except (ProviderUnavailable, TimeoutError):
             weights = {}
-            weight_warning = 'Current weights are unavailable. Showing saved weights where known.'
+            weight_warning = (
+                "Current weights are unavailable. Showing saved weights where known."
+            )
         # Saved blanks are intentional and must win even when upstream fails.
-        effective = overlay_accounts(request.app['store'], {'accounts': [
-            {'tag': row['player_tag'], 'war_weight': (weights.get(row['player_tag']) or {}).get('weight', row.get('weight'))}
-            for row in rows]})
-        indexed = {row['tag']: row['war_weight'] for row in effective['accounts']}
+        effective = overlay_accounts(
+            request.app["store"],
+            {
+                "accounts": [
+                    {
+                        "tag": row["player_tag"],
+                        "war_weight": (weights.get(row["player_tag"]) or {}).get(
+                            "weight", row.get("weight")
+                        ),
+                    }
+                    for row in rows
+                ]
+            },
+        )
+        indexed = {row["tag"]: row["war_weight"] for row in effective["accounts"]}
         for row in rows:
-            row['weight'] = indexed.get(row['player_tag'])
-    identity_warning = ('Some Discord names are unavailable. Search those members by Discord ID, player name or tag.'
-                        if link_warning or any(row.get('discord_id') and not row.get('discord_name') for row in rows) else None)
-    return web.json_response(public({'accounts': rows, 'total': len(rows),
-                                    'weight_warning': weight_warning, 'identity_warning': identity_warning,
-                                    'activity_warning': activity_warning,
-                                    'clans': [{'tag': row['tag'], 'name': row.get('name') or row['tag']}
-                                              for row in context['clans']]}))
+            row["weight"] = indexed.get(row["player_tag"])
+    identity_warning = (
+        "Some Discord names are unavailable. Search those members by Discord ID, player name or tag."
+        if link_warning
+        or any(row.get("discord_id") and not row.get("discord_name") for row in rows)
+        else None
+    )
+    return web.json_response(
+        public(
+            {
+                "accounts": rows,
+                "total": len(rows),
+                "weight_warning": weight_warning,
+                "identity_warning": identity_warning,
+                "activity_warning": activity_warning,
+                "history_warning": history_warning,
+                "clans": [
+                    {"tag": row["tag"], "name": row.get("name") or row["tag"]}
+                    for row in context["clans"]
+                ],
+            }
+        )
+    )
 
 
 async def _enrich_war_names(request, rows, clan_names, *, budget=8):
@@ -866,8 +948,6 @@ async def delete_replacement_list(request):
         saved = await ledger.clear_replacement_preference(GUILD_ID, player, int(_session(request)['user_id']),
                                                            expected_revision=revision)
     return web.json_response({'ok': True, 'revision': saved['revision']})
-
-
 
 
 JOB_TTL_SECONDS = 60 * 60
