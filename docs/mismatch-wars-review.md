@@ -77,3 +77,31 @@ backend suite passed 5,357 tests and 221 subtests, with 21 skipped; full layout
 passed. Two legacy sequence-delivery tests depended on the real month boundary;
 their module now uses a fixed mid-month clock, and all six module tests pass.
 No production behavior was changed for that fixture correction.
+
+## Released 2026-10-31
+
+PR103 was merged and released as `mismatch-wars-1` at
+`248a5aadef133fd231dd6ab9243456b63d321772` after explicit chat approval.
+Bot, backend and frontend readiness, runtime imports and public asset hashes
+passed. Active strikes were 3,558 before and after; all 7,732 strike records were
+byte-identical. The retired exclusion list was already empty: zero entries
+cleared, with no settings write or historical reprocessing.
+
+Fresh retry backup SHA256:
+`54d9902c8a71dd073385e1016a961d13e231a4be31da516dc5ae87bf371fd11c`.
+Protected SQLite, 25 clan records, campaign/send state, strike settings, leave and
+import data remained identical. The first activation automatically rolled back
+because whole-collection equality included routine tracker refreshes. Read-only
+comparison confirmed unchanged strike records; the retry gate explicitly excluded
+roster observation timestamps, scan bookkeeping and observing-war caches while
+retaining strict checks on staff-controlled fields and finalized snapshots.
+The changed fields are recorded in `.local/mismatch-activation-retry/postcheck.json`;
+that directory also retains backup and successful activation evidence.
+Rollback frontend/backend `0a9533e` and bot `47f5422` are retained.
+
+Claude's read-only production smoke (handoff entry 187) passed: tracker health
+showed 25 clans, the retired setting was absent, and the Mismatch war (no strike)
+history filter returned HTTP 200. There were no HTTP errors or horizontal overflow
+at 360px and no backend tracebacks. No live Discord test sends occurred. The later
+PR102 release advances only frontend/backend to `56c9ab4`; the bot remains at this
+mismatch release.
