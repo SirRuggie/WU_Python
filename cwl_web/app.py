@@ -238,8 +238,8 @@ CWL_PAGE_PATHS = {
 MANAGEMENT_PAGE_PATHS = {
     "staff-overview": "/staff",
     "clan-management": "/clans",
-    "strikes": "/clans/strikes",
-    "replacements": "/clans/replacements",
+    "strikes": "/strikes",
+    "replacements": "/replacements",
     "members-settings": "/server/members",
     "member-activity": "/server/member-activity",
     "moderation": "/server/moderation",
@@ -263,6 +263,10 @@ def login_destination(query):
         if re.fullmatch(r"[0-9]{1,18}", season):
             params["season"] = season
         return CWL_PAGE_PATHS["roster"] + ("?" + urlencode(params) if params else "")
+    if view in ('strikes', 'replacements'):
+        from .strike_activity_links import activity_query
+        params = activity_query(query)
+        return MANAGEMENT_PAGE_PATHS[view] + ('?' + urlencode(params) if params else '')
     if view in MANAGEMENT_PAGE_PATHS:
         return MANAGEMENT_PAGE_PATHS[view]
     if view in CWL_PAGE_PATHS:
@@ -290,6 +294,14 @@ def saved_login_destination(request):
     value = request.cookies.get(RETURN_COOKIE, "")
     if value in {'/', '/signup', '/assignments', '/tasks', '/wars', '/events', '/search', '/clan-weights', '/my-signups'}:
         return value
+    if len(value) <= 2048:
+        path, _, query = value.partition('?')
+        strike_view = {'/strikes':'strikes', '/clans/strikes':'strikes',
+                       '/replacements':'replacements', '/clans/replacements':'replacements'}.get(path)
+        if strike_view:
+            params = {key: values[0] for key, values in parse_qs(query).items()}
+            params['view'] = strike_view
+            return login_destination(params)
     if len(value) <= 150:
         path, _, query = value.partition("?")
         if path == '/clan-weights':
@@ -1995,7 +2007,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values()), *(path.lstrip('/') for path in MANAGEMENT_PAGE_PATHS.values())):
             app.router.add_get('/' + path, index_page)
             app.router.add_get('/' + path + '/', index_page)
-        for page in ("reminders", "history"):
+        for page in ("reminders", "history", "strikes", "replacements"):
             app.router.add_get("/clans/" + page, index_page)
             app.router.add_get("/clans/" + page + "/", index_page)
 

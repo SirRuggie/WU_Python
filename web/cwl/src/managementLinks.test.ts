@@ -57,3 +57,22 @@ it("canonicalizes old member activity links to the permission-gated Moderation r
     "/server/moderation",
   );
 });
+
+it("retains strike filters and player through sign-in from canonical and legacy aliases", () => {
+  for (const path of ["/replacements", "/clans/replacements"]) {
+    const result = new URL(
+      loginPath(
+        "?clans=%23PYY&marked=1&sort=quiet&q=Aspen&tag=%23PQQ&next=https://evil.test",
+        false,
+        path,
+      ),
+      "https://fixture",
+    );
+    expect(result.searchParams.get("view")).toBe("replacements");
+    expect(result.searchParams.get("clans")).toBe("#PYY");
+    expect(result.searchParams.get("marked")).toBe("1");
+    expect(result.searchParams.get("q")).toBe("Aspen");
+    expect(result.searchParams.get("tag")).toBe("#PQQ");
+    expect(result.searchParams.has("next")).toBe(false);
+  }
+});

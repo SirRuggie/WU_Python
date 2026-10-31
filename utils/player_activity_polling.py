@@ -145,6 +145,7 @@ async def run(mongo, client):
     store = PlayerActivityStore(mongo)
     indexes_ready = False
     seed_task = None
+    history_task = None
     try:
         while True:
             started = time.monotonic()
@@ -156,6 +157,11 @@ async def run(mongo, client):
                 members = sweep.members
                 if sweep.complete:
                     await store.reconcile_membership(members)
+                if history_task is None or history_task.done():
+                    if history_task is not None and not history_task.cancelled() and history_task.exception():
+                        log.warning('Player activity history state unavailable')
+                    from utils.player_activity_history import backfill_recent_wars
+                    history_task = asyncio.create_task(backfill_recent_wars(mongo), name='player-activity-history')
                 counts = await poll_hour(store, members, client.get_player,
                                          duration=max(1, 3600 - (time.monotonic() - started)))
                 await capture_raids(store, client, sweep.clan_tags)
@@ -174,6 +180,9 @@ async def run(mongo, client):
             await asyncio.sleep(max(1, 3600 - (time.monotonic() - started)))
 
     finally:
+        if history_task is not None:
+            history_task.cancel()
+            await asyncio.gather(history_task, return_exceptions=True)
         if seed_task is not None:
             seed_task.cancel()
             await asyncio.gather(seed_task, return_exceptions=True)

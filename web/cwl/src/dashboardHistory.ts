@@ -1,3 +1,4 @@
+import { activityFilterKeys } from "./strikeActivityView";
 import { clanRoute, clanPath, type ClanRoute } from "./clanManagement/routes";
 import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";
@@ -14,6 +15,7 @@ export type DashboardRoute = {
   replacementClan?: string;
   replacementTag?: string;
   strikeTag?: string;
+  strikeState?: string;
   flowFrom?: "strikes" | "replacements";
   view: DashboardView;
   season: string;
@@ -29,6 +31,13 @@ export function dashboardTarget(
   pathname = "/",
 ): DashboardRoute {
   pathname = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
+  pathname =
+    (
+      {
+        "/clans/strikes": "/strikes",
+        "/clans/replacements": "/replacements",
+      } as Record<string, string>
+    )[pathname] || pathname;
   const family = clanRoute(pathname);
   const params = new URLSearchParams(search);
   const saved = savedSignupTarget(search, pathname);
@@ -56,6 +65,16 @@ export function dashboardTarget(
           weightClan: /^#[A-Z0-9]{1,20}$/i.test(params.get("clan") || "")
             ? params.get("clan")!
             : undefined,
+        }
+      : {}),
+    ...(["strikes", "replacements"].includes(value || "") &&
+    activityFilterKeys.some((key) => params.has(key))
+      ? {
+          strikeState: new URLSearchParams(
+            activityFilterKeys.flatMap((key) =>
+              params.has(key) ? [[key, params.get(key)!]] : [],
+            ),
+          ).toString(),
         }
       : {}),
     ...(saved ? { signupPanel: "saved" as const } : {}),
@@ -128,6 +147,11 @@ export function dashboardPath(route: DashboardRoute) {
   }
   if (route.view === "publication" && route.step)
     params.set("step", route.step);
+  if (["strikes", "replacements"].includes(route.view) && route.strikeState) {
+    const filters = new URLSearchParams(route.strikeState);
+    for (const key of activityFilterKeys)
+      if (filters.has(key)) params.set(key, filters.get(key)!);
+  }
   if (route.season && seasonViews.has(route.view))
     params.set("season", route.season);
   return `${path || "/"}${params.size ? `?${params}` : ""}`;

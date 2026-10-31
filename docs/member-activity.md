@@ -50,8 +50,8 @@ returning clears it. Backup-gated migration enables expiry 90 days after departu
 
 Recent ended raid logs are merged across every active family clan, including
 clans with no current members. Any unread clan makes the sweep incomplete. Ended
-weekends are marked checked once complete; partial reads retry and unchanged rows
-are not rewritten. The UTC Monday 07:00
+weekends are marked checked only after a complete read plus an observed membership bracket,
+or a positive attack; partial reads retry and unchanged rows are not rewritten. The UTC Monday 07:00
 weekend-end calendar also handles a family with no raid log entries at all; it
 supplies only the weekend identity, while the same membership/read gates apply. A raid attack in any family
 clan wins over a skip, including a move between clans. Historical logs can prove
@@ -183,3 +183,47 @@ version has not been read for this development proof; record it during the appro
 release before enabling any migration. The full baseline plus bounded raid/clan
 metadata remains roughly 8–10 MB per 1000 players before storage/index overhead;
 actual release collStats governs sizing.
+
+Quiet rows may retain older `active_days` values until the next daily write. Any reader
+that counts active days must filter by its current UTC date (today through 29 days
+ago), never use the stored list length. The unified page does not expose or count
+`active_days`; its activity signals use last-seen timestamps and raid/war evidence.
+
+
+### Bounded historical war activity (PR B)
+
+The tracker re-reads each active clan's last 60 days once a day, with at most
+three concurrent reads, 120 seconds per clan and 600 seconds per job. The activity
+storage owner retains one player document with fourteen recent observations and
+one clan cache of at most sixty wars. Player readers exclude clan metadata;
+inactive caches use the existing 90-day departure TTL. No new collection or index
+is required. Version 3 replaces old completion/status fields on the next write.
+
+No-plan FWA wars count normally; only a matching Mismatch plan is neutral.
+Friendly and CWL wars are ignored. Failed reads and malformed lineups stop only
+the affected current clan members' consecutive chains at their observation time;
+they never count as misses. A daily refresh heals these markers. Known wars still
+contribute totals, and monitored records win duplicate war keys. Exempt and
+revoked observations remain neutral after ledger retention.
+
+Failures retry after five and ten minutes, then every six hours, without charging
+canceled jobs. Healthy caches are reused during another clan's outage. A new
+account may refresh its own older clan cache. One small clan receipt records the
+next read time; unchanged player observations do not write, including when the
+Mongo client returns naive UTC datetimes. Live tracker timestamps, strikes,
+streaks and replacement marks are never refreshed by historical reads. Page
+metadata reads project only failed clan tags. Measure collStats during rollout.
+
+#### Known history limitations at member-activity-page release
+
+A player who moved clans can carry a known-war chain across an unreadable war in
+their old clan: unusable markers apply to current clan members. Claude accepted
+this rare, read-only limitation in review214; it does not write strikes or change
+streaks. Monitored observations gradually replace imported history.
+
+Claude's read-only ClashKing sample found the newest stored war on October19 for
+two FWA-style clans, while official monitoring began October30. October20–29 can
+therefore be unknown, and known-war chains may cross that interval until newer
+monitored wars replace it. No missing activity is invented or written. The live
+sample returned only ended wars across three family clans; this does not prove
+complete historical coverage.

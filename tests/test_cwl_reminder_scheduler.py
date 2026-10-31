@@ -7,6 +7,14 @@ import pendulum
 from extensions.tasks import cwl_reminder as cwl
 
 
+import pytest
+
+@pytest.fixture(autouse=True)
+def stable_clock(monkeypatch):
+    fixed = pendulum.datetime(2026, 10, 15, 12, tz="UTC")
+    monkeypatch.setattr(pendulum, "now", lambda tz=None: fixed.in_timezone(tz or "UTC"))
+
+
 class FakeResult:
     def __init__(self, deleted_count=0):
         self.deleted_count = deleted_count

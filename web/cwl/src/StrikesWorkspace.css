@@ -6,10 +6,6 @@
 .strikes-workspace .page-head {
   margin-bottom: 18px;
 }
-.strikes-workspace .page-head p:last-child {
-  margin-bottom: 0;
-  color: #bac6d7;
-}
 .strikes-tabs {
   display: flex;
   gap: 0;
@@ -1090,5 +1086,98 @@
   .strikes-player-detail .page-head,
   .strikes-player-detail .strikes-toolbar {
     margin-bottom: 2px;
+  }
+}
+@media (max-width: 760px) {
+  .strikes-player-detail .strikes-detail-context {
+    margin-top: 0;
+    line-height: 1.4;
+  }
+  .strikes-player-detail .page-head > div > p:not(.eyebrow) {
+    display: none;
+  }
+}
+.strike-review-resolution {
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #ae8750;
+  border-radius: 12px;
+  background: #2a261f;
+}
+.strike-review-resolution textarea {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  padding: 10px;
+  margin-block: 6px 10px;
+  background: #171719;
+  border: 1px solid #6d624e;
+  border-radius: 8px;
+  color: #f5f4f0;
+  font: inherit;
+  resize: vertical;
+}
+
+/* Keep the family overview immediately below its routine controls. */
+.strikes-activity-overview .page-head {
+  margin-bottom: 8px;
+}
+.strikes-activity-overview .page-head h1 {
+  margin: 0;
+  font-size: 24px;
+}
+.strikes-navigation {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.strikes-navigation .strikes-tabs {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.strikes-navigation .strikes-tabs button {
+  padding: 8px;
+}
+.strikes-navigation .strikes-tracking {
+  flex: 0 1 280px;
+  margin: 0;
+  padding: 0 8px;
+}
+.strikes-toolbar.strikes-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.strikes-toolbar.strikes-toolbar-actions > button {
+  flex: 0 1 auto;
+  width: auto;
+  padding: 6px 10px;
+}
+.replacement-departure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #cfb9a4;
+}
+.replacement-departure summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  .strikes-navigation .strikes-tracking {
+    flex-basis: 120px;
+  }
+  .strikes-navigation .strikes-tracking summary {
+    gap: 0;
+    font-size: 12px;
+  }
+  .strikes-navigation .strikes-tracking summary > span {
+    display: none;
   }
 }

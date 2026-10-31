@@ -110,3 +110,75 @@ def test_unchanged_hourly_poll_and_membership_only_write_daily_or_at_boundary():
         assert await store.record(payload,CLAN,now=NOW+timedelta(days=1))
         assert await store.record({**payload,'attackWins':2},CLAN,now=NOW+timedelta(days=1,hours=1))
     asyncio.run(run())
+
+
+def test_raid_membership_bracket_requires_recent_observation_and_pre_end_join():
+    from datetime import datetime, timezone
+    end = datetime(2026, 10, 26, 7, tzinfo=timezone.utc)
+    async def run():
+        for age, joined_after, expected in ((90, False, True), (91, False, False), (60, True, False)):
+            collection = ActivityCollection()
+            store = PlayerActivityStore(SimpleNamespace(player_activity=collection))
+            await store.record({'tag': PLAYER, 'attackWins': 1}, CLAN, now=end-timedelta(minutes=90))
+            row = collection.rows[PLAYER]
+            row.update(family_since=end+timedelta(seconds=1) if joined_after else end-timedelta(days=7),
+                       last_roster_at=end-timedelta(minutes=age-15))
+            await store.reconcile_membership({PLAYER: CLAN}, now=end+timedelta(minutes=15))
+            assert (end.isoformat() in (await store.get(PLAYER)).get('raid_membership_ends', [])) is expected
+    asyncio.run(run())
+
+
+def test_membership_retries_one_seed_revision_race_and_preserves_boundary():
+    from datetime import datetime, timezone
+    async def run():
+        class Race(ActivityCollection):
+            raced=False
+            async def update_one(self,q,u,upsert=False):
+                if not self.raced and 'raid_membership_ends' in u.get('$set',{}):
+                    self.raced=True
+                    self.rows[PLAYER]['revision']+=1
+                    self.rows[PLAYER]['seed_status']='seeded'
+                    return SimpleNamespace(matched_count=0)
+                return await super().update_one(q,u,upsert)
+        end=datetime(2026,10,26,7,tzinfo=timezone.utc)
+        c=Race();store=PlayerActivityStore(SimpleNamespace(player_activity=c))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=end-timedelta(minutes=10))
+        c.rows[PLAYER].update(family_since=end-timedelta(days=7),last_roster_at=end-timedelta(minutes=10))
+        await store.reconcile_membership({PLAYER:CLAN},now=end+timedelta(minutes=15))
+        row=await store.get(PLAYER)
+        assert c.raced and row['seed_status']=='seeded'
+        assert end.isoformat() in row['raid_membership_ends']
+    asyncio.run(run())
+
+
+def test_clan_cache_is_not_a_player_and_retirement_preserves_cache():
+    async def run():
+        c = ActivityCollection()
+        store = PlayerActivityStore(SimpleNamespace(player_activity=c))
+        await store.record({'tag': PLAYER, 'attackWins': 1}, CLAN, now=NOW)
+        await store.save_history_clan(CLAN, {'status': 'complete', 'version': 1,
+                                            'wars': []}, now=NOW)
+        assert [row['_id'] for row in await store.all_players()] == [PLAYER]
+        assert [row['tag'] for row in await store.overview()] == [PLAYER]
+        assert await store.history_report() == []
+        await store.reconcile_membership({PLAYER: CLAN}, now=NOW)
+        assert not (await store.history_clans())[0].get('left_at')
+        await store.retire_history_clans(set(), now=NOW)
+        assert (await store.history_clans())[0]['left_at'] == NOW
+        assert len(await store.all_players()) == 1
+    asyncio.run(run())
+
+
+def test_naive_bson_war_timestamps_do_not_rewrite_unchanged_rows():
+    async def run():
+        collection=ActivityCollection();store=PlayerActivityStore(SimpleNamespace(player_activity=collection))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
+        observation={'war_key':'known','occurred_at':NOW,'attacks_used':0,'attacks_available':2}
+        await store.save_recent_wars(PLAYER,[observation],version=3,now=NOW)
+        revision=(await store.get(PLAYER))['revision']
+        collection.rows[PLAYER]['recent_wars'][0]['occurred_at']=NOW.replace(tzinfo=None)
+        for hour in (1,2,3):
+            assert not await store.save_recent_wars(PLAYER,[observation],version=3,
+                                                   now=NOW+timedelta(hours=hour))
+            assert (await store.get(PLAYER))['revision']==revision
+    asyncio.run(run())

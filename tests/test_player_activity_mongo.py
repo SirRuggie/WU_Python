@@ -138,3 +138,32 @@ def test_real_quarantine_resolution_is_cas_audited_and_releases_the_hold():
             await client.drop_database(name)
             await client.close()
     asyncio.run(run())
+
+
+def test_real_recent_war_merge_is_bounded_and_cannot_touch_strikes_or_streaks():
+    async def run():
+        client=AsyncMongoClient(local_uri());name='wu_activity_history_'+uuid4().hex;db=client[name]
+        try:
+            store=PlayerActivityStore(SimpleNamespace(player_activity=db.player_activity))
+            now=datetime.now(timezone.utc)
+            await store.record({'tag':'#PYY','attackWins':1},'#PQQ',now=now)
+            await db.strike_records.insert_one({'_id':'protected','kind':'strike','expires_at':now+timedelta(days=60)})
+            await db.strike_profiles.insert_one({'_id':'protected','streak_count':4,'replacement_listed':True})
+            records=await db.strike_records.find({}).to_list(None);profiles=await db.strike_profiles.find({}).to_list(None)
+            async def write(group):
+                return await store.save_recent_wars('#PYY',[{'war_key':f'{group}:{n}','occurred_at':now-timedelta(days=n),
+                    'attacks_used':n%3,'attacks_available':2} for n in range(20)],version=1,now=now)
+            assert all(await asyncio.gather(*(write(group) for group in range(3))))
+            row=await store.get('#PYY')
+            assert len(row['recent_wars'])==14 and len({r['war_key'] for r in row['recent_wars']})==14
+            assert row['recent_wars_version']==1 and await db.player_activity.count_documents({})==1
+            revision = row['revision']
+            for hour in (1, 2, 3):
+                assert not await store.save_recent_wars('#PYY', row['recent_wars'], version=1,
+                                                       now=now+timedelta(hours=hour))
+                assert (await store.get('#PYY'))['revision'] == revision
+            assert await db.strike_records.find({}).to_list(None)==records
+            assert await db.strike_profiles.find({}).to_list(None)==profiles
+        finally:
+            await client.drop_database(name);await client.close()
+    asyncio.run(run())

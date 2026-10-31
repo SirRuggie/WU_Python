@@ -1,4 +1,5 @@
 """Authenticated dashboard for the same account ledger used by Discord."""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +13,7 @@ import uuid
 from types import SimpleNamespace
 
 from aiohttp import web
+from pymongo.errors import PyMongoError
 
 from . import server_management as shared
 from .providers import ProviderUnavailable, tag
@@ -23,7 +25,6 @@ from utils.replacement_filters import parse_weight, compact_weight
 API = '/api/cwl/strikes'
 GUILD_ID = shared.GUILD_ID
 _OPPONENT_NAME_CACHE = {}
-
 
 
 def endpoint(fn=None, *, scope=None):
@@ -298,6 +299,8 @@ async def overview(request):
 
 @endpoint
 async def accounts(request):
+    if request.query.get('activity') == 'true':
+        return await activity_accounts(request)
     query = request.query.get('query', '').strip()
     if len(query) > 80:
         raise ValueError('Use a shorter account search.')
@@ -329,6 +332,100 @@ async def accounts(request):
     return web.json_response({'accounts': entries, 'total': result['total'],
                               'clans': clans, 'limit': limit, 'offset': offset,
                               'summary': result['summary'], 'strike_limit': result['strike_limit']})
+
+
+async def activity_accounts(request):
+    from utils.player_activity_store import PlayerActivityStore
+    from utils.player_activity_overview import family_activity_rows
+
+    async with shared.mongo(request) as db:
+        ledger = await service(request, db)
+        activity_warning = None
+        try:
+            activity = await PlayerActivityStore(db).overview()
+        except PyMongoError:
+            activity = []
+            activity_warning = "Activity unavailable. Strike rows remain available."
+        context = await ledger.activity_context(
+            GUILD_ID, [row["tag"] for row in activity]
+        )
+        try:
+            failed_clans = sorted(set(await PlayerActivityStore(db).history_report()) & {row["tag"] for row in context["clans"]})
+        except PyMongoError:
+            failed_clans = []
+        history_warning = ("Some war reads unavailable for clans: " + ", ".join(failed_clans)) if failed_clans else None
+    rows = family_activity_rows(activity, **context)
+    if activity_warning:
+        for row in rows:
+            row.update(
+                activity_unavailable=True,
+                quiet_days=None,
+                missed_attacks=0,
+                observed_attacks=0,
+                no_attack_wars=0,
+                skipped_raid_weekends=0,
+            )
+    elif rows and all(row.get("activity_tracking_behind") for row in rows):
+        activity_warning = "Activity tracking is behind. Quiet indicators are paused."
+    from .strike_activity_identity import account_identities
+    identities, link_warning = await account_identities(request, [row["player_tag"] for row in rows])
+    for row in rows:
+        if row["player_tag"] in identities:
+            row.update(identities[row["player_tag"]])
+    weight_warning = None
+    if rows:
+        from utils.clan_weights import source_weights, overlay_accounts
+
+        weights = {}
+        try:
+            async with asyncio.timeout(8):
+                weights = await source_weights(
+                    request.app["store"],
+                    request.app["providers"],
+                    [row["player_tag"] for row in rows],
+                )
+            if not isinstance(weights, dict):
+                raise ProviderUnavailable("Invalid weight snapshot")
+        except (ProviderUnavailable, TimeoutError):
+            weights = {}
+            weight_warning = (
+                "Current weights are unavailable. Showing saved weights where known."
+            )
+        # Saved blanks are intentional and must win even when upstream fails.
+        effective = overlay_accounts(
+            request.app["store"],
+            {
+                "accounts": [
+                    {
+                        "tag": row["player_tag"],
+                        "war_weight": (weights.get(row["player_tag"]) or {}).get(
+                            "weight", row.get("weight")
+                        ),
+                    }
+                    for row in rows
+                ]
+            },
+        )
+        indexed = {row["tag"]: row["war_weight"] for row in effective["accounts"]}
+        for row in rows:
+            row["weight"] = indexed.get(row["player_tag"])
+    identity_warning = "Discord names are loading or unavailable. Search by player name, tag or known Discord ID." if link_warning else None
+    return web.json_response(
+        public(
+            {
+                "accounts": rows,
+                "total": len(rows),
+                "weight_warning": weight_warning,
+                "identity_warning": identity_warning,
+                "activity_warning": activity_warning,
+                "history_warning": history_warning,
+                "clans": [
+                    {"tag": row["tag"], "name": row.get("name") or row["tag"]}
+                    for row in context["clans"]
+                ],
+            }
+        )
+    )
 
 
 async def _enrich_war_names(request, rows, clan_names, *, budget=8):
@@ -665,7 +762,7 @@ async def replacement_roster(request):
 
 @endpoint
 async def bulk_add_replacement_list(request):
-    data = await body(request, {'clan_tag', 'player_tags', 'priority', 'note'})
+    data = await body(request, {'clan_tag', 'player_tags', 'priority', 'note', 'revisions'})
     raw_tags = data.get('player_tags')
     if not isinstance(raw_tags, list) or not 1 <= len(raw_tags) <= 50:
         raise ValueError('Choose 1 to 50 accounts.')
@@ -674,6 +771,10 @@ async def bulk_add_replacement_list(request):
     selected = [tag(value) for value in raw_tags]
     if len(set(selected)) != len(selected):
         raise ValueError('Select each account only once.')
+    revisions = data.get('revisions')
+    if revisions is not None and (not isinstance(revisions, dict) or set(revisions) != set(selected)
+            or any(type(v) is not int or not 0 <= v <= 2**53-1 for v in revisions.values())):
+        raise ValueError('Refresh the selected account revisions.')
     priority = data.get('priority')
     note = data.get('note', '')
     if priority not in ('replace_first', 'high', 'normal'):
@@ -690,6 +791,9 @@ async def bulk_add_replacement_list(request):
             raise web.HTTPConflict(text='Some selected accounts left this clan. Refresh the list and try again.')
         existing = await db.strike_profiles.find(
             {'guild_id': GUILD_ID, 'player_tag': {'$in': selected}}).to_list(length=None)
+        indexed = {row['player_tag']: row for row in existing}
+        if revisions is not None and any(revisions[value] != indexed.get(value, {}).get('revision', 0) for value in selected):
+            raise web.HTTPConflict(text='Selected accounts changed. Refresh before marking; nothing was saved.')
         already = {row['player_tag'] for row in existing
                    if (row.get('replacement_listed') and row.get('replacement_clan_tag') == roster['tag'])
                    or (row.get('filler') and row.get('filler_clan_tag') == roster['tag'])}
@@ -702,8 +806,12 @@ async def bulk_add_replacement_list(request):
                 result = await ledger.set_replacement_preference(
                     GUILD_ID, value, priority, note, actor, clan_tag=roster['tag'],
                     player_name=members[value]['name'],
-                    town_hall=members[value].get('town_hall'), only_if_unmarked=True)
+                    town_hall=members[value].get('town_hall'), only_if_unmarked=True,
+                    **({'expected_revision': revisions[value]} if revisions is not None else {}))
                 (added if result is not None else skipped).append(value)
+        except StrikeConflict:
+            return web.json_response({'added':added,'skipped':skipped,'added_count':len(added),
+                'skipped_count':len(skipped),'error':'Selected accounts changed. Refresh before continuing; no automatic retry.'},status=409)
         except Exception:
             _job_log.exception('Replacement bulk add stopped after partial write')
             return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,
@@ -768,8 +876,6 @@ async def delete_replacement_list(request):
         saved = await ledger.clear_replacement_preference(GUILD_ID, player, int(_session(request)['user_id']),
                                                            expected_revision=revision)
     return web.json_response({'ok': True, 'revision': saved['revision']})
-
-
 
 
 JOB_TTL_SECONDS = 60 * 60
@@ -1015,6 +1121,15 @@ async def tracking_retry(request):
                               'retry_requested_at': public(row['retry_requested_at'])}, status=202)
 
 
+@endpoint
+async def tracking_review(request):
+    async with shared.mongo(request) as db:
+        review = await StrikeTracking(db).review(GUILD_ID, request.query.get('war_key'))
+    if review is None:
+        raise web.HTTPNotFound(text='Review was not found. Refresh Find war.')
+    return web.json_response(public(review))
+
+
 @endpoint(scope='strikes')
 async def tracking_resolve(request):
     data = await body(request, {'war_key', 'revision', 'reason'})
@@ -1026,6 +1141,7 @@ async def tracking_resolve(request):
 
 
 routes = [web.get(API + '/tracking', tracking_status),
+          web.get(API + '/tracking/review', tracking_review),
           web.post(API + '/tracking/retry', tracking_retry),
           web.post(API + '/tracking/resolve', tracking_resolve),
           web.get(API + '/overview', overview), web.get(API + '/accounts', accounts),

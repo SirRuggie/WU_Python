@@ -1,3 +1,7 @@
+import StrikeReviewResolution from "./StrikeReviewResolution";
+import ReplacementDeparture from "./ReplacementDeparture";
+import { parseActivityFilters } from "./strikeActivityView";
+import StrikeActivityRoster from "./StrikeActivityRoster";
 import StrikeReplacementRow from "./StrikeReplacementRow";
 import {
   useViewState,
@@ -86,6 +90,9 @@ type Overview = {
   streak?: StrikeStreakState | null;
 };
 type StrikeAccount = {
+  left_clan?: boolean;
+  last_clan_name?: string | null;
+  departed_at?: string | null;
   player_tag: string;
   player_name: string;
   discord_id?: string | null;
@@ -124,6 +131,8 @@ type War = {
   source_label?: string | null;
   incomplete?: boolean;
   review_message?: string | null;
+  manual_review_required?: boolean;
+  review_revision?: number;
 };
 type Settings = StrikeSettings;
 type ImportEntry = {
@@ -250,9 +259,16 @@ export default function StrikesWorkspace({
   onFindReplacement,
   targetTag = "",
   memory,
-  onBack,
   onWorking,
+  activityState,
+  markedDefault = false,
+  onActivityState,
+  onAccountRoute,
 }: {
+  activityState?: string;
+  markedDefault?: boolean;
+  onActivityState?: (state: string, push: boolean) => void;
+  onAccountRoute?: (tag: string) => void;
   permissions: string[];
   isOwner: boolean;
   userId: string;
@@ -261,7 +277,6 @@ export default function StrikesWorkspace({
   onFindReplacement?: (clan: string, tag: string) => void;
   targetTag?: string;
   memory?: ViewMemory;
-  onBack?: () => void;
 }) {
   const access = strikePermissions(permissions, isOwner);
   const visibleTabs = tabs.filter((item) =>
@@ -294,32 +309,12 @@ export default function StrikesWorkspace({
     tag: string;
     streak?: StrikeStreakState | null;
   } | null>(null);
-  const [accountOverview, setAccountOverview] = useState<AccountOverview>({
-    accounts: [],
-    clans: [],
-    total: 0,
-  });
+  const [activityReload, setActivityReload] = useState(0);
   const [selectedAccount, setSelectedAccount] =
     useViewState<StrikeAccount | null>(memory, "selectedAccount", null);
-  const [query, setQuery] = useViewState(memory, "query", "");
-  const [historyMember, setHistoryMember] = useViewState<Member | null>(
-    memory,
-    "historyMember",
-    null,
-  );
-  const [historyMatches, setHistoryMatches] = useState<Member[]>([]);
+  const lastTarget = useRef(targetTag || selectedAccount?.player_tag || "");
   const [status, setStatus] = useViewState(memory, "status", "all");
-  const [actionFilter, setActionFilter] = useViewState(
-    memory,
-    "actionFilter",
-    "all",
-  );
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const [accountStatus, setAccountStatus] = useViewState<"active" | "all">(
-    memory,
-    "accountStatus",
-    "active",
-  );
   const [showWarSearch, setShowWarSearch] = useState(false);
   const [warQuery, setWarQuery] = useState("");
   const [wars, setWars] = useState<War[]>([]);
@@ -334,29 +329,33 @@ export default function StrikesWorkspace({
     "selectedWar",
     null,
   );
-  const [clan, setClan] = useViewState(memory, "clan", "");
-  const [accountPage, setAccountPage] = useViewState(memory, "accountPage", 0);
+  const activityClans = parseActivityFilters(
+    activityState,
+    markedDefault,
+  ).clans;
+  const clan = activityClans.length === 1 ? activityClans[0] : "";
   const [detailPage, setDetailPage] = useViewState(memory, "detailPage", 0);
-  const page = selectedAccount || selectedWar ? detailPage : accountPage;
-  const setPage =
-    selectedAccount || selectedWar ? setDetailPage : setAccountPage;
+  const page = detailPage;
+  const setPage = setDetailPage;
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const listHeading = useRef<HTMLHeadingElement>(null);
   const returnPlayer = useRef<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   useViewScroll(memory, !loading);
   const historyRequest = useRef(0);
-  const accountRequest = useRef(0);
   const memberRequest = useRef(0);
   const [busy, setBusy] = useState(false);
+  const [reviewDirty, setReviewDirty] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [replacementDirty, setReplacementDirty] = useState(false);
   const [replacementBusy, setReplacementBusy] = useState(false);
   useEffect(() => {
-    onWorking?.(busy || replacementBusy);
+    onWorking?.(busy || replacementBusy || reviewBusy);
     return () => onWorking?.(false);
-  }, [busy, replacementBusy, onWorking]);
+  }, [busy, replacementBusy, reviewBusy, onWorking]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const noticeRef = useRef<HTMLDivElement>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [memberQuery, setMemberQuery] = useState("");
   const [memberError, setMemberError] = useState("");
@@ -364,6 +363,8 @@ export default function StrikesWorkspace({
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState("");
   const [manualDirty, setManualDirty] = useState(false);
+  const [bulkDirty, setBulkDirty] = useState(false);
+  const [selectionReset, setSelectionReset] = useState(0);
   const mutation = useRef(false);
   const [removeId, setRemoveId] = useState("");
   const [removeReason, setRemoveReason] = useState("");
@@ -387,16 +388,13 @@ export default function StrikesWorkspace({
   useEffect(() => {
     const clear = () => {
       historyRequest.current++;
-      accountRequest.current++;
       memberRequest.current++;
       setAccessLost(true);
       setOverview({ entries: [], clans: [], total: 0 });
-      setAccountOverview({ accounts: [], clans: [], total: 0 });
       setSelectedAccount(null);
       setSelectedWar(null);
       setSettings(null);
       setMembers([]);
-      setHistoryMatches([]);
       setWars([]);
       setManualOpen(false);
       setPreview(null);
@@ -407,9 +405,11 @@ export default function StrikesWorkspace({
     return () => window.removeEventListener("dashboard-access-changed", clear);
   }, []);
   const dirty =
+    reviewDirty ||
     replacementDirty ||
     settingsDirty ||
     manualDirty ||
+    bulkDirty ||
     !!removeReason ||
     !!resumeDate ||
     leaveTags.length > 0;
@@ -418,7 +418,7 @@ export default function StrikesWorkspace({
     (() => void) | null
   >(null);
   const leaveDraft = (action: () => void) => {
-    if (busy || replacementBusy) return;
+    if (busy || replacementBusy || reviewBusy) return;
     if (dirty) setPendingNavigation(() => action);
     else action();
   };
@@ -450,29 +450,16 @@ export default function StrikesWorkspace({
     }
   }, [page, status, selectedWar?.war_key, selectedAccount?.player_tag]);
   const refreshAccounts = useCallback(async () => {
-    const request = ++accountRequest.current;
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams({
-        limit: "25",
-        offset: String(page * 25),
-        status: accountStatus,
-        action: actionFilter,
-      });
-      if (historyMember?.id || query.trim())
-        params.set("query", historyMember?.id || query.trim());
-      if (clan) params.set("clan", clan);
-      const data = await api<AccountOverview>(`/strikes/accounts?${params}`);
-      if (request === accountRequest.current) setAccountOverview(data);
-    } catch (err) {
-      if (request === accountRequest.current) setError(errorText(err));
-    } finally {
-      if (request === accountRequest.current) setLoading(false);
-    }
-  }, [page, query, historyMember?.id, clan, accountStatus, actionFilter]);
+    setActivityReload((value) => value + 1);
+  }, []);
   useEffect(() => {
-    if (accessLost || !access.view || tab !== "history") return;
+    if (
+      accessLost ||
+      !access.view ||
+      tab !== "history" ||
+      (!selectedAccount && !selectedWar)
+    )
+      return;
     const timer = setTimeout(
       () =>
         void (selectedAccount || selectedWar
@@ -483,7 +470,6 @@ export default function StrikesWorkspace({
     return () => {
       clearTimeout(timer);
       historyRequest.current++;
-      accountRequest.current++;
     };
   }, [
     accessLost,
@@ -525,14 +511,6 @@ export default function StrikesWorkspace({
       clearTimeout(timer);
     };
   }, [accessLost, access.view, memberQuery, tab]);
-  const accountFiltersMounted = useRef(false);
-  useEffect(() => {
-    if (!accountFiltersMounted.current) {
-      accountFiltersMounted.current = true;
-      return;
-    }
-    setAccountPage(0);
-  }, [query, historyMember?.id, accountStatus, actionFilter, clan]);
   const detailFiltersMounted = useRef(false);
   useEffect(() => {
     if (!detailFiltersMounted.current) {
@@ -544,15 +522,6 @@ export default function StrikesWorkspace({
   useEffect(() => {
     detailHeading.current?.focus();
   }, [selectedAccount?.player_tag, selectedWar?.war_key]);
-  useEffect(() => {
-    if (selectedAccount || selectedWar || loading || !returnPlayer.current)
-      return;
-    const opener = document.querySelector<HTMLButtonElement>(
-      `button[data-strike-player="${CSS.escape(returnPlayer.current)}"]`,
-    );
-    (opener || listHeading.current)?.focus();
-    returnPlayer.current = null;
-  }, [selectedAccount, selectedWar, loading]);
   useEffect(() => {
     if (accessLost || !access.view || tab !== "history" || !showWarSearch)
       return;
@@ -598,46 +567,6 @@ export default function StrikesWorkspace({
     clan,
     warPage,
     warRetry,
-  ]);
-  useEffect(() => {
-    if (
-      accessLost ||
-      !access.view ||
-      tab !== "history" ||
-      selectedAccount ||
-      selectedWar ||
-      historyMember ||
-      query.trim().length < 2 ||
-      query.trim().startsWith("#") ||
-      /^\d+$/.test(query.trim())
-    ) {
-      setHistoryMatches([]);
-      return;
-    }
-    let active = true;
-    const timer = setTimeout(() => {
-      void api<{ members: Member[] }>(
-        `/strikes/members?query=${encodeURIComponent(query.trim())}`,
-      )
-        .then((data) => {
-          if (active) setHistoryMatches(data.members);
-        })
-        .catch(() => {
-          if (active) setHistoryMatches([]);
-        });
-    }, 250);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [
-    accessLost,
-    access.view,
-    query,
-    historyMember,
-    tab,
-    selectedAccount,
-    selectedWar,
   ]);
   useEffect(() => {
     if (accessLost || !access.manage || (tab !== "settings" && tab !== "leave"))
@@ -723,6 +652,7 @@ export default function StrikesWorkspace({
       setRemoveReason("");
       setSelectedAccount(null);
       clearWar();
+      onAccountRoute?.("");
     });
   const chooseAccount = (account: StrikeAccount) => {
     setSelectedAccount(account);
@@ -731,16 +661,36 @@ export default function StrikesWorkspace({
     setDetailPage(0);
   };
   useEffect(() => {
-    if (!targetTag || !access.view || accessLost) return;
+    const previous = lastTarget.current;
+    lastTarget.current = targetTag;
+    if (!targetTag) {
+      if (previous) {
+        returnPlayer.current = previous;
+        setSelectedAccount(null);
+        setSelectedWar(null);
+      }
+      return;
+    }
+    if (!access.view || accessLost || selectedAccount?.player_tag === targetTag)
+      return;
     let active = true;
     void api<AccountOverview>(
       `/strikes/accounts?query=${encodeURIComponent(targetTag)}&status=all`,
     )
-      .then((data) => {
+      .then(async (data) => {
         if (!active) return;
-        const found = data.accounts.find(
+        let found = data.accounts.find(
           (account) => account.player_tag === targetTag,
         );
+        if (!found) {
+          const family = await api<AccountOverview>(
+            "/strikes/accounts?activity=true",
+          );
+          if (!active) return;
+          found = family.accounts.find(
+            (account) => account.player_tag === targetTag,
+          );
+        }
         if (found) {
           setTab("history");
           chooseAccount(found);
@@ -757,8 +707,6 @@ export default function StrikesWorkspace({
     setSelectedAccount(null);
     setSelectedWar(war);
     setStatus("all");
-    setQuery("");
-    setHistoryMember(null);
     setShowWarSearch(false);
     setDetailPage(0);
   };
@@ -914,51 +862,44 @@ export default function StrikesWorkspace({
 
   return (
     <section
-      className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : ""}`}
+      className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
     >
-      {onBack && (
-        <button type="button" disabled={busy} onClick={onBack}>
-          ‹ Back to Replacements
-        </button>
-      )}
       <div className="page-head">
         <div>
-          <p className="eyebrow">Family clans</p>
-          <h1>Strikes</h1>
-          <p>Review active strikes, account history, and approved leave.</p>
-          {(settings?.strike_limit ?? accountOverview.strike_limit) != null && (
-            <StrikeHelp
-              limit={settings?.strike_limit ?? accountOverview.strike_limit}
-            />
-          )}
+          <h1>Strikes &amp; replacements</h1>
         </div>
       </div>
-      <div className="strikes-tabs" role="group" aria-label="Strike sections">
-        {visibleTabs.map((item) => (
-          <button
-            key={item.id}
-            aria-pressed={tab === item.id}
-            disabled={busy}
-            onClick={() =>
-              leaveDraft(() => {
-                setManualOpen(false);
-                setManualDirty(false);
-                memberRequest.current++;
-                setRemoveId("");
-                setRemoveReason("");
-                setLeaveTags([]);
-                setLeaveRevision(null);
-                setLeaveConflict(false);
-                setResumeDate("");
-                setTab(item.id);
-                setError("");
-                setNotice("");
-              })
-            }
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="strikes-navigation">
+        <div className="strikes-tabs" role="group" aria-label="Strike sections">
+          {visibleTabs.map((item) => (
+            <button
+              key={item.id}
+              aria-pressed={tab === item.id}
+              disabled={busy}
+              onClick={() =>
+                leaveDraft(() => {
+                  setManualOpen(false);
+                  setManualDirty(false);
+                  memberRequest.current++;
+                  setRemoveId("");
+                  setRemoveReason("");
+                  setLeaveTags([]);
+                  setLeaveRevision(null);
+                  setLeaveConflict(false);
+                  setResumeDate("");
+                  setTab(item.id);
+                  setError("");
+                  setNotice("");
+                })
+              }
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {tab === "history" && !manualOpen && (
+          <StrikeTrackingStatus compact canRetry={access.add} />
+        )}
       </div>
       {error && (
         <div className="notice error" role="alert">
@@ -1002,7 +943,12 @@ export default function StrikesWorkspace({
         </div>
       )}
       {notice && (
-        <div className="notice success" role="status">
+        <div
+          className="notice success"
+          role="status"
+          ref={noticeRef}
+          tabIndex={-1}
+        >
           {notice}
         </div>
       )}
@@ -1027,58 +973,9 @@ export default function StrikesWorkspace({
       )}
       {tab === "history" && !manualOpen && (
         <>
-          <StrikeTrackingStatus canRetry={access.add} />
           <div
-            className={`strikes-toolbar${selectedAccount ? " strikes-toolbar-player" : ""}`}
+            className={`strikes-toolbar${selectedAccount ? " strikes-toolbar-player" : !selectedWar ? " strikes-toolbar-actions" : ""}`}
           >
-            {!selectedAccount && !selectedWar && (
-              <div className="strikes-history-search">
-                <label>
-                  Find player or member
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                      setHistoryMember(null);
-                    }}
-                    placeholder="Name, tag or Discord ID"
-                  />
-                </label>
-                {historyMember && (
-                  <button
-                    className="strikes-picked-member"
-                    onClick={() => {
-                      setHistoryMember(null);
-                      setQuery("");
-                    }}
-                  >
-                    Member: {historyMember.name} ×
-                  </button>
-                )}
-                {historyMatches.length > 0 && (
-                  <div
-                    className="strikes-search-matches"
-                    role="group"
-                    aria-label="Matching Discord members"
-                  >
-                    {historyMatches.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          setHistoryMember(item);
-                          setQuery(item.name);
-                          setHistoryMatches([]);
-                        }}
-                      >
-                        {item.name}
-                        <small>{item.id}</small>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
             {selectedAccount && (
               <button onClick={backToAccounts}>← Players</button>
             )}
@@ -1110,38 +1007,9 @@ export default function StrikesWorkspace({
                 </select>
               </label>
             )}
+
             {!selectedAccount && !selectedWar && (
-              <label>
-                Show
-                <select
-                  value={accountStatus}
-                  onChange={(event) =>
-                    setAccountStatus(event.target.value as "active" | "all")
-                  }
-                >
-                  <option value="active">Active strikes</option>
-                  <option value="all">All accounts</option>
-                </select>
-              </label>
-            )}
-            {!selectedAccount && !selectedWar && (
-              <label>
-                Clan
-                <select
-                  value={clan}
-                  onChange={(event) => {
-                    setClan(event.target.value);
-                    setWarPage(0);
-                  }}
-                >
-                  <option value="">All clans</option>
-                  {accountOverview.clans.map((item) => (
-                    <option key={item.tag} value={item.tag}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <StrikeHelp compact limit={settings?.strike_limit} />
             )}
             {access.add && (
               <button
@@ -1158,19 +1026,25 @@ export default function StrikesWorkspace({
                 {manualOpen ? "Close" : "Add strike"}
               </button>
             )}
-          </div>
-          {!selectedAccount && (
-            <div className="strikes-war-tools">
+            {!selectedAccount && !selectedWar && (
               <button
-                disabled={busy || loading}
-                onClick={() =>
-                  void (selectedAccount || selectedWar
-                    ? refreshHistory()
-                    : refreshAccounts())
-                }
+                aria-expanded={showWarSearch}
+                onClick={() => setShowWarSearch((open) => !open)}
               >
-                Refresh records
+                {showWarSearch ? "Close war search" : "Find war"}
               </button>
+            )}
+          </div>
+          {!selectedAccount && selectedWar && (
+            <div className="strikes-war-tools">
+              {selectedWar && (
+                <button
+                  disabled={busy || loading}
+                  onClick={() => void refreshHistory()}
+                >
+                  Refresh records
+                </button>
+              )}
               <button
                 aria-expanded={showWarSearch}
                 onClick={() => setShowWarSearch((open) => !open)}
@@ -1186,19 +1060,43 @@ export default function StrikesWorkspace({
                     )}{" "}
                     · {dateText(selectedWar.war_end)} ·{" "}
                     {selectedWar.source_label || "Source unavailable"}
-                    {selectedWar.mismatch
-                      ? " · ⊖ Mismatch war (no strike)"
-                      : selectedWar.no_attack
-                      ? " · ⊖ No-attack war (no strike)"
-                      : selectedWar.incomplete
-                        ? " · Incomplete · No automatic strikes"
-                        : " · All records"}
+                    {selectedWar.manual_review_required
+                      ? " · Quarantined · Streak hold"
+                      : selectedWar.mismatch
+                        ? " · ⊖ Mismatch war (no strike)"
+                        : selectedWar.no_attack
+                          ? " · ⊖ No-attack war (no strike)"
+                          : selectedWar.incomplete
+                            ? " · Incomplete · No automatic strikes"
+                            : " · All records"}
                   </span>
-                  {selectedWar.war_plan_reason && <span>{selectedWar.war_plan_reason}</span>}
-                  <button onClick={clearWar}>Clear war</button>
+                  {selectedWar.war_plan_reason && (
+                    <span>{selectedWar.war_plan_reason}</span>
+                  )}
+                  <button onClick={() => leaveDraft(clearWar)}>
+                    Clear war
+                  </button>
                 </div>
               )}
             </div>
+          )}
+          {selectedWar?.manual_review_required && (
+            <StrikeReviewResolution
+              key={selectedWar.war_key}
+              warKey={selectedWar.war_key}
+              revision={selectedWar.review_revision || 0}
+              reason={selectedWar.review_message}
+              canManage={access.manage}
+              onDirty={setReviewDirty}
+              onWorking={setReviewBusy}
+              onResolved={() => {
+                setSelectedWar(null);
+                setShowWarSearch(true);
+                setWarRetry((value) => value + 1);
+                setNotice("War review resolved. The streak hold is released.");
+                requestAnimationFrame(() => noticeRef.current?.focus());
+              }}
+            />
           )}
           {!selectedAccount && showWarSearch && (
             <div className="card strikes-war-search">
@@ -1244,9 +1142,11 @@ export default function StrikesWorkspace({
                       <span>
                         {dateText(war.war_end)} ·{" "}
                         {war.source_label || "Source unavailable"} ·{" "}
-                        {war.incomplete
-                          ? `${war.review_message || "War ended before final check: review in Find war"} · No automatic strikes`
-                          : warSummary(war)}
+                        {war.manual_review_required
+                          ? `${war.review_message || "Staff review required"} · Streak hold`
+                          : war.incomplete
+                            ? `${war.review_message || "War ended before final check: review in Find war"} · No automatic strikes`
+                            : warSummary(war)}
                       </span>
                     </button>
                   ))}
@@ -1298,9 +1198,27 @@ export default function StrikesWorkspace({
                     ? `${selectedAccount.clan_is_current === false ? "Last known" : "Current"}: ${selectedAccount.current_clan_name}`
                     : "No clan"}{" "}
                   · {selectedAccount.active_strikes} active /{" "}
-                  {strikeCountLabel(
-                    selectedAccount.total_strikes,
-                    "total strike",
+                  {strikeCountLabel(selectedAccount.total_strikes, "strike")} in
+                  the last 90 days
+                  {onFindReplacement && selectedAccount.current_clan_tag && (
+                    <button
+                      onClick={() =>
+                        leaveDraft(() =>
+                          onFindReplacement(
+                            selectedAccount.current_clan_tag!,
+                            selectedAccount.player_tag,
+                          ),
+                        )
+                      }
+                    >
+                      Find replacements in this clan
+                    </button>
+                  )}
+                  {selectedAccount.left_clan && (
+                    <ReplacementDeparture
+                      clan={selectedAccount.last_clan_name || "family"}
+                      seenAt={selectedAccount.departed_at}
+                    />
                   )}
                   <StrikeReplacementRow
                     key={selectedAccount.player_tag}
@@ -1439,165 +1357,29 @@ export default function StrikesWorkspace({
               )}
             </>
           ) : (
-            <>
-              {accountOverview.summary && !error && (
-                <p className="strikes-action-summary" aria-live="polite">
-                  {accountOverview.summary.over_limit} over limit ·{" "}
-                  {accountOverview.summary.new_this_week} new this week
-                  {loading ? " · Updating…" : ""}
-                </p>
-              )}
-              <div
-                className="strikes-action-chips"
-                role="group"
-                aria-label="Account action filters"
-              >
-                {(
-                  [
-                    ["over_limit", "Over limit"],
-                    ["new_this_week", "New this week"],
-                    ["all", "All"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    aria-pressed={actionFilter === value}
-                    onClick={() => setActionFilter(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="strikes-list-head">
-                <h2 ref={listHeading} tabIndex={-1}>
-                  Players
-                </h2>
-                <span>
-                  {loading
-                    ? "Loading…"
-                    : strikeCountLabel(accountOverview.total, "account")}
-                </span>
-              </div>
-              {!loading && !error && accountOverview.accounts.length === 0 && (
-                <div className="card strikes-empty">
-                  {query || clan
-                    ? "No accounts match these filters."
-                    : accountStatus === "active"
-                      ? "No active strikes. Choose All accounts to review past records."
-                      : "No account history yet."}
-                </div>
-              )}
-              <div className="strikes-account-list">
-                {!loading &&
-                  !error &&
-                  accountOverview.accounts.map((account) => (
-                    <div
-                      className="strike-account-item"
-                      key={account.player_tag}
-                    >
-                      <button
-                        data-strike-player={account.player_tag}
-                        className="card strikes-account-row"
-                        key={account.player_tag}
-                        onClick={() => chooseAccount(account)}
-                      >
-                        <span className="strikes-account-name">
-                          <strong>
-                            {account.player_name || account.player_tag}
-                          </strong>
-                          <small>
-                            {account.player_tag} ·{" "}
-                            {account.current_clan_name
-                              ? `${account.clan_is_current === false ? "Last known" : "Current"}: ${account.current_clan_name}`
-                              : "No clan"}
-                          </small>
-                          {!account.discord_id && <small>Not linked</small>}
-                        </span>
-                        <span className="strikes-account-count">
-                          <strong>{account.active_strikes}</strong> active{" "}
-                          {account.active_strikes === 1 ? "strike" : "strikes"}
-                        </span>
-                        <span className="strikes-account-more">
-                          {account.total_strikes
-                            ? `${account.total_strikes} total · Last ${dateText(account.last_strike_at)}`
-                            : "Missed attacks only"}
-                        </span>
-                        <span aria-hidden="true">›</span>
-                      </button>
-                      {accountOverview.strike_limit != null &&
-                        account.active_strikes >=
-                          accountOverview.strike_limit && (
-                          <div className="strike-account-action">
-                            <span>
-                              {account.active_strikes ===
-                              accountOverview.strike_limit
-                                ? "Limit reached"
-                                : "Over limit"}{" "}
-                              ({accountOverview.strike_limit})
-                            </span>
-                            {account.current_clan_tag && (
-                              <a
-                                href={`/clans/replacements?clan=${encodeURIComponent(account.current_clan_tag)}&tag=${encodeURIComponent(account.player_tag)}&from=strikes`}
-                                onClick={(event) => {
-                                  if (
-                                    !onFindReplacement ||
-                                    event.ctrlKey ||
-                                    event.metaKey ||
-                                    event.shiftKey ||
-                                    event.altKey
-                                  )
-                                    return;
-                                  event.preventDefault();
-                                  onFindReplacement(
-                                    account.current_clan_tag!,
-                                    account.player_tag,
-                                  );
-                                }}
-                              >
-                                Find replacement ›
-                              </a>
-                            )}
-                          </div>
-                        )}
-                    </div>
-                  ))}
-              </div>
-              {accountOverview.total > 25 && (
-                <div className="strikes-pages">
-                  <button
-                    disabled={page === 0 || loading}
-                    onClick={() =>
-                      leaveDraft(() => {
-                        setRemoveId("");
-                        setRemoveReason("");
-                        setPage((value) => value - 1);
-                      })
-                    }
-                  >
-                    Previous
-                  </button>
-                  <span>
-                    {page * 25 + 1}–
-                    {Math.min((page + 1) * 25, accountOverview.total)} of{" "}
-                    {accountOverview.total}
-                  </span>
-                  <button
-                    disabled={
-                      (page + 1) * 25 >= accountOverview.total || loading
-                    }
-                    onClick={() =>
-                      leaveDraft(() => {
-                        setRemoveId("");
-                        setRemoveReason("");
-                        setPage((value) => value + 1);
-                      })
-                    }
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </>
+            <StrikeActivityRoster
+              selectionReset={selectionReset}
+              canManage={access.manage}
+              onWorking={setBusy}
+              onDirty={setBulkDirty}
+              state={activityState}
+              markedDefault={markedDefault}
+              reload={activityReload}
+              memory={memory}
+              headingRef={listHeading}
+              focusTag={returnPlayer.current}
+              onRestored={() => {
+                returnPlayer.current = null;
+              }}
+              onState={onActivityState}
+              onChoose={(account) => {
+                leaveDraft(() => {
+                  chooseAccount(account);
+                  onAccountRoute?.(account.player_tag);
+                });
+              }}
+              onDenied={() => setAccessLost(true)}
+            />
           )}
         </>
       )}
@@ -1982,11 +1764,13 @@ export default function StrikesWorkspace({
           text="Discard unsaved changes?"
           confirmLabel="Discard"
           cancelLabel="Keep editing"
-          disabled={busy}
+          disabled={busy || reviewBusy}
           onCancel={() => setPendingNavigation(null)}
           onConfirm={() => {
             const action = pendingNavigation;
             setPendingNavigation(null);
+            setSelectionReset((value) => value + 1);
+            setBulkDirty(false);
             action();
           }}
         />

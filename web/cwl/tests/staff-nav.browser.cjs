@@ -41,8 +41,7 @@ const expected = {
     Clans: [
       "Family clans",
       "Clan weights",
-      "Strikes",
-      "Replacements",
+      "Strikes & replacements",
       "FWA tools",
     ],
     Members: ["Members & roles", "Tickets", "Ticket settings"],

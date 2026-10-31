@@ -103,6 +103,9 @@ export default function StrikeReplacementRow({
           </button>
         )}
       </p>
+      {!editing && baseline.saved?.note && (
+        <p className="replacement-note">{baseline.saved.note}</p>
+      )}
       {(error || baseline.error) && (
         <p role="alert">{error || baseline.error}</p>
       )}

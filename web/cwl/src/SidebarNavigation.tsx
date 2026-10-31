@@ -233,14 +233,8 @@ const sections: Section[] = [
       },
       {
         view: "strikes",
-        label: "Strikes",
+        label: "Strikes & replacements",
         icon: "flag",
-        permissions: ["strikes", "strikes_add", "strikes_remove"],
-      },
-      {
-        view: "replacements",
-        label: "Replacements",
-        icon: "replace",
         permissions: ["strikes", "strikes_add", "strikes_remove"],
       },
       {
@@ -359,15 +353,18 @@ export function navigationLabel(
   return (
     sections
       .flatMap((section) => section.items)
-      .find((item) => item.view === view)?.label ||
-    (view === "manage" ? "Server management" : "Dashboard")
+      .find(
+        (item) => item.view === (view === "replacements" ? "strikes" : view),
+      )?.label || (view === "manage" ? "Server management" : "Dashboard")
   );
 }
 export function navigationSection(view: DashboardView) {
   if (view === "staff-overview" || view === "moderation") return "Staff tools";
   if (view === "member-activity") return navigationSection("moderation");
   return sections.find((section) =>
-    section.items.some((item) => item.view === view),
+    section.items.some(
+      (item) => item.view === (view === "replacements" ? "strikes" : view),
+    ),
   )?.label;
 }
 const memberSectionIds = new Set(["my-dashboard", "activity", "my-cwl"]);
@@ -441,7 +438,9 @@ export default function SidebarNavigation({
     ) as Record<string, boolean>;
     preferences.current = { ...initial };
     const active = sections.find((section) =>
-      section.items.some((item) => item.view === view),
+      section.items.some(
+        (item) => item.view === (view === "replacements" ? "strikes" : view),
+      ),
     );
     if (active && !active.direct && active.id !== "my-cwl")
       initial[active.id] = true;
@@ -451,7 +450,9 @@ export default function SidebarNavigation({
   useEffect(() => {
     if (tourExpanded) return;
     const active = sections.find((section) =>
-      section.items.some((item) => item.view === view),
+      section.items.some(
+        (item) => item.view === (view === "replacements" ? "strikes" : view),
+      ),
     );
     if (active && !active.direct && active.id !== "my-cwl") {
       setExpanded((current) =>
@@ -471,7 +472,7 @@ export default function SidebarNavigation({
   }, [expanded, key]);
 
   const itemActive = (item: Item) =>
-    view === item.view &&
+    (view === "replacements" ? "strikes" : view) === item.view &&
     (!item.step || item.step === publicationStep) &&
     (!item.signupPanel || item.signupPanel === signupPanel);
   const itemButton = (item: Item) => (
@@ -514,7 +515,9 @@ export default function SidebarNavigation({
           {section.items.map(itemButton)}
         </section>
       );
-    const active = section.items.some((item) => item.view === view);
+    const active = section.items.some(
+      (item) => item.view === (view === "replacements" ? "strikes" : view),
+    );
     const shown = tourExpanded ? active : !!expanded[section.id];
     return (
       <section

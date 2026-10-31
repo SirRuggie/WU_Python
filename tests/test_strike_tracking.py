@@ -197,3 +197,21 @@ def test_observe_and_quarantine_remove_stale_purge_dates():
         await tracking.quarantine_old(GUILD,sample)
         assert 'purge_after' not in (await db.strike_war_snapshots.find_one({'_id':key}))
     asyncio.run(run())
+
+
+def test_review_resolution_requires_an_actual_review_hold():
+    from tests.test_strike_streaks import setup, war, GUILD
+    from utils.strike_store import StrikeConflict
+    async def run():
+        db, _ = setup()
+        tracking = StrikeTracking(db)
+        sample = war(1)
+        await tracking.observe(GUILD, sample)
+        row = await db.strike_war_snapshots.find_one({'_id': tracking.snapshot_key(GUILD, sample)})
+        await db.strike_war_snapshots.update_one({'_id': row['_id']}, {'$set': {'review_revision': 1}})
+        row = await db.strike_war_snapshots.find_one({'_id': row['_id']})
+        before = __import__('copy').deepcopy(row)
+        with __import__('pytest').raises(StrikeConflict):
+            await tracking.resolve_review(GUILD, row['war_key'], 1, 'No hold exists', 123)
+        assert row == before
+    asyncio.run(run())

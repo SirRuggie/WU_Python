@@ -28,7 +28,7 @@ class ManagementDashboardLinksTests(unittest.IsolatedAsyncioTestCase):
                             response = await client.get(path + suffix)
                             self.assertEqual(response.status, 200)
                             self.assertIn("Management dashboard", await response.text())
-                for path in ("/clans/reminders", "/clans/history", "/clans/%23P0LYQ", "/clans/%23P0LYQ/roles", "/clans/%23P0LYQ/war-reminders/"):
+                for path in ("/clans/strikes", "/clans/replacements", "/clans/reminders", "/clans/history", "/clans/%23P0LYQ", "/clans/%23P0LYQ/roles", "/clans/%23P0LYQ/war-reminders/"):
                     response = await client.get(path)
                     self.assertEqual(response.status, 200)
                     self.assertIn("Management dashboard", await response.text())
@@ -97,3 +97,14 @@ class ManagementDashboardLinksTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(response.headers['Location'],expected)
                     self.assertEqual(response.cookies['wu_login_page'].value,'')
                     self.assertEqual(response.cookies['cwl_oauth_state'].value,'')
+
+
+def test_activity_signin_preserves_bounded_filters_and_legacy_alias():
+    from urllib.parse import urlsplit, parse_qs
+    destination=login_destination({'view':'replacements','clans':'#PYY,https://evil.test',
+                                   'marked':'1','sort':'quiet','q':'<Name>','tag':'#PQQ','next':'https://evil.test'})
+    assert urlsplit(destination).path=='/replacements'
+    params=parse_qs(urlsplit(destination).query)
+    assert params=={'clans':['#PYY'],'marked':['1'],'sort':['quiet'],'q':['<Name>'],'tag':['#PQQ']}
+    assert saved_login_destination(SimpleNamespace(cookies={'wu_login_page':'/clans/replacements?clan=%23PYY&marked=1'}))=='/replacements?clan=%23PYY&marked=1'
+    assert login_destination({'view':'strikes','q':'x'*1000}).count('x')==80

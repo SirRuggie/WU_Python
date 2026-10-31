@@ -2,8 +2,8 @@
 export const managementPaths: Record<string, string> = {
   "staff-overview": "/staff",
   "clan-management": "/clans",
-  strikes: "/clans/strikes",
-  replacements: "/clans/replacements",
+  strikes: "/strikes",
+  replacements: "/replacements",
   "members-settings": "/server/members",
   "member-activity": "/server/moderation",
   moderation: "/server/moderation",
@@ -30,6 +30,8 @@ export function managementTarget(
   )
     return "moderation";
   if (path === "/server/moderation") return "moderation";
+  if (path === "/clans/strikes") return "strikes";
+  if (path === "/clans/replacements") return "replacements";
   const matched = Object.entries(managementPaths).find(
     ([, destination]) => destination === path,
   )?.[0];

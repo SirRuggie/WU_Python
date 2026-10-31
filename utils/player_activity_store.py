@@ -1,4 +1,5 @@
 """Single owner for bounded player_activity documents and optimistic writes."""
+
 from datetime import datetime, timedelta, timezone
 import logging
 
@@ -21,7 +22,31 @@ class PlayerActivityStore:
         await self.collection.create_index('current_clan_tag', name='activity_family_clan')
 
     async def all_players(self):
-        return await self.collection.find({}).to_list(length=None)
+        return await self.collection.find({"kind": {"$ne": "history_clan"}}).to_list(
+            length=None
+        )
+
+    async def overview(self):
+        """Read only page signals, never the large per-unit diff baseline."""
+        fields = {
+            key: 1
+            for key in (
+                "tag",
+                "name",
+                "current_clan_tag",
+                "left_at",
+                "last_seen_at",
+                "last_seen_source",
+                "tracking_started_at",
+                "raid_weekends",
+                "recent_wars",
+                "updated_at",
+                "baseline.townHallLevel",
+            )
+        }
+        return await self.collection.find(
+            {"kind": {"$ne": "history_clan"}}, fields
+        ).to_list(length=None)
 
     async def mark_seed_attempt(self, player_tag, status, version):
         await self.collection.update_one(
@@ -77,45 +102,102 @@ class PlayerActivityStore:
         return {row.get('tag', row['_id']): tag(clan_tag) for row in rows}
 
     async def reconcile_membership(self, members: dict[str, str], *, now=None):
-        """A complete sweep; persist daily, on membership changes, or at raid boundaries."""
+        """Reconcile a complete sweep; cache every observation, persist daily or on
+        membership/raid-boundary changes. Partial sweeps must not call this method.
+        """
         now = utc(now or datetime.now(timezone.utc))
         members = {tag(player): tag(clan) for player, clan in members.items()}
         ended = latest_raid_end(now)
-        upcoming = (ended+timedelta(days=7)).isoformat()
+        upcoming = (ended + timedelta(days=7)).isoformat()
         seen = {}
-        for row in await self.collection.find({}).to_list(length=None):
-            key = row['_id']
-            if key in members:
-                previous = self._roster_seen.get(key)
-                if previous is None and row.get('last_roster_at') and not row.get('left_at'):
-                    previous = (utc(row['last_roster_at']), row.get('current_clan_tag'))
-                since = (row.get('family_since') or now) if not row.get('left_at') else now
-                evidence = set(row.get('raid_membership_ends', []))
-                if (previous and previous[0] <= ended <= now and now-previous[0] <= timedelta(minutes=90)
-                        and utc(since) <= ended and not row.get('left_at')):
-                    evidence.add(ended.isoformat())
-                histories = {item['weekend_id']: set(item['clan_tags']) for item in row.get('raid_clan_history', [])}
-                histories.setdefault(upcoming, set()).add(members[key])
-                # Include the last observed clan when a move brackets the end.
-                if ended.isoformat() in evidence and previous and previous[1]:
-                    histories.setdefault(ended.isoformat(), set()).update((previous[1], members[key]))
-                history = [{'weekend_id': end, 'clan_tags': sorted(histories[end])} for end in sorted(histories)[-9:]]
-                fields = {'current_clan_tag': members[key], 'left_at': None, 'family_since': since,
-                          'raid_membership_ends': sorted(evidence)[-8:], 'raid_clan_history': history}
-                daily = not row.get('last_roster_at') or utc(row['last_roster_at']).date() != now.date()
-                changed = any(row.get(field) != value for field, value in fields.items())
-                if daily or changed:
-                    fields.update(previous_roster_at=previous[0] if previous else row.get('last_roster_at'), last_roster_at=now)
-                seen[key] = (now, members[key])
-            else:
-                fields = {'current_clan_tag': None, 'left_at': row.get('left_at') or now,
-                          'previous_roster_at': None, 'last_roster_at': None}
-            if all(row.get(field) == value for field, value in fields.items()):
-                continue
-            result = await self.collection.update_one({'_id': key, 'revision': row['revision']},
-                                                       {'$set': fields, '$inc': {'revision': 1}})
-            if not result.matched_count:
-                log.warning('Player activity membership CAS conflict: %s', key)
+        for row in await self.all_players():
+            key = row["_id"]
+            for attempt in range(2):
+                if key in members:
+                    previous = self._roster_seen.get(key)
+                    if (
+                        previous is None
+                        and row.get("last_roster_at")
+                        and not row.get("left_at")
+                    ):
+                        previous = (
+                            utc(row["last_roster_at"]),
+                            row.get("current_clan_tag"),
+                        )
+                    since = (
+                        (row.get("family_since") or now)
+                        if not row.get("left_at")
+                        else now
+                    )
+                    evidence = set(row.get("raid_membership_ends", []))
+                    if (
+                        previous
+                        and previous[0] <= ended <= now
+                        and now - previous[0] <= timedelta(minutes=90)
+                        and utc(since) <= ended
+                        and not row.get("left_at")
+                    ):
+                        evidence.add(ended.isoformat())
+                    histories = {
+                        item["weekend_id"]: set(item["clan_tags"])
+                        for item in row.get("raid_clan_history", [])
+                    }
+                    histories.setdefault(upcoming, set()).add(members[key])
+                    # Include the last observed clan when a move brackets the end.
+                    if ended.isoformat() in evidence and previous and previous[1]:
+                        histories.setdefault(ended.isoformat(), set()).update(
+                            (previous[1], members[key])
+                        )
+                    history = [
+                        {"weekend_id": end, "clan_tags": sorted(histories[end])}
+                        for end in sorted(histories)[-9:]
+                    ]
+                    fields = {
+                        "current_clan_tag": members[key],
+                        "left_at": None,
+                        "family_since": since,
+                        "raid_membership_ends": sorted(evidence)[-8:],
+                        "raid_clan_history": history,
+                    }
+                    daily = (
+                        not row.get("last_roster_at")
+                        or utc(row["last_roster_at"]).date() != now.date()
+                    )
+                    changed = any(
+                        row.get(field) != value for field, value in fields.items()
+                    )
+                    if daily or changed:
+                        fields.update(
+                            previous_roster_at=(
+                                previous[0] if previous else row.get("last_roster_at")
+                            ),
+                            last_roster_at=now,
+                        )
+                    seen[key] = (now, members[key])
+                else:
+                    fields = {
+                        "current_clan_tag": None,
+                        "left_at": row.get("left_at") or now,
+                        "previous_roster_at": None,
+                        "last_roster_at": None,
+                    }
+                if all(row.get(field) == value for field, value in fields.items()):
+                    break
+                result = await self.collection.update_one(
+                    {"_id": key, "revision": row["revision"]},
+                    {"$set": fields, "$inc": {"revision": 1}},
+                )
+                if result.matched_count:
+                    break
+                if attempt == 0:
+                    fresh = await self.get(key)
+                    if fresh is None:
+                        break
+                    row = fresh
+                else:
+                    log.warning(
+                        "Player activity membership CAS conflict after retry: %s", key
+                    )
         self._roster_seen = seen
 
     async def record_weekend(self, player_tag, weekend_id, attacks, *, observed_member):
@@ -147,3 +229,72 @@ class PlayerActivityStore:
             if result.matched_count:
                 return True
         raise RuntimeError('Raid activity changed concurrently')
+
+    async def save_recent_wars(
+        self, player_tag, observations, *, version, now=None
+    ):
+        from utils.player_activity_history import recent_wars
+
+        now = utc(now or datetime.now(timezone.utc))
+        for _ in range(5):
+            row = await self.get(player_tag)
+            if row is None:
+                return False  # No extra document solely for historical data.
+            fields = {
+                "recent_wars": recent_wars(row.get("recent_wars", []), observations),
+            }
+            if (
+                recent_wars([], row.get("recent_wars", [])) == fields["recent_wars"]
+                and row.get("recent_wars_version") == version
+            ):
+                return False
+            fields["recent_wars_backfilled_at"] = now
+            fields["recent_wars_version"] = version
+            result = await self.collection.update_one(
+                {"_id": row["_id"], "revision": row["revision"]},
+                {"$set": fields, "$unset": {"recent_wars_complete": ""}, "$inc": {"revision": 1}},
+            )
+            if result.matched_count:
+                return True
+        raise RuntimeError("Player war history changed concurrently")
+
+    async def history_clans(self):
+        return await self.collection.find({"kind": "history_clan"}).to_list(length=None)
+
+    async def save_history_clan(self, clan_tag, fields, *, now=None):
+        """One bounded cache/receipt per clan, in this feature's existing collection."""
+        now = utc(now or datetime.now(timezone.utc))
+        clan = tag(clan_tag)
+        if len(fields.get("wars", [])) > 60:
+            raise ValueError("Clan history cache exceeds60 wars")
+        await self.collection.update_one(
+            {"_id": "history-clan:" + clan},
+            {
+                "$set": {
+                    **fields,
+                    "kind": "history_clan",
+                    "clan_tag": clan,
+                    "history_checked_at": now,
+                },
+                "$unset": {"left_at": "", "status": "", "next_retry_at": ""},
+                "$inc": {"revision": 1},
+            },
+            upsert=True,
+        )
+
+    async def retire_history_clans(self, active, *, now=None):
+        """Retired caches use the already-approved90-day departure index."""
+        now = utc(now or datetime.now(timezone.utc))
+        for row in await self.history_clans():
+            if row["clan_tag"] not in active and not row.get("left_at"):
+                await self.collection.update_one(
+                    {"_id": row["_id"]}, {"$set": {"left_at": now}}
+                )
+
+    async def history_report(self):
+        """Page needs only clan tags with failed reads, never cached lineups."""
+        rows = await self.collection.find(
+            {"kind": "history_clan", "failed_attempts": {"$gt": 0}},
+            {"_id": 0, "clan_tag": 1},
+        ).to_list(length=None)
+        return [row["clan_tag"] for row in rows]

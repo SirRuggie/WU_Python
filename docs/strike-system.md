@@ -588,3 +588,13 @@ resolution and returns 409 for a stale/already-resolved request. The snapshot
 records actor, reason, time and the new revision, clears the hold, and retains the
 audit receipt for 30 days from resolution. It does not invent or import a missing
 strike. PR A supplies the backend action; PR B adds the button to Find war.
+## Unified family activity page (prompt 54 PR B)
+
+`/strikes` and `/replacements` now use one Strikes & replacements page; the latter
+starts with Marked for replacement selected. Legacy clan-prefixed URLs remain
+aliases. One read supplies family activity and strike signals, then URL-backed
+filters, sorts and pagination run locally. Existing history, add/remove, priority,
+Leave and Settings flows keep their grants and revision checks. Recruit matching
+is an explicit collapsed tool. Counts formerly described as lifetime now mean
+last 90 days. See [member activity](member-activity.md) for capture/retention and
+[page review](strikes-activity-page-review.md) for permissions, limits and checks.
