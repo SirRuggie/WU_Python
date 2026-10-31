@@ -71,9 +71,12 @@ const base = `http://127.0.0.1:${port}`;
           1,
         );
         await page.request.get(base + "/qa/scenario?season=1");
-        await page.goto(base + "/assignments");
+        await page.goto(base + "/my-signups");
         await page
-          .getByRole("button", { name: "Sign up 3 more accounts ›", exact: true })
+          .getByRole("button", {
+            name: "Sign up 3 more accounts ›",
+            exact: true,
+          })
           .click();
         await page.getByRole("button", { name: /Main CWL/ }).click();
         await page.locator(".account-select").first().waitFor();

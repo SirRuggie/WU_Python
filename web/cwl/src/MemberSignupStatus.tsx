@@ -68,14 +68,20 @@ export default function MemberSignupStatus({
   onChange,
   onRemaining,
   onRefresh,
+  savedView = false,
+  publicationUnavailable = false,
+  onAssignments,
 }: {
   signups: Signed[];
   accounts: Linked[] | null;
   season?: Season;
   published?: boolean;
-  onChange: () => void;
+  onChange?: () => void;
   onRemaining: () => void;
   onRefresh?: () => void;
+  savedView?: boolean;
+  publicationUnavailable?: boolean;
+  onAssignments?: () => void;
 }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -90,7 +96,10 @@ export default function MemberSignupStatus({
   const open = season?.signup_open && season.status === "draft";
   const waiting = signups.filter((s) => !s.assigned_clan_tag);
   const partial =
-    published && waiting.length > 0 && waiting.length < signups.length;
+    published &&
+    waiting.length > 0 &&
+    waiting.length < signups.length &&
+    !savedView;
   const dateLines = memberDateLines(season, published, now);
   const signupDeadlineLine = signupCloseLine(season, now);
   return (
@@ -109,9 +118,38 @@ export default function MemberSignupStatus({
         </h2>
         {signups.length > 0 && (
           <p>
-            {published && !waiting.length
-              ? "Your published clan assignments are ready to view."
-              : "We've got your signup. Your clan will show here once staff finish the roster."}
+            {publicationUnavailable ? (
+              <>
+                Clan assignments could not be checked.{" "}
+                <a
+                  href="/assignments"
+                  onClick={(event) => {
+                    if (onAssignments) {
+                      event.preventDefault();
+                      onAssignments();
+                    }
+                  }}
+                >
+                  My clan ›
+                </a>
+              </>
+            ) : published && !waiting.length ? (
+              onAssignments ? (
+                <a
+                  href="/assignments"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onAssignments();
+                  }}
+                >
+                  Your published clan assignments are ready to view.
+                </a>
+              ) : (
+                "Your published clan assignments are ready to view."
+              )
+            ) : (
+              "We've got your signup. Your clan will show here once staff finish the roster."
+            )}
           </p>
         )}
         {signups.length > 0 && (
@@ -129,7 +167,7 @@ export default function MemberSignupStatus({
             {line}
           </p>
         ))}
-        {open && signups.length > 0 && (
+        {open && signups.length > 0 && !savedView && onChange && (
           <button onClick={onChange}>Change signups ›</button>
         )}
         {!signups.length &&

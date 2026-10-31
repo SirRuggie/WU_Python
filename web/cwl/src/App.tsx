@@ -14,6 +14,7 @@ import FwaSignupDialog from './FwaSignupDialog'
 import {saveSignupMoves, type SignupMove} from './signupMoves'
 import {withdrawInOrder} from './signupWithdrawal'
 import SavedSignups from './SavedSignups'
+import SavedSignupStatus from './SavedSignupStatus'
 import AttentionSummary from './AttentionSummary'
 import CwlPoolTabs from './CwlPoolTabs'
 import SignupWalkthrough from './SignupWalkthrough'
@@ -1089,6 +1090,13 @@ function App() {
             {signupPanel === 'saved' && <section className="registered">
               {!savedSignupsLoaded && !dataError ? <p role="status">Loading saved signups…</p> : dataError ? null : <>
                 {loadingData && <p role="status">Checking linked accounts…</p>}
+                {existing.length > 0 && <SavedSignupStatus
+                  signups={existing}
+                  accounts={loadingData || accountError ? null : accounts}
+                  season={season}
+                  onRemaining={() => { changeSignupPanel('register'); setSignupStep(1); setPool(null) }}
+                  onAssignments={() => changeView('assignments')}
+                />}
                 <SavedSignups key={seasonId} signups={existing} accounts={accounts} editable={season.signup_open && season.status === 'draft'} busy={pending || loadingData} canMove={!loadingData && !accountError} headingRef={registeredHeadingRef} onDirty={setSavedSignupDirty} onSave={saveSavedSignups} onWithdraw={rows => void withdraw(rows)} onRefreshAccounts={retrySignupRead}/>
                 {!existing.length && <div className="card empty"><p>No signed-up accounts for this season.</p>{season.signup_open && <button onClick={() => {changeSignupPanel('register');setSignupStep(1)}}>Choose accounts</button>}</div>}
                 <button disabled={pending || loadingData} onClick={retrySignupRead}>Refresh saved signups</button>

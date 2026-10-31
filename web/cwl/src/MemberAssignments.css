@@ -1,13 +1,380 @@
-.member-assignments .member-compact-status{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 18px;margin-bottom:18px;border-color:#8c712d}.member-assignments .member-compact-status.is-provisional{background:#262116;border-color:#786435}.member-compact-status>div{min-width:0}.member-compact-status .eyebrow{margin:0 0 4px}.member-compact-status strong{display:block;font-size:15px}.member-compact-status p{margin:4px 0 0;font-size:12px}.member-compact-status button{flex:none}.member-assignment-count{font-size:12px;margin:0 0 14px;color:#c5c4c1}.member-clan-jumps{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 17px}.member-clan-jumps a{display:inline-flex;align-items:center;padding:7px 10px;border:1px solid #4a412c;border-radius:8px;color:#efd48e;text-decoration:none;font-size:12px}.member-clan-list{display:grid;gap:13px;margin-bottom:45px}.member-clan-card{min-width:0;padding:0;scroll-margin-top:82px}.member-clan-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:17px 18px;border-bottom:1px solid #37373b}.member-clan-head>div{min-width:0}.member-clan-head h2{font-size:18px;margin:0 0 3px;overflow-wrap:anywhere}.member-clan-head small{display:block;overflow-wrap:anywhere}.member-clan-head .button{flex:none;font-size:12px;white-space:normal;text-align:center}.member-clan-rows{padding:0 18px}.member-clan-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding:10px 0;border-bottom:1px solid #303035}.member-clan-row:last-child{border-bottom:0}.member-clan-row>div{min-width:0}.member-clan-row strong,.member-clan-row small{display:block;overflow-wrap:anywhere}.member-clan-row small{font-size:12px}.member-clan-row>span{flex:none;color:#d9c68d;font-size:12px}.member-awaiting-card .member-clan-head{background:#292216}.member-awaiting-card .member-clan-head h2{color:#efd391}.member-awaiting-note{font-size:12px;margin:10px 18px 0;color:#c8b792}@media(max-width:650px){.member-assignments .member-compact-status{display:block}.member-compact-status button{width:100%;margin-top:12px}.member-clan-head{display:block}.member-clan-head .button{display:block;margin-top:12px;width:100%}.member-clan-row{align-items:start}.member-clan-row>span{white-space:nowrap}}
+.member-assignments .member-compact-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 18px;
+  margin-bottom: 18px;
+  border-color: #8c712d;
+}
+.member-assignments .member-compact-status.is-provisional {
+  background: #262116;
+  border-color: #786435;
+}
+.member-compact-status > div {
+  min-width: 0;
+}
+.member-compact-status .eyebrow {
+  margin: 0 0 4px;
+}
+.member-compact-status strong {
+  display: block;
+  font-size: 15px;
+}
+.member-compact-status p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.member-compact-status button {
+  flex: none;
+}
+.member-assignment-count {
+  font-size: 12px;
+  margin: 0 0 14px;
+  color: #c5c4c1;
+}
+.member-clan-jumps {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 0 0 17px;
+}
+.member-clan-jumps a {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid #4a412c;
+  border-radius: 8px;
+  color: #efd48e;
+  text-decoration: none;
+  font-size: 12px;
+}
+.member-clan-list {
+  display: grid;
+  gap: 13px;
+  margin-bottom: 45px;
+}
+.member-clan-card {
+  min-width: 0;
+  padding: 0;
+  scroll-margin-top: 82px;
+}
+.member-clan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 17px 18px;
+  border-bottom: 1px solid #37373b;
+}
+.member-clan-head > div {
+  min-width: 0;
+}
+.member-clan-head h2 {
+  font-size: 18px;
+  margin: 0 0 3px;
+  overflow-wrap: anywhere;
+}
+.member-clan-head small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.member-clan-head .button {
+  flex: none;
+  font-size: 12px;
+  white-space: normal;
+  text-align: center;
+}
+.member-clan-rows {
+  padding: 0 18px;
+}
+.member-clan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid #303035;
+}
+.member-clan-row:last-child {
+  border-bottom: 0;
+}
+.member-clan-row > div {
+  min-width: 0;
+}
+.member-clan-row strong,
+.member-clan-row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.member-clan-row small {
+  font-size: 12px;
+}
+.member-clan-row > span {
+  flex: none;
+  color: #d9c68d;
+  font-size: 12px;
+}
+.member-awaiting-card .member-clan-head {
+  background: #292216;
+}
+.member-awaiting-card .member-clan-head h2 {
+  color: #efd391;
+}
+.member-awaiting-note {
+  font-size: 12px;
+  margin: 10px 18px 0;
+  color: #c8b792;
+}
+@media (max-width: 650px) {
+  .member-assignments .member-compact-status {
+    display: block;
+  }
+  .member-compact-status button {
+    width: 100%;
+    margin-top: 12px;
+  }
+  .member-clan-head {
+    display: block;
+  }
+  .member-clan-head .button {
+    display: block;
+    margin-top: 12px;
+    width: 100%;
+  }
+  .member-clan-row {
+    align-items: start;
+  }
+  .member-clan-row > span {
+    white-space: nowrap;
+  }
+}
 /* Keep the first account near the top of the mobile viewport. */
-.workspace main:has(> .member-assignments){padding-top:16px}.workspace main:has(> .member-assignments) .member-nav-tabs{margin-bottom:13px}.member-assignments .page-head{margin-bottom:13px}.member-assignments .page-head h1{font-size:clamp(26px,3vw,32px);margin-bottom:3px}.member-assignments .page-head p{font-size:13px;line-height:1.35}.member-assignments .member-compact-status{display:block;padding:10px 13px;margin-bottom:9px}.member-status-line{display:flex;align-items:center;justify-content:space-between;gap:8px}.member-status-line>div{display:flex;align-items:center;gap:9px;min-width:0}.member-status-line strong{font-size:12px;white-space:nowrap}.member-status-line button{min-height:36px;padding:6px 10px;font-size:12px}.member-status-badge{background:#3e3420;color:#f2d892;white-space:nowrap}.member-compact-status:not(.is-provisional) .member-status-badge{background:#365b43;color:#b9e8cc}.member-compact-status details{margin-top:5px}.member-compact-status summary{color:#c9c5ba;font-size:12px;cursor:pointer}.member-compact-status details p{font-size:12px;margin:6px 0 0}.member-assignments .member-assignment-count{margin-bottom:8px}.member-clan-head .button{padding:8px 10px}.member-clan-head{padding:12px 14px}.member-clan-rows{padding:0 14px}@media(max-width:650px){.workspace main:has(> .member-assignments){padding-top:12px}.workspace main:has(> .member-assignments) .member-nav-tabs{margin-bottom:10px}.member-assignments .page-head{margin-bottom:9px}.member-assignments .page-head .season-choice{margin-top:10px}.member-assignments .member-compact-status{padding:9px 11px}.member-compact-status button{width:auto;margin-top:0}.member-clan-head{display:flex;align-items:center;gap:9px}.member-clan-head h2{font-size:16px}.member-clan-head .button{display:inline-flex;width:auto;margin:0;flex:none;font-size:11px;padding:7px 8px}.member-clan-row{padding:8px 0}}
+.workspace main:has(> .member-assignments) {
+  padding-top: 16px;
+}
+.workspace main:has(> .member-assignments) .member-nav-tabs {
+  margin-bottom: 13px;
+}
+.member-assignments .page-head {
+  margin-bottom: 13px;
+}
+.member-assignments .page-head h1 {
+  font-size: clamp(26px, 3vw, 32px);
+  margin-bottom: 3px;
+}
+.member-assignments .page-head p {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.member-assignments .member-compact-status {
+  display: block;
+  padding: 10px 13px;
+  margin-bottom: 9px;
+}
+.member-status-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.member-status-line > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.member-status-line strong {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.member-status-line button {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.member-status-badge {
+  background: #3e3420;
+  color: #f2d892;
+  white-space: nowrap;
+}
+.member-compact-status:not(.is-provisional) .member-status-badge {
+  background: #365b43;
+  color: #b9e8cc;
+}
+.member-compact-status details {
+  margin-top: 5px;
+}
+.member-compact-status summary {
+  color: #c9c5ba;
+  font-size: 12px;
+  cursor: pointer;
+}
+.member-compact-status details p {
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+.member-assignments .member-assignment-count {
+  margin-bottom: 8px;
+}
+.member-clan-head .button {
+  padding: 8px 10px;
+}
+.member-clan-head {
+  padding: 12px 14px;
+}
+.member-clan-rows {
+  padding: 0 14px;
+}
+@media (max-width: 650px) {
+  .workspace main:has(> .member-assignments) {
+    padding-top: 12px;
+  }
+  .workspace main:has(> .member-assignments) .member-nav-tabs {
+    margin-bottom: 10px;
+  }
+  .member-assignments .page-head {
+    margin-bottom: 9px;
+  }
+  .member-assignments .page-head .season-choice {
+    margin-top: 10px;
+  }
+  .member-assignments .member-compact-status {
+    padding: 9px 11px;
+  }
+  .member-compact-status button {
+    width: auto;
+    margin-top: 0;
+  }
+  .member-clan-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .member-clan-head h2 {
+    font-size: 16px;
+  }
+  .member-clan-head .button {
+    display: inline-flex;
+    width: auto;
+    margin: 0;
+    flex: none;
+    font-size: 11px;
+    padding: 7px 8px;
+  }
+  .member-clan-row {
+    padding: 8px 0;
+  }
+}
 
 /* Separate clan identity, its game action, and the account list. */
-.member-assignments .member-clan-card:not(.member-awaiting-card) .member-clan-head{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:24px;padding:20px;background:linear-gradient(110deg,#17263c,#171719 80%);border-bottom:1px solid #526783;border-radius:16px 16px 0 0}
-.member-assignments .member-clan-head a.member-open-clan{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;min-width:0;max-width:100%;margin:0;padding:11px 16px;border:2px solid #83b4ff;border-radius:12px;background:#1749a0;color:#fff;font-size:15px;font-weight:700;line-height:1.35;text-align:left;box-shadow:0 3px 12px #0004;text-decoration:none}
-.member-assignments .member-clan-head a.member-open-clan:hover{background:#103578;border-color:#b9d5ff;color:#fff}
-.member-assignments .member-clan-head a.member-open-clan:focus-visible{outline:3px solid #fff;outline-offset:4px;background:#103578;color:#fff}
-.member-open-arrow{width:20px;height:20px;display:block;flex:none}
-@media(max-width:650px){.member-assignments .member-clan-head a.member-open-clan{width:auto;min-width:0;font-size:14px;padding:10px 12px;gap:8px;white-space:nowrap}.member-assignments .member-clan-card:not(.member-awaiting-card) .member-clan-head{flex-direction:row;align-items:center;gap:12px;padding:16px 14px}}
+.member-assignments
+  .member-clan-card:not(.member-awaiting-card)
+  .member-clan-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px;
+  background: linear-gradient(110deg, #17263c, #171719 80%);
+  border-bottom: 1px solid #526783;
+  border-radius: 16px 16px 0 0;
+}
+.member-assignments .member-clan-head a.member-open-clan {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 11px 16px;
+  border: 2px solid #83b4ff;
+  border-radius: 12px;
+  background: #1749a0;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  box-shadow: 0 3px 12px #0004;
+  text-decoration: none;
+}
+.member-assignments .member-clan-head a.member-open-clan:hover {
+  background: #103578;
+  border-color: #b9d5ff;
+  color: #fff;
+}
+.member-assignments .member-clan-head a.member-open-clan:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
+  background: #103578;
+  color: #fff;
+}
+.member-open-arrow {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex: none;
+}
+@media (max-width: 650px) {
+  .member-assignments .member-clan-head a.member-open-clan {
+    width: auto;
+    min-width: 0;
+    font-size: 14px;
+    padding: 10px 12px;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .member-assignments
+    .member-clan-card:not(.member-awaiting-card)
+    .member-clan-head {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 14px;
+  }
+}
 
-.member-assignments .member-clan-card{padding:0}.member-assignments .member-clan-rows{padding:4px 20px}.member-assignments .member-clan-row{padding:14px 0}@media(max-width:650px){.member-assignments .member-clan-rows{padding:2px 14px}}
+.member-assignments .member-clan-card {
+  padding: 0;
+}
+.member-assignments .member-clan-rows {
+  padding: 4px 20px;
+}
+.member-assignments .member-clan-row {
+  padding: 14px 0;
+}
+@media (max-width: 650px) {
+  .member-assignments .member-clan-rows {
+    padding: 2px 14px;
+  }
+}
+
+.member-unpublished-status p {
+  margin: 6px 0;
+}
+.member-unpublished-status button {
+  margin-top: 4px;
+}
+
+.member-unpublished-status a {
+  color: #f2d892;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.member-unpublished-status a:focus-visible {
+  outline: 2px solid #f2d892;
+  outline-offset: 4px;
+}
+.member-assignments .member-status-line > div {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.member-assignments .member-status-line p {
+  margin: 0;
+}
