@@ -115,7 +115,7 @@ it("retains banner on refetch, scopes it to roster tabs and labels only placemen
     "Members see v1 Oct 27 · Draft changes unpublished",
   );
   expect(banner()?.textContent).not.toMatch(/:\d{2}:\d{2}/);
-  for (const tab of ["Compare clans", "Clan settings", "Accounts & signups"]) {
+  for (const tab of ["Compare clans", "Hosting clans", "Accounts & signups"]) {
     await click(tab);
     expect(banner()).not.toBeNull();
   }

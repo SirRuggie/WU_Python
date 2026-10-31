@@ -28,22 +28,22 @@ class _Context:
         self.interaction = SimpleNamespace(values=[tag])
         self.responses = []
 
-    async def respond(self, **kwargs):
-        self.responses.append(kwargs)
+    async def respond(self, *args, **kwargs):
+        self.responses.append({"content": args[0] if args else "", **kwargs})
 
 
 def _response_text(ctx):
-    return str(ctx.responses[0]["components"][0].build())
+    return ctx.responses[0]["content"]
 
 
 @pytest.mark.parametrize(
     ("document", "message"),
     [
-        (None, "Clan not found"),
-        ({"tag": "#NOLOGO", "name": "No Logo", "emoji": ""}, "No Logo Found"),
+        (None, "no longer in the family directory"),
+        ({"tag": "#NOLOGO", "name": "No Logo", "emoji": ""}, "Logo: Not set"),
     ],
 )
-def test_logo_emoji_errors_edit_deferred_response(document, message):
+def test_old_emoji_controls_redirect_without_creating_emoji(document, message):
     ctx = _Context("#NOLOGO")
     ctx.member = SimpleNamespace(get_roles=lambda: [
         SimpleNamespace(id=update_clan_info.CLAN_MANAGEMENT_ROLE_ID)
@@ -55,7 +55,7 @@ def test_logo_emoji_errors_edit_deferred_response(document, message):
 
     assert result is None
     assert len(ctx.responses) == 1
-    assert ctx.responses[0]["edit"] is True
+    assert ctx.responses[0]["ephemeral"] is True
     assert message in _response_text(ctx)
 
 

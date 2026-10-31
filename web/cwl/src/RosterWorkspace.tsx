@@ -1194,7 +1194,7 @@ export default function RosterWorkspace({
                 [
                   { id: "assign", label: "Accounts & signups" },
                   { id: "compare", label: "Compare clans" },
-                  { id: "rules", label: "Clan settings" },
+                  { id: "rules", label: "Hosting clans" },
                   {
                     id: "weights",
                     label: `Missing weights · ${globalMissingWeight}`,

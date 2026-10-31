@@ -1111,3 +1111,30 @@ class BalanceRequestTests(RosterTests):
         response = await self.call('PATCH', path + '/assignments', self.owner,
                                    json={'revision': body['revision'], 'tags': ['#Q2Y'], 'assigned_clan_tag': None, 'include_locked': False})
         self.assertEqual(response.status, 409)
+
+    async def test_all_stored_types_change_outside_counts_without_rewriting_pools_or_locks(self):
+        from unittest.mock import AsyncMock
+        await self.signup('main', '#P2Y')
+        await self.signup('lazy', '#Q2Y')
+        self.providers.players['#P2Y']['current_clan_tag'] = '#C2Y'
+        self.providers.players['#Q2Y']['current_clan_tag'] = '#J2Y'
+        self.providers.family_clans = AsyncMock(return_value={'clans': [{'tag': '#R2Y', 'type': 'Tactical'}]})
+        self.app.get('roster_location_cache', {}).clear()
+        async def counts():
+            result = await self.call('GET', f'/seasons/{self.sid}/roster', self.owner)
+            self.assertEqual(result.status, 200)
+            rows = (await result.json())['accounts']
+            return {pool: sum(bool(row['outside_family_and_hosts']) for row in rows if row['pool'] == pool)
+                    for pool in ('main', 'lazy')}
+        self.assertEqual(await counts(), {'main': 1, 'lazy': 1})
+        def state():
+            return [dict(row) for row in self.app['store'].rows(
+                'SELECT s.tag,s.pool,r.assigned_clan_tag,r.kept FROM signups s '
+                'JOIN roster_entries r ON r.tag=s.tag AND r.season_id=s.season_id ORDER BY s.tag')]
+        before = state()
+        self.providers.family_clans = AsyncMock(return_value={'clans': [
+            {'tag': '#R2Y', 'type': 'Tactical'}, {'tag': '#C2Y', 'type': 'CWL'},
+            {'tag': '#J2Y', 'type': 'Unknown'},
+        ]})
+        self.assertEqual(await counts(), {'main': 0, 'lazy': 0})
+        self.assertEqual(state(), before)

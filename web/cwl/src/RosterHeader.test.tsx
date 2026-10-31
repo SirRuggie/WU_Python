@@ -108,7 +108,7 @@ describe("roster header counts", () => {
     } as RosterSnapshot;
     const html = render("all", "1", "June", [], testRoster, () => {});
     expect(html).toContain("Funnies has no capacity set");
-    expect(html).toContain("Set in Clan settings ›");
+    expect(html).toContain("Set in Hosting clans ›");
     expect(html).not.toContain("Ready has no capacity set");
     expect(html).not.toContain("Old has no capacity set");
     expect(html.indexOf("signup-activity")).toBeLessThan(

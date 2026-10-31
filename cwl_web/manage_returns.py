@@ -14,7 +14,7 @@ async def page(request):
     pool=request.match_info.get('pool'); clan_tag=request.match_info.get('tag')
     async with mongo(request) as db:
         if not pool:
-            clans=await db.clans.find({'type':{'$in':['FWA','Tactical','Flexible Fun','Competitive']}}).to_list(length=201)
+            clans=await db.clans.find({'archived': {'$ne': True}, 'removed': {'$ne': True}}).to_list(length=201)
             if len(clans)>200:raise web.HTTPServiceUnavailable(text='Clan directory is too large. Use search in Discord for now.')
             documents=[
                 dict(id='return-channels',label='Settings · Return channels',endpoint='/manage/return-channels'),

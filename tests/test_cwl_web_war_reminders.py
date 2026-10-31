@@ -15,7 +15,7 @@ from utils import war_reminder_store as storage
 @pytest.fixture
 def setup(monkeypatch):
     coll = NS(insert_one=AsyncMock(), update_one=AsyncMock())
-    db = NS(clans=NS(find_one=AsyncMock(return_value={'tag':'#P0LY','name':'Warriors'})))
+    db = NS(clans=NS(find_one=AsyncMock(return_value={'tag':'#P0LY','name':'Warriors'})), bot_config=NS(database=NS(get_collection=lambda *a, **kw: NS(insert_one=AsyncMock(), update_one=AsyncMock(return_value=NS(matched_count=1))))))
     @asynccontextmanager
     async def mongo(request): yield db
     monkeypatch.setattr(api,'mongo',mongo)

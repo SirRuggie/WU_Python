@@ -376,3 +376,23 @@ it("round-trips replacement clan and player targets without losing the flow orig
       .replacementTag,
   ).toBeUndefined();
 });
+
+it("round-trips family clan routes without stealing Strikes or Replacements", () => {
+  for (const path of [
+    "/clans/reminders",
+    "/clans/history",
+    "/clans/%23P0LYQ",
+    "/clans/%23P0LYQ/war-reminders",
+    "/clans/%23P0LYQ/roles",
+  ]) {
+    const route = dashboardTarget("", path);
+    expect(route.view).toBe("clan-management");
+    expect(dashboardPath(route)).toBe(path);
+  }
+  expect(dashboardTarget("", "/clans/strikes").view).toBe("strikes");
+  expect(dashboardTarget("", "/clans/replacements").view).toBe("replacements");
+  expect(dashboardTarget("", "/clans/%ZZ").view).toBe("home");
+  expect(dashboardTarget("", "/clans/%23P0LYQ/not-a-section").view).toBe(
+    "home",
+  );
+});

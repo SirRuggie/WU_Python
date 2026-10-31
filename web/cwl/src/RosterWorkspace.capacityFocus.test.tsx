@@ -12,7 +12,7 @@ vi.mock("./StaffSignupControls", () => ({ default: () => null }));
 vi.mock("./CompareClans", () => ({ default: () => null }));
 vi.mock("./WeightQueue", () => ({ default: () => null }));
 
-it("consumes capacity-link focus so a later ordinary Clan settings visit does not refocus", async () => {
+it("consumes capacity-link focus so a later ordinary Hosting clans visit does not refocus", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   sessionStorage.clear();
   localStorage.clear();
@@ -97,7 +97,7 @@ it("consumes capacity-link focus so a later ordinary Clan settings visit does no
         </DashboardPermissions.Provider>,
       ),
     );
-    await act(async () => button("Set in Clan settings").click());
+    await act(async () => button("Set in Hosting clans").click());
     expect(
       host
         .querySelector('.clan-settings-row[data-clan="#FUN"]')
@@ -108,14 +108,14 @@ it("consumes capacity-link focus so a later ordinary Clan settings visit does no
     );
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     await act(async () => tab("Accounts & signups").click());
-    await act(async () => tab("Clan settings").click());
+    await act(async () => tab("Hosting clans").click());
     expect(
       host
         .querySelector('.clan-settings-row[data-clan="#FUN"]')
         ?.classList.contains("is-selected"),
     ).toBe(false);
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
-    await act(async () => button("Set in Clan settings").click());
+    await act(async () => button("Set in Hosting clans").click());
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
   } finally {
     await act(async () => root.unmount());

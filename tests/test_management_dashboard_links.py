@@ -28,6 +28,12 @@ class ManagementDashboardLinksTests(unittest.IsolatedAsyncioTestCase):
                             response = await client.get(path + suffix)
                             self.assertEqual(response.status, 200)
                             self.assertIn("Management dashboard", await response.text())
+                for path in ("/clans/reminders", "/clans/history", "/clans/%23P0LYQ", "/clans/%23P0LYQ/roles", "/clans/%23P0LYQ/war-reminders/"):
+                    response = await client.get(path)
+                    self.assertEqual(response.status, 200)
+                    self.assertIn("Management dashboard", await response.text())
+                self.assertEqual((await client.get("/clans/not-a-tag")).status, 404)
+                self.assertEqual((await client.get("/clans/%23P0LYQ/not-a-section")).status, 404)
                 self.assertEqual((await client.get("/settings/not-a-page")).status, 404)
                 self.assertEqual((await client.get("/api/cwl/seasons/1/signups")).status, 401)
 

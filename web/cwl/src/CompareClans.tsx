@@ -298,7 +298,7 @@ export default function CompareClans({
       )}
       {roster.clans.some((clan) => !clan.archived && !clan.pool) && (
         <p className="inline-reason">
-          Some hosting clans need a Main or Lazy CWL pool in Clan settings
+          Some hosting clans need a Main or Lazy CWL pool in Hosting clans
           before they can be compared.
         </p>
       )}

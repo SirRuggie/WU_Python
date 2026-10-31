@@ -326,7 +326,7 @@ export default function RosterHeader({
               disabled={navigationDisabled}
               onClick={() => onCapacitySettings(missingCapacityClans[0].tag)}
             >
-              Set in Clan settings ›
+              Set in Hosting clans ›
             </button>
           )}
         </div>

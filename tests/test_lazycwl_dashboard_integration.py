@@ -59,6 +59,9 @@ def test_section_clan_queries_use_live_main_categories_and_keep_fwa_strict(monke
         {"_id": 4, "tag": "#OLD", "name": "Legacy", "type": "Competitive"},
         {"_id": 5, "tag": "#HOST", "name": "Host", "type": "CWL Hosting"},
         {"_id": 6, "name": "No tag", "type": "Tactical"},
+        {"_id": 7, "tag": "#UNKNOWN", "name": "Unknown", "type": "Unknown"},
+        {"_id": 8, "tag": "#GONE", "name": "Gone", "type": "CWL", "archived": True},
+        {"_id": 9, "tag": "#FWAGONE", "name": "Removed FWA", "type": "FWA", "removed": True},
     ])
     queries = []
     original_find = mongo.clans.find
@@ -73,11 +76,11 @@ def test_section_clan_queries_use_live_main_categories_and_keep_fwa_strict(monke
     main = asyncio.run(dashboard._clans(mongo, token))
 
     assert queries == [
-        {"type": "FWA"},
-        {"type": {"$in": ["Tactical", "Flexible Fun", "Competitive"]}},
+        {"type": "FWA", "archived": {"$ne": True}, "removed": {"$ne": True}},
+        {"type": {"$ne": "FWA"}, "archived": {"$ne": True}, "removed": {"$ne": True}},
     ]
     assert [clan["tag"] for clan in fwa] == ["#FWA"]
-    assert [clan["tag"] for clan in main] == ["#FUN", "#OLD", "#TAC"]
+    assert [clan["tag"] for clan in main] == ["#FUN", "#HOST", "#OLD", "#TAC", "#UNKNOWN"]
 
 
 def test_serialized_24_clan_and_50_player_panels_fit_discord_and_do_not_silently_truncate():
