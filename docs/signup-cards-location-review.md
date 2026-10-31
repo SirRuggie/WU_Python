@@ -50,7 +50,7 @@ to avoid existing review previews. No production ports, records or messages were
 used. Native links/buttons retain keyboard semantics and visible focus styles;
 this is not a complete screen-reader or physical-phone audit.
 
-Final results: 224 frontend test files / 1,162 tests passed. TypeScript and Vite
+Initial prompt 52 results: 224 frontend test files / 1,162 tests passed. TypeScript and Vite
 build passed, as did the complete `test:layout` suite (including the new location
 gate, existing roster/member, moderation, weights, strikes, replacements, family
 and announcement gates). Scoped Prettier and `git diff --check` passed. Both
@@ -78,3 +78,21 @@ It verifies that the previously chosen Lazy CWL form and account step survive,
 with no writes. The browser gate additionally checks desktop title/version
 alignment and captures published-but-waiting at both viewport widths using only
 an intercepted synthetic fixture response.
+
+Rework results: all 224 frontend files / 1,164 tests passed, TypeScript and build
+passed, and the complete layout suite exited 0. Three new mutations were killed:
+unconditional reset on refused navigation, incorrect unpublished wording after
+publication, and loss of the empty Refresh class. Restored source passed all 14
+targeted tests. The browser gate confirms inline desktop metadata, no overflow,
+zero application writes and identical fixture counts; the 360px Open Clan button
+remains at y408. The first standalone preview run timed out during a scenario load;
+its rerun and the full suite passed. Both requested screenshots were visually
+inspected, with ten updated captures embedded in the local review report.
+
+Preview 8914 now serves `index-DAigbCmj.js`, SHA256
+`b3729886083302b9cb894e043ad8738e6a5811b66193528148c145abd35ff771`,
+verified byte-for-byte against the build. Evidence is in
+`.local/p52-evidence/preview-proof.json`, `rework-mutations.json`,
+`layout.json` and `review.html`; required screenshots are
+`assignments-published-1440.png` and `assignments-waiting-360.png`.
+No production release or live notification test was performed.
