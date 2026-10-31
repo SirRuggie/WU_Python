@@ -174,3 +174,38 @@ def test_change_names_uses_server_roles_and_honest_unavailable_fallback(monkeypa
         'leader_id': {'before': 'Old leader', 'after': 'New leader'},
         'chat_channel_id': {'before': 'Name not recorded', 'after': 'Name not recorded'},
     }
+
+@pytest.mark.parametrize('confirmed,abandoned,label', [(False,False,'Saved snapshot'),(False,True,'Not confirmed'),(True,False,'War reminders changed')])
+def test_history_endpoint_uses_confirmation_label(setup, confirmed, abandoned, label):
+    req, db, rows, event = setup
+    event.update(action='reminders', confirmed=confirmed, abandoned=abandoned)
+    class Cursor:
+        def __init__(self, items): self.items=items
+        def sort(self,*args): return self
+        def skip(self,*args): return self
+        def limit(self,*args): return self
+        async def to_list(self,**kwargs): return self.items
+    rows.find=lambda query: Cursor([event])
+    db.clans.find=lambda *args: Cursor([])
+    req.query={}
+    result=json.loads(asyncio.run(api.history(req)).text)
+    assert result['events'][0]['action']==label
+
+
+def test_show_clan_uses_mentions_for_ids_but_escapes_external_text(setup, monkeypatch):
+    from extensions.commands.clan.dashboard import read_only_clan as native
+    _,db,_,event=setup
+    event['clan'].update(name='@everyone [unsafe](https://example.test)', leader_id='111111111111111111',role_id='222222222222222222',chat_channel_id='333333333333333333')
+    db.clans.find_one.return_value=event['clan']
+    monkeypatch.setattr(native,'require_dashboard_role',AsyncMock(return_value=True))
+    ctx=NS(respond=AsyncMock())
+    asyncio.run(native.show_clan(ctx,db,'clan:#P0LYQ'))
+    args=ctx.respond.await_args
+    assert 'Leader: <@111111111111111111>' in args.args[0]
+    assert 'Clan role: <@&222222222222222222>' in args.args[0]
+    assert 'Chat channel: <#333333333333333333>' in args.args[0]
+    assert '@everyone' not in args.args[0]
+    assert '[unsafe]' not in args.args[0]
+    assert args.kwargs['user_mentions'] is False
+    assert args.kwargs['role_mentions'] is False
+    assert args.kwargs['mentions_everyone'] is False

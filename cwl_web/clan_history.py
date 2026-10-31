@@ -38,7 +38,7 @@ def history_value(field, value):
 
 def history_label(row):
     if row['action'] == 'reminders' and not row.get('confirmed'):
-        return 'Not saved' if row.get('abandoned') else 'Saved snapshot'
+        return 'Not confirmed' if row.get('abandoned') else 'Saved snapshot'
     return LABELS.get(row['action'], 'Saved snapshot')
 
 

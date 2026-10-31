@@ -341,3 +341,34 @@ it("returns to the directory route after confirmed removal", async () => {
   expect(onNavigate).toHaveBeenLastCalledWith({ tab: "clans" });
   expect(host.textContent).toContain("Clan removed from the family directory.");
 });
+
+
+it("Add clan closes the current clean editor", async () => {
+  await open();
+  expect(host.querySelector('input[maxlength="120"]')).not.toBeNull();
+  await click("+ Add clan");
+  expect(host.querySelector('input[maxlength="120"]')).toBeNull();
+  expect(host.textContent).toContain("Look up");
+});
+
+it("legacy Farming does not claim removal from exact-FWA consumers", async () => {
+  const fallback = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (url, method, body) => url === "/manage/clans"
+    ? {clans: [{...clan, type: "Farming"}], types: ["Farming", "CWL", "FWA"], town_halls: ["16"]} as never
+    : fallback(url, method, body));
+  await open();
+  const select = [...host.querySelectorAll<HTMLSelectElement>("select")].find(el => [...el.options].some(option => option.value === "FWA"))!;
+  await act(async () => { select.value = "CWL"; select.dispatchEvent(new Event("change", {bubbles: true})); });
+  await click("Save");
+  expect(document.querySelector("dialog")?.textContent).toContain("CWL hosting classification");
+  expect(document.querySelector("dialog")?.textContent).not.toContain("removes this clan from Clan weights");
+  await click("Cancel");
+});
+
+it("reminder summary pluralizes saved times while off", async () => {
+  await open();
+  expect(host.textContent).toContain("Off · 1 time saved");
+  await act(async () => [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(b => b.textContent === "War reminders")!.click());
+  await click("+ 12h");
+  expect(host.textContent).toContain("Off · 2 times saved");
+});
