@@ -165,7 +165,7 @@ Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`,
    - Signups shown as `Signups open · Add signup · ⚙` (the gear holds window settings and Close signups). Refresh roster is in `⋯`.
    - The Weights count is global. Section tabs use a pill; pool tabs use an underline.
 7. **Filters:** `[Search] [Filters (n)] [Sort]`. Filter sheet (side panel on desktop):
-   - Status: Assigned / Unassigned / Missing weight / Over capacity / Locked. This merged the old "Show" and "Readiness check".
+   - Status: Assigned / Unassigned / Missing weight / Over capacity / Locked / Outside family. This merged the old "Show" and "Readiness check".
    - Weight min–max (missing weights never match), Town Hall, Assigned clan (searchable, multi-select).
    - Per-option counts, `Show N accounts`, Reset. OR within a section, AND across sections.
    - Active filters show as removable chips with Clear all. Stats, clan cards and the panel all share one filter state.

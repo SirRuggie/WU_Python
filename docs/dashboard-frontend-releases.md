@@ -1,5 +1,35 @@
 # Dashboard frontend releases
 
+## Outside-family-1 — October 31, 2026
+
+PR [#110](https://github.com/SirRuggie/WU_Python/pull/110), tag `outside-family-1`,
+frontend `26fc7dabd5cf535bf59f957db1c322e89b43c71c`. Adds the Outside family
+checkbox/count to roster Status, matching `outside_family_and_hosts` with the
+existing chips and Clear all behavior. Claude ACCEPT205 and read-only SMOKE206
+passed: the 360px production panel showed Outside family2 without overflow;
+Claude opened it without applying or saving. The live count was not independently
+cross-checked against account chips.
+
+Validation:1,166 frontend tests/225files, TypeScript/build,17focused tests and
+wrong-field mutation killed. All six layout stages exited0; isolated360×800 and
+1440×1000 checks verified count13/65, filtering/chips/Clear all,44px targets and
+zero writes. Production entry `index-CcCStPU3.js` SHA256
+`6ab004e2dcc5becf37de83ffe0169329a3bb93b93da1ac111c2d803f190c4ae7`
+and affected roster assets matched the immutable manifest.
+
+Clean tagged isolated build and atomic switch; no service restarts. BotPID514877
+and backendPID515068 remained unchanged, backend on member-activity-1 `44142eb`.
+SQLite backup/integrity and protected tables passed; seven lineup cache rows were
+unchanged. Production protected Mongo state stayed3560 active strikes across301
+accounts,581profiles,274replacement rows, with identical streaks. Durable backup:
+repository `.local/outside-family-1-backup-20261031T202310Z`. Evidence:
+`/tmp/wu-outside-release/{live.json,activation.log,sqlite-backup.log}`.
+
+Rollback frontend only: `/home/ruggie/.local/share/wu-dashboard/switch-release.py
+44142ebffd648e0d5560e3002e5792715d4713fc`. Retain both immutable directories and
+shared assets. Member-activity-1's first-hour tracker check is separate and pending.
+No live Discord test messages were sent.
+
 ## No-war-strikes-1 — October 30, 2026
 
 Frontend `73eda11a1e883b711bc40494f023b4d87efd5a6b` is live and Claude smoke 131 passed.
