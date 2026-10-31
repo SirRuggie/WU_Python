@@ -156,3 +156,27 @@ class PlayerActivityStore:
             if result.matched_count:
                 return True
         raise RuntimeError('Raid activity changed concurrently')
+
+
+    async def begin_history_attempt(self, player_tag, version):
+        await self.collection.update_one(
+            {'_id': tag(player_tag), 'recent_wars_version': {'$ne': version}},
+            {'$inc': {'recent_wars_attempts': 1, 'revision': 1}})
+
+    async def save_recent_wars(self, player_tag, observations, *, complete, version, now=None):
+        from utils.player_activity_history import recent_wars
+        now = utc(now or datetime.now(timezone.utc))
+        for _ in range(5):
+            row = await self.get(player_tag)
+            if row is None:
+                return False  # No extra document solely for historical data.
+            fields = {'recent_wars': recent_wars(row.get('recent_wars', []), observations),
+                      'recent_wars_backfilled_at': now}
+            if complete:
+                fields['recent_wars_version'] = version
+            result = await self.collection.update_one(
+                {'_id': row['_id'], 'revision': row['revision']},
+                {'$set': fields, '$inc': {'revision': 1}})
+            if result.matched_count:
+                return True
+        raise RuntimeError('Player war history changed concurrently')

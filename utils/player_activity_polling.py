@@ -145,6 +145,7 @@ async def run(mongo, client):
     store = PlayerActivityStore(mongo)
     indexes_ready = False
     seed_task = None
+    history_task = None
     try:
         while True:
             started = time.monotonic()
@@ -165,6 +166,12 @@ async def run(mongo, client):
                     seed_task = asyncio.create_task(seed_from_clashking(store), name='player-activity-seed')
                 elif seed_task.done() and not seed_task.cancelled() and seed_task.exception():
                     log.warning('Player activity seed state unavailable')
+                if history_task is None or (history_task.done() and not history_task.cancelled()
+                                             and history_task.exception() is None and history_task.result().get('retryable')):
+                    from utils.player_activity_history import backfill_recent_wars
+                    history_task = asyncio.create_task(backfill_recent_wars(mongo), name='player-activity-history')
+                elif history_task.done() and not history_task.cancelled() and history_task.exception():
+                    log.warning('Player activity history state unavailable')
                 log.info('Player activity hourly sweep: members=%d success=%d failure=%d',
                          len(members), counts['success'], counts['failure'])
             except asyncio.CancelledError:
@@ -174,6 +181,9 @@ async def run(mongo, client):
             await asyncio.sleep(max(1, 3600 - (time.monotonic() - started)))
 
     finally:
+        if history_task is not None:
+            history_task.cancel()
+            await asyncio.gather(history_task, return_exceptions=True)
         if seed_task is not None:
             seed_task.cancel()
             await asyncio.gather(seed_task, return_exceptions=True)
