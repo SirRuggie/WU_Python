@@ -6,7 +6,7 @@ from utils.player_activity_signals import activity_signals
 from utils.strike_store import status_of, stamp
 
 
-def family_activity_rows(activity, profiles, records, clans, *, replacements=None, now=None):
+def family_activity_rows(activity, profiles, records, clans, *, replacements=None, strike_limit=3, now=None):
     now = now or datetime.now(timezone.utc)
     updated = [stamp(row['updated_at']) for row in activity if row.get('updated_at')]
     tracking_fresh = bool(updated and now-timedelta(hours=36) <= max(updated) <= now+timedelta(minutes=5))
@@ -45,6 +45,10 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
                        'departed_at': item.get('left_at') or profile.get('departed_last_seen_at'),
                        'town_hall': profile.get('town_hall') or item.get('baseline', {}).get('townHallLevel'),
                        'weight': profile.get('weight'), 'active_strikes': active,
+                       'over_limit': active >= strike_limit,
+                       'new_this_week': any(row.get('kind')=='strike' and status_of(row,now)=='active'
+                                            and now-timedelta(days=7) <= stamp(row['occurred_at']) <= now
+                                            for row in by_record[player]),
                        'total_strikes': sum(row.get('kind') == 'strike' for row in by_record[player]),
                        'discord_id': str(profile['member_id']) if profile.get('member_id') else None,
                        'discord_name': profile.get('discord_name'), 'priority': priority,

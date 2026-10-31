@@ -48,7 +48,7 @@ The scope follows `docs/dashboard-interaction-standard.md`: searchable overview,
 one account editor, labeled native controls and disclosures for occasional
 matching/history. Current summary and refresh time stay visible. Errors are
 visible outside disclosures; priority and manual edits retain their existing
-revision/conflict and discard guards. No new write or retry semantics were added.
+revision/conflict and discard guards. Bulk selection restores the existing current-clan marking route. Displayed revisions are checked before any write and at each account CAS; existing marks are skipped. A partial group or conflict locks submission until explicit refresh, and no write automatically retries.
 
 Browser-only fixtures cover 26, 65 and 125 accounts at 360×800 and 1440×1000.
 Checks measure overflow, strike-count alignment, wrapped chips, 44px control
@@ -74,3 +74,37 @@ a reason and confirmation are required, a pending request cannot duplicate, and
 guild-scoped with the existing read grant. Resolving releases the streak hold and
 preserves the audit receipt; it never creates the missing strike. Draft navigation
 uses the same Keep editing/Discard guard as the other editors.
+
+
+## Prompt 58 corrections
+
+The first row is measured at or above420px at360px width and360px at1440px.
+Tabs and compact tracking share a row; search/sort stay together. Help, Add strike
+and Find war form a compact action row; Refresh and Select accounts are in the
+labeled Activity actions disclosure. Selection is off by default, manage-only,
+limited to50 current-clan accounts; Select all covers the entire current filter,
+including later pages. Read-only notes are visible on rows and details.
+
+A war contributes only when that player's complete outcome is known. Miss-only
+import rows cannot establish a streak. The bounded historical backfill reads full
+lineups through the existing60-day ClashKing import reader and stores fourteen
+war summaries in the existing player document. Monitored captures win duplicate
+keys; mismatch, exempt and no-attack observations neither count nor break the
+chain. Partial reads and unknown/neutral FWA plans are omitted. No strike ledger,
+streak or replacement mark is written by this backfill. Three attempts per player,
+three concurrent clans,120seconds per clan and600seconds per run bound the job.
+
+The newest daily tracker timestamp controls freshness. Older than36hours pauses
+Quiet and its badge contribution. An unavailable activity collection retains
+strike/profile rows with an explicit warning and suppresses activity chips. One
+cached Discord directory read supplies names; missing names get an ID-search
+notice. Over limit uses the configured strike limit; New this week counts recent
+active, unrevoked strikes. Recruit matching explicitly uses all FWA clans/Town
+Halls rather than list filters, and shows Gap. Oversized login numbers are rejected
+before integer conversion.
+
+Additional required mutations cover invented imported streaks, mismatch penalties,
+stale Quiet, backfill writes to streaks, and a blank page on activity failure.
+The real Mongo lane covers concurrent bounded recent_wars writes with unchanged
+strike records and permanent profile/streak state. Browser checks include manager
+wiring and Select all across pages. No mocked notification test proves delivery.

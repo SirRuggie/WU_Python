@@ -98,3 +98,13 @@ it("read-only staff have no editor or write controls", async () => {
   expect(host.querySelector("button")).toBeNull();
   expect(vi.mocked(api).mock.calls).toHaveLength(1);
 });
+
+it("staff readers see the saved note without manager controls", async () => {
+  await render(false);
+  expect(host.textContent).toContain("Saved");
+  expect(
+    [...host.querySelectorAll("button")].some(
+      (button) => button.textContent === "Edit",
+    ),
+  ).toBe(false);
+});

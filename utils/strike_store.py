@@ -595,7 +595,8 @@ class StrikeService:
              'occurred_at': 1, 'missed_attacks': 1, 'expires_at': 1, 'revoked_at': 1,
              'capture_source': 1, 'import_id': 1, 'exemption': 1}).to_list(length=None)
         return {'profiles': profiles, 'records': records, 'clans': clans,
-                'replacements': await self.replacement(guild_id, limit=None)}
+                'replacements': await self.replacement(guild_id, limit=None),
+                'strike_limit': (await self.settings(guild_id))['strike_limit']}
 
     async def account_list(self, guild_id: int, *, query=None, clan_tag=None,
                            status='active', limit=25, skip=0, action='all') -> dict:

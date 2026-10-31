@@ -125,3 +125,61 @@ it("unavailable and stale activity never renders Quiet or invented activity", ()
     ),
   ).toBe(false);
 });
+
+it("restores action filters and priority ties use strikes then weight", () => {
+  const a = {
+    ...healthy,
+    player_tag: "#P22",
+    player_name: "Alpha",
+    priority: "high" as const,
+    active_strikes: 1,
+    weight: 150000,
+    over_limit: false,
+    new_this_week: true,
+  };
+  const b = {
+    ...a,
+    player_tag: "#P33",
+    player_name: "Beta",
+    active_strikes: 3,
+    weight: 140000,
+    over_limit: true,
+    new_this_week: false,
+  };
+  const c = { ...b, player_tag: "#P44", player_name: "Zebra", weight: 160000 };
+  expect(
+    visibleActivityAccounts(
+      [a, b, c],
+      parseActivityFilters("?sort=priority"),
+    ).map((row) => row.player_tag),
+  ).toEqual([c.player_tag, b.player_tag, a.player_tag]);
+  expect(
+    visibleActivityAccounts([a, b], parseActivityFilters("?action=over_limit")),
+  ).toEqual([b]);
+  expect(
+    visibleActivityAccounts(
+      [a, b],
+      parseActivityFilters("?action=new_this_week"),
+    ),
+  ).toEqual([a]);
+  expect(
+    parseActivityFilters(
+      activityFilterQuery(parseActivityFilters("?action=new_this_week")),
+    ).action,
+  ).toBe("new_this_week");
+});
+
+it("Include 1–2 strikes respects the owner's explicit low eligibility", () => {
+  const row = {
+    ...healthy,
+    active_strikes: 1,
+    replacement_eligible_low: false,
+  };
+  expect(
+    visibleActivityAccounts([row], {
+      ...parseActivityFilters(),
+      marked: true,
+      includeLow: true,
+    }),
+  ).toEqual([]);
+});

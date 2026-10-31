@@ -32,6 +32,7 @@ fs.mkdirSync(output, { recursive: true });
           scroll: document.documentElement.scrollWidth,
           width: innerWidth,
           rows: document.querySelectorAll(".strike-activity-row").length,
+          firstRowY: document.querySelector(".strike-activity-row")?.getBoundingClientRect().top ?? null,
           small: [
             ...document.querySelectorAll(
               ".strike-activity-roster button,.strike-activity-roster select,.strike-activity-roster input:not([type=checkbox]),.strike-activity-roster summary,.strike-review-resolution button,.strike-review-resolution textarea,.confirm-dialog button",
@@ -68,6 +69,7 @@ fs.mkdirSync(output, { recursive: true });
           }),
         }));
         assert(measure.scroll <= width, "horizontal overflow");
+        if(name==="default" && (width===360 || width===1440)) assert(measure.firstRowY <= (width===360?420:360), `first player at ${measure.firstRowY}`);
         assert.equal(measure.small.length, 0, "44px target");
         assert(
           measure.text.every((size) => size >= 12),
@@ -177,6 +179,22 @@ fs.mkdirSync(output, { recursive: true });
       assert.equal(errors.length, 0, errors.join("\n"));
       await page.close();
     }
+  for(const scope of ["add","manage"]) {
+    const page=await browser.newPage({viewport:{width:360,height:800}});
+    await page.route("**/*",route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
+    await page.goto(`${origin}/strikes-preview.html?count=26&scope=${scope}`);
+    await page.locator(".strike-activity-row").first().waitFor();
+    await page.getByLabel("Activity actions").click();
+    if(scope==="add") assert.equal(await page.getByRole("button",{name:"Select accounts",exact:true}).count(),0);
+    else {
+      await page.getByRole("button",{name:"Select accounts",exact:true}).click();
+      await page.getByRole("button",{name:"Select all (26)",exact:true}).click();
+      await page.getByText(/26 selected/).waitFor();
+      assert.equal(await page.locator('input[aria-label^="Select "]:checked').count(),25);
+      await page.getByRole("button",{name:"Cancel selection",exact:true}).click();
+    }
+    await page.close();
+  }
   fs.writeFileSync(
     path.join(output, "measurements.json"),
     JSON.stringify(measurements, null, 2),

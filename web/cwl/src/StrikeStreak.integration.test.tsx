@@ -80,7 +80,9 @@ it("shows the account-scoped streak independently of records and rejects late pr
     ),
   );
   await settle();
-  expect(host.textContent).toContain("How strikes work");
+  expect(
+    host.querySelector('button[aria-label="How strikes work"]'),
+  ).not.toBeNull();
   await click("Alpha");
   await settle();
   expect(host.textContent).toContain(

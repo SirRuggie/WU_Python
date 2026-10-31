@@ -728,7 +728,7 @@ async def replacement_roster(request):
 
 @endpoint
 async def bulk_add_replacement_list(request):
-    data = await body(request, {'clan_tag', 'player_tags', 'priority', 'note'})
+    data = await body(request, {'clan_tag', 'player_tags', 'priority', 'note', 'revisions'})
     raw_tags = data.get('player_tags')
     if not isinstance(raw_tags, list) or not 1 <= len(raw_tags) <= 50:
         raise ValueError('Choose 1 to 50 accounts.')
@@ -737,6 +737,10 @@ async def bulk_add_replacement_list(request):
     selected = [tag(value) for value in raw_tags]
     if len(set(selected)) != len(selected):
         raise ValueError('Select each account only once.')
+    revisions = data.get('revisions')
+    if revisions is not None and (not isinstance(revisions, dict) or set(revisions) != set(selected)
+            or any(type(v) is not int or not 0 <= v <= 2**53-1 for v in revisions.values())):
+        raise ValueError('Refresh the selected account revisions.')
     priority = data.get('priority')
     note = data.get('note', '')
     if priority not in ('replace_first', 'high', 'normal'):
@@ -753,6 +757,9 @@ async def bulk_add_replacement_list(request):
             raise web.HTTPConflict(text='Some selected accounts left this clan. Refresh the list and try again.')
         existing = await db.strike_profiles.find(
             {'guild_id': GUILD_ID, 'player_tag': {'$in': selected}}).to_list(length=None)
+        indexed = {row['player_tag']: row for row in existing}
+        if revisions is not None and any(revisions[value] != indexed.get(value, {}).get('revision', 0) for value in selected):
+            raise web.HTTPConflict(text='Selected accounts changed. Refresh before marking; nothing was saved.')
         already = {row['player_tag'] for row in existing
                    if (row.get('replacement_listed') and row.get('replacement_clan_tag') == roster['tag'])
                    or (row.get('filler') and row.get('filler_clan_tag') == roster['tag'])}
@@ -765,8 +772,11 @@ async def bulk_add_replacement_list(request):
                 result = await ledger.set_replacement_preference(
                     GUILD_ID, value, priority, note, actor, clan_tag=roster['tag'],
                     player_name=members[value]['name'],
-                    town_hall=members[value].get('town_hall'), only_if_unmarked=True)
+                    town_hall=members[value].get('town_hall'), only_if_unmarked=True,
+                    **({'expected_revision': revisions[value]} if revisions is not None else {}))
                 (added if result is not None else skipped).append(value)
+        except StrikeConflict:
+            raise web.HTTPConflict(text=f'Selected accounts changed after {len(added)} saves. Refresh before continuing; no automatic retry.')
         except Exception:
             _job_log.exception('Replacement bulk add stopped after partial write')
             return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,

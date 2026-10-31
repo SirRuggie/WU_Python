@@ -23,6 +23,8 @@ def activity_query(query):
     for key in ('marked', 'low', 'strikes'):
         if query.get(key) in ('0', '1'):
             result[key] = query[key]
+    if query.get('action') in ('over_limit', 'new_this_week'):
+        result['action'] = query['action']
     for key, allowed in (('sort', {'status','quiet','strikes','weight','th','missed','name','priority'}),
                          ('left', {'all','current','left'})):
         if query.get(key) in allowed:

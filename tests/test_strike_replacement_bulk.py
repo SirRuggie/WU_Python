@@ -61,7 +61,7 @@ class Ledger:
         self.saved = []
 
     async def set_replacement_preference(self, guild_id, tag, priority, note, actor,
-                                         *, clan_tag, player_name, town_hall=None, only_if_unmarked):
+                                         *, clan_tag, player_name, town_hall=None, only_if_unmarked, expected_revision=None):
         assert guild_id == strikes.GUILD_ID and actor == 123
         assert clan_tag == CLAN and only_if_unmarked
         self.saved.append(tag)
@@ -209,3 +209,13 @@ def test_conditional_bulk_write_scopes_existing_mark_to_current_clan():
             {'replacement_listed': True, 'replacement_clan_tag': CLAN},
             {'filler': True, 'filler_clan_tag': CLAN}]
     asyncio.run(run())
+
+
+def test_bulk_displayed_revision_conflict_stops_before_first_write():
+    payload={'clan_tag':CLAN,'player_tags':[P1,P2],'priority':'normal','note':'fixture',
+             'revisions':{P1:1,P2:0}}
+    with pytest.raises(web.HTTPConflict):run_post(payload)
+    for revision in (True,-1,'1'):
+        with pytest.raises(web.HTTPBadRequest):run_post({**payload,'revisions':{P1:revision,P2:0}})
+    response,ledger,_=run_post({**payload,'revisions':{P1:0,P2:0}})
+    assert response.status==200 and ledger.saved==[P1,P2]

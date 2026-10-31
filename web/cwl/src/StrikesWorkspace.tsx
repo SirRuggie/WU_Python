@@ -259,7 +259,6 @@ export default function StrikesWorkspace({
   onFindReplacement,
   targetTag = "",
   memory,
-  onBack,
   onWorking,
   activityState,
   markedDefault = false,
@@ -278,7 +277,6 @@ export default function StrikesWorkspace({
   onFindReplacement?: (clan: string, tag: string) => void;
   targetTag?: string;
   memory?: ViewMemory;
-  onBack?: () => void;
 }) {
   const access = strikePermissions(permissions, isOwner);
   const visibleTabs = tabs.filter((item) =>
@@ -365,6 +363,7 @@ export default function StrikesWorkspace({
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState("");
   const [manualDirty, setManualDirty] = useState(false);
+  const [bulkDirty, setBulkDirty] = useState(false);
   const mutation = useRef(false);
   const [removeId, setRemoveId] = useState("");
   const [removeReason, setRemoveReason] = useState("");
@@ -409,6 +408,7 @@ export default function StrikesWorkspace({
     replacementDirty ||
     settingsDirty ||
     manualDirty ||
+    bulkDirty ||
     !!removeReason ||
     !!resumeDate ||
     leaveTags.length > 0;
@@ -863,45 +863,42 @@ export default function StrikesWorkspace({
     <section
       className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
     >
-      {onBack && (
-        <button type="button" disabled={busy} onClick={onBack}>
-          ‹ Back to Replacements
-        </button>
-      )}
       <div className="page-head">
         <div>
-          <p className="eyebrow">Family clans</p>
           <h1>Strikes &amp; replacements</h1>
-          <p>Family activity, strikes and replacement priorities.</p>
-          <StrikeHelp limit={settings?.strike_limit} />
         </div>
       </div>
-      <div className="strikes-tabs" role="group" aria-label="Strike sections">
-        {visibleTabs.map((item) => (
-          <button
-            key={item.id}
-            aria-pressed={tab === item.id}
-            disabled={busy}
-            onClick={() =>
-              leaveDraft(() => {
-                setManualOpen(false);
-                setManualDirty(false);
-                memberRequest.current++;
-                setRemoveId("");
-                setRemoveReason("");
-                setLeaveTags([]);
-                setLeaveRevision(null);
-                setLeaveConflict(false);
-                setResumeDate("");
-                setTab(item.id);
-                setError("");
-                setNotice("");
-              })
-            }
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="strikes-navigation">
+        <div className="strikes-tabs" role="group" aria-label="Strike sections">
+          {visibleTabs.map((item) => (
+            <button
+              key={item.id}
+              aria-pressed={tab === item.id}
+              disabled={busy}
+              onClick={() =>
+                leaveDraft(() => {
+                  setManualOpen(false);
+                  setManualDirty(false);
+                  memberRequest.current++;
+                  setRemoveId("");
+                  setRemoveReason("");
+                  setLeaveTags([]);
+                  setLeaveRevision(null);
+                  setLeaveConflict(false);
+                  setResumeDate("");
+                  setTab(item.id);
+                  setError("");
+                  setNotice("");
+                })
+              }
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {tab === "history" && !manualOpen && (
+          <StrikeTrackingStatus compact canRetry={access.add} />
+        )}
       </div>
       {error && (
         <div className="notice error" role="alert">
@@ -975,9 +972,8 @@ export default function StrikesWorkspace({
       )}
       {tab === "history" && !manualOpen && (
         <>
-          <StrikeTrackingStatus canRetry={access.add} />
           <div
-            className={`strikes-toolbar${selectedAccount ? " strikes-toolbar-player" : ""}`}
+            className={`strikes-toolbar${selectedAccount ? " strikes-toolbar-player" : !selectedWar ? " strikes-toolbar-actions" : ""}`}
           >
             {selectedAccount && (
               <button onClick={backToAccounts}>← Players</button>
@@ -1011,6 +1007,9 @@ export default function StrikesWorkspace({
               </label>
             )}
 
+            {!selectedAccount && !selectedWar && (
+              <StrikeHelp compact limit={settings?.strike_limit} />
+            )}
             {access.add && (
               <button
                 className="primary"
@@ -1358,6 +1357,9 @@ export default function StrikesWorkspace({
             </>
           ) : (
             <StrikeActivityRoster
+              canManage={access.manage}
+              onWorking={setBusy}
+              onDirty={setBulkDirty}
               state={activityState}
               markedDefault={markedDefault}
               reload={activityReload}
@@ -1369,8 +1371,10 @@ export default function StrikesWorkspace({
               }}
               onState={onActivityState}
               onChoose={(account) => {
-                chooseAccount(account);
-                onAccountRoute?.(account.player_tag);
+                leaveDraft(() => {
+                  chooseAccount(account);
+                  onAccountRoute?.(account.player_tag);
+                });
               }}
               onDenied={() => setAccessLost(true)}
             />

@@ -20,8 +20,10 @@ const message = (error: unknown) =>
 
 export default function StrikeTrackingStatus({
   canRetry,
+  compact = false,
 }: {
   canRetry: boolean
+  compact?: boolean
 }) {
   const [clans, setClans] = useState<ClanTracking[]>([])
   const [loading, setLoading] = useState(true)
@@ -85,13 +87,15 @@ export default function StrikeTrackingStatus({
   }
 
   const summary = trackingSummary(clans)
+  const behind = clans.filter(item => displayTrackingStatus(item) !== 'healthy').length
+  const compactLabel = behind ? `${behind} need review` : `${clans.length} on track`
   const tone = error ? 'warning' : summary.tone
   return (
     <details className={`card strikes-tracking ${tone}`}>
       <summary>
         <span>Tracking</span>
         <strong>
-          {loading ? 'Checking…' : error ? 'Status unavailable' : summary.label}
+          {loading ? 'Checking…' : error ? 'Status unavailable' : compact ? compactLabel : summary.label}
         </strong>
       </summary>
       <div className="strikes-tracking-body">

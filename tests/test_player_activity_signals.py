@@ -72,3 +72,12 @@ def test_stale_tracker_suppresses_quiet_and_quiet_badge():
 @pytest.mark.parametrize('priority,status',[('high','watch'),('replace_first','risk')])
 def test_priority_badges(priority,status):
     assert activity_signals({},[],priority=priority,now=NOW)['status']==status
+
+
+def test_partial_attack_breaks_no_attack_chain_and_raid_skip_is_watch():
+    recent=[{'war_key':str(n),'occurred_at':NOW-timedelta(days=n),'attacks_used':used,'attacks_available':2}
+            for n,used in enumerate((0,1,0))]
+    row=activity_signals({'recent_wars':recent},[],now=NOW)
+    assert row['no_attack_wars']==1 and row['status']=='watch' and row['missed_attacks']==5
+    row=activity_signals({'raid_weekends':[{'weekend_id':latest_raid_end(NOW).isoformat(),'attacked':False}]},[],now=NOW)
+    assert row['status']=='watch'

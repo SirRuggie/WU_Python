@@ -223,3 +223,30 @@ def test_missing_and_empty_roster_responses_never_authorize_departures():
             sweep=await family_members(mongo,NS(get_clan=clan))
             assert not sweep.complete and not sweep.members
     asyncio.run(run())
+
+
+def test_history_starts_before_the_hourly_player_poll_and_is_cancelled(monkeypatch):
+    from types import SimpleNamespace
+    from utils import player_activity_polling as polling, player_activity_history as history
+    async def scenario():
+        started=asyncio.Event();cancelled=asyncio.Event()
+        class Store:
+            def __init__(self,mongo):pass
+            async def ensure_indexes(self):pass
+        async def family(*args):return polling.RosterSweep({},[],False)
+        async def backfill(*args):
+            started.set()
+            try:await asyncio.Event().wait()
+            finally:cancelled.set()
+        async def poll(*args,**kwargs):
+            await asyncio.sleep(0)
+            assert started.is_set()
+            raise asyncio.CancelledError
+        monkeypatch.setattr(polling,'PlayerActivityStore',Store)
+        monkeypatch.setattr(polling,'family_members',family)
+        monkeypatch.setattr(polling,'poll_hour',poll)
+        monkeypatch.setattr(history,'backfill_recent_wars',backfill)
+        with __import__('pytest').raises(asyncio.CancelledError):
+            await polling.run(None,SimpleNamespace(get_player=None))
+        assert cancelled.is_set()
+    asyncio.run(scenario())

@@ -157,6 +157,11 @@ async def run(mongo, client):
                 members = sweep.members
                 if sweep.complete:
                     await store.reconcile_membership(members)
+                if history_task is None or history_task.done():
+                    if history_task is not None and not history_task.cancelled() and history_task.exception():
+                        log.warning('Player activity history state unavailable')
+                    from utils.player_activity_history import backfill_recent_wars
+                    history_task = asyncio.create_task(backfill_recent_wars(mongo), name='player-activity-history')
                 counts = await poll_hour(store, members, client.get_player,
                                          duration=max(1, 3600 - (time.monotonic() - started)))
                 await capture_raids(store, client, sweep.clan_tags)
@@ -166,12 +171,6 @@ async def run(mongo, client):
                     seed_task = asyncio.create_task(seed_from_clashking(store), name='player-activity-seed')
                 elif seed_task.done() and not seed_task.cancelled() and seed_task.exception():
                     log.warning('Player activity seed state unavailable')
-                if history_task is None or (history_task.done() and not history_task.cancelled()
-                                             and history_task.exception() is None and history_task.result().get('retryable')):
-                    from utils.player_activity_history import backfill_recent_wars
-                    history_task = asyncio.create_task(backfill_recent_wars(mongo), name='player-activity-history')
-                elif history_task.done() and not history_task.cancelled() and history_task.exception():
-                    log.warning('Player activity history state unavailable')
                 log.info('Player activity hourly sweep: members=%d success=%d failure=%d',
                          len(members), counts['success'], counts['failure'])
             except asyncio.CancelledError:

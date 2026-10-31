@@ -95,9 +95,9 @@ it("replacements alias starts with marked filter and preserves URL changes", asy
     root.render(<StrikeActivityRoster markedDefault onChoose={vi.fn()} />),
   );
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(1);
-  const toggle = [...host.querySelectorAll("label")]
-    .find((label) => label.textContent === "Marked for replacement")!
-    .querySelector<HTMLInputElement>("input")!;
+  const toggle = host.querySelector<HTMLInputElement>(
+    'input[aria-label="Marked for replacement"]',
+  )!;
   await act(async () => toggle.click());
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(2);
   expect(new URLSearchParams(location.search).get("marked")).toBe("0");
@@ -186,4 +186,42 @@ it("loads recruit matches only on request and ignores a response after the weigh
       (node) => node.textContent === "Find closest weights",
     )!.disabled,
   ).toBe(false);
+});
+
+it("selection controls are manager-only and Select all covers the current filter", async () => {
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} canManage={false} />),
+  );
+  expect(host.textContent).not.toContain("Select accounts");
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} canManage />),
+  );
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Select accounts")!
+      .click(),
+  );
+  const all = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Select all (2)",
+  )!;
+  await act(async () => all.click());
+  expect(
+    host.querySelectorAll('input[aria-label^="Select "]:checked'),
+  ).toHaveLength(2);
+  expect(host.textContent).toContain("2 selected");
+});
+
+it("failure shows unavailable counts instead of a false zero summary", async () => {
+  vi.mocked(fetch).mockImplementation(
+    async () =>
+      new Response(JSON.stringify({ error: "Fixture unavailable" }), {
+        status: 503,
+        headers: { "X-Read-Retries-Exhausted": "1" },
+      }),
+  );
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  expect(host.textContent).toContain("— at risk · — watch · — active");
+  expect(host.textContent).toContain("Fixture unavailable");
 });

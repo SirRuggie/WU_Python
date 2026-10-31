@@ -166,3 +166,16 @@ def test_activity_outage_preserves_strike_rows_and_directory_names_without_profi
             result=json.loads((await strikes.activity_accounts(request)).body)
             assert result['identity_warning'] and len(result['accounts'])==1
     asyncio.run(run())
+
+
+def test_action_filters_use_configured_limit_and_only_new_active_strikes():
+    activity=[{'tag':'#PYY','current_clan_tag':'#CLAN','updated_at':NOW}]
+    def record(days,expires,revoked=False):
+        row={'player_tag':'#PYY','kind':'strike','source':'manual','occurred_at':NOW-timedelta(days=days),'expires_at':NOW+timedelta(days=expires)}
+        if revoked:row['revoked_at']=NOW
+        return row
+    records=[record(8,30),record(9,30),record(1,-1),record(1,30,True)]
+    row=family_activity_rows(activity,[],records,[{'tag':'#CLAN'}],strike_limit=2,now=NOW)[0]
+    assert row['over_limit'] and not row['new_this_week'] and row['active_strikes']==2
+    row=family_activity_rows(activity,[],records+[record(1,30)],[{'tag':'#CLAN'}],strike_limit=5,now=NOW)[0]
+    assert not row['over_limit'] and row['new_this_week']

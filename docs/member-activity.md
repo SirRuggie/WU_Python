@@ -188,3 +188,18 @@ Quiet rows may retain older `active_days` values until the next daily write. Any
 that counts active days must filter by its current UTC date (today through 29 days
 ago), never use the stored list length. The unified page does not expose or count
 `active_days`; its activity signals use last-seen timestamps and raid/war evidence.
+
+
+### Bounded historical war activity (PR B, prompt58)
+
+The tracker owns a cancellable one-time full-lineup backfill using the existing
+ClashKing historical war import reader (last60days). It writes only existing
+player_activity documents: fourteen known recent_wars summaries, a bounded version
+receipt and at most three attempts per player. Each summary carries war_key,
+occurred_at, attacks_used and attacks_available. Three concurrent clan reads,
+120seconds per clan and600seconds per run bound requests. Partial/unknown lineups
+and unconfirmed or neutral FWA plans contribute nothing; failure leaves the
+completion receipt unset. CAS preserves concurrent official observations and
+never refreshes the live tracker timestamp. No strike records, streaks or
+replacement marks are modified. Fourteen summaries add roughly4KB/player
+before storage/index overhead; measure collStats during the approved PR B rollout.

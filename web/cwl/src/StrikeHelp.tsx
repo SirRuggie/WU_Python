@@ -27,8 +27,10 @@ export function StrikeHelpText({
 
 export default function StrikeHelp({
   limit = DEFAULT_STRIKE_LIMIT,
+  compact = false,
 }: {
   limit?: number;
+  compact?: boolean;
 }) {
   const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null);
   return (
@@ -36,9 +38,10 @@ export default function StrikeHelp({
       <button
         type="button"
         className="strike-help-trigger"
+        aria-label="How strikes work"
         onClick={(event) => setTrigger(event.currentTarget)}
       >
-        How strikes work
+        {compact ? "Help" : "How strikes work"}
       </button>
       {trigger && (
         <ActionPanel

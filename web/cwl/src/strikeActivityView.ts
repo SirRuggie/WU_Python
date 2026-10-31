@@ -2,6 +2,9 @@ export type ActivityStatus = "risk" | "watch" | "active";
 export type ActivityPriority = "replace_first" | "high" | "normal";
 export type ActivityAccount = {
   player_tag: string;
+  revision?: number;
+  over_limit?: boolean;
+  new_this_week?: boolean;
   player_name: string;
   current_clan_tag?: string | null;
   current_clan_name?: string | null;
@@ -43,6 +46,7 @@ export const activitySorts = [
 ] as const;
 export type ActivitySort = (typeof activitySorts)[number];
 export type ActivityFilters = {
+  action: "all" | "over_limit" | "new_this_week";
   query: string;
   clans: string[];
   statuses: ActivityStatus[];
@@ -55,6 +59,7 @@ export type ActivityFilters = {
   page: number;
 };
 export const activityFilterKeys = [
+  "action",
   "q",
   "clans",
   "status",
@@ -81,6 +86,11 @@ export function parseActivityFilters(
   const sort = params.get("sort");
   const left = params.get("left");
   return {
+    action:
+      params.get("action") === "over_limit" ||
+      params.get("action") === "new_this_week"
+        ? (params.get("action") as ActivityFilters["action"])
+        : "all",
     query: (params.get("q") || "").slice(0, 80),
     clans: tags(params.get("clans")),
     statuses: (params.get("status") || "")
@@ -118,6 +128,7 @@ export function parseActivityFilters(
 }
 export function activityFilterQuery(filters: ActivityFilters) {
   const params = new URLSearchParams();
+  if (filters.action !== "all") params.set("action", filters.action);
   if (filters.query) params.set("q", filters.query);
   if (filters.clans.length)
     params.set("clans", [...filters.clans].sort().join(","));
@@ -189,6 +200,8 @@ export function activityChips(row: ActivityAccount): ActivityChip[] {
       label: activityPriorityLabels[row.priority],
       tone: row.priority === "replace_first" ? "bad" : "warn",
     });
+  if (row.over_limit) chips.push({ label: "Over limit", tone: "bad" });
+  if (row.new_this_week) chips.push({ label: "New this week", tone: "warn" });
   if (row.left_clan) chips.push({ label: "Left clan", tone: "neutral" });
   if (!chips.length)
     chips.push({
@@ -222,6 +235,10 @@ export function visibleActivityAccounts(
             (row.left_clan ? row.last_clan_tag : row.current_clan_tag) || "",
           )) &&
         (!filters.statuses.length || filters.statuses.includes(row.status)) &&
+        (filters.action === "all" ||
+          (filters.action === "over_limit"
+            ? row.over_limit
+            : row.new_this_week)) &&
         (!filters.onlyStrikes || row.active_strikes > 0) &&
         (!filters.marked ||
           row.marked_for_replacement ||
@@ -259,7 +276,9 @@ export function visibleActivityAccounts(
                     ? numeric("missed_attacks")
                     : filters.sort === "priority"
                       ? (a.priority ? priorityRank[a.priority] : 3) -
-                        (b.priority ? priorityRank[b.priority] : 3)
+                          (b.priority ? priorityRank[b.priority] : 3) ||
+                        numeric("active_strikes") ||
+                        numeric("weight")
                       : 0;
       return (
         order ||

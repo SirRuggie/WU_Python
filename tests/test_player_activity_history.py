@@ -18,7 +18,7 @@ def test_full_history_backfill_is_bounded_and_cannot_change_strikes_or_streaks()
         db.fwa_war_plans = Collection()
         db.clans.rows['clan']['type'] = 'War'
         await db.strike_records.insert_one({'_id':'protected','kind':'strike'})
-        await db.strike_profiles.insert_one({'_id':'protected','streak_count':4,'replacement_listed':True})
+        await db.strike_profiles.insert_one({'_id':'protected','player_tag':PLAYER,'streak_count':4,'replacement_listed':True})
         protected = deepcopy((db.strike_records.rows,db.strike_profiles.rows))
         store=PlayerActivityStore(db)
         await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
