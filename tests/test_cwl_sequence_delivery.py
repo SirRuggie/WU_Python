@@ -17,6 +17,13 @@ GUILD_ID = 22
 USER_ID = 11
 
 
+@pytest.fixture(autouse=True)
+def stable_campaign_clock(monkeypatch):
+    # Keep relative campaign windows inside one cycle, including month-end runs.
+    instant = pendulum.datetime(2026, 10, 15, 12, tz=TZ)
+    monkeypatch.setattr(pendulum, "now", lambda tz=None: instant.in_timezone(tz or "UTC"))
+
+
 def run(coroutine):
     return asyncio.run(coroutine)
 
