@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import re
 import lightbulb
 import hikari
@@ -545,9 +544,9 @@ async def send_campaign_message(
                 {"campaign": campaign, "deadline": loaded["deadline"]},
                 message_id, variant, preview=False,
             )
-            nonce = hashlib.blake2s(
-                f"{guild_id}|{occurrence}".encode("utf-8"), digest_size=10,
-            ).hexdigest()
+            nonce = cwl_campaign.roster_delivery_nonce(
+                guild_id, occurrence, loaded.get("deliveries", []),
+            )
             if _sequence_delivery_blocked(loaded, message_id, pendulum.now(DEFAULT_TIMEZONE)):
                 await _release_campaign_claim(guild_id, cycle, occurrence)
                 continue
