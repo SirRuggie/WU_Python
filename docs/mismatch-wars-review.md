@@ -68,5 +68,8 @@ Current-main integration includes visitors-1 and its release documentation. The
 integrated frontend has 1,142 passing tests and a successful TypeScript/Vite build.
 The four policy mutations were rerun and killed. The refreshed standalone browser
 at 360/1440 passed (12px minimum text and no undersized tested controls/overflow);
-the receipt/template focused suite passed 41 tests. The final full backend/layout
-counts are recorded in READY after their completion.
+the receipt/template focused suite passed 41 tests. The final network-isolated
+backend suite passed 5,357 tests and 221 subtests, with 21 skipped; full layout
+passed. Two legacy sequence-delivery tests depended on the real month boundary;
+their module now uses a fixed mid-month clock, and all six module tests pass.
+No production behavior was changed for that fixture correction.
