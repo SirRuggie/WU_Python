@@ -97,6 +97,7 @@ export default function AnnouncementSequenceStatus({
               ? `Stopped at ${stopped?.name || "closing note"}`
               : `Posting clan images · ${sent} of ${sequence.clans.length}`}
       </p>
+      {sequence.status === "complete" && sequence.closing?.error && <p>{sequence.closing.error}</p>}
       {sequence.status === "stopped" && sequence.error && (
         <p className="notice error">{sequence.error}</p>
       )}

@@ -486,6 +486,26 @@ class RosterImageStore:
                        "WHERE sequence_id=? AND status='stopped' AND announcement_message_id IS NOT NULL",
                        (sequence_id,))
 
+    def repost_deleted_closing(self, sequence_id, message_id, actor):
+        """After a confirmed 10008, queue one fresh frozen closing message."""
+        import hashlib
+        with self.store.tx() as db:
+            job = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?', (sequence_id,)).fetchone()
+            receipt = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?', (sequence_id,)).fetchone()
+            if (not job or job['status'] != 'complete' or not receipt
+                    or receipt['status'] != 'posted' or receipt['message_id'] != message_id):
+                raise ImageConflict('Closing message changed; refresh before updating')
+            old = dict(receipt)
+            old['status'] = 'deleted_confirmed'
+            db.execute('INSERT INTO roster_image_sequence_closing_history VALUES(?,?,?)',
+                       (receipt['request_id'], sequence_id, json.dumps(old)))
+            plan = json.loads(job['plan_json'])
+            plan['closing']['request_id'] = hashlib.sha256((receipt['request_id'] + ':deleted-repost').encode()).hexdigest()[:24]
+            db.execute('DELETE FROM roster_image_sequence_closing WHERE sequence_id=?', (sequence_id,))
+            db.execute("UPDATE roster_image_sequences SET status='ready',plan_json=?,actor_id=?,error=NULL,resume_requested=1,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?",
+                       (json.dumps(plan, sort_keys=True), str(actor), sequence_id))
+            return dict(db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?', (sequence_id,)).fetchone())
+
     def claim_sequence_closing(self, sequence_id, *, retry_failed=False):
         """Claim the final note only after all images are durably confirmed."""
         with self.store.tx() as db:
@@ -547,6 +567,11 @@ class RosterImageStore:
                 raise ImageConflict('Closing note has not been claimed')
             if row['status'] != 'sending':
                 return dict(row)
+            if status == 'posted' and any(
+                json.loads(item['receipt_json']).get('status') == 'deleted_confirmed'
+                for item in db.execute('SELECT receipt_json FROM roster_image_sequence_closing_history WHERE sequence_id=?', (sequence_id,))
+            ):
+                error = 'Reposted (old message was deleted)'
             db.execute('UPDATE roster_image_sequence_closing SET status=?,message_id=?,error=?,'
                        'retry_after=?,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?',
                        (status, str(message) if message else None, error, retry_after, sequence_id))

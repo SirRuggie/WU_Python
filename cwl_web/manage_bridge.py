@@ -261,7 +261,7 @@ async def send(request):
 
 def routes():
     from . import manage_reminders, roster_sequence_tests, announcement_recovery
-    from .roster_sequence_review import resume as resume_sequence, recover as recover_sequence
+    from .roster_sequence_review import resume as resume_sequence, recover as recover_sequence, repair_closing
     return [web.get(API + '/seasons/{season_id}/manage-bridge', status),
             web.post(API + '/seasons/{season_id}/manage-bridge/bind', bind),
             web.patch(API + '/seasons/{season_id}/manage-bridge/{pool}', save_variant),
@@ -269,6 +269,7 @@ def routes():
             web.get(API + '/seasons/{season_id}/manage-bridge/{pool}/check-message', announcement_recovery.check),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/resume', resume_sequence),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/recover', recover_sequence),
+            web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/closing/update', repair_closing),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/test-full', roster_sequence_tests.prepare),
             web.get(API + '/seasons/{season_id}/manage-bridge/{pool}/test-full/{request_id}', roster_sequence_tests.status),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/test', test_announcement)] + manage_reminders.routes()

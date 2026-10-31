@@ -138,3 +138,30 @@ async def recover(request):
     except ImageConflict as exc:
         raise web.HTTPConflict(text=str(exc)) from None
     return web.json_response({'sequence': describe(storage, job['season_id'], job['pool'])}, status=202)
+
+
+async def repair_closing(request):
+    from .app import _json, _sid
+    from .manage_bridge import _pool
+    from .roster_image_posts import staff
+    from .announcement_recovery import deleted_in_discord
+    actor = staff(request, send=True)
+    body = await _json(request)
+    if set(body) != {'sequence_id', 'message_id'}:
+        raise web.HTTPBadRequest(text='Review the current closing message first')
+    storage = RosterImageStore(request.app['store'])
+    sid, pool = _sid(request), _pool(request)
+    job = storage.pool_sequence(sid, pool)
+    if not job or job['sequence_id'] != body['sequence_id'] or not storage.publication(sid):
+        raise web.HTTPConflict(text='Published sequence changed; refresh first')
+    _not_active(request, job)
+    receipt = storage.closing_receipt(job['sequence_id'])
+    if not receipt or receipt['status'] != 'posted' or receipt['message_id'] != body['message_id']:
+        raise web.HTTPConflict(text='Closing message changed; refresh before updating')
+    if not await deleted_in_discord(request, receipt):
+        return web.json_response({'reposted': False})
+    try:
+        storage.repost_deleted_closing(job['sequence_id'], body['message_id'], actor['user_id'])
+    except ImageConflict as exc:
+        raise web.HTTPConflict(text=str(exc)) from None
+    return web.json_response({'repost_queued': True}, status=202)

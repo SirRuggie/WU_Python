@@ -98,3 +98,31 @@ class RecoveryHTTPTests(ManageBridgeTests):
         self.assertFalse(current['pools']['main']['sequence']['announcement_confirmed'])
         history = await cwl_campaign.load_campaign(self.mongo, GUILD_ID, state['cycle'])
         self.assertEqual(history['deliveries'][-1]['status'], 'deleted_confirmed')
+
+    async def test_closing_update_only_queues_replacement_for_confirmed_deletion(self):
+        from utils.cwl_roster_image_store import RosterImageStore
+        from utils.cwl_roster_messages import closing_message
+        await self.bind()
+        await self.publish()
+        images = RosterImageStore(self.app['store'])
+        images.prepare_sequence(sequence_id='a'*24, sid=self.sid, pool='main', cycle='2026-10',
+            version=1, generation='g', channel=RECEIPT['channel_id'], actor='staff',
+            plan={'clans': [], 'closing': {'request_id': 'b'*24, 'payload': closing_message()}})
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE roster_image_sequences SET status='ready',announcement_message_id='987654321098765400'")
+        images.claim_sequence_closing('a'*24)
+        images.finish_sequence_closing('a'*24, status='posted', message=RECEIPT['message_id'])
+        body = {'sequence_id': 'a'*24, 'message_id': RECEIPT['message_id']}
+        path = self.base + '/main/sequence/closing/update'
+        fake = AsyncMock(side_effect=[CHANNEL, {'id': RECEIPT['message_id']}, CHANNEL, DiscordItemNotFound(10008)])
+        with patch('cwl_web.announcement_recovery.discord', fake):
+            self.assertEqual((await self.call('POST', path, self.member, json=body)).status, 403)
+            response = await self.call('POST', path, self.owner, json=body)
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertEqual(images.sequence('a'*24)['status'], 'complete')
+            response = await self.call('POST', path, self.owner, json=body)
+            self.assertEqual(response.status, 202, await response.text())
+            self.assertEqual((await self.call('POST', path, self.owner, json=body)).status, 409)
+        self.assertEqual(images.sequence('a'*24)['status'], 'ready')
+        self.assertIsNone(images.closing_receipt('a'*24))
+        self.assertTrue(all(call.args[1] == 'GET' for call in fake.call_args_list))

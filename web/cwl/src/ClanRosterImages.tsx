@@ -94,6 +94,18 @@ export default function ClanRosterImages({
         },
         completed: () => reload(generation),
       });
+      if (jobs[0]?.operation !== "test") {
+        for (const pool of new Set(jobs.map((job) => job.clan.pool))) {
+          if (generation !== active.current || !permission.current) break;
+          const closing = data.closings?.[pool];
+          if (closing)
+            await api(
+              `/seasons/${seasonId}/manage-bridge/${pool}/sequence/closing/update`,
+              "POST",
+              closing,
+            );
+        }
+      }
     } catch (e) {
       if (generation === active.current) {
         setError((e as Error).message);

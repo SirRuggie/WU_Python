@@ -49,7 +49,12 @@ async def posts(request):
     result = storage.posts(sid)
     from .roster_image_destination import new_post_destination
     result['destinations'] = {}
+    result['closings'] = {}
     for pool in ('main', 'lazy'):
+        sequence = storage.pool_sequence(sid, pool)
+        closing = storage.closing_receipt(sequence['sequence_id']) if sequence else None
+        if closing and closing['status'] == 'posted':
+            result['closings'][pool] = {'sequence_id': sequence['sequence_id'], 'message_id': closing['message_id']}
         try:
             result['destinations'][pool] = {'channel_id': await new_post_destination(request, sid, pool)}
         except web.HTTPException as exc:

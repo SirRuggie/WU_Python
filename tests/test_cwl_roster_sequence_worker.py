@@ -184,3 +184,24 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(old['status'], 'uncertain')
         self.assertEqual(self.images.closing_receipt('a' * 24), active)
         self.assertEqual(self.sent, ['#AAA', '#BBB', '#CCC', '#DDD', 'closing'])
+
+    async def test_deleted_closing_reposts_only_closing_and_keeps_old_receipt(self):
+        import json
+        self.confirm()
+        await self.worker.advance('a' * 24)
+        old = self.images.closing_receipt('a' * 24)
+        self.images.repost_deleted_closing('a' * 24, old['message_id'], 'new-staff')
+        async def replacement(job, item):
+            self.sent.append('replacement closing')
+            self.assertEqual(item['payload'], json.loads(old['payload_json']))
+            return '123456789012345698'
+        self.transport.closing = replacement
+        await self.worker.advance('a' * 24)
+        self.assertEqual(self.sent, ['#AAA', '#BBB', '#CCC', '#DDD', 'closing', 'replacement closing'])
+        self.assertEqual(self.images.closing_receipt('a' * 24)['message_id'], '123456789012345698')
+        self.assertEqual(self.images.closing_receipt('a' * 24)['error'], 'Reposted (old message was deleted)')
+        archive = self.store.one('SELECT receipt_json FROM roster_image_sequence_closing_history')
+        self.assertEqual(json.loads(archive['receipt_json'])['message_id'], old['message_id'])
+        self.assertEqual(json.loads(archive['receipt_json'])['status'], 'deleted_confirmed')
+        await self.worker.advance('a' * 24)
+        self.assertEqual(len(self.sent), 6)

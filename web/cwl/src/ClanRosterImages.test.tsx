@@ -293,3 +293,19 @@ it("new images follow announcements without a separate channel or Post control",
   ).toBe(false);
   expect(writes()).toHaveLength(0);
 });
+it("checks an existing closing note only after the reviewed image updates finish", async () => {
+  failedPost();
+  state.data.closings = {
+    main: { sequence_id: "a".repeat(24), message_id: "987654321098765432" },
+  };
+  await render();
+  await act(async () => button("Retry failed").click());
+  await act(async () => button("Confirm").click());
+  expect(writes()).toHaveLength(2);
+  expect(writes()[0][0]).toContain("/roster-image-posts/");
+  expect(writes()[1]).toEqual([
+    "/seasons/1/manage-bridge/main/sequence/closing/update",
+    "POST",
+    state.data.closings.main,
+  ]);
+});

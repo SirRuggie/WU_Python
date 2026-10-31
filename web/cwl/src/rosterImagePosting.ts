@@ -27,6 +27,7 @@ export type ImagePost = {
   operation: "post" | "update" | "drop";
 };
 export type ImageData = {
+  closings?: Partial<Record<Pool, { sequence_id: string; message_id: string }>>;
   destinations?: Partial<
     Record<Pool, { channel_id: string | null; reason?: string }>
   >;
@@ -91,7 +92,10 @@ export function imageJobs(
     jobs.push({
       clan,
       operation,
-      channel: operation === "update" || old?.status === "failed" ? old!.channel_id : channel,
+      channel:
+        operation === "update" || old?.status === "failed"
+          ? old!.channel_id
+          : channel,
       version,
     });
   }
