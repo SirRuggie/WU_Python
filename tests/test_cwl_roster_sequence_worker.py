@@ -19,13 +19,13 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
             'request_id': 'e' * 24, 'payload': closing_message()}}
         self.images.prepare_sequence(**self.args)
         self.sent = []
-        self.fail = None
+        self.failure = None
         self.permission = AsyncMock(return_value=True)
 
         async def image(job, item):
             self.sent.append(item['tag'])
-            if self.fail and item['tag'] == '#BBB':
-                raise self.fail
+            if self.failure and item['tag'] == '#BBB':
+                raise self.failure
             return str(123456789012345680 + len(self.sent))
 
         async def closing(job, item):
@@ -53,21 +53,22 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_first_rejection_stops_and_restart_does_not_retry_failed_message(self):
         self.confirm()
-        self.fail = SequenceRejected('Forbidden')
+        self.failure = SequenceRejected('Forbidden')
         self.assertEqual((await self.worker.advance('a' * 24))['status'], 'stopped')
         self.assertEqual(self.sent, ['#AAA', '#BBB'])
         restarted = SequenceWorker(self.images, self.transport, self.permission)
-        self.fail = None
-        self.assertEqual((await restarted.advance('a' * 24))['clan_tag'], '#BBB')
+        self.failure = None
+        self.assertEqual((await restarted.advance('a' * 24))['status'], 'stopped')
         self.assertEqual(self.sent, ['#AAA', '#BBB'])
 
     async def test_unknown_accepted_message_is_not_duplicated_after_restart(self):
         self.confirm()
-        self.fail = TimeoutError('Accepted, response lost')
+        self.failure = TimeoutError('Accepted, response lost')
         self.assertEqual((await self.worker.advance('a' * 24))['status'], 'uncertain')
-        self.fail = None
+        self.failure = None
         restarted = SequenceWorker(self.images, self.transport, self.permission)
-        self.assertEqual((await restarted.advance('a' * 24))['status'], 'uncertain')
+        self.assertEqual((await restarted.advance('a' * 24))['status'], 'stopped')
+        self.assertEqual(self.images.receipt('2' * 24)['status'], 'uncertain')
         self.assertEqual(self.sent, ['#AAA', '#BBB'])
 
     async def test_permission_denied_before_any_send(self):
@@ -80,12 +81,12 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_known_rate_limit_waits_then_retries_same_clan_before_advancing(self):
         from unittest.mock import patch
         self.confirm()
-        self.fail = SequenceRateLimit(2.5)
+        self.failure = SequenceRateLimit(2.5)
         async def waited(seconds):
             self.assertEqual(seconds, 2.5)
             self.assertEqual(self.images.receipt('2' * 24)['retry_after'], 2.5)
             self.assertEqual(self.sent, ['#AAA', '#BBB'])
-            self.fail = None
+            self.failure = None
         with patch('utils.cwl_roster_sequence.asyncio.sleep', side_effect=waited) as sleep:
             result = await self.worker.advance('a' * 24)
         self.assertEqual(result['status'], 'complete')
@@ -94,17 +95,17 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_explicit_resume_skips_confirmed_and_retries_only_known_failure(self):
         self.confirm()
-        self.fail = SequenceRejected('Forbidden')
+        self.failure = SequenceRejected('Forbidden')
         await self.worker.advance('a' * 24)
-        self.fail = None
+        self.failure = None
         self.assertEqual((await self.worker.advance('a' * 24, resume=True))['status'], 'complete')
         self.assertEqual(self.sent, ['#AAA', '#BBB', '#BBB', '#CCC', '#DDD', 'closing'])
 
     async def test_explicit_resume_still_requires_check_first_for_unknown_message(self):
         self.confirm()
-        self.fail = TimeoutError()
+        self.failure = TimeoutError()
         await self.worker.advance('a' * 24)
-        self.fail = None
+        self.failure = None
         self.assertEqual((await self.worker.advance('a' * 24, resume=True))['status'], 'uncertain')
         self.assertEqual(self.sent, ['#AAA', '#BBB'])
 
@@ -117,11 +118,11 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancelled_send_is_unknown_and_never_retried_by_resume(self):
         self.confirm()
-        self.fail = asyncio.CancelledError()
+        self.failure = asyncio.CancelledError()
         with self.assertRaises(asyncio.CancelledError):
             await self.worker.advance('a' * 24)
         self.assertEqual(self.images.receipt('2' * 24)['status'], 'uncertain')
-        self.fail = None
+        self.failure = None
         self.assertEqual((await self.worker.advance('a' * 24, resume=True))['status'], 'uncertain')
         self.assertEqual(self.sent, ['#AAA', '#BBB'])
 
@@ -134,3 +135,23 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.transport.closing = original
         self.assertEqual((await self.worker.advance('a' * 24, resume=True))['status'], 'complete')
         self.assertEqual(self.sent, ['#AAA', '#BBB', '#CCC', '#DDD', 'closing'])
+
+    async def test_durable_resume_intent_survives_worker_restart(self):
+        self.confirm()
+        self.failure = SequenceRejected('Forbidden')
+        await self.worker.advance('a' * 24)
+        self.images.request_sequence_resume('a' * 24, self.args['actor'])
+        self.failure = None
+        restarted = SequenceWorker(self.images, self.transport, self.permission)
+        self.assertEqual((await restarted.advance('a' * 24))['status'], 'complete')
+        self.assertEqual(self.sent, ['#AAA', '#BBB', '#BBB', '#CCC', '#DDD', 'closing'])
+        self.assertEqual(self.images.sequence('a' * 24)['resume_requested'], 0)
+
+    async def test_new_publication_does_not_replace_frozen_inflight_sequence(self):
+        self.confirm()
+        with self.store.tx() as db:
+            db.execute("INSERT INTO roster_publications(season_id,version,revision,published_by,"
+                       "published_at,joining_instructions,assigned_count,unassigned_count,clans_json) "
+                       "VALUES(1,2,2,'staff','2026-10-30T01:00:00Z','',0,0,'[]')")
+        self.assertEqual((await self.worker.advance('a' * 24))['status'], 'complete')
+        self.assertEqual(self.images.receipt('1' * 24)['target_version'], 1)

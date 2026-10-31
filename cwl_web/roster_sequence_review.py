@@ -80,3 +80,26 @@ def describe(storage, sid, pool):
         'channel_id': sequence['channel_id'] if sequence else None,
         'clans': clans,
     }
+
+
+async def resume(request):
+    from .app import _json, _sid
+    from .manage_bridge import _pool
+    from .roster_image_posts import staff
+    actor = staff(request, send=True)
+    body = await _json(request)
+    storage = RosterImageStore(request.app['store'])
+    job = storage.pool_sequence(_sid(request), _pool(request))
+    if set(body) != {'sequence_id'} or not job or body['sequence_id'] != job['sequence_id']:
+        raise web.HTTPConflict(text='Sequence changed; refresh before resuming')
+    import json
+    plan = json.loads(job['plan_json'])
+    receipts = [storage.receipt(item['request_id']) for item in plan['clans']]
+    receipts.append(storage.closing_receipt(job['sequence_id']))
+    if any(receipt and receipt['status'] in ('sending', 'uncertain') for receipt in receipts):
+        raise web.HTTPConflict(text='Check Discord first: a message may already have posted')
+    try:
+        storage.request_sequence_resume(job['sequence_id'], str(actor['user_id']))
+    except ImageConflict as exc:
+        raise web.HTTPConflict(text=str(exc)) from None
+    return web.json_response({'sequence': describe(storage, job['season_id'], job['pool'])}, status=202)

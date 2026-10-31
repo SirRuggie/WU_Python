@@ -36,6 +36,8 @@ class SequenceWorker:
         reported as uncertain, not retried, even if Discord's nonce window expired.
         """
         async with self._lock:
+            saved = self.storage.sequence(sequence_id)
+            resume = resume or bool(saved and saved.get('resume_requested'))
             while True:
                 if resume:
                     job = self.storage.sequence(sequence_id)
@@ -45,7 +47,6 @@ class SequenceWorker:
                 result = await self._advance(sequence_id, resume=resume)
                 if result['status'] != 'rate_limited':
                     return result
-                await asyncio.sleep(result['retry_after'])
                 resume = True
 
     async def _advance(self, sequence_id, *, resume=False):
@@ -65,6 +66,10 @@ class SequenceWorker:
                 return {'status': 'stopped', 'clan_tag': item['tag'], 'error': 'Send permission was removed'}
             try:
                 if receipt and resume:
+                    if receipt.get('retry_after') is not None:
+                        await asyncio.sleep(receipt['retry_after'])
+                        if not await self.authorize(job):
+                            return {'status': 'stopped', 'clan_tag': item['tag'], 'error': 'Send permission was removed'}
                     receipt = self.storage.retry_sequence_image(sequence_id, item['request_id'])
                     acquired = True
                 else:
@@ -81,20 +86,25 @@ class SequenceWorker:
                 message = await self.transport.image(job, item)
                 self._message_id(message)
             except asyncio.CancelledError:
-                self.storage.finish(receipt, 'uncertain', error='Delivery interrupted; check Discord first')
+                self.storage.finish(receipt, 'uncertain', error='Delivery interrupted; check Discord first', sequence_id=sequence_id)
                 raise
             except SequenceRateLimit as exc:
-                self.storage.finish(receipt, 'failed', error=str(exc), retry_after=exc.seconds)
+                self.storage.finish(receipt, 'failed', error=str(exc), retry_after=exc.seconds, sequence_id=sequence_id)
                 return {'status': 'rate_limited', 'clan_tag': item['tag'], 'retry_after': exc.seconds}
             except SequenceRejected as exc:
-                self.storage.finish(receipt, 'failed', error=str(exc))
+                self.storage.finish(receipt, 'failed', error=str(exc), sequence_id=sequence_id)
                 return {'status': 'stopped', 'clan_tag': item['tag'], 'error': str(exc)}
             except Exception:
-                self.storage.finish(receipt, 'uncertain', error='Delivery outcome unknown; check Discord first')
+                self.storage.finish(receipt, 'uncertain', error='Delivery outcome unknown; check Discord first', sequence_id=sequence_id)
                 return {'status': 'uncertain', 'clan_tag': item['tag']}
             self.storage.finish(receipt, 'posted', str(message))
         if not await self.authorize(job):
             return {'status': 'stopped', 'step': 'closing', 'error': 'Send permission was removed'}
+        prior_closing = self.storage.closing_receipt(sequence_id)
+        if resume and prior_closing and prior_closing.get('retry_after') is not None:
+            await asyncio.sleep(prior_closing['retry_after'])
+            if not await self.authorize(job):
+                return {'status': 'stopped', 'step': 'closing', 'error': 'Send permission was removed'}
         try:
             receipt, acquired = self.storage.claim_sequence_closing(sequence_id, retry_failed=resume)
         except ImageConflict as exc:

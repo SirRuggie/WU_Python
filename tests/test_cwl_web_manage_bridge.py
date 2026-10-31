@@ -185,3 +185,42 @@ class SequenceSendTests(ManageBridgeTests):
         response = await self.call('POST', self.base + '/main/send', self.owner, json=body)
         self.assertEqual(response.status, 409)
         self.assertIsNone(RosterImageStore(self.app['store']).pool_sequence(self.sid, 'main'))
+
+    async def stopped_sequence(self):
+        from utils.cwl_roster_image_store import RosterImageStore
+        await self.bind()
+        await self.publish()
+        data = await self.state()
+        await cwl_web_bridge.mark_worker_alive(self.mongo, GUILD_ID)
+        body = {'generation': data['generation'], 'channel_id': data['pools']['main']['channel_id'], 'version': 1}
+        response = await self.call('POST', self.base + '/main/send', self.owner, json=body)
+        self.assertEqual(response.status, 202)
+        storage = RosterImageStore(self.app['store'])
+        job = storage.pool_sequence(self.sid, 'main')
+        native = await self.mongo.bot_config.find_one({'_id': cwl_web_bridge.request_id(GUILD_ID, '2026-10', 'main')})
+        native.update(status='sent', receipt={'status': 'sent', 'occurrence_id': '2026-10|roster|main',
+                                              'channel_id': body['channel_id'], 'message_id': 123456789012345678})
+        storage.confirm_sequence_announcement(job['sequence_id'], native)
+        storage.stop_sequence(job['sequence_id'], 'Fixture rejected')
+        return storage, job
+
+    async def test_resume_is_durable_and_requires_current_sequence(self):
+        storage, job = await self.stopped_sequence()
+        path = self.base + '/main/sequence/resume'
+        wrong = await self.call('POST', path, self.owner, json={'sequence_id': 'wrong'})
+        self.assertEqual(wrong.status, 409)
+        self.assertEqual(storage.sequence(job['sequence_id'])['status'], 'stopped')
+        response = await self.call('POST', path, self.owner, json={'sequence_id': job['sequence_id']})
+        self.assertEqual(response.status, 202, await response.text())
+        self.assertEqual(storage.sequence(job['sequence_id'])['resume_requested'], 1)
+        self.assertEqual((await self.call('POST', path, self.owner, json={'sequence_id': job['sequence_id']})).status, 409)
+
+    async def test_unknown_closing_message_requires_check_first_not_resume(self):
+        storage, job = await self.stopped_sequence()
+        storage.resume_sequence(job['sequence_id'])
+        storage.claim_sequence_closing(job['sequence_id'])
+        storage.finish_sequence_closing(job['sequence_id'], status='uncertain', error='Response lost')
+        response = await self.call('POST', self.base + '/main/sequence/resume', self.owner,
+                                   json={'sequence_id': job['sequence_id']})
+        self.assertEqual(response.status, 409)
+        self.assertEqual(storage.sequence(job['sequence_id'])['resume_requested'], 0)

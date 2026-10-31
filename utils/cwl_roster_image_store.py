@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS roster_image_sequences (
  plan_json TEXT NOT NULL,
  status TEXT NOT NULL DEFAULT 'awaiting_announcement'
    CHECK(status IN ('awaiting_announcement','ready','stopped','complete')),
- announcement_message_id TEXT, error TEXT,
+ announcement_message_id TEXT, error TEXT, resume_requested INTEGER NOT NULL DEFAULT 0,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  UNIQUE(season_id,pool), UNIQUE(cycle,pool)
@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS roster_image_sequence_closing (
 
 def migrate(db):
     """Extend the existing CHECK constraint without changing saved delivery data."""
+    if 'resume_requested' not in {row[1] for row in db.execute('PRAGMA table_info(roster_image_sequences)')}:
+        db.execute('ALTER TABLE roster_image_sequences ADD COLUMN resume_requested INTEGER NOT NULL DEFAULT 0')
     if 'error' not in {row[1] for row in db.execute('PRAGMA table_info(roster_image_sequences)')}:
         db.execute('ALTER TABLE roster_image_sequences ADD COLUMN error TEXT')
     sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='roster_image_posts'").fetchone()['sql']
@@ -175,7 +177,7 @@ class RosterImageStore:
 
     def stop_sequence(self, sequence_id, error):
         with self.store.tx() as db:
-            db.execute("UPDATE roster_image_sequences SET status='stopped',error=?,"
+            db.execute("UPDATE roster_image_sequences SET status='stopped',resume_requested=0,error=?,"
                        "updated_at=CURRENT_TIMESTAMP WHERE sequence_id=? AND status!='complete'",
                        (error, sequence_id))
 
@@ -319,6 +321,21 @@ class RosterImageStore:
             return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?',
                                    (request_id,)).fetchone())
 
+    def request_sequence_resume(self, sequence_id, actor):
+        with self.store.tx() as db:
+            changed = db.execute("UPDATE roster_image_sequences SET status='ready',resume_requested=1,"
+                                 "actor_id=?,error=NULL,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=? "
+                                 "AND status='stopped' AND announcement_message_id IS NOT NULL",
+                                 (actor, sequence_id))
+            if not changed.rowcount:
+                raise ImageConflict('Sequence changed; refresh before resuming')
+
+    def closing_receipt(self, sequence_id):
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
+                             (sequence_id,)).fetchone()
+            return dict(row) if row else None
+
     def resume_sequence(self, sequence_id):
         with self.store.tx() as db:
             db.execute("UPDATE roster_image_sequences SET status='ready',error=NULL,updated_at=CURRENT_TIMESTAMP "
@@ -382,9 +399,11 @@ class RosterImageStore:
             db.execute('UPDATE roster_image_sequence_closing SET status=?,message_id=?,error=?,'
                        'retry_after=?,updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?',
                        (status, str(message) if message else None, error, retry_after, sequence_id))
-            db.execute('UPDATE roster_image_sequences SET status=?,updated_at=CURRENT_TIMESTAMP '
-                       'WHERE sequence_id=?',
-                       ('complete' if status == 'posted' else 'stopped', sequence_id))
+            retry = status == 'failed' and retry_after is not None
+            db.execute('UPDATE roster_image_sequences SET status=?,resume_requested=?,'
+                       'updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?',
+                       ('complete' if status == 'posted' else 'ready' if retry else 'stopped',
+                        int(retry), sequence_id))
             return dict(db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?',
                                    (sequence_id,)).fetchone())
 
@@ -426,7 +445,7 @@ class RosterImageStore:
             latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
             if not latest:
                 raise ImageConflict('Publish the roster before posting images')
-            if latest['version'] != version:
+            if latest['version'] != version and sequence_id is None:
                 raise ImageConflict('A newer roster is published. Refresh before posting images.')
             old = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=? AND clan_tag=?', (sid, pool, clan)).fetchone()
             if old and old['status'] == 'sending':
@@ -461,10 +480,15 @@ class RosterImageStore:
                        (sid, pool, clan, channel, message, 'sending', request_id, actor))
             return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()), True
 
-    def finish(self, receipt, status, message=None, error=None, retry_after=None, *, clear_message=False):
+    def finish(self, receipt, status, message=None, error=None, retry_after=None, *, clear_message=False, sequence_id=None):
         with self.store.tx() as db:
             db.execute('UPDATE roster_image_requests SET status=?,message_id=COALESCE(?,message_id),error=?,retry_after=?,updated_at=CURRENT_TIMESTAMP WHERE request_id=?',
                        (status, message, error, retry_after, receipt['request_id']))
+            if sequence_id is not None and status in ('failed', 'uncertain'):
+                retry = status == 'failed' and retry_after is not None
+                db.execute('UPDATE roster_image_sequences SET status=?,resume_requested=?,error=?,'
+                           'updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?',
+                           ('ready' if retry else 'stopped', int(retry), error, sequence_id))
             successful = status in ('posted', 'dropped')
             db.execute('UPDATE roster_image_posts SET status=?,message_id=CASE WHEN ? THEN NULL ELSE COALESCE(?,message_id) END,error=?,posted_version=CASE WHEN ? THEN ? ELSE posted_version END,posted_at=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE posted_at END,updated_at=CURRENT_TIMESTAMP WHERE request_id=?',
                        (status, clear_message, message, error, successful, receipt['target_version'], successful, receipt['request_id']))
