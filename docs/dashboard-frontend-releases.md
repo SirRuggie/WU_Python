@@ -1,5 +1,35 @@
 # Dashboard frontend releases
 
+## Outside-family-1 — October 31, 2026
+
+PR [#110](https://github.com/SirRuggie/WU_Python/pull/110), tag `outside-family-1`,
+frontend `26fc7dabd5cf535bf59f957db1c322e89b43c71c`. Adds the Outside family
+checkbox/count to roster Status, matching `outside_family_and_hosts` with the
+existing chips and Clear all behavior. Claude ACCEPT205 and read-only SMOKE206
+passed: the 360px production panel showed Outside family2 without overflow;
+Claude opened it without applying or saving. The live count was not independently
+cross-checked against account chips.
+
+Validation:1,166 frontend tests/225files, TypeScript/build,17focused tests and
+wrong-field mutation killed. All six layout stages exited0; isolated360×800 and
+1440×1000 checks verified count13/65, filtering/chips/Clear all,44px targets and
+zero writes. Production entry `index-CcCStPU3.js` SHA256
+`6ab004e2dcc5becf37de83ffe0169329a3bb93b93da1ac111c2d803f190c4ae7`
+and affected roster assets matched the immutable manifest.
+
+Clean tagged isolated build and atomic switch; no service restarts. BotPID514877
+and backendPID515068 remained unchanged, backend on member-activity-1 `44142eb`.
+SQLite backup/integrity and protected tables passed; seven lineup cache rows were
+unchanged. Production protected Mongo state stayed3560 active strikes across301
+accounts,581profiles,274replacement rows, with identical streaks. Durable backup:
+repository `.local/outside-family-1-backup-20261031T202310Z`. Evidence:
+`/tmp/wu-outside-release/{live.json,activation.log,sqlite-backup.log}`.
+
+Rollback frontend only: `/home/ruggie/.local/share/wu-dashboard/switch-release.py
+44142ebffd648e0d5560e3002e5792715d4713fc`. Retain both immutable directories and
+shared assets. Member-activity-1's first-hour tracker check is separate and pending.
+No live Discord test messages were sent.
+
 ## No-war-strikes-1 — October 30, 2026
 
 Frontend `73eda11a1e883b711bc40494f023b4d87efd5a6b` is live and Claude smoke 131 passed.
@@ -240,3 +270,31 @@ Public entry `index-DBoE0wgU.js`, SHA-256
 `d079b7fa7a53cf298c9828ba578f8dfd44dd85430bc8c8350b2235bca2b4c10c`,
 matched immutable assets. Claude read-only smoke169 passed at360px. See
 `command-triggers-review.md` for checks, backups, counts and guarded rollback.
+
+## Signup-cards-1 — October 31, 2026
+
+[PR #106](https://github.com/SirRuggie/WU_Python/pull/106), tag `signup-cards-1`,
+frontend `b8d7b6f800baa8588121e6839a46b85de60df86e` is live. Claude acceptance195
+and read-only production smoke196 passed. My signups owns the green/red signup
+cards; My clan keeps assignments. Desktop publication metadata stays inline.
+Clean tagged npm ci/build passed; reviewed revision passed1164 frontend tests,
+TypeScript and the complete layout suite. No service restart was needed.
+
+Public entry `index-DAigbCmj.js` SHA256
+`b3729886083302b9cb894e043ad8738e6a5811b66193528148c145abd35ff771`, index/CSS and
+MemberAssignments feature assets matched the release manifest. Backup and
+per-table count/hash evidence: `.local/signup-cards-release-evidence/` in the
+main repository (`dashboard.sqlite3`, `preflight.json`, `live.json`). SQLite
+backup integrity was OK; every table count and content hash remained unchanged.
+Backend PID256874 stayed unchanged at56c9ab4; both dashboard services were active.
+
+Smoke196 verified360 My signups lists all3 signed-up accounts and44 remaining,
+without Change signups or overflow; reads settle without a refetch loop. My clan
+has no signup cards, and Open Clan is visible at y472 with joining instructions
+present. At1440 the publication row stays inline. No live write test was sent.
+
+Retained frontend rollback: `56c9ab4613c7ec5c1d052e4de17c32837dca4a50`.
+Only at this release boundary, verify current resolves to b8d7b6f, then invoke
+`python3 /home/ruggie/.local/share/wu-dashboard/switch-release.py 56c9ab4613c7ec5c1d052e4de17c32837dca4a50`
+and verify public hashes against that manifest. Keep both immutable directories;
+frontend rollback requires no database restoration or service restart.

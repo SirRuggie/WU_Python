@@ -8,6 +8,7 @@ export const ROSTER_RELEASE_STATUSES = [
   "missing_weight",
   "over_capacity",
   "locked",
+  "outside_family",
 ] as const;
 export type RosterReleaseStatus = (typeof ROSTER_RELEASE_STATUSES)[number];
 export const ROSTER_RELEASE_SORTS = [
@@ -152,6 +153,7 @@ function statusFlags(
       !!account.assigned_clan_tag &&
       overCapacity.has(account.assigned_clan_tag),
     locked: account.kept,
+    outside_family: account.outside_family_and_hosts === true,
   };
 }
 
@@ -248,6 +250,7 @@ export function deriveRosterRelease(
       missing_weight: 0,
       over_capacity: 0,
       locked: 0,
+      outside_family: 0,
     },
     townHall: {},
     assignedClan: {},
