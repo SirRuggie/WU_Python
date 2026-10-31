@@ -270,6 +270,7 @@ async def record_delete_outcome(db, row, *, channel_id, error=None):
     selector = {'_id': f'{GUILD_ID}:{row["command"]}'}
     selector['revision'] = row['revision'] if 'revision' in row else {'$exists': False}
     if error is None:
+        selector['last_delete_error'] = {'$exists': True}
         update = {'$unset': {'last_delete_error': ''}}
     else:
         reason = ('Missing Manage Messages permission' if isinstance(error, hikari.ForbiddenError)
@@ -297,20 +298,20 @@ async def handle(event, db, bot):
             return False
     except ValueError:
         return False
-    # Exact match only: never react to words inside ordinary conversations.
-    import time
-    now = time.monotonic()
-    key = (int(event.channel_id), name)
-    if now - _recent.get(key, -100) < 5:
-        return True
-    _recent[key] = now
-    _recent.move_to_end(key)
-    while len(_recent) > 5000:
-        _recent.popitem(last=False)
     try:
         row = await collection(db).find_one({'_id': f'{GUILD_ID}:{name}', 'enabled': True})
         if not row:
             return False
+        # Only enabled, existing commands consume a cooldown.
+        import time
+        now = time.monotonic()
+        key = (int(event.channel_id), name)
+        if now - _recent.get(key, -100) < 5:
+            return True
+        _recent[key] = now
+        _recent.move_to_end(key)
+        while len(_recent) > 5000:
+            _recent.popitem(last=False)
         # Validate persisted input too; never interpret code or template expressions.
         clean = validate({key:row[key] for key in FIELDS if key in row})
         recipient = None

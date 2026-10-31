@@ -92,7 +92,8 @@ def test_trigger_cleanup_follows_successful_reply_and_records_outcome(recipient)
             assert operations==['reply','delete']
             rest.delete_message.assert_awaited_once_with(123,555)
             assert target.update_one.await_args.args[0]=={
-                '_id':f'{core.GUILD_ID}:!cwl','revision':'rev-1'}
+                '_id':f'{core.GUILD_ID}:!cwl','revision':'rev-1',
+                'last_delete_error': {'$exists': True}}
             assert target.update_one.await_args.args[1]=={
                 '$unset':{'last_delete_error':''}}
             assert await core.handle(event,None,NS(rest=rest))
