@@ -24,6 +24,12 @@ const base = `http://127.0.0.1:${port}`,
     await page.getByRole("button", { name: "Open local test session" }).click();
     await page.locator(".announcement-pool-card").first().waitFor();
     fs.mkdirSync(out, { recursive: true });
+    for (const card of await page.locator(".announcement-pool-card").all()) {
+      for (const label of ["Preview", "Edit", "Clear", "Test full post"]) {
+        assert.equal(await card.getByRole("button", { name: label, exact: true }).isVisible(), false, label + " visible at rest");
+      }
+    }
+    await page.screenshot({ path: `${out}/360-at-rest.png` });
     const before = await (
       await context.request.get(base + "/api/cwl/seasons/1/manage-bridge")
     ).json();
@@ -54,7 +60,7 @@ const base = `http://127.0.0.1:${port}`,
     const state = await (
       await context.request.get(base + "/qa/sequence")
     ).json();
-    assert.equal(state.posts.length, 18);
+    assert.equal(state.posts.length, 12);
     assert.deepEqual(errors, []);
     fs.writeFileSync(
       out + "/production-payloads.json",
