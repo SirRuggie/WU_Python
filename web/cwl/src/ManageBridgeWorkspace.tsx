@@ -1,3 +1,4 @@
+import AnnouncementFullTest from "./AnnouncementFullTest";
 import AnnouncementSequenceStatus from "./AnnouncementSequenceStatus";
 import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
 import AnnouncementPoolCard from "./AnnouncementPoolCard";
@@ -835,6 +836,28 @@ export default function ManageBridgeWorkspace({
             !bridgeError &&
             !channelsError &&
             draftGeneration === bridge.generation
+          }
+          fullTest={
+            <AnnouncementFullTest
+              key={`${seasonId}:${editor.pool}`}
+              seasonId={seasonId}
+              pool={editor.pool}
+              version={bridge.published_version}
+              generation={bridge.generation || ""}
+              draft={drafts[editor.pool]}
+              channels={channels}
+              allowed={
+                canManage &&
+                !busy &&
+                !loading &&
+                !bridgeError &&
+                !channelsError &&
+                draftGeneration === bridge.generation
+              }
+              clanNames={(bridge.pools[editor.pool].sequence?.clans || []).map(
+                (clan) => clan.name,
+              )}
+            />
           }
           testChannel={testChannel}
           testUrl={safeMessageUrl(testUrl) ? testUrl : ""}

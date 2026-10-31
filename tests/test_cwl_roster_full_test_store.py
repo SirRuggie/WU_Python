@@ -61,3 +61,53 @@ class FullTestStoreTests(unittest.TestCase):
         self.test_args['plan'][0]['payload']['allowed_mentions'] = {'parse': ['roles']}
         with self.assertRaises(ImageConflict):
             self.images.prepare_test_sequence(**self.test_args)
+
+
+class FullTestWorkerTests(unittest.TestCase):
+    setUp = SequenceStoreTests.setUp
+    prepare = FullTestStoreTests.prepare
+
+    def run_worker(self, transport, authorize=None):
+        import asyncio
+        from unittest.mock import AsyncMock
+        from utils.cwl_roster_test_sequence import TestSequenceWorker
+        return asyncio.run(TestSequenceWorker(self.images, transport, authorize or AsyncMock(return_value=True)).advance('f' * 24))
+
+    def test_worker_preserves_order_across_concurrent_passes(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from utils.cwl_roster_test_sequence import TestSequenceWorker
+        self.prepare()
+        sent = []
+        async def send(job, item):
+            sent.append(item['kind'])
+            await asyncio.sleep(0)
+            return '987654321098765432'
+        transport = SimpleNamespace(test_announcement=send, image=send, closing=send)
+        async def run():
+            await asyncio.gather(*[TestSequenceWorker(self.images, transport, AsyncMock(return_value=True)).advance('f' * 24) for _ in range(2)])
+        asyncio.run(run())
+        self.assertEqual(sent, ['announcement', 'image', 'closing'])
+        self.assertEqual(self.images.test_sequence('f' * 24)['status'], 'complete')
+
+    def test_worker_stops_at_unknown_image_and_reopening_cannot_replay(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        self.prepare()
+        transport = SimpleNamespace(test_announcement=AsyncMock(return_value='987654321098765432'), image=AsyncMock(side_effect=TimeoutError()), closing=AsyncMock())
+        self.assertEqual(self.run_worker(transport)['status'], 'uncertain')
+        self.images = RosterImageStore(Store(self.path))
+        self.run_worker(transport)
+        transport.test_announcement.assert_awaited_once()
+        transport.image.assert_awaited_once()
+        transport.closing.assert_not_awaited()
+
+    def test_permission_loss_prevents_all_messages(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        self.prepare()
+        transport = SimpleNamespace(test_announcement=AsyncMock(), image=AsyncMock(), closing=AsyncMock())
+        self.assertEqual(self.run_worker(transport, AsyncMock(return_value=False))['status'], 'failed')
+        transport.test_announcement.assert_not_awaited()
+        self.assertEqual(self.images.pending_test_sequences(), [])

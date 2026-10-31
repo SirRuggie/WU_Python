@@ -93,11 +93,27 @@ class SequenceJobs:
         finally:
             self.tasks.pop(sequence_id, None)
 
+    async def _run_test(self, request_id):
+        from utils.cwl_roster_test_sequence import TestSequenceWorker
+        try:
+            await TestSequenceWorker(self.storage, SequenceTransport(self.app), self.authorized).advance(request_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOG.exception('Roster full-test pass failed for %s', request_id)
+        finally:
+            self.tasks.pop('test:' + request_id, None)
+
     def poll(self):
         for job in self.storage.pending_sequences():
             key = job['sequence_id']
             if key not in self.tasks:
                 self.tasks[key] = asyncio.create_task(self._run(key), name='roster-sequence-' + key)
+
+        for job in self.storage.pending_test_sequences():
+            key = 'test:' + job['request_id']
+            if key not in self.tasks:
+                self.tasks[key] = asyncio.create_task(self._run_test(job['request_id']), name=key)
 
     async def close(self):
         tasks = list(self.tasks.values())

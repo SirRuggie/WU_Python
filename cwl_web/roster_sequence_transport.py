@@ -60,6 +60,10 @@ class SequenceTransport:
                            filename=payload['attachments'][index]['filename'], content_type='image/png')
         return await self._post(job['channel_id'], data=form)
 
+    async def test_announcement(self, job, item):
+        await self._destination(job['channel_id'])
+        return await self._post(job['channel_id'], json=self._payload(item['payload'], item['request_id']))
+
     async def closing(self, job, item):
         await self._destination(job['channel_id'])
         return await self._post(job['channel_id'], json=self._payload(item['payload'], item['request_id']))

@@ -131,6 +131,14 @@ class RosterImageStore:
             db.execute("INSERT INTO roster_image_test_sequences(request_id,season_id,pool,target_version,channel_id,actor_id,plan_json,status) VALUES(?,?,?,?,?,?,?,'ready')", (request_id, *values))
         return self.test_sequence(request_id)
 
+    def pending_test_sequences(self):
+        with self.store.tx() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM roster_image_test_sequences WHERE status='ready' ORDER BY created_at")]
+
+    def stop_test_sequence(self, request_id, error):
+        with self.store.tx() as db:
+            db.execute("UPDATE roster_image_test_sequences SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE request_id=? AND status='ready'", (error, request_id))
+
     def test_sequence(self, request_id):
         with self.store.tx() as db:
             row = db.execute('SELECT * FROM roster_image_test_sequences WHERE request_id=?', (request_id,)).fetchone()
