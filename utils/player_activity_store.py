@@ -84,7 +84,9 @@ class PlayerActivityStore:
         return {row.get('tag', row['_id']): tag(clan_tag) for row in rows}
 
     async def reconcile_membership(self, members: dict[str, str], *, now=None):
-        """A complete sweep; persist daily, on membership changes, or at raid boundaries."""
+        """Reconcile a complete sweep; cache every observation, persist daily or on
+        membership/raid-boundary changes. Partial sweeps must not call this method.
+        """
         now = utc(now or datetime.now(timezone.utc))
         members = {tag(player): tag(clan) for player, clan in members.items()}
         ended = latest_raid_end(now)

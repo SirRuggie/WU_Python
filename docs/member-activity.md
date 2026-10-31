@@ -50,8 +50,8 @@ returning clears it. Backup-gated migration enables expiry 90 days after departu
 
 Recent ended raid logs are merged across every active family clan, including
 clans with no current members. Any unread clan makes the sweep incomplete. Ended
-weekends are marked checked once complete; partial reads retry and unchanged rows
-are not rewritten. The UTC Monday 07:00
+weekends are marked checked only after a complete read plus an observed membership bracket,
+or a positive attack; partial reads retry and unchanged rows are not rewritten. The UTC Monday 07:00
 weekend-end calendar also handles a family with no raid log entries at all; it
 supplies only the weekend identity, while the same membership/read gates apply. A raid attack in any family
 clan wins over a skip, including a move between clans. Historical logs can prove
@@ -183,3 +183,8 @@ version has not been read for this development proof; record it during the appro
 release before enabling any migration. The full baseline plus bounded raid/clan
 metadata remains roughly 8–10 MB per 1000 players before storage/index overhead;
 actual release collStats governs sizing.
+
+Quiet rows may retain older `active_days` values until the next daily write. Any reader
+that counts active days must filter by its current UTC date (today through 29 days
+ago), never use the stored list length. The unified page does not expose or count
+`active_days`; its activity signals use last-seen timestamps and raid/war evidence.

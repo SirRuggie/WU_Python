@@ -110,3 +110,19 @@ def test_unchanged_hourly_poll_and_membership_only_write_daily_or_at_boundary():
         assert await store.record(payload,CLAN,now=NOW+timedelta(days=1))
         assert await store.record({**payload,'attackWins':2},CLAN,now=NOW+timedelta(days=1,hours=1))
     asyncio.run(run())
+
+
+def test_raid_membership_bracket_requires_recent_observation_and_pre_end_join():
+    from datetime import datetime, timezone
+    end = datetime(2026, 10, 26, 7, tzinfo=timezone.utc)
+    async def run():
+        for age, joined_after, expected in ((90, False, True), (91, False, False), (60, True, False)):
+            collection = ActivityCollection()
+            store = PlayerActivityStore(SimpleNamespace(player_activity=collection))
+            await store.record({'tag': PLAYER, 'attackWins': 1}, CLAN, now=end-timedelta(minutes=90))
+            row = collection.rows[PLAYER]
+            row.update(family_since=end+timedelta(seconds=1) if joined_after else end-timedelta(days=7),
+                       last_roster_at=end-timedelta(minutes=age-15))
+            await store.reconcile_membership({PLAYER: CLAN}, now=end+timedelta(minutes=15))
+            assert (end.isoformat() in (await store.get(PLAYER)).get('raid_membership_ends', [])) is expected
+    asyncio.run(run())
