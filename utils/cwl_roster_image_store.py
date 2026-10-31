@@ -317,7 +317,12 @@ class RosterImageStore:
             if (bridge.get('status') != 'sent' or receipt.get('status') != 'sent'
                     or receipt.get('occurrence_id') != f"{row['cycle']}|roster|{row['pool']}"
                     or str(receipt.get('channel_id') or bridge.get('channel_id')) != row['channel_id']
-                    or row['announcement_message_id']):
+                    or row['announcement_message_id']
+                    or (receipt.get('message_id') and
+                        not (row['status'] == 'stopped'
+                             and bridge.get('sequence_id') == row['sequence_id']
+                             and bridge.get('generation') == row['generation']
+                             and bridge.get('publication_version') == row['target_version']))):
                 raise ImageConflict('A sent announcement in this channel is required')
             db.execute('INSERT INTO roster_image_sequence_assumptions(sequence_id,actor_id,native_receipt_json) VALUES(?,?,?)',
                        (row['sequence_id'], actor, json.dumps(receipt, sort_keys=True)))
@@ -698,6 +703,35 @@ class RosterImageStore:
                        (sid, pool, clan, channel, message, 'sending', request_id, actor))
             return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()), True
 
+    def check_archive_deleted_sequence(self, sid, pool, deleted_message_id):
+        """Preflight every archive refusal before changing the native occurrence."""
+        if pool not in ('main', 'lazy') or not re.fullmatch(r'\d{15,22}', str(deleted_message_id)):
+            raise ImageConflict('A confirmed deleted announcement receipt is required')
+        with self.store.tx() as db:
+            self._deleted_sequence_state(db, sid, pool, deleted_message_id)
+
+    @staticmethod
+    def _deleted_sequence_state(db, sid, pool, deleted_message_id):
+        previous = db.execute(
+            'SELECT 1 FROM roster_image_sequence_archives WHERE season_id=? AND pool=? AND deleted_message_id=?',
+            (sid, pool, str(deleted_message_id)),
+        ).fetchone()
+        if previous:
+            return None, [], None, True
+        sequence = db.execute('SELECT * FROM roster_image_sequences WHERE season_id=? AND pool=?', (sid, pool)).fetchone()
+        posts = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=?', (sid, pool)).fetchall()
+        if any(post['status'] in ('sending', 'uncertain') for post in posts):
+            raise ImageConflict('Check unfinished image deliveries before resending the announcement')
+        closing = None
+        if sequence:
+            if (sequence['announcement_message_id'] != str(deleted_message_id)
+                    or sequence['status'] not in ('complete', 'stopped')):
+                raise ImageConflict('The previous image sequence must finish or stop before resending')
+            closing = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?', (sequence['sequence_id'],)).fetchone()
+            if closing and closing['status'] in ('sending', 'uncertain'):
+                raise ImageConflict('Check the unfinished closing message before resending')
+        return sequence, posts, closing, False
+
     def archive_deleted_sequence(self, sid, pool, deleted_message_id, actor):
         """Retain the old sequence/mappings before an explicit fresh resend.
 
@@ -707,24 +741,9 @@ class RosterImageStore:
         if pool not in ('main', 'lazy') or not re.fullmatch(r'\d{15,22}', str(deleted_message_id)):
             raise ImageConflict('A confirmed deleted announcement receipt is required')
         with self.store.tx() as db:
-            previous = db.execute(
-                'SELECT 1 FROM roster_image_sequence_archives WHERE season_id=? AND pool=? AND deleted_message_id=?',
-                (sid, pool, str(deleted_message_id)),
-            ).fetchone()
-            if previous:
+            sequence, posts, closing, archived = self._deleted_sequence_state(db, sid, pool, deleted_message_id)
+            if archived:
                 return False
-            sequence = db.execute('SELECT * FROM roster_image_sequences WHERE season_id=? AND pool=?', (sid, pool)).fetchone()
-            posts = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=?', (sid, pool)).fetchall()
-            if any(post['status'] in ('sending', 'uncertain') for post in posts):
-                raise ImageConflict('Check unfinished image deliveries before resending the announcement')
-            closing = None
-            if sequence:
-                if (sequence['announcement_message_id'] != str(deleted_message_id)
-                        or sequence['status'] not in ('complete', 'stopped')):
-                    raise ImageConflict('The previous image sequence must finish or stop before resending')
-                closing = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?', (sequence['sequence_id'],)).fetchone()
-                if closing and closing['status'] in ('sending', 'uncertain'):
-                    raise ImageConflict('Check the unfinished closing message before resending')
             db.execute('INSERT INTO roster_image_sequence_archives(season_id,pool,deleted_message_id,sequence_json,closing_json,posts_json,actor_id) VALUES(?,?,?,?,?,?,?)',
                        (sid, pool, str(deleted_message_id), json.dumps(dict(sequence)) if sequence else None,
                         json.dumps(dict(closing)) if closing else None, json.dumps([dict(post) for post in posts]), str(actor)))

@@ -177,3 +177,21 @@ it("requires an explicit no-ping review before continuing an unconfirmed sent an
     },
   );
 });
+it("waits five seconds before offering missing-message recovery", async () => {
+  vi.useFakeTimers();
+  try {
+    sequence.status = "awaiting_announcement";
+    sequence.announcement_confirmed = false;
+    await mount(true, true);
+    expect(button("Post clan images now")).toBeUndefined();
+    await act(async () => vi.advanceTimersByTime(4999));
+    expect(button("Post clan images now")).toBeUndefined();
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(button("Post clan images now")).toBeDefined();
+  } finally { vi.useRealTimers(); }
+});
+it("names a stop before announcement confirmation", async () => {
+  sequence.announcement_confirmed = false;
+  await mount();
+  expect(host.textContent).toContain("Stopped before the announcement was confirmed");
+});

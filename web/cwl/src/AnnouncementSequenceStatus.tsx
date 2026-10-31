@@ -21,6 +21,13 @@ export default function AnnouncementSequenceStatus({
   channelName?: string;
   onRefresh: () => Promise<void>;
 }) {
+  const [waitExpired, setWaitExpired] = useState(false);
+  useEffect(() => {
+    setWaitExpired(false);
+    if (sequence?.status !== "awaiting_announcement") return;
+    const timer = setTimeout(() => setWaitExpired(true), 5000);
+    return () => clearTimeout(timer);
+  }, [sequence?.sequence_id, sequence?.status]);
   const [confirm, setConfirm] = useState<{
     sequenceId: string;
     requestId: string;
@@ -152,7 +159,7 @@ export default function AnnouncementSequenceStatus({
       {canSend &&
         announcementSent &&
         !sequence.announcement_confirmed &&
-        ["stopped", "awaiting_announcement"].includes(sequence.status) && (
+        (sequence.status === "stopped" || (sequence.status === "awaiting_announcement" && waitExpired)) && (
           <>
             <p>
               Announcement shows as sent, but its message couldn't be confirmed.

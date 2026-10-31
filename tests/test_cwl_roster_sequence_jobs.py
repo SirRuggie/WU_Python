@@ -101,3 +101,20 @@ class SequenceJobTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(assumption['actor_id'], '123456789012345679')
         self.assertTrue(assumption['assumed_at'])
         self.assertIsNone(self.images.sequence('a' * 24)['announcement_message_id'])
+
+    async def test_assumption_requires_matching_native_occurrence_channel_and_missing_message(self):
+        from utils.cwl_roster_image_store import ImageConflict
+        job = self.images.sequence('a'*24)
+        missing = self.bridge | {'receipt': self.bridge['receipt'] | {'message_id': None}}
+        for bad in (
+            missing | {'status': 'pending'},
+            missing | {'receipt': missing['receipt'] | {'occurrence_id': 'other'}},
+            missing | {'receipt': missing['receipt'] | {'channel_id': '123456789012345699'}},
+            self.bridge,
+        ):
+            with self.assertRaises(ImageConflict):
+                self.images.assume_announcement(job, bad, 'staff')
+            self.assertEqual(self.images.sequence('a'*24),job)
+            self.assertIsNone(self.images.announcement_assumption('a'*24))
+        self.images.assume_announcement(job, missing, 'staff')
+        self.assertEqual(self.images.sequence('a'*24)['status'],'ready')

@@ -300,6 +300,8 @@ it("checks an existing closing note only after the reviewed image updates finish
   };
   await render();
   await act(async () => button("Retry failed").click());
+  expect(document.body.textContent).toContain("The closing note will also be checked");
+  expect(document.body.textContent).toContain("reposted without pings");
   await act(async () => button("Confirm").click());
   expect(writes()).toHaveLength(2);
   expect(writes()[0][0]).toContain("/roster-image-posts/");

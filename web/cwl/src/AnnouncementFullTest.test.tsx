@@ -112,3 +112,10 @@ it("permission loss closes a pending confirmation without sending", async () => 
   expect(document.querySelector("dialog")).toBeNull();
   expect(api).not.toHaveBeenCalled();
 });
+it("unlocks the test channel after a definite rejection", async () => {
+  const { ApiError } = await import("./api");
+  await mount(); await choose();
+  api.mockRejectedValueOnce(new ApiError("Forbidden", 403));
+  await click("Test full post"); await click("Send full test");
+  expect(host.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
+});

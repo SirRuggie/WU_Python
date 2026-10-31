@@ -60,8 +60,10 @@ export default function AnnouncementDeletedRecovery(props: Props) {
     if (
       checked.current.identity === identity &&
       Date.now() - checked.current.at < 30000
-    )
+    ) {
+      setNotice("Checked moments ago");
       return;
+    }
     checked.current = { identity, at: Date.now() };
     running.current = true;
     setBusy(true);

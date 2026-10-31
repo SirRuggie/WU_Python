@@ -148,9 +148,19 @@ class RecoveryHTTPTests(ManageBridgeTests):
         body = {'sequence_id': job['sequence_id'], 'version': 1,
                 'channel_id': channel, 'confirm_no_pings': True}
         path = self.base + '/main/sequence/assume'
+        import json
+        with self.app['store'].tx() as db:
+            db.execute('INSERT INTO grants(user_id,granted_by,permissions) VALUES(?,?,?)',
+                       ('200', 'owner', json.dumps(['cwl_roster'])))
+        limited = self.auth('200')
         with patch('utils.cwl_web_bridge.queue_roster_send', AsyncMock(side_effect=AssertionError('Must never queue an announcement'))):
             denied = await self.call('POST', path, self.member, json=body)
             self.assertEqual(denied.status, 403)
+            self.assertEqual((await self.call('POST', path, limited, json=body)).status, 403)
+            # Exercise the explicit send gate independently of the generic route
+            # permission map, which also rejects this user in the HTTP case above.
+            with patch('cwl_web.cwl_permissions.mutation_permission', return_value='cwl_roster'):
+                self.assertEqual((await self.call('POST', path, limited, json=body)).status, 403)
             allowed = await self.call('POST', path, self.owner, json=body)
             self.assertEqual(allowed.status, 202, await allowed.text())
             duplicate = await self.call('POST', path, self.owner, json=body)
@@ -208,3 +218,54 @@ class RecoveryHTTPTests(ManageBridgeTests):
             await jobs.advance(sequence['sequence_id'])
             await jobs.advance(sequence['sequence_id'])
         self.assertEqual(events, ['announcement', 'image', 'closing'])
+
+    async def refused_resend_preserves_occurrence(self, uncertain):
+        from copy import deepcopy
+        from utils import cwl_web_bridge
+        from utils.cwl_roster_image_store import RosterImageStore
+        from cwl_web.manage_bridge import GUILD_ID
+        await self.bind()
+        await self.publish()
+        await cwl_web_bridge.mark_worker_alive(self.mongo, GUILD_ID)
+        state = await self.state()
+        channel = state['pools']['main']['channel_id']
+        response = await self.call('POST', self.base+'/main/send', self.owner, json={
+            'version': 1, 'generation': state['generation'], 'channel_id': channel})
+        self.assertEqual(response.status, 202, await response.text())
+        receipt = {'occurrence_id': cwl_campaign.occurrence_id(state['cycle'], 'roster', 'main'),
+                   'status': 'sent', 'channel_id': channel, 'message_id': RECEIPT['message_id']}
+        async def sender(*args, **kwargs):
+            await cwl_campaign.record_delivery(self.mongo, GUILD_ID, state['cycle'], receipt)
+            return True
+        await cwl_web_bridge.process_pending_roster_requests(self.mongo, sender, guild_id=GUILD_ID)
+        storage = RosterImageStore(self.app['store'])
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE roster_image_sequences SET status=?,announcement_message_id=?",
+                       ('stopped' if uncertain else 'ready', RECEIPT['message_id']))
+            if uncertain:
+                db.execute("INSERT INTO roster_image_posts(season_id,pool,clan_tag,channel_id,status,request_id,posted_by) VALUES(?,'main','#AAA',?,'uncertain','fixture','staff')", (self.sid,channel))
+        before = deepcopy(await cwl_campaign.load_campaign(self.mongo, GUILD_ID, state['cycle']))
+        sequence = storage.pool_sequence(self.sid,'main')
+        posts = self.app['store'].rows('SELECT * FROM roster_image_posts')
+        body = {'version': 1, 'generation': state['generation'], 'channel_id': channel,
+                'deleted_message_id': RECEIPT['message_id'], 'confirm_resend': True}
+        async def deleted(*args, **kwargs):
+            if '/messages/' in args[2]: raise DiscordItemNotFound(10008)
+            return CHANNEL
+        with patch('cwl_web.announcement_recovery.discord', deleted):
+            refused = await self.call('POST', self.base+'/main/send', self.owner, json=body)
+            self.assertEqual(refused.status,409,await refused.text())
+            self.assertEqual(await cwl_campaign.load_campaign(self.mongo,GUILD_ID,state['cycle']),before)
+            self.assertEqual(storage.pool_sequence(self.sid,'main'),sequence)
+            self.assertEqual(self.app['store'].rows('SELECT * FROM roster_image_posts'), posts)
+            with self.app['store'].tx() as db:
+                db.execute("UPDATE roster_image_sequences SET status='stopped'")
+                db.execute("UPDATE roster_image_posts SET status='failed'")
+            valid = await self.call('POST',self.base+'/main/send',self.owner,json=body)
+            self.assertEqual(valid.status,202,await valid.text())
+
+    async def test_ready_sequence_refuses_resend_without_reopening_native_receipt(self):
+        await self.refused_resend_preserves_occurrence(False)
+
+    async def test_uncertain_image_refuses_resend_without_reopening_native_receipt(self):
+        await self.refused_resend_preserves_occurrence(True)

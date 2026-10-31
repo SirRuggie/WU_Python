@@ -102,3 +102,10 @@ it("ignores a late deleted response after permission loss", async () => {
   expect(document.querySelector("dialog")).toBeNull();
   expect(api).toHaveBeenCalledTimes(1);
 });
+it("explains a rate-limited manual check without another request", async () => {
+  api.mockResolvedValue({ deleted: false });
+  await mount();
+  await click("Check posted");
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(document.body.textContent).toContain("Checked moments ago");
+});

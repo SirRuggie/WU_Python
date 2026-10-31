@@ -18,3 +18,31 @@ Evidence: /tmp/wu-ann-full-backend-rerun.log, /tmp/wu-ann-full-frontend.log, /tm
 Tooling notes: browser startup initially preceded fixture readiness; final run waited for ready. The initial asynchronous browser poll returned before the fixture completed; explicit Node response polling verifies all12 receipts. Fake-channel rendering was corrected to omit empty metadata lines and display button labels. The full layout run used isolated networking and a disk-backed /tmp mount because the host tmpfs inode pool was exhausted. Required mutations restored all application source.
 
 Remaining release gate: Claude ACCEPT, then integrated clean tagged backend/bot/frontend release with backup, counts, readiness and rollback. Preserve the carousel already accepted separately when merging. Staff, not release automation, chooses whether to resend a deleted November announcement.
+
+Claude171 required-fix verification: archive preconditions are shared by a public
+read-only preflight and the archive transaction, and checked before reopening the
+native occurrence. Ready sequences and uncertain images reject resend without
+changing native or SQLite state; resolving that state permits a valid resend.
+Staff continuation requires the matching sent occurrence/channel and no message
+ID, except a stopped unconfirmed sequence with its own matching receipt. Both
+normal HTTP authorization and the explicit send gate are tested for staff lacking
+cwl_send (the latter independently of the generic route permission map).
+
+The UI waits five seconds or a stopped state before offering recovery, unlocks a
+full-test destination after definite4xx rejection (408 remains ambiguous), reports
+Checked moments ago for a rate-limited check, and tests pre-confirmation stopping
+and the closing-message check copy. Full backend5213 passed,21 skipped,221
+subtests; frontend1088 passed; TypeScript/build passed. Four mutations killed:
+reopen before preflight, missing explicit send permission, wrong channel and wrong
+occurrence. Evidence .local/ann171-mutation-results.json and per-mutation logs.
+
+Isolated browser360/1440:12 fake messages preserve announcement/images/closing
+order and allowed mentions; automatic deleted detection and frozen-body/channel
+ambiguous full-test retry pass with no page errors. Evidence is in
+.local/announcement171-review. The initial recovery browser started immediately
+after sequence delivery and timed out; read-only diagnosis confirmed both completed
+pools and automatic checks, then the rerun passed. No live Discord write occurred.
+Scratch setup fixes corrected working-directory paths and the native-delivery test
+fixture (complete its pending request before testing resend). The first explicit
+send-gate mutation survived due to the separate generic route gate; the added
+boundary test verifies the explicit gate independently and kills that mutation.

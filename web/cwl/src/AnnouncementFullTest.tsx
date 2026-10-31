@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Pool } from "./api";
+import { api, ApiError, type Pool } from "./api";
 import type { AnnouncementDraft } from "./announcementDrafts";
 import type { AnnouncementChannel } from "./announcements";
 import ChannelCombobox from "./ChannelCombobox";
@@ -97,6 +97,8 @@ export default function AnnouncementFullTest({
       pendingRequest.current = null;
       if (alive.current) setJob(result.test);
     } catch (e) {
+      if (e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 408)
+        pendingRequest.current = null;
       if (alive.current) setError((e as Error).message);
     } finally {
       running.current = false;
