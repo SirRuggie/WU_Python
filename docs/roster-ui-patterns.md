@@ -74,6 +74,7 @@ The goal was to replace the old square buttons and native OS pickers ("early 200
 - **Account card:** shared Player card below; left checkbox target remains 44px.
 - **Filter panel:**
   - Sections (Status, Weight, Town Hall, Assigned clan) with per-option counts.
+  - Outside family matches only `outside_family_and_hosts`, with the same count, active chip and Clear all behavior as other statuses.
   - Footer: `Reset` + `Show N accounts`. One line explaining OR within a section, AND across sections.
 - **Active filter chips:** removable (`Assigned ✕`) + `Clear all`, above the list.
 - **Tabs:** section tabs = gold-tinted pill; pool tabs (All / Main / Lazy) = underline. One indicator each.
