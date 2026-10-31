@@ -191,3 +191,35 @@ SHA-256 `ace9289aa3436554d9dd0cda0004f0250641df58d0dcd3757f7308e827aa1685`
 matched the immutable manifest, as did affected feature chunks. Previous release
 for all three code layers is `73eda11a1e883b711bc40494f023b4d87efd5a6b`.
 See [backend release evidence and guarded rollback](dashboard-backend-releases.md#linked-weights-1--2026-10-30).
+
+## roster-image-carousel-1 (2026-10-30)
+
+Released PR #90 at `fe0edfca34c282c7a73f2188f502670e3d4bcbb3`, tagged
+`roster-image-carousel-1`, from a clean isolated checkout. The single-clan test
+uses a swipe/keyboard carousel with current-neighbor image loading, stacked image
+pages, and a selected-clan send button gated on image readiness and settled scroll.
+The test endpoint, permissions and mention behavior are unchanged.
+
+Public entry `index-C3sivv4w.js` SHA-256
+`1774b6945267ff46bc712d55ceddbd1bd1eaa2c30446cda773c9139a20b3a191` and all 125
+manifest assets matched. Frontend 1,067 tests, type check/build, four-width fixture
+checks and five mutations passed. The review's same-clan reselection fix preserves
+readiness and the sent link; mutations also cover unsettled scroll and confirm lock.
+
+Backup `dashboard-20261031T015506Z.sqlite3` (1,470,464 bytes), SHA-256
+`ba628720f3a8380a1e00c462edf73e24089569e0aa4f4c3b45522a9f030090e9`, passed integrity
+and table parity checks. Pre/gate/post protected hashes and every table count were
+unchanged. Evidence and guarded rollback script are in
+`.local/carousel-release-evidence/`. Rollback frontend:
+`b611af4781850a3bde8755d4d27d184f43a0cf93`. Backend remained `b611af4`, PID 3584843;
+gateway PID 307279 and both invocations were unchanged. No restart or Discord write.
+
+Claude's handoff 159 reports read-only production smoke passed at 360px: first to
+next clan, lazy image count 3 to 4, no overflow or 4xx/5xx, public hash matched,
+backend unchanged and no traceback. Nothing sent. The pool sort remains the
+existing mixed order until the announcement-images batch lands.
+
+Tooling notes: public verification used curl after urllib received 403; every asset
+was verified. A reviewed recursive copy of the staging helper handled nested assets;
+the installed helper was unchanged. The initial merge approval review succeeded on
+retry after supplying the exact frontend-only diff and standing approval evidence.

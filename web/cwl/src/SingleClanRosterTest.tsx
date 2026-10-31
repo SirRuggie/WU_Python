@@ -1,12 +1,12 @@
 import ConfirmDialog from "./ConfirmDialog";
 import { Button } from "./rosterUi/primitives";
-import { RefreshCw, Eye, Send } from "lucide-react";
+import { RefreshCw, Send } from "lucide-react";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
 import type { AnnouncementChannel } from "./announcements";
-import AnnouncementPreviewDialog from "./AnnouncementPreviewDialog";
+import RosterImageCarousel from "./RosterImageCarousel";
 type Clan = {
   tag: string;
   name: string;
@@ -27,7 +27,6 @@ export default function SingleClanRosterTest({
   acquire: () => (() => void) | null;
 }) {
   const sending = useRef(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const canManage = useDashboardPermission("cwl_send");
   const [data, setData] = useState<Data | null>(null),
     [tag, setTag] = useState(""),
@@ -36,20 +35,24 @@ export default function SingleClanRosterTest({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [url, setUrl] = useState(""),
-    [expanded, setExpanded] = useState(false),
     [loaded, setLoaded] = useState(false),
     [nonce, setNonce] = useState("");
   const [confirmTest, setConfirmTest] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const path = `/seasons/${encodeURIComponent(seasonId)}/roster-images`;
+  const previousTag = useRef(tag);
+  previousTag.current = tag;
   useEffect(() => {
     let active = true;
+    const selected = previousTag.current;
+    setConfirmTest(false);
+    setNonce("");
     setData(null);
     setTag("");
     setUrl("");
     setError("");
     setLoaded(false);
-    if (!version) return;
+    if (!version || !canManage) return;
     void Promise.all([
       api<Data>(path),
       api<{ channels: AnnouncementChannel[] }>("/announcement-channels"),
@@ -57,7 +60,11 @@ export default function SingleClanRosterTest({
       .then(([result, choices]) => {
         if (active) {
           setData(result);
-          setTag(result.clans[0]?.tag || "");
+          setTag(
+            result.clans.some((clan) => clan.tag === selected)
+              ? selected
+              : result.clans[0]?.tag || "",
+          );
           setChannels(choices.channels);
         }
       })
@@ -67,7 +74,7 @@ export default function SingleClanRosterTest({
     return () => {
       active = false;
     };
-  }, [seasonId, version, refresh]);
+  }, [seasonId, version, refresh, canManage]);
   const clan = data?.clans.find((c) => c.tag === tag);
   function changed() {
     setLoaded(false);
@@ -75,8 +82,6 @@ export default function SingleClanRosterTest({
     setUrl("");
     setError("");
   }
-  const imageUrl = (page: number) =>
-    `/api/cwl${path}/${encodeURIComponent(tag)}.png?version=${data?.version}&page=${page}`;
   async function send() {
     if (!canManage || !clan || !data || !channel || disabled || sending.current)
       return;
@@ -112,19 +117,6 @@ export default function SingleClanRosterTest({
       setBusy(false);
     }
   }
-  const pictures = clan ? (
-    <RosterPictures
-      clan={clan}
-      tag={tag}
-      version={data?.version}
-      imageUrl={imageUrl}
-      onLoad={() => setLoaded(true)}
-      onError={() => {
-        setLoaded(false);
-        setError("Image unavailable. Refresh this section.");
-      }}
-    />
-  ) : null;
   return (
     <section className="clan-roster-images roster-ui">
       <div className="card-heading">
@@ -142,56 +134,24 @@ export default function SingleClanRosterTest({
         <p>Finalize a roster first.</p>
       ) : (
         <>
-          <label>
-            Clan
-            <select
-              value={tag}
-              disabled={!canManage || busy || disabled || !data}
-              onChange={(e) => {
-                setTag(e.target.value);
-                changed();
-              }}
-            >
-              {!data && <option>Loading…</option>}
-              {(["main", "lazy"] as const).map((pool) => (
-                <optgroup
-                  label={pool === "main" ? "Main CWL" : "Lazy CWL"}
-                  key={pool}
-                >
-                  {data?.clans
-                    .filter((c) => c.pool === pool)
-                    .map((c) => (
-                      <option key={c.tag} value={c.tag}>
-                        {c.name} · {c.count} players
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
           {clan && (
             <>
               <p className="small">
                 Finalized version {data?.version} · {clan.pages} image
                 {clan.pages === 1 ? "" : "s"}. Draft changes are not included.
               </p>
-              <details onToggle={(e) => setPreviewOpen(e.currentTarget.open)}>
-                <summary>Image preview</summary>
-                <div className="clan-roster-pictures">
-                  {previewOpen && pictures}
-                </div>
-                <Button icon={Eye} onClick={() => setExpanded(true)}>
-                  Expand preview
-                </Button>
-              </details>
-              {expanded && (
-                <AnnouncementPreviewDialog
-                  title={clan.name}
-                  onClose={() => setExpanded(false)}
-                >
-                  {pictures}
-                </AnnouncementPreviewDialog>
-              )}
+              <RosterImageCarousel
+                clans={data!.clans}
+                selected={tag}
+                version={data!.version}
+                path={path}
+                disabled={!canManage || busy || disabled || confirmTest}
+                onSelect={(next) => {
+                  setTag(next);
+                  changed();
+                }}
+                onReady={setLoaded}
+              />
               <ChannelCombobox
                 label="Test channel"
                 channels={channels}
@@ -215,7 +175,7 @@ export default function SingleClanRosterTest({
                 }
                 onClick={() => setConfirmTest(true)}
               >
-                {busy ? "Sending…" : "Send test image"}
+                {busy ? "Sending…" : `Send ${clan.name} test`}
               </Button>
               {url && (
                 <p role="status">
@@ -243,44 +203,5 @@ export default function SingleClanRosterTest({
         />
       )}
     </section>
-  );
-}
-
-function RosterPictures({
-  clan,
-  tag,
-  version,
-  imageUrl,
-  onLoad,
-  onError,
-}: {
-  clan: Clan;
-  tag: string;
-  version?: number;
-  imageUrl: (page: number) => string;
-  onLoad: () => void;
-  onError: () => void;
-}) {
-  return (
-    <>
-      {Array.from({ length: clan.pages }, (_, i) => (
-        <div key={`${tag}:${version}:${i}`}>
-          <img
-            src={imageUrl(i + 1)}
-            alt={`${clan.name} finalized roster, page ${i + 1}`}
-            className="clan-roster-image"
-            onLoad={onLoad}
-            onError={onError}
-          />
-          <a
-            className="button"
-            href={imageUrl(i + 1)}
-            download={`roster-${tag.slice(1)}-${i + 1}.png`}
-          >
-            Download{clan.pages > 1 ? ` page ${i + 1}` : " image"}
-          </a>
-        </div>
-      ))}
-    </>
   );
 }

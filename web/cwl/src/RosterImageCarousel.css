@@ -1,0 +1,74 @@
+.roster-image-carousel {
+  min-width: 0;
+  font-size: 14px;
+}
+.image-carousel-position {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.image-carousel-position button,
+.image-carousel-jump button {
+  min-height: 44px;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--text, #eee);
+  background: var(--panel, #18212d);
+  border: 1px solid var(--border, #596374);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.image-carousel-jump {
+  max-height: 260px;
+  overflow-y: auto;
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.image-carousel-jump button {
+  width: 100%;
+  text-align: left;
+}
+.image-carousel-controls {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+.image-carousel-rail {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  min-width: 0;
+}
+.image-carousel-rail[aria-disabled="true"] {
+  overflow-x: hidden;
+}
+.image-carousel-card {
+  flex: 0 0 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  scroll-snap-align: start;
+  padding: 4px;
+}
+.image-carousel-card h4 {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.image-carousel-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.image-carousel-card .button {
+  min-height: 44px;
+  margin-bottom: 12px;
+}
+.image-carousel-rail:focus-visible,
+.roster-image-carousel button:focus-visible {
+  outline: 2px solid #f2b84b;
+  outline-offset: 2px;
+}
