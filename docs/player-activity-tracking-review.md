@@ -83,3 +83,7 @@ A full baseline is approximately 7.8 KB, about 8 MB for 1000 players before over
 Final rework suite counts and mutation table are recorded in the new READY entry;
 the previous READY counts above describe the pre-review revision only. No live
 Discord test, notification or production migration was performed.
+
+A quarantined old war remains a streak blocker until an explicit staff-reviewed
+resolution clears the hold. Quarantine changes its retry state, not its effect on
+newer streak credit; a regression covers both sides of that resolution.

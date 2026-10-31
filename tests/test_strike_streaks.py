@@ -616,3 +616,22 @@ def test_transferred_mark_read_grace_without_roster_sync(elapsed, visible):
         if not visible:
             assert profile['replacement_clear_reason'] == 'Left clan (48h)'
     asyncio.run(run())
+
+
+def test_quarantined_old_capture_keeps_streak_blocker_until_staff_resolution():
+    from utils.strike_tracking import StrikeTracking
+    async def run():
+        db, ledger = setup()
+        await capture(db, ledger, 1, apply=False)
+        await StrikeTracking(db).quarantine_old(GUILD, war(1))
+        result = await capture(db, ledger, 2)
+        assert result['deferred_count'] == 1
+        assert (await ledger.streak(GUILD, PLAYER))['count'] == 0
+        snapshot=next(row for row in db.strike_war_snapshots.rows.values() if row['war_key']==war_key(war(1)))
+        assert snapshot['manual_review_required'] and 'purge_after' not in snapshot
+        # An explicit reviewed resolution releases the hold, not age or a TTL.
+        await db.strike_war_snapshots.update_one({'_id':snapshot['_id']},
+            {'$set':{'status':'finalized'},'$unset':{'manual_review_required':''}})
+        await ledger.process_war(GUILD, war(2), official_capture=True)
+        assert (await ledger.streak(GUILD, PLAYER))['count'] == 1
+    asyncio.run(run())

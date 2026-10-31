@@ -1292,7 +1292,8 @@ class StrikeService:
         profile_id = f'{guild_id}:{player}'
         order = utc(row['occurred_at']).isoformat() + ':' + row['war_key']
         snapshots = await self.mongo.strike_war_snapshots.find(
-            {'guild_id': guild_id, 'status': 'observing', 'seen_active': True,
+            {'guild_id': guild_id, 'seen_active': True,
+             '$or': [{'status': 'observing'}, {'manual_review_required': True}],
              'end_time': {'$lte': row['occurred_at']}}).to_list(length=None)
         for snapshot in snapshots:
             other = snapshot['war']
