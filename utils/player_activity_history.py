@@ -59,7 +59,7 @@ async def _backfill(mongo, fetch, now):
     store = PlayerActivityStore(mongo)
     players = await store.all_players()
     if not players:
-        return {"players": 0, "wars": 0, "retryable": 0, "stuck_clans": []}
+        return {"players": 0, "wars": 0, "retryable": 0}
     clans = [
         r
         for r in await mongo.clans.find({}).to_list(length=None)
@@ -195,7 +195,6 @@ async def _backfill(mongo, fetch, now):
         "players": len(players),
         "wars": sum(map(len, observed.values())),
         "retryable": sum(bool(s.get("failed_attempts")) for s in states),
-        "stuck_clans": sorted(s["clan_tag"] for s in states if s.get("failed_attempts", 0) >= 3),
     }
 
 

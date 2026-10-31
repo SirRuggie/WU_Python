@@ -353,7 +353,8 @@ async def activity_accounts(request):
             failed_clans = sorted(set(await PlayerActivityStore(db).history_report()) & {row["tag"] for row in context["clans"]})
         except PyMongoError:
             failed_clans = []
-        history_warning = ("Some war reads unavailable for clans: " + ", ".join(failed_clans)) if failed_clans else None
+        clan_names = {row["tag"]: row.get("name") or row["tag"] for row in context["clans"]}
+        history_warning = ("Some war reads unavailable for clans: " + ", ".join(clan_names[tag] for tag in failed_clans)) if failed_clans else None
     rows = family_activity_rows(activity, **context)
     if activity_warning:
         for row in rows:

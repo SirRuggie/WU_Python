@@ -287,3 +287,36 @@ def test_page_does_not_wait_for_names_and_failure_refresh_is_cached(monkeypatch)
             await asyncio.wait_for(strikes.activity_accounts(request),.1)
         assert recruit_links.resolve_players.await_count==1
     asyncio.run(run())
+
+
+def test_route_clan_failure_names_clan_without_changing_healthy_chain(monkeypatch):
+    import asyncio
+    from datetime import datetime, timezone
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from cwl_web import strikes
+    from utils import clan_weights
+    async def run():
+        now = datetime.now(timezone.utc)
+        sample={'tag':'#PYY','current_clan_tag':'#PQQ','updated_at':now,
+                'recent_wars':[{'war_key':str(n),'occurred_at':now-timedelta(days=n),
+                    'attacks_used':0,'attacks_available':2} for n in range(3)]}
+        ledger=SimpleNamespace(activity_context=AsyncMock(return_value={
+            'profiles':[], 'records':[], 'clans':[{'tag':'#PQQ','name':'Healthy clan'},
+                                                {'tag':'#PQL','name':'Unavailable clan'}]}))
+        @asynccontextmanager
+        async def mongo(request):yield SimpleNamespace(player_activity=object())
+        monkeypatch.setattr(strikes.shared,'mongo',mongo)
+        monkeypatch.setattr(strikes,'service',AsyncMock(return_value=ledger))
+        monkeypatch.setattr('utils.player_activity_store.PlayerActivityStore.overview',AsyncMock(return_value=[sample]))
+        monkeypatch.setattr('utils.player_activity_store.PlayerActivityStore.history_report',AsyncMock(return_value=['#PQL']))
+        monkeypatch.setattr('cwl_web.strike_activity_identity.account_identities',AsyncMock(return_value=({},True)))
+        monkeypatch.setattr(clan_weights,'source_weights',AsyncMock(return_value={}))
+        monkeypatch.setattr(clan_weights,'overlay_accounts',lambda store,payload:payload)
+        response=await strikes.activity_accounts(SimpleNamespace(app={'store':object(),'providers':object()}))
+        result=json.loads(response.body)
+        assert result['history_warning']=='Some war reads unavailable for clans: Unavailable clan'
+        assert result['accounts'][0]['no_attack_wars']==3
+        assert result['accounts'][0]['observed_wars']==3
+    asyncio.run(run())
