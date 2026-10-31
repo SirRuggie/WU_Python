@@ -30,6 +30,8 @@ export function managementTarget(
   )
     return "moderation";
   if (path === "/server/moderation") return "moderation";
+  if (path === "/clans/strikes") return "strikes";
+  if (path === "/clans/replacements") return "replacements";
   const matched = Object.entries(managementPaths).find(
     ([, destination]) => destination === path,
   )?.[0];

@@ -1092,3 +1092,12 @@
     margin-bottom: 2px;
   }
 }
+@media (max-width: 760px) {
+  .strikes-player-detail .strikes-detail-context {
+    margin-top: 0;
+    line-height: 1.4;
+  }
+  .strikes-player-detail .page-head > div > p:not(.eyebrow) {
+    display: none;
+  }
+}

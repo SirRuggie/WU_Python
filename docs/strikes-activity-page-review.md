@@ -3,6 +3,8 @@
 The sidebar has one **Strikes & replacements** destination. `/strikes` opens the
 family roster; `/replacements` opens the same roster with the replacement filter.
 Old `/clans/strikes` and `/clans/replacements` links remain readable aliases.
+The backend serves both canonical paths, and sign-in preserves bounded, allowlisted
+filters and the selected account while rejecting arbitrary redirect parameters.
 Leave and Settings remain tabs. Account detail keeps strike history, manual
 add/remove actions and the revision-protected priority editor. The old standalone
 workspace, group renderer, bulk-only helpers and styles are retired. Recruit

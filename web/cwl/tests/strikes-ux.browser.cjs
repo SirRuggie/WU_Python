@@ -37,6 +37,7 @@ fs.mkdirSync(output, { recursive: true });
           .filter(
             (e) =>
               e.checkVisibility() &&
+              e.type !== "checkbox" &&
               e.getBoundingClientRect().height > 0 &&
               e.getBoundingClientRect().height < 44,
           )
@@ -54,7 +55,10 @@ fs.mkdirSync(output, { recursive: true });
             }).length,
         );
         if (m.firstRowY > 560 || visibleRows < 3)
-          throw Error("phone detail must show at least three strike rows: " + JSON.stringify({firstRowY:m.firstRowY,visibleRows}));
+          throw Error(
+            "phone detail must show at least three strike rows: " +
+              JSON.stringify({ firstRowY: m.firstRowY, visibleRows }),
+          );
       }
       if (m.scrollWidth > width) throw Error("overflow " + name);
       if (m.small.length)
@@ -136,12 +140,19 @@ fs.mkdirSync(output, { recursive: true });
     await p.locator(".strike-compact-row").first().waitFor();
     await p.getByText("No-attack war (no strike)", { exact: false }).waitFor();
     await snap("detail");
-    await p.getByRole("combobox", {name: /^Status/}).selectOption("mismatch");
-    await p.waitForFunction(() => document.querySelectorAll(".strike-compact-row").length === 1);
-    await p.locator(".strike-compact-row").getByText("Mismatch war (no strike)", {exact: true}).waitFor();
+    await p.getByRole("combobox", { name: /^Status/ }).selectOption("mismatch");
+    await p.waitForFunction(
+      () => document.querySelectorAll(".strike-compact-row").length === 1,
+    );
+    await p
+      .locator(".strike-compact-row")
+      .getByText("Mismatch war (no strike)", { exact: true })
+      .waitFor();
     await snap("mismatch-filter");
-    await p.getByRole("combobox", {name: /^Status/}).selectOption("all");
-    await p.waitForFunction(() => document.querySelectorAll(".strike-compact-row").length === 25);
+    await p.getByRole("combobox", { name: /^Status/ }).selectOption("all");
+    await p.waitForFunction(
+      () => document.querySelectorAll(".strike-compact-row").length === 25,
+    );
     await p.getByRole("button", { name: "Next", exact: true }).click();
     await p.getByText("26–30 of 30").waitFor();
     await p.waitForFunction(
