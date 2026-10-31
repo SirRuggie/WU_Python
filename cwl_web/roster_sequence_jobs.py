@@ -47,6 +47,11 @@ class SequenceJobs:
             async with _mongo(self.request) as mongo:
                 bridge = await get_roster_send_status(mongo, GUILD_ID, job['cycle'], job['pool'])
                 if bridge is None:
+                    # Revalidate the saved intent before recovering a missing native queue.
+                    publication = self.storage.publication(job['season_id'])
+                    if not publication or publication[1]['version'] != job['target_version']:
+                        self.storage.stop_sequence(sequence_id, 'Published roster changed; review again')
+                        return
                     # Recover a crash after SQLite intent but before native queue insertion.
                     try:
                         await queue_roster_send(

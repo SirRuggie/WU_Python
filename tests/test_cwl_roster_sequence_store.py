@@ -208,3 +208,24 @@ class SequenceStoreTests(unittest.TestCase):
         self.assertEqual(self.images.current(1, 'main', '#ABC')['message_id'], '987654321098765433')
         archive = self.store.one('SELECT posts_json FROM roster_image_sequence_archives')
         self.assertEqual(json.loads(archive['posts_json'])[0]['message_id'], '987654321098765433')
+
+    def test_second_sender_cannot_overwrite_inflight_announcement_identity(self):
+        first = self.images.prepare_sequence(**self.args)
+        revision = dict(version=1, generation='other', channel=self.args['channel'],
+                        actor='other-staff', plan={'clans': []})
+        with self.assertRaises(ImageConflict):
+            self.images.revise_unsent_sequence(first['sequence_id'], **revision)
+        self.assertEqual(self.images.sequence(first['sequence_id']), first)
+        self.images.stop_sequence(first['sequence_id'], 'Known unsent')
+        claimed = self.images.revise_unsent_sequence(first['sequence_id'], **revision)
+        with self.assertRaises(ImageConflict):
+            self.images.revise_unsent_sequence(first['sequence_id'], **(revision | {'actor': 'third'}))
+        self.assertEqual(self.images.sequence(first['sequence_id']), claimed)
+
+    def test_ready_status_alone_cannot_bypass_announcement_receipt_gate(self):
+        frozen = self.image_plan()
+        with self.store.tx() as db:
+            db.execute("UPDATE roster_image_sequences SET status='ready' WHERE sequence_id=?", ('a' * 24,))
+        with self.assertRaises(ImageConflict):
+            self.claim_image('#AAA', 'b' * 24, frozen)
+        self.assertIsNone(self.images.receipt('b' * 24))

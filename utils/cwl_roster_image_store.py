@@ -255,7 +255,7 @@ class RosterImageStore:
         with self.store.tx() as db:
             row = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
                              (sequence_id,)).fetchone()
-            if not row or row['announcement_message_id'] or row['status'] not in ('awaiting_announcement', 'stopped'):
+            if not row or row['announcement_message_id'] or row['status'] != 'stopped':
                 raise ImageConflict('This sequence has already started; refresh its status')
             latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? '
                                 'AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1',

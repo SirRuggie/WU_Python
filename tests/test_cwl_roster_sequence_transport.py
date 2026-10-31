@@ -65,3 +65,11 @@ class SequenceTransportTests(unittest.IsolatedAsyncioTestCase):
         self.fixture.mode = 'timeout'
         with patch('cwl_web.roster_sequence_transport.discord', self.fixture.fake), self.assertRaises(TimeoutError):
             await self.transport.closing(self.job, {'request_id': 'e' * 24, 'payload': closing_message()})
+
+    async def test_adapter_rejects_mention_payload_before_transport(self):
+        for mentions in ({'parse': ['roles']}, {'parse': [], 'users': ['123']}, None):
+            with self.subTest(mentions=mentions):
+                payload = {**closing_message(), 'allowed_mentions': mentions}
+                with patch('cwl_web.roster_sequence_transport.discord', self.fixture.fake), self.assertRaises(SequenceRejected):
+                    await self.transport.closing(self.job, {'request_id': 'e' * 24, 'payload': payload})
+                self.assertEqual(self.fixture.sent, [])

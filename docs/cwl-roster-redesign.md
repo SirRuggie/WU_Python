@@ -595,3 +595,40 @@ Ruggie decided that a clan weight is always a total. Assign current/projected an
 ## Weight range and quick selection — prompt 32 (released October 30)
 
 Both endpoints of a configured range are inclusive throughout status, impact, eligibility and automatic planning. Wording uses “Range: 172k–179k” and “Includes 172k to 179k.” No assignments or locks are changed by evaluation. Compare defaults to descending weight; quick picks and the selection cap follow the updated contracts above. Frontend/backend release and read-only smoke passed as recorded in the October 30 status above.
+
+## Decisions — Announcement followed by roster images (prompt 45)
+
+A reviewed pool send posts the existing role-pinging announcement, then one full-resolution
+attachment message per hosting clan, then a closing note, all in the announcement
+channel. Images and closing never allow mentions. Clan messages contain only the
+bold clan name and an Open clan link; the closing says “Can't find your name? Check
+My assignments.” and links to My assignments. Multi-page rosters stay in one message.
+
+One shared order applies to review, delivery, image lists, tests and the carousel:
+Lazy trailing clan numbers descend, then unnumbered names alphabetically; Main
+capacity 30 first, then 15, then other/unset, alphabetically within each group.
+Capacity and accounts come from the immutable published version. Review names the
+channel, announcement pings, ordered clans and closing before staff confirms.
+
+The durable server sequence starts images only after its matching announcement
+receipt is confirmed, stops on the first failure, and resumes in order. Unknown
+outcomes require explicit check-first recovery; they never trigger automatic retry.
+Resume names the next clan and does not repeat the announcement. Tests use separate
+receipts and a selected test channel, prefix TEST and suppress all mentions.
+
+Republishing does not resend an announcement: existing clan messages update in
+place, added clans append after the closing, and dropped clans are edited as no
+longer hosting. Existing legacy image posts retain their saved channels. New
+sequence images use the announcement channel; no separate image-channel choice.
+
+Addendum 1: only Discord 404/code 10008 proves an image or closing message was
+deleted. Such updates repost once without pings, retain the old receipt and show
+“Reposted (old message was deleted)”. Unknown Channel, forbidden access and uncertain
+outcomes stop. An update confirmation includes the closing-note check.
+
+Addendum 2 supersedes the announcement exclusion: a deleted announcement may be
+sent again only after an explicit staff review warning that its roles ping again.
+A read-only check runs on the sent pool's Announcements view, with a rate-limited
+manual fallback. Confirm rechecks deletion, archives the old receipt and uses the
+current publication for the new announcement/images/closing sequence. Merely opening
+the page never posts. November is not automatically resent or migrated.

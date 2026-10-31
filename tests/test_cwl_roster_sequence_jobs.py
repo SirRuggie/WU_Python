@@ -69,3 +69,12 @@ class SequenceJobTests(unittest.IsolatedAsyncioTestCase):
             await self.jobs.advance('a' * 24)
         queue.assert_not_awaited()
         self.assertEqual(self.images.sequence('a' * 24)['status'], 'stopped')
+
+    async def test_republished_after_http_failure_never_queues_old_intent(self):
+        with self.store.tx() as db:
+            db.execute("UPDATE roster_publications SET version=2 WHERE season_id=1")
+        with patch('cwl_web.roster_sequence_jobs.get_roster_send_status', AsyncMock(return_value=None)), \
+             patch('cwl_web.roster_sequence_jobs.queue_roster_send', AsyncMock()) as queue:
+            await self.jobs.advance('a' * 24)
+        queue.assert_not_awaited()
+        self.assertEqual(self.images.sequence('a' * 24)['status'], 'stopped')
