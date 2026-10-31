@@ -1,9 +1,9 @@
 """Opt-in transport behavior must not alter other dashboard callers."""
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 from aiohttp import web
-from cwl_web.server_management import discord, DiscordDeliveryUncertain
+from cwl_web.server_management import discord, DiscordDeliveryUncertain, DiscordItemNotFound
 
 
 class Context:
@@ -67,3 +67,21 @@ class ImageTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('roster_delivery', fake.call_args.kwargs)
         await discord(request, 'POST', '/fake', roster_delivery=True)
         self.assertTrue(fake.call_args.kwargs['roster_delivery'])
+
+
+class DeletedMessageTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_only_explicit_unknown_message_is_classified_as_deleted(self):
+        for code in (10008, 10003, 50001, None, '10008'):
+            with self.subTest(code=code), patch.object(Response, 'status', 404), patch.object(Response, 'json', AsyncMock(return_value={'code': code})), patch.dict('os.environ', {'DISCORD_TOKEN': 'fake'}), patch('cwl_web.server_management.aiohttp.ClientSession', return_value=Context(Client())):
+                with self.assertRaises(DiscordItemNotFound) as result:
+                    await discord(Request(), 'GET', '/channels/1/messages/2', roster_delivery=True)
+                self.assertEqual(result.exception.discord_code, code if type(code) is int else None)
+                self.assertEqual(result.exception.text == 'Message was deleted in Discord', code == 10008)
+                with self.assertRaises(web.HTTPNotFound) as ordinary:
+                    await discord(Request(), 'GET', '/channels/1/messages/2')
+                self.assertFalse(isinstance(ordinary.exception, DiscordItemNotFound))
+
+    async def test_unreadable_404_body_never_confirms_deletion(self):
+        with patch.object(Response, 'status', 404), patch.object(Response, 'json', AsyncMock(side_effect=ValueError('invalid json'))), patch.dict('os.environ', {'DISCORD_TOKEN': 'fake'}), patch('cwl_web.server_management.aiohttp.ClientSession', return_value=Context(Client())):
+            with self.assertRaises(DiscordDeliveryUncertain):
+                await discord(Request(), 'GET', '/channels/1/messages/2', roster_delivery=True)

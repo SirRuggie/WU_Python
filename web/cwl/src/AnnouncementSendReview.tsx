@@ -5,10 +5,12 @@ import { createPortal } from "react-dom";
 
 type ReviewPool = {
   key: string;
+  resend?: boolean;
   label: string;
   destination: string;
   roleNames: string[];
   preview: ReactNode;
+  clans?: { tag: string; name: string; pages: number }[];
 };
 
 export default function AnnouncementSendReview({
@@ -79,11 +81,20 @@ export default function AnnouncementSendReview({
       </header>
       <p className="announcement-review-warning">
         Confirming queues{" "}
-        {pools.length === 1 ? "this message" : "each message separately"}.
-        Selected roles will be notified. Nothing is sent when you cancel.
+        {pools.length === 1
+          ? "this pool’s post"
+          : "each pool’s post separately"}
+        . Selected roles will be notified. Nothing is sent when you cancel.
       </p>
       {pools.map((pool) => (
         <section key={pool.key} aria-label={`${pool.label} send review`}>
+          {pool.resend && (
+            <p role="alert">
+              The previous announcement was deleted. Send again will ping the
+              configured roles again, followed by fresh clan images and a
+              closing note. Earlier image posts stay in Discord.
+            </p>
+          )}
           <h3>
             {pool.label} → #{pool.destination}
           </h3>
@@ -91,6 +102,29 @@ export default function AnnouncementSendReview({
             <strong>Roles notified: </strong>
             {pool.roleNames.length ? pool.roleNames.join(", ") : "None"}
           </p>
+          <p>
+            Posts to #{pool.destination}: 1 announcement
+            {pool.roleNames.length
+              ? ` (pings ${pool.roleNames.map((name) => `@${name}`).join(", ")})`
+              : " (no pings)"}
+            , then {pool.clans?.length || 0} clan images in order (no pings),
+            then a closing note (no pings).
+          </p>
+          {!!pool.clans?.length && (
+            <details>
+              <summary>Clan image order ({pool.clans.length})</summary>
+              <ol>
+                {pool.clans.map((clan) => (
+                  <li key={clan.tag}>
+                    {clan.name}
+                    {clan.pages > 1
+                      ? ` · ${clan.pages} pages in one message`
+                      : ""}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
           {pool.preview}
         </section>
       ))}
@@ -104,7 +138,9 @@ export default function AnnouncementSendReview({
             onConfirm();
           }}
         >
-          Queue {pools.length === 1 ? "announcement" : "both announcements"}
+          {pools.some((pool) => pool.resend)
+            ? "Send again — ping again"
+            : `Queue ${pools.length === 1 ? "announcement" : "both announcements"}`}
         </Button>
       </footer>
     </dialog>,

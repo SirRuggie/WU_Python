@@ -23,6 +23,16 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
         await self.publish()
         with self.app['store'].tx() as db:
             db.execute("INSERT INTO roster_image_channels(pool,channel_id,channel_name,configured_by) VALUES('main','123456789012345678','rosters','owner')")
+        from test_cwl_dashboard_integration import MemoryMongo
+        from utils import cwl_campaign
+        from cwl_web.manage_bridge import GUILD_ID
+        self.app['manage_bridge_mongo'] = MemoryMongo()
+        with self.app['store'].tx() as db:
+            db.execute("INSERT INTO manage_campaign_bindings(season_id,cycle) VALUES(?,'2026-11')", (self.sid,))
+        await cwl_campaign.record_delivery(self.app['manage_bridge_mongo'], GUILD_ID, '2026-11', {
+            'occurrence_id': cwl_campaign.occurrence_id('2026-11', 'roster', 'main'),
+            'status': 'sent', 'channel_id': '123456789012345678', 'message_id': '987654321098765400',
+        })
         self.path = f'/seasons/{self.sid}/roster-image-posts/%23C2Y'
         self.body = {'pool': 'main', 'version': 1, 'request_id': 'a' * 24}
         self.sent = []
@@ -43,9 +53,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             if self.mode == 'cancel':
                 import asyncio
                 raise asyncio.CancelledError()
+            if self.mode in ('404', 'repost-rate') and method == 'PATCH':
+                from cwl_web.server_management import DiscordItemNotFound
+                raise DiscordItemNotFound(10008)
             if self.mode == '404':
                 raise web.HTTPNotFound()
-            if self.mode == '429':
+            if self.mode in ('429', 'repost-rate'):
                 raise web.HTTPTooManyRequests(text=json.dumps({'retry_after': 0.01}), content_type='application/json')
             return {'id': '987654321098765432'}
         self.fake = fake
@@ -90,6 +103,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             await self.republish()
             self.assertEqual((await self.send('/drop')).status, 200)
             self.assertEqual(self.sent[-1][0:2], ('PATCH', '/channels/123456789012345678/messages/987654321098765432'))
+            from utils import cwl_campaign
+            from cwl_web.manage_bridge import GUILD_ID
+            await cwl_campaign.record_delivery(self.app['manage_bridge_mongo'], GUILD_ID, '2026-11', {
+                'occurrence_id': cwl_campaign.occurrence_id('2026-11', 'roster', 'lazy'),
+                'status': 'sent', 'channel_id': '222222222222222222', 'message_id': '987654321098765401',
+            })
             self.body = self.body | {'pool': 'lazy', 'request_id': 'c' * 24}
             self.assertEqual((await self.send()).status, 200)
             self.assertEqual(self.sent[-1][0:2], ('POST', '/channels/222222222222222222/messages'))
@@ -163,7 +182,7 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('no longer hosting', payload['content'])
             self.assertEqual([s[0] for s in self.sent], ['POST', 'PATCH', 'PATCH'])
 
-    async def test_update_retry_404_offers_new_post_and_rate_limit_receipt(self):
+    async def test_update_retry_deleted_message_repost_rate_limit_receipt(self):
         await self.setup_post()
         with patch('cwl_web.roster_image_posts.discord', self.fake):
             await self.send()
@@ -171,13 +190,8 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.mode = 'timeout'
             await self.send('/update')
             self.body['request_id'] = 'c' * 24
-            self.mode = '404'
+            self.mode = 'repost-rate'
             response = await self.send('/update')
-            self.assertEqual(response.status, 400)
-            self.assertEqual((await response.json())['error'], 'Message was deleted in Discord')
-            self.body['request_id'] = 'd' * 24
-            self.mode = '429'
-            response = await self.send()
             self.assertEqual(response.status, 429)
             self.assertEqual((await response.json())['retry_after'], 0.01)
             self.body['request_id'] = 'e' * 24
@@ -269,7 +283,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.body['confirm_duplicate'] = True
             self.mode = None
             self.assertEqual((await self.send()).status, 200)
-            self.assertIn('Roster v2', json.loads(self.sent[-1][2]['data']._fields[0][2])['content'])
+            payload = json.loads(self.sent[-1][2]['data']._fields[0][2])
+            self.assertTrue(payload['content'].startswith('**'))
+            self.assertNotIn('Roster v', payload['content'])
+            with self.app['store'].tx() as db:
+                posted = db.execute('SELECT posted_version FROM roster_image_posts WHERE season_id=? AND clan_tag=?', (self.sid, '#C2Y')).fetchone()
+            self.assertEqual(posted['posted_version'], 2)
             self.assertEqual([s[0] for s in self.sent], ['POST', 'POST'])
 
     async def test_uncertain_update_recovers_new_version_same_message(self):
@@ -285,7 +304,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.mode = None
             self.assertEqual((await self.send('/update')).status, 200)
             self.assertEqual(first[:2], self.sent[-1][:2])
-            self.assertIn('Roster v3', json.loads(self.sent[-1][2]['data']._fields[0][2])['content'])
+            payload = json.loads(self.sent[-1][2]['data']._fields[0][2])
+            self.assertTrue(payload['content'].startswith('**'))
+            self.assertNotIn('Roster v', payload['content'])
+            with self.app['store'].tx() as db:
+                posted = db.execute('SELECT posted_version FROM roster_image_posts WHERE season_id=? AND clan_tag=?', (self.sid, '#C2Y')).fetchone()
+            self.assertEqual(posted['posted_version'], 3)
             self.body.update(version=2, request_id='e' * 24)
             self.assertEqual((await self.send('/update')).status, 409)
 
@@ -308,7 +332,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.mode = None
             self.assertEqual((await self.send('/update')).status, 200)
             self.assertEqual(first[:2], self.sent[-1][:2])
-            self.assertIn('Roster v4', json.loads(self.sent[-1][2]['data']._fields[0][2])['content'])
+            payload = json.loads(self.sent[-1][2]['data']._fields[0][2])
+            self.assertTrue(payload['content'].startswith('**'))
+            self.assertNotIn('Roster v', payload['content'])
+            with self.app['store'].tx() as db:
+                posted = db.execute('SELECT posted_version FROM roster_image_posts WHERE season_id=? AND clan_tag=?', (self.sid, '#C2Y')).fetchone()
+            self.assertEqual(posted['posted_version'], 4)
 
     async def test_new_post_over_failed_update_is_rejected(self):
         await self.setup_post()
@@ -503,3 +532,23 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 503)
             self.assertEqual((await response.json())['post']['status'], 'uncertain')
             self.assertEqual(len(self.sent), 1)
+
+    async def test_new_posts_ignore_retired_image_channel(self):
+        await self.setup_post()
+        with self.app['store'].tx() as db:
+            db.execute("UPDATE roster_image_channels SET channel_id='222222222222222222'")
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            self.assertEqual((await self.send()).status, 200)
+        self.assertEqual(self.sent[0][1], '/channels/123456789012345678/messages')
+
+    async def test_new_posts_require_confirmed_announcement(self):
+        await self.setup_post()
+        from utils import cwl_campaign
+        from cwl_web.manage_bridge import GUILD_ID
+        await self.app['manage_bridge_mongo'].bot_config.update_one(
+            {'_id': cwl_campaign.cycle_id(GUILD_ID, '2026-11')},
+            {'$set': {'deliveries': [], 'sent_occurrences': []}},
+        )
+        with patch('cwl_web.roster_image_posts.discord', self.fake):
+            self.assertEqual((await self.send()).status, 409)
+        self.assertEqual(self.sent, [])

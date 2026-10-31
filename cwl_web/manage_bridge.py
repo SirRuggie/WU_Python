@@ -93,6 +93,11 @@ async def status(request):
     sid = _sid(request)
     cycle = _binding(request, sid)
     published = _store(request).one('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,))
+    from .roster_sequence_review import describe
+    from utils.cwl_roster_image_store import RosterImageStore
+    image_store = RosterImageStore(_store(request))
+    def sequence_status(sid, pool):
+        return describe(image_store, sid, pool)
     result = {'cycle': cycle, 'generation': None, 'worker_ready': False, 'pools': {},
               'published_version': published['version'] if published else None}
     if not cycle:
@@ -112,6 +117,7 @@ async def status(request):
                 'role_ids': [str(role) for role in item.get('role_ids', [])],
                 'enabled': loaded['campaign']['messages']['roster'].get('enabled', True) and item.get('enabled', True),
                 'delivery': _delivery(await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool)),
+                'sequence': sequence_status(sid, pool),
             }
     return web.json_response(result)
 
@@ -214,12 +220,16 @@ async def save_variant(request):
 async def send(request):
     from .app import _require, _sid, _json, _store, _season
     from utils.cwl_web_bridge import queue_roster_send, get_roster_send_status
-    session = _require(request, 'editor')
+    from .roster_image_posts import staff
+    from .roster_sequence_review import prepare
+    session = staff(request, send=True)
     sid = _sid(request)
     cycle = _required_binding(request, sid)
     pool = _pool(request)
     body = await _json(request)
-    if set(body) != {'generation', 'channel_id', 'version'} or type(body.get('version')) is not int:
+    resend = 'deleted_message_id' in body or 'confirm_resend' in body
+    expected_keys = {'generation', 'channel_id', 'version'} | ({'deleted_message_id', 'confirm_resend'} if resend else set())
+    if set(body) != expected_keys or type(body.get('version')) is not int:
         raise web.HTTPBadRequest(text='Review the published version, channel and Manage settings before sending')
     with _store(request).tx() as db:
         if _season(db, sid)['status'] != 'draft':
@@ -234,21 +244,35 @@ async def send(request):
             raise web.HTTPServiceUnavailable(text='Manage delivery worker is unavailable; nothing queued')
         try:
             previous = await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool)
+            if resend:
+                from .announcement_recovery import prepare_resend
+                previous = await prepare_resend(request, mongo, sid=sid, cycle=cycle, pool=pool,
+                                                body=body, actor=session, previous=previous)
+            sequence = await prepare(request, sid, pool, cycle, body, session, previous)
             result = await queue_roster_send(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool,
                 publication_version=body['version'], expected_generation=body['generation'],
                 expected_channel_id=int(body['channel_id']), requested_by=int(session['user_id']),
-                retry_failed=bool(previous and previous.get('status') in ('failed', 'stale')))
+                retry_failed=bool(previous and previous.get('status') in ('failed', 'stale')),
+                sequence_id=sequence['sequence_id'])
         except (ValueError, RuntimeError) as exc:
             raise web.HTTPConflict(text=str(exc)) from exc
     return web.json_response({'delivery': _delivery(result)}, status=202)
 
 
 def routes():
-    from . import manage_reminders
+    from . import manage_reminders, roster_sequence_tests, announcement_recovery
+    from .roster_sequence_review import resume as resume_sequence, recover as recover_sequence, repair_closing, assume_announcement
     return [web.get(API + '/seasons/{season_id}/manage-bridge', status),
             web.post(API + '/seasons/{season_id}/manage-bridge/bind', bind),
             web.patch(API + '/seasons/{season_id}/manage-bridge/{pool}', save_variant),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/send', send),
+            web.get(API + '/seasons/{season_id}/manage-bridge/{pool}/check-message', announcement_recovery.check),
+            web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/resume', resume_sequence),
+            web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/assume', assume_announcement),
+            web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/recover', recover_sequence),
+            web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/closing/update', repair_closing),
+            web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/test-full', roster_sequence_tests.prepare),
+            web.get(API + '/seasons/{season_id}/manage-bridge/{pool}/test-full/{request_id}', roster_sequence_tests.status),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/test', test_announcement)] + manage_reminders.routes()
 
 async def test_announcement(request):
@@ -256,7 +280,8 @@ async def test_announcement(request):
     from .app import _require, _sid, _json, _store
     from .server_management import discord
     from utils.cwl_web_bridge import campaign_generation
-    actor = _require(request, 'editor')
+    from .roster_image_posts import staff
+    actor = staff(request, send=True)
     sid = _sid(request)
     cycle = _required_binding(request, sid)
     pool = _pool(request)

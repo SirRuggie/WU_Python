@@ -168,6 +168,6 @@ it("failed edits retry the existing message; only a deleted message becomes a ne
   d.posts[0].error = "Message was deleted in Discord";
   expect(imageJobs(d, "lazy", "new", true)[0]).toMatchObject({
     operation: "post",
-    channel: "new",
+    channel: "123",
   });
 });

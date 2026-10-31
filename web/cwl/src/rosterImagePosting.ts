@@ -14,7 +14,12 @@ export type ImagePost = {
   channel_id: string;
   message_id: string | null;
   status:
-    "sending" | "posted" | "failed" | "uncertain" | "dropped" | "dismissed";
+    | "sending"
+    | "posted"
+    | "failed"
+    | "uncertain"
+    | "dropped"
+    | "dismissed";
   posted_version: number | null;
   target_version?: number;
   posted_at: string | null;
@@ -22,6 +27,10 @@ export type ImagePost = {
   operation: "post" | "update" | "drop";
 };
 export type ImageData = {
+  closings?: Partial<Record<Pool, { sequence_id: string; message_id: string }>>;
+  destinations?: Partial<
+    Record<Pool, { channel_id: string | null; reason?: string }>
+  >;
   posts: ImagePost[];
   clans: ImageClan[];
   published: { version: number; published_at: string } | null;
@@ -83,7 +92,10 @@ export function imageJobs(
     jobs.push({
       clan,
       operation,
-      channel: operation === "update" ? old!.channel_id : channel,
+      channel:
+        operation === "update" || old?.status === "failed"
+          ? old!.channel_id
+          : channel,
       version,
     });
   }
