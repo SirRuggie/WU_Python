@@ -26,7 +26,7 @@ def test_defaults_cover_live_inventory_without_changing_names():
     expected |= {'strike_records', 'strike_settings', 'strike_leaves',
                  'strike_leave_history', 'strike_profiles', 'strike_imports',
                  'strike_tracking', 'strike_war_snapshots', 'cwl_dashboard_state',
-                 'member_events', 'member_event_test_audit'}
+                 'member_events', 'member_event_test_audit', 'fwa_war_plans'}
     routes = load_routes({})
     assert {n.collection for n in routes.values()} == expected
     assert {n.database for n in routes.values()} == {"settings"}

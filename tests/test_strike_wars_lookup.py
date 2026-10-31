@@ -102,7 +102,7 @@ def test_war_summary_pipeline_keeps_old_one_missed_rows():
     ledger = StrikeService(SimpleNamespace(strike_records=records))
     asyncio.run(ledger.war_list(1))
     match = records.pipeline[0]['$match']
-    assert match['kind']['$in'] == ['strike', 'missed', 'exempt', 'cwl', 'no_attack']
+    assert match['kind']['$in'] == ['strike', 'missed', 'exempt', 'cwl', 'no_attack', 'mismatch']
     assert 'occurred_at' not in match  # prior imports remain discoverable
     assert records.pipeline[1] == {'$sort': {'occurred_at': -1, '_id': 1}}
 

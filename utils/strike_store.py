@@ -11,13 +11,13 @@ from typing import Any
 from pymongo.errors import DuplicateKeyError
 
 from utils import recruit_links
+from utils.fwa_war_plan_store import WarPlanStore
 
 DEFAULT_EXEMPT_ROLE = 769130325460254740
 STRIKE_LIMIT = 4
 REPLACEMENT_GRACE = timedelta(hours=48)
 STRIKE_DAYS = 60
 IMPORT_DAYS = 60
-DEFAULT_NO_ATTACK_OPPONENTS = ['#2CYVV92R']
 
 
 class StrikeConflict(RuntimeError):
@@ -53,8 +53,8 @@ def stamp(value: datetime | str) -> datetime:
 def status_of(row: dict, now: datetime | None = None) -> str:
     if row.get('revoked_at'):
         return 'removed'
-    if row.get('kind') == 'no_attack':
-        return 'no_attack'
+    if row.get('kind') in ('no_attack', 'mismatch'):
+        return row['kind']
     if row.get('kind') == 'cwl':
         return 'recorded'
     if row.get('kind') == 'missed':
@@ -156,9 +156,9 @@ class StrikeService:
 
     async def settings(self, guild_id: int) -> dict:
         saved = await self.mongo.strike_settings.find_one({'_id': str(int(guild_id))})
+        saved = {key: value for key, value in (saved or {}).items() if key != 'no_attack_opponents'}
         return {'guild_id': int(guild_id), 'exempt_role_ids': [DEFAULT_EXEMPT_ROLE],
                 'strike_limit': STRIKE_LIMIT, 'revision': 0,
-                'no_attack_opponents': list(DEFAULT_NO_ATTACK_OPPONENTS),
                 **(saved or {}), 'retention_days': STRIKE_DAYS}
 
     async def monitor_activation(self, guild_id: int) -> datetime:
@@ -193,13 +193,9 @@ class StrikeService:
         return changes
 
     async def set_exempt_roles(self, guild_id: int, role_ids, actor_id: int,
-                               *, expected_revision=None, strike_limit=None, no_attack_opponents=None) -> dict:
+                               *, expected_revision=None, strike_limit=None) -> dict:
         if expected_revision is not None:
             revision_match(expected_revision)
-        if no_attack_opponents is not None:
-            if not isinstance(no_attack_opponents, list) or len(no_attack_opponents) > 100:
-                raise ValueError('Choose up to 100 no-attack opponent tags.')
-            no_attack_opponents = sorted({tag(value) for value in no_attack_opponents})
         roles = sorted({int(role) for role in role_ids})
         if any(role <= 0 for role in roles):
             raise ValueError('Role IDs must be positive.')
@@ -211,15 +207,14 @@ class StrikeService:
                    'updated_at': datetime.now(timezone.utc), 'updated_by': int(actor_id)}
         if strike_limit is not None:
             changes['strike_limit'] = strike_limit
-        if no_attack_opponents is not None:
-            changes['no_attack_opponents'] = no_attack_opponents
+        # Retire legacy settings on any settings write; release clears old rows too.
+        changes['no_attack_opponents'] = []
         saved = await self._compare_write(self.mongo.strike_settings, key, previous,
                                           changes, expected_revision)
         # Return this successful write's receipt, not a later editor's revision.
         # Otherwise the caller could pair its old draft with that newer revision.
         return {'_id': key, 'guild_id': int(guild_id), 'exempt_role_ids': [DEFAULT_EXEMPT_ROLE],
                 'strike_limit': STRIKE_LIMIT,
-                'no_attack_opponents': list(DEFAULT_NO_ATTACK_OPPONENTS),
                 **(previous or {}), **saved,
                 'retention_days': STRIKE_DAYS}
 
@@ -511,7 +506,7 @@ class StrikeService:
             query.update(unrevoked)
             query.update(kind='strike', expires_at={
                 '$gt' if status == 'active' else '$lte': utc(now or datetime.now(timezone.utc))})
-        elif status in ('cwl', 'missed', 'exempt', 'completed', 'no_attack'):
+        elif status in ('cwl', 'missed', 'exempt', 'completed', 'no_attack', 'mismatch'):
             query.update(unrevoked)
             query['kind'] = status
         else:
@@ -589,7 +584,7 @@ class StrikeService:
         if len(search) > 80:
             raise ValueError('Use a shorter account search.')
         match: dict[str, Any] = {'guild_id': int(guild_id),
-            'kind': 'strike' if status == 'active' else {'$in': ['strike', 'missed', 'exempt', 'cwl', 'no_attack']}}
+            'kind': 'strike' if status == 'active' else {'$in': ['strike', 'missed', 'exempt', 'cwl', 'no_attack', 'mismatch']}}
         searched_member = None
         if search.startswith('#'):
             match['player_tag'] = tag(search)
@@ -694,7 +689,7 @@ class StrikeService:
         """Group saved missed-attack incidents by exact war, without API rescans."""
         match = {'guild_id': int(guild_id), 'source': {'$in': ['war', 'cwl']},
                  'war_key': {'$exists': True},
-                 'kind': {'$in': ['strike', 'missed', 'exempt', 'cwl', 'no_attack']}}
+                 'kind': {'$in': ['strike', 'missed', 'exempt', 'cwl', 'no_attack', 'mismatch']}}
         if clan_tag:
             match['clan_tag'] = tag(clan_tag)
         pipeline = [
@@ -710,6 +705,8 @@ class StrikeService:
                 'war_type': {'$first': '$war_type'},
                 'capture_source': {'$first': '$capture_source'},
                 'import_id': {'$first': '$import_id'},
+                'war_plan_reason': {'$first': '$war_plan_reason'},
+                'mismatch': {'$max': {'$cond': [{'$eq': ['$kind', 'mismatch']}, 1, 0]}},
                 'no_attack': {'$max': {'$cond': [{'$eq': ['$kind', 'no_attack']}, 1, 0]}},
                 'missed_accounts': {'$sum': {'$cond': [{'$gt': ['$missed_attacks', 0]}, 1, 0]}},
                 'strikes': {'$sum': {'$cond': [{'$eq': ['$kind', 'strike']}, 1, 0]}},
@@ -785,7 +782,7 @@ class StrikeService:
                 saved = await self.mongo.strike_records.find_one({
                     'guild_id': int(guild_id), 'war_key': snapshot['war_key'],
                     'source': {'$in': ['war', 'cwl']},
-                    'kind': {'$in': ['strike', 'missed', 'exempt', 'cwl', 'no_attack']}}, {'_id': 1})
+                    'kind': {'$in': ['strike', 'missed', 'exempt', 'cwl', 'no_attack', 'mismatch']}}, {'_id': 1})
                 if saved:
                     continue
                 war = snapshot['war']
@@ -1119,16 +1116,20 @@ class StrikeService:
                         deferred=None, check_all=False) -> list[dict]:
         validate_war(war)
         clan = tag(war['clan_tag'])
-        registered = await self.mongo.clans.find_one({'tag': clan}, {'_id': 1})
+        registered = await self.mongo.clans.find_one({'tag': clan}, {'_id': 1, 'type': 1})
         if not registered:
             raise ValueError('Clan is not registered.')
+        outcome, plan_reason = None, None
+        if registered.get('type') == 'FWA':
+            try:
+                outcome, plan_reason = await WarPlanStore(self.mongo).outcome(guild_id, war)
+            except Exception:
+                plan_reason = 'War plan check failed'
+        mismatch = outcome == 'mismatch'
         settings = await self.settings(guild_id)
-        no_attack = tag(war['opponent_tag']) in settings['no_attack_opponents']
         members = war['members']
         tags = [tag(member['tag']) for member in members]
-        if no_attack:
-            owners, conflicts = {}, set()
-        elif owner_cache is None:
+        if owner_cache is None:
             owners, conflicts = await self._resolve_members(tags)
         else:
             missing = [player for player in tags if player not in owner_cache]
@@ -1147,12 +1148,12 @@ class StrikeService:
             player = tag(member['tag'])
             missed = 2 - member['attacks']
             row_id = f'war:{int(guild_id)}:{key}:{player}'
-            reason = 'Account owner conflict' if player in conflicts and (missed or check_all) else None
+            reason = 'Account owner conflict' if not mismatch and player in conflicts and (missed or check_all) else None
             owner = owners.get(player)
-            if player in conflicts and not missed and not check_all:
+            if not mismatch and player in conflicts and not missed and not check_all:
                 continue
             exemption = None
-            if not no_attack and (missed or check_all) and reason is None:
+            if not mismatch and (missed or check_all) and reason is None:
                 exemption = await self._exemption(guild_id, player, owner, ended, exempt_roles, leave_cache=leave_cache)
                 if exemption == 'pending_role_check':
                     reason = 'Discord roles unavailable'
@@ -1165,18 +1166,19 @@ class StrikeService:
                                      'reason': reason})
                 continue
             kind = 'exempt' if missed and exemption else ('strike' if missed == 2 else ('missed' if missed == 1 else 'completed'))
-            if no_attack:
-                kind = 'no_attack'
+            if mismatch:
+                kind = 'mismatch'
             rows.append({'_id': row_id,
                          'guild_id': int(guild_id), 'player_tag': player,
-                         'member_id': owner, 'link_status': 'unknown' if no_attack else ('linked' if owner is not None else 'unlinked'),
+                         'member_id': owner, 'link_status': 'linked' if owner is not None else 'unlinked',
                          'player_name': member.get('name') or player,
                          'clan_tag': clan, 'clan_name': war.get('clan_name'),
                          'opponent_tag': tag(war['opponent_tag']),
                          'opponent_name': war.get('opponent_name'),
+                         'war_plan_reason': plan_reason,
                          'war_key': key, 'kind': kind, 'source': 'war',
                          'capture_source': 'clash_api',
-                         'reason': 'No-attack war (no strike)' if no_attack else ('Both attacks missed' if missed == 2 else ('One attack missed' if missed else 'Both attacks used')),
+                         'reason': ('Both attacks missed' if missed == 2 else ('One attack missed' if missed else 'Both attacks used')),
                          'missed_attacks': missed, 'exemption': exemption,
                          'occurred_at': ended, 'expires_at': ended + timedelta(days=STRIKE_DAYS)})
         return rows
@@ -1291,7 +1293,7 @@ class StrikeService:
                     and any(tag(m['tag']) == player for m in other.get('members', []))):
                 older = await self.mongo.strike_records.find_one(
                     {'_id': f'war:{guild_id}:{snapshot["war_key"]}:{player}'})
-                if older and older.get('kind') == 'no_attack':
+                if older and older.get('kind') in ('no_attack', 'mismatch'):
                     continue
                 if not older or not older.get('streak_receipt'):
                     return False
@@ -1348,7 +1350,7 @@ class StrikeService:
         rows = await self._war_rows(guild_id, war, deferred=deferred, check_all=official_capture)
         applied = existing = strikes = 0
         for row in rows:
-            if official_capture and row['kind'] != 'no_attack':
+            if official_capture and row['kind'] not in ('no_attack', 'mismatch'):
                 row['streak_eligible'] = True
             try:
                 await self.mongo.strike_records.insert_one(row)
@@ -1359,7 +1361,7 @@ class StrikeService:
             if official_capture:
                 saved = await self.mongo.strike_records.find_one({'_id': row['_id']})
                 # Never convert an imported/legacy row into a new streak event.
-                if saved.get('kind') != 'no_attack' and saved.get('streak_eligible') is True and saved.get('capture_source') == 'clash_api' and not saved.get('import_id'):
+                if saved.get('kind') not in ('no_attack', 'mismatch') and saved.get('streak_eligible') is True and saved.get('capture_source') == 'clash_api' and not saved.get('import_id'):
                     if not await self._count_streak(saved):
                         deferred.append({'player_tag': row['player_tag'],
                                          'reason': 'Earlier captured war pending'})
@@ -1415,6 +1417,11 @@ class StrikeService:
                             'reason': 'Not approved in this preview; create a new preview'})
                     continue
                 if row['_id'] in excluded:
+                    continue
+                if original == 'mismatch' and row['kind'] != 'mismatch':
+                    results['deferred_accounts'].append({
+                        'row_id': row['_id'], 'player_tag': row['player_tag'],
+                        'reason': 'War plan changed; create a new preview'})
                     continue
                 # An exemption discovered since preview can lower a strike.
                 # Clearing an exemption cannot promote an originally exempt row.

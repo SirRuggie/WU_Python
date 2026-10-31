@@ -7,7 +7,7 @@ Handles Win, Lose, Blacklisted, and Mismatch war scenarios.
 import hikari
 import lightbulb
 import coc
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List
 
 from extensions.commands.fwa import loader, fwa
@@ -21,6 +21,7 @@ from utils.fwa_blacklist import add_blacklisted
 from utils.fwa_points_parser import sanitize_tag
 from .message_templates import sanitize_opponent_name
 from utils import fwa_war_content
+from utils.fwa_war_plan_store import WarPlanStore, capture_binding
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
@@ -220,7 +221,8 @@ class WarPlans(
             )
             # Components V2 posts have no plain content. Only the selected clan
             # role may ping; template text cannot notify users or everyone.
-            await ctx.client.rest.create_message(
+            binding = await capture_binding(coc_client, clan_tag, opponent_name)
+            posted = await ctx.client.rest.create_message(
                 channel=target_channel,
                 components=message_components,
                 role_mentions=[int(clan_role_id)],
@@ -229,12 +231,23 @@ class WarPlans(
             )
 
             final_copy_text = copy_text
+            try:
+                await WarPlanStore(mongo).record(
+                    guild_id=ctx.interaction.guild_id, message_id=posted.id,
+                    channel_id=target_channel, actor_id=ctx.user.id,
+                    outcome=self.war_result, binding=binding,
+                    posted_at=datetime.now(timezone.utc),
+                )
+            except Exception:
+                # The post is confirmed. Never report a failed send or resend it.
+                final_copy_text += "\nMessage posted, but its war-plan receipt could not be saved. Strikes can only use previously saved confirmed plans; otherwise normal rules apply."
+
             if self.war_result == "blacklisted":
                 blacklist_note = await _add_war_opponent_to_blacklist(
                     coc_client, mongo, clan_tag,
                     ctx.user.id, author_name, opponent_name,
                 )
-                final_copy_text = f"{copy_text}\n{blacklist_note}"
+                final_copy_text = f"{final_copy_text}\n{blacklist_note}"
 
             # Send ephemeral response with just the copy text as plain text
             await ctx.respond(

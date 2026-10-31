@@ -8,6 +8,19 @@ import "./style.css";
 const now = new Date().toISOString();
 const entries: Entry[] = [
   {
+    id: "mismatch",
+    player_tag: "#P22ABC",
+    player_name: "CastleFox",
+    war_end: now,
+    opponent_name: "Mismatch opponent",
+    source: "war",
+    kind: "mismatch",
+    status: "mismatch",
+    source_label: "Clash API",
+    war_key: "mismatch-war",
+    reason: "Mismatch war (no strike)",
+  },
+  {
     id: "no-attack",
     player_tag: "#P22ABC",
     player_name: "CastleFox",
@@ -105,6 +118,12 @@ for (const entry of entries) {
   ).toISOString();
 }
 const wars = [
+  {
+    war_key: "mismatch-war", clan_tag: "#FWA", clan_name: "Warriors United FWA",
+    opponent_tag: "#MISMATCH", opponent_name: "Mismatch opponent", war_end: now,
+    missed_accounts: 1, strikes: 0, one_missed: 0, mismatch: true,
+    source_label: "Clash API",
+  },
   {
     war_key: "war-fwa-edrag",
     clan_tag: "#FWA",
@@ -233,8 +252,6 @@ const candidates = [
 const settings = {
   revision: 1,
   strike_limit: 7,
-  no_attack_opponents: ["#2CYVV92R"],
-  no_attack_names: { "#2CYVV92R": "NO WAR" },
   excluded_roles: [{ id: "769130325460254740", name: "Strike exempt" }],
   roles: [
     { id: "769130325460254740", name: "Strike exempt" },
@@ -475,6 +492,7 @@ window.fetch = async (input, init) => {
           item.war_key === url.searchParams.get("war_key")) &&
         (!url.searchParams.get("query")?.startsWith("#") ||
           item.player_tag === url.searchParams.get("query")) &&
+        (url.searchParams.get("status") !== "mismatch" || item.kind === "mismatch") &&
         (url.searchParams.get("status") !== "strikes" ||
           item.kind === "strike"),
     );
@@ -536,15 +554,12 @@ window.fetch = async (input, init) => {
     }
     settings.revision += 1;
     settings.strike_limit = body.strike_limit;
-    settings.no_attack_opponents = body.no_attack_opponents;
     settings.excluded_roles = settings.roles.filter((role) =>
       body.role_ids.includes(role.id),
     );
     data = {
       revision: settings.revision,
       strike_limit: settings.strike_limit,
-      no_attack_opponents: settings.no_attack_opponents,
-      no_attack_names: settings.no_attack_names,
     };
   } else if (path.endsWith("/settings")) data = settings;
   else if (path.endsWith("/replacement-roster"))

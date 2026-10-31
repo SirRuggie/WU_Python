@@ -310,11 +310,11 @@ def test_new_week_ignores_removed_expired_old_and_future_rows():
     run(scenario())
 
 
-@pytest.mark.parametrize('wanted', ['active', 'expired', 'removed', 'missed', 'exempt', 'completed', 'cwl'])
+@pytest.mark.parametrize('wanted', ['active', 'expired', 'removed', 'missed', 'exempt', 'completed', 'cwl', 'mismatch'])
 def test_history_status_precedence_and_stable_paging(wanted):
     async def scenario():
         db, store = setup()
-        for kind in ('strike', 'cwl', 'missed', 'exempt', 'completed'):
+        for kind in ('strike', 'cwl', 'missed', 'exempt', 'completed', 'mismatch'):
             for revoked in (False, True):
                 for expired in (False, True):
                     identity = f'{kind}-{revoked}-{expired}'
@@ -706,4 +706,18 @@ def test_name_and_linked_target_search_use_saved_th_and_current_clan_without_liv
                 assert json.loads(response.text)['accounts'] == [{'tag': '#P2Y', 'name': 'Known player',
                     'town_hall': 16, 'current_clan_tag': '#Q2Y', 'current_clan_name': 'Family'}]
             provider.player.assert_not_awaited()
+    run(scenario())
+
+
+def test_http_settings_reject_retired_opponent_field_before_storage():
+    async def scenario():
+        request = SimpleNamespace(method='PUT', app={})
+        with patch.object(api.shared, 'require_manage', AsyncMock()), \
+             patch('cwl_web.app._json', AsyncMock(return_value={
+                 'revision': 0, 'role_ids': [], 'no_attack_opponents': ['#2CYVV92R']})), \
+             patch.object(api.shared, 'identity', AsyncMock()) as identity:
+            with pytest.raises(web.HTTPBadRequest) as error:
+                await api.save_roles(request)
+            assert 'Unknown field' in error.value.text
+            identity.assert_not_called()
     run(scenario())

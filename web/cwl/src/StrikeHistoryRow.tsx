@@ -10,6 +10,7 @@ import type { Entry } from "./StrikesWorkspace";
 import { strikeLinkLabel } from "./strikeHistoryView";
 
 function statusText(item: Entry) {
+  if (item.kind === "mismatch") return "Mismatch war (no strike)";
   if (item.kind === "no_attack") return "No-attack war (no strike)";
   if (item.status === "removed") return "Removed";
   if (item.status === "exempt") return "Exempt (no strike)";
@@ -133,6 +134,7 @@ export default function StrikeHistoryRow({
               · {item.current_clan_name || "Current clan unavailable"}
             </p>
           )}
+          {item.war_plan_reason && <p>{item.war_plan_reason}</p>}
           {item.removed_reason && <p>Removed: {item.removed_reason}</p>}
           {item.exemption && <p>Exemption: {item.exemption}</p>}
           {canRemove && !removing && (
