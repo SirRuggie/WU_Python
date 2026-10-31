@@ -65,17 +65,27 @@ def test_route_uses_public_weight_owner_and_preserves_rows_on_upstream_failure()
         request = SimpleNamespace(app={'store':object(),'providers':object()})
         activity=[{'tag':'#PYY','name':'Healthy','current_clan_tag':'#CLAN','last_seen_at':NOW}]
         weights = AsyncMock(return_value={'#PYY':{'weight':149000}})
+        saved_blank = [False]
+        def overlay(store, payload):
+            return {'accounts': [{**row, 'war_weight': None} for row in payload['accounts']]} if saved_blank[0] else payload
         with patch.object(strikes.shared,'mongo',mongo), patch.object(strikes,'service',AsyncMock(return_value=ledger)), \
              patch('utils.player_activity_store.PlayerActivityStore.overview',AsyncMock(return_value=activity)), \
              patch.object(clan_weights,'source_weights',weights), \
-             patch.object(clan_weights,'overlay_accounts',lambda store,payload: payload):
+             patch.object(clan_weights,'overlay_accounts',overlay):
             result=json.loads((await strikes.activity_accounts(request)).body)
             assert result['accounts'][0]['weight']==149000
             assert not result['weight_warning']
             assert weights.call_args.args[2]==['#PYY']
+            ledger.activity_context.return_value['profiles']=[{'player_tag':'#PYY','current_clan_tag':'#CLAN','weight':149000}]
+            saved_blank[0]=True
             weights.side_effect=ProviderUnavailable('fixture outage')
             result=json.loads((await strikes.activity_accounts(request)).body)
             assert len(result['accounts'])==1 and result['weight_warning']
+            assert result['accounts'][0]['weight'] is None
+            weights.side_effect=None
+            weights.return_value=[]
+            result=json.loads((await strikes.activity_accounts(request)).body)
+            assert result['weight_warning'] and result['accounts'][0]['weight'] is None
     asyncio.run(run())
 
 

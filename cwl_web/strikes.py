@@ -344,18 +344,23 @@ async def activity_accounts(request):
     weight_warning = None
     if rows:
         from utils.clan_weights import source_weights, overlay_accounts
+        weights = {}
         try:
             async with asyncio.timeout(8):
                 weights = await source_weights(request.app['store'], request.app['providers'],
                                                [row['player_tag'] for row in rows])
-            effective = overlay_accounts(request.app['store'], {'accounts': [
-                {'tag': row['player_tag'], 'war_weight': (weights.get(row['player_tag']) or {}).get('weight')}
-                for row in rows]})
-            indexed = {row['tag']: row['war_weight'] for row in effective['accounts']}
-            for row in rows:
-                row['weight'] = indexed.get(row['player_tag'])
+            if not isinstance(weights, dict):
+                raise ProviderUnavailable('Invalid weight snapshot')
         except (ProviderUnavailable, TimeoutError):
+            weights = {}
             weight_warning = 'Current weights are unavailable. Showing saved weights where known.'
+        # Saved blanks are intentional and must win even when upstream fails.
+        effective = overlay_accounts(request.app['store'], {'accounts': [
+            {'tag': row['player_tag'], 'war_weight': (weights.get(row['player_tag']) or {}).get('weight', row.get('weight'))}
+            for row in rows]})
+        indexed = {row['tag']: row['war_weight'] for row in effective['accounts']}
+        for row in rows:
+            row['weight'] = indexed.get(row['player_tag'])
     identity_warning = ('Some Discord names are unavailable. Search those members by Discord ID, player name or tag.'
                         if any(row.get('discord_id') and not row.get('discord_name') for row in rows) else None)
     return web.json_response(public({'accounts': rows, 'total': len(rows),

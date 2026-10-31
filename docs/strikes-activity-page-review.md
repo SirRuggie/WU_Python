@@ -24,7 +24,8 @@ large per-unit baseline from this read; the strike ledger supplies
 retained records, profiles and its public replacement eligibility, preserving
 original-clan departure grace. Current weights use the existing public weight
 service and saved-weight overlay. An upstream outage preserves the roster and
-shows a warning. Missing Discord names retain ID search and an explicit notice;
+shows a warning. The saved-weight overlay still applies during an outage, so
+an intentionally blank saved weight never revives an older profile value. Missing Discord names retain ID search and an explicit notice;
 this page does not fan out into one live Discord request per account.
 
 Signals count the last 14 observed regular lineup wars, exclude CWL and manual
