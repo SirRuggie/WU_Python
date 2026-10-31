@@ -668,7 +668,8 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
                              {"id": "100", "username": "old_name", "display_name": "old_name", "avatar_url": None})
             self.assertEqual(old_app["store"].one("SELECT player_name FROM signups")["player_name"], "Alpha")
             self.assertEqual({row["name"] for row in old_app["store"].rows("PRAGMA table_info(sessions)")},
-                             {"token_hash", "user_id", "username", "guild_owner", "csrf", "expires_at", "display_name", "avatar_url"})
+                             {"token_hash", "user_id", "username", "guild_owner", "csrf", "expires_at", "display_name", "avatar_url", "is_bot"})
+            self.assertEqual(old_app["store"].one("SELECT is_bot FROM sessions")["is_bot"], 0)
         finally:
             await old_client.close()
 
