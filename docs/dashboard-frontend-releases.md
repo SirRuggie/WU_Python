@@ -223,3 +223,12 @@ Tooling notes: public verification used curl after urllib received 403; every as
 was verified. A reviewed recursive copy of the staging helper handled nested assets;
 the installed helper was unchanged. The initial merge approval review succeeded on
 retry after supplying the exact frontend-only diff and standing approval evidence.
+
+## Family clans2 release — October30,2026
+
+`family-clans-2` /PR92 /`5f8fb1427e488bc69a1f67eb82f4e97615af621b` passed
+Claude read-only smoke167. Public `index-DuK7p2QP.js` SHA256
+`b13da49ba7f3121a0a9c9b51c3867820819d0f667d69ad9a891fdfacfbe9088a` and affected
+assets match the immutable manifest. Built from a clean tagged isolated checkout;
+shared workspace dist was never activated. Backend/bot readiness, unchanged
+protected data, backup and rollback evidence are in dashboard-backend-releases.md.
