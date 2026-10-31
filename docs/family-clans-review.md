@@ -1,7 +1,7 @@
 # Family clans redesign — implementation record
 
-This batch is in progress on `codex/family-clans-2` from `b611af4`. It is not
-released or ready for review. The approved specification is handoff prompt 29,
+This batch is ready for re-review on `codex/family-clans-2` from `b611af4`. It is not
+released. The approved specification is handoff prompt 29,
 with the all-stored-types decision in Claude entry 117 replacing item 11.
 
 ## Directory findings and changes
@@ -185,3 +185,41 @@ No production release has occurred for this batch.
 
 Current queue per Claude 149–150: Family 29 → Announcements with images 45 →
 carousel 44 → triggers 31 → 19. Clan Games remains on ClashPerk.
+
+## Prompt 46 rework verification
+
+Removal snapshots now protect referenced artwork, including cross-clan reuse;
+held cleanup events are checked again on every pass. Historical removal snapshots
+are retained conservatively even when a newer removal supersedes them, preferring
+extra retained artwork to a broken recovery. Failed reminder CAS/database saves
+mark their before-image abandoned; unconfirmed events never render as completed
+reminder changes.
+
+Add/Remove navigation updates the URL. Add/restore asks about dirty settings before
+a write. Type labels/warnings share the category helper. Singular times, skipped
+reasons, focused picker hints, active FWA queries, non-pinging Discord mentions and
+existing-clan precedence were corrected. The all-type returns reader has a new
+behavior regression. Hosting-clans labels remain consistent across Compare,
+Declaration, balance, header and seasons.
+
+Final rework gates: **5,090 backend tests passed / 21 skipped / 162 subtests**;
+**1,100 frontend tests / 213 files passed**; type checking/build, war-reminder gate
+and full layout suite passed. Dedicated Family layout checks cover 320, 360, 390
+and 1440 pixels with synthetic data. Three new mutations (ignoring removal
+snapshots, labeling unfinished reminder events changed, restoring the returns
+FWA-only filter) were killed.
+
+Verification corrections: the existing FWA-query assertion was updated to include
+the approved active-clan predicates. The shared profile Escape test now waits for
+React Aria's animation-frame focus restoration, retaining its focus assertion.
+Both clean-main and Family standalone checks passed. The previously observed
+shared signup-success timeout recurred once; fixture-only failure diagnostics were
+added, and the full suite then passed without signup application changes. This
+intermittent timeout is not claimed as an application fix. `/tmp` inode exhaustion
+was avoided with disk-backed scratch space; an overlapping scratch mutation run
+was discarded and full backend verification rerun on restored sources.
+
+Final logs: `/tmp/wu-family-rework-full-be.log`,
+`/tmp/wu-family-rework-full-fe.log`, `/tmp/wu-family-rework-layout.log`,
+`/tmp/wu-family-rework-own-layout.log`, `/tmp/wu-family-rework-war-gate.log`.
+No real Discord delivery was tested and no production writes were performed.
