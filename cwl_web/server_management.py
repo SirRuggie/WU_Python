@@ -48,6 +48,17 @@ class DiscordDeliveryUncertain(Exception):
     """Discord may have accepted the request; never retry automatically."""
 
 
+class DiscordItemNotFound(web.HTTPNotFound):
+    """A confirmed Discord 404, retaining its machine-readable reason."""
+    def __init__(self, code):
+        self.discord_code = code
+        super().__init__(text=(
+            'Message was deleted in Discord' if code == 10008 else
+            'Discord channel is no longer available' if code == 10003 else
+            'This Discord member or item is no longer available.'
+        ))
+
+
 async def discord(request, method, path, *, roster_delivery=False, **kwargs):
     injected = request.app.get('server_management_discord')
     if injected:
@@ -60,6 +71,10 @@ async def discord(request, method, path, *, roster_delivery=False, **kwargs):
             async with client.request(method, 'https://discord.com/api/v10' + path,
                     headers={'Authorization': 'Bot ' + token}, **kwargs) as response:
                 if response.status == 404:
+                    if roster_delivery:
+                        data = await response.json()
+                        code = data.get('code') if isinstance(data, dict) else None
+                        raise DiscordItemNotFound(code if type(code) is int else None)
                     raise web.HTTPNotFound(text='This Discord member or item is no longer available.')
                 if response.status == 403:
                     raise web.HTTPForbidden(text='Discord does not allow this action. Check bot permissions.')
