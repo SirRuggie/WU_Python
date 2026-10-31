@@ -217,6 +217,8 @@ async def config(request):
 
 async def me(request):
     session = _require(request)
+    from .visitors import record
+    await record(request, session)
     return web.json_response({"authenticated": True, "access_warning": request.get("access_warning"), "user": {"id": session["user_id"], "username": session["username"], "display_name": session["display_name"] or session["username"], "avatar_url": session["avatar_url"]}, "is_owner": _owner(session), "can_edit": _editor(request, session), "dashboard_permissions": list(PERMISSIONS) if _owner(session) else sorted(request_scopes(request, session["user_id"])), "csrf_token": session["csrf"]})
 
 
@@ -389,9 +391,9 @@ async def auth_callback(request):
         username = str(user.get("username") or user["id"])
         global_name = user.get("global_name")
         display_name = global_name.strip() if isinstance(global_name, str) and global_name.strip() else username
-        db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at,display_name,avatar_url) VALUES (?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at,display_name,avatar_url,is_bot) VALUES (?,?,?,?,?,?,?,?,?)",
                    (_hash(raw), str(user["id"]), username, int(guild.get("owner") is True), csrf,
-                    int(time.time()) + SESSION_SECONDS, display_name, _discord_avatar_url(user)))
+                    int(time.time()) + SESSION_SECONDS, display_name, _discord_avatar_url(user), int(user.get("bot") is True)))
     response = web.HTTPFound(saved_login_destination(request) or request.app["after_login"])
     response.del_cookie(RETURN_COOKIE, path=API + "/auth")
     response.set_cookie(COOKIE, raw, max_age=SESSION_SECONDS, httponly=True, secure=request.app["secure_cookies"], samesite="Lax", path=API)
@@ -425,10 +427,10 @@ async def dev_login(request):
     identity = request.app["dev_identity"]
     raw, csrf = secrets.token_urlsafe(48), secrets.token_urlsafe(32)
     with _store(request).tx() as db:
-        db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at,display_name,avatar_url) VALUES (?,?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO sessions(token_hash,user_id,username,guild_owner,csrf,expires_at,display_name,avatar_url,is_bot) VALUES (?,?,?,?,?,?,?,?,?)",
                    (_hash(raw), identity["id"], identity["username"], int(identity.get("guild_owner", False)),
                     csrf, int(time.time()) + SESSION_SECONDS, identity.get("display_name") or identity["username"],
-                    identity.get("avatar_url") or _discord_avatar_url(identity)))
+                    identity.get("avatar_url") or _discord_avatar_url(identity), int(identity.get("bot") is True)))
     response = web.json_response({"ok": True})
     response.set_cookie(COOKIE, raw, max_age=SESSION_SECONDS, httponly=True, secure=False, samesite="Lax", path=API)
     return response
@@ -1895,6 +1897,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(todo_lifecycle)
     from .clan_activity import setup as setup_clan_activity
     setup_clan_activity(app)
+    from .visitors import setup as setup_visitors
+    setup_visitors(app)
     from .war_detail import setup as setup_war_detail
     setup_war_detail(app)
     app.cleanup_ctx.append(push_lifecycle)
