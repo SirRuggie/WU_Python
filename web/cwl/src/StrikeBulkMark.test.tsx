@@ -88,3 +88,23 @@ it("conflict preserves draft and needs explicit refresh before any next write", 
   );
   expect(saved).toHaveBeenCalledOnce();
 });
+
+it("ignores completion after the editor unmounts without retrying the write", async () => {
+  let complete: (value: unknown) => void = () => {};
+  vi.mocked(api).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  const saved = vi.fn();
+  const busy = vi.fn();
+  await act(async () =>
+    root.render(<StrikeBulkMark rows={[row]} onSaved={saved} onBusy={busy} />),
+  );
+  await act(async () => host.querySelector("button")!.click());
+  await act(async () => root.render(<div />));
+  await act(async () => complete({ added_count: 1, skipped_count: 0 }));
+  expect(saved).not.toHaveBeenCalled();
+  expect(api).toHaveBeenCalledTimes(1);
+});

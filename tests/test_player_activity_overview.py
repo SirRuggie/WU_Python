@@ -165,6 +165,11 @@ def test_activity_outage_preserves_strike_rows_and_directory_names_without_profi
             directory.side_effect=__import__('aiohttp').web.HTTPServiceUnavailable()
             result=json.loads((await strikes.activity_accounts(request)).body)
             assert result['identity_warning'] and len(result['accounts'])==1
+            directory.side_effect=None
+            for malformed in ([{'user':{'id':'123456789012345678'}}], {'not':'a directory'}, [None]):
+                directory.return_value=malformed
+                result=json.loads((await strikes.activity_accounts(request)).body)
+                assert result['identity_warning'] and len(result['accounts'])==1
     asyncio.run(run())
 
 

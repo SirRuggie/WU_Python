@@ -74,3 +74,20 @@ def test_history_storage_cas_retries_preserve_concurrent_official_fields():
         row=await store.get(PLAYER)
         assert row['last_seen_source']=='clash_api' and len(row['recent_wars'])==1
     asyncio.run(run())
+
+
+def test_total_history_budget_cancels_upstream_without_completion_receipt(monkeypatch):
+    from utils import player_activity_history as history
+    import pytest
+    async def run():
+        db,_=setup();db.player_activity=ActivityCollection();db.fwa_war_plans=Collection()
+        db.clans.rows['clan']['type']='War'
+        store=PlayerActivityStore(db)
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
+        async def fetch(*args,**kwargs):await asyncio.Event().wait()
+        monkeypatch.setattr(history,'HISTORY_TIMEOUT_SECONDS',.01)
+        with pytest.raises(TimeoutError):await history.backfill_recent_wars(db,fetch=fetch,now=NOW)
+        row=await store.get(PLAYER)
+        assert row.get('recent_wars_version') is None and not row.get('recent_wars')
+        assert not db.strike_records.rows and not db.strike_profiles.rows
+    asyncio.run(run())

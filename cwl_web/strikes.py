@@ -358,12 +358,22 @@ async def activity_accounts(request):
         try:
             async with asyncio.timeout(8):
                 directory = await searchable_members(request)
-            names = {str(item['user']['id']): display_member(item)['name'] for item in directory
-                     if isinstance(item.get('user'), dict) and item['user'].get('id')}
+            if not isinstance(directory, list):
+                raise ProviderUnavailable('Member directory is incomplete')
+            names = {}
+            for item in directory:
+                user = item.get('user') if isinstance(item, dict) else None
+                if not isinstance(user, dict) or not user.get('id'):
+                    continue
+                name = next((value.strip()[:100] for value in
+                             (item.get('nick'), user.get('global_name'), user.get('username'))
+                             if isinstance(value, str) and value.strip()), None)
+                if name:
+                    names[str(user['id'])] = name
             for row in rows:
                 if row.get('discord_id'):
                     row['discord_name'] = names.get(row['discord_id'])
-        except (ProviderUnavailable, TimeoutError, aiohttp.ClientError, web.HTTPException):
+        except (ProviderUnavailable, TimeoutError, aiohttp.ClientError, web.HTTPException, ValueError, TypeError, KeyError):
             pass
     weight_warning = None
     if rows:

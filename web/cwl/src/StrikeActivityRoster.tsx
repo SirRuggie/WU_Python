@@ -174,7 +174,8 @@ export default function StrikeActivityRoster({
   }, [loading, focusTag, headingRef, memory, rows.length]);
   function change(patch: Partial<ActivityFilters>, push = true) {
     if (bulkBusy) return;
-    setSelected([]);
+    if (Object.keys(patch).some((key) => key !== "page" && key !== "sort"))
+      setSelected([]);
     const next = {
       ...filters,
       ...patch,
@@ -255,11 +256,25 @@ export default function StrikeActivityRoster({
         <details className="strike-activity-actions">
           <summary aria-label="Activity actions">⋯</summary>
           <div className="strike-activity-action-menu">
-            <button disabled={loading || bulkBusy} onClick={() => void read()}>
+            <button
+              disabled={loading || bulkBusy}
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                void read();
+              }}
+            >
               {loading ? "Refreshing…" : "Refresh activity"}
             </button>
             {canManage && !selecting && (
-              <button disabled={bulkBusy} onClick={() => setSelecting(true)}>
+              <button
+                disabled={bulkBusy}
+                onClick={(event) => {
+                  event.currentTarget
+                    .closest("details")
+                    ?.removeAttribute("open");
+                  setSelecting(true);
+                }}
+              >
                 Select accounts
               </button>
             )}

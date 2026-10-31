@@ -20,11 +20,18 @@ export default function StrikeBulkMark({
     [error, setError] = useState(""),
     [conflict, setConflict] = useState(false);
   const pending = useRef(false);
+  const mounted = useRef(true);
   useEffect(() => {
     onDirty?.(rows.length > 0 || !!note);
     return () => onDirty?.(false);
   }, [rows.length, note, onDirty]);
-  useEffect(() => () => onBusy(false), [onBusy]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      onBusy(false);
+    };
+  }, [onBusy]);
   async function save() {
     if (pending.current || conflict || !rows.length || rows.length > 50) return;
     pending.current = true;
@@ -64,16 +71,19 @@ export default function StrikeBulkMark({
         added += result.added_count;
         skipped += result.skipped_count;
       }
-      onSaved();
+      if (mounted.current) onSaved();
     } catch (cause) {
+      if (!mounted.current) return;
       setConflict(true); // A partial group may have saved. Explicit refresh only.
       setError(
         `${added} marked; ${skipped} already marked in completed groups. ${cause instanceof Error ? cause.message : "Bulk marking stopped."} Refresh selected accounts before continuing.`,
       );
     } finally {
       pending.current = false;
-      setBusy(false);
-      onBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        onBusy(false);
+      }
     }
   }
   return (

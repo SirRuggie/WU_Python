@@ -512,6 +512,13 @@ window.fetch = async (input, init) => {
           town_hall: 16 - (index % 4),
           weight: 149000 - index * 100,
           active_strikes: strikes,
+          revision: 0,
+          over_limit: strikes >= 4,
+          new_this_week: index === 0,
+          replacement_note:
+            index === 0
+              ? "Staff follow-up: review recent attendance before marking a replacement."
+              : "",
           total_strikes: index === 0 ? 28 : strikes,
           marked_for_replacement: strikes >= 3,
           replacement_eligible_low: strikes > 0 && strikes < 3,

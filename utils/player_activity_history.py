@@ -13,6 +13,7 @@ from utils.strike_wars import fetch_history_report
 log = logging.getLogger(__name__)
 HISTORY_VERSION = 1
 MAX_ATTEMPTS = 3
+HISTORY_TIMEOUT_SECONDS = 600
 
 
 def recent_wars(existing, incoming):
@@ -29,7 +30,7 @@ def recent_wars(existing, incoming):
     return sorted(indexed.values(), key=lambda row: (row['occurred_at'], row['war_key']), reverse=True)[:14]
 
 
-async def backfill_recent_wars(mongo, *, fetch=fetch_history_report, now=None):
+async def _backfill_recent_wars(mongo, *, fetch, now):
     """At most three attempts/player, three clan reads concurrently, ten minutes/run.
 
     Full historical lineups are fetched through the existing import reader. Only
@@ -74,8 +75,7 @@ async def backfill_recent_wars(mongo, *, fetch=fetch_history_report, now=None):
             except Exception:
                 log.warning('Player activity historical wars unavailable: %s', clan['tag'])
                 return [], True
-    async with asyncio.timeout(600):
-        reports = await asyncio.gather(*(read(clan) for clan in clans))
+    reports = await asyncio.gather(*(read(clan) for clan in clans))
     observed = defaultdict(list)
     incomplete = not clans or any(failed for _, failed in reports)
     for wars, _ in reports:
@@ -93,3 +93,9 @@ async def backfill_recent_wars(mongo, *, fetch=fetch_history_report, now=None):
     log.info('Player activity historical backfill: players=%d wars=%d retryable=%d',
              result['players'], result['wars'], result['retryable'])
     return result
+
+
+async def backfill_recent_wars(mongo, *, fetch=fetch_history_report, now=None):
+    """Bound the entire job, including Mongo reads, attempt receipts and CAS writes."""
+    async with asyncio.timeout(HISTORY_TIMEOUT_SECONDS):
+        return await _backfill_recent_wars(mongo, fetch=fetch, now=now)
