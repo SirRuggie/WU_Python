@@ -17,9 +17,11 @@ type Lookup =
 export default function AddClan({
   disabled,
   onBusy,
+  beforeAdd,
   onOpen,
 }: {
   disabled: boolean;
+  beforeAdd?: () => Promise<boolean>;
   onBusy: (value: boolean) => void;
   onOpen: (clan: Clan, warning: string) => void;
 }) {
@@ -59,6 +61,7 @@ export default function AddClan({
     const snapshot = found;
     setConfirm(null);
     void run(async () => {
+      if (beforeAdd && !(await beforeAdd())) return;
       if (mode === "restore") {
         const result = await api<{ clan: Clan; message: string }>(
           `/manage/clan-history/${encodeURIComponent(snapshot.removal_id!)}/restore`,
@@ -121,7 +124,11 @@ export default function AddClan({
           Already in the family · {found.clan.name}{" "}
           <button
             disabled={disabled || busy}
-            onClick={() => onOpen(found.clan, "")}
+            onClick={() =>
+              void run(async () => {
+                if (!beforeAdd || (await beforeAdd())) onOpen(found.clan, "");
+              })
+            }
           >
             Open
           </button>

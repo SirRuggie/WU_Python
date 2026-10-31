@@ -151,3 +151,29 @@ it("restores the reviewed snapshot only after confirmation", async () => {
   );
   expect(onOpen).toHaveBeenCalledWith(clan, "Clan restored.");
 });
+
+it("asks about dirty settings before writing and cancels without adding", async () => {
+  const beforeAdd = vi.fn().mockResolvedValue(false);
+  await act(async () =>
+    root.render(
+      <AddClan
+        disabled={false}
+        onBusy={() => {}}
+        onOpen={onOpen}
+        beforeAdd={beforeAdd}
+      />,
+    ),
+  );
+  await lookup(found);
+  await click("Add");
+  expect(beforeAdd).toHaveBeenCalledOnce();
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(onOpen).not.toHaveBeenCalled();
+  beforeAdd.mockResolvedValue(true);
+  vi.mocked(api).mockResolvedValueOnce({ clan, warning: "" });
+  await click("Add");
+  expect(api).toHaveBeenLastCalledWith("/manage/clans", "POST", {
+    tag: clan.tag,
+  });
+  expect(onOpen).toHaveBeenCalledOnce();
+});

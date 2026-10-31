@@ -140,7 +140,7 @@ export default function ChannelCombobox({
           Clear
         </button>
       </div>
-      <small id={hintId}>
+      <small id={hintId} className="channel-picker-hint">
         {onResolve
           ? "Search active forum posts and channels, or paste a post ID and choose Look up. "
           : "Type part of a channel name or ID. "}

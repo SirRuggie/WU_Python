@@ -93,6 +93,8 @@ async def add(request):
     except ProviderUnavailable:raise web.HTTPServiceUnavailable(text='Clash could not confirm this clan. Try again.') from None
     warning = ''
     async with mongo(request) as db:
+        if await db.clans.find_one({'tag': clan_tag}):
+            raise web.HTTPConflict(text='Already in the family. Its current settings were kept.')
         removed = await history_collection(db).find_one(
             {'guild_id': GUILD_ID, 'clan.tag': clan_tag, 'action': 'before_remove'},
             sort=[('at', -1), ('_id', -1)],

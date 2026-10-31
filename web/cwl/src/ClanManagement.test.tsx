@@ -306,3 +306,38 @@ it("warns about FWA consumers before committing a type change", async () => {
     false,
   );
 });
+
+it("updates the route when Add switches out of Reminders", async () => {
+  const onNavigate = vi.fn();
+  await act(async () =>
+    root.render(
+      <ClanManagement
+        onDirty={onDirty}
+        initialRoute={{ tab: "overview" }}
+        onNavigate={onNavigate}
+      />,
+    ),
+  );
+  await click("+ Add clan");
+  expect(onNavigate).toHaveBeenLastCalledWith({ tab: "clans" });
+});
+
+it("returns to the directory route after confirmed removal", async () => {
+  const onNavigate = vi.fn();
+  const fallback = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation(async (url, method, body) =>
+    method === "DELETE" ? ({} as never) : fallback(url, method, body),
+  );
+  await act(async () =>
+    root.render(<ClanManagement onDirty={onDirty} onNavigate={onNavigate} />),
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".clan-directory button")!.click(),
+  );
+  await click("Remove clan");
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>("dialog .primary")!.click(),
+  );
+  expect(onNavigate).toHaveBeenLastCalledWith({ tab: "clans" });
+  expect(host.textContent).toContain("Clan removed from the family directory.");
+});

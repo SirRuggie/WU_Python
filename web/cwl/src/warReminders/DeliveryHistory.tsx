@@ -53,6 +53,9 @@ export default function DeliveryHistory({
                 </div>
                 <span>
                   {statuses[receipt.status] || "? Unknown delivery status"}
+                  {receipt.status === "skipped" && receipt.detail
+                    ? ` · ${receipt.detail}`
+                    : ""}
                 </span>
                 {(receipt.urls?.length
                   ? receipt.urls
@@ -70,7 +73,9 @@ export default function DeliveryHistory({
                     View{part ? ` part ${part + 1}` : ""} ↗
                   </a>
                 ))}
-                {receipt.detail && <p>{receipt.detail}</p>}
+                {receipt.detail && receipt.status !== "skipped" && (
+                  <p>{receipt.detail}</p>
+                )}
               </article>
             ))}
           </div>

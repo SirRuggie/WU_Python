@@ -22,6 +22,17 @@ def safe_text(value):
     return re.sub(r"([\\\x60*_~|<>\[\]])", r"\\\1", text)[:80]
 
 
+def display_value(field, value):
+    raw = str(value or '')
+    if field.endswith('_id') and raw.isdigit() and 15 <= len(raw) <= 22:
+        if field == 'leader_id':
+            return f'<@{raw}>'
+        if 'role' in field:
+            return f'<@&{raw}>'
+        return f'<#{raw}>'
+    return safe_text(value)
+
+
 async def show_clan(ctx, mongo, action_id=""):
     """Never mutate storage or call Clash/Discord transport beyond the response."""
     if not await require_dashboard_role(ctx, ROLE_ID, "Clan Management"):
@@ -33,7 +44,7 @@ async def show_clan(ctx, mongo, action_id=""):
     lines = ["Clan editing has moved to the dashboard."]
     if row:
         lines.append("Current settings:")
-        lines.extend(f"{label}: {safe_text(row.get(field))}" for field, label in FIELDS)
+        lines.extend(f"{label}: {display_value(field, row.get(field))}" for field, label in FIELDS)
     elif tag:
         lines.append("This clan is no longer in the family directory.")
     lines.append(f"Edit this on the dashboard › <{link}>")

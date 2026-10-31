@@ -326,7 +326,7 @@
   border-radius: 50%;
 }
 /* Only the focused channel picker shows its keyboard tip; all remain described. */
-.clan-management .channel-combobox:not(:focus-within) .channel-keyboard-hint {
+.clan-management .channel-combobox:not(:focus-within) .channel-picker-hint {
   position: absolute;
   width: 1px;
   height: 1px;

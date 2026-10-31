@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, useRef } from "react";
 import { api, apiUpload } from "./api";
 import { useClanChoices } from "./useClanChoices";
 import ReminderOverview from "./clanManagement/ReminderOverview";
+import { clanCategory } from "./clanManagement/ClanCategories";
 import ClanDirectory from "./clanManagement/ClanDirectory";
 import ClanSettingsNavigation from "./clanManagement/ClanSettingsNavigation";
 import ClanFields from "./clanManagement/ClanFields";
@@ -268,12 +269,17 @@ export default function ClanManagement({
     if (!draft || !saved || disabled) return;
     if (
       draft.type !== saved.type &&
-      (draft.type === "FWA" || saved.type === "FWA")
+      (clanCategory(draft.type) === "FWA" ||
+        clanCategory(saved.type) === "FWA" ||
+        clanCategory(draft.type) === "CWL" ||
+        clanCategory(saved.type) === "CWL")
     ) {
       const effects =
-        saved.type === "FWA"
+        clanCategory(saved.type) === "FWA"
           ? "removes this clan from Clan weights and FWA strike rules"
-          : "adds this clan to Clan weights and FWA strike rules; its members can only sign up for Lazy CWL";
+          : clanCategory(draft.type) === "FWA"
+            ? "adds this clan to Clan weights and FWA strike rules; its members can only sign up for Lazy CWL"
+            : "changes its CWL hosting classification; existing assignments are kept";
       if (
         !(await confirmAction(
           `Changing ${saved.type || "Not set"} → ${draft.type || "Not set"} ${effects}. Save this change?`,
@@ -414,6 +420,7 @@ export default function ClanManagement({
         <button
           disabled={disabled}
           onClick={() => {
+            onNavigate?.({ tab: "clans" });
             setView("clans");
             setAdding(!adding);
           }}
@@ -449,6 +456,7 @@ export default function ClanManagement({
           onOpen={openReminderClan}
           returnTag={overviewReturnTag}
           onAdd={() => {
+            onNavigate?.({ tab: "clans" });
             setView("clans");
             setAdding(true);
           }}
@@ -480,13 +488,11 @@ export default function ClanManagement({
             <AddClan
               disabled={disabled}
               onBusy={setBusy}
+              beforeAdd={async () =>
+                !dirty || (await confirmAction("Discard unsaved clan changes?"))
+              }
               onOpen={(clan, warning) => {
                 void (async () => {
-                  if (
-                    dirty &&
-                    !(await confirmAction("Discard unsaved clan changes?"))
-                  )
-                    return;
                   ++editGeneration.current;
                   setSetupTag(clan.tag);
                   setSaved(clan);
@@ -725,6 +731,8 @@ export default function ClanManagement({
                         });
                         setSaved(null);
                         setDraft(null);
+                        setReminderDirty(false);
+                        onNavigate?.({ tab: "clans" });
                         await load();
                         setNotice("Clan removed from the family directory.");
                       });

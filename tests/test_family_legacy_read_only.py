@@ -44,3 +44,11 @@ def test_unauthorized_legacy_control_does_not_read_clan():
     asyncio.run(show_clan(ctx, NS(clans=clans), "#P0LYQ"))
     clans.find_one.assert_not_awaited()
     assert "role required" in ctx.respond.await_args.args[0]
+
+
+def test_read_only_ids_are_mentions_with_no_ping_permission():
+    from extensions.commands.clan.dashboard.read_only_clan import display_value
+    assert display_value('leader_id', 123456789012345678) == '<@123456789012345678>'
+    assert display_value('role_id', 123456789012345678) == '<@&123456789012345678>'
+    assert display_value('chat_channel_id', 123456789012345678) == '<#123456789012345678>'
+    assert '@everyone' not in display_value('name', '@everyone')

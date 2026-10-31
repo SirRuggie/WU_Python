@@ -267,7 +267,10 @@ export default function ReminderOverview({
                             <strong title={row.clan.name}>
                               {row.clan.name}
                             </strong>
-                            <span>{row.clan.type || "Type not set"} · Off</span>
+                            <span>
+                              {clanCategory(row.clan.type) || "Type not set"} ·
+                              Off
+                            </span>
                             <button
                               ref={(el) => {
                                 if (el) buttons.current.set(row.clan.tag, el);

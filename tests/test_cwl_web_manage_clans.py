@@ -140,8 +140,10 @@ def test_lookup_reports_removed_choice_and_real_member_count(setup, removed, mon
     assert not rows.changes
 
 
-def test_add_existing_tag_is_not_a_silent_success(setup, monkeypatch):
+@pytest.mark.parametrize('old_removal', [False, True])
+def test_add_existing_tag_is_not_a_silent_success(setup, monkeypatch, old_removal):
     req, rows, history = setup
+    history.find_one.return_value = {'_id': 'old'} if old_removal else None
     req.json.return_value = {'tag': '#P0LYQ'}
     req.app = {'providers': NS(clan=AsyncMock(return_value={'name': 'Found clan'}))}
     rows.update_one = AsyncMock(return_value=NS(upserted_id=None))
@@ -155,6 +157,7 @@ def test_add_existing_tag_is_not_a_silent_success(setup, monkeypatch):
 def test_start_fresh_clears_reminders_with_cas_and_preserves_concurrent_edits(setup, monkeypatch, conflict):
     import json
     req, rows, history = setup
+    rows.row = None
     old = {'version': 8, 'enabled': True, 'channel_id': '123456789012345678', 'minutes': [30]}
     store = NS(get_settings=AsyncMock(return_value=old), save_settings=AsyncMock())
     if conflict:
@@ -162,7 +165,10 @@ def test_start_fresh_clears_reminders_with_cas_and_preserves_concurrent_edits(se
     monkeypatch.setattr(api, 'WarReminderStore', lambda db: store)
     monkeypatch.setattr(api, 'ensure_clan_tag_index', AsyncMock(return_value=True))
     history.find_one.return_value = {'_id': 'removed'}
-    rows.update_one = AsyncMock(return_value=NS(upserted_id='new'))
+    async def insert(q, change, **kwargs):
+        rows.row = {'tag': '#P0LYQ', **change['$setOnInsert']}
+        return NS(upserted_id='new')
+    rows.update_one = AsyncMock(side_effect=insert)
     req.app = {'providers': NS(clan=AsyncMock(return_value={'name': 'Found clan'}))}
     req.json.return_value = {'tag': '#P0LYQ', 'mode': 'fresh', 'removal_id': 'removed', 'reminder_revision': api.revision(old)}
     result = json.loads(asyncio.run(api.add(req)).text)
@@ -178,6 +184,7 @@ def test_start_fresh_clears_reminders_with_cas_and_preserves_concurrent_edits(se
 
 def test_removed_add_requires_explicit_choice_and_fresh_reminder_revision(setup, monkeypatch):
     req, rows, history = setup
+    rows.row = None
     old = {'version': 8}
     store = NS(get_settings=AsyncMock(return_value=old), save_settings=AsyncMock())
     monkeypatch.setattr(api, 'WarReminderStore', lambda db: store)

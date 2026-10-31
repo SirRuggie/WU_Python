@@ -89,7 +89,7 @@ async def _allow(ctx, token: str | None) -> bool:
 
 
 async def _fwa_clans(mongo: MongoClient) -> list[dict]:
-    clans = await mongo.clans.find({"type": "FWA"}).to_list(length=None)
+    clans = await mongo.clans.find({"type": "FWA", "archived": {"$ne": True}, "removed": {"$ne": True}}).to_list(length=None)
     return sorted((c for c in clans if c.get("tag")), key=lambda c: c.get("name") or "")
 
 
