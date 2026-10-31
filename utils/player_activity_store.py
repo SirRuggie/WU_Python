@@ -59,9 +59,13 @@ class PlayerActivityStore:
         members = {tag(player): tag(clan) for player, clan in members.items()}
         for row in await self.collection.find({}).to_list(length=None):
             key = row['_id']
-            fields = ({'current_clan_tag': members[key], 'left_at': None}
+            fields = ({'current_clan_tag': members[key], 'left_at': None,
+                       'previous_roster_at': row.get('last_roster_at'),
+                       'last_roster_at': now,
+                       'family_since': (row.get('family_since') or now) if not row.get('left_at') else now}
                       if key in members else
-                      {'current_clan_tag': None, 'left_at': row.get('left_at') or now})
+                      {'current_clan_tag': None, 'left_at': row.get('left_at') or now,
+                       'previous_roster_at': None, 'last_roster_at': None})
             await self.collection.update_one({'_id': key, 'revision': row['revision']},
                                              {'$set': fields, '$inc': {'revision': 1}})
 

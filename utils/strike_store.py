@@ -1,6 +1,6 @@
 """Durable account strike ledger. War inputs are normalized by strike_wars.
 
-No TTL indexes: expiry affects active counts, never the audit record. Automatic
+Expiry affects active counts. Backup-gated retention removes history after90 days. Automatic
 writes use a deterministic primary key, so concurrent scans cannot double count.
 """
 from __future__ import annotations
@@ -401,6 +401,7 @@ class StrikeService:
                'player_name': player_name or player, 'clan_tag': tag(clan_tag) if clan_tag else None,
                'kind': 'strike', 'source': 'manual', 'reason': reason,
                'missed_attacks': None, 'occurred_at': now,
+               'purge_after': now + timedelta(days=90),
                'expires_at': now + timedelta(days=STRIKE_DAYS), 'created_by': int(actor_id)}
         try:
             await self.mongo.strike_records.insert_one(row)
@@ -1115,6 +1116,8 @@ class StrikeService:
     async def _war_rows(self, guild_id: int, war: dict, *, owner_cache=None, leave_cache=None,
                         deferred=None, check_all=False) -> list[dict]:
         validate_war(war)
+        if stamp(war['end_time']) < datetime.now(timezone.utc) - timedelta(days=90):
+            raise ValueError('War is outside the retention window.')
         clan = tag(war['clan_tag'])
         registered = await self.mongo.clans.find_one({'tag': clan}, {'_id': 1, 'type': 1})
         if not registered:
@@ -1180,11 +1183,14 @@ class StrikeService:
                          'capture_source': 'clash_api',
                          'reason': ('Both attacks missed' if missed == 2 else ('One attack missed' if missed else 'Both attacks used')),
                          'missed_attacks': missed, 'exemption': exemption,
-                         'occurred_at': ended, 'expires_at': ended + timedelta(days=STRIKE_DAYS)})
+                         'occurred_at': ended, 'purge_after': ended + timedelta(days=90),
+                         'expires_at': ended + timedelta(days=STRIKE_DAYS)})
         return rows
 
     async def _cwl_rows(self, guild_id: int, war: dict, *, owner_cache=None) -> list[dict]:
         validate_cwl_war(war)
+        if stamp(war['end_time']) < datetime.now(timezone.utc) - timedelta(days=90):
+            raise ValueError('War is outside the retention window.')
         clan = tag(war['clan_tag'])
         if not await self.mongo.clans.find_one({'tag': clan}, {'_id': 1}):
             raise ValueError('Clan is not registered.')
@@ -1229,7 +1235,8 @@ class StrikeService:
                          'capture_source': 'clash_api',
                          'reason': 'CWL attack missed' if used == 0 else 'CWL attack used',
                          'attacks_used': used, 'attacks_per_member': 1,
-                         'missed_attacks': 1 - used, 'occurred_at': ended})
+                         'missed_attacks': 1 - used, 'occurred_at': ended,
+                         'purge_after': ended + timedelta(days=90)})
         return rows
 
     async def process_cwl_war(self, guild_id: int, war: dict, *, owner_cache=None) -> dict:

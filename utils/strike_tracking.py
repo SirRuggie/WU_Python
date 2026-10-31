@@ -67,6 +67,7 @@ class StrikeTracking:
                       now + timedelta(seconds=min(900, 60 * 2 ** min(attempts, 4))))
         fields = {'guild_id': int(guild_id), 'clan_tag': war['clan_tag'],
                   'war_key': war_key(war), 'war': war, 'end_time': war['end_time'],
+                  'purge_after': ended + timedelta(days=30),
                   'updated_at': now, 'status': 'observing',
                   'next_check_at': next_check,
                   'final_check_attempts': attempts}

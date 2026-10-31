@@ -4,6 +4,7 @@ import logging
 import time
 
 from utils.player_activity_store import PlayerActivityStore
+from utils.player_activity_raids import capture_raids
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ async def run(mongo, client):
         try:
             members = await family_members(mongo, client)
             await store.reconcile_membership(members)
+            await capture_raids(store, client, members.values())
             counts = await poll_hour(store, members, client.get_player)
             log.info('Player activity hourly sweep: members=%d success=%d failure=%d',
                      len(members), counts['success'], counts['failure'])
