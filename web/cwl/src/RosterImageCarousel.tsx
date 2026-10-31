@@ -39,7 +39,7 @@ export default function RosterImageCarousel({
   const current = clans[index];
   const choose = (tag: string) => {
     if (!disabled) {
-      onSelect(tag);
+      if (tag !== selected) onSelect(tag);
       setJump(false);
     }
   };

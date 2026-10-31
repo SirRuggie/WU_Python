@@ -15,3 +15,5 @@ Verification:
 Evidence: /tmp/wu-carousel-browser.log, /tmp/wu-carousel-review/{320,360,390,1440}-{first,after-swipe,two-images}.png, /tmp/wu-carousel-full-frontend.log, /tmp/wu-carousel-build.log, /tmp/wu-carousel-mutation-{send-first,eager-images}.log.
 
 No production writes, deployment or live Discord messages were used. Mocked sends verify endpoint selection, not live Discord delivery. Backend unchanged.
+
+Claude review 157–158 required a same-clan selection correction before release. Choosing the current clan is now a no-op (the jump menu still closes), retaining loaded readiness, nonce and sent receipt. Added regressions for current-clan reselection, mid-scroll send blocking, and rail locking during confirmation. All three corresponding mutations were killed. Full frontend now passes 1,067 tests / 203 files.

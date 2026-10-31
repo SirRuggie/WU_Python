@@ -153,3 +153,68 @@ it("all pages must load before sending and cancel performs no write", async () =
   await click("Cancel");
   expect(api.mock.calls.filter((call) => call[1] === "POST")).toHaveLength(0);
 });
+
+it("reselecting the current clan retains readiness and the sent receipt", async () => {
+  await loaded();
+  await click("Pick test channel");
+  await click("Clan 1");
+  await click("Clan 1 · 15 players");
+  const send = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Send Clan 1 test",
+  )!;
+  expect(send.disabled).toBe(false);
+  const rail = host.querySelector(".image-carousel-rail")!;
+  await act(async () =>
+    rail.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+    ),
+  );
+  expect(send.disabled).toBe(false);
+  await click("Send Clan 1 test");
+  await click("Confirm test");
+  expect(host.textContent).toContain("View in Discord");
+  await click("Clan 1");
+  await click("Clan 1 · 15 players");
+  expect(host.textContent).toContain("View in Discord");
+  expect(api.mock.calls.filter((call) => call[1] === "POST")).toHaveLength(1);
+});
+it("send waits for a loaded rail to settle on the selected clan", async () => {
+  await loaded();
+  await click("Pick test channel");
+  const rail = host.querySelector(".image-carousel-rail") as HTMLDivElement;
+  rail.getBoundingClientRect = () => ({ left: 0, width: 360 }) as DOMRect;
+  let offset = -90;
+  [...rail.children].forEach((card, index) => {
+    card.getBoundingClientRect = () =>
+      ({ left: index * 360 + offset, width: 360 }) as DOMRect;
+  });
+  rail.scrollTo = vi.fn();
+  await act(async () => rail.dispatchEvent(new Event("scroll")));
+  const send = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Send Clan 1 test",
+  )!;
+  expect(send.disabled).toBe(true);
+  offset = 0;
+  await act(async () => rail.dispatchEvent(new Event("scrollend")));
+  expect(send.disabled).toBe(false);
+});
+it("confirmation disables the rail and cannot change the reviewed clan", async () => {
+  await loaded();
+  await click("Pick test channel");
+  await click("Send Clan 1 test");
+  const rail = host.querySelector(".image-carousel-rail")!;
+  expect(rail.getAttribute("aria-disabled")).toBe("true");
+  await act(async () =>
+    rail.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    ),
+  );
+  expect(host.textContent).toContain("Clan 1 of 4");
+  expect(
+    host.querySelector("[aria-label='Next clan']")?.hasAttribute("disabled"),
+  ).toBe(true);
+  await click("Confirm test");
+  expect(api.mock.calls.find((call) => call[1] === "POST")?.[0]).toBe(
+    "/seasons/1/roster-images/%23AAA/test",
+  );
+});
