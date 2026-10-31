@@ -98,3 +98,13 @@ def test_trigger_cleanup_never_deletes_before_delivery_or_resends(send_fails):
   assert operations==(['send'] if send_fails else ['send','delete'])
   assert rest.create_message.await_count==1
  asyncio.run(run())
+
+
+def test_obsolete_picker_is_not_a_production_entrypoint():
+ from pathlib import Path
+ root=Path(__file__).resolve().parents[1]
+ assert not (root/'utils/text_command_recipients.py').exists()
+ for name in ('utils/text_commands.py','extensions/components.py'):
+  source=(root/name).read_text()
+  assert 'text_command_recipients' not in source
+  assert "startswith('cr:')" not in source

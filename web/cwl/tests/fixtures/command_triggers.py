@@ -19,7 +19,7 @@ rows = {name: {**validate({'command':name,'text':'Welcome to the family.','block
         for name in ('!lazy','!rules')}
 channels=[{'id':'111111111111111111','name':'general','type':0},{'id':'222222222222222222','name':'staff','type':0}]
 roles=[{'id':'333333333333333333','name':'Member'},{'id':'444444444444444444','name':'Leader'}]
-entries=[]
+entries=[{'id':'sample','actor_name':'Fixture staff','at':datetime.now(timezone.utc).isoformat(),'action':'edit','status':'saved','before':{'text':'Old welcome'},'after':{'text':'Welcome to the family.'},'changed':['text']}]
 
 @web.middleware
 async def sample(request, handler):
