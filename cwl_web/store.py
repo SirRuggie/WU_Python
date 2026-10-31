@@ -5,12 +5,11 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-from utils.dashboard_visit_store import SCHEMA as VISIT_SCHEMA
 from .push import SCHEMA as PUSH_SCHEMA
 from utils.cwl_roster_image_store import SCHEMA as ROSTER_IMAGE_SCHEMA
 from utils.owner_prank_store import SCHEMA as OWNER_PRANK_SCHEMA
 
-SCHEMA = VISIT_SCHEMA + PUSH_SCHEMA + ROSTER_IMAGE_SCHEMA + OWNER_PRANK_SCHEMA + """
+SCHEMA = PUSH_SCHEMA + ROSTER_IMAGE_SCHEMA + OWNER_PRANK_SCHEMA + """
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS roster_test_messages (
  id TEXT PRIMARY KEY, season_id INTEGER NOT NULL, pool TEXT NOT NULL,
@@ -319,6 +318,8 @@ class Store:
                 db.execute("ALTER TABLE sessions ADD COLUMN display_name TEXT")
             if "avatar_url" not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN avatar_url TEXT")
+            if "is_bot" not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
             source_columns = {row[1] for row in db.execute("PRAGMA table_info(participation_source_results)")}
             if "roster_token" not in source_columns:
                 db.execute("ALTER TABLE participation_source_results ADD COLUMN roster_token TEXT")

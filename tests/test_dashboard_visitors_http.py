@@ -1,16 +1,22 @@
-from test_cwl_web_foundation import WebFoundationTests
+import test_cwl_web_foundation as foundation
+import unittest
 from unittest.mock import patch
 
 
-class VisitorsHTTPTests(WebFoundationTests):
+class VisitorsHTTPTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = foundation.WebFoundationTests.asyncSetUp
+    asyncTearDown = foundation.WebFoundationTests.asyncTearDown
+    auth = foundation.WebFoundationTests.auth
+    call = foundation.WebFoundationTests.call
+
     async def test_only_authenticated_session_calls_count_and_owner_gets_aggregates(self):
         response = await self.client.get('/api/cwl/auth/me')
         self.assertEqual(response.status, 401)
-        self.assertEqual(self.app['store'].rows('SELECT * FROM visit_days'), [])
+        self.assertEqual(self.app['visit_store'].rows('SELECT * FROM visit_days'), [])
         for _ in range(2):
             response = await self.call('GET', '/auth/me', self.member)
             self.assertEqual(response.status, 200)
-        rows = self.app['store'].rows('SELECT * FROM visit_days')
+        rows = self.app['visit_store'].rows('SELECT * FROM visit_days')
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['is_staff'], 0)
         denied = await self.call('GET', '/manage/visitors', self.member)
@@ -27,7 +33,7 @@ class VisitorsHTTPTests(WebFoundationTests):
             response = await self.call('GET', '/auth/me', self.member)
         self.assertEqual(response.status, 200)
 
-    async def test_oauth_bot_is_rejected_without_visit_or_session(self):
+    async def test_oauth_bot_keeps_auth_behavior_but_is_not_counted(self):
         self.app["oauth"] = {"client_id": "id", "client_secret": "secret", "redirect_uri": "https://example.test/callback"}
         response = await self.call("GET", "/auth/discord", allow_redirects=False)
         from urllib.parse import parse_qs, urlparse
@@ -60,7 +66,74 @@ class VisitorsHTTPTests(WebFoundationTests):
         with patch("cwl_web.app.aiohttp.ClientSession", return_value=FakeSession()):
             response = await self.call("GET", f"/auth/callback?state={state}&code=code",
                                        {"Cookie": "cwl_oauth_state=" + cookie + "; wu_login_page=/cwl/publish?season=12&step=announce"}, allow_redirects=False)
-        self.assertEqual(response.status, 403)
-        self.assertNotIn("cwl_session", response.cookies)
-        self.assertEqual(self.app["store"].rows("SELECT * FROM visit_days"), [])
-        self.assertEqual(self.app["store"].rows("SELECT * FROM sessions WHERE user_id='300'"), [])
+        self.assertEqual(response.status, 302)
+        self.assertIn("cwl_session", response.cookies)
+        counted = await self.call('GET', '/auth/me', {"Cookie": "cwl_session=" + response.cookies["cwl_session"].value})
+        self.assertEqual(counted.status, 200)
+        self.assertEqual(self.app["visit_store"].rows("SELECT * FROM visit_days"), [])
+        self.assertEqual(len(self.app["store"].rows("SELECT * FROM sessions WHERE user_id='300'")), 1)
+
+    async def test_repeat_auth_me_does_no_visit_database_work(self):
+        first = await self.call('GET', '/auth/me', self.member)
+        self.assertEqual(first.status, 200)
+        with patch.object(self.app['visit_store'], 'tx', side_effect=AssertionError('repeat DB access')) as tx:
+            second = await self.call('GET', '/auth/me', self.member)
+        self.assertEqual(second.status, 200)
+        tx.assert_not_called()
+
+    async def test_failing_durable_publisher_is_never_used_by_counting(self):
+        from test_cwl_dashboard_state import Collection
+        from utils.cwl_dashboard_state import MongoDashboardState
+        store = self.app['store']
+        collection = Collection()
+        owner = MongoDashboardState(collection)
+        owner.seed(store.path)
+        owner.restore(store.path)
+        store.durability = owner
+        collection.fail = 'before'
+        with patch.object(owner, 'publish', wraps=owner.publish) as publish:
+            response = await self.call('GET', '/auth/me', self.member)
+            self.assertEqual(response.status, 200)
+            publish.assert_not_called()
+        self.assertFalse(owner.poisoned)
+        self.assertEqual(len(self.app['visit_store'].rows('SELECT * FROM visit_days')), 1)
+        collection.fail = None
+        with store.tx() as db:
+            db.execute("INSERT INTO seasons(id,label) VALUES(999,'Unrelated write succeeds')")
+        self.assertEqual(store.one('SELECT label FROM seasons WHERE id=999')['label'], 'Unrelated write succeeds')
+        self.assertFalse(store.rows("SELECT name FROM sqlite_master WHERE name='visit_days'"))
+
+    async def test_counting_runs_on_worker_and_errors_are_rate_limited(self):
+        import threading
+        from cwl_web.visitors import LOG
+        loop_thread = threading.get_ident()
+        threads = []
+        def broken(*args, **kwargs):
+            threads.append(threading.get_ident())
+            raise RuntimeError('non-durable file unavailable')
+        with patch.object(self.app['visit_store'], 'record_session', side_effect=broken), patch.object(LOG, 'exception') as log:
+            for _ in range(3):
+                response = await self.call('GET', '/auth/me', self.member)
+                self.assertEqual(response.status, 200)
+            self.assertEqual(log.call_count, 1)
+        self.assertTrue(threads)
+        self.assertNotIn(loop_thread, threads)
+
+    async def test_cache_resets_at_local_day_boundary_and_has_a_bound(self):
+        from cwl_web.visitors import VisitCounter
+        from datetime import datetime, timezone, timedelta
+        from unittest.mock import Mock
+        store = Mock()
+        counter = VisitCounter(store)
+        first = datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc)
+        with patch('cwl_web.visitors.MAX_DAILY_CACHE', 2):
+            await counter.record('100', first, False)
+            await counter.record('100', first + timedelta(hours=1), True)
+            self.assertEqual(store.record_session.call_count, 1)
+            await counter.record('200', first, False)
+            await counter.record('300', first, False)
+            self.assertEqual(len(counter.seen), 2)
+            self.assertEqual(store.record_session.call_count, 2)
+            await counter.record('300', first + timedelta(days=1), False)
+            self.assertEqual(store.record_session.call_count, 3)
+            self.assertEqual(len(counter.seen), 1)

@@ -39,3 +39,10 @@ it("shows an error and permits explicit retry", async () => {
   await act(async () => host.querySelector("button")!.click());
   expect(api).toHaveBeenCalledTimes(2); expect(host.querySelector('[role="alert"]')).toBeNull();
 });
+it("uses singular member for a one-person count", async () => {
+  const single = { total: 1, members: 1, staff: 0 };
+  api.mockResolvedValue({ today: "2026-11-01", windows: { "1": single, "7": single, "30": single }, series: [] });
+  await mount(true);
+  expect(host.textContent).toContain("1 member · 0 staff");
+  expect(host.textContent).not.toContain("1 members");
+});

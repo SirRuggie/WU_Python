@@ -1,6 +1,9 @@
 """Storage owner for daily authenticated visits; no device or request metadata."""
 from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+from contextlib import contextmanager
+import sqlite3
+import threading
 
 LOCAL_TIMEZONE = ZoneInfo("America/New_York")
 
@@ -17,9 +20,37 @@ CREATE INDEX IF NOT EXISTS visit_days_day ON visit_days(day);
 
 
 class VisitStore:
-    def __init__(self, store):
-        self.store = store
+    def __init__(self, path):
+        self.path = str(path)
         self._pruned_day = None
+        self._schema_ready = False
+        self._lock = threading.RLock()
+
+    @contextmanager
+    def tx(self):
+        # This connection never enters the authoritative dashboard transaction.
+        # Initialization is lazy so even a missing/unwritable file cannot break startup.
+        db = sqlite3.connect(self.path, timeout=0.2)
+        db.row_factory = sqlite3.Row
+        try:
+            if not self._schema_ready:
+                with self._lock:
+                    if not self._schema_ready:
+                        db.execute("PRAGMA journal_mode=WAL")
+                        db.executescript(SCHEMA)
+                        self._schema_ready = True
+            with db:
+                yield db
+        finally:
+            db.close()
+
+    def rows(self, sql, args=()):
+        with self.tx() as db:
+            return db.execute(sql, args).fetchall()
+
+    def one(self, sql, args=()):
+        rows = self.rows(sql, args)
+        return rows[0] if rows else None
 
     def record(self, user_id, *, day, at, is_staff):
         """The caller supplies policy's local day and current staff classification."""
@@ -29,7 +60,7 @@ class VisitStore:
             raise ValueError('A calendar day and timezone-aware timestamp are required.')
         if type(is_staff) is not bool:
             raise ValueError('Staff classification must be a boolean.')
-        with self.store.tx() as db:
+        with self.tx() as db:
             cursor = db.execute(
                 'INSERT OR IGNORE INTO visit_days(user_id,day,first_seen_at,is_staff) VALUES(?,?,?,?)',
                 (user_id, day.isoformat(), at.astimezone(timezone.utc).isoformat(), int(is_staff)),
@@ -49,7 +80,7 @@ class VisitStore:
             raise ValueError('A calendar day is required.')
         if self._pruned_day == today:
             return
-        with self.store.tx() as db:
+        with self.tx() as db:
             db.execute('DELETE FROM visit_days WHERE day < ?',
                        ((today - timedelta(days=89)).isoformat(),))
         self._pruned_day = today
@@ -58,7 +89,7 @@ class VisitStore:
         """Return counts only; a person seen as staff in a window counts as staff."""
         if type(today) is not date:
             raise ValueError('A calendar day is required.')
-        with self.store.tx() as db:
+        with self.tx() as db:
             def window(days):
                 rows = db.execute(
                     'SELECT MAX(is_staff) AS staff FROM visit_days WHERE day BETWEEN ? AND ? GROUP BY user_id',

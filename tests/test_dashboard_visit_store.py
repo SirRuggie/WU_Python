@@ -13,13 +13,15 @@ def test_daily_visit_migration_is_additive_idempotent_and_metadata_minimal(tmp_p
         db.execute("INSERT INTO unrelated VALUES('preserve')")
     store=Store(str(path)); Store(str(path))
     assert store.one('SELECT value FROM unrelated')['value']=='preserve'
-    columns=store.rows('PRAGMA table_info(visit_days)')
+    assert not store.rows("SELECT name FROM sqlite_master WHERE name='visit_days'")
+    visits=VisitStore(tmp_path/'old.sqlite.visits.sqlite3')
+    columns=visits.rows('PRAGMA table_info(visit_days)')
     assert {row['name'] for row in columns}=={'user_id','day','first_seen_at','is_staff'}
     assert [row['name'] for row in columns if row['pk']]==['user_id','day']
 
 
 def test_daily_visit_is_idempotent_under_concurrent_page_loads(tmp_path):
-    store=Store(str(tmp_path/'visits.sqlite')); visits=VisitStore(store)
+    store=VisitStore(tmp_path/'visits.sqlite'); visits=store
     now=datetime(2026,11,1,1,30,tzinfo=timezone(timedelta(hours=-4)))
     def write(_):return visits.record('123',day=date(2026,11,1),at=now,is_staff=False)
     with ThreadPoolExecutor(max_workers=4) as pool:assert sum(pool.map(write,range(12)))==1
@@ -32,7 +34,7 @@ def test_daily_visit_is_idempotent_under_concurrent_page_loads(tmp_path):
 
 
 def test_invalid_visit_data_never_writes(tmp_path):
-    store=Store(str(tmp_path/'visits.sqlite')); visits=VisitStore(store)
+    store=VisitStore(tmp_path/'visits.sqlite'); visits=store
     with pytest.raises(ValueError):visits.record('123',day=date.today(),at=datetime.now(),is_staff=False)
     with pytest.raises(ValueError):visits.record('bad',day=date.today(),at=datetime.now(timezone.utc),is_staff=False)
     with pytest.raises(ValueError):visits.record('123',day=date.today(),at=datetime.now(timezone.utc),is_staff='false')
@@ -40,19 +42,19 @@ def test_invalid_visit_data_never_writes(tmp_path):
 
 
 def test_local_day_dst_and_retention(tmp_path):
-    store = Store(str(tmp_path/'visits.sqlite')); visits = VisitStore(store)
+    store = VisitStore(tmp_path/'visits.sqlite'); visits = store
     visits.record_session('123', at=datetime(2026,11,1,5,30,tzinfo=timezone.utc), is_staff=False)
     assert not visits.record_session('123', at=datetime(2026,11,1,6,30,tzinfo=timezone.utc), is_staff=True)
     assert store.one('SELECT day FROM visit_days')['day'] == '2026-11-01'
     for age in (89,90):
         day=date(2026,11,1)-timedelta(days=age)
         visits.record(str(age),day=day,at=datetime(2026,8,1,tzinfo=timezone.utc),is_staff=False)
-    VisitStore(store).prune(date(2026,11,1))
+    VisitStore(store.path).prune(date(2026,11,1))
     assert {row['user_id'] for row in store.rows('SELECT user_id FROM visit_days')} == {'123','89'}
 
 
 def test_aggregate_unique_windows_staff_transition_and_zero_days(tmp_path):
-    store=Store(str(tmp_path/'visits.sqlite')); visits=VisitStore(store); today=date(2026,11,1)
+    store=VisitStore(tmp_path/'visits.sqlite'); visits=store; today=date(2026,11,1)
     for user,age,staff in [('123',0,False),('123',1,True),('456',6,False),('789',7,True),('999',30,False)]:
         visits.record(user,day=today-timedelta(days=age),at=datetime(2026,11,1,tzinfo=timezone.utc),is_staff=staff)
     result=visits.aggregates(today)

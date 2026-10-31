@@ -38,7 +38,7 @@ export default function VisitorSummary({ refresh = 0 }: { refresh?: number }) {
         <dl className="visitor-counts">
           {[["1", "Today"], ["7", "7 days"], ["30", "30 days"]].map(([key, label]) => {
             const counts = data.windows[key];
-            return <div key={key}><dt>{label}</dt><dd><strong>{counts.total}</strong><span>{counts.members} members · {counts.staff} staff</span></dd></div>;
+            return <div key={key}><dt>{label}</dt><dd><strong>{counts.total}</strong><span>{counts.members} {counts.members === 1 ? "member" : "members"} · {counts.staff} staff</span></dd></div>;
           })}
         </dl>
         <svg viewBox="0 0 298 64" role="img" aria-label="Unique dashboard visitors each day for the last 30 days">
