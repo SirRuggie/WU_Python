@@ -110,3 +110,33 @@ stale Quiet, backfill writes to streaks, and a blank page on activity failure.
 The real Mongo lane covers concurrent bounded recent_wars writes with unchanged
 strike records and permanent profile/streak state. Browser checks include manager
 wiring and Select all across pages. No mocked notification test proves delivery.
+
+### Prompt59 follow-up review
+
+Production-shaped profiles without a Discord ID resolve through one cached public
+bulk link lookup, followed by the existing cached member directory. Link or name
+outages remain visible and cannot remove strike rows. The release check must report
+how many production accounts resolve; fixture lookup tests do not establish that
+live count.
+
+Bulk selections clear on externally supplied filter changes and Discard. The panel
+lists every selected name/tag/clan, including later pages. Partial errors preserve
+server counts, name unresolved accounts and keep only those selections, requiring
+an explicit revision refresh before another submission. No fixture result proves
+live Discord delivery.
+
+Clan-history retries, cancellation, recovery, cache reuse, cache retirement and
+exemptions after ledger purge have direct regressions. Revoked wars are neutral;
+left players do not acquire Quiet or its risk badge; unavailable tracking retains
+priority, strike and departure chips. Schema-old or retired clan caches do not
+claim completeness. All seven requested fault mutations fail their checks,
+including forcing page freshness and refreshing the live timestamp during backfill.
+
+Follow-up validation: 1,176 frontend tests, TypeScript and production build pass;
+all seven integrated build/layout stages pass. The activity fixture records 79
+measurements across 26/65/125 accounts, 320/360/390/1440 widths and a short mobile
+viewport. First rows measure about 375px at 360 and 320px at 1440. Confirmation
+screenshots at 360/1440 were visually inspected; the browser asserts all 26
+selected accounts, including the next page, are listed. Five isolated real-Mongo
+checks and 48 focused activity regressions pass. The network-isolated full backend
+result is recorded in the final handoff and evidence directory.
