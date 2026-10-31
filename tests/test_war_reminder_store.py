@@ -108,7 +108,7 @@ def test_failed_save_is_abandoned_and_cannot_render_changed(store, monkeypatch, 
     with pytest.raises(type(failure)):
         asyncio.run(value.save_settings('#P2Y', {'version': 2}, {'enabled': True}, 'staff',
             history_context=({'tag': '#P2Y'}, {'user_id': 'staff'})))
-    assert history_label(event) == 'Not saved'
+    assert history_label(event) == 'Not confirmed'
     assert public_changes(event) == []
     assert history_label({'action': 'reminders'}) == 'Saved snapshot'
     assert history_label({'action': 'reminders', 'confirmed': True}) == 'War reminders changed'

@@ -269,15 +269,15 @@ export default function ClanManagement({
     if (!draft || !saved || disabled) return;
     if (
       draft.type !== saved.type &&
-      (clanCategory(draft.type) === "FWA" ||
-        clanCategory(saved.type) === "FWA" ||
+      (draft.type === "FWA" ||
+        saved.type === "FWA" ||
         clanCategory(draft.type) === "CWL" ||
         clanCategory(saved.type) === "CWL")
     ) {
       const effects =
-        clanCategory(saved.type) === "FWA"
+        saved.type === "FWA"
           ? "removes this clan from Clan weights and FWA strike rules"
-          : clanCategory(draft.type) === "FWA"
+          : draft.type === "FWA"
             ? "adds this clan to Clan weights and FWA strike rules; its members can only sign up for Lazy CWL"
             : "changes its CWL hosting classification; existing assignments are kept";
       if (
@@ -419,7 +419,13 @@ export default function ClanManagement({
         </div>
         <button
           disabled={disabled}
-          onClick={() => {
+          onClick={async () => {
+            if (dirty && !(await confirmAction("Discard unsaved clan changes?"))) return;
+            ++editGeneration.current;
+            setSaved(null);
+            setDraft(null);
+            setReminderDirty(false);
+            setSetupTag(null);
             onNavigate?.({ tab: "clans" });
             setView("clans");
             setAdding(!adding);
