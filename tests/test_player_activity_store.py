@@ -64,3 +64,14 @@ def test_seed_membership_and_raid_backfill_safety():
         assert len(raids) == 8
         assert raids[-1]['attacked']
     asyncio.run(run())
+
+
+def test_seed_cannot_override_an_official_first_seen():
+    async def run():
+        store = PlayerActivityStore(SimpleNamespace(player_activity=ActivityCollection()))
+        await store.record({'tag': PLAYER, 'attackWins': 1}, CLAN, now=NOW)
+        await store.record({'tag': PLAYER, 'attackWins': 2}, CLAN, now=NOW+timedelta(hours=1))
+        before = await store.get(PLAYER)
+        assert not await store.seed(PLAYER, NOW-timedelta(days=2), now=NOW+timedelta(hours=2))
+        assert await store.get(PLAYER) == before
+    asyncio.run(run())

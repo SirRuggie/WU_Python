@@ -555,3 +555,23 @@ more strikes, manual marks first in Top 10 with weights, collapsed summaries,
 present-only Town Hall choices, no missing row weights, and recruit matches
 below Match. No 4xx/5xx or horizontal overflow appeared. Nothing was marked,
 edited or saved; this is not proof of live Discord delivery.
+
+
+## Bounded activity and strike-history retention (prompt54 PR A)
+
+See [member activity](member-activity.md) for the official API signal list,
+hourly rate, bounded player documents, raid evidence rules and rollout gate.
+Strike records receive a dedicated purge_after90days after war end/manual
+creation; war snapshots receive30days. Existing active expiry remains60days.
+Current streak count and war watermark remain on strike_profiles, independently
+of retained history. Replacement notes/marks, settings, leave and exempt roles
+are never TTL collections. Imports remain restricted to60days; direct ingestion
+rejects war data beyond90days so purged history cannot reappear.
+
+TTL indexes are created only by the explicit backup-and-restore migration,
+not startup. Before the approved production migration, stop the strike writers
+for a consistent backup/restore and verification window, retain the local dump,
+and record protected counts/streaks/eligibility and collStats before and after.
+The maintenance command aborts if pending streak receipts remain. Resume the
+writers only after verification, then inspect the first-hour activity logs.
+These are release requirements; fixture tests are not production backup proof.
