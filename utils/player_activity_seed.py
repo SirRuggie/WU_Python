@@ -10,6 +10,7 @@ from utils.strike_store import tag, stamp
 
 log = logging.getLogger(__name__)
 SEED_VERSION = 1
+MAX_SEED_ATTEMPTS = 3
 
 
 class SeedHTTPError(RuntimeError):
@@ -38,9 +39,9 @@ async def fetch_battle_last_seen(http, player_tag, *, now=None):
     return max(values) if values else None
 
 
-async def seed_players(store, fetch_last_online, *, force=False, sleep=asyncio.sleep, timeout=120):
+async def seed_players(store, fetch_last_online, *, sleep=asyncio.sleep, timeout=120):
     counts = {key: 0 for key in ('seeded', 'official_or_existing', 'unavailable', 'failed',
-                                 'non_200', 'timeout', 'already_attempted', 'pending')}
+                                 'non_200', 'timeout', 'already_attempted', 'pending', 'retryable')}
     semaphore = asyncio.Semaphore(5)
     rows = await store.all_players()
 
@@ -48,7 +49,9 @@ async def seed_players(store, fetch_last_online, *, force=False, sleep=asyncio.s
         if row.get('last_seen_at'):
             counts['official_or_existing'] += 1
             return
-        if row.get('seed_job_version') == SEED_VERSION and not force:
+        if (row.get('seed_job_version') == SEED_VERSION
+                and (row.get('seed_status') not in ('non_200', 'timeout', 'failed')
+                     or int(row.get('seed_attempts', 0)) >= MAX_SEED_ATTEMPTS)):
             counts['already_attempted'] += 1
             return
         status = 'failed'
@@ -71,6 +74,8 @@ async def seed_players(store, fetch_last_online, *, force=False, sleep=asyncio.s
         except Exception:
             pass  # No upstream error bodies or credential-bearing URLs in logs.
         counts[status] += 1
+        if status in ('non_200', 'timeout', 'failed') and int(row.get('seed_attempts', 0))+1 < MAX_SEED_ATTEMPTS:
+            counts['retryable'] += 1
         await store.mark_seed_attempt(row['_id'], status, SEED_VERSION)
 
     tasks = [asyncio.create_task(one(row)) for row in rows]

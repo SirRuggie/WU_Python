@@ -2,8 +2,7 @@
 from datetime import timedelta
 from utils.strike_store import stamp
 
-RECORD_DAYS = 90
-SNAPSHOT_DAYS = 30
+from utils.strike_retention_policy import RECORD_DAYS, SNAPSHOT_DAYS, INCOMPLETE_DAYS
 
 
 def record_purge_after(row):
@@ -11,7 +10,13 @@ def record_purge_after(row):
 
 
 def snapshot_purge_after(row):
-    return stamp(row['end_time']) + timedelta(days=SNAPSHOT_DAYS)
+    if row.get('manual_review_required'):
+        return None
+    if row.get('status') == 'finalized':
+        return stamp(row['end_time']) + timedelta(days=SNAPSHOT_DAYS)
+    if row.get('status') in ('incomplete', 'abandoned'):
+        return stamp(row['end_time']) + timedelta(days=INCOMPLETE_DAYS)
+    return None
 
 
 def validate_record_retention(row):

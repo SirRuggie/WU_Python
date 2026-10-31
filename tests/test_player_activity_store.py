@@ -75,3 +75,16 @@ def test_seed_cannot_override_an_official_first_seen():
         assert not await store.seed(PLAYER, NOW-timedelta(days=2), now=NOW+timedelta(hours=2))
         assert await store.get(PLAYER) == before
     asyncio.run(run())
+
+
+def test_membership_cas_loss_is_logged_without_claiming_success(caplog):
+    async def run():
+        collection=ActivityCollection()
+        store=PlayerActivityStore(SimpleNamespace(player_activity=collection))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
+        async def conflict(*args,**kwargs): return SimpleNamespace(matched_count=0)
+        collection.update_one=conflict
+        await store.reconcile_membership({},now=NOW+timedelta(hours=1))
+        assert not (await store.get(PLAYER)).get('left_at')
+        assert 'membership CAS conflict' in caplog.text
+    asyncio.run(run())

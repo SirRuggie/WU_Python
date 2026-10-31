@@ -17,8 +17,8 @@ ACHIEVEMENTS = frozenset({
     'Mortar Mauler', 'Multi-Archer Tower Terminator', 'Ricochet Cannon Crusher',
     'Firespitter Finisher', 'Multi-Gear Tower Trampler', 'Firefighter',
 })
-COUNTERS = ('attackWins', 'donations', 'expLevel', 'townHallLevel')
-CHANGES = ('name', 'warPreference', 'builderBaseTrophies')
+COUNTERS = ('attackWins', 'donations', 'expLevel', 'townHallLevel', 'builderBaseTrophies')
+CHANGES = ('name', 'warPreference')
 
 
 def baseline(player: dict) -> dict:

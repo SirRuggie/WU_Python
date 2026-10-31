@@ -7,6 +7,7 @@ import uuid
 from pymongo.errors import DuplicateKeyError
 
 from utils.strike_store import tag, utc, war_key
+from utils.strike_retention import snapshot_purge_after
 
 RECENT = timedelta(minutes=25)
 ERROR_LIMIT = 5
@@ -67,7 +68,6 @@ class StrikeTracking:
                       now + timedelta(seconds=min(900, 60 * 2 ** min(attempts, 4))))
         fields = {'guild_id': int(guild_id), 'clan_tag': war['clan_tag'],
                   'war_key': war_key(war), 'war': war, 'end_time': war['end_time'],
-                  'purge_after': ended + timedelta(days=30),
                   'updated_at': now, 'status': 'observing',
                   'next_check_at': next_check,
                   'final_check_attempts': attempts}
@@ -80,7 +80,8 @@ class StrikeTracking:
         else:
             await self.mongo.strike_war_snapshots.update_one(
                 {'_id': key, 'status': 'observing'},
-                {'$set': {**fields, 'seen_active': bool(existing.get('seen_active')) or active}})
+                {'$set': {**fields, 'seen_active': bool(existing.get('seen_active')) or active},
+                 '$unset': {'purge_after': ''}})
         return await self.mongo.strike_war_snapshots.find_one({'_id': key})
 
     async def finalized(self, guild_id: int, war: dict, *, now=None):
@@ -88,7 +89,8 @@ class StrikeTracking:
         await self.mongo.strike_war_snapshots.update_one(
             {'_id': self.snapshot_key(guild_id, war), 'status': 'observing'},
             {'$set': {'war': war, 'status': 'finalized', 'finalized_at': now,
-                      'next_check_at': None, 'updated_at': now}})
+                      'next_check_at': None, 'updated_at': now,
+                      'purge_after': snapshot_purge_after({'end_time': war['end_time'], 'status': 'finalized'})}})
 
     async def incomplete(self, guild_id: int, war: dict, reason: str, *, now=None):
         now = utc(now or datetime.now(timezone.utc))
@@ -96,7 +98,17 @@ class StrikeTracking:
             {'_id': self.snapshot_key(guild_id, war), 'status': 'observing'},
             {'$set': {'war': war, 'status': 'incomplete', 'incomplete_at': now,
                       'incomplete_reason': reason, 'next_check_at': None,
+                      'purge_after': snapshot_purge_after({'end_time': war['end_time'], 'status': 'incomplete'}),
                       'updated_at': now}})
+
+    async def quarantine_old(self, guild_id, war, *, now=None):
+        """Keep an unresolved observation visible without retrying it forever."""
+        now = utc(now or datetime.now(timezone.utc))
+        await self.mongo.strike_war_snapshots.update_one(
+            {'_id': self.snapshot_key(guild_id, war), 'status': 'observing'},
+            {'$set': {'status': 'incomplete', 'manual_review_required': True,
+                      'incomplete_reason': 'Outside retention window: staff review required',
+                      'next_check_at': None, 'updated_at': now}, '$unset': {'purge_after': ''}})
 
     async def abandon_older(self, guild_id: int, clan_tag: str, current_keys=(), *, now=None):
         now = utc(now or datetime.now(timezone.utc))
@@ -125,7 +137,8 @@ class StrikeTracking:
             result = await self.mongo.strike_war_snapshots.update_one(
                 {'_id': row['_id'], 'status': 'observing'},
                 {'$set': {'status': 'abandoned', 'abandoned_at': now,
-                          'next_check_at': None, 'updated_at': now}})
+                          'next_check_at': None, 'updated_at': now,
+                          'purge_after': snapshot_purge_after({**row, 'status': 'abandoned'})}})
             if result.matched_count:
                 removed.add(row['clan_tag'])
         return removed
@@ -274,6 +287,8 @@ class StrikeTracking:
             prior = latest_ended.get(row['clan_tag'])
             if prior is None or utc(row['end_time']) > utc(prior['end_time']):
                 latest_ended[row['clan_tag']] = row
+        review_rows = (await snapshots.find({'guild_id': guild_id, 'manual_review_required': True}).to_list(length=None)) if snapshots is not None else []
+        review_clans = {row['clan_tag'] for row in review_rows}
         result = []
         for clan in clans:
             clan_tag = tag(clan['tag'])
@@ -305,7 +320,7 @@ class StrikeTracking:
                       'behind' if unfinished or check_stale else
                       'private' if state == 'private' else
                       'behind' if state == 'unknown' or
-                        latest_incomplete or stale or item.get('skipped_wars') or
+                        latest_incomplete or clan_tag in review_clans or stale or item.get('skipped_wars') or
                         item.get('deferred_accounts') or
                         (state != 'notInWar' and not recorded) else 'healthy')
             result.append({'clan_tag': clan_tag, 'clan_name': clan.get('name') or clan_tag,

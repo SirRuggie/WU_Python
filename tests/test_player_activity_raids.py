@@ -2,7 +2,8 @@ import asyncio
 from datetime import timedelta
 from types import SimpleNamespace as NS
 
-from tests.test_player_activity import NOW
+from datetime import datetime, timezone
+NOW = datetime(2026,11,2,7,tzinfo=timezone.utc)
 from tests.test_player_activity_store import ActivityCollection, PLAYER, CLAN
 from utils.player_activity_store import PlayerActivityStore
 from utils.player_activity_raids import capture_raids
@@ -48,4 +49,39 @@ def test_entire_family_without_raid_entries_can_have_an_observed_skip():
         await capture_raids(store, NS(get_raid_log=empty), [CLAN], now=end+timedelta(minutes=30))
         rows = (await store.get(PLAYER))['raid_weekends']
         assert rows == [{'weekend_id': end.isoformat(), 'attacked': False, 'attacks': 0}]
+    asyncio.run(run())
+
+
+def test_raid_failure_is_incomplete_and_straddle_guard_is_required():
+    async def run():
+        store=PlayerActivityStore(NS(player_activity=ActivityCollection()))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW-timedelta(days=1))
+        await store.reconcile_membership({PLAYER:CLAN},now=NOW-timedelta(minutes=30))
+        await store.reconcile_membership({PLAYER:CLAN},now=NOW+timedelta(minutes=30))
+        async def failed(*args,**kwargs): raise TimeoutError()
+        result=await capture_raids(store,NS(get_raid_log=failed),[CLAN],now=NOW+timedelta(minutes=30))
+        assert not result['complete']
+        assert (await store.get(PLAYER))['raid_weekends']==[]
+        assert not (await store.get(PLAYER)).get('raid_checked_weekends')
+        await store.reconcile_membership({PLAYER:CLAN},now=NOW+timedelta(hours=1,minutes=30))
+        async def empty(*args,**kwargs): return []
+        await capture_raids(store,NS(get_raid_log=empty),[CLAN],now=NOW+timedelta(hours=1,minutes=30))
+        assert (await store.get(PLAYER))['raid_weekends']==[]
+    asyncio.run(run())
+
+
+def test_completed_weekend_is_not_read_or_rewritten_every_hour():
+    async def run():
+        class CountCollection(ActivityCollection):
+            writes=0
+            async def update_one(self,*args,**kwargs):
+                self.writes+=1;return await super().update_one(*args,**kwargs)
+        collection=CountCollection();store=PlayerActivityStore(NS(player_activity=collection))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW-timedelta(hours=2))
+        calls=[]
+        async def raids(*args,**kwargs): calls.append(1);return [NS(end_time=NOW,members=[NS(tag=PLAYER,attack_count=6)])]
+        await capture_raids(store,NS(get_raid_log=raids),[CLAN],now=NOW+timedelta(minutes=30))
+        before=collection.writes
+        result=await capture_raids(store,NS(get_raid_log=raids),[CLAN],now=NOW+timedelta(hours=1))
+        assert len(calls)==1 and collection.writes==before and result['writes']==0
     asyncio.run(run())

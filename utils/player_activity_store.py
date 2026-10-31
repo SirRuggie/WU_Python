@@ -1,5 +1,8 @@
 """Single owner for bounded player_activity documents and optimistic writes."""
 from datetime import datetime, timezone
+import logging
+
+log = logging.getLogger(__name__)
 
 from pymongo.errors import DuplicateKeyError
 
@@ -22,7 +25,7 @@ class PlayerActivityStore:
         await self.collection.update_one(
             {'_id': tag(player_tag)},
             {'$set': {'seed_job_version': version, 'seed_status': status,
-                      'seed_attempted_at': datetime.now(timezone.utc)}, '$inc': {'revision': 1}})
+                      'seed_attempted_at': datetime.now(timezone.utc)}, '$inc': {'revision': 1, 'seed_attempts': 1}})
 
     async def get(self, player_tag):
         return await self.collection.find_one({'_id': tag(player_tag)})
@@ -75,27 +78,38 @@ class PlayerActivityStore:
                       if key in members else
                       {'current_clan_tag': None, 'left_at': row.get('left_at') or now,
                        'previous_roster_at': None, 'last_roster_at': None})
-            await self.collection.update_one({'_id': key, 'revision': row['revision']},
-                                             {'$set': fields, '$inc': {'revision': 1}})
+            if all(row.get(field) == value for field, value in fields.items()):
+                continue
+            result = await self.collection.update_one({'_id': key, 'revision': row['revision']},
+                                                       {'$set': fields, '$inc': {'revision': 1}})
+            if not result.matched_count:
+                log.warning('Player activity membership CAS conflict: %s', key)
 
-    async def record_weekend(self, player_tag, weekend_id: str, attacks: int, *, observed_member: bool):
-        if not isinstance(attacks, int) or isinstance(attacks, bool) or attacks < 0:
-            raise ValueError('Raid attacks must be a non-negative integer')
-        # Historical logs prove attacks, never absence or membership.
-        if not attacks and not observed_member:
-            return False
+
+    async def record_weekend(self, player_tag, weekend_id, attacks, *, observed_member):
+        return await self.merge_raid_observations(player_tag, {weekend_id: (attacks, observed_member)}, [])
+
+    async def merge_raid_observations(self, player_tag, observations, checked):
+        for attacks, observed in observations.values():
+            if type(attacks) is not int or attacks < 0:
+                raise ValueError('Raid attacks must be a non-negative integer')
         for _ in range(5):
             row = await self.get(player_tag)
             if row is None:
                 return False
             weekends = {item['weekend_id']: item for item in row.get('raid_weekends', [])}
-            existing = weekends.get(weekend_id, {})
-            count = max(attacks, existing.get('attacks', 0))
-            weekends[weekend_id] = {'weekend_id': weekend_id, 'attacked': count > 0, 'attacks': count}
+            for weekend, (attacks, observed) in observations.items():
+                if not attacks and not observed:
+                    continue
+                count = max(attacks, weekends.get(weekend, {}).get('attacks', 0))
+                weekends[weekend] = {'weekend_id': weekend, 'attacked': count > 0, 'attacks': count}
             recent = [weekends[key] for key in sorted(weekends)[-8:]]
+            checked_ids = sorted(set(row.get('raid_checked_weekends', [])) | set(checked))[-8:]
+            if recent == row.get('raid_weekends', []) and checked_ids == row.get('raid_checked_weekends', []):
+                return False
             result = await self.collection.update_one(
                 {'_id': row['_id'], 'revision': row['revision']},
-                {'$set': {'raid_weekends': recent}, '$inc': {'revision': 1}})
+                {'$set': {'raid_weekends': recent, 'raid_checked_weekends': checked_ids}, '$inc': {'revision': 1}})
             if result.matched_count:
                 return True
         raise RuntimeError('Raid activity changed concurrently')

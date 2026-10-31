@@ -61,7 +61,7 @@ def test_worker_cancels_its_background_seed_on_shutdown(monkeypatch):
             async def reconcile_membership(self, members):
                 pass
         async def family(*args):
-            return {'#A': '#CLAN'}
+            return polling.RosterSweep({'#A': '#CLAN'}, ['#CLAN'], True)
         async def raids(*args):
             return {}
         async def hour(*args, **kwargs):
@@ -102,7 +102,7 @@ def test_transient_index_failure_does_not_permanently_kill_worker(monkeypatch):
             async def reconcile_membership(self, members):
                 pass
         async def family(*args):
-            return {}
+            return polling.RosterSweep({}, [], False)
         async def raids(*args):
             pass
         async def stop(*args, **kwargs):
@@ -136,4 +136,53 @@ def test_official_calls_share_a_one_per_second_budget():
         await client.get_raid_log('#CLAN', limit=8)
         await client.get_player('#A')
         assert calls==[0,1,2]
+    asyncio.run(scenario())
+
+
+def test_family_read_isolates_failed_archived_removed_and_empty_answers(caplog):
+    from utils.player_activity_polling import family_members, CompleteActivityClan
+    import pytest
+    async def scenario():
+        from tests.test_strike_streaks import Cursor
+        good,bad,empty,archived,removed='#PYY','#PQQ','#PRR','#PJJ','#PUU'
+        rows=[{'tag':good},{'tag':bad},{'tag':empty},{'tag':archived,'archived':True},{'tag':removed,'removed_at':1}]
+        mongo=SimpleNamespace(clans=SimpleNamespace(find=lambda *args:Cursor(rows)))
+        called=[]
+        async def clan(value):
+            called.append(value)
+            if value==bad: raise TimeoutError()
+            return SimpleNamespace(tag=value,member_count=0 if value==empty else 1,
+                                   members=[] if value==empty else [SimpleNamespace(tag='#PC9YGL0JL')])
+        sweep=await family_members(mongo,SimpleNamespace(get_clan=clan))
+        assert sweep.members=={'#PC9YGL0JL':good}
+        assert sweep.clan_tags==[good,bad,empty] and not sweep.complete
+        assert called==[good,bad,empty] and bad in caplog.text
+        with pytest.raises(ValueError,match='member list'):
+            CompleteActivityClan(data={'tag':good,'members':0},client=None)
+        rows.clear()
+        sweep=await family_members(mongo,SimpleNamespace(get_clan=clan))
+        assert not sweep.complete and sweep.members=={}
+    asyncio.run(scenario())
+
+
+def test_incomplete_roster_never_marks_left_but_polls_healthy_and_reads_all_clans(monkeypatch):
+    from utils import player_activity_polling as polling
+    import pytest
+    async def scenario():
+        seen=[]
+        class Store:
+            def __init__(self,mongo): pass
+            async def ensure_indexes(self): pass
+            async def reconcile_membership(self,members): seen.append('left-write')
+        async def family(*args): return polling.RosterSweep({'#PYY':'#PQQ'},['#PQQ','#PRR'],False)
+        async def hour(store,members,*args,**kwargs):
+            assert members=={'#PYY':'#PQQ'};seen.append('poll');return {'success':1,'failure':0}
+        async def raids(store,client,tags):
+            assert tags==['#PQQ','#PRR'];seen.append('raids');raise asyncio.CancelledError()
+        monkeypatch.setattr(polling,'PlayerActivityStore',Store)
+        monkeypatch.setattr(polling,'family_members',family)
+        monkeypatch.setattr(polling,'poll_hour',hour)
+        monkeypatch.setattr(polling,'capture_raids',raids)
+        with pytest.raises(asyncio.CancelledError): await polling.run(None,SimpleNamespace(get_player=None))
+        assert seen==['poll','raids']
     asyncio.run(scenario())

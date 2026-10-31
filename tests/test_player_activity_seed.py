@@ -24,9 +24,12 @@ def test_background_seed_failures_are_counted_and_rerun_is_safe():
         first = await seed_players(store, fetch, sleep=no_sleep)
         assert first['seeded']==1 and first['timeout']==1 and first['unavailable']==1
         again = await seed_players(store, fetch, sleep=no_sleep)
-        assert again['already_attempted']==2 and again['official_or_existing']==1
+        assert again['already_attempted']==1 and again['official_or_existing']==1 and again['timeout']==1
+        await seed_players(store, fetch, sleep=no_sleep)
+        capped = await seed_players(store, fetch, sleep=no_sleep)
+        assert capped['already_attempted']==2
         await store.record({'tag': PLAYER, 'attackWins': 2}, CLAN, now=NOW+timedelta(hours=1))
-        await seed_players(store, fetch, force=True, sleep=no_sleep)
+        await seed_players(store, fetch, sleep=no_sleep)
         assert (await store.get(PLAYER))['last_seen_source']=='clash_api'
     asyncio.run(run())
 

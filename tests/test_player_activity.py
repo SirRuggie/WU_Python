@@ -56,3 +56,9 @@ def test_malformed_tracked_counters_fail_without_changing_saved_state():
             observe(previous, invalid, now=NOW+timedelta(hours=1))
         assert previous['baseline']['attackWins']==1
         assert 'last_seen_at' not in previous
+
+
+def test_builder_trophy_decrease_is_not_activity():
+    first=observe(None,{'builderBaseTrophies':100},now=NOW)
+    reset=observe(first,{'builderBaseTrophies':90},now=NOW+timedelta(hours=1))
+    assert 'last_seen_at' not in reset and reset['baseline']['builderBaseTrophies']==90

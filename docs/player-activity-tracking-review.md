@@ -60,3 +60,26 @@ All four required mutations were refreshed and killed, then source was restored.
 The raid calendar supplies only the ended weekend identity when every clan log
 is empty; it never substitutes for observed membership. Backup directories use
 private0700 permissions. No live Discord or notification test was sent.
+
+
+## Prompt 55 rework
+
+Deferred snapshots have no TTL; finalized snapshots use 30 days and incomplete
+placeholders 90 days. Old unresolved wars are quarantined for visible staff review
+without stopping subsequent wars. Migration uses an explicit separate local server,
+refuses unacknowledged empty collections and corrupt restores even under `-O`, and
+records partial index success. Recovery restores verified dumps into a fresh local
+database. Real Mongo 7.0.41 proves deferred/incomplete survival across actual TTL
+sweeps and finalized deletion, with no dry-run source changes.
+
+Roster failures retain healthy polling and suppress departure writes; archived
+clans are excluded. Every family clan participates in raid reads. Completed raid
+weekends avoid repeat API/Mongo writes, incomplete weekends retry, builder trophy
+decreases are ignored, and transient seed attempts retry at most three times.
+Membership CAS conflicts are logged. Writer-level dates, retained expiry and
+replacement eligibility are covered. PR B will label retained counts Last 90 days.
+A full baseline is approximately 7.8 KB, about 8 MB for 1000 players before overhead.
+
+Final rework suite counts and mutation table are recorded in the new READY entry;
+the previous READY counts above describe the pre-review revision only. No live
+Discord test, notification or production migration was performed.
