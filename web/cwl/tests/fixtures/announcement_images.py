@@ -28,7 +28,9 @@ class Options:
 app['announcement_transport'] = Options()
 
 async def discord(method, path, **kwargs):
-    if method == 'GET': return {'guild_id': str(GUILD_ID), 'type': 0, 'roles': []}
+    if method == 'GET':
+        channel = next((item for item in channels if path == '/channels/' + item['id']), None)
+        return {'guild_id': str(GUILD_ID), 'type': 0, 'roles': [], **(channel or {})}
     assert method in ('POST', 'PATCH')
     payload = kwargs.get('json')
     images = []
@@ -84,7 +86,10 @@ async def main():
             buttons=[{'label':'My assignments','url':'https://dash.warriorsunited.cc/assignments?season=1'}])
     await mongo.bot_config.update_one({'_id':cwl_campaign.cycle_id(GUILD_ID,'2026-11')},{'$set':{'campaign':campaign,'revision':1}},upsert=True)
     runner = web.AppRunner(app); await runner.setup()
-    await web.TCPSite(runner,'127.0.0.1',fixture.PORT).start()
+    site = web.TCPSite(runner,'127.0.0.1',fixture.PORT)
+    await site.start()
+    fixture.PORT = runner.addresses[0][1]
+    assert fixture.PORT != 8767
     async with fixture.ClientSession(cookie_jar=fixture.CookieJar(unsafe=True)) as session:
         base = f'http://127.0.0.1:{fixture.PORT}/api/cwl'
         await session.post(base+'/dev/login')

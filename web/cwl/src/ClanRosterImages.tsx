@@ -1,3 +1,4 @@
+import { DISCORD_GUILD_ID } from "./discordGuild";
 import { useEffect, useRef, useState } from "react";
 import { api, type Pool } from "./api";
 import { useDashboardPermission } from "./DashboardPermissions";
@@ -34,6 +35,15 @@ export default function ClanRosterImages({
   const [confirm, setConfirm] = useState<{
     jobs: ImageJob[];
     text: string;
+    beforeSend?: () => Promise<void>;
+  } | null>(null);
+  const [result, setResult] = useState<{
+    status: "posting" | "complete" | "stopped";
+    count: number;
+    total: number;
+    url: string | null;
+    test: boolean;
+    channel: string;
   } | null>(null);
   const [singleTest, setSingleTest] = useState(false);
   const [testAll, setTestAll] = useState(false);
@@ -54,6 +64,7 @@ export default function ClanRosterImages({
     setBusy(false);
     setData(null);
     setConfirm(null);
+    setResult(null);
     setTestAll(false);
     setSingleTest(false);
     setError("");
@@ -77,13 +88,27 @@ export default function ClanRosterImages({
   async function start() {
     if (!permission.current || running.current || !confirm || !data?.published)
       return;
+    const beforeSend = confirm.beforeSend;
     const jobs = confirm.jobs,
       generation = active.current;
     running.current = true;
     setBusy(true);
     setConfirm(null);
     setError("");
+    setResult({
+      status: "posting",
+      count: 0,
+      total: jobs.length,
+      url: null,
+      test: jobs[0]?.operation === "test",
+      channel:
+        channels.find((c) => c.id === jobs[0]?.channel)?.name ||
+        jobs[0]?.channel ||
+        "the reviewed channels",
+    });
     try {
+      await beforeSend?.();
+      if (generation !== active.current || !permission.current) return;
       await runImageJobs(seasonId, jobs, {
         active: () =>
           generation === active.current &&
@@ -93,6 +118,16 @@ export default function ClanRosterImages({
           if (generation === active.current) setProgress(t);
         },
         completed: () => reload(generation),
+        delivered: (url) =>
+          setResult((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  count: previous.count + 1,
+                  url: previous.url || url,
+                }
+              : null,
+          ),
       });
       if (jobs[0]?.operation !== "test") {
         for (const pool of new Set(jobs.map((job) => job.clan.pool))) {
@@ -106,8 +141,19 @@ export default function ClanRosterImages({
             );
         }
       }
+      if (
+        generation === active.current &&
+        permission.current &&
+        (jobs[0]?.operation !== "test" || testActive.current)
+      )
+        setResult((previous) =>
+          previous ? { ...previous, status: "complete" } : null,
+        );
     } catch (e) {
       if (generation === active.current) {
+        setResult((previous) =>
+          previous ? { ...previous, status: "stopped" } : null,
+        );
         setError((e as Error).message);
         await reload(generation).catch(() => {});
       }
@@ -118,10 +164,15 @@ export default function ClanRosterImages({
       }
     }
   }
-  function open(jobs: ImageJob[], text: string) {
+  function open(
+    jobs: ImageJob[],
+    text: string,
+    beforeSend?: () => Promise<void>,
+  ) {
     if (canSend && !running.current && jobs.length)
       setConfirm({
         jobs,
+        beforeSend,
         text:
           jobs[0]?.operation === "test"
             ? text
@@ -250,7 +301,7 @@ export default function ClanRosterImages({
                             <a
                               target="_blank"
                               rel="noopener noreferrer"
-                              href={`https://discord.com/channels/644963518025826315/${post.channel_id}/${post.message_id}`}
+                              href={`https://discord.com/channels/${DISCORD_GUILD_ID}/${post.channel_id}/${post.message_id}`}
                             >
                               View in Discord ↗
                             </a>
@@ -352,6 +403,7 @@ export default function ClanRosterImages({
           )}
           {canSend && testAll && (
             <RosterImagesTestPanel
+              canSend={canSend}
               data={data}
               channels={channels}
               busy={busy}
@@ -390,6 +442,51 @@ export default function ClanRosterImages({
             </details>
           )}
         </>
+      )}
+      {result && canSend && (
+        <ConfirmDialog
+          heading={
+            result.status === "complete"
+              ? "Done"
+              : result.status === "stopped"
+                ? "Posting stopped"
+                : "Posting images"
+          }
+          text={
+            result.status === "complete"
+              ? `${result.test ? "TEST posted" : "Images updated"} · ${result.count} clan messages in #${result.channel} · no pings`
+              : result.status === "stopped"
+                ? `Stopped after ${result.count} of ${result.total} clan messages. ${error}`
+                : progress || "Preparing images…"
+          }
+          confirmLabel="Close"
+          hideCancel
+          onCancel={() => {
+            setResult(null);
+          }}
+          onConfirm={() => {
+            setProgress(
+              result.status === "complete"
+                ? "Done · image posting complete"
+                : "Check image status before continuing.",
+            );
+            setResult(null);
+          }}
+        >
+          {result.url &&
+            /^https:\/\/discord\.com\/channels\/\d+\/\d+\/\d+$/.test(
+              result.url,
+            ) && (
+              <a
+                className="announcement-result-link"
+                href={result.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open in Discord
+              </a>
+            )}
+        </ConfirmDialog>
       )}
       {confirm && (
         <ConfirmDialog

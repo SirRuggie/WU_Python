@@ -1,3 +1,5 @@
+import useAnnouncementTestChannel from "./useAnnouncementTestChannel";
+import TestChannelDefault from "./TestChannelDefault";
 import ConfirmDialog from "./ConfirmDialog";
 import { Button } from "./rosterUi/primitives";
 import { RefreshCw, Send } from "lucide-react";
@@ -28,15 +30,26 @@ export default function SingleClanRosterTest({
 }) {
   const sending = useRef(false);
   const canManage = useDashboardPermission("cwl_send");
+  const identity = useRef("");
+  identity.current = `${seasonId}:${version}`;
+  useEffect(
+    () => () => {
+      identity.current = "";
+    },
+    [],
+  );
+  const permission = useRef(canManage);
+  permission.current = canManage;
   const [data, setData] = useState<Data | null>(null),
     [tag, setTag] = useState(""),
-    [channel, setChannel] = useState(""),
     [channels, setChannels] = useState<AnnouncementChannel[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [url, setUrl] = useState(""),
     [loaded, setLoaded] = useState(false),
     [nonce, setNonce] = useState("");
+  const destination = useAnnouncementTestChannel(canManage);
+  const { channel, setChannel } = destination;
   const [confirmTest, setConfirmTest] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const path = `/seasons/${encodeURIComponent(seasonId)}/roster-images`;
@@ -87,6 +100,7 @@ export default function SingleClanRosterTest({
       return;
     const release = acquire();
     if (!release) return;
+    const reviewedIdentity = identity.current;
     sending.current = true;
     setConfirmTest(false);
     setBusy(true);
@@ -99,6 +113,8 @@ export default function SingleClanRosterTest({
       ).join("");
     setNonce(id);
     try {
+      await destination.saveDefault();
+      if (!permission.current || identity.current !== reviewedIdentity) return;
       const result = await api<{ url: string }>(
         `${path}/${encodeURIComponent(tag)}/test`,
         "POST",
@@ -162,6 +178,13 @@ export default function SingleClanRosterTest({
                   setNonce("");
                   setUrl("");
                 }}
+              />
+              <TestChannelDefault
+                checked={destination.makeDefault}
+                disabled={busy || !canManage}
+                error={destination.error}
+                onChange={destination.setMakeDefault}
+                onReload={destination.reload}
               />
               <p className="small">
                 Sends only this clan. No pings. Does not mark announcements as

@@ -1,4 +1,5 @@
 """Authorized review and status for isolated full-post test jobs."""
+from utils.cwl_roster_messages import roster_button
 import copy
 import re
 from urllib.parse import urlsplit
@@ -18,7 +19,9 @@ from .server_management import discord, GUILD_ID
 def public_test(job):
     import json
     return {key: job[key] for key in ('request_id', 'status', 'next_step', 'error', 'channel_id')} | {
-        'steps': len(json.loads(job['plan_json']))}
+        'steps': len(json.loads(job['plan_json'])),
+        'message_url': (f"https://discord.com/channels/{GUILD_ID}/{job['channel_id']}/{job['first_message_id']}"
+                        if job.get('first_message_id') else None)}
 
 
 async def prepare(request):
@@ -58,11 +61,10 @@ async def prepare(request):
             raise web.HTTPConflict(text='Message settings changed; review the test again')
         item = loaded['campaign']['messages']['roster']['variants'][pool]
         item['body'] = body['body']
-        item['title'] = 'TEST · ' + item['title']
         if item.get('buttons'):
             item['buttons'][0]['url'] = body['roster_url']
         else:
-            item['buttons'] = [{'label': 'CWL Rosters', 'url': body['roster_url']}]
+            item['buttons'] = [roster_button(body['roster_url'])]
         try:
             components = await cwl_campaign.render_message(loaded, 'roster', pool, preview=True)
         except ValueError as exc:
@@ -70,7 +72,7 @@ async def prepare(request):
     frozen = await frozen_plan(request, sid, pool, body['version'])
     plan = [{'kind': 'announcement', 'payload': {
         'components': [component.build()[0] for component in components],
-        'flags': 32768, 'allowed_mentions': {'parse': []},
+        'flags': 32768, 'allowed_mentions': {'parse': [], 'roles': []},
     }}]
     for clan in frozen['clans']:
         payload = clan_image_message(clan['name'], clan['tag'], test=True)

@@ -222,3 +222,35 @@
   -webkit-text-fill-color: currentColor;
   font-weight: 400;
 }
+
+.announcement-more > summary {
+  min-height: 44px;
+  padding-block: 12px;
+  box-sizing: border-box;
+  font-size: 13px;
+  cursor: pointer;
+}
+.test-channel-default label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 13px;
+}
+.test-channel-default input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.announcement-result-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #f1d378;
+  text-decoration: underline;
+  font-size: 14px;
+}
+
+.announcement-more:not([open]) > :not(summary) {
+  display: none;
+}

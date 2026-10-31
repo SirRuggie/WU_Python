@@ -6,6 +6,7 @@ from utils.cwl_roster_order import ordered_roster_clans
 from utils.cwl_roster_messages import clan_image_message, closing_message
 from utils.cwl_roster_image_store import RosterImageStore, ImageConflict
 from .clan_metadata import enrich
+from .server_management import GUILD_ID
 from .roster_image_posts import groups_for
 
 
@@ -79,6 +80,8 @@ def describe(storage, sid, pool):
     return {
         'sequence_id': sequence['sequence_id'] if sequence else None,
         'status': sequence['status'] if sequence else 'not_started',
+        'message_url': (f"https://discord.com/channels/{GUILD_ID}/{sequence['channel_id']}/{sequence['announcement_message_id']}"
+                        if sequence and sequence['announcement_message_id'] else None),
         'announcement_confirmed': bool(sequence and (sequence['announcement_message_id'] or storage.announcement_assumption(sequence['sequence_id']))),
         'error': sequence['error'] if sequence else None,
         'version': sequence['target_version'] if sequence else publication[1]['version'] if publication else None,

@@ -32,16 +32,18 @@ class RosterImageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.call('GET',path+'/%23C2Y.png?page=2',self.owner)).status,400)
     async def test_test_send_no_pings_deduplicated_and_channel_guard(self):
         await self.publish();path=f'/seasons/{self.sid}/roster-images/%23C2Y/test'
+        before_audit = self.app['store'].one('SELECT COUNT(*) AS n FROM roster_audit')['n']
         body={'channel_id':'123456789012345678','request_id':'a'*24,'version':1}
         mock=AsyncMock(side_effect=[{'guild_id':str(GUILD_ID),'type':0},{'id':'987654321098765432'},{'guild_id':str(GUILD_ID),'type':0}])
         with patch('cwl_web.roster_images.discord',mock):
             first=await self.call('POST',path,self.owner,json=body);self.assertEqual(first.status,200)
             second=await self.call('POST',path,self.owner,json=body);self.assertEqual(second.status,200)
             self.assertEqual(await first.json(),await second.json())
+        self.assertEqual(self.app['store'].one('SELECT COUNT(*) AS n FROM roster_audit')['n'], before_audit)
         self.assertEqual(sum(c.args[1]=='POST' for c in mock.call_args_list),1)
         form=mock.call_args_list[1].kwargs['data']
-        payload=json.loads(form._fields[0][2]);self.assertEqual(payload['allowed_mentions'],{'parse':[]})
-        self.assertTrue(payload['content'].startswith('TEST'))
+        payload=json.loads(form._fields[0][2]);self.assertEqual(payload['allowed_mentions'],{'parse':[], 'roles':[]})
+        self.assertFalse(payload['content'].startswith('TEST')); self.assertTrue(payload['content'].startswith('**'))
         with patch('cwl_web.roster_images.discord',AsyncMock(return_value={'guild_id':'other','type':0})):
             self.assertEqual((await self.call('POST',path,self.owner,json=body|{'request_id':'b'*24})).status,400)
     def test_render_splits_fifteen_per_image(self):
@@ -50,3 +52,16 @@ class RosterImageTests(unittest.IsolatedAsyncioTestCase):
         second=render({'label':'November'},{'version':1},group,2)
         self.assertEqual(Image.open(io.BytesIO(first)).height,1440)
         self.assertNotEqual(first,second)
+
+    async def test_single_clan_test_requires_send_scope_even_for_an_editor(self):
+        from aiohttp import web
+        await self.publish()
+        def require_send(request, *, send=False):
+            if send: raise web.HTTPForbidden(text='Send permission required')
+            return {'user_id':'editor'}
+        transport = AsyncMock()
+        with patch('cwl_web.roster_image_posts.staff', side_effect=require_send), patch('cwl_web.roster_images.discord', transport):
+            response = await self.call('POST', f'/seasons/{self.sid}/roster-images/%23C2Y/test', self.owner,
+                json={'channel_id':'123456789012345678','request_id':'e'*24,'version':1})
+            self.assertEqual(response.status,403)
+            transport.assert_not_called()

@@ -122,7 +122,7 @@ class ManageBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.call('POST',self.base+'/main/test',self.member,json=body)).status,403)
         response=await self.call('POST',self.base+'/main/test',self.owner,json=body)
         self.assertEqual(response.status,200,await response.text())
-        self.assertEqual(posts[0]['allowed_mentions'],{'parse':[]})
+        self.assertEqual(posts[0]['allowed_mentions'],{'parse':[], 'roles':[]})
         self.assertEqual(posts[0]['flags'],32768)
         self.assertIn('Test draft',str(posts[0]['components']))
         self.assertEqual((await self.state())['pools'],state['pools'])

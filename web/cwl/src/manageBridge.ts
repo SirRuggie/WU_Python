@@ -18,6 +18,7 @@ export type ImageSequence = {
     | "stopped"
     | "complete";
   announcement_confirmed: boolean;
+  message_url?: string | null;
   version: number | null;
   error: string | null;
   channel_id: string | null;

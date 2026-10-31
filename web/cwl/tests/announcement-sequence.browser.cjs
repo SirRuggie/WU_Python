@@ -25,7 +25,7 @@ fs.mkdirSync(out, { recursive: true });
     await page.getByRole("button", { name: "Open local test session" }).click();
     if (process.env.WU_SEQUENCE_CAPTURE_ONLY !== "1") {
       await page
-        .getByRole("button", { name: "Review and send", exact: true })
+        .getByRole("button", { name: "Review both pools", exact: true })
         .click();
       const review = page.locator(".announcement-send-review");
       await review.waitFor();

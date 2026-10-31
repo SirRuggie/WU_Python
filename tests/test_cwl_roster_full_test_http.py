@@ -45,10 +45,20 @@ class FullTestHTTPTests(ManageBridgeTests):
         jobs.poll()
         await asyncio.gather(*list(jobs.tasks.values()))
         self.assertEqual(len(sent), 3)
-        self.assertIn('TEST ·', json.dumps(sent[0], ensure_ascii=False))
-        self.assertTrue(sent[1]['content'].startswith('TEST · **'))
-        self.assertTrue(sent[2]['content'].startswith('TEST · Can'))
-        self.assertTrue(all(payload['allowed_mentions'] == {'parse': []} for payload in sent))
+        from utils import cwl_campaign
+        from cwl_web.manage_bridge import GUILD_ID
+        import copy
+        production = copy.deepcopy(await cwl_campaign.load_campaign(self.mongo, GUILD_ID, '2026-10'))
+        variant = production['campaign']['messages']['roster']['variants']['main']
+        variant['body'] = body['body']
+        variant['buttons'][0]['url'] = body['roster_url']
+        components = await cwl_campaign.render_message(production, 'roster', 'main', preview=False)
+        self.assertEqual(sent[0]['components'], [component.build()[0] for component in components])
+        self.assertEqual(sent[0]['flags'], 32768)
+        self.assertNotIn('TEST', json.dumps(sent, ensure_ascii=False))
+        self.assertTrue(sent[1]['content'].startswith('**'))
+        self.assertTrue(sent[2]['content'].startswith('Can'))
+        self.assertTrue(all(payload['allowed_mentions'] == {'parse': [], 'roles': []} for payload in sent))
         status = await self.call('GET', path + '/' + body['request_id'], self.owner)
         self.assertEqual((await status.json())['test']['status'], 'complete')
         self.assertEqual((await self.state())['pools'], before['pools'])
@@ -67,3 +77,35 @@ class FullTestHTTPTests(ManageBridgeTests):
             'body': 'Test', 'roster_url': 'https://example.test/', 'version': 1})
         self.assertEqual(response.status, 409)
         self.assertIsNone(RosterImageStore(self.app['store']).test_sequence('e' * 24))
+
+    async def test_empty_button_defaults_have_clipboard_emoji_in_both_test_paths(self):
+        from unittest.mock import patch
+        from utils import cwl_campaign
+        from test_cwl_roster_images import RosterImageTests
+        import copy
+        await self.bind()
+        await RosterImageTests.publish(self)
+        load = cwl_campaign.load_campaign
+        async def without_buttons(*args, **kwargs):
+            loaded = copy.deepcopy(await load(*args, **kwargs))
+            loaded['campaign']['messages']['roster']['variants']['main']['buttons'] = []
+            return loaded
+        posted = []
+        async def discord(method, path, **kwargs):
+            if method == 'GET': return {'guild_id': '644963518025826315', 'type': 0}
+            posted.append(kwargs['json'])
+            return {'id': '987654321098765432'}
+        self.app['server_management_discord'] = discord
+        with patch.object(cwl_campaign, 'load_campaign', without_buttons):
+            state = await self.state()
+            body = {'channel_id': '123456789012345678', 'request_id': 'b'*24,
+                    'generation': state['generation'], 'body': 'Draft',
+                    'roster_url': 'https://example.test/assignments'}
+            response = await self.call('POST', self.base+'/main/test', self.owner, json=body)
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertIn('📋', json.dumps(posted, ensure_ascii=False))
+            response = await self.call('POST', self.base+'/main/test-full', self.owner,
+                                       json=body|{'request_id':'c'*24,'version':1})
+            self.assertEqual(response.status, 202, await response.text())
+            receipt = RosterImageStore(self.app['store']).test_sequence('c'*24)
+            self.assertIn('📋', json.dumps(json.loads(receipt['plan_json']), ensure_ascii=False))

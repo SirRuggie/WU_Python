@@ -16,8 +16,8 @@ def link_button(label: str, url: str) -> list[dict]:
 
 def clan_image_message(name: str, tag: str, *, test: bool = False) -> dict:
     return {
-        'content': ('TEST · ' if test else '') + f'**{clan_name(name)}**',
-        'allowed_mentions': {'parse': []}, 'attachments': [],
+        'content': f'**{clan_name(name)}**',
+        'allowed_mentions': {'parse': [], 'roles': []} if test else {'parse': []}, 'attachments': [],
         'components': link_button('Open clan',
             f'https://link.clashofclans.com/en?action=OpenClanProfile&tag={quote(tag, safe="")}'),
     }
@@ -25,7 +25,12 @@ def clan_image_message(name: str, tag: str, *, test: bool = False) -> dict:
 
 def closing_message(*, test: bool = False) -> dict:
     return {
-        'content': ('TEST · ' if test else '') + "Can't find your name? Check My assignments.",
-        'allowed_mentions': {'parse': []},
+        'content': "Can't find your name? Check My assignments.",
+        'allowed_mentions': {'parse': [], 'roles': []} if test else {'parse': []},
         'components': link_button('My assignments', ASSIGNMENTS_URL),
     }
+
+
+def roster_button(url: str) -> dict:
+    """Default campaign button shared by save and both test paths."""
+    return {"label": "CWL Rosters", "url": url, "emoji": "📋"}

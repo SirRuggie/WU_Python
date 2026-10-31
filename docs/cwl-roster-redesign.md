@@ -446,7 +446,7 @@ Released frontend + approved B1 backend as `announcements-1` at `73fe3fa92d8d0d8
 
 ### Next — Roster images (approved design; not implemented here)
 
-Main/Lazy image channels are saved server-side and carried over. Post per pool sends one message per clan, with no pings, idempotent receipts and retry of failed messages only. Republish updates existing messages in place; a new clan gets a new post, and a dropped clan's post is edited to “<Clan> is no longer hosting · Roster vN”, never deleted. Test all sends to a chosen channel with a TEST label and is never recorded as production delivery. Preview and download remain. Ruggie approved the backend and schema work for that separate batch.
+Main/Lazy image channels are saved server-side and carried over. Post per pool sends one message per clan, with no pings, idempotent receipts and retry of failed messages only. Republish updates existing messages in place; a new clan gets a new post, and a dropped clan's post is edited to “<Clan> is no longer hosting · Roster vN”, never deleted. Test all sends to a chosen channel with production-identical content and no TEST label and is never recorded as production delivery. Preview and download remain. Ruggie approved the backend and schema work for that separate batch.
 
 
 ## Decisions — Details panel (2026-10-27)
@@ -488,7 +488,7 @@ Implementation checkpoint on `codex/roster-images`, based on Declaration docs `d
 - Update PATCH replaces attachments and retains the clan link. Drop PATCH removes attachments/buttons and says the clan is no longer hosting. Never DELETE.
 - Uncertain NEW posts require the duplicate-warning Post again anyway confirmation. Uncertain UPDATE/DROP requires “Retry the edit on the same message? This won't create a new message.” Retry PATCHes the same message; update 404 offers Post again, drop 404 is treated as dropped.
 - Ruggie approved durable text-only request receipts: operation, season/pool/clan, target version, channel/message IDs, request ID and frozen payload/render metadata. PNGs regenerate from the immutable publication and frozen metadata after restart; no PNG bytes or base64 enter SQLite or audit logs. Regression compares decoded pixels.
-- Test all uses an unsaved test channel and explicit confirmation. Main and Lazy copies use the existing test endpoint, TEST prefix and no mentions; they never become image-post records. Single-clan testing remains available.
+- Test all uses the shared saved test channel, supports a per-send override and explicit confirmation. Saving a new shared default is opt-in. Main and Lazy copies use the existing test endpoint, production-identical content without a TEST prefix and no mentions; they never become image-post records. Single-clan testing remains available.
 - Without cwl_send the card exposes statuses only. Preview images mount only while their disclosure is open.
 - Backend and schema approved. Release requires an isolated backend directory, restart and readiness gate; development/review use temporary SQLite plus fake Discord only.
 
@@ -614,7 +614,7 @@ The durable server sequence starts images only after its matching announcement
 receipt is confirmed, stops on the first failure, and resumes in order. Unknown
 outcomes require explicit check-first recovery; they never trigger automatic retry.
 Resume names the next clan and does not repeat the announcement. Tests use separate
-receipts and a selected test channel, prefix TEST and suppress all mentions.
+receipts and the shared saved test channel (or local override), omit TEST labels and suppress all mentions.
 
 Republishing does not resend an announcement: existing clan messages update in
 place, added clans append after the closing, and dropped clans are edited as no

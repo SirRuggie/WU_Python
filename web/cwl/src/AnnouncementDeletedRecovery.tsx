@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { AnnouncementMoreContext } from "./AnnouncementPoolCard";
+import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type Pool } from "./api";
 import AnnouncementSendReview from "./AnnouncementSendReview";
 import type { ImageSequence } from "./manageBridge";
@@ -17,8 +19,10 @@ type Props = {
   preview: ReactNode;
   allowed: boolean;
   onQueued: () => void;
+  onDeleted?: (deleted: boolean) => void;
 };
 export default function AnnouncementDeletedRecovery(props: Props) {
+  const moreTarget = useContext(AnnouncementMoreContext);
   const [deleted, setDeleted] = useState<string | null>(null);
   const checked = useRef({ identity: "", at: 0 });
   const [review, setReview] = useState<string | null>(null);
@@ -42,6 +46,7 @@ export default function AnnouncementDeletedRecovery(props: Props) {
     setReview(null);
     setNotice("");
     setDeleted(null);
+    props.onDeleted?.(false);
   }, [identity]);
   useEffect(() => {
     if (!props.allowed) setReview(null);
@@ -74,6 +79,7 @@ export default function AnnouncementDeletedRecovery(props: Props) {
         `${base}/check-message`,
       );
       if (!valid(captured)) return;
+      props.onDeleted?.(result.deleted);
       if (result.deleted) {
         reviewedIdentity.current = captured;
         setDeleted(result.message_id);
@@ -132,11 +138,14 @@ export default function AnnouncementDeletedRecovery(props: Props) {
       if (alive.current) setBusy(false);
     }
   };
+  const checkButton = (
+    <Button disabled={!props.allowed || busy} onClick={() => void check()}>
+      Check posted message
+    </Button>
+  );
   return (
     <>
-      <Button disabled={!props.allowed || busy} onClick={() => void check()}>
-        Check posted message
-      </Button>
+      {moreTarget ? createPortal(checkButton, moreTarget) : checkButton}
       {deleted && (
         <>
           <p role="status">Previous post was deleted</p>

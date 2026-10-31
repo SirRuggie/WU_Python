@@ -88,6 +88,8 @@ export default function ManageBridgeWorkspace({
     null,
   );
   const [confirmMonth, setConfirmMonth] = useState(false);
+  const [deletedPools, setDeletedPools] = useState<Pool[]>([]);
+  const [resultPools, setResultPools] = useState<Pool[]>([]);
   const [sendReview, setSendReview] = useState<Pool[] | null>(null);
   const roles = useReminderLookup<{ id: string; name: string }>(
     "/announcement-roles",
@@ -184,6 +186,8 @@ export default function ManageBridgeWorkspace({
   useEffect(() => {
     requestId.current += 1;
     activeSeason.current = seasonId;
+    setResultPools([]);
+    setDeletedPools([]);
     setSendReview(null);
     setExpandedPreview(null);
     setEditor(null);
@@ -478,6 +482,7 @@ export default function ManageBridgeWorkspace({
     setBusy(true);
     setNotice(null);
     const results: string[] = [];
+    const queued: Pool[] = [];
     for (const pool of selected) {
       try {
         await api(
@@ -490,6 +495,7 @@ export default function ManageBridgeWorkspace({
           },
         );
         results.push(`${poolLabel(pool)} queued.`);
+        queued.push(pool);
       } catch (error) {
         results.push(`${poolLabel(pool)}: ${errorText(error)}`);
       }
@@ -502,6 +508,7 @@ export default function ManageBridgeWorkspace({
         text: results.join(" "),
       });
       await load(false);
+      setResultPools(queued);
     }
     sending.current = false;
     setBusy(false);
@@ -657,6 +664,16 @@ export default function ManageBridgeWorkspace({
                             seasonId={seasonId}
                             pool={pool}
                             sequence={entry.sequence}
+                            resultOpen={!bridgeError && resultPools[0] === pool}
+                            onResultClose={() =>
+                              setResultPools((items) =>
+                                items.filter((item) => item !== pool),
+                              )
+                            }
+                            messageUrl={
+                              entry.sequence?.message_url ||
+                              delivery?.message_url
+                            }
                             announcementSent={delivery?.status === "sent"}
                             channelName={
                               channels.find(
@@ -707,10 +724,43 @@ export default function ManageBridgeWorkspace({
                                 !unsaved(pool) &&
                                 draftGeneration === bridge.generation
                               }
-                              onQueued={() => void load(false)}
+                              onDeleted={(deleted) =>
+                                setDeletedPools((items) =>
+                                  deleted
+                                    ? [...new Set([...items, pool])]
+                                    : items.filter((item) => item !== pool),
+                                )
+                              }
+                              onQueued={() =>
+                                void load(false).then(() =>
+                                  setResultPools([pool]),
+                                )
+                              }
                             />
                           )}
                         </>
+                      }
+                      tests={
+                        <AnnouncementFullTest
+                          key={`${seasonId}:${pool}`}
+                          seasonId={seasonId}
+                          pool={pool}
+                          version={bridge.published_version}
+                          generation={bridge.generation || ""}
+                          draft={drafts[pool]}
+                          channels={channels}
+                          allowed={
+                            canManage &&
+                            !busy &&
+                            !loading &&
+                            !bridgeError &&
+                            !channelsError &&
+                            draftGeneration === bridge.generation
+                          }
+                          clanNames={(
+                            entry.sequence?.published_clans || []
+                          ).map((clan) => clan.name)}
+                        />
                       }
                       enabled={entry.enabled}
                       changed={unsaved(pool)}
@@ -752,10 +802,12 @@ export default function ManageBridgeWorkspace({
                       status={
                         <>
                           <span>
-                            {announcementDeliveryStatus(
-                              delivery,
-                              bridge.published_version,
-                            )}
+                            {deletedPools.includes(pool)
+                              ? "The post was deleted. You can send it again."
+                              : announcementDeliveryStatus(
+                                  delivery,
+                                  bridge.published_version,
+                                )}
                           </span>
                           {safeMessageUrl(delivery?.message_url) && (
                             <a
@@ -768,9 +820,7 @@ export default function ManageBridgeWorkspace({
                           )}
                         </>
                       }
-                      canSend={
-                        readyPools.length === 1 && readyPools.includes(pool)
-                      }
+                      canSend={readyPools.includes(pool)}
                       retry={
                         delivery?.status === "failed" ||
                         delivery?.status === "stale"
@@ -802,7 +852,9 @@ export default function ManageBridgeWorkspace({
                 disabled={!readyPools.length}
                 onClick={() => setSendReview(readyPools)}
               >
-                Review and send
+                {readyPools.length > 1
+                  ? "Review both pools"
+                  : "Review and send"}
               </Button>
               {!readyPools.length && (
                 <p className="announcement-muted">
@@ -889,28 +941,6 @@ export default function ManageBridgeWorkspace({
             !bridgeError &&
             !channelsError &&
             draftGeneration === bridge.generation
-          }
-          fullTest={
-            <AnnouncementFullTest
-              key={`${seasonId}:${editor.pool}`}
-              seasonId={seasonId}
-              pool={editor.pool}
-              version={bridge.published_version}
-              generation={bridge.generation || ""}
-              draft={drafts[editor.pool]}
-              channels={channels}
-              allowed={
-                canManage &&
-                !busy &&
-                !loading &&
-                !bridgeError &&
-                !channelsError &&
-                draftGeneration === bridge.generation
-              }
-              clanNames={(
-                bridge.pools[editor.pool].sequence?.published_clans || []
-              ).map((clan) => clan.name)}
-            />
           }
           testChannel={testChannel}
           testUrl={safeMessageUrl(testUrl) ? testUrl : ""}

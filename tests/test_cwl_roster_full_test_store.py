@@ -12,7 +12,7 @@ class FullTestStoreTests(unittest.TestCase):
     def prepare(self):
         self.test_args = dict(request_id='f' * 24, sid=1, pool='lazy', version=1,
             channel='123456789012345678', actor='staff', plan=[
-                {'kind': kind, 'payload': {'content': 'TEST · ' + kind, 'allowed_mentions': {'parse': []}}}
+                {'kind': kind, 'payload': {'content': kind, 'allowed_mentions': {'parse': [], 'roles': []}}}
                 for kind in ('announcement', 'image', 'closing')])
         return self.images.prepare_test_sequence(**self.test_args)
 
@@ -29,7 +29,11 @@ class FullTestStoreTests(unittest.TestCase):
             item = reopened.claim_test_step(job['request_id'])
             self.assertEqual((item['step'], item['item']['kind']), (step, kind))
             reopened.finish_test_step(job['request_id'], step, status='posted', message_id=str(987654321098765432+step))
-        self.assertEqual(reopened.test_sequence(job['request_id'])['status'], 'complete')
+        complete = reopened.test_sequence(job['request_id'])
+        self.assertEqual(complete['status'], 'complete')
+        self.assertEqual(complete['first_message_id'], '987654321098765432')
+        from cwl_web.roster_sequence_tests import public_test
+        self.assertTrue(public_test(complete)['message_url'].endswith('/123456789012345678/987654321098765432'))
         with self.store.tx() as db:
             for table in ('roster_image_posts', 'roster_image_requests', 'roster_image_sequences', 'roster_audit'):
                 self.assertEqual(db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0], 0, table)

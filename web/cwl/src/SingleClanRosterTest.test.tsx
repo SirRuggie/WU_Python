@@ -61,7 +61,9 @@ beforeEach(async () => {
   api.mockImplementation(async (path: string, method?: string) =>
     method === "POST"
       ? { url: "https://discord.com/channels/1/2/3" }
-      : path === "/announcement-channels"
+      : path === "/manage/announcement-test-channel"
+        ? {channel_id: "", channel_name: "", revision: 0}
+        : path === "/announcement-channels"
         ? { channels: [] }
         : { version: 3, season: "Test", clans },
   );

@@ -251,8 +251,8 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
                 json={'version': 1, 'channel_id': '123456789012345678', 'request_id': 'f' * 24})
             self.assertEqual(response.status, 200)
         payload = json.loads(self.sent[0][2]['data']._fields[0][2])
-        self.assertTrue(payload['content'].startswith('TEST ·'))
-        self.assertEqual(payload['allowed_mentions'], {'parse': []})
+        self.assertNotIn('TEST', payload['content'])
+        self.assertEqual(payload['allowed_mentions'], {'parse': [], 'roles': []})
         with self.app['store'].tx() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM roster_image_posts').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM roster_image_requests').fetchone()[0], 0)
