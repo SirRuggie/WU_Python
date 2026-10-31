@@ -277,3 +277,17 @@ it("state-driven filters and explicit Discard clear selection", async () => {
     host.querySelector('[aria-label="Mark selected replacements"]'),
   ).toBeNull();
 });
+
+it("disables oversized Select all and explains how to enable it", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    accounts:Array.from({length:125},(_,n)=>({...row,player_tag:`#P${n}`})),
+    clans:[{tag:"#PQQ",name:"Family"}],
+  }))));
+  await act(async () => root.render(<StrikeActivityRoster state="" onChoose={vi.fn()} canManage />));
+  await act(async () => [...host.querySelectorAll("button")]
+    .find(button=>button.textContent==="Select accounts")!.click());
+  const selectAll=[...host.querySelectorAll("button")]
+    .find(button=>button.textContent==="Select all (125)")!;
+  expect(selectAll.disabled).toBe(true);
+  expect(host.textContent).toContain("Filter to 50 or fewer to select all.");
+});

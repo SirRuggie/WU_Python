@@ -130,7 +130,7 @@ left players do not acquire Quiet or its risk badge; unavailable tracking retain
 priority, strike and departure chips. Clan metadata is isolated from player rows
 and retires through the existing TTL. Prompt60 removes obsolete completion flags.
 
-Follow-up validation: 1,178 frontend tests, TypeScript and production build pass;
+Follow-up validation: 1,179 frontend tests, TypeScript and production build pass;
 all seven integrated build/layout stages pass. The activity fixture records 79
 measurements across 26/65/125 accounts, 320/360/390/1440 widths and a short mobile
 viewport. First rows measure about 375px at 360 and 320px at 1440. Confirmation
@@ -156,3 +156,13 @@ cooldown; requests never queue behind it. A warm cache stays usable during an
 outage. Empty names cache shows a warning. Select all is disabled above fifty
 accounts with a visible filter instruction; Vitest checks all twenty-six names
 and the Left clan chip. Scheduler tests pin the clock away from month boundaries.
+
+
+Final prompt60 evidence: 5,489 full backend tests and 221 subtests passed, with 26
+optional skips under the network guard; 76 focused tests include the added
+successful-cache gap-healing case. All six required mutations plus the Vitest
+bulk-list slice and Left-clan mutations fail their regressions. Five real-Mongo
+checks include repeated unchanged writes with the default naive-UTC client.
+History implementation: 246 → 204 lines; activity route: 164 → 92 lines.
+Evidence is in `.local/p60-final-evidence`; production resolution counts and actual
+Discord delivery remain outside these fixture checks.
