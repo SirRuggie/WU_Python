@@ -225,3 +225,55 @@ it("failure shows unavailable counts instead of a false zero summary", async () 
   expect(host.textContent).toContain("— at risk · — watch · — active");
   expect(host.textContent).toContain("Fixture unavailable");
 });
+
+it("state-driven filters and explicit Discard clear selection", async () => {
+  const choose = vi.fn();
+  await act(async () =>
+    root.render(<StrikeActivityRoster state="" onChoose={choose} canManage />),
+  );
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Select accounts")!
+      .click(),
+  );
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Select all (2)")!
+      .click(),
+  );
+  expect(host.textContent).toContain("2 selected");
+  expect(
+    host.querySelector('[aria-label="Selected accounts"]')!.textContent,
+  ).toContain("Fixture healthy");
+  await act(async () =>
+    root.render(
+      <StrikeActivityRoster state="?q=Risk" onChoose={choose} canManage />,
+    ),
+  );
+  expect(
+    host.querySelector('[aria-label="Mark selected replacements"]'),
+  ).toBeNull();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Select accounts")!
+      .click(),
+  );
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Select all (1)")!
+      .click(),
+  );
+  await act(async () =>
+    root.render(
+      <StrikeActivityRoster
+        state="?q=Risk"
+        selectionReset={1}
+        onChoose={choose}
+        canManage
+      />,
+    ),
+  );
+  expect(
+    host.querySelector('[aria-label="Mark selected replacements"]'),
+  ).toBeNull();
+});

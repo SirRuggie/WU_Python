@@ -126,3 +126,26 @@ def test_raid_membership_bracket_requires_recent_observation_and_pre_end_join():
             await store.reconcile_membership({PLAYER: CLAN}, now=end+timedelta(minutes=15))
             assert (end.isoformat() in (await store.get(PLAYER)).get('raid_membership_ends', [])) is expected
     asyncio.run(run())
+
+
+def test_membership_retries_one_seed_revision_race_and_preserves_boundary():
+    from datetime import datetime, timezone
+    async def run():
+        class Race(ActivityCollection):
+            raced=False
+            async def update_one(self,q,u,upsert=False):
+                if not self.raced and 'raid_membership_ends' in u.get('$set',{}):
+                    self.raced=True
+                    self.rows[PLAYER]['revision']+=1
+                    self.rows[PLAYER]['seed_status']='seeded'
+                    return SimpleNamespace(matched_count=0)
+                return await super().update_one(q,u,upsert)
+        end=datetime(2026,10,26,7,tzinfo=timezone.utc)
+        c=Race();store=PlayerActivityStore(SimpleNamespace(player_activity=c))
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=end-timedelta(minutes=10))
+        c.rows[PLAYER].update(family_since=end-timedelta(days=7),last_roster_at=end-timedelta(minutes=10))
+        await store.reconcile_membership({PLAYER:CLAN},now=end+timedelta(minutes=15))
+        row=await store.get(PLAYER)
+        assert c.raced and row['seed_status']=='seeded'
+        assert end.isoformat() in row['raid_membership_ends']
+    asyncio.run(run())

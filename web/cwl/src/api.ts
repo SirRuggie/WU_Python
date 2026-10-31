@@ -74,6 +74,7 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public retryAfter?: number,
+    public responseData?: unknown,
   ) {
     super(message);
   }
@@ -141,6 +142,7 @@ export async function api<T>(
         data.retry_after >= 0
         ? data.retry_after
         : undefined,
+      data,
     );
   }
   if (method !== "GET") clearSnapshots();

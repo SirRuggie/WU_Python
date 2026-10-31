@@ -353,6 +353,20 @@ async def activity_accounts(request):
                        no_attack_wars=0, skipped_raid_weekends=0)
     elif rows and all(row.get('activity_tracking_behind') for row in rows):
         activity_warning = 'Activity tracking is behind. Quiet indicators are paused.'
+    link_warning = False
+    if rows:
+        from .strike_activity_identity import account_owners
+        try:
+            owners = await account_owners(request, [row['player_tag'] for row in rows])
+            link_warning = bool(owners.unavailable or owners.conflicts)
+            for row in rows:
+                if row['player_tag'] in owners.conflicts:
+                    row['discord_id'] = None
+                    row['discord_name'] = None
+                elif row['player_tag'] in owners.owners:
+                    row['discord_id'] = str(owners.owners[row['player_tag']])
+        except (RuntimeError, ValueError, TimeoutError):
+            link_warning = True
     if any(row.get('discord_id') for row in rows):
         from .manage_roles import searchable_members
         try:
@@ -396,7 +410,7 @@ async def activity_accounts(request):
         for row in rows:
             row['weight'] = indexed.get(row['player_tag'])
     identity_warning = ('Some Discord names are unavailable. Search those members by Discord ID, player name or tag.'
-                        if any(row.get('discord_id') and not row.get('discord_name') for row in rows) else None)
+                        if link_warning or any(row.get('discord_id') and not row.get('discord_name') for row in rows) else None)
     return web.json_response(public({'accounts': rows, 'total': len(rows),
                                     'weight_warning': weight_warning, 'identity_warning': identity_warning,
                                     'activity_warning': activity_warning,
@@ -786,7 +800,8 @@ async def bulk_add_replacement_list(request):
                     **({'expected_revision': revisions[value]} if revisions is not None else {}))
                 (added if result is not None else skipped).append(value)
         except StrikeConflict:
-            raise web.HTTPConflict(text=f'Selected accounts changed after {len(added)} saves. Refresh before continuing; no automatic retry.')
+            return web.json_response({'added':added,'skipped':skipped,'added_count':len(added),
+                'skipped_count':len(skipped),'error':'Selected accounts changed. Refresh before continuing; no automatic retry.'},status=409)
         except Exception:
             _job_log.exception('Replacement bulk add stopped after partial write')
             return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,

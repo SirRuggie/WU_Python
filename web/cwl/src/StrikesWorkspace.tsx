@@ -364,6 +364,7 @@ export default function StrikesWorkspace({
   const [selectedMember, setSelectedMember] = useState("");
   const [manualDirty, setManualDirty] = useState(false);
   const [bulkDirty, setBulkDirty] = useState(false);
+  const [selectionReset, setSelectionReset] = useState(0);
   const mutation = useRef(false);
   const [removeId, setRemoveId] = useState("");
   const [removeReason, setRemoveReason] = useState("");
@@ -1357,6 +1358,7 @@ export default function StrikesWorkspace({
             </>
           ) : (
             <StrikeActivityRoster
+              selectionReset={selectionReset}
               canManage={access.manage}
               onWorking={setBusy}
               onDirty={setBulkDirty}
@@ -1767,6 +1769,8 @@ export default function StrikesWorkspace({
           onConfirm={() => {
             const action = pendingNavigation;
             setPendingNavigation(null);
+            setSelectionReset((value) => value + 1);
+            setBulkDirty(false);
             action();
           }}
         />

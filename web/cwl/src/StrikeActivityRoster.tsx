@@ -50,6 +50,7 @@ const toggle = <T,>(values: T[], value: T) =>
 export default function StrikeActivityRoster({
   state,
   canManage = false,
+  selectionReset = 0,
   onWorking,
   onDirty,
   markedDefault = false,
@@ -64,6 +65,7 @@ export default function StrikeActivityRoster({
 }: {
   state?: string;
   canManage?: boolean;
+  selectionReset?: number;
   onWorking?: (value: boolean) => void;
   onDirty?: (value: boolean) => void;
   markedDefault?: boolean;
@@ -84,6 +86,15 @@ export default function StrikeActivityRoster({
       state === undefined ? local : parseActivityFilters(state, markedDefault),
     [state, local, markedDefault],
   );
+  const filterIdentity = JSON.stringify({
+    ...filters,
+    page: 0,
+    sort: "status",
+  });
+  useEffect(() => {
+    setSelected([]);
+    setSelecting(false);
+  }, [filterIdentity, selectionReset]);
   const [data, setData] = useState<Response>({ accounts: [], clans: [] });
   const [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -124,8 +135,9 @@ export default function StrikeActivityRoster({
           minute: "2-digit",
         }),
       );
+      return true;
     } catch (cause) {
-      if (current !== request.current) return;
+      if (current !== request.current) return false;
       if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
         setData({ accounts: [], clans: [] });
         callbacks.current.onDenied?.();
@@ -135,6 +147,7 @@ export default function StrikeActivityRoster({
           ? cause.message
           : "Activity could not be loaded. Try again.",
       );
+      return false;
     } finally {
       if (current === request.current) {
         pending.current = false;
@@ -494,6 +507,8 @@ export default function StrikeActivityRoster({
       {canManage && selecting && (
         <StrikeBulkMark
           rows={selectedRows}
+          onRemaining={setSelected}
+          onRefresh={read}
           onBusy={bulkWorking}
           onDirty={onDirty}
           onSaved={() => {

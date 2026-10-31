@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import type { ActivityAccount, ActivityPriority } from "./strikeActivityView";
 
 /** Explicit current-clan bulk marks; each group uses the displayed revisions. */
 export default function StrikeBulkMark({
   rows,
   onSaved,
+  onRemaining,
+  onRefresh,
   onBusy,
   onDirty,
 }: {
   rows: ActivityAccount[];
   onSaved: () => void;
+  onRemaining?: (tags: string[]) => void;
+  onRefresh?: () => Promise<boolean | undefined>;
   onBusy: (value: boolean) => void;
   onDirty?: (value: boolean) => void;
 }) {
@@ -52,6 +56,7 @@ export default function StrikeBulkMark({
         row,
       ]);
     }
+    const completed = new Set<string>();
     let added = 0,
       skipped = 0;
     try {
@@ -70,13 +75,39 @@ export default function StrikeBulkMark({
         });
         added += result.added_count;
         skipped += result.skipped_count;
+        for (const row of accounts) completed.add(row.player_tag);
       }
       if (mounted.current) onSaved();
     } catch (cause) {
       if (!mounted.current) return;
-      setConflict(true); // A partial group may have saved. Explicit refresh only.
+      const data =
+        cause instanceof ApiError &&
+        cause.responseData &&
+        typeof cause.responseData === "object"
+          ? (cause.responseData as Record<string, unknown>)
+          : null;
+      if (data) {
+        if (Number.isInteger(data.added_count) && Number(data.added_count) >= 0)
+          added += Number(data.added_count);
+        if (
+          Number.isInteger(data.skipped_count) &&
+          Number(data.skipped_count) >= 0
+        )
+          skipped += Number(data.skipped_count);
+        for (const key of ["added", "skipped"])
+          if (Array.isArray(data[key]))
+            for (const tag of data[key])
+              if (
+                typeof tag === "string" &&
+                rows.some((row) => row.player_tag === tag)
+              )
+                completed.add(tag);
+      }
+      const failed = rows.filter((row) => !completed.has(row.player_tag));
+      onRemaining?.(failed.map((row) => row.player_tag));
+      setConflict(true);
       setError(
-        `${added} marked; ${skipped} already marked in completed groups. ${cause instanceof Error ? cause.message : "Bulk marking stopped."} Refresh selected accounts before continuing.`,
+        `${added} marked; ${skipped} already marked. Not completed or unconfirmed: ${failed.map((row) => row.player_name).join(", ") || "none"}. ${cause instanceof Error ? cause.message : "Bulk marking stopped."} Refresh before continuing.`,
       );
     } finally {
       pending.current = false;
@@ -92,6 +123,14 @@ export default function StrikeBulkMark({
       aria-label="Mark selected replacements"
     >
       <p>{rows.length} selected · up to 50 · existing marks are preserved</p>
+      <ul aria-label="Selected accounts" className="strike-bulk-accounts">
+        {rows.map((row) => (
+          <li key={row.player_tag}>
+            <strong>{row.player_name}</strong> {row.player_tag} ·{" "}
+            {row.current_clan_name || row.current_clan_tag}
+          </li>
+        ))}
+      </ul>
       <label>
         Priority
         <select
@@ -120,7 +159,35 @@ export default function StrikeBulkMark({
         {busy ? "Marking…" : "Mark selected"}
       </button>
       {error && <p role="alert">{error}</p>}
-      {conflict && <button onClick={onSaved}>Refresh selected accounts</button>}
+      {conflict && (
+        <button
+          disabled={busy}
+          onClick={async () => {
+            if (!onRefresh) {
+              onSaved();
+              return;
+            }
+            setBusy(true);
+            onBusy(true);
+            try {
+              if (await onRefresh()) {
+                setConflict(false);
+                setError("");
+              } else
+                setError(
+                  "Refresh failed. Saved outcomes remain unconfirmed; no retry was sent.",
+                );
+            } finally {
+              if (mounted.current) {
+                setBusy(false);
+                onBusy(false);
+              }
+            }
+          }}
+        >
+          Refresh selected accounts
+        </button>
+      )}
     </section>
   );
 }

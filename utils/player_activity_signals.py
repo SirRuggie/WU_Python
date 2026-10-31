@@ -30,7 +30,7 @@ def activity_signals(activity, records, *, active_strikes=0, priority=None, now=
                 and type(available) is int and available == 2 and 0 <= used <= available):
             regular[row['war_key']] = {**row, 'missed_attacks': available-used}
     for row in records:
-        if row.get('source') == 'war' and (row.get('kind') in ('mismatch', 'exempt', 'no_attack') or row.get('exemption')):
+        if row.get('source') == 'war' and (row.get('revoked_at') or row.get('kind') in ('mismatch', 'exempt', 'no_attack') or row.get('exemption')):
             regular.pop(row.get('war_key'), None)
             continue
         # Imported ledgers omit completed members. Only full-lineup backfill or

@@ -94,37 +94,45 @@ class PlayerActivityStore:
         seen = {}
         for row in await self.collection.find({}).to_list(length=None):
             key = row['_id']
-            if key in members:
-                previous = self._roster_seen.get(key)
-                if previous is None and row.get('last_roster_at') and not row.get('left_at'):
-                    previous = (utc(row['last_roster_at']), row.get('current_clan_tag'))
-                since = (row.get('family_since') or now) if not row.get('left_at') else now
-                evidence = set(row.get('raid_membership_ends', []))
-                if (previous and previous[0] <= ended <= now and now-previous[0] <= timedelta(minutes=90)
-                        and utc(since) <= ended and not row.get('left_at')):
-                    evidence.add(ended.isoformat())
-                histories = {item['weekend_id']: set(item['clan_tags']) for item in row.get('raid_clan_history', [])}
-                histories.setdefault(upcoming, set()).add(members[key])
-                # Include the last observed clan when a move brackets the end.
-                if ended.isoformat() in evidence and previous and previous[1]:
-                    histories.setdefault(ended.isoformat(), set()).update((previous[1], members[key]))
-                history = [{'weekend_id': end, 'clan_tags': sorted(histories[end])} for end in sorted(histories)[-9:]]
-                fields = {'current_clan_tag': members[key], 'left_at': None, 'family_since': since,
-                          'raid_membership_ends': sorted(evidence)[-8:], 'raid_clan_history': history}
-                daily = not row.get('last_roster_at') or utc(row['last_roster_at']).date() != now.date()
-                changed = any(row.get(field) != value for field, value in fields.items())
-                if daily or changed:
-                    fields.update(previous_roster_at=previous[0] if previous else row.get('last_roster_at'), last_roster_at=now)
-                seen[key] = (now, members[key])
-            else:
-                fields = {'current_clan_tag': None, 'left_at': row.get('left_at') or now,
-                          'previous_roster_at': None, 'last_roster_at': None}
-            if all(row.get(field) == value for field, value in fields.items()):
-                continue
-            result = await self.collection.update_one({'_id': key, 'revision': row['revision']},
-                                                       {'$set': fields, '$inc': {'revision': 1}})
-            if not result.matched_count:
-                log.warning('Player activity membership CAS conflict: %s', key)
+            for attempt in range(2):
+                if key in members:
+                    previous = self._roster_seen.get(key)
+                    if previous is None and row.get('last_roster_at') and not row.get('left_at'):
+                        previous = (utc(row['last_roster_at']), row.get('current_clan_tag'))
+                    since = (row.get('family_since') or now) if not row.get('left_at') else now
+                    evidence = set(row.get('raid_membership_ends', []))
+                    if (previous and previous[0] <= ended <= now and now-previous[0] <= timedelta(minutes=90)
+                            and utc(since) <= ended and not row.get('left_at')):
+                        evidence.add(ended.isoformat())
+                    histories = {item['weekend_id']: set(item['clan_tags']) for item in row.get('raid_clan_history', [])}
+                    histories.setdefault(upcoming, set()).add(members[key])
+                    # Include the last observed clan when a move brackets the end.
+                    if ended.isoformat() in evidence and previous and previous[1]:
+                        histories.setdefault(ended.isoformat(), set()).update((previous[1], members[key]))
+                    history = [{'weekend_id': end, 'clan_tags': sorted(histories[end])} for end in sorted(histories)[-9:]]
+                    fields = {'current_clan_tag': members[key], 'left_at': None, 'family_since': since,
+                              'raid_membership_ends': sorted(evidence)[-8:], 'raid_clan_history': history}
+                    daily = not row.get('last_roster_at') or utc(row['last_roster_at']).date() != now.date()
+                    changed = any(row.get(field) != value for field, value in fields.items())
+                    if daily or changed:
+                        fields.update(previous_roster_at=previous[0] if previous else row.get('last_roster_at'), last_roster_at=now)
+                    seen[key] = (now, members[key])
+                else:
+                    fields = {'current_clan_tag': None, 'left_at': row.get('left_at') or now,
+                              'previous_roster_at': None, 'last_roster_at': None}
+                if all(row.get(field) == value for field, value in fields.items()):
+                    break
+                result = await self.collection.update_one({'_id': key, 'revision': row['revision']},
+                                                           {'$set': fields, '$inc': {'revision': 1}})
+                if result.matched_count:
+                    break
+                if attempt == 0:
+                    fresh = await self.get(key)
+                    if fresh is None:
+                        break
+                    row = fresh
+                else:
+                    log.warning('Player activity membership CAS conflict after retry: %s', key)
         self._roster_seen = seen
 
     async def record_weekend(self, player_tag, weekend_id, attacks, *, observed_member):

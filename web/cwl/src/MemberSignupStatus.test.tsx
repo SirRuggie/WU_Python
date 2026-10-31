@@ -11,6 +11,12 @@ import { MemberStepStrip } from "./CwlStepStrip";
 import { memberTarget, loginPath } from "./memberLinks";
 import type { Season } from "./api";
 
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-29T12:00:00Z"));
+});
+afterEach(() => vi.useRealTimers());
+
 const accounts = ["Aurora", "Ace", "Birch", "Cedar", "Dawn"].map((name, i) => ({
   name,
   tag: `#P2Y2Y2Y${i}`,

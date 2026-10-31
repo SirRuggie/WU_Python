@@ -108,3 +108,33 @@ it("ignores completion after the editor unmounts without retrying the write", as
   expect(saved).not.toHaveBeenCalled();
   expect(api).toHaveBeenCalledTimes(1);
 });
+
+it("partial failure shows server counts and retains the failed account", async () => {
+  const other = { ...row, player_tag: "#PQQ", player_name: "Other" };
+  vi.mocked(api).mockRejectedValue(
+    new ApiError("Stopped on Other", 503, undefined, {
+      added_count: 1,
+      skipped_count: 0,
+      added: [row.player_tag],
+      skipped: [],
+    }),
+  );
+  const remaining = vi.fn();
+  await act(async () =>
+    root.render(
+      <StrikeBulkMark
+        rows={[row, other]}
+        onSaved={vi.fn()}
+        onBusy={vi.fn()}
+        onRemaining={remaining}
+      />,
+    ),
+  );
+  expect(
+    host.querySelector('[aria-label="Selected accounts"]')!.textContent,
+  ).toContain("Other");
+  await act(async () => host.querySelector("button")!.click());
+  expect(host.textContent).toContain("1 marked; 0 already marked");
+  expect(host.textContent).toContain("Not completed or unconfirmed: Other");
+  expect(remaining).toHaveBeenCalledWith([other.player_tag]);
+});

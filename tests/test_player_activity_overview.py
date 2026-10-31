@@ -1,9 +1,16 @@
+import pytest
 import gzip
 import json
 from datetime import timedelta
 from tests.test_player_activity_signals import NOW
 from utils.player_activity_overview import family_activity_rows
 from cwl_web.strikes import public
+
+@pytest.fixture(autouse=True)
+def no_external_link_reads(monkeypatch):
+    from unittest.mock import AsyncMock
+    from utils import recruit_links
+    monkeypatch.setattr(recruit_links,'resolve_players',AsyncMock(return_value=recruit_links.PlayerOwners()))
 
 
 def test_family_with_zero_strikes_and_departed_accounts_is_visible():
@@ -146,7 +153,9 @@ def test_activity_outage_preserves_strike_rows_and_directory_names_without_profi
         @asynccontextmanager
         async def mongo(request):
             yield SimpleNamespace(player_activity=SimpleNamespace())
-        profile={'player_tag':'#PYY','current_clan_tag':'#CLAN','member_id':123456789012345678}
+        profile={'player_tag':'#PYY','current_clan_tag':'#CLAN'}
+        from utils import recruit_links
+        recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={'#PYY':'123456789012345678'})
         ledger=SimpleNamespace(activity_context=AsyncMock(return_value={'profiles':[profile], 'records':[],
             'clans':[{'tag':'#CLAN','name':'Family'}]}))
         request=SimpleNamespace(app={'store':object(),'providers':object()})
@@ -184,3 +193,19 @@ def test_action_filters_use_configured_limit_and_only_new_active_strikes():
     assert row['over_limit'] and not row['new_this_week'] and row['active_strikes']==2
     row=family_activity_rows(activity,[],records+[record(1,30)],[{'tag':'#CLAN'}],strike_limit=5,now=NOW)[0]
     assert not row['over_limit'] and row['new_this_week']
+
+
+def test_production_profile_without_member_id_gets_cached_bulk_link_identity():
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from cwl_web.strike_activity_identity import account_owners
+    from utils import recruit_links
+    async def run():
+        request=SimpleNamespace(app={})
+        recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={'#PYY':'123456789012345678'})
+        first=await account_owners(request,['#PYY'])
+        assert first.owners['#PYY']=='123456789012345678'
+        assert await account_owners(request,['#PYY']) is first
+        recruit_links.resolve_players.assert_awaited_once_with(['#PYY'])
+    asyncio.run(run())

@@ -161,40 +161,44 @@ export type ActivityChip = {
 export function activityChips(row: ActivityAccount): ActivityChip[] {
   const chips: ActivityChip[] = [];
   if (row.activity_unavailable)
-    return [{ label: "Activity unavailable", tone: "neutral" }];
+    chips.push({ label: "Activity unavailable", tone: "neutral" });
   const seed = row.last_seen_source === "clashking_seed" ? " (ClashKing)" : "";
-  if (row.activity_tracking_behind) {
-    chips.push({ label: "Activity tracking is behind", tone: "neutral" });
-  } else if (row.quiet_days === null || !row.last_seen_at) {
-    const date = row.tracking_started_at && new Date(row.tracking_started_at);
-    const label =
-      date && Number.isFinite(date.getTime())
-        ? ` (${date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })})`
-        : "";
-    chips.push({
-      label: `Not seen since tracking began${label}`,
-      tone: "neutral",
-    });
-  } else if (row.quiet_days >= 3)
-    chips.push({
-      label: `Quiet for ${row.quiet_days} days${seed}`,
-      tone: row.quiet_days >= 14 ? "bad" : "warn",
-    });
-  if (row.missed_attacks > 0)
-    chips.push({
-      label: `Missed ${row.missed_attacks} of ${row.observed_attacks} war attacks`,
-      tone: "warn",
-    });
-  if (row.no_attack_wars > 0)
-    chips.push({
-      label: `Didn't attack in their last ${row.no_attack_wars} ${row.no_attack_wars === 1 ? "war" : "wars"}`,
-      tone: "bad",
-    });
-  if (row.skipped_raid_weekends > 0)
-    chips.push({
-      label: `Skipped the last ${row.skipped_raid_weekends} raid ${row.skipped_raid_weekends === 1 ? "weekend" : "weekends"}`,
-      tone: "warn",
-    });
+  if (!row.activity_unavailable) {
+    if (row.left_clan) {
+      // Membership is the status; departure is never inactivity evidence.
+    } else if (row.activity_tracking_behind) {
+      chips.push({ label: "Activity tracking is behind", tone: "neutral" });
+    } else if (row.quiet_days === null || !row.last_seen_at) {
+      const date = row.tracking_started_at && new Date(row.tracking_started_at);
+      const label =
+        date && Number.isFinite(date.getTime())
+          ? ` (${date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })})`
+          : "";
+      chips.push({
+        label: `Not seen since tracking began${label}`,
+        tone: "neutral",
+      });
+    } else if (row.quiet_days >= 3)
+      chips.push({
+        label: `Quiet for ${row.quiet_days} days${seed}`,
+        tone: row.quiet_days >= 14 ? "bad" : "warn",
+      });
+    if (row.missed_attacks > 0)
+      chips.push({
+        label: `Missed ${row.missed_attacks} of ${row.observed_attacks} war attacks`,
+        tone: "warn",
+      });
+    if (row.no_attack_wars > 0)
+      chips.push({
+        label: `Didn't attack in their last ${row.no_attack_wars} ${row.no_attack_wars === 1 ? "war" : "wars"}`,
+        tone: "bad",
+      });
+    if (row.skipped_raid_weekends > 0)
+      chips.push({
+        label: `Skipped the last ${row.skipped_raid_weekends} raid ${row.skipped_raid_weekends === 1 ? "weekend" : "weekends"}`,
+        tone: "warn",
+      });
+  }
   if (row.priority)
     chips.push({
       label: activityPriorityLabels[row.priority],
