@@ -42,8 +42,10 @@ async def poll_hour(store, members, fetch_player, *, sleep=asyncio.sleep, clock=
     start = clock()
     count = len(members)
     success = failure = 0
+    previous_start = start - 1
     for index, (player_tag, clan_tag) in enumerate(sorted(members.items())):
-        await sleep(max(0, start + index * 3600 / max(count, 1) - clock()))
+        await sleep(max(0, max(start + index * 3600 / max(count, 1), previous_start + 1) - clock()))
+        previous_start = clock()
         try:
             player = await fetch_player(player_tag)
             payload = player_payload(player)
