@@ -25,15 +25,28 @@ content, while allowed_mentions explicitly forbids role/user/everyone pings.
 Request nonces are separate transport identities. Tests retain separate tables and
 never claim production sent marks or sequences.
 
+## Rework 51
+
+The test-clock prerequisite was merged separately as PR104. Stale TEST/mention
+assertions and the decision record now follow production payload parity. Test link
+buttons include the production emoji. Single-clan tests require cwl_send and do not
+write production audit rows. Default-save conflicts expose Reload and clear after
+a successful reload. Test all receives the actual send permission. Closed More
+contents have an explicit visibility rule. Parent-level tests cover Send and Send
+again through progress, completion and stopped states. The normal layout command
+now runs the synthetic Send browser gate, requiring hidden secondary controls at
+rest, two Done dialogs, 12 fake messages and no browser errors.
+
 ## Validation and limits
 
-- Integrated frontend: 1,148 tests passed; TypeScript and Vite build passed.
-- Affected backend: 73 tests passed with 54 subtests. Coverage includes channel
+- Integrated frontend: 1,150 tests passed; TypeScript and Vite build passed.
+- Full network-isolated backend: 5,343 tests and 221 subtests passed, 21 skipped. Coverage includes channel
   authorization/ownership/malformed inputs/revision conflicts, production renderer
   parity, no-ping enforcement, separate receipts, first-message links and restart
   handling. Existing aiohttp application-key warnings remain.
 - Required mutations all killed in an isolated copy: success returns to review;
-  default saved without the checkbox; test payload permits role pings.
+  default saved without the checkbox; test payload permits role pings; parent resultOpen
+  forced false; parent queued-result state omitted. All five mutations were killed.
 - Isolated fake Discord/browser at 360 and 1440: pool height below one phone screen,
   secondary actions collapsed, no horizontal overflow, full-test completion with
   a single Close and first-message link, shared default surviving reload, six test
@@ -42,7 +55,7 @@ never claim production sent marks or sequences.
 - End-to-end checking caught and fixed a missing completion URL when the sequence
   receipt held the message ID but the legacy campaign receipt omitted its URL.
 - Before/after and completion screenshots are retained under
-  `.local/polish50-browser` on the review host. Synthetic preview uses port 8905.
+  `.local/polish50-browser` and `.local/p51-browser-final` on the review host. Synthetic preview uses port 8905.
 
 These checks use isolated SQLite/Mongo fixtures and fake Discord, not live delivery.
 No production data, messages or service state changed for this batch. Keyboard and
