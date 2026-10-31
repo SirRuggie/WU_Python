@@ -60,3 +60,26 @@ def test_removed_snapshot_keeps_reused_logo_and_rechecks_each_pass(monkeypatch):
     db.clans.find_one.return_value = {'logo': url}
     asyncio.run(history.cleanup_artwork(db, media))
     media.delete_url.assert_not_awaited()
+
+
+def test_snapshot_lookup_uses_persisted_nested_field_names(monkeypatch):
+    url = 'https://images.example/clans/Test/logo.0123456789.png'
+    snapshots = [{'_id': 'removed', 'action': 'before_remove', 'clan': {'logo': url, 'tag': '#ABC'}}]
+    async def lookup(query, projection=None):
+        for row in snapshots:
+            if row['action'] != query.get('action'):
+                continue
+            for clause in query.get('$or', []):
+                for path, value in clause.items():
+                    current = row
+                    for key in path.split('.'):
+                        current = current.get(key) if isinstance(current, dict) else None
+                    if current == value:
+                        return row
+        return None
+    rows = NS(find=lambda query: Cursor([{'_id': 'replacement', 'artwork_cleanup': [url]}]), find_one=AsyncMock(side_effect=lookup), update_one=AsyncMock())
+    monkeypatch.setattr(history, 'collection', lambda db: rows)
+    db = NS(clans=NS(find_one=AsyncMock(return_value=None)))
+    media = NS(key_for_url=lambda value: value.removeprefix('https://images.example/'), delete_url=AsyncMock())
+    asyncio.run(history.cleanup_artwork(db, media))
+    media.delete_url.assert_not_awaited()

@@ -144,7 +144,7 @@ export default function WarReminders({
     onEditor?.({
       changes,
       summary: draft
-        ? `${draft.enabled ? "On" : "Off"} · ${draft.minutes.length} ${draft.minutes.length === 1 ? "time" : "times"}`
+        ? `${draft.enabled ? "On" : "Off"} · ${draft.minutes.length} ${draft.minutes.length === 1 ? "time" : "times"}${draft.enabled ? "" : " saved"}`
         : "Loading…",
       save,
       discard: () => {
