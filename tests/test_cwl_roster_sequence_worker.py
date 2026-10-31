@@ -54,7 +54,8 @@ class SequenceWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_first_rejection_stops_and_restart_does_not_retry_failed_message(self):
         self.confirm()
         self.failure = SequenceRejected('Forbidden')
-        self.assertEqual((await self.worker.advance('a' * 24))['status'], 'stopped')
+        result = await self.worker.advance('a' * 24)
+        self.assertEqual(result, {'status': 'stopped', 'clan_tag': '#BBB', 'error': 'Forbidden'})
         self.assertEqual(self.sent, ['#AAA', '#BBB'])
         restarted = SequenceWorker(self.images, self.transport, self.permission)
         self.failure = None
