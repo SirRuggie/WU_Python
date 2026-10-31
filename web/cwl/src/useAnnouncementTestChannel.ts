@@ -18,6 +18,7 @@ export default function useAnnouncementTestChannel(allowed: boolean) {
     setSetting(null);
     setError("");
     if (!allowed) {
+      edited.current = false;
       setChannel("");
       setMakeDefault(false);
       return;

@@ -60,7 +60,10 @@ it("retains the override on a conflict and reloads its revision without overwrit
   await act(async () => state.reload());
   expect(state.channel).toBe("222222222222222222");
 });
-it("clears the saved destination when permission is lost", async () => {
+it("clears an override on permission loss and restores the default when permission returns", async () => {
+  await act(async () => state.setChannel("222222222222222222"));
   await act(async () => root.render(<Fixture allowed={false} />));
   expect(state.channel).toBe("");
+  await act(async () => root.render(<Fixture allowed />));
+  expect(state.channel).toBe("111111111111111111");
 });
