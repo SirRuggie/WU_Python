@@ -75,6 +75,11 @@ async function mount(commands: Command[]) {
     ) => {
       if (path === "/manage/text-commands" && !method) return { commands };
       if (path === "/manage/text-command-roles") return { roles: [] };
+      if (path === "/manage/text-command-scope")
+        return {
+          channels: [{ id: "123456789012345678", name: "general", type: 0 }],
+          roles: [],
+        };
       if (method === "PATCH" || method === "POST") {
         return { ...body?.values, revision: "r2", last_delete_error: null };
       }
@@ -91,6 +96,12 @@ async function mount(commands: Command[]) {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   api.mockReset();
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
 });
 afterEach(() => {
   document.body.replaceChildren();
@@ -133,7 +144,7 @@ it("defaults an old row on, toggles it off, and excludes runtime error from save
     expect(
       host.querySelector(".text-command-rows button")?.textContent,
     ).toContain(
-      "Last time the bot could not delete the trigger message in #123456789012345678",
+      "Last time the bot could not delete the trigger message in #general",
     );
     await act(async () => {
       (
@@ -147,7 +158,7 @@ it("defaults an old row on, toggles it off, and excludes runtime error from save
     )!;
     expect(checkbox.checked).toBe(true);
     expect(host.textContent).toContain(
-      "Last time the bot could not delete the trigger message in #123456789012345678",
+      "Last time the bot could not delete the trigger message in #general",
     );
     expect(host.textContent).toContain("it needs Manage Messages there");
     expect(host.textContent).not.toContain("<script>");
@@ -166,9 +177,64 @@ it("defaults an old row on, toggles it off, and excludes runtime error from save
     expect(save[2].revision).toBe("r1");
     for (const field of ["use_count", "last_used_at", "last_outcome"])
       expect(save[2].values).not.toHaveProperty(field);
-
   } finally {
     await act(async () => root.unmount());
     host.remove();
+  }
+});
+
+it("uses an in-app discard dialog and a bottom Danger zone confirmation", async () => {
+  const priorConfirm = window.confirm;
+  const native = vi.fn(() => {
+    throw new Error("Native confirm forbidden");
+  });
+  window.confirm = native;
+  const { host, root } = await mount([oldCommand]);
+  try {
+    await act(async () => {
+      (
+        host.querySelector(".text-command-rows button") as HTMLButtonElement
+      ).click();
+    });
+    const danger = host.querySelector(".command-danger")!;
+    expect(danger.querySelector("summary")?.textContent).toBe("Danger zone");
+    await act(async () => {
+      (danger.querySelector("button") as HTMLButtonElement).click();
+    });
+    expect(document.querySelector("dialog")?.textContent).toContain(
+      "Delete !lazy? Its reply will be removed.",
+    );
+    expect(api.mock.calls.some((call) => call[1] === "DELETE")).toBe(false);
+    await act(async () => {
+      (document.querySelector("dialog button") as HTMLButtonElement).click();
+    });
+    const checkbox = [
+      ...host.querySelectorAll<HTMLInputElement>("input[type=checkbox]"),
+    ].find((e) =>
+      e.parentElement?.textContent?.includes("Delete the trigger message"),
+    )!;
+    await act(async () => checkbox.click());
+    await act(async () => {
+      (
+        host.querySelector(
+          '[aria-label="Back to commands"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    expect(document.querySelector("dialog")?.textContent).toContain(
+      "Discard unsaved command changes?",
+    );
+    expect(host.querySelector("#command-reply-form")).not.toBeNull();
+    await act(async () => {
+      (document.querySelector("dialog button") as HTMLButtonElement).click();
+    });
+    expect(host.querySelector("#command-reply-form")).not.toBeNull();
+    expect(native).not.toHaveBeenCalled();
+    expect(
+      host.querySelector<HTMLInputElement>('input[pattern^="!"]')?.pattern,
+    ).toContain("\\-");
+  } finally {
+    await act(async () => root.unmount());
+    window.confirm = priorConfirm;
   }
 });

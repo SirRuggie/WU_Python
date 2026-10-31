@@ -64,6 +64,31 @@ async def validate_scope(request, actor, values):
             raise web.HTTPBadRequest(text='Choose non-managed roles from this server.')
 
 
+async def scope_options(request):
+    actor = await require_manage(request, 'text_commands')
+    from .server_management import discord
+    channels = await discord(request, 'GET', f'/guilds/{GUILD_ID}/channels')
+    return web.json_response({
+        'channels': [{'id': str(row['id']), 'name': row['name'], 'type': row['type']}
+                     for row in channels if row.get('type') in (0, 5)],
+        'roles': [{'id': str(row['id']), 'name': row['name']}
+                  for row in actor.get('roles', [])
+                  if not row.get('managed') and str(row['id']) != str(GUILD_ID)],
+    })
+
+
+async def deleted_commands(request):
+    await require_manage(request, 'text_commands')
+    async with mongo(request) as db:
+        rows = await db.bot_config.find({
+            'kind': 'dashboard_history', 'action': 'delete', 'status': 'saved',
+            'target': {'$regex': '^' + re.escape(API + '/text-commands/')},
+        }).sort('at', -1).limit(100).to_list(length=100)
+    return web.json_response({'commands': list(dict.fromkeys(
+        row['before']['command'] for row in rows if row.get('before', {}).get('command')
+    ))})
+
+
 async def save(request):
     actor = await require_manage(request, 'text_commands', write=True)
     body = await (request.clone(client_max_size=256*1024) if isinstance(request,web.Request) else request).json()
@@ -219,7 +244,7 @@ async def upload_file(request):
     return web.json_response(result)
 
 
-routes = [web.get(API + '/text-command-activity', role_activity),web.get(API + '/text-command-roles', role_options),web.post(API + '/text-command-files', upload_file),web.get(API + '/text-command-mentions', mention_lookup),web.get(API + '/text-commands', listing), web.post(API + '/text-commands', save), web.patch(API + '/text-commands/{name}', save), web.delete(API + '/text-commands/{name}', delete)]
+routes = [web.get(API + '/text-command-scope', scope_options), web.get(API + '/text-command-deleted', deleted_commands),web.get(API + '/text-command-activity', role_activity),web.get(API + '/text-command-roles', role_options),web.post(API + '/text-command-files', upload_file),web.get(API + '/text-command-mentions', mention_lookup),web.get(API + '/text-commands', listing), web.post(API + '/text-commands', save), web.patch(API + '/text-commands/{name}', save), web.delete(API + '/text-commands/{name}', delete)]
 
 from .command_images import routes as image_routes
 routes.extend(image_routes)

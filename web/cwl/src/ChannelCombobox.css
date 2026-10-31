@@ -9,7 +9,7 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-@media (pointer: fine) {
+@media (min-width: 701px) and (pointer: fine) {
   .channel-combobox .channel-keyboard-hint {
     position: static;
     width: auto;

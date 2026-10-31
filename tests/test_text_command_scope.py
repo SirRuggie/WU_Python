@@ -46,3 +46,18 @@ def test_scope_destination_and_managed_roles_rejected():
             with pytest.raises(web.HTTPBadRequest):
                 await validate_scope(None,actor,{'allowed_channel_ids':[CHANNEL],'allowed_role_ids':[]})
     asyncio.run(run())
+
+
+def test_scope_choices_hide_managed_roles_and_foreign_channel_types():
+    async def run():
+        import json
+        from cwl_web import text_commands as api
+        actor={'roles':[{'id':ROLE,'name':'Members'},{'id':'333333333333333333','name':'Managed','managed':True},{'id':str(core.GUILD_ID),'name':'everyone'}]}
+        channels=[{'id':CHANNEL,'name':'general','type':0},{'id':'444444444444444444','name':'voice','type':2}]
+        auth=AsyncMock(return_value=actor)
+        with patch.object(api,'require_manage',auth),patch('cwl_web.server_management.discord',AsyncMock(return_value=channels)):
+            body=json.loads((await api.scope_options(None)).text)
+        assert body['roles']==[{'id':ROLE,'name':'Members'}]
+        assert body['channels']==[channels[0]]
+        auth.assert_awaited_once_with(None,'text_commands')
+    asyncio.run(run())

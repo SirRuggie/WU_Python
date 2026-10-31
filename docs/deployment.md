@@ -631,7 +631,7 @@ settings loaded successfully after restart. Rollback snapshot:
 
 ### Text-command Components V2 builder (2026-10-15)
 
-Text commands now send Hikari Components V2 (`IS_COMPONENTS_V2`) with optional
+Command triggers now send Hikari Components V2 (`IS_COMPONENTS_V2`) with optional
 outside text and a colored container. Ordered blocks support text, images with
 alt descriptions, separators (divider/spacing), and rows of up to five HTTPS link
 buttons. Blocks can be moved, duplicated, and removed. Mobile switches between

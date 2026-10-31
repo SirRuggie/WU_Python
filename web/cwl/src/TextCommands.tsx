@@ -1,4 +1,8 @@
 import { relativeTime } from "./commandTime";
+import ConfirmDialog from "./ConfirmDialog";
+import CommandScope from "./CommandScope";
+import type { AnnouncementChannel } from "./announcements";
+import DeletedCommands from "./DeletedCommands";
 import CommandTest from "./CommandTest";
 import CommandActivity from "./CommandActivity";
 import type { RoleChoice } from "./CommandExtras";
@@ -12,6 +16,7 @@ import "./TextCommands.css";
 import CommandBuilder, {
   hasRoleActions,
   commandBlocks,
+  blockTextLength,
   commandPreview,
   mapBlockText,
   type Command,
@@ -35,8 +40,7 @@ const normalizeCommand = (row: Command): Command => ({
   ...row,
   delete_trigger: row.delete_trigger ?? true,
 });
-const deleteWarning = (error: NonNullable<Command["last_delete_error"]>) =>
-  `Last time the bot could not delete the trigger message in #${error.channel_id} (it needs Manage Messages there).`;
+
 export default function TextCommands({
   onDirty,
 }: {
@@ -47,13 +51,20 @@ export default function TextCommands({
   const mutation = useRef(false);
   const sequence = useRef(0);
   const [conflict, setConflict] = useState(false);
-  function closeEditor() {
-    if (
-      busy ||
-      mutation.current ||
-      (dirty && !window.confirm("Discard unsaved command changes?"))
-    )
+  const [confirmation, setConfirmation] = useState<{
+    text: string;
+    action: () => void;
+    danger?: boolean;
+  } | null>(null);
+  function closeEditor(confirmed = false) {
+    if (busy || mutation.current) return;
+    if (dirty && !confirmed) {
+      setConfirmation({
+        text: "Discard unsaved command changes?",
+        action: () => closeEditor(true),
+      });
       return;
+    }
     setDraft(null);
     setSaved(null);
     setConflict(false);
@@ -88,6 +99,24 @@ export default function TextCommands({
       rolesLoading.current = false;
     }
   }
+  const [scope, setScope] = useState<{
+    channels: AnnouncementChannel[];
+    roles: RoleChoice[];
+  }>({ channels: [], roles: [] });
+  const [scopeError, setScopeError] = useState("");
+  async function loadScope() {
+    try {
+      setScope(await api("/manage/text-command-scope"));
+      setScopeError("");
+    } catch {
+      setScopeError("Could not load channel and role choices.");
+    }
+  }
+  useEffect(() => {
+    void loadScope();
+  }, []);
+  const deleteWarning = (error: NonNullable<Command["last_delete_error"]>) =>
+    `Last time the bot could not delete the trigger message in ${scope.channels.find((c) => c.id === error.channel_id) ? "#" + scope.channels.find((c) => c.id === error.channel_id)!.name : "an unavailable channel"} (it needs Manage Messages there).`;
   const [mentionNames, setMentionNames] = useState<MentionNames>({});
   const rememberMention = (key: string, name: string) =>
     setMentionNames((current) =>
@@ -134,9 +163,15 @@ export default function TextCommands({
       window.removeEventListener("beforeunload", guard);
     };
   }, [dirty, busy, onDirty]);
-  function choose(row: Command | null) {
+  function choose(row: Command | null, confirmed = false) {
     if (busy || loading || mutation.current) return;
-    if (dirty && !window.confirm("Leave without saving your changes?")) return;
+    if (dirty && !confirmed) {
+      setConfirmation({
+        text: "Discard unsaved command changes?",
+        action: () => choose(row, true),
+      });
+      return;
+    }
     if (!rolesLoaded.current) void loadRoles();
     const selected = row ? normalizeCommand(row) : null;
     setSaved(selected);
@@ -201,17 +236,16 @@ export default function TextCommands({
       setBusy(false);
     }
   }
-  async function remove() {
-    if (
-      !saved ||
-      busy ||
-      mutation.current ||
-      conflict ||
-      !window.confirm(
-        `Delete ${saved.command}? Its saved reply will be removed.`,
-      )
-    )
+  async function remove(confirmed = false) {
+    if (!saved || busy || mutation.current || conflict) return;
+    if (!confirmed) {
+      setConfirmation({
+        text: `Delete ${saved.command}? Its reply will be removed.`,
+        danger: true,
+        action: () => void remove(true),
+      });
       return;
+    }
     mutation.current = true;
     setBusy(true);
     setError("");
@@ -242,13 +276,28 @@ export default function TextCommands({
   }
   return (
     <section className={`text-commands ${draft ? "command-is-editing" : ""}`}>
+      {confirmation && (
+        <ConfirmDialog
+          text={confirmation.text}
+          danger={confirmation.danger}
+          confirmLabel={
+            confirmation.danger ? "Delete command" : "Discard changes"
+          }
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => {
+            const action = confirmation.action;
+            setConfirmation(null);
+            action();
+          }}
+        />
+      )}
       <div className="page-head">
         <div>
           <p className="eyebrow">SERVER TOOLS</p>
           <h1>Command triggers</h1>
           <p>
-            Type a trigger like <strong>!trigger</strong> in Discord to post its
-            saved reply.
+            Type a command like <strong>!rules</strong> in Discord. The bot
+            posts its reply.
           </p>
         </div>
         <button
@@ -265,14 +314,17 @@ export default function TextCommands({
           <button
             disabled={busy}
             onClick={async () => {
-              if (
-                dirty &&
-                !window.confirm("Discard edits and reload commands?")
-              )
-                return;
-              setDraft(null);
-              setSaved(null);
-              await load();
+              const reload = () => {
+                setDraft(null);
+                setSaved(null);
+                void load();
+              };
+              if (dirty)
+                setConfirmation({
+                  text: "Discard edits and reload commands?",
+                  action: reload,
+                });
+              else reload();
             }}
           >
             Reload commands
@@ -341,6 +393,11 @@ export default function TextCommands({
                 ) && <p>No matching commands.</p>}
             </div>
           )}
+          <DeletedCommands
+            disabled={busy || dirty}
+            onBusy={setBusy}
+            onRestored={load}
+          />
         </aside>
         {draft ? (
           <section>
@@ -351,7 +408,7 @@ export default function TextCommands({
               <button
                 type="button"
                 disabled={busy}
-                onClick={closeEditor}
+                onClick={() => closeEditor()}
                 aria-label="Back to commands"
               >
                 ← Commands
@@ -404,85 +461,123 @@ export default function TextCommands({
                   <legend className="command-sr-only">
                     {saved ? "Edit " + saved.command : "New command"}
                   </legend>
-                  <label>
-                    Command
-                    <input
-                      value={draft.command}
-                      readOnly={!!saved}
-                      required
-                      pattern="![a-zA-Z0-9][a-zA-Z0-9_-]{0,31}"
-                      maxLength={33}
-                      placeholder="!trigger"
-                      onChange={(e) => change("command", e.target.value)}
+                  <details open key={draft.command + ":command"}>
+                    <summary>
+                      Command · {draft.command} · {draft.enabled ? "On" : "Off"}
+                    </summary>
+                    <label>
+                      Command
+                      <input
+                        value={draft.command}
+                        readOnly={!!saved}
+                        required
+                        pattern={"![a-zA-Z0-9][a-zA-Z0-9_\\-]{0,31}"}
+                        maxLength={33}
+                        placeholder="!trigger"
+                        onChange={(e) => change("command", e.target.value)}
+                      />
+                      <small>
+                        One word starting with !. Uppercase and lowercase work
+                        the same.
+                      </small>
+                    </label>
+                    <label className="text-command-enable">
+                      <input
+                        type="checkbox"
+                        checked={draft.enabled}
+                        onChange={(e) => change("enabled", e.target.checked)}
+                      />
+                      On
+                    </label>
+                    <label className="text-command-enable">
+                      <input
+                        type="checkbox"
+                        checked={draft.delete_trigger ?? true}
+                        onChange={(e) =>
+                          change("delete_trigger", e.target.checked)
+                        }
+                      />
+                      Delete the trigger message
+                    </label>
+                    {scopeError ? (
+                      <p role="alert">
+                        {scopeError}{" "}
+                        <button type="button" onClick={() => void loadScope()}>
+                          Retry choices
+                        </button>
+                      </p>
+                    ) : (
+                      <CommandScope
+                        draft={draft}
+                        channels={scope.channels}
+                        roles={scope.roles}
+                        disabled={busy}
+                        onChange={(key, values) =>
+                          setDraft((current) =>
+                            current ? { ...current, [key]: values } : current,
+                          )
+                        }
+                      />
+                    )}
+                  </details>
+                  <details key={draft.command + ":reply"}>
+                    <summary>
+                      Reply · {commandBlocks(draft).length} blocks ·{" "}
+                      {(
+                        draft.text.length +
+                        commandBlocks(draft).reduce(
+                          (sum, block) => sum + blockTextLength(block),
+                          0,
+                        )
+                      ).toLocaleString()}
+                      /4,000 characters
+                    </summary>
+                    <MentionText
+                      key={draft.command}
+                      label="Text above the card"
+                      value={draft.text}
+                      maxLength={2000}
+                      placeholder="Text shown above the embed…"
+                      onChange={(text) => change("text", text)}
+                      onMention={rememberMention}
                     />
-                    <small>
-                      One word starting with !. Uppercase and lowercase work the
-                      same.
-                    </small>
-                  </label>
-                  <label className="text-command-enable">
-                    <input
-                      type="checkbox"
-                      checked={draft.enabled}
-                      onChange={(e) => change("enabled", e.target.checked)}
-                    />
-                    Enabled in Discord
-                  </label>
-                  <label className="text-command-enable">
-                    <input
-                      type="checkbox"
-                      checked={draft.delete_trigger ?? true}
-                      onChange={(e) =>
-                        change("delete_trigger", e.target.checked)
-                      }
-                    />
-                    Delete the trigger message
-                  </label>
-                  <MentionText
-                    key={draft.command}
-                    label="Message text (outside embed)"
-                    value={draft.text}
-                    maxLength={2000}
-                    placeholder="Text shown above the embed…"
-                    onChange={(text) => change("text", text)}
-                    onMention={rememberMention}
-                  />
 
-                  {roleError && (
-                    <p role="status">
-                      {roleError}{" "}
-                      <button type="button" onClick={() => void loadRoles()}>
-                        Retry roles
-                      </button>
-                    </p>
-                  )}
-                  <CommandBuilder
-                    roles={roles}
-                    commands={rows
-                      .filter((row) => row.enabled)
-                      .map((row) => row.command)}
-                    onBusy={setBusy}
-                    key={draft.command + ":" + (draft.revision || "new")}
-                    onMention={rememberMention}
-                    value={draft}
-                    onChange={(blocks) => {
-                      setDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              blocks,
-                              title: "",
-                              description: "",
-                              image_url: "",
-                            }
-                          : current,
-                      );
-                      setNotice("");
-                    }}
-                  />
+                    {roleError && (
+                      <p role="status">
+                        {roleError}{" "}
+                        <button type="button" onClick={() => void loadRoles()}>
+                          Retry roles
+                        </button>
+                      </p>
+                    )}
+                    <CommandBuilder
+                      roles={roles}
+                      commands={rows
+                        .filter((row) => row.enabled)
+                        .map((row) => row.command)}
+                      onBusy={setBusy}
+                      key={draft.command + ":" + (draft.revision || "new")}
+                      onMention={rememberMention}
+                      value={draft}
+                      onChange={(blocks) => {
+                        setDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                blocks,
+                                title: "",
+                                description: "",
+                                image_url: "",
+                              }
+                            : current,
+                        );
+                        setNotice("");
+                      }}
+                    />
+                  </details>
                   <details className="command-recipient-settings">
                     <summary>
-                      Mentions &amp; recipients ·{" "}
+                      Pings ·{" "}
                       {draft.allow_pings || draft.choose_recipient
                         ? "On"
                         : "Off"}
@@ -495,7 +590,7 @@ export default function TextCommands({
                           change("allow_pings", e.target.checked)
                         }
                       />
-                      Allow pings in message and embed
+                      Ping the people and roles in this reply
                     </label>
                     <small>
                       Pings the roles and users you add to the reply, including
@@ -510,7 +605,7 @@ export default function TextCommands({
                           change("choose_recipient", e.target.checked)
                         }
                       />
-                      Mention a user or role with the trigger
+                      Let members add @person or @role
                     </label>
                     <small>
                       Type !trigger @person or !trigger @role. Pings inside the
@@ -518,7 +613,7 @@ export default function TextCommands({
                     </small>
                   </details>
                   <details className="command-appearance">
-                    <summary>Appearance</summary>{" "}
+                    <summary>Look · {draft.color}</summary>{" "}
                     <div className="command-color">
                       <label>
                         Embed color
@@ -561,8 +656,7 @@ export default function TextCommands({
                     )}
                   </details>
                   <p className="small">
-                    Anyone can use enabled commands. Replies appear in the same
-                    channel.
+                    The reply appears in the same channel.
                   </p>
                 </fieldset>
               </form>
@@ -610,22 +704,6 @@ export default function TextCommands({
               </button>
             </div>
             <CommandTest draft={draft} disabled={busy} onBusy={setBusy} />
-            {saved && (
-              <details className="command-danger">
-                <summary>Delete command</summary>
-                <p>
-                  Removes the saved reply. Existing Discord posts stay in place.
-                </p>
-                <button
-                  type="button"
-                  disabled={busy || dirty || conflict}
-                  onClick={() => void remove()}
-                >
-                  Delete {saved.command}
-                </button>
-                {dirty && <p>Save or discard your edits first.</p>}
-              </details>
-            )}
             {saved && hasRoleActions(commandBlocks(saved)) && (
               <CommandActivity
                 key={"activity:" + saved.command}
@@ -663,6 +741,22 @@ export default function TextCommands({
                   setDraft(row ? normalizeCommand(row) : null);
                 }}
               />
+            )}
+            {saved && (
+              <details className="command-danger">
+                <summary>Danger zone</summary>
+                <p>
+                  Removes the saved reply. Existing Discord posts stay in place.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy || dirty || conflict}
+                  onClick={() => void remove()}
+                >
+                  Delete {saved.command}
+                </button>
+                {dirty && <p>Save or discard your edits first.</p>}
+              </details>
             )}
           </section>
         ) : (
