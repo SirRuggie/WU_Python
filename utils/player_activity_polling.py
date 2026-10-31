@@ -5,6 +5,7 @@ import time
 
 from utils.player_activity_store import PlayerActivityStore
 from utils.player_activity_raids import capture_raids
+from utils.player_activity_seed import seed_from_clashking
 
 log = logging.getLogger(__name__)
 
@@ -66,17 +67,28 @@ async def poll_hour(store, members, fetch_player, *, sleep=asyncio.sleep, clock=
 async def run(mongo, client):
     store = PlayerActivityStore(mongo)
     await store.ensure_indexes()
-    while True:
-        started = time.monotonic()
-        try:
-            members = await family_members(mongo, client)
-            await store.reconcile_membership(members)
-            await capture_raids(store, client, members.values())
-            counts = await poll_hour(store, members, client.get_player)
-            log.info('Player activity hourly sweep: members=%d success=%d failure=%d',
-                     len(members), counts['success'], counts['failure'])
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.warning('Player activity family sweep unavailable')
-        await asyncio.sleep(max(1, 3600 - (time.monotonic() - started)))
+    seed_task = None
+    try:
+        while True:
+            started = time.monotonic()
+            try:
+                members = await family_members(mongo, client)
+                await store.reconcile_membership(members)
+                await capture_raids(store, client, members.values())
+                counts = await poll_hour(store, members, client.get_player)
+                if seed_task is None:
+                    seed_task = asyncio.create_task(seed_from_clashking(store), name='player-activity-seed')
+                elif seed_task.done() and not seed_task.cancelled() and seed_task.exception():
+                    log.warning('Player activity seed state unavailable')
+                log.info('Player activity hourly sweep: members=%d success=%d failure=%d',
+                         len(members), counts['success'], counts['failure'])
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.warning('Player activity family sweep unavailable')
+            await asyncio.sleep(max(1, 3600 - (time.monotonic() - started)))
+
+    finally:
+        if seed_task is not None:
+            seed_task.cancel()
+            await asyncio.gather(seed_task, return_exceptions=True)

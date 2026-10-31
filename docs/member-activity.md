@@ -78,3 +78,29 @@ must independently verify active counts, streaks, expiry and replacement eligibi
 before/after, retain rollback code, and record first-hour worker logs. Removing
 indexes can stop future purges; rollback cannot recreate deleted audit history
 without the separately reviewed backup. Never restore data over ongoing live writes.
+
+## One-time ClashKing seed
+
+The approved source correction is the public
+`GET /v2/player/{tag}/battlelog/history?time[after]=<90-days-ago ISO>` endpoint,
+already used by the gold-loot tool. It needs no DeveloperToken and uses no limit
+parameter. The newest valid `battleTime` becomes `last_seen_at` only when no
+existing last-seen value exists. Source is explicitly `clashking_seed`.
+This is the last attack ClashKing observed (farming/ranked/legend), not last login;
+it may be older than the player's actual activity. PR B labels seeded values.
+Empty data, non-200, malformed data and timeouts never create a guessed date.
+
+After the first official sweep the bot launches a background seed with at most
+five concurrent reads, a30second request timeout and a120second overall deadline.
+Results are logged as seeded, existing/official, unavailable, non-200, timeout and
+failed counts. Attempt version/status are bounded fields on each player document.
+Completed attempts are not automatically repeated; the coordinator supports an
+explicit safe rerun. A canceled deadline leaves unattempted players eligible on
+restart; every write is conditional and cannot override official activity.
+Bot shutdown cancels and awaits the seed and closes the HTTP session.
+
+Fixture evidence:125players over400days retained125documents (110250 BSON bytes,
+max882bytes with the minimal fixture counters; full unit baselines are larger).
+Real isolated Mongo7 checks passed for backup/restore, exact TTL metadata,
+purge invariance and official/seed concurrency. These are synthetic fixture
+results, not evidence of production activity or a production restore.
