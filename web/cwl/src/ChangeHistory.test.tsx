@@ -7,7 +7,7 @@ it('offers history only for restorable configuration editors',()=>{
 })
 it('keeps history collapsed and explains that restore does not publish',()=>{
  const html=renderToStaticMarkup(<ChangeHistory target="/manage/content/war--win" revision={1} disabled={false} onBusy={()=>{}} onRestored={async()=>{}}/>)
- expect(html).toContain('<summary>Change history</summary>')
+ expect(html).toContain('<summary>History</summary>')
  expect(html).not.toContain('open=""')
  expect(html).toContain('Restoring does not publish a Discord post.')
 })

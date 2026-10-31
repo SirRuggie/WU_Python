@@ -112,7 +112,9 @@ def test_text_command_restore_keeps_name_and_uses_current_revision():
   from cwl_web import text_commands
   from test_text_commands import values
   mongo=db();original=values(delete_trigger=False)
-  current={**original,'text':'New reply','delete_trigger':True,'revision':'current'}
+  current={**original,'text':'New reply','delete_trigger':True,'revision':'current',
+           'allowed_channel_ids':['111111111111111111'],
+           'allowed_role_ids':['222222222222222222']}
   target=NS(find_one=AsyncMock(return_value=current),update_one=AsyncMock(return_value=NS(matched_count=1)))
   @asynccontextmanager
   async def database(_):yield mongo
@@ -120,10 +122,12 @@ def test_text_command_restore_keeps_name_and_uses_current_revision():
   token=await history.begin(mongo,'/api/cwl/manage/text-commands/!cwl',{'user_id':'1'},original)
   await history.finish(mongo,token,{k:v for k,v in current.items() if k!='revision'})
   req=NS(query={'target':'/manage/text-commands/%21cwl'},json=AsyncMock(return_value={'id':token,'side':'before','revision':'current'}))
-  with patch.object(history,'mongo',database),patch.object(history,'require_manage',auth),patch.object(text_commands,'mongo',database),patch.object(text_commands,'require_manage',auth),patch.object(text_commands,'collection',return_value=target):
+  with patch.object(history,'mongo',database),patch.object(history,'require_manage',auth),patch.object(text_commands,'mongo',database),patch.object(text_commands,'require_manage',auth),patch.object(text_commands,'collection',return_value=target),patch('utils.text_commands.collection',return_value=target):
    result=json.loads((await history.restore(req)).text)
    assert result['text']==original['text'] and result['command']=='!cwl'
    assert result['delete_trigger'] is False
+   assert result['allowed_channel_ids']==current['allowed_channel_ids']
+   assert result['allowed_role_ids']==current['allowed_role_ids']
    assert target.update_one.await_args.args[0]['revision']=='current'
    assert result['revision']!='current'
  asyncio.run(run())
@@ -167,4 +171,48 @@ def test_native_message_history_uses_same_target_and_can_restore():
    result=json.loads((await history.restore(req)).text)
   assert history.fields(result)==history.fields(content.schema(item,before))
   assert len([r for r in mongo.bot_config.rows.values() if r.get('kind')=='dashboard_history'])==2
+ asyncio.run(run())
+
+
+@pytest.mark.parametrize('taken', [False, True])
+def test_deleted_command_restoration_and_name_conflict(taken):
+ async def run():
+  from cwl_web import text_commands
+  from test_text_commands import values
+  from utils import text_commands as core
+  mongo=db(); original=values(delete_trigger=False)
+  target=NS(find_one=AsyncMock(return_value={**original,'revision':'new'} if taken else None),insert_one=AsyncMock())
+  @asynccontextmanager
+  async def database(_):yield mongo
+  auth=AsyncMock(return_value={'user_id':'1'})
+  token=await history.begin(mongo,'/api/cwl/manage/text-commands/!cwl',{'user_id':'1'},original,'delete')
+  await history.finish(mongo,token,{})
+  req=NS(query={'target':'/manage/text-commands/%21cwl'},json=AsyncMock(return_value={'id':token,'side':'before','revision':''}))
+  with patch.object(history,'mongo',database),patch.object(history,'require_manage',auth),patch.object(text_commands,'mongo',database),patch.object(text_commands,'require_manage',auth),patch.object(text_commands,'collection',return_value=target),patch.object(core,'collection',return_value=target):
+   if taken:
+    with pytest.raises(web.HTTPConflict) as caught:await history.restore(req)
+    assert 'already taken' in caught.value.text
+    target.insert_one.assert_not_awaited()
+   else:
+    result=json.loads((await history.restore(req)).text)
+    assert result['command']=='!cwl' and result['delete_trigger'] is False
+    target.insert_one.assert_awaited_once()
+ asyncio.run(run())
+
+
+def test_pre_delete_setting_history_preserves_current_preference():
+ async def run():
+  from cwl_web import text_commands
+  from test_text_commands import values
+  mongo=db(); original=values()
+  current={**original,'delete_trigger':False,'revision':'current'}
+  target=NS(find_one=AsyncMock(return_value=current),update_one=AsyncMock(return_value=NS(matched_count=1)))
+  @asynccontextmanager
+  async def database(_):yield mongo
+  auth=AsyncMock(return_value={'user_id':'1'})
+  token=await history.begin(mongo,'/api/cwl/manage/text-commands/!cwl',{'user_id':'1'},original)
+  await history.finish(mongo,token,original)
+  req=NS(query={'target':'/manage/text-commands/%21cwl'},json=AsyncMock(return_value={'id':token,'side':'before','revision':'current'}))
+  with patch.object(history,'mongo',database),patch.object(history,'require_manage',auth),patch.object(text_commands,'mongo',database),patch.object(text_commands,'require_manage',auth),patch.object(text_commands,'collection',return_value=target),patch('utils.text_commands.collection',return_value=target):
+   assert json.loads((await history.restore(req)).text)['delete_trigger'] is False
  asyncio.run(run())

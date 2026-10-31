@@ -19,19 +19,25 @@ The frontend/backend/bot release and Claude's read-only 360px smoke passed.
 Codex and Claude did not send a live Discord trigger; Ruggie's own `!lazy` check
 is separate. See [release evidence and rollback](dashboard-backend-releases.md#trigger-delete-1--october-30-2026).
 
-Later, prompt 31: escape the hyphen in the command-input pattern for browsers'
-`v`-flag regex semantics and add a regression. Smoke found this pre-existing
-client-validation error on the prior 6a2f8d7 revision too; it was not introduced
-by trigger-delete.
-
 ## Recipient behavior
 
-In Command triggers, enable **Choose a user or role each time**, and optionally **Ping only the selected user or role**. Save the trigger. Type the trigger without a mention, click Choose recipient, and select one server member or role in the private picker. Selection posts the Components V2 reply in the original channel, with the selected mention above it. No fixed recipient is saved in the command. Existing triggers default to the old behavior.
+In Command triggers, enable **Let members add @person or @role**. Members type
+`!command @person` or `!command @role`. A missing recipient produces usage guidance;
+no saved reply is delivered. The selected recipient must be a current server member
+or role. Unmentionable roles require the invoking member's MENTION_ROLES permission.
+The mention appears inside the card, or above the text when there is no card.
 
-The initial Choose recipient button is public because prefix messages cannot create private responses; the member/role selection is an ephemeral interaction. Only the original caller can operate it. Pickers expire after 10 minutes and check the command fingerprint, enabled status, guild and channel. Mongo component_state with its existing TTL index stores the per-use state. An atomic claim prevents duplicate deliveries; uncertain sends are not automatically retried. Saved reply actions pointing at a recipient-enabled trigger direct the user to run that trigger instead.
+The selected recipient is allowed to ping. Other saved mentions ping only when
+**Ping the people and roles in this reply** is on. No DMs are sent. Discord's
+permissions and personal notification preferences still apply; mocked payload
+tests do not prove live notification delivery.
 
-Recipient mode allows only the selected mention to ping. Fixed mentions, @everyone and @here remain silent. Unmentionable role pings require the invoking member's Discord MENTION_ROLES permission, and bot/Discord notification permissions still apply. No DMs are sent. Notifications are never guaranteed because Discord user notification preferences also apply.
+The old `text_command_recipients.start()` picker had no production caller: the
+prefix handler already used the inline path. Its unused component route and module
+were removed in command-triggers-2. No new picker state was reachable; old state
+expires through the existing component-state TTL. Inline user/role, mention scope,
+exact-match, missing-recipient and failed-delivery tests remain.
 
-Validation: 60 backend command/dispatch tests passed and 111 frontend tests passed. Production build succeeded. Isolated browser verification confirmed checkbox save round-trip, preview recipient label and mobile controls. Bot runtime imports and recipient payload passed in the deployed virtualenv. No live Discord messages or pings were sent for testing.
-
-Reference: https://github.com/discord/discord-api-docs/blob/main/developers/interactions/receiving-and-responding.mdx
+Command input now escapes the hyphen for browser `v`-flag validation. Replies
+outside configured channel or role scope are silent and do not delete the trigger.
+Usage outcomes use safe reasons; uncertainty never automatically resends a reply.

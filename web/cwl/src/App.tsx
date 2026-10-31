@@ -354,8 +354,13 @@ function App() {
     window.addEventListener('beforeunload', protect)
     return () => window.removeEventListener('beforeunload', protect)
   }, [view, signupDirty, pending, tourActive])
+  const [pendingCommandLeave, setPendingCommandLeave] = useState<null | (() => void)>(null)
   const canLeave = (action?: () => void) => {
     if (isTourReadOnly()) return true
+    if (view === 'text-commands' && manageDirty) {
+      setPendingCommandLeave(() => action || (() => {}))
+      return false
+    }
     if (view === 'clan-management' && familyWorking) return false
     if (view === 'clan-management' && manageDirty) { setPendingClanLeave(() => action || (() => {})); return false }
     if (view === 'roster') {
@@ -828,6 +833,17 @@ function App() {
         }}
       />
     )}
+    {pendingCommandLeave && <ConfirmDialog
+      text="Discard unsaved command changes?"
+      confirmLabel="Discard"
+      cancelLabel="Keep editing"
+      onCancel={() => setPendingCommandLeave(null)}
+      onConfirm={() => {
+        const action = pendingCommandLeave
+        setPendingCommandLeave(null)
+        action()
+      }}
+    />}
     {pendingClanLeave && <ConfirmDialog text="Discard unsaved clan changes?" confirmLabel="Discard" onCancel={() => setPendingClanLeave(null)} onConfirm={() => { const action = pendingClanLeave; setPendingClanLeave(null); action(); }} />}
     {pendingWeightLeave && (
       <ConfirmDialog

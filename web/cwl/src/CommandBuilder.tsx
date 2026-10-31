@@ -1,72 +1,1170 @@
-import CommandImage from './CommandImage'
-import {HexColor,FileUpload,ActionFields,type ActionItem,type FileInfo,type RoleChoice} from './CommandExtras'
-import MentionText from './MentionText'
-import {useState,type ReactNode} from 'react'
-import {DndContext,PointerSensor,KeyboardSensor,useSensor,useSensors,closestCenter,type DragEndEvent} from '@dnd-kit/core'
-import {SortableContext,useSortable,verticalListSortingStrategy,sortableKeyboardCoordinates} from '@dnd-kit/sortable'
-import {CSS} from '@dnd-kit/utilities'
-import type {PreviewPart} from './DiscordMessagePreview'
-export type MediaItem={url:string;description:string;spoiler?:boolean}
-export type Accessory={type:'thumbnail';url:string;description:string;spoiler?:boolean}|{type:'button';url:string;label:string}
-export type Block={name?:string}&({type:'text';text:string}|{type:'image';url:string;description:string}|{type:'separator';divider:boolean;spacing:1|2}|{type:'buttons';buttons:{label:string;url:string}[]}|{type:'gallery';items:MediaItem[]}|{type:'section';texts:string[];accessory:Accessory}|{type:'container';color:string;spoiler?:boolean;blocks:Block[]}|({type:'file';spoiler?:boolean}&FileInfo)|{type:'actions';buttons:ActionItem[]}|{type:'select';placeholder:string;options:ActionItem[]})
+import CommandImage from "./CommandImage";
+import {
+  HexColor,
+  FileUpload,
+  ActionFields,
+  type ActionItem,
+  type FileInfo,
+  type RoleChoice,
+} from "./CommandExtras";
+import MentionText from "./MentionText";
+import { useState, type ReactNode } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import type { PreviewPart } from "./DiscordMessagePreview";
+export type MediaItem = { url: string; description: string; spoiler?: boolean };
+export type Accessory =
+  | { type: "thumbnail"; url: string; description: string; spoiler?: boolean }
+  | { type: "button"; url: string; label: string };
+export type Block = { name?: string } & (
+  | { type: "text"; text: string }
+  | { type: "image"; url: string; description: string }
+  | { type: "separator"; divider: boolean; spacing: 1 | 2 }
+  | { type: "buttons"; buttons: { label: string; url: string }[] }
+  | { type: "gallery"; items: MediaItem[] }
+  | { type: "section"; texts: string[]; accessory: Accessory }
+  | { type: "container"; color: string; spoiler?: boolean; blocks: Block[] }
+  | ({ type: "file"; spoiler?: boolean } & FileInfo)
+  | { type: "actions"; buttons: ActionItem[] }
+  | { type: "select"; placeholder: string; options: ActionItem[] }
+);
 export type Command = {
- command:string; enabled:boolean; text:string; title:string; description:string
- image_url:string; color:string; blocks?:Block[]; allow_pings?:boolean
- choose_recipient?:boolean; recipient_ping?:boolean; delete_trigger?:boolean
- last_delete_error?:{at:string;channel_id:string;reason:string}|null; revision?:string
+  command: string;
+  enabled: boolean;
+  text: string;
+  title: string;
+  description: string;
+  image_url: string;
+  color: string;
+  blocks?: Block[];
+  allow_pings?: boolean;
+  choose_recipient?: boolean;
+  recipient_ping?: boolean;
+  delete_trigger?: boolean;
+  allowed_channel_ids?: string[];
+  allowed_role_ids?: string[];
+  use_count?: number;
+  last_used_at?: string | null;
+  last_outcome?: {
+    status: "ok" | "error";
+    at: string;
+    channel_id: string;
+    reason: string;
+  } | null;
+  last_delete_error?: { at: string; channel_id: string; reason: string } | null;
+  revision?: string;
+};
+export function commandBlocks(value: Command): Block[] {
+  return (
+    value.blocks ?? [
+      ...(value.title
+        ? [{ type: "text" as const, text: "## " + value.title }]
+        : []),
+      ...(value.description
+        ? [{ type: "text" as const, text: value.description }]
+        : []),
+      ...(value.image_url
+        ? [
+            {
+              type: "image" as const,
+              url: value.image_url,
+              description: "Reply image",
+            },
+          ]
+        : []),
+    ]
+  );
 }
-export function commandBlocks(value:Command):Block[]{return value.blocks??[...(value.title?[{type:'text' as const,text:'## '+value.title}]:[]),...(value.description?[{type:'text' as const,text:value.description}]:[]),...(value.image_url?[{type:'image' as const,url:value.image_url,description:'Reply image'}]:[])]}
-export function hasRoleActions(blocks:Block[]):boolean{return blocks.some(block=>block.type==='container'?hasRoleActions(block.blocks):(block.type==='actions'?block.buttons:block.type==='select'?block.options:[]).some(item=>item.action.kind==='add_role'||item.action.kind==='remove_role'))}
-export function blockTextLength(block:Block):number{return block.type==='text'?block.text.length:block.type==='section'?block.texts.join('').length:block.type==='container'?block.blocks.reduce((sum,b)=>sum+blockTextLength(b),0):0}
-export function mapBlockText(block:Block,fn:(text:string)=>string):Block{return block.type==='text'?{...block,text:fn(block.text)}:block.type==='section'?{...block,texts:block.texts.map(fn)}:block.type==='container'?{...block,blocks:block.blocks.map(b=>mapBlockText(b,fn))}:block}
-function blockPreview(block:Block):PreviewPart{
- switch(block.type){
- case 'text':return {type:'text',text:block.text}
- case 'image':return {type:'media',items:[{url:block.url,description:block.description}]}
- case 'gallery':return {type:'media',items:block.items}
- case 'separator':return {type:'separator',divider:block.divider,spacing:block.spacing}
- case 'section':return {type:'section',children:block.texts.map(text=>({type:'text',text})),accessory:block.accessory.type==='thumbnail'?{type:'thumbnail',url:block.accessory.url,description:block.accessory.description,spoiler:block.accessory.spoiler}:{type:'button',label:block.accessory.label,url:block.accessory.url,style:5}}
- case 'container':return {type:'container',accent:block.color,spoiler:block.spoiler,children:block.blocks.map(blockPreview)}
- case 'file':return {type:'file',label:block.filename,size:block.size,spoiler:block.spoiler}
- case 'select':return {type:'select',placeholder:block.placeholder,options:block.options}
- case 'actions':return {type:'row',children:block.buttons.map(button=>({type:'button',style:button.style||1,label:button.label}))}
- default:return {type:'row',children:block.buttons.map(button=>({type:'button',style:5,label:button.label,url:button.url}))}
- }
+export function hasRoleActions(blocks: Block[]): boolean {
+  return blocks.some((block) =>
+    block.type === "container"
+      ? hasRoleActions(block.blocks)
+      : (block.type === "actions"
+          ? block.buttons
+          : block.type === "select"
+            ? block.options
+            : []
+        ).some(
+          (item) =>
+            item.action.kind === "add_role" ||
+            item.action.kind === "remove_role",
+        ),
+  );
 }
-export function commandPreview(value:Command):PreviewPart[]{
- const parts:PreviewPart[]=value.choose_recipient?[{type:'text',text:'@Selected user or role'}]:[];if(value.text)parts.push({type:'text',text:value.text});let loose:PreviewPart[]=[]
- function flush(){if(loose.length)parts.push({type:'container',accent:value.color,children:loose});loose=[]}
- for(const block of commandBlocks(value)){if(block.type==='container'){flush();parts.push(blockPreview(block))}else loose.push(blockPreview(block))}flush();return parts
+export function blockTextLength(block: Block): number {
+  return block.type === "text"
+    ? block.text.length
+    : block.type === "section"
+      ? block.texts.join("").length
+      : block.type === "container"
+        ? block.blocks.reduce((sum, b) => sum + blockTextLength(b), 0)
+        : 0;
 }
-const titles={text:'Text',image:'Image',separator:'Separator',buttons:'Link buttons',gallery:'Media gallery',section:'Text + accessory',container:'Message card',file:'File',actions:'Action buttons',select:'Dropdown'}
-function SortableBlock({id,children}:{id:string;children:ReactNode}){
- const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id})
- return <section id={`command-block-${id}`} ref={setNodeRef} style={{transform:CSS.Transform.toString(transform),transition,position:'relative',zIndex:isDragging?2:undefined,opacity:isDragging?.75:1}} className="command-block"><button type="button" className="command-drag" {...attributes} {...listeners} aria-label="Drag to move block" title="Drag to move · Space and arrow keys also work">⠿</button>{children}</section>
+export function mapBlockText(
+  block: Block,
+  fn: (text: string) => string,
+): Block {
+  return block.type === "text"
+    ? { ...block, text: fn(block.text) }
+    : block.type === "section"
+      ? { ...block, texts: block.texts.map(fn) }
+      : block.type === "container"
+        ? { ...block, blocks: block.blocks.map((b) => mapBlockText(b, fn)) }
+        : block;
 }
-export default function CommandBuilder({value,onChange,onMention=()=>{},commands=[],roles=[],onBusy=()=>{},withinCard=false}:{value:Command;onChange:(blocks:Block[])=>void;onMention?:(key:string,name:string)=>void;commands?:string[];roles?:RoleChoice[];onBusy?:(busy:boolean)=>void;withinCard?:boolean}){
- const blocks=commandBlocks(value),[active,setActive]=useState<number|null>(null),[adding,setAdding]=useState(false)
- const [ids,setIds]=useState<string[]>(()=>commandBlocks(value).map(()=>crypto.randomUUID()))
- const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}),useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}))
- function reorder(from:number,to:number){if(from===to)return;const next=[...blocks],keys=[...ids];next.splice(to,0,next.splice(from,1)[0]);keys.splice(to,0,keys.splice(from,1)[0]);setIds(keys);onChange(next);setActive(current=>current===null?null:keys.indexOf(ids[current]))}
- function dragEnd(event:DragEndEvent){if(event.over)reorder(ids.indexOf(String(event.active.id)),ids.indexOf(String(event.over.id)))}
- function update(index:number,block:Block){onChange(blocks.map((current,i)=>i===index?block:current))}
- function add(type:Block['type']){const block:Block=type==='container'?{type,color:value.color,blocks:[]}:type==='file'?{type,file_id:'',filename:'',size:0}:type==='actions'?{type,buttons:[{label:'Show reply',style:1,action:{kind:'reply',command:''}}]}:type==='select'?{type,placeholder:'Choose an option',options:[{label:'Option 1',action:{kind:'reply',command:''}}]}:type==='text'?{type,text:''}:type==='image'?{type,url:'',description:''}:type==='separator'?{type,divider:true,spacing:1}:type==='gallery'?{type,items:[{url:'',description:''}]}:type==='section'?{type,texts:[''],accessory:{type:'thumbnail',url:'',description:''}}:{type,buttons:[{label:'Open link',url:''}]};setAdding(false);setIds([...ids,crypto.randomUUID()]);onChange([...blocks,block]);setActive(blocks.length)}
- function move(index:number,offset:number){reorder(index,index+offset)}
- return <section className="command-builder" aria-label="Embed builder"><h3>{withinCard?'Card blocks':'Embed content'}</h3><p className="small">Add text, images or controls in the order they should appear.</p><details className="command-add-menu" open={adding} onToggle={e=>setAdding(e.currentTarget.open)}><summary>+ Add block</summary><div className="command-add-blocks">{(['text','section','gallery','image','separator','buttons','container','file','actions','select'] as const).filter(type=>!withinCard||type!=='container').map(type=><button type="button" key={type} disabled={blocks.length>=15} onClick={()=>add(type)}>+ {titles[type]}</button>)}</div></details>{!blocks.length&&<p className="small">Optional. Add a block to build an embed.</p>}
- {blocks.length>0&&<div className="command-outline"><label>Jump to block<select value={active===null?'':ids[active]} onChange={e=>{const index=ids.indexOf(e.target.value);if(index<0)return;setActive(index);requestAnimationFrame(()=>{const block=document.getElementById('command-block-'+ids[index]);block?.scrollIntoView({block:'start',behavior:'smooth'});block?.querySelector<HTMLButtonElement>('.command-block-title')?.focus({preventScroll:true})})}}><option value="">Choose a block</option>{blocks.map((block,index)=><option key={ids[index]} value={ids[index]}>{index+1}. {block.name||titles[block.type]}</option>)}</select></label><button type="button" onClick={()=>{setActive(null);setAdding(false)}}>Collapse all</button></div>}
- <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}><SortableContext items={ids} strategy={verticalListSortingStrategy}><div className="command-block-list">{blocks.map((block,index)=><SortableBlock id={ids[index]} key={ids[index]}><div className="command-block-heading"><button type="button" className="command-block-title" aria-expanded={active===index} onClick={()=>setActive(active===index?null:index)}>{index+1}. {block.name||titles[block.type]} <span>{active===index?'▾':'▸'}</span></button><div className="command-block-order"><button type="button" aria-label={`Move block ${index+1} up`} disabled={index===0} onClick={()=>move(index,-1)}>↑</button><button type="button" aria-label={`Move block ${index+1} down`} disabled={index===blocks.length-1} onClick={()=>move(index,1)}>↓</button></div></div>
- {active!==index&&<p className="command-block-summary">{block.type==='text'?(block.text||'Add text'):block.type==='image'?(block.description||'Image link'):block.type==='buttons'?block.buttons.map(button=>button.label).join(' · '):block.type==='gallery'?`${block.items.length} media items`:block.type==='section'?block.texts.join(' · '):block.type==='container'?`${block.blocks.length} ${block.blocks.length===1?'block':'blocks'}`:block.type==='file'?(block.filename||'Upload a file'):block.type==='actions'?block.buttons.map(b=>b.label).join(' · '):block.type==='select'?`${block.options.length} ${block.options.length===1?'option':'options'}`:block.divider?'Divider line':'Blank space'}</p>}
- {active===index&&<div className="command-block-fields"><label>Block name <small>Only shown in this editor</small><input maxLength={80} value={block.name||''} placeholder={block.type==='text'?'Title, instructions, footer…':titles[block.type]} onChange={e=>update(index,{...block,name:e.target.value})}/></label>
- {block.type==='container'&&<><HexColor value={block.color} onChange={color=>update(index,{...block,color})}/><label className="text-command-enable"><input type="checkbox" checked={!!block.spoiler} onChange={e=>update(index,{...block,spoiler:e.target.checked})}/>Hide card as spoiler</label><CommandBuilder value={{...value,text:'',blocks:block.blocks,color:block.color}} withinCard commands={commands} roles={roles} onBusy={onBusy} onMention={onMention} onChange={children=>update(index,{...block,blocks:children})}/></>}
- {block.type==='file'&&<><FileUpload value={block} onBusy={onBusy} onChange={file=>update(index,{...block,...file})}/><label className="text-command-enable"><input type="checkbox" checked={!!block.spoiler} onChange={e=>update(index,{...block,spoiler:e.target.checked})}/>Hide file as spoiler</label></>}
- {block.type==='actions'&&<>{block.buttons.map((item,j)=><div className="command-link-fields" key={j}><ActionFields item={item} commands={commands} roles={roles} onChange={item=>update(index,{...block,buttons:block.buttons.map((b,k)=>k===j?item:b)})}/>{block.buttons.length>1&&<button type="button" onClick={()=>update(index,{...block,buttons:block.buttons.filter((_,k)=>k!==j)})}>Remove button {j+1}</button>}</div>)}<button type="button" disabled={block.buttons.length>=5} onClick={()=>update(index,{...block,buttons:[...block.buttons,{label:'Show reply',style:1,action:{kind:'reply',command:''}}]})}>+ Action button</button></>}
- {block.type==='select'&&<><label>Dropdown prompt<input maxLength={150} value={block.placeholder} onChange={e=>update(index,{...block,placeholder:e.target.value})}/></label>{block.options.map((item,j)=><details className="command-option" key={j} open={block.options.length===1||undefined}><summary>{item.label||`Option ${j+1}`}</summary><ActionFields item={item} select commands={commands} roles={roles} onChange={item=>update(index,{...block,options:block.options.map((b,k)=>k===j?item:b)})}/>{block.options.length>1&&<button type="button" onClick={()=>update(index,{...block,options:block.options.filter((_,k)=>k!==j)})}>Remove option {j+1}</button>}</details>)}<button type="button" disabled={block.options.length>=25} onClick={()=>update(index,{...block,options:[...block.options,{label:`Option ${block.options.length+1}`,action:{kind:'reply',command:''}}]})}>+ Dropdown option</button></>}
- {block.type==='text'&&<MentionText label="Embed text" value={block.text} onChange={text=>update(index,{...block,text})} placeholder="Use ## for a heading or **bold** for emphasis." onMention={onMention}/>}
- {block.type==='image'&&<><CommandImage value={block.url} onBusy={onBusy} onChange={url=>update(index,{...block,url})}/><label>Image description<input maxLength={1024} value={block.description} placeholder="Describe the image" onChange={e=>update(index,{...block,description:e.target.value})}/></label></>}
- {block.type==='gallery'&&<>{block.items.map((item,j)=><div className="command-link-fields" key={j}><CommandImage label={`Media ${j+1} link`} value={item.url} onBusy={onBusy} onChange={url=>update(index,{...block,items:block.items.map((x,k)=>k===j?{...x,url}:x)})}/><label>Description<input maxLength={1024} value={item.description} onChange={e=>update(index,{...block,items:block.items.map((x,k)=>k===j?{...x,description:e.target.value}:x)})}/></label><label className="text-command-enable"><input type="checkbox" checked={!!item.spoiler} onChange={e=>update(index,{...block,items:block.items.map((x,k)=>k===j?{...x,spoiler:e.target.checked}:x)})}/>Hide as spoiler in Discord</label>{block.items.length>1&&<button type="button" onClick={()=>update(index,{...block,items:block.items.filter((_,k)=>k!==j)})}>Remove media {j+1}</button>}</div>)}<button type="button" disabled={block.items.length>=10} onClick={()=>update(index,{...block,items:[...block.items,{url:'',description:''}]})}>+ Image or video</button></>}
- {block.type==='section'&&<>{block.texts.map((text,j)=><div key={j}><MentionText label={`Section text ${j+1}`} value={text} onMention={onMention} onChange={text=>update(index,{...block,texts:block.texts.map((x,k)=>k===j?text:x)})}/>{block.texts.length>1&&<button type="button" onClick={()=>update(index,{...block,texts:block.texts.filter((_,k)=>k!==j)})}>Remove text {j+1}</button>}</div>)}<button type="button" disabled={block.texts.length>=3} onClick={()=>update(index,{...block,texts:[...block.texts,'']})}>+ Text field</button><label>Show beside the text<select value={block.accessory.type} onChange={e=>update(index,{...block,accessory:e.target.value==='thumbnail'?{type:'thumbnail',url:'',description:''}:{type:'button',url:'',label:'Open link'}})}><option value="thumbnail">Thumbnail</option><option value="button">Link button</option></select></label><>{block.accessory.type==='thumbnail'?<CommandImage label="Thumbnail link" value={block.accessory.url} onBusy={onBusy} onChange={url=>update(index,{...block,accessory:{...block.accessory,url}})}/>:<label>Button link<input type="url" value={block.accessory.url} maxLength={512} onChange={e=>update(index,{...block,accessory:{...block.accessory,url:e.target.value}})}/></label>}</>{block.accessory.type==='button'?<label>Button label<input maxLength={80} value={block.accessory.label} onChange={e=>{if(block.accessory.type==='button')update(index,{...block,accessory:{...block.accessory,label:e.target.value}})}}/></label>:<><label>Thumbnail description<input maxLength={1024} value={block.accessory.description} onChange={e=>{if(block.accessory.type==='thumbnail')update(index,{...block,accessory:{...block.accessory,description:e.target.value}})}}/></label><label className="text-command-enable"><input type="checkbox" checked={!!block.accessory.spoiler} onChange={e=>{if(block.accessory.type==='thumbnail')update(index,{...block,accessory:{...block.accessory,spoiler:e.target.checked}})}}/>Hide as spoiler in Discord</label></>}</>}
- {block.type==='separator'&&<><label className="text-command-enable"><input type="checkbox" checked={block.divider} onChange={e=>update(index,{...block,divider:e.target.checked})}/>Show divider line</label><label>Spacing<select value={block.spacing} onChange={e=>update(index,{...block,spacing:Number(e.target.value) as 1|2})}><option value={1}>Small</option><option value={2}>Large</option></select></label></>}
- {block.type==='buttons'&&<>{block.buttons.map((button,j)=><div className="command-link-fields" key={j}><label>Button {j+1} label<input maxLength={80} value={button.label} onChange={e=>update(index,{...block,buttons:block.buttons.map((b,k)=>k===j?{...b,label:e.target.value}:b)})}/></label><label>Button {j+1} link<input type="url" maxLength={512} value={button.url} placeholder="https://…" onChange={e=>update(index,{...block,buttons:block.buttons.map((b,k)=>k===j?{...b,url:e.target.value}:b)})}/></label>{block.buttons.length>1&&<button type="button" onClick={()=>update(index,{...block,buttons:block.buttons.filter((_,k)=>k!==j)})}>Remove button {j+1}</button>}</div>)}<button type="button" disabled={block.buttons.length>=5} onClick={()=>update(index,{...block,buttons:[...block.buttons,{label:'Open link',url:''}]})}>+ Link button</button></>}
- <div className="command-block-tools"><button type="button" disabled={blocks.length>=15} onClick={()=>{setIds([...ids.slice(0,index+1),crypto.randomUUID(),...ids.slice(index+1)]);onChange([...blocks.slice(0,index+1),structuredClone(block),...blocks.slice(index+1)]);setActive(index+1)}}>Duplicate block</button><button type="button" className="danger-link" onClick={()=>{setIds(ids.filter((_,i)=>i!==index));onChange(blocks.filter((_,i)=>i!==index));setActive(null)}}>Remove block</button></div>
- </div>}</SortableBlock>)}</div></SortableContext></DndContext><p className="small">{value.text.length+blocks.reduce((sum,block)=>sum+blockTextLength(block),0)}/4,000 text characters · {blocks.length}/15 blocks</p></section>
+function blockPreview(block: Block): PreviewPart {
+  switch (block.type) {
+    case "text":
+      return { type: "text", text: block.text };
+    case "image":
+      return {
+        type: "media",
+        items: [{ url: block.url, description: block.description }],
+      };
+    case "gallery":
+      return { type: "media", items: block.items };
+    case "separator":
+      return {
+        type: "separator",
+        divider: block.divider,
+        spacing: block.spacing,
+      };
+    case "section":
+      return {
+        type: "section",
+        children: block.texts.map((text) => ({ type: "text", text })),
+        accessory:
+          block.accessory.type === "thumbnail"
+            ? {
+                type: "thumbnail",
+                url: block.accessory.url,
+                description: block.accessory.description,
+                spoiler: block.accessory.spoiler,
+              }
+            : {
+                type: "button",
+                label: block.accessory.label,
+                url: block.accessory.url,
+                style: 5,
+              },
+      };
+    case "container":
+      return {
+        type: "container",
+        accent: block.color,
+        spoiler: block.spoiler,
+        children: block.blocks.map(blockPreview),
+      };
+    case "file":
+      return {
+        type: "file",
+        label: block.filename,
+        size: block.size,
+        spoiler: block.spoiler,
+      };
+    case "select":
+      return {
+        type: "select",
+        placeholder: block.placeholder,
+        options: block.options,
+      };
+    case "actions":
+      return {
+        type: "row",
+        children: block.buttons.map((button) => ({
+          type: "button",
+          style: button.style || 1,
+          label: button.label,
+        })),
+      };
+    default:
+      return {
+        type: "row",
+        children: block.buttons.map((button) => ({
+          type: "button",
+          style: 5,
+          label: button.label,
+          url: button.url,
+        })),
+      };
+  }
+}
+export function commandPreview(value: Command): PreviewPart[] {
+  const parts: PreviewPart[] = value.choose_recipient
+    ? [{ type: "text", text: "@Selected user or role" }]
+    : [];
+  if (value.text) parts.push({ type: "text", text: value.text });
+  let loose: PreviewPart[] = [];
+  function flush() {
+    if (loose.length)
+      parts.push({ type: "container", accent: value.color, children: loose });
+    loose = [];
+  }
+  for (const block of commandBlocks(value)) {
+    if (block.type === "container") {
+      flush();
+      parts.push(blockPreview(block));
+    } else loose.push(blockPreview(block));
+  }
+  flush();
+  return parts;
+}
+const titles = {
+  text: "Text",
+  image: "Image",
+  separator: "Line",
+  buttons: "Link buttons",
+  gallery: "Image gallery",
+  section: "Text with small image",
+  container: "Card",
+  file: "File",
+  actions: "Buttons",
+  select: "Menu",
+};
+function SortableBlock({ id, children }: { id: string; children: ReactNode }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  return (
+    <section
+      id={`command-block-${id}`}
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        position: "relative",
+        zIndex: isDragging ? 2 : undefined,
+        opacity: isDragging ? 0.75 : 1,
+      }}
+      className="command-block"
+    >
+      <button
+        type="button"
+        className="command-drag"
+        {...attributes}
+        {...listeners}
+        aria-label="Drag to move block"
+        title="Drag to move · Space and arrow keys also work"
+      >
+        ⠿
+      </button>
+      {children}
+    </section>
+  );
+}
+export default function CommandBuilder({
+  value,
+  onChange,
+  onMention = () => {},
+  commands = [],
+  roles = [],
+  onBusy = () => {},
+  withinCard = false,
+}: {
+  value: Command;
+  onChange: (blocks: Block[]) => void;
+  onMention?: (key: string, name: string) => void;
+  commands?: string[];
+  roles?: RoleChoice[];
+  onBusy?: (busy: boolean) => void;
+  withinCard?: boolean;
+}) {
+  const blocks = commandBlocks(value),
+    [active, setActive] = useState<number | null>(null),
+    [adding, setAdding] = useState(false);
+  const [ids, setIds] = useState<string[]>(() =>
+    commandBlocks(value).map(() => crypto.randomUUID()),
+  );
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+  function reorder(from: number, to: number) {
+    if (from === to) return;
+    const next = [...blocks],
+      keys = [...ids];
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    keys.splice(to, 0, keys.splice(from, 1)[0]);
+    setIds(keys);
+    onChange(next);
+    setActive((current) =>
+      current === null ? null : keys.indexOf(ids[current]),
+    );
+  }
+  function dragEnd(event: DragEndEvent) {
+    if (event.over)
+      reorder(
+        ids.indexOf(String(event.active.id)),
+        ids.indexOf(String(event.over.id)),
+      );
+  }
+  function update(index: number, block: Block) {
+    onChange(blocks.map((current, i) => (i === index ? block : current)));
+  }
+  function add(type: Block["type"]) {
+    const block: Block =
+      type === "container"
+        ? { type, color: value.color, blocks: [] }
+        : type === "file"
+          ? { type, file_id: "", filename: "", size: 0 }
+          : type === "actions"
+            ? {
+                type,
+                buttons: [
+                  {
+                    label: "Show reply",
+                    style: 1,
+                    action: { kind: "reply", command: "" },
+                  },
+                ],
+              }
+            : type === "select"
+              ? {
+                  type,
+                  placeholder: "Choose an option",
+                  options: [
+                    {
+                      label: "Option 1",
+                      action: { kind: "reply", command: "" },
+                    },
+                  ],
+                }
+              : type === "text"
+                ? { type, text: "" }
+                : type === "image"
+                  ? { type, url: "", description: "" }
+                  : type === "separator"
+                    ? { type, divider: true, spacing: 1 }
+                    : type === "gallery"
+                      ? { type, items: [{ url: "", description: "" }] }
+                      : type === "section"
+                        ? {
+                            type,
+                            texts: [""],
+                            accessory: {
+                              type: "thumbnail",
+                              url: "",
+                              description: "",
+                            },
+                          }
+                        : { type, buttons: [{ label: "Open link", url: "" }] };
+    setAdding(false);
+    setIds([...ids, crypto.randomUUID()]);
+    onChange([...blocks, block]);
+    setActive(blocks.length);
+  }
+  function move(index: number, offset: number) {
+    reorder(index, index + offset);
+  }
+  return (
+    <section className="command-builder" aria-label="Embed builder">
+      <h3>{withinCard ? "Card blocks" : "Embed content"}</h3>
+      <p className="small">
+        Add text, images or controls in the order they should appear.
+      </p>
+      <details
+        className="command-add-menu"
+        open={adding}
+        onToggle={(e) => setAdding(e.currentTarget.open)}
+      >
+        <summary>+ Add block</summary>
+        <div className="command-add-blocks">
+          {(
+            [
+              "text",
+              "section",
+              "gallery",
+              "image",
+              "separator",
+              "buttons",
+              "container",
+              "file",
+              "actions",
+              "select",
+            ] as const
+          )
+            .filter((type) => !withinCard || type !== "container")
+            .map((type) => (
+              <button
+                type="button"
+                key={type}
+                disabled={blocks.length >= 15}
+                onClick={() => add(type)}
+              >
+                + {titles[type]}
+              </button>
+            ))}
+        </div>
+      </details>
+      {!blocks.length && (
+        <p className="small">Optional. Add a block to build an embed.</p>
+      )}
+      {blocks.length > 0 && (
+        <div className="command-outline">
+          <label>
+            Jump to block
+            <select
+              value={active === null ? "" : ids[active]}
+              onChange={(e) => {
+                const index = ids.indexOf(e.target.value);
+                if (index < 0) return;
+                setActive(index);
+                requestAnimationFrame(() => {
+                  const block = document.getElementById(
+                    "command-block-" + ids[index],
+                  );
+                  block?.scrollIntoView({ block: "start", behavior: "smooth" });
+                  block
+                    ?.querySelector<HTMLButtonElement>(".command-block-title")
+                    ?.focus({ preventScroll: true });
+                });
+              }}
+            >
+              <option value="">Choose a block</option>
+              {blocks.map((block, index) => (
+                <option key={ids[index]} value={ids[index]}>
+                  {index + 1}. {block.name || titles[block.type]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setActive(null);
+              setAdding(false);
+            }}
+          >
+            Collapse all
+          </button>
+        </div>
+      )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={dragEnd}
+      >
+        <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+          <div className="command-block-list">
+            {blocks.map((block, index) => (
+              <SortableBlock id={ids[index]} key={ids[index]}>
+                <div className="command-block-heading">
+                  <button
+                    type="button"
+                    className="command-block-title"
+                    aria-expanded={active === index}
+                    onClick={() => setActive(active === index ? null : index)}
+                  >
+                    {index + 1}. {block.name || titles[block.type]}{" "}
+                    <span>{active === index ? "▾" : "▸"}</span>
+                  </button>
+                  <div className="command-block-order">
+                    <button
+                      type="button"
+                      aria-label={`Move block ${index + 1} up`}
+                      disabled={index === 0}
+                      onClick={() => move(index, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Move block ${index + 1} down`}
+                      disabled={index === blocks.length - 1}
+                      onClick={() => move(index, 1)}
+                    >
+                      ↓
+                    </button>
+                  </div>
+                </div>
+                {active !== index && (
+                  <p className="command-block-summary">
+                    {block.type === "text"
+                      ? block.text || "Add text"
+                      : block.type === "image"
+                        ? block.description || "Image link"
+                        : block.type === "buttons"
+                          ? block.buttons
+                              .map((button) => button.label)
+                              .join(" · ")
+                          : block.type === "gallery"
+                            ? `${block.items.length} media items`
+                            : block.type === "section"
+                              ? block.texts.join(" · ")
+                              : block.type === "container"
+                                ? `${block.blocks.length} ${block.blocks.length === 1 ? "block" : "blocks"}`
+                                : block.type === "file"
+                                  ? block.filename || "Upload a file"
+                                  : block.type === "actions"
+                                    ? block.buttons
+                                        .map((b) => b.label)
+                                        .join(" · ")
+                                    : block.type === "select"
+                                      ? `${block.options.length} ${block.options.length === 1 ? "option" : "options"}`
+                                      : block.divider
+                                        ? "Divider line"
+                                        : "Blank space"}
+                  </p>
+                )}
+                {active === index && (
+                  <div className="command-block-fields">
+                    <label>
+                      Block name <small>Only shown in this editor</small>
+                      <input
+                        maxLength={80}
+                        value={block.name || ""}
+                        placeholder={
+                          block.type === "text"
+                            ? "Title, instructions, footer…"
+                            : titles[block.type]
+                        }
+                        onChange={(e) =>
+                          update(index, { ...block, name: e.target.value })
+                        }
+                      />
+                    </label>
+                    {block.type === "container" && (
+                      <>
+                        <HexColor
+                          value={block.color}
+                          onChange={(color) =>
+                            update(index, { ...block, color })
+                          }
+                        />
+                        <label className="text-command-enable">
+                          <input
+                            type="checkbox"
+                            checked={!!block.spoiler}
+                            onChange={(e) =>
+                              update(index, {
+                                ...block,
+                                spoiler: e.target.checked,
+                              })
+                            }
+                          />
+                          Hide card as spoiler
+                        </label>
+                        <CommandBuilder
+                          value={{
+                            ...value,
+                            text: "",
+                            blocks: block.blocks,
+                            color: block.color,
+                          }}
+                          withinCard
+                          commands={commands}
+                          roles={roles}
+                          onBusy={onBusy}
+                          onMention={onMention}
+                          onChange={(children) =>
+                            update(index, { ...block, blocks: children })
+                          }
+                        />
+                      </>
+                    )}
+                    {block.type === "file" && (
+                      <>
+                        <FileUpload
+                          value={block}
+                          onBusy={onBusy}
+                          onChange={(file) =>
+                            update(index, { ...block, ...file })
+                          }
+                        />
+                        <label className="text-command-enable">
+                          <input
+                            type="checkbox"
+                            checked={!!block.spoiler}
+                            onChange={(e) =>
+                              update(index, {
+                                ...block,
+                                spoiler: e.target.checked,
+                              })
+                            }
+                          />
+                          Hide file as spoiler
+                        </label>
+                      </>
+                    )}
+                    {block.type === "actions" && (
+                      <>
+                        {block.buttons.map((item, j) => (
+                          <div className="command-link-fields" key={j}>
+                            <ActionFields
+                              item={item}
+                              commands={commands}
+                              roles={roles}
+                              onChange={(item) =>
+                                update(index, {
+                                  ...block,
+                                  buttons: block.buttons.map((b, k) =>
+                                    k === j ? item : b,
+                                  ),
+                                })
+                              }
+                            />
+                            {block.buttons.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  update(index, {
+                                    ...block,
+                                    buttons: block.buttons.filter(
+                                      (_, k) => k !== j,
+                                    ),
+                                  })
+                                }
+                              >
+                                Remove button {j + 1}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          disabled={block.buttons.length >= 5}
+                          onClick={() =>
+                            update(index, {
+                              ...block,
+                              buttons: [
+                                ...block.buttons,
+                                {
+                                  label: "Show reply",
+                                  style: 1,
+                                  action: { kind: "reply", command: "" },
+                                },
+                              ],
+                            })
+                          }
+                        >
+                          + Action button
+                        </button>
+                      </>
+                    )}
+                    {block.type === "select" && (
+                      <>
+                        <label>
+                          Menu prompt
+                          <input
+                            maxLength={150}
+                            value={block.placeholder}
+                            onChange={(e) =>
+                              update(index, {
+                                ...block,
+                                placeholder: e.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        {block.options.map((item, j) => (
+                          <details
+                            className="command-option"
+                            key={j}
+                            open={block.options.length === 1 || undefined}
+                          >
+                            <summary>{item.label || `Option ${j + 1}`}</summary>
+                            <ActionFields
+                              item={item}
+                              select
+                              commands={commands}
+                              roles={roles}
+                              onChange={(item) =>
+                                update(index, {
+                                  ...block,
+                                  options: block.options.map((b, k) =>
+                                    k === j ? item : b,
+                                  ),
+                                })
+                              }
+                            />
+                            {block.options.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  update(index, {
+                                    ...block,
+                                    options: block.options.filter(
+                                      (_, k) => k !== j,
+                                    ),
+                                  })
+                                }
+                              >
+                                Remove option {j + 1}
+                              </button>
+                            )}
+                          </details>
+                        ))}
+                        <button
+                          type="button"
+                          disabled={block.options.length >= 25}
+                          onClick={() =>
+                            update(index, {
+                              ...block,
+                              options: [
+                                ...block.options,
+                                {
+                                  label: `Option ${block.options.length + 1}`,
+                                  action: { kind: "reply", command: "" },
+                                },
+                              ],
+                            })
+                          }
+                        >
+                          + Menu option
+                        </button>
+                      </>
+                    )}
+                    {block.type === "text" && (
+                      <MentionText
+                        label="Embed text"
+                        value={block.text}
+                        onChange={(text) => update(index, { ...block, text })}
+                        placeholder="Use ## for a heading or **bold** for emphasis."
+                        onMention={onMention}
+                      />
+                    )}
+                    {block.type === "image" && (
+                      <>
+                        <CommandImage
+                          value={block.url}
+                          onBusy={onBusy}
+                          onChange={(url) => update(index, { ...block, url })}
+                        />
+                        <label>
+                          Image description
+                          <input
+                            maxLength={1024}
+                            value={block.description}
+                            placeholder="Describe the image"
+                            onChange={(e) =>
+                              update(index, {
+                                ...block,
+                                description: e.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                      </>
+                    )}
+                    {block.type === "gallery" && (
+                      <>
+                        {block.items.map((item, j) => (
+                          <div className="command-link-fields" key={j}>
+                            <CommandImage
+                              label={`Media ${j + 1} link`}
+                              value={item.url}
+                              onBusy={onBusy}
+                              onChange={(url) =>
+                                update(index, {
+                                  ...block,
+                                  items: block.items.map((x, k) =>
+                                    k === j ? { ...x, url } : x,
+                                  ),
+                                })
+                              }
+                            />
+                            <label>
+                              Description
+                              <input
+                                maxLength={1024}
+                                value={item.description}
+                                onChange={(e) =>
+                                  update(index, {
+                                    ...block,
+                                    items: block.items.map((x, k) =>
+                                      k === j
+                                        ? { ...x, description: e.target.value }
+                                        : x,
+                                    ),
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="text-command-enable">
+                              <input
+                                type="checkbox"
+                                checked={!!item.spoiler}
+                                onChange={(e) =>
+                                  update(index, {
+                                    ...block,
+                                    items: block.items.map((x, k) =>
+                                      k === j
+                                        ? { ...x, spoiler: e.target.checked }
+                                        : x,
+                                    ),
+                                  })
+                                }
+                              />
+                              Hide as spoiler in Discord
+                            </label>
+                            {block.items.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  update(index, {
+                                    ...block,
+                                    items: block.items.filter(
+                                      (_, k) => k !== j,
+                                    ),
+                                  })
+                                }
+                              >
+                                Remove media {j + 1}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          disabled={block.items.length >= 10}
+                          onClick={() =>
+                            update(index, {
+                              ...block,
+                              items: [
+                                ...block.items,
+                                { url: "", description: "" },
+                              ],
+                            })
+                          }
+                        >
+                          + Image or video
+                        </button>
+                      </>
+                    )}
+                    {block.type === "section" && (
+                      <>
+                        {block.texts.map((text, j) => (
+                          <div key={j}>
+                            <MentionText
+                              label={`Section text ${j + 1}`}
+                              value={text}
+                              onMention={onMention}
+                              onChange={(text) =>
+                                update(index, {
+                                  ...block,
+                                  texts: block.texts.map((x, k) =>
+                                    k === j ? text : x,
+                                  ),
+                                })
+                              }
+                            />
+                            {block.texts.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  update(index, {
+                                    ...block,
+                                    texts: block.texts.filter(
+                                      (_, k) => k !== j,
+                                    ),
+                                  })
+                                }
+                              >
+                                Remove text {j + 1}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          disabled={block.texts.length >= 3}
+                          onClick={() =>
+                            update(index, {
+                              ...block,
+                              texts: [...block.texts, ""],
+                            })
+                          }
+                        >
+                          + Text field
+                        </button>
+                        <label>
+                          Show beside the text
+                          <select
+                            value={block.accessory.type}
+                            onChange={(e) =>
+                              update(index, {
+                                ...block,
+                                accessory:
+                                  e.target.value === "thumbnail"
+                                    ? {
+                                        type: "thumbnail",
+                                        url: "",
+                                        description: "",
+                                      }
+                                    : {
+                                        type: "button",
+                                        url: "",
+                                        label: "Open link",
+                                      },
+                              })
+                            }
+                          >
+                            <option value="thumbnail">Thumbnail</option>
+                            <option value="button">Link button</option>
+                          </select>
+                        </label>
+                        <>
+                          {block.accessory.type === "thumbnail" ? (
+                            <CommandImage
+                              label="Thumbnail link"
+                              value={block.accessory.url}
+                              onBusy={onBusy}
+                              onChange={(url) =>
+                                update(index, {
+                                  ...block,
+                                  accessory: { ...block.accessory, url },
+                                })
+                              }
+                            />
+                          ) : (
+                            <label>
+                              Button link
+                              <input
+                                type="url"
+                                value={block.accessory.url}
+                                maxLength={512}
+                                onChange={(e) =>
+                                  update(index, {
+                                    ...block,
+                                    accessory: {
+                                      ...block.accessory,
+                                      url: e.target.value,
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                          )}
+                        </>
+                        {block.accessory.type === "button" ? (
+                          <label>
+                            Button label
+                            <input
+                              maxLength={80}
+                              value={block.accessory.label}
+                              onChange={(e) => {
+                                if (block.accessory.type === "button")
+                                  update(index, {
+                                    ...block,
+                                    accessory: {
+                                      ...block.accessory,
+                                      label: e.target.value,
+                                    },
+                                  });
+                              }}
+                            />
+                          </label>
+                        ) : (
+                          <>
+                            <label>
+                              Thumbnail description
+                              <input
+                                maxLength={1024}
+                                value={block.accessory.description}
+                                onChange={(e) => {
+                                  if (block.accessory.type === "thumbnail")
+                                    update(index, {
+                                      ...block,
+                                      accessory: {
+                                        ...block.accessory,
+                                        description: e.target.value,
+                                      },
+                                    });
+                                }}
+                              />
+                            </label>
+                            <label className="text-command-enable">
+                              <input
+                                type="checkbox"
+                                checked={!!block.accessory.spoiler}
+                                onChange={(e) => {
+                                  if (block.accessory.type === "thumbnail")
+                                    update(index, {
+                                      ...block,
+                                      accessory: {
+                                        ...block.accessory,
+                                        spoiler: e.target.checked,
+                                      },
+                                    });
+                                }}
+                              />
+                              Hide as spoiler in Discord
+                            </label>
+                          </>
+                        )}
+                      </>
+                    )}
+                    {block.type === "separator" && (
+                      <>
+                        <label className="text-command-enable">
+                          <input
+                            type="checkbox"
+                            checked={block.divider}
+                            onChange={(e) =>
+                              update(index, {
+                                ...block,
+                                divider: e.target.checked,
+                              })
+                            }
+                          />
+                          Show divider line
+                        </label>
+                        <label>
+                          Spacing
+                          <select
+                            value={block.spacing}
+                            onChange={(e) =>
+                              update(index, {
+                                ...block,
+                                spacing: Number(e.target.value) as 1 | 2,
+                              })
+                            }
+                          >
+                            <option value={1}>Small</option>
+                            <option value={2}>Large</option>
+                          </select>
+                        </label>
+                      </>
+                    )}
+                    {block.type === "buttons" && (
+                      <>
+                        {block.buttons.map((button, j) => (
+                          <div className="command-link-fields" key={j}>
+                            <label>
+                              Button {j + 1} label
+                              <input
+                                maxLength={80}
+                                value={button.label}
+                                onChange={(e) =>
+                                  update(index, {
+                                    ...block,
+                                    buttons: block.buttons.map((b, k) =>
+                                      k === j
+                                        ? { ...b, label: e.target.value }
+                                        : b,
+                                    ),
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              Button {j + 1} link
+                              <input
+                                type="url"
+                                maxLength={512}
+                                value={button.url}
+                                placeholder="https://…"
+                                onChange={(e) =>
+                                  update(index, {
+                                    ...block,
+                                    buttons: block.buttons.map((b, k) =>
+                                      k === j
+                                        ? { ...b, url: e.target.value }
+                                        : b,
+                                    ),
+                                  })
+                                }
+                              />
+                            </label>
+                            {block.buttons.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  update(index, {
+                                    ...block,
+                                    buttons: block.buttons.filter(
+                                      (_, k) => k !== j,
+                                    ),
+                                  })
+                                }
+                              >
+                                Remove button {j + 1}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          disabled={block.buttons.length >= 5}
+                          onClick={() =>
+                            update(index, {
+                              ...block,
+                              buttons: [
+                                ...block.buttons,
+                                { label: "Open link", url: "" },
+                              ],
+                            })
+                          }
+                        >
+                          + Link button
+                        </button>
+                      </>
+                    )}
+                    <div className="command-block-tools">
+                      <button
+                        type="button"
+                        disabled={blocks.length >= 15}
+                        onClick={() => {
+                          setIds([
+                            ...ids.slice(0, index + 1),
+                            crypto.randomUUID(),
+                            ...ids.slice(index + 1),
+                          ]);
+                          onChange([
+                            ...blocks.slice(0, index + 1),
+                            structuredClone(block),
+                            ...blocks.slice(index + 1),
+                          ]);
+                          setActive(index + 1);
+                        }}
+                      >
+                        Duplicate block
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-link"
+                        onClick={() => {
+                          setIds(ids.filter((_, i) => i !== index));
+                          onChange(blocks.filter((_, i) => i !== index));
+                          setActive(null);
+                        }}
+                      >
+                        Remove block
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </SortableBlock>
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+      <p className="small">
+        {value.text.length +
+          blocks.reduce((sum, block) => sum + blockTextLength(block), 0)}
+        /4,000 text characters · {blocks.length}/15 blocks
+      </p>
+    </section>
+  );
 }
