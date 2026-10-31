@@ -113,6 +113,15 @@ class StrikeTracking:
                       'next_check_at': None, 'updated_at': now},
              '$unset': {'purge_after': ''}, '$inc': {'review_revision': 1}})
 
+    async def review(self, guild_id, key):
+        if not isinstance(key, str) or not 1 <= len(key) <= 256:
+            raise ValueError('Choose a quarantined war.')
+        row = await self.mongo.strike_war_snapshots.find_one({'guild_id': int(guild_id), 'war_key': key})
+        if row is None:
+            return None
+        return {field: row.get(field) for field in ('war_key', 'clan_tag', 'manual_review_required',
+                'review_revision', 'incomplete_reason', 'review_resolution')}
+
     async def resolve_review(self, guild_id, key, revision, reason, actor_id, *, now=None):
         """Resolve the hold, not the missing strike; preserve a bounded audit receipt."""
         if (not isinstance(key, str) or not 1 <= len(key) <= 256

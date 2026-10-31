@@ -366,6 +366,7 @@ const preview = {
 
 const fixtureJobs = new Map<string, { reads: number; result: unknown }>();
 let trackingQueued = false;
+let reviewResolved = false;
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
   const url = new URL(
@@ -606,17 +607,36 @@ window.fetch = async (input, init) => {
           }
         : {}),
     };
+  } else if (path.endsWith("/tracking/review")) {
+    data = { manual_review_required: !reviewResolved, review_revision: 1 };
+  } else if (path.endsWith("/tracking/resolve")) {
+    reviewResolved = true;
+    data = {
+      resolved: true,
+      receipt: { reason: "Fixture staff review", revision: 2 },
+    };
   } else if (path.endsWith("/wars"))
     data = {
-      wars: wars.filter(
-        (item) =>
-          (!url.searchParams.get("clan") ||
-            item.clan_tag === url.searchParams.get("clan")) &&
-          (!url.searchParams.get("query") ||
-            `${item.clan_name} ${item.opponent_name}`
-              .toLowerCase()
-              .includes(url.searchParams.get("query")!.toLowerCase())),
-      ),
+      wars: wars
+        .map((item) =>
+          item.war_key === "war-incomplete" &&
+          new URLSearchParams(location.search).has("review")
+            ? {
+                ...item,
+                manual_review_required: !reviewResolved,
+                review_revision: 1,
+              }
+            : item,
+        )
+        .filter(
+          (item) =>
+            (!url.searchParams.get("clan") ||
+              item.clan_tag === url.searchParams.get("clan")) &&
+            (!url.searchParams.get("query") ||
+              `${item.clan_name} ${item.opponent_name}`
+                .toLowerCase()
+                .includes(url.searchParams.get("query")!.toLowerCase())),
+        ),
     };
   else if (path.endsWith("/targets"))
     data = {

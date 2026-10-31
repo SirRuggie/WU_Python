@@ -1,3 +1,4 @@
+import StrikeReviewResolution from "./StrikeReviewResolution";
 import ReplacementDeparture from "./ReplacementDeparture";
 import { parseActivityFilters } from "./strikeActivityView";
 import StrikeActivityRoster from "./StrikeActivityRoster";
@@ -130,6 +131,8 @@ type War = {
   source_label?: string | null;
   incomplete?: boolean;
   review_message?: string | null;
+  manual_review_required?: boolean;
+  review_revision?: number;
 };
 type Settings = StrikeSettings;
 type ImportEntry = {
@@ -344,14 +347,17 @@ export default function StrikesWorkspace({
   const historyRequest = useRef(0);
   const memberRequest = useRef(0);
   const [busy, setBusy] = useState(false);
+  const [reviewDirty, setReviewDirty] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [replacementDirty, setReplacementDirty] = useState(false);
   const [replacementBusy, setReplacementBusy] = useState(false);
   useEffect(() => {
-    onWorking?.(busy || replacementBusy);
+    onWorking?.(busy || replacementBusy || reviewBusy);
     return () => onWorking?.(false);
-  }, [busy, replacementBusy, onWorking]);
+  }, [busy, replacementBusy, reviewBusy, onWorking]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const noticeRef = useRef<HTMLDivElement>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [memberQuery, setMemberQuery] = useState("");
   const [memberError, setMemberError] = useState("");
@@ -399,6 +405,7 @@ export default function StrikesWorkspace({
     return () => window.removeEventListener("dashboard-access-changed", clear);
   }, []);
   const dirty =
+    reviewDirty ||
     replacementDirty ||
     settingsDirty ||
     manualDirty ||
@@ -410,7 +417,7 @@ export default function StrikesWorkspace({
     (() => void) | null
   >(null);
   const leaveDraft = (action: () => void) => {
-    if (busy || replacementBusy) return;
+    if (busy || replacementBusy || reviewBusy) return;
     if (dirty) setPendingNavigation(() => action);
     else action();
   };
@@ -938,7 +945,12 @@ export default function StrikesWorkspace({
         </div>
       )}
       {notice && (
-        <div className="notice success" role="status">
+        <div
+          className="notice success"
+          role="status"
+          ref={noticeRef}
+          tabIndex={-1}
+        >
           {notice}
         </div>
       )}
@@ -1059,10 +1071,30 @@ export default function StrikesWorkspace({
                   {selectedWar.war_plan_reason && (
                     <span>{selectedWar.war_plan_reason}</span>
                   )}
-                  <button onClick={clearWar}>Clear war</button>
+                  <button onClick={() => leaveDraft(clearWar)}>
+                    Clear war
+                  </button>
                 </div>
               )}
             </div>
+          )}
+          {selectedWar?.manual_review_required && (
+            <StrikeReviewResolution
+              key={selectedWar.war_key}
+              warKey={selectedWar.war_key}
+              revision={selectedWar.review_revision || 0}
+              reason={selectedWar.review_message}
+              canManage={access.manage}
+              onDirty={setReviewDirty}
+              onWorking={setReviewBusy}
+              onResolved={() => {
+                setSelectedWar(null);
+                setShowWarSearch(true);
+                setWarRetry((value) => value + 1);
+                setNotice("War review resolved. The streak hold is released.");
+                requestAnimationFrame(() => noticeRef.current?.focus());
+              }}
+            />
           )}
           {!selectedAccount && showWarSearch && (
             <div className="card strikes-war-search">
@@ -1108,9 +1140,11 @@ export default function StrikesWorkspace({
                       <span>
                         {dateText(war.war_end)} ·{" "}
                         {war.source_label || "Source unavailable"} ·{" "}
-                        {war.incomplete
-                          ? `${war.review_message || "War ended before final check: review in Find war"} · No automatic strikes`
-                          : warSummary(war)}
+                        {war.manual_review_required
+                          ? `${war.review_message || "Staff review required"} · Streak hold`
+                          : war.incomplete
+                            ? `${war.review_message || "War ended before final check: review in Find war"} · No automatic strikes`
+                            : warSummary(war)}
                       </span>
                     </button>
                   ))}
@@ -1722,7 +1756,7 @@ export default function StrikesWorkspace({
           text="Discard unsaved changes?"
           confirmLabel="Discard"
           cancelLabel="Keep editing"
-          disabled={busy}
+          disabled={busy || reviewBusy}
           onCancel={() => setPendingNavigation(null)}
           onConfirm={() => {
             const action = pendingNavigation;

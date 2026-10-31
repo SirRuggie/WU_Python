@@ -14,7 +14,10 @@ request. Its results open the same account detail.
 ## Data and permissions
 
 `GET /api/cwl/strikes/accounts?activity=true` uses the existing strikes-read grant;
-there is no new write route. Its one response contains every current family
+regular strike/priority writes retain their existing routes. Prompt 56 adds an
+explicit quarantine-resolution action through PR A, with the manage grant, reason,
+revision check and audit receipt; PR B supplies its confirmation UI and a read-only
+review refresh. Its one response contains every current family
 account and recently departed tracked accounts, including accounts without
 strikes. The activity owner projects page fields and the town-hall scalar, excluding the
 large per-unit baseline from this read; the strike ledger supplies
@@ -59,3 +62,14 @@ nonconsecutive raid skips count; replacement alias drops its filter. Each must
 fail its targeted regression and source must be restored afterward. Final evidence
 is under `.local/p54b-evidence`, with full validation reported only after all gates
 pass. No production release is implied by these fixtures.
+
+
+## Quarantine review (prompt 56)
+
+Find war always shows a quarantined incident, including saved partial rows. Open
+it to read the held-review reason. Only staff with `strikes` manage can resolve:
+a reason and confirmation are required, a pending request cannot duplicate, and
+409 retains the reason until an explicit revision refresh. The read endpoint is
+guild-scoped with the existing read grant. Resolving releases the streak hold and
+preserves the audit receipt; it never creates the missing strike. Draft navigation
+uses the same Keep editing/Discard guard as the other editors.

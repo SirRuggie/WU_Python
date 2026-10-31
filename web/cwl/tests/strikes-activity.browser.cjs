@@ -34,7 +34,7 @@ fs.mkdirSync(output, { recursive: true });
           rows: document.querySelectorAll(".strike-activity-row").length,
           small: [
             ...document.querySelectorAll(
-              ".strike-activity-roster button,.strike-activity-roster select,.strike-activity-roster input:not([type=checkbox]),.strike-activity-roster summary",
+              ".strike-activity-roster button,.strike-activity-roster select,.strike-activity-roster input:not([type=checkbox]),.strike-activity-roster summary,.strike-review-resolution button,.strike-review-resolution textarea,.confirm-dialog button",
             ),
           ]
             .filter(
@@ -42,7 +42,11 @@ fs.mkdirSync(output, { recursive: true });
                 e.checkVisibility() && e.getBoundingClientRect().height < 44,
             )
             .map((e) => e.textContent),
-          text: [...document.querySelectorAll(".strike-activity-roster *")]
+          text: [
+            ...document.querySelectorAll(
+              ".strike-activity-roster *, .strike-review-resolution *, .confirm-dialog *",
+            ),
+          ]
             .filter(
               (e) =>
                 e.checkVisibility() &&
@@ -131,6 +135,45 @@ fs.mkdirSync(output, { recursive: true });
           "Quiet",
         ),
       );
+      if (
+        count === 125 &&
+        ((width === 360 && height === 800) || width === 1440)
+      ) {
+        await page.goto(`${origin}/strikes-preview.html?count=125&review=1`);
+        await page
+          .getByRole("button", { name: "Find war", exact: true })
+          .click();
+        await page
+          .getByRole("button", { name: /Unfinalized opponent/ })
+          .click();
+        await page
+          .getByRole("heading", { name: "Staff review required" })
+          .waitFor();
+        await page
+          .getByRole("button", { name: "Resolve review", exact: true })
+          .click();
+        await page
+          .getByRole("textbox", { name: "Review reason" })
+          .fill("Fixture staff reviewed missing final");
+        await snap("review");
+        await page
+          .getByRole("button", {
+            name: "Resolve and release hold",
+            exact: true,
+          })
+          .click();
+        await page.getByRole("dialog").waitFor();
+        await snap("review-confirm");
+        await page
+          .getByRole("dialog")
+          .getByRole("button", { name: "Resolve review", exact: true })
+          .click();
+        await page
+          .getByText("War review resolved. The streak hold is released.", {
+            exact: true,
+          })
+          .waitFor();
+      }
       assert.equal(errors.length, 0, errors.join("\n"));
       await page.close();
     }

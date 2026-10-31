@@ -1101,3 +1101,23 @@
     display: none;
   }
 }
+.strike-review-resolution {
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #ae8750;
+  border-radius: 12px;
+  background: #2a261f;
+}
+.strike-review-resolution textarea {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  padding: 10px;
+  margin-block: 6px 10px;
+  background: #171719;
+  border: 1px solid #6d624e;
+  border-radius: 8px;
+  color: #f5f4f0;
+  font: inherit;
+  resize: vertical;
+}
