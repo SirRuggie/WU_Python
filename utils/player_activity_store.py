@@ -294,12 +294,15 @@ class PlayerActivityStore:
                 )
 
     async def history_report(self, clans):
+        from utils.player_activity_history import HISTORY_VERSION
+
         states = {row["clan_tag"]: row for row in await self.history_clans()}
         pending = [
             clan
             for clan in clans
             if states.get(clan, {}).get("status") != "complete"
-            or states.get(clan, {}).get("version") != 2
+            or states.get(clan, {}).get("version") != HISTORY_VERSION
+            or states.get(clan, {}).get("left_at")
         ]
         return {
             "complete": not pending,

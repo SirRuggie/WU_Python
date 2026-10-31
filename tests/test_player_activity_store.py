@@ -168,5 +168,6 @@ def test_clan_cache_is_not_a_player_and_retirement_preserves_cache():
         assert not (await store.history_clans())[0].get('left_at')
         await store.retire_history_clans(set(), now=NOW)
         assert (await store.history_clans())[0]['left_at'] == NOW
+        assert not (await store.history_report([CLAN]))['complete']
         assert len(await store.all_players()) == 1
     asyncio.run(run())

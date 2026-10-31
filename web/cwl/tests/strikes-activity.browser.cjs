@@ -221,6 +221,11 @@ fs.mkdirSync(output, { recursive: true });
           .click();
         await page.getByText(/26 selected/).waitFor();
         assert.equal(
+          await page.locator('[aria-label="Selected accounts"] li').count(),
+          26,
+          "Confirmation must list every account including the next page",
+        );
+        assert.equal(
           await page.locator('input[aria-label^="Select "]:checked').count(),
           25,
         );
@@ -246,6 +251,11 @@ fs.mkdirSync(output, { recursive: true });
           1,
         );
         await page.getByText(/26 selected/).waitFor();
+        assert.equal(
+          await page.locator('[aria-label="Selected accounts"] li').count(),
+          26,
+          "Confirmation must list every account including the next page",
+        );
         await page
           .getByRole("button", { name: "Cancel selection", exact: true })
           .click();
