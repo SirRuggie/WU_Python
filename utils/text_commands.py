@@ -27,7 +27,7 @@ def command_name(value):
 
 FIELDS = ('command', 'enabled', 'text', 'title', 'description', 'image_url',
           'color', 'blocks', 'allow_pings', 'choose_recipient', 'recipient_ping',
-          'delete_trigger')
+          'delete_trigger', 'allowed_channel_ids', 'allowed_role_ids')
 
 
 def legacy_blocks(row):
@@ -64,6 +64,13 @@ def validate(values, *, nested=False):
            ('enabled', 'allow_pings', 'choose_recipient', 'recipient_ping',
             'delete_trigger')):
         raise ValueError('Choose whether the command and pings are enabled.')
+    for key in ('allowed_channel_ids', 'allowed_role_ids'):
+        ids = values.get(key, [])
+        if not isinstance(ids, list) or len(ids) > 100 or any(
+            not isinstance(value, str) or not re.fullmatch(r'[0-9]{15,22}', value) for value in ids
+        ):
+            raise ValueError('Choose up to 100 channels or roles from this server.')
+        result[key] = list(dict.fromkeys(ids))
     for key,limit in (('text',2000),('title',256),('description',4000),('image_url',1000)):
         value=values.get(key,'')
         if not isinstance(value,str) or len(value)>limit:raise ValueError(f'{key.replace("_"," ").title()} must be at most {limit} characters.')
@@ -195,7 +202,7 @@ def fingerprint(row):
     import hashlib,json
     # Trigger cleanup is not part of the sent reply or its interactive actions.
     fields = {key:row.get(key) for key in FIELDS
-              if key not in ('choose_recipient','recipient_ping','delete_trigger')}
+              if key not in ('choose_recipient','recipient_ping','delete_trigger','allowed_channel_ids','allowed_role_ids')}
     if row.get('choose_recipient'):fields.update(choose_recipient=True,recipient_ping=True)
     return hashlib.sha256(json.dumps(fields,sort_keys=True).encode()).hexdigest()[:16]
 
@@ -286,6 +293,19 @@ async def record_delete_outcome(db, row, *, channel_id, error=None):
         log.warning('Could not record trigger deletion outcome', exc_info=True)
 
 
+async def within_scope(row, event, bot):
+    channels = row['allowed_channel_ids']
+    if channels and str(event.channel_id) not in channels:
+        return False
+    roles = row['allowed_role_ids']
+    if not roles:
+        return True
+    member = getattr(event.message, 'member', None)
+    if member is None:
+        member = await bot.rest.fetch_member(GUILD_ID, event.message.author.id)
+    return bool(set(roles) & {str(role) for role in member.role_ids})
+
+
 async def handle(event, db, bot):
     message = event.message
     if int(event.guild_id) != GUILD_ID or message.author.is_bot or getattr(message, 'webhook_id', None):
@@ -302,6 +322,10 @@ async def handle(event, db, bot):
         row = await collection(db).find_one({'_id': f'{GUILD_ID}:{name}', 'enabled': True})
         if not row:
             return False
+        # Validate persisted input and check scope before replying or deleting.
+        clean = validate({key: row[key] for key in FIELDS if key in row})
+        if not await within_scope(clean, event, bot):
+            return False
         # Only enabled, existing commands consume a cooldown.
         import time
         now = time.monotonic()
@@ -312,8 +336,6 @@ async def handle(event, db, bot):
         _recent.move_to_end(key)
         while len(_recent) > 5000:
             _recent.popitem(last=False)
-        # Validate persisted input too; never interpret code or template expressions.
-        clean = validate({key:row[key] for key in FIELDS if key in row})
         recipient = None
         if clean.get('choose_recipient'):
             async def explain(text):

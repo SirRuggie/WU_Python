@@ -27,6 +27,8 @@ def public(row):
         'recipient_ping': row.get('recipient_ping', False),
         'delete_trigger': row.get('delete_trigger', True),
         'last_delete_error': error,
+        'allowed_channel_ids': row.get('allowed_channel_ids', []),
+        'allowed_role_ids': row.get('allowed_role_ids', []),
         'blocks': row.get('blocks', legacy_blocks(row)),
         'revision': row['revision'],
     }
@@ -39,6 +41,21 @@ async def listing(request):
     return web.json_response({'commands': [public(row) for row in rows]})
 
 
+async def validate_scope(request, actor, values):
+    from .server_management import discord
+    if values['allowed_channel_ids']:
+        channels = await discord(request, 'GET', f'/guilds/{GUILD_ID}/channels')
+        available = {str(row['id']) for row in channels if row.get('type') in (0, 5)}
+        if not set(values['allowed_channel_ids']) <= available:
+            raise web.HTTPBadRequest(text='Choose channels from this server.')
+    if values['allowed_role_ids']:
+        roles = actor.get('roles', [])
+        available = {str(row['id']) for row in roles
+                     if not row.get('managed') and str(row['id']) != str(GUILD_ID)}
+        if not set(values['allowed_role_ids']) <= available:
+            raise web.HTTPBadRequest(text='Choose non-managed roles from this server.')
+
+
 async def save(request):
     actor = await require_manage(request, 'text_commands', write=True)
     body = await (request.clone(client_max_size=256*1024) if isinstance(request,web.Request) else request).json()
@@ -48,6 +65,7 @@ async def save(request):
         values = validate(body.get('values'))
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from None
+    await validate_scope(request, actor, values)
     from .command_images import preserve_images
     values=await preserve_images(request,values)
     revision = uuid4().hex
