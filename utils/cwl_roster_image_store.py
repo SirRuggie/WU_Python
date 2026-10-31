@@ -3,6 +3,13 @@ import json
 import re
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS announcement_test_settings (
+ id INTEGER PRIMARY KEY CHECK(id=1),
+ channel_id TEXT NOT NULL, channel_name TEXT NOT NULL,
+ revision INTEGER NOT NULL, configured_by TEXT NOT NULL,
+ configured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS roster_image_channels (
  pool TEXT PRIMARY KEY CHECK(pool IN ('main','lazy')),
  channel_id TEXT NOT NULL, channel_name TEXT NOT NULL,
@@ -120,6 +127,31 @@ def has_active_image_message(row):
 class RosterImageStore:
     def __init__(self, store):
         self.store = store
+
+    def test_channel(self):
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM announcement_test_settings WHERE id=1').fetchone()
+            return ({'channel_id': row['channel_id'], 'channel_name': row['channel_name'],
+                     'revision': row['revision']} if row else
+                    {'channel_id': '', 'channel_name': '', 'revision': 0})
+
+    def configure_test_channel(self, channel_id, channel_name, actor, expected_revision):
+        if (type(expected_revision) is not int or expected_revision < 0
+                or not isinstance(channel_id, str) or not re.fullmatch(r'\d{15,22}', channel_id)
+                or not isinstance(channel_name, str) or not channel_name):
+            raise ValueError('Choose a test channel and a valid revision')
+        with self.store.tx() as db:
+            prior = db.execute('SELECT revision FROM announcement_test_settings WHERE id=1').fetchone()
+            revision = prior['revision'] if prior else 0
+            if revision != expected_revision:
+                raise ImageConflict('Test channel changed; reload before saving')
+            db.execute("""INSERT INTO announcement_test_settings
+                (id,channel_id,channel_name,revision,configured_by) VALUES(1,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET channel_id=excluded.channel_id,
+                channel_name=excluded.channel_name,revision=excluded.revision,
+                configured_by=excluded.configured_by,configured_at=CURRENT_TIMESTAMP""",
+                (channel_id, channel_name, revision + 1, str(actor)))
+        return {'channel_id': channel_id, 'channel_name': channel_name, 'revision': revision + 1}
 
     def prepare_test_sequence(self, *, request_id, sid, pool, version, channel, actor, plan):
         """Freeze a test independently of production occurrence/post records."""
