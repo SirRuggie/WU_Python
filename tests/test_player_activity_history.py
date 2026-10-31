@@ -293,3 +293,23 @@ def test_fwa_no_plan_counts_and_non_regular_wars_are_ignored():
             assert len(row['recent_wars'])==1 and not await store.history_report()
             assert activity_signals(row,[],now=NOW)['missed_attacks']==expected
     asyncio.run(run())
+
+
+def test_successful_clan_cache_refreshes_next_day_after_tracker_gap():
+    from utils.player_activity_signals import activity_signals
+    async def run():
+        db,_=setup();db.player_activity=ActivityCollection();db.fwa_war_plans=Collection()
+        db.clans.rows['clan']['type']='War'
+        store=PlayerActivityStore(db)
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
+        old={**war(1,0),'end_time':NOW-timedelta(days=1)}
+        fetch=AsyncMock(return_value={'wars':[old]})
+        await backfill_recent_wars(db,fetch=fetch,now=NOW)
+        fetch.return_value={'wars':[old,{**war(2,2),'end_time':NOW+timedelta(hours=1)}]}
+        await backfill_recent_wars(db,fetch=fetch,now=NOW+timedelta(hours=2))
+        assert fetch.await_count==1
+        await backfill_recent_wars(db,fetch=fetch,now=NOW+timedelta(days=1))
+        assert fetch.await_count==2
+        signals=activity_signals(await store.get(PLAYER),[],now=NOW+timedelta(days=1))
+        assert signals['observed_wars']==2 and signals['no_attack_wars']==0
+    asyncio.run(run())
