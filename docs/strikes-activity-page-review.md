@@ -163,6 +163,6 @@ optional skips under the network guard; 76 focused tests include the added
 successful-cache gap-healing case. All six required mutations plus the Vitest
 bulk-list slice and Left-clan mutations fail their regressions. Five real-Mongo
 checks include repeated unchanged writes with the default naive-UTC client.
-History implementation: 246 → 204 lines; activity route: 164 → 92 lines.
+History implementation: 242 → 204 lines; activity route: 164 → 92 lines.
 Evidence is in `.local/p60-final-evidence`; production resolution counts and actual
 Discord delivery remain outside these fixture checks.
