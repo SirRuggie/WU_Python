@@ -8,6 +8,8 @@ from utils.strike_store import status_of, stamp
 
 def family_activity_rows(activity, profiles, records, clans, *, replacements=None, now=None):
     now = now or datetime.now(timezone.utc)
+    updated = [stamp(row['updated_at']) for row in activity if row.get('updated_at')]
+    tracking_fresh = bool(updated and now-timedelta(hours=36) <= max(updated) <= now+timedelta(minutes=5))
     clan_names = {row['tag']: row.get('name') or row['tag'] for row in clans}
     activities = {row['tag']: row for row in activity
                   if not row.get('left_at') or stamp(row['left_at']) >= now-timedelta(days=90)}
@@ -35,7 +37,7 @@ def family_activity_rows(activity, profiles, records, clans, *, replacements=Non
             marked = bool(replacement and replacement.get('replacement_listed'))
             filler = bool(replacement and replacement.get('filler'))
             priority = replacement.get('replacement_priority') if marked or filler else None
-        signals = activity_signals(item, by_record[player], active_strikes=active, priority=priority, now=now)
+        signals = activity_signals(item, by_record[player], active_strikes=active, priority=priority, now=now, tracking_fresh=tracking_fresh)
         result.append({'player_tag': player, 'player_name': item.get('name') or profile.get('player_name') or player,
                        'current_clan_tag': clan, 'current_clan_name': clan_names.get(clan),
                        'last_clan_tag': profile.get('departed_clan_tag'),

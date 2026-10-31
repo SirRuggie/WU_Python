@@ -15,7 +15,7 @@ def activity_query(query):
         if key == 'clans':
             valid = [value for value in values if TAG.fullmatch(value)]
         elif key == 'th':
-            valid = [value for value in values if value.isascii() and value.isdigit() and 1 <= int(value) <= 99]
+            valid = [value for value in values if 1 <= len(value) <= 2 and value.isascii() and value.isdigit() and 1 <= int(value) <= 99]
         else:
             valid = [value for value in values if value in allowed]
         if valid:
@@ -28,7 +28,7 @@ def activity_query(query):
         if query.get(key) in allowed:
             result[key] = query[key]
     page = str(query.get('page', ''))
-    if page.isascii() and page.isdigit() and 0 <= int(page) <= 999:
+    if 1 <= len(page) <= 3 and page.isascii() and page.isdigit() and 0 <= int(page) <= 999:
         result['page'] = page
     if query.get('q'):
         result['q'] = str(query['q'])[:80]

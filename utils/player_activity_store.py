@@ -27,7 +27,7 @@ class PlayerActivityStore:
         """Read only page signals, never the large per-unit diff baseline."""
         fields = {key: 1 for key in ('tag', 'name', 'current_clan_tag', 'left_at',
                                     'last_seen_at', 'last_seen_source', 'tracking_started_at',
-                                    'raid_weekends', 'updated_at', 'baseline.townHallLevel')}
+                                    'raid_weekends', 'recent_wars', 'updated_at', 'baseline.townHallLevel')}
         return await self.collection.find({}, fields).to_list(length=None)
 
     async def mark_seed_attempt(self, player_tag, status, version):
