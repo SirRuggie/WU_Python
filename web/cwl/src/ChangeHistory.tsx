@@ -233,12 +233,14 @@ export default function ChangeHistory({
                       >
                         Restore before this change
                       </button>
+                      {entry.action !== 'delete' && (
                       <button
                         disabled={disabled || busy || !!pending}
                         onClick={() => setConfirmSide("after")}
                       >
                         Restore this version
                       </button>
+                      )}
                     </div>
                   </>
                 )}

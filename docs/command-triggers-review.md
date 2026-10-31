@@ -70,3 +70,12 @@ while a reply is in flight can leave the usage display behind. It never causes a
 reply retry or changes a successful delivery into a send failure. Unknown delivery
 failures remain a single attempt. History only marks saved after the guarded
 mutation succeeds; failed CAS entries remain explicitly unconfirmed.
+
+Claude review165 required corrections: PATCH and old history snapshots now keep
+current channel/role restrictions when those keys are absent; explicit empty lists
+still clear them. Thread messages may use an allowed cached parent channel. Command
+navigation uses the in-app discard guard, including Back replay and Keep editing;
+delete history offers only the before snapshot. Focused backend69 passed; frontend
+1064 passed; TypeScript/build passed. Removing omitted-scope preservation produced
+two assertion failures in old-tab and old-history tests. Full backend regression
+is being rerun before release. No production messages were sent for these checks.

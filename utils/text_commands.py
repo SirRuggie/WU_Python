@@ -326,7 +326,10 @@ async def record_use(db, row, channel_id, error=None):
 async def within_scope(row, event, bot):
     channels = row['allowed_channel_ids']
     if channels and str(event.channel_id) not in channels:
-        return False
+        cache = getattr(bot, 'cache', None)
+        thread = cache.get_thread(event.channel_id) if cache is not None else None
+        if thread is None or str(thread.parent_id) not in channels:
+            return False
     roles = row['allowed_role_ids']
     if not roles:
         return True

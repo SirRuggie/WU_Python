@@ -61,3 +61,42 @@ def test_scope_choices_hide_managed_roles_and_foreign_channel_types():
         assert body['channels']==[channels[0]]
         auth.assert_awaited_once_with(None,'text_commands')
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('parent,allowed', [(CHANNEL, True), ('999999999999999999', False), (None, False)])
+def test_thread_inherits_allowed_parent(parent, allowed):
+    from unittest.mock import Mock
+    thread = NS(parent_id=parent) if parent else None
+    cache = NS(get_thread=Mock(return_value=thread))
+    row = core.validate({'command': '!scope', 'text': 'Reply', 'allowed_channel_ids': [CHANNEL]})
+    event = NS(channel_id=444444444444444444)
+    assert asyncio.run(core.within_scope(row, event, NS(cache=cache))) is allowed
+    cache.get_thread.assert_called_once_with(event.channel_id)
+
+
+@pytest.mark.parametrize('explicit_clear', [False, True])
+def test_old_tab_preserves_scope_and_explicit_empty_clears(explicit_clear):
+    from contextlib import asynccontextmanager
+    import json
+    from cwl_web import text_commands as api, change_history
+    from test_text_commands import values
+
+    async def run():
+        prior = {**core.validate(values(allowed_channel_ids=[CHANNEL], allowed_role_ids=[ROLE])), 'revision': 'current'}
+        target = NS(find_one=AsyncMock(return_value=prior), update_one=AsyncMock(return_value=NS(matched_count=1)))
+        @asynccontextmanager
+        async def database(_):
+            yield NS()
+        submitted = values()
+        if explicit_clear:
+            submitted.update(allowed_channel_ids=[], allowed_role_ids=[])
+        request = NS(method='PATCH', match_info={'name': '!cwl'}, json=AsyncMock(return_value={'values': submitted, 'revision': 'current'}))
+        finish = AsyncMock()
+        with patch.object(api, 'require_manage', AsyncMock(return_value={'user_id': '1'})), patch.object(api, 'mongo', database), patch.object(api, 'collection', return_value=target), patch.object(change_history, 'begin', AsyncMock(return_value='h')), patch.object(change_history, 'finish', finish):
+            result = json.loads((await api.save(request)).text)
+        for key in ('allowed_channel_ids', 'allowed_role_ids'):
+            expected = [] if explicit_clear else prior[key]
+            assert result[key] == expected
+            assert target.update_one.await_args.args[1]['$set'][key] == expected
+            assert finish.await_args.args[2][key] == expected
+    asyncio.run(run())

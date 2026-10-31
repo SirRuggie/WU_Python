@@ -138,6 +138,11 @@ async def save(request):
             before = await target.find_one({'_id': f'{GUILD_ID}:{name}'})
             if not before or before.get('revision') != body['revision']:
                 raise web.HTTPConflict(text='This command changed or was deleted. Reload before saving.')
+            # Old tabs and history snapshots omit scope; only explicit [] clears it.
+            for key in ('allowed_channel_ids', 'allowed_role_ids'):
+                if key not in body['values']:
+                    values[key] = list(before.get(key, []))
+                    row[key] = values[key]
             from .change_history import begin, finish
             history_id = await begin(db, API+'/text-commands/'+name, actor,
                                      history_values(before),

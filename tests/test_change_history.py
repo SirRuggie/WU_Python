@@ -112,7 +112,9 @@ def test_text_command_restore_keeps_name_and_uses_current_revision():
   from cwl_web import text_commands
   from test_text_commands import values
   mongo=db();original=values(delete_trigger=False)
-  current={**original,'text':'New reply','delete_trigger':True,'revision':'current'}
+  current={**original,'text':'New reply','delete_trigger':True,'revision':'current',
+           'allowed_channel_ids':['111111111111111111'],
+           'allowed_role_ids':['222222222222222222']}
   target=NS(find_one=AsyncMock(return_value=current),update_one=AsyncMock(return_value=NS(matched_count=1)))
   @asynccontextmanager
   async def database(_):yield mongo
@@ -124,6 +126,8 @@ def test_text_command_restore_keeps_name_and_uses_current_revision():
    result=json.loads((await history.restore(req)).text)
    assert result['text']==original['text'] and result['command']=='!cwl'
    assert result['delete_trigger'] is False
+   assert result['allowed_channel_ids']==current['allowed_channel_ids']
+   assert result['allowed_role_ids']==current['allowed_role_ids']
    assert target.update_one.await_args.args[0]['revision']=='current'
    assert result['revision']!='current'
  asyncio.run(run())
