@@ -78,7 +78,7 @@ fs.mkdirSync(output, { recursive: true });
         if (count === 125 && (height === 800 || width === 1440))
           await page.screenshot({
             path: path.join(output, `${width}-${name}.png`),
-            fullPage: name === "all-chips",
+            fullPage: name === "all-chips" || name === "review",
           });
       }
       await page.goto(`${origin}/strikes-preview.html?count=${count}`);

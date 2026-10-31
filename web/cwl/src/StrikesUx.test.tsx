@@ -657,3 +657,48 @@ it("returns from a routed account to the filtered roster when browser history cl
   ).toBe("Routed");
   expect(host.querySelectorAll("[data-strike-player]")).toHaveLength(1);
 });
+
+it("keeps a saved quarantine visible and identifies its hold without claiming no strikes", async () => {
+  const held = {
+    war_key: "held",
+    clan_tag: "#Q2Y",
+    clan_name: "Oak",
+    opponent_name: "Held opponent",
+    war_end: "2026-10-01T00:00:00Z",
+    strikes: 1,
+    missed_accounts: 1,
+    one_missed: 0,
+    incomplete: true,
+    manual_review_required: true,
+    review_revision: 2,
+    review_message: "Missing final",
+  };
+  transport.mockImplementation(async (path: string) =>
+    path.startsWith("/strikes/wars")
+      ? { wars: [held], total: 1 }
+      : path.startsWith("/strikes/accounts")
+        ? { accounts: [], clans: [] }
+        : { entries: [], total: 0, clans: [] },
+  );
+  await render(
+    <StrikesWorkspace permissions={["strikes"]} isOwner={false} userId="1" />,
+  );
+  await settle();
+  await click("Find war");
+  await settle();
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(".strikes-war-results button")!
+      .click(),
+  );
+  await settle();
+  expect(host.querySelector(".strikes-selected-war")?.textContent).toContain(
+    "Quarantined · Streak hold",
+  );
+  expect(
+    host.querySelector(".strikes-selected-war")?.textContent,
+  ).not.toContain("No automatic strikes");
+  expect(
+    host.querySelector(".strike-review-resolution")?.textContent,
+  ).toContain("Missing final");
+});

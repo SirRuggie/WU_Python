@@ -1060,13 +1060,15 @@ export default function StrikesWorkspace({
                     )}{" "}
                     · {dateText(selectedWar.war_end)} ·{" "}
                     {selectedWar.source_label || "Source unavailable"}
-                    {selectedWar.mismatch
-                      ? " · ⊖ Mismatch war (no strike)"
-                      : selectedWar.no_attack
-                        ? " · ⊖ No-attack war (no strike)"
-                        : selectedWar.incomplete
-                          ? " · Incomplete · No automatic strikes"
-                          : " · All records"}
+                    {selectedWar.manual_review_required
+                      ? " · Quarantined · Streak hold"
+                      : selectedWar.mismatch
+                        ? " · ⊖ Mismatch war (no strike)"
+                        : selectedWar.no_attack
+                          ? " · ⊖ No-attack war (no strike)"
+                          : selectedWar.incomplete
+                            ? " · Incomplete · No automatic strikes"
+                            : " · All records"}
                   </span>
                   {selectedWar.war_plan_reason && (
                     <span>{selectedWar.war_plan_reason}</span>
