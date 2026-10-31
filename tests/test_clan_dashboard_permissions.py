@@ -82,7 +82,7 @@ def test_dispatch_refuses_revoked_role_before_any_child_handler(monkeypatch, act
 
 @pytest.mark.parametrize(
     ("action", "dispatcher_defers"),
-    [("remove_clan", True), ("add_clan", False), ("add_clan_modal", False)],
+    [("remove_clan", True), ("add_clan", True), ("add_clan_modal", False)],
 )
 def test_dispatch_allows_current_role_for_nonmodal_opener_and_submit(
     monkeypatch, action, dispatcher_defers
@@ -108,8 +108,7 @@ def test_dispatch_allows_current_role_for_nonmodal_opener_and_submit(
 
 def test_all_six_legacy_modal_openers_have_opener_metadata():
     for action in (
-        "clan_image_upload", "fwa_image_upload",
-        "add_clan", "logo_url_modal", "emoji_url_modal",
+        "fwa_image_upload",
         "fwa_update_link", "fwa_image_urls", "fwa_update_descriptions",
     ):
         registration = components.registered_functions[action]
@@ -117,53 +116,12 @@ def test_all_six_legacy_modal_openers_have_opener_metadata():
         assert registration.is_modal is False
 
 
-def test_add_clan_modal_acknowledges_before_coc_or_mongo(monkeypatch):
-    events = []
-
-    class Interaction:
-        member = SimpleNamespace(get_roles=lambda: (SimpleNamespace(id=ROLE_ID),))
-        components = ((SimpleNamespace(custom_id="clantag", value="#ABC"),),)
-
-        async def create_initial_response(self, response_type):
-            events.append(("ack", response_type))
-
-        async def edit_initial_response(self, **_kwargs):
-            events.append(("edit",))
-
-    ctx = SimpleNamespace(
-        interaction=Interaction(),
-        member=Interaction.member,
-        respond=AsyncMock(),
-    )
-    clan = SimpleNamespace(tag="#ABC", name="Alpha")
-
-    class Coc:
-        async def get_clan(self, *, tag):
-            events.append(("coc", tag))
-            return clan
-
-    class Clans:
-        async def update_one(self, *_args, **_kwargs):
-            events.append(("mongo",))
-            return SimpleNamespace(upserted_id="new-clan")
-
-    async def fake_index(_mongo):
-        events.append(("index",))
-
-    async def fake_menu(*_args, **_kwargs):
-        return []
-
-    monkeypatch.setattr(update_clan_info, "ensure_clan_tag_index", fake_index)
-    monkeypatch.setattr(update_clan_info, "clan_edit_menu", fake_menu)
-    monkeypatch.setattr(update_clan_info, "native_snapshot", AsyncMock())
-    asyncio.run(update_clan_info.add_clan_modal.__wrapped__._func(
-        ctx=ctx,
-        coc_client=Coc(),
-        mongo=SimpleNamespace(clans=Clans()),
-    ))
-
-    assert events[0] == ("ack", hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
-    assert [event[0] for event in events[1:4]] == ["coc", "index", "mongo"]
+def test_old_add_modal_redirects_without_clash_or_database_writes():
+    ctx = SimpleNamespace(member=SimpleNamespace(get_roles=lambda: (SimpleNamespace(id=ROLE_ID),)), respond=AsyncMock())
+    mongo = SimpleNamespace(clans=SimpleNamespace(update_one=AsyncMock()))
+    asyncio.run(update_clan_info.add_clan_modal.__wrapped__._func(ctx=ctx, mongo=mongo))
+    assert "Edit this on the dashboard" in ctx.respond.await_args.args[0]
+    mongo.clans.update_one.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

@@ -51,27 +51,14 @@ def test_fwa_editor_preserves_base_images_without_file_uploads():
     assert [g["items"][0]["media"]["url"] for g in galleries] == [war, active]
 
 
-def test_clan_image_panel_previews_both_slots_and_offers_native_uploads():
+def test_clan_image_panel_redirects_read_only():
     from extensions.commands.clan.dashboard.update_clan_info import update_logo_button
-    mongo = SimpleNamespace(clans=SimpleNamespace(find_one=AsyncMock(return_value={
-        "tag": "#ABC", "name": "Test Clan",
-        "logo": "https://img.example.com/logo.png",
-        "banner": "https://img.example.com/banner.png",
-    })))
-    panels = asyncio.run(update_logo_button.__wrapped__._func(
-        ctx=SimpleNamespace(), action_id="#ABC", mongo=mongo,
-    ))
-    rest = object.__new__(RESTClientImpl)
-    body, form = rest._build_message_payload(components=panels)
-    assert form is None
-    children = body["components"][0]["components"]
-    galleries = [c for c in children if c["type"] == 12]
-    assert len(galleries) == 2
-    buttons = [b for row in children if row["type"] == 1 for b in row["components"]]
-    ids = {b["custom_id"] for b in buttons}
-    assert {"clan_image_upload:logo:#ABC", "clan_image_upload:banner:#ABC"} <= ids
-    assert "immediately" in children[1]["content"]
-
+    mongo = SimpleNamespace(clans=SimpleNamespace(find_one=AsyncMock(return_value={"tag":"#ABC","name":"Test Clan","logo":"https://img.example.com/logo.png"})))
+    ctx = SimpleNamespace(member=SimpleNamespace(get_roles=lambda: [SimpleNamespace(id=993015846442127420)]), respond=AsyncMock())
+    asyncio.run(update_logo_button.__wrapped__._func(ctx=ctx,action_id="#ABC",mongo=mongo))
+    text = ctx.respond.await_args.args[0]
+    assert "https://img.example.com/logo.png" in text
+    assert "https://dash.warriorsunited.cc/clans/%23ABC" in text
 
 def test_fwa_image_panel_targets_each_base_for_selected_town_hall():
     from extensions.commands.clan.dashboard.fwa_data import fwa_update_images
@@ -96,33 +83,17 @@ def test_legacy_image_commands_are_removed_but_native_actions_remain():
     assert "upload-images" not in fwa.subcommands
     assert "/clan upload-images" not in command_paths()
     assert "/fwa upload-images" not in command_paths()
-    for action in ("clan_image_upload", "fwa_image_upload"):
-        assert registered_functions[action].opens_modal
+    assert not registered_functions["clan_image_upload"].opens_modal
+    assert registered_functions["fwa_image_upload"].opens_modal
     assert registered_functions["dashboard_image_submit"].is_modal
 
 
-@pytest.mark.parametrize("kind", ["clan", "fwa"])
-def test_old_instruction_buttons_redirect_to_native_upload_controls(kind):
-    from extensions.commands.clan.dashboard import update_clan_info, fwa_data
-
-    if kind == "clan":
-        mongo = SimpleNamespace(clans=SimpleNamespace(find_one=AsyncMock(return_value={
-            "tag": "#ABC", "name": "Test Clan",
-        })))
-        panels = asyncio.run(update_clan_info.logo_upload_guide.__wrapped__._func(
-            ctx=SimpleNamespace(), action_id="#ABC", mongo=mongo,
-        ))
-        expected = {"clan_image_upload:logo:#ABC", "clan_image_upload:banner:#ABC"}
-    else:
-        panels = asyncio.run(fwa_data.fwa_upload_guide.__wrapped__._func(
-            ctx=SimpleNamespace(), action_id="th16",
-        ))
-        expected = {"fwa_image_upload:war:th16", "fwa_image_upload:active:th16"}
+def test_old_fwa_instruction_button_keeps_native_upload_controls():
+    from extensions.commands.clan.dashboard import fwa_data
+    panels = asyncio.run(fwa_data.fwa_upload_guide.__wrapped__._func(ctx=SimpleNamespace(), action_id="th16"))
     payload = panels[0].build()[0]
     rows = [c for c in payload["components"] if c["type"] == 1]
-    assert expected <= {b["custom_id"] for row in rows for b in row["components"]}
-    assert "upload-images" not in str(payload)
-
+    assert {"fwa_image_upload:war:th16", "fwa_image_upload:active:th16"} <= {b["custom_id"] for row in rows for b in row["components"]}
 
 def test_managed_fwa_upload_modal_carries_home_through_return_navigation():
     from extensions.commands.clan.dashboard import image_uploads

@@ -135,7 +135,7 @@ export default function SeasonsPage({
       {!dismissed && (
         <div className="notice season-hosting-note">
           <button onClick={onClans}>
-            Hosting clans moved to Build roster → Clan settings ›
+            Hosting clans moved to Build roster → Hosting clans ›
           </button>
           <button
             aria-label="Dismiss hosting clans note"

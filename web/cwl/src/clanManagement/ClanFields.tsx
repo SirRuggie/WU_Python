@@ -1,7 +1,8 @@
+import RolePicker, { type RoleChoice } from "../RolePicker";
 import ChannelCombobox from "../ChannelCombobox";
 import type { AnnouncementChannel } from "../announcements";
 import type { Clan } from "./types";
-type Choice = { id: string; name: string };
+type Choice = { id: string; name: string; avatar_url?: string };
 type Props = {
   section: string;
   draft: Clan;
@@ -10,7 +11,7 @@ type Props = {
   dirty: boolean;
   data: { types: string[]; town_halls: string[] };
   channels: AnnouncementChannel[];
-  roles: Choice[];
+  roles: RoleChoice[];
   memberQuery: string;
   setMemberQuery: (value: string) => void;
   members: Choice[];
@@ -106,7 +107,7 @@ export default function ClanFields({
               {draft.leader_id &&
                 !members.some((m) => m.id === draft.leader_id) && (
                   <option value={draft.leader_id}>
-                    Current leader · {draft.leader_id}
+                    Current leader unavailable
                   </option>
                 )}
               {members.map((m) => (
@@ -116,24 +117,53 @@ export default function ClanFields({
               ))}
             </select>
           </label>
+          {members.find((member) => member.id === draft.leader_id) && (
+            <p className="clan-leader-identity" title={draft.leader_id}>
+              {members.find((member) => member.id === draft.leader_id)
+                ?.avatar_url && (
+                <img
+                  src={
+                    members.find((member) => member.id === draft.leader_id)!
+                      .avatar_url
+                  }
+                  alt=""
+                  width={32}
+                  height={32}
+                />
+              )}
+              {members.find((member) => member.id === draft.leader_id)?.name}
+            </p>
+          )}
           {[
             ["leader_role_id", "Leader role"],
             ["role_id", "Clan role"],
           ].map(([key, label]) => (
-            <label key={key}>
-              {label}
-              <select
-                value={draft[key]}
-                onChange={(e) => change(key, e.target.value)}
+            <div key={key}>
+              <p>
+                {label}:{" "}
+                <span title={draft[key]}>
+                  {draft[key]
+                    ? roles.find((role) => role.id === draft[key])?.name ||
+                      "Unavailable role"
+                    : "Not set"}
+                </span>
+              </p>
+              <RolePicker
+                roles={roles}
+                selected={[draft[key]]}
+                disabled={disabled}
+                label={`Find ${label.toLowerCase()}`}
+                optionsLabel={`Available ${label.toLowerCase()}s`}
+                onChoose={(role) => change(key, role.id)}
+              />
+              <button
+                type="button"
+                disabled={disabled || !draft[key]}
+                onClick={() => change(key, "")}
               >
-                <option value="">Not set</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                Clear {label.toLowerCase()}
+              </button>
+            </div>
           ))}
         </>
       )}
@@ -196,6 +226,7 @@ export default function ClanFields({
                 </button>
                 <label>
                   Upload {slot}
+                  <small>PNG, JPG, GIF or WEBP · up to 10 MB</small>
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/gif,image/webp"

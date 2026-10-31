@@ -49,6 +49,13 @@ class WarReminderStore:
         latest = {row['_id']: row['latest'] for row in await cursor.to_list(length=None)}
         return [(row, configs.get(row['tag']), states.get(row['tag']), latest.get(row['tag'])) for row in clans]
 
+    async def copy_targets(self):
+        clans = await self.db.clans.find({}).sort('name', 1).to_list(length=None)
+        tags = [clan['tag'] for clan in clans]
+        configs = {row['_id']: row for row in await self.settings.find(
+            {'_id': {'$in': tags}}).to_list(length=None)}
+        return [(clan, configs.get(clan['tag'])) for clan in clans]
+
     async def clan(self, tag):
         return await self.db.clans.find_one({'tag': tag})
 
@@ -58,15 +65,32 @@ class WarReminderStore:
     async def enabled_settings(self):
         return await self.settings.find({'enabled': True}).to_list(length=None)
 
-    async def save_settings(self, tag, before, values, actor):
+    async def save_settings(self, tag, before, values, actor, *, history_context=None, history_names=None):
+        event_id = None
+        if history_context is not None:
+            from utils.clan_dashboard_history import audit
+            from utils.war_reminders import settings
+            clan, identity = history_context
+            previous = settings(before)
+            event_id = await audit(self.db, identity, 'reminders',
+                                   {**clan, 'reminder_settings': previous})
         query = {'_id': tag, 'version': before.get('version') if before else {'$exists': False}}
         update = {'$set': {**values, 'updated_by': actor, 'updated_at': datetime.now(timezone.utc)}, '$inc': {'version': 1}}
         try:
             result = await self.settings.update_one(query, update, upsert=before is None)
-        except DuplicateKeyError as exc:
-            raise SettingsConflict from exc
-        if not result.matched_count and not result.upserted_id:
-            raise SettingsConflict
+            if not result.matched_count and not result.upserted_id:
+                raise SettingsConflict
+        except Exception as exc:
+            if event_id:
+                from utils.clan_dashboard_history import abandon_change
+                await abandon_change(self.db, event_id)
+            if isinstance(exc, DuplicateKeyError):
+                raise SettingsConflict from exc
+            raise
+        if event_id:
+            from utils.clan_dashboard_history import finish_change
+            await finish_change(self.db, event_id,
+                                {key: previous.get(key) for key in values}, values, names=history_names)
 
     async def recent_deliveries(self, tag, limit=15):
         return await self.deliveries.find({'clan_tag': tag}, {'_id': 0}).sort('at', -1).limit(limit).to_list(length=limit)

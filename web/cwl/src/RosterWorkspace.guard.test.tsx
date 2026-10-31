@@ -107,7 +107,7 @@ it("mounts phone back-to-top only in Accounts & signups", async () => {
     expect(host.querySelector(".roster-back-to-top-spacer")).not.toBeNull();
     for (const label of [
       "Compare clans",
-      "Clan settings",
+      "Hosting clans",
       "Missing weights",
       "Accounts & signups",
     ]) {
@@ -243,7 +243,7 @@ it.each(["tab", "season", "capacity"])(
       if (destination === "season")
         expect(onSeasonChange).toHaveBeenCalledExactlyOnceWith("2");
       if (destination === "capacity")
-        expect(button("Clan settings").getAttribute("aria-pressed")).toBe(
+        expect(button("Hosting clans").getAttribute("aria-pressed")).toBe(
           "true",
         );
     } finally {

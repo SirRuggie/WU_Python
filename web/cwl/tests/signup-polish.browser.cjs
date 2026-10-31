@@ -167,6 +167,13 @@ const base = `http://127.0.0.1:${port}`;
       await page.getByRole("menuitem", { name: "Sign out" }).waitFor();
       await page.keyboard.press("Escape");
       await page.locator(".account-menu-popover").waitFor({ state: "hidden" });
+      // React Aria restores focus on the animation frame after unmount.
+      // Hidden popover alone does not mean that frame has run yet.
+      await page.waitForFunction(
+        () => document.activeElement?.matches(".account-menu-profile-trigger"),
+        undefined,
+        { timeout: 5000 },
+      );
       assert(
         await profile.evaluate((el) => el === document.activeElement),
         "Escape restores profile focus",

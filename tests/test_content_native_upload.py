@@ -479,7 +479,7 @@ def test_existing_text_modal_submission_still_reads_hikari_action_rows(monkeypat
     asyncio.run(check())
 
 
-def test_clan_raw_upload_routes_through_dispatcher_and_previews_saved_banner(monkeypatch):
+def test_stale_clan_raw_upload_routes_through_dispatcher_without_writes(monkeypatch):
     from extensions.commands.clan.dashboard import image_uploads
 
     async def check():
@@ -516,15 +516,11 @@ def test_clan_raw_upload_routes_through_dispatcher_and_previews_saved_banner(mon
         monkeypatch.setattr(image_uploads, "download_image_blocking", lambda url: b"valid-image")
         await components._dispatch(ctx, mongo)
         assert interaction.initial_responses == [hikari.ResponseType.DEFERRED_MESSAGE_UPDATE]
-        media.upload_bytes.assert_awaited_once_with(b"valid-image", folder="clans/Test_Clan", name="banner")
-        mongo.clans.update_one.assert_awaited_once_with(
-            {"_id": "clan-row", "tag": "#ABC", "banner": None},
-            {"$set": {"banner": "https://media.example/banner.png"}},
-        )
-        history.insert_one.assert_awaited_once()
+        media.upload_bytes.assert_not_awaited()
+        mongo.clans.update_one.assert_not_awaited()
+        history.insert_one.assert_not_awaited()
         payload = interaction.edits[-1]["components"][0].build()[0]
-        galleries = [c for c in payload["components"] if c["type"] == 12]
-        assert galleries[0]["items"][0]["media"]["url"] == "https://media.example/banner.png"
+        assert "Clan editing moved to Dashboard" in str(payload)
         assert discord_file_upload.pop_file_upload(601, custom_id, "image") is None
         assert "clan-native" not in image_uploads._PENDING
 

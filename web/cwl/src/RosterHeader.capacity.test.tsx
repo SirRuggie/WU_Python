@@ -116,7 +116,7 @@ it("names the one hosting clan with missing capacity and opens its settings", as
   const alerts = view.host.querySelectorAll(".roster-capacity-alert");
   expect(alerts).toHaveLength(1);
   expect(alerts[0].textContent).toBe(
-    "⚠ Clan 17 has no capacity setSet in Clan settings ›",
+    "⚠ Clan 17 has no capacity setSet in Hosting clans ›",
   );
   const link = alerts[0].querySelector("button");
   await act(async () => link!.click());
@@ -129,7 +129,7 @@ it("shows one warning for two assigned clans among 23 empty clans and opens the 
   const alerts = view.host.querySelectorAll(".roster-capacity-alert");
   expect(alerts).toHaveLength(1);
   expect(alerts[0].textContent).toBe(
-    "⚠ 2 clans have no capacity setSet in Clan settings ›",
+    "⚠ 2 clans have no capacity setSet in Hosting clans ›",
   );
   const link = alerts[0].querySelector("button");
   await act(async () => link!.click());

@@ -10,6 +10,7 @@ type Props = {
   disabled: boolean;
   onChange: (value: string) => void;
   onResolve?: (value: string) => void;
+  nameOnly?: boolean;
 };
 const visibleLimit = 30;
 
@@ -20,6 +21,7 @@ export default function ChannelCombobox({
   disabled,
   onChange,
   onResolve,
+  nameOnly = false,
 }: Props) {
   const id = useId();
   const inputId = `${id}-input`;
@@ -45,11 +47,15 @@ export default function ChannelCombobox({
       setQuery(
         value
           ? chosen
-            ? `#${chosen.name} · ${chosen.id}`
-            : `Channel ${value} (unavailable)`
+            ? nameOnly
+              ? `#${chosen.name}`
+              : `#${chosen.name} · ${chosen.id}`
+            : nameOnly
+              ? "Selected channel unavailable"
+              : `Channel ${value} (unavailable)`
           : "",
       );
-  }, [value, chosen?.name, open]);
+  }, [value, chosen?.name, open, nameOnly]);
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
@@ -134,7 +140,7 @@ export default function ChannelCombobox({
           Clear
         </button>
       </div>
-      <small id={hintId}>
+      <small id={hintId} className="channel-picker-hint">
         {onResolve
           ? "Search active forum posts and channels, or paste a post ID and choose Look up. "
           : "Type part of a channel name or ID. "}
@@ -163,7 +169,7 @@ export default function ChannelCombobox({
                 onClick={() => choose(channel)}
               >
                 <span>#{channel.name}</span>
-                <small>{channel.id}</small>
+                {!nameOnly && <small>{channel.id}</small>}
               </button>
             ))
           ) : (

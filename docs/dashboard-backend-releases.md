@@ -532,3 +532,36 @@ Later: the separately reviewed linked-weight follow-up handles historical Clear,
 permission notices, legacy bot fallback and export labeling. Archived-weight
 freezing was explicitly dropped by the owner; old-season weights may track the
 current global effective value.
+
+## family-clans-2 — October30,2026
+
+PR[#92](https://github.com/SirRuggie/WU_Python/pull/92), tag `family-clans-2`,
+frontend/backend/bot `5f8fb1427e488bc69a1f67eb82f4e97615af621b`.
+Claude ACCEPT162 and read-only smoke167 passed:25 clans (Tactical1, Flexible Fun7,
+FWA7, CWL10), clan URL/section cards, zero unsaved changes, no overflow or4xx/5xx
+at360px. Legacy Discord clan management is read-only. No live test messages,
+settings saves or removal tests were performed in production.
+
+Integrated validation:5090 backend passed,21 skipped,162 subtests;1107 frontend
+passed; TypeScript/build. Bot PID3909926 reached gateway readiness; backend
+PID3910041 ran from the matching immutable archive. Two consecutive public config
+200s, clean invocation journals, anonymous clan/roster401s, and public entry/feature
+hashes passed. Entry `index-DuK7p2QP.js` SHA256
+`b13da49ba7f3121a0a9c9b51c3867820819d0f667d69ad9a891fdfacfbe9088a`.
+
+Protected signups, assignments and locks were identical:155 signups and155 roster
+entries. Outside-family counts before/after:Main26 accounts/0 outside;Lazy129/6;
+no unavailable locations. Artwork cleanup ran with zero total deletions and zero
+deletions of referenced or recoverable images. SQLite backup SHA256
+`df9a7e0ec3b9d100493e4540f16be2fa9de17c739616770b59b9fe95064bfdbd`;
+SQLite counts/integrity and Mongo clan/history archive hashes verified. Evidence
+lives in repository `.local/family-release-evidence/` (private data excluded from
+Git). The guarded `activate.py rollback` restores code only to frontend
+`fe0edfca34c282c7a73f2188f502670e3d4bcbb3`, backend/bot
+`b611af4781850a3bde8755d4d27d184f43a0cf93`; never restore the database for rollback.
+
+Scratch-tool corrections:recursive asset staging handles nested tour assets;
+archive import check uses cwl_web.clan_usage; botrunner imports use a readable,
+exact-revision temporary export. Production routing/storage drop-ins were retained.
+Later162/167 polish:close the old editor on Add;exact FWA effects;confirmation
+history labels and escaping/snapshot regressions;Off times labeled as saved.
