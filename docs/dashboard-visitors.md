@@ -58,3 +58,33 @@ After entry 173's release corrections and main integration: 5,130 backend tests
 passed (21 skipped, 162 subtests); 1,119 frontend tests, TypeScript/build and the
 360/1440 synthetic visitor browser checks passed. Mutations removing WAL,
 changing the busy timeout, or widening file permissions were all killed.
+
+## visitors-1 release — 2026-10-31
+
+PR #100 merged as `0a9533ee9f39f5538d1a9228b86d49bfec4d5c3d`, tagged
+`visitors-1`, after Ruggie's explicit chat approval. Frontend and backend run from
+immutable release directories at that SHA. Only the dashboard restarted (PID
+31737); bot PID 4192969, invocation and revision `47f5422` stayed unchanged.
+
+Public entry `index-DBQDRCxk.js` SHA256:
+`3f6021c06146cb3b3af11becacdd4d59d5a79c81361d265906d9eae434e714d8`.
+The entry and affected feature assets matched the release manifest. Runtime
+imports, two consecutive public config responses and the startup journal passed.
+
+Protected SQLite backup SHA256:
+`c8bf567866e98b732260078c87a0f93cd7eeadf646d18e53e3653d67f5c92768`.
+Backup archives verified; protected SQLite rows/old columns and native campaign
+send state stayed identical. Clan count remained 25, with unchanged metadata.
+An additive migration was rehearsed twice on the backup with integrity checks.
+Evidence remains in `.local/visitors-release-evidence` on the deployment host.
+Rollback assets for frontend/backend `47f5422f2541fed734f1ea86a7df59ded38194f5`
+are retained; preserve the separate visits database during rollback.
+
+Validation: 5,327 backend tests passed, 21 skipped, 221 subtests; 1,140 frontend
+tests; TypeScript, build, full layout and isolated browser checks at 360/1440.
+Three storage mutations were killed. Synthetic checks are not live delivery proof.
+
+Claude's handoff entry 180 records a read-only production smoke pass: matching
+frontend/backend revision, no tracebacks, bot unchanged, separate visits SQLite
+file mode 0600, owner Visitors card visible at 360px with the expected aggregates,
+no 4xx/5xx and no overflow. No live test messages or Discord writes were performed.
