@@ -254,12 +254,13 @@ async def send(request):
 
 
 def routes():
-    from . import manage_reminders, roster_sequence_tests
+    from . import manage_reminders, roster_sequence_tests, announcement_recovery
     from .roster_sequence_review import resume as resume_sequence, recover as recover_sequence
     return [web.get(API + '/seasons/{season_id}/manage-bridge', status),
             web.post(API + '/seasons/{season_id}/manage-bridge/bind', bind),
             web.patch(API + '/seasons/{season_id}/manage-bridge/{pool}', save_variant),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/send', send),
+            web.get(API + '/seasons/{season_id}/manage-bridge/{pool}/check-message', announcement_recovery.check),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/resume', resume_sequence),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/sequence/recover', recover_sequence),
             web.post(API + '/seasons/{season_id}/manage-bridge/{pool}/test-full', roster_sequence_tests.prepare),

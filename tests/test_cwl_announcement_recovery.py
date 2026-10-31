@@ -1,0 +1,70 @@
+import asyncio
+from unittest.mock import AsyncMock, patch
+import pytest
+from aiohttp import web
+from cwl_web.announcement_recovery import deleted_in_discord, receipt_target
+from cwl_web.server_management import DiscordItemNotFound
+
+RECEIPT = {'channel_id': '123456789012345678', 'message_id': '987654321098765432'}
+CHANNEL = {'guild_id': '644963518025826315', 'type': 0}
+
+def test_only_known_deleted_message_allows_explicit_resend_review():
+    async def scenario():
+        fake = AsyncMock(side_effect=[CHANNEL, DiscordItemNotFound(10008)])
+        with patch('cwl_web.announcement_recovery.discord', fake):
+            assert await deleted_in_discord(None, RECEIPT) is True
+        assert all(call.args[1] == 'GET' for call in fake.call_args_list)
+        assert fake.call_args_list[-1].kwargs['roster_delivery'] is True
+    asyncio.run(scenario())
+
+@pytest.mark.parametrize('failure', [DiscordItemNotFound(10003), web.HTTPNotFound(), web.HTTPForbidden(), TimeoutError()])
+def test_unknown_or_unavailable_is_not_deleted(failure):
+    async def scenario():
+        with patch('cwl_web.announcement_recovery.discord', AsyncMock(side_effect=[CHANNEL, failure])):
+            with pytest.raises(type(failure)):
+                await deleted_in_discord(None, RECEIPT)
+    asyncio.run(scenario())
+
+def test_existing_message_and_wrong_guild_never_allow_resend():
+    async def scenario():
+        with patch('cwl_web.announcement_recovery.discord', AsyncMock(side_effect=[CHANNEL, {'id': RECEIPT['message_id']}])):
+            assert await deleted_in_discord(None, RECEIPT) is False
+        fake = AsyncMock(return_value=dict(CHANNEL, guild_id='999'))
+        with patch('cwl_web.announcement_recovery.discord', fake):
+            with pytest.raises(web.HTTPForbidden):
+                await deleted_in_discord(None, RECEIPT)
+        assert fake.await_count == 1
+    asyncio.run(scenario())
+
+@pytest.mark.parametrize('receipt', [None, {}, {'channel_id': 'bad', 'message_id': '123'}])
+def test_unverifiable_receipt_cannot_be_assumed_deleted(receipt):
+    with pytest.raises(web.HTTPConflict):
+        receipt_target(receipt)
+
+from test_cwl_web_manage_bridge import ManageBridgeTests
+from utils import cwl_campaign
+
+
+class RecoveryHTTPTests(ManageBridgeTests):
+    async def test_deletion_review_is_read_only_and_requires_send_permission(self):
+        await self.bind()
+        from cwl_web.manage_bridge import GUILD_ID
+        cycle = (await self.state())['cycle']
+        mongo = self.app['manage_bridge_mongo']
+        await cwl_campaign.record_delivery(mongo, GUILD_ID, cycle, {
+            'occurrence_id': cwl_campaign.occurrence_id(cycle, 'roster', 'main'),
+            'status': 'sent', **RECEIPT,
+        })
+        before = await cwl_campaign.load_campaign(mongo, GUILD_ID, cycle)
+        fake = AsyncMock(side_effect=[CHANNEL, DiscordItemNotFound(10008)])
+        path = self.base + '/main/check-message'
+        with patch('cwl_web.announcement_recovery.discord', fake):
+            denied = await self.call('GET', path, self.member)
+            self.assertEqual(denied.status, 403)
+            self.assertEqual(fake.await_count, 0)
+            result = await self.call('GET', path, self.owner)
+            self.assertEqual(result.status, 200, await result.text())
+            self.assertEqual(await result.json(), {'deleted': True, **RECEIPT})
+        after = await cwl_campaign.load_campaign(mongo, GUILD_ID, cycle)
+        self.assertEqual(after['deliveries'], before['deliveries'])
+        self.assertEqual(after['sent_occurrences'], before['sent_occurrences'])
