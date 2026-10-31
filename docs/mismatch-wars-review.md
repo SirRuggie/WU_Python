@@ -1,38 +1,72 @@
-# Mismatch wars — development checkpoint
+# FWA mismatch wars review
 
-Prompt 49 replaces opponent-based exclusions with a forward-only FWA mismatch
-rule. This first increment removes the old settings control and HTTP field,
-ignores legacy opponent exclusions during war processing, and clears that legacy
-list on settings writes. Existing no-attack history and removed strikes remain
-untouched. Release will explicitly clear the remaining stored settings with
-before/after evidence; no production data has changed during development.
+Prompt 49 removes opponent-based strike exclusions. New wars against NO WAR count
+normally. Existing no-attack history is retained and the 50 previously removed
+strikes are not restored. Settings no longer expose/accept the old list; settings
+writes clear it. No production settings have been changed during development.
 
-Source verification found that Tasks' `load_fwa_records` reads the latest scraped
-`fwa_points` document. `matching_outcome` checks only clan and end time within
-60 seconds; it does not check the opponent and maps mismatch/unknown to unknown.
-The `/war-plans` command posts the chosen outcome without saving an outcome
-receipt. Only the Blacklisted path persists blacklist metadata. This source
-cannot reliably establish staff-selected mismatch plans or historical plans.
-Handoff QUESTION 253 proposes durable, confirmed-post war-plan receipts and
-explicit identity/window matching; implementation of that source awaits review.
+## Confirmed war-plan source
 
-This checkpoint is not READY and must not be deployed. The FWA mismatch matcher,
-streak-neutral history/filter rendering, final release migration, mutations and
-full batch verification remain outstanding.
+Source verification found Tasks' scraper is unsuitable: it checks clan/end within
+60 seconds, omits opponent identity, and maps mismatch to unknown. Claude handoff
+175 approved a dedicated durable receipt owner instead. Tasks remains unchanged.
 
-## Confirmed plan receipts and history checkpoint
+The existing `/war-plans` command reads the official current war before its
+existing Discord post. Only preparation/inWar with the exact clan and a matching
+typed opponent name can bind; notInWar, API failure or conflicting identity leaves
+an unbound receipt. The receipt is inserted only after the existing message is
+confirmed. Receipt failure reports that the message posted but recording failed;
+it never sends again. Immutable guild/message identity handles duplicates, with
+collection selection/indexing and receipt matching owned by WarPlanStore.
 
-Claude entry 175 approved a separate durable `settings.fwa_war_plans` owner.
-The existing command reads the official current war before posting and saves a
-receipt only after Discord confirms the post. Receipt failure never retries the
-message. Exact guild, clan, opponent tag and war end matching ignores renamed
-opponents at finalization. Latest confirmed corrections win; conflicting
-identities, tied conflicting outcomes and posts after the war end count normally.
-Unbound posts never suppress strikes. Tasks' scraper remains unchanged.
+At finalization, lookup is exact guild + clan tag + war end, and every candidate
+must have the same opponent tag and a consistent preparation start. Posts before
+preparation or after the end, unbound candidates, conflicting opponents/start
+windows and tied latest conflicting outcomes give normal strikes with an explicit
+reason. Otherwise the latest confirmed correction wins. Renaming the opponent
+after posting does not affect the tag match. Missing receipts use `War plan not
+found`; unavailable/malformed reads use `War plan check failed`; ambiguity uses
+`War plan unclear`. Historical wars without receipts count normally.
 
-Mismatch rows are neutral for every participant so the whole war neither advances
-nor breaks streaks. History and Find war expose text/icon, reason and status filter.
-The isolated 360/1440 browser fixture passed, including filtering and pagination.
-70 focused backend tests passed; frontend history checks and build passed in the
-preceding checkpoint. Full suites, command delivery-failure tests, import cases,
-mutation checks and completion review remain before READY. No deployment yet.
+## Strike and UI behavior
+
+Only exact family type FWA uses the rule. Mismatch is neutral for every participant:
+the whole war neither advances nor breaks the streak, including participants who
+attacked. Win/lose/blacklisted and non-FWA wars retain normal rules. Newly imported
+wars use the same classification; stale import previews that would change a
+mismatch to a normal outcome require a fresh preview. Already-finalized receipts
+are never relabeled or reprocessed. CWL, expiry, leave/exemption behavior, thresholds,
+permissions and request idempotency remain intact.
+
+Find war and History show Mismatch war (no strike), an icon, and the plan reason.
+The status filter supports mismatch without discarding pagination/search context.
+Synthetic 360/1440 browser checks cover history and filtering; no live posts/DMs
+were sent during validation. Existing command template tests preserve content and
+no-ping behavior. This does not prove live Discord delivery.
+
+## Release gates
+
+After Claude acceptance, back up Mongo/SQLite and record active strikes and settings
+before activation. Clear only the legacy no_attack_opponents list using the public
+settings writer with the observed revision and unchanged exempt roles/threshold.
+Report the list-entry count cleared plus the expected settings revision/audit
+metadata change. Compare protected records and active strikes before/after; the
+50 removed strikes must stay removed. Do not reprocess old wars. Retain the old
+frontend/backend/bot revisions and rollback assets, verify imports/readiness/public
+hashes, and wait for Claude's read-only smoke. No live Discord test sends.
+
+## Validation
+
+Full integrated backend/frontend, TypeScript/build/layout and the four required
+mutations are recorded with the READY handoff. Before current-main integration,
+5,343 backend tests passed (21 skipped, 221 subtests), 1,137 frontend tests passed,
+and full layout passed. Review evidence is retained in `.local/mismatch-*` and
+`/tmp/mismatch-*` on the review host. The standalone synthetic strikes preview is
+served separately from production; its routes/data are fixtures only.
+
+Current-main integration includes visitors-1 and its release documentation. The
+integrated frontend has 1,142 passing tests and a successful TypeScript/Vite build.
+The four policy mutations were rerun and killed. The refreshed standalone browser
+at 360/1440 passed (12px minimum text and no undersized tested controls/overflow);
+the receipt/template focused suite passed 41 tests. The final full backend/layout
+counts are recorded in READY after their completion.

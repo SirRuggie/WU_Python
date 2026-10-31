@@ -240,7 +240,7 @@ class WarPlans(
                 )
             except Exception:
                 # The post is confirmed. Never report a failed send or resend it.
-                final_copy_text += "\nMessage posted, but its war-plan receipt could not be saved. Strikes will use normal rules unless another confirmed plan is recorded."
+                final_copy_text += "\nMessage posted, but its war-plan receipt could not be saved. Strikes can only use previously saved confirmed plans; otherwise normal rules apply."
 
             if self.war_result == "blacklisted":
                 blacklist_note = await _add_war_opponent_to_blacklist(
