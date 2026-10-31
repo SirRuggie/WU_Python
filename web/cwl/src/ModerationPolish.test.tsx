@@ -46,7 +46,7 @@ it("keeps the phone keyboard guidance accessible and reveals it only for fine po
     description.querySelector(".channel-keyboard-hint")?.textContent,
   ).toContain("Use arrow keys and Enter");
   const css = readFileSync("src/ChannelCombobox.css", "utf8");
-  const [phone, fine] = css.split("@media (pointer: fine)");
+  const [phone, fine] = css.split("@media (min-width: 701px) and (pointer: fine)");
   expect(phone).toContain("clip-path: inset(50%)");
   expect(phone).toContain("width: 1px");
   expect(phone).not.toMatch(/display:\s*none|visibility:\s*hidden/);

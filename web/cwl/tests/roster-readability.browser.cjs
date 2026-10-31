@@ -348,7 +348,7 @@ async function checkFades(page, selector) {
     const missingCapacity = phone
       .locator(".roster-capacity-alert")
       .filter({ hasText: "Funnies" })
-      .getByRole("button", { name: "Set in Clan settings" });
+      .getByRole("button", { name: "Set in Hosting clans" });
     await missingCapacity.waitFor();
     assert.equal(
       await phone.getByText(/has no capacity set/i).count(),
@@ -370,7 +370,7 @@ async function checkFades(page, selector) {
     );
     await missingCapacity.click();
     await phone
-      .getByRole("button", { name: "Clan settings", exact: true })
+      .getByRole("button", { name: "Hosting clans", exact: true })
       .waitFor();
     const selectedClan = phone.locator(".clan-settings-row.is-selected");
     await selectedClan.waitFor();
@@ -380,7 +380,7 @@ async function checkFades(page, selector) {
       .click();
     await phone.locator(".roster-player-card").first().waitFor();
     const settingsTab = phone.getByRole("button", {
-      name: "Clan settings",
+      name: "Hosting clans",
       exact: true,
     });
     await settingsTab.click();
@@ -392,7 +392,7 @@ async function checkFades(page, selector) {
     );
     assert(
       await settingsTab.evaluate((node) => document.activeElement === node),
-      "returning to Clan settings moved focus into the list",
+      "returning to Hosting clans moved focus into the list",
     );
     passes.push("capacity focus consumed once; tab return preserves focus");
     await phone.getByRole("button", { name: /Missing weights/ }).click();

@@ -8,10 +8,58 @@ from utils.mongo import ensure_clan_tag_index
 from .server_management import API, GUILD_ID, require_manage, mongo
 from .manage_clans import public
 
-LABELS = {'add':'Clan added', 'before_edit':'Settings saved before edit',
+LABELS = {'add':'Clan added', 'before_edit':'Before this change',
           'before_remove':'Clan saved before removal', 'before_emoji':'Emoji update requested',
           'before_thread':'Thread update requested', 'before_restore':'Restore requested',
-          'restore':'Clan restored'}
+          'restore':'Clan restored', 'reminders':'War reminders changed'}
+
+FIELD_LABELS = {
+    'name': 'Name', 'type': 'Clan type', 'th_requirements': 'Minimum Town Hall',
+    'leader_id': 'Leader', 'leader_role_id': 'Leader role', 'role_id': 'Clan role',
+    'chat_channel_id': 'Chat channel', 'announcement_id': 'Announcement channel',
+    'rules_channel_id': 'Rules channel', 'leadership_channel_id': 'Leadership channel',
+    'thread_id': 'Thread', 'logo': 'Logo', 'banner': 'Banner', 'profile': 'Profile',
+    'emoji': 'Emoji', 'enabled': 'Reminders', 'channel_id': 'Reminder channel',
+    'minutes': 'Reminder times', 'war_started': 'War-start message', 'audience': 'Remind who',
+}
+
+def history_value(field, value):
+    if value is None or value == '':
+        return 'Not set'
+    if field.endswith('_id'):
+        return 'Name not recorded' if value else 'Not set'
+    if isinstance(value, bool):
+        return 'On' if value else 'Off'
+    if field == 'minutes' and isinstance(value, list):
+        return ', '.join(f'{minute}m' for minute in value) or 'None'
+    if field == 'audience':
+        return {'remaining': 'Players with attacks left', 'zero': 'Players with no attacks used'}.get(value, 'Unknown')
+    return str(value)
+
+def history_label(row):
+    if row['action'] == 'reminders' and not row.get('confirmed'):
+        return 'Not confirmed' if row.get('abandoned') else 'Saved snapshot'
+    return LABELS.get(row['action'], 'Saved snapshot')
+
+
+def public_changes(row):
+    if not row.get('confirmed'):
+        return []
+    return [{'field': FIELD_LABELS[item['field']],
+             'before': item.get('display', {}).get('before') or history_value(item['field'], item.get('before')),
+             'after': item.get('display', {}).get('after') or history_value(item['field'], item.get('after'))}
+            for item in row.get('changes', []) if item.get('field') in FIELD_LABELS]
+
+def reminder_snapshot(clan):
+    """Expose only the recorded reminder values, never inferred current settings."""
+    settings = clan.get('reminder_settings')
+    if not isinstance(settings, dict):
+        return []
+    return [
+        {'field': FIELD_LABELS[field], 'value': history_value(field, settings[field])}
+        for field in ('enabled', 'channel_id', 'minutes', 'audience', 'war_started')
+        if field in settings
+    ]
 
 async def history(request):
     await require_manage(request, 'clans')
@@ -20,7 +68,13 @@ async def history(request):
     query = {'guild_id': GUILD_ID}
     term = request.query.get('q', '').strip()[:100]
     if term:query['$or'] = [{key:{'$regex':re.escape(term),'$options':'i'}} for key in ('clan.name','clan.tag')]
-    if request.query.get('kind') == 'removed':query['action'] = 'before_remove'
+    kinds = {'removed': 'before_remove', 'settings': 'before_edit',
+             'reminders': 'reminders', 'added': 'add', 'restored': 'restore'}
+    kind = request.query.get('kind', 'all')
+    if kind not in ('all', *kinds):
+        raise web.HTTPBadRequest(text='Choose a valid change type.')
+    if kind in kinds:
+        query['action'] = kinds[kind]
     async with mongo(request) as db:
         rows = await collection(db).find(query).sort([('at',-1),('_id',-1)]).skip(page*15).limit(16).to_list(length=16)
         tags = list({r['clan']['tag'] for r in rows})
@@ -34,9 +88,11 @@ async def history(request):
         events = []
         for row in rows[:15]:
             clan = row['clan'];date = row.get('at')
-            events.append({'id':row['_id'],'action':LABELS.get(row['action'],'Saved snapshot'),
-                'at':date.replace(tzinfo=timezone.utc).isoformat() if date else None,'actor':row.get('actor_name') or 'Staff · '+str(row.get('actor','unknown')),
+            events.append({'id':row['_id'],'action':history_label(row),
+                'at':(date if date.tzinfo else date.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat() if date else None,'actor':row.get('actor_name') or 'Staff member (name unavailable)',
                 'source':row.get('source','Dashboard'),'clan':public(clan),
+                'changes':public_changes(row),
+                'reminder_snapshot':reminder_snapshot(clan),
                 'can_restore':row['action']=='before_remove' and clan['tag'] not in present and latest.get(clan['tag'])==row['_id'],
                 'present':clan['tag'] in present})
     return web.json_response({'events':events,'more':len(rows)>15})

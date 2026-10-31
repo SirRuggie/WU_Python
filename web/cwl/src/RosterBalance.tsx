@@ -365,7 +365,7 @@ export default function RosterBalance({
                             </small>
                           )}
                           {!configured && (
-                            <small>Set capacity in Clan settings first.</small>
+                            <small>Set capacity in Hosting clans first.</small>
                           )}
                         </span>
                       </label>

@@ -87,7 +87,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.text-command-editor input[type='color'] {
+.text-command-editor input[type="color"] {
   max-width: 90px;
   height: 42px;
 }
@@ -342,7 +342,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.command-file input[type='file'] {
+.command-file input[type="file"] {
   max-width: 100%;
   font-size: 0.85rem;
 }
@@ -449,7 +449,7 @@
   max-width: 100%;
   font-size: 0.9rem;
 }
-.command-image-upload input[type='file'] {
+.command-image-upload input[type="file"] {
   max-width: 100%;
   font-size: 0.8rem;
 }
@@ -546,7 +546,7 @@
 .text-command-tabs button {
   min-height: 44px;
 }
-.text-command-tabs button[aria-pressed='true'] {
+.text-command-tabs button[aria-pressed="true"] {
   border-color: #e2b332;
   background: #e2b33218;
 }
@@ -591,7 +591,7 @@
 .command-appearance .command-color {
   margin-top: 12px;
 }
-.text-command-rows button[aria-pressed='true'] {
+.text-command-rows button[aria-pressed="true"] {
   background: #e2b33218;
   border-color: #e2b332;
 }
@@ -622,4 +622,28 @@
   .command-is-editing > .page-head > button {
     display: none;
   }
+}
+
+.text-command-editor fieldset > details {
+  border-bottom: 1px solid #ffffff26;
+  padding: 8px 0;
+}
+.text-commands summary {
+  min-height: 44px;
+  align-content: center;
+  font-size: 14px;
+  cursor: pointer;
+}
+.text-commands .command-scope button {
+  min-height: 44px;
+  margin: 4px;
+}
+.text-commands small {
+  font-size: 12px;
+}
+.text-command-rows small {
+  display: block;
+}
+.text-command-editor fieldset > details[open] > summary {
+  margin-bottom: 12px;
 }

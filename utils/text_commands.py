@@ -27,7 +27,7 @@ def command_name(value):
 
 FIELDS = ('command', 'enabled', 'text', 'title', 'description', 'image_url',
           'color', 'blocks', 'allow_pings', 'choose_recipient', 'recipient_ping',
-          'delete_trigger')
+          'delete_trigger', 'allowed_channel_ids', 'allowed_role_ids')
 
 
 def legacy_blocks(row):
@@ -64,6 +64,13 @@ def validate(values, *, nested=False):
            ('enabled', 'allow_pings', 'choose_recipient', 'recipient_ping',
             'delete_trigger')):
         raise ValueError('Choose whether the command and pings are enabled.')
+    for key in ('allowed_channel_ids', 'allowed_role_ids'):
+        ids = values.get(key, [])
+        if not isinstance(ids, list) or len(ids) > 100 or any(
+            not isinstance(value, str) or not re.fullmatch(r'[0-9]{15,22}', value) for value in ids
+        ):
+            raise ValueError('Choose up to 100 channels or roles from this server.')
+        result[key] = list(dict.fromkeys(ids))
     for key,limit in (('text',2000),('title',256),('description',4000),('image_url',1000)):
         value=values.get(key,'')
         if not isinstance(value,str) or len(value)>limit:raise ValueError(f'{key.replace("_"," ").title()} must be at most {limit} characters.')
@@ -195,7 +202,7 @@ def fingerprint(row):
     import hashlib,json
     # Trigger cleanup is not part of the sent reply or its interactive actions.
     fields = {key:row.get(key) for key in FIELDS
-              if key not in ('choose_recipient','recipient_ping','delete_trigger')}
+              if key not in ('choose_recipient','recipient_ping','delete_trigger','allowed_channel_ids','allowed_role_ids')}
     if row.get('choose_recipient'):fields.update(choose_recipient=True,recipient_ping=True)
     return hashlib.sha256(json.dumps(fields,sort_keys=True).encode()).hexdigest()[:16]
 
@@ -270,6 +277,7 @@ async def record_delete_outcome(db, row, *, channel_id, error=None):
     selector = {'_id': f'{GUILD_ID}:{row["command"]}'}
     selector['revision'] = row['revision'] if 'revision' in row else {'$exists': False}
     if error is None:
+        selector['last_delete_error'] = {'$exists': True}
         update = {'$unset': {'last_delete_error': ''}}
     else:
         reason = ('Missing Manage Messages permission' if isinstance(error, hikari.ForbiddenError)
@@ -285,6 +293,52 @@ async def record_delete_outcome(db, row, *, channel_id, error=None):
         log.warning('Could not record trigger deletion outcome', exc_info=True)
 
 
+def safe_outcome_reason(error):
+    if isinstance(error, hikari.ForbiddenError):
+        return 'Discord denied the reply. Check bot permissions.'
+    if isinstance(error, hikari.NotFoundError):
+        return 'The channel or linked item was not found.'
+    if isinstance(error, (TimeoutError, hikari.InternalServerError)):
+        return 'Delivery was not confirmed. Check Discord before trying again.'
+    if isinstance(error, ValueError) and str(error) in (
+        'An attachment is missing or changed. Upload it again.',
+        'An attachment is unreadable. Upload it again.',
+    ):
+        return str(error)
+    return 'The reply could not be delivered. Check its content and bot permissions.'
+
+
+async def record_use(db, row, channel_id, error=None):
+    at = datetime.now(timezone.utc).isoformat()
+    selector = {'_id': f'{GUILD_ID}:{row["command"]}',
+                'revision': row['revision'] if 'revision' in row else {'$exists': False}}
+    outcome = {'status': 'error' if error else 'ok', 'at': at,
+               'channel_id': str(channel_id), 'reason': safe_outcome_reason(error) if error else ''}
+    try:
+        await collection(db).update_one(selector, {
+            '$inc': {'use_count': 1},
+            '$set': {'last_used_at': at, 'last_outcome': outcome},
+        })
+    except Exception:
+        log.warning('Could not record command usage outcome', exc_info=True)
+
+
+async def within_scope(row, event, bot):
+    channels = row['allowed_channel_ids']
+    if channels and str(event.channel_id) not in channels:
+        cache = getattr(bot, 'cache', None)
+        thread = cache.get_thread(event.channel_id) if cache is not None else None
+        if thread is None or str(thread.parent_id) not in channels:
+            return False
+    roles = row['allowed_role_ids']
+    if not roles:
+        return True
+    member = getattr(event.message, 'member', None)
+    if member is None:
+        member = await bot.rest.fetch_member(GUILD_ID, event.message.author.id)
+    return bool(set(roles) & {str(role) for role in member.role_ids})
+
+
 async def handle(event, db, bot):
     message = event.message
     if int(event.guild_id) != GUILD_ID or message.author.is_bot or getattr(message, 'webhook_id', None):
@@ -297,22 +351,26 @@ async def handle(event, db, bot):
             return False
     except ValueError:
         return False
-    # Exact match only: never react to words inside ordinary conversations.
-    import time
-    now = time.monotonic()
-    key = (int(event.channel_id), name)
-    if now - _recent.get(key, -100) < 5:
-        return True
-    _recent[key] = now
-    _recent.move_to_end(key)
-    while len(_recent) > 5000:
-        _recent.popitem(last=False)
+    row = None
+    attempted = False
     try:
         row = await collection(db).find_one({'_id': f'{GUILD_ID}:{name}', 'enabled': True})
         if not row:
             return False
-        # Validate persisted input too; never interpret code or template expressions.
-        clean = validate({key:row[key] for key in FIELDS if key in row})
+        # Validate persisted input and check scope before replying or deleting.
+        clean = validate({key: row[key] for key in FIELDS if key in row})
+        if not await within_scope(clean, event, bot):
+            return False
+        # Only enabled, existing commands consume a cooldown.
+        import time
+        now = time.monotonic()
+        key = (int(event.channel_id), name)
+        if now - _recent.get(key, -100) < 5:
+            return True
+        _recent[key] = now
+        _recent.move_to_end(key)
+        while len(_recent) > 5000:
+            _recent.popitem(last=False)
         recipient = None
         if clean.get('choose_recipient'):
             async def explain(text):
@@ -348,7 +406,9 @@ async def handle(event, db, bot):
         elif mention is not None:
             return False
         from utils.text_command_files import load_files
+        attempted = True
         await bot.rest.create_message(event.channel_id, **payload(clean,await load_files(db,clean),recipient=recipient))
+        await record_use(db, row, event.channel_id)
         if clean['delete_trigger']:
             try:
                 await bot.rest.delete_message(event.channel_id, message.id)
@@ -362,6 +422,8 @@ async def handle(event, db, bot):
             else:
                 await record_delete_outcome(db, row, channel_id=event.channel_id)
         return True
-    except Exception:
+    except Exception as error:
+        if row is not None and attempted:
+            await record_use(db, row, event.channel_id, error)
         log.exception('Text command could not be delivered: %s', name)
         return True

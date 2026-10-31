@@ -1954,9 +1954,11 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     from .strikes import routes as strike_routes
     routes.extend(strike_routes)
     routes.extend(push_routes())
-    from . import war_reminders, staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, owner_prank
+    from . import war_reminders, staff_overview, clan_history, clan_usage, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_content, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, owner_prank
     app.cleanup_ctx.append(owner_prank.lifecycle)
-    for module in (war_reminders, staff_overview, clan_history, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, owner_prank):
+    from .clan_artwork_cleanup import lifecycle as clan_artwork_cleanup_lifecycle
+    app.cleanup_ctx.append(clan_artwork_cleanup_lifecycle)
+    for module in (war_reminders, staff_overview, clan_history, clan_usage, manage_clans, server_management, manage_roles, manage_tickets, manage_returns, manage_operations, manage_return_bulk, manage_return_channels, text_commands, change_history, member_events, owner_prank):
         routes.extend(module.routes)
     manage_content.routes(app)
     routes.extend(issue_routes)
@@ -1989,4 +1991,21 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values()), *(path.lstrip('/') for path in MANAGEMENT_PAGE_PATHS.values())):
             app.router.add_get('/' + path, index_page)
             app.router.add_get('/' + path + '/', index_page)
+        for page in ("reminders", "history"):
+            app.router.add_get("/clans/" + page, index_page)
+            app.router.add_get("/clans/" + page + "/", index_page)
+
+        async def family_clan_page(request):
+            import re
+            if not re.fullmatch(r"#[A-Za-z0-9]{3,15}", request.match_info["clan_tag"]):
+                raise web.HTTPNotFound()
+            if request.match_info.get("section", "details") not in (
+                "details", "roles", "channels", "artwork", "war-reminders"
+            ):
+                raise web.HTTPNotFound()
+            return await index_page(request)
+
+        for suffix in ("", "/"):
+            app.router.add_get("/clans/{clan_tag}" + suffix, family_clan_page)
+            app.router.add_get("/clans/{clan_tag}/{section}" + suffix, family_clan_page)
     return app

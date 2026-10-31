@@ -69,7 +69,13 @@ const base = `http://127.0.0.1:${port}`;
         await page
           .getByRole("button", { name: "Open local test session" })
           .click();
-        await page.locator(".member-signup-success").waitFor();
+        try {
+          await page.locator(".member-signup-success").waitFor();
+        } catch (error) {
+          console.error(JSON.stringify({ scenario, width, url: page.url(), errors,
+            fixtureBody: await page.locator("body").innerText() }));
+          throw error;
+        }
         page.on("request", (r) => {
           if (!["GET", "HEAD"].includes(r.method()))
             writes.push(r.method() + " " + r.url());

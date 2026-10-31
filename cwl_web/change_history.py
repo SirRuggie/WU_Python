@@ -97,6 +97,17 @@ async def restore(request):
         return await save(proxy)
     if kind=='commands':
         from .text_commands import save
+        from utils.text_commands import collection, GUILD_ID
+        if not values or values.get('command') != match['name']:
+            raise web.HTTPBadRequest(text='Choose a version containing a command reply.')
+        async with mongo(request) as db:
+            current = await collection(db).find_one({'_id': f"{GUILD_ID}:{match['name']}"})
+        if row.get('action') == 'delete' and body['side'] == 'before':
+            if current:
+                raise web.HTTPConflict(text='This command name is already taken. Edit the existing command instead.')
+            proxy.method = 'POST'
+        elif current and 'delete_trigger' not in values:
+            values['delete_trigger'] = current.get('delete_trigger', True)
         return await save(proxy)
     from .manage_tickets import save
     return await save(proxy)

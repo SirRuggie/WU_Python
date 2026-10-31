@@ -27,9 +27,19 @@ def public(row):
         'recipient_ping': row.get('recipient_ping', False),
         'delete_trigger': row.get('delete_trigger', True),
         'last_delete_error': error,
+        'use_count': max(0, row.get('use_count', 0)) if type(row.get('use_count', 0)) is int else 0,
+        'last_used_at': row.get('last_used_at'),
+        'last_outcome': row.get('last_outcome'),
+        'allowed_channel_ids': row.get('allowed_channel_ids', []),
+        'allowed_role_ids': row.get('allowed_role_ids', []),
         'blocks': row.get('blocks', legacy_blocks(row)),
         'revision': row['revision'],
     }
+
+
+def history_values(row):
+    return {key: value for key, value in public(row).items()
+            if key not in ('revision', 'last_delete_error', 'use_count', 'last_used_at', 'last_outcome')}
 
 
 async def listing(request):
@@ -37,6 +47,46 @@ async def listing(request):
     async with mongo(request) as db:
         rows = await collection(db).find({'guild_id': GUILD_ID}).sort('command', 1).to_list(length=None)
     return web.json_response({'commands': [public(row) for row in rows]})
+
+
+async def validate_scope(request, actor, values):
+    from .server_management import discord
+    if values['allowed_channel_ids']:
+        channels = await discord(request, 'GET', f'/guilds/{GUILD_ID}/channels')
+        available = {str(row['id']) for row in channels if row.get('type') in (0, 5)}
+        if not set(values['allowed_channel_ids']) <= available:
+            raise web.HTTPBadRequest(text='Choose channels from this server.')
+    if values['allowed_role_ids']:
+        roles = actor.get('roles', [])
+        available = {str(row['id']) for row in roles
+                     if not row.get('managed') and str(row['id']) != str(GUILD_ID)}
+        if not set(values['allowed_role_ids']) <= available:
+            raise web.HTTPBadRequest(text='Choose non-managed roles from this server.')
+
+
+async def scope_options(request):
+    actor = await require_manage(request, 'text_commands')
+    from .server_management import discord
+    channels = await discord(request, 'GET', f'/guilds/{GUILD_ID}/channels')
+    return web.json_response({
+        'channels': [{'id': str(row['id']), 'name': row['name'], 'type': row['type']}
+                     for row in channels if row.get('type') in (0, 5)],
+        'roles': [{'id': str(row['id']), 'name': row['name']}
+                  for row in actor.get('roles', [])
+                  if not row.get('managed') and str(row['id']) != str(GUILD_ID)],
+    })
+
+
+async def deleted_commands(request):
+    await require_manage(request, 'text_commands')
+    async with mongo(request) as db:
+        rows = await db.bot_config.find({
+            'kind': 'dashboard_history', 'action': 'delete', 'status': 'saved',
+            'target': {'$regex': '^' + re.escape(API + '/text-commands/')},
+        }).sort('at', -1).limit(100).to_list(length=100)
+    return web.json_response({'commands': list(dict.fromkeys(
+        row['before']['command'] for row in rows if row.get('before', {}).get('command')
+    ))})
 
 
 async def save(request):
@@ -48,6 +98,7 @@ async def save(request):
         values = validate(body.get('values'))
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from None
+    await validate_scope(request, actor, values)
     from .command_images import preserve_images
     values=await preserve_images(request,values)
     revision = uuid4().hex
@@ -65,12 +116,16 @@ async def save(request):
                 if action['command']!=values['command'] and not await collection(db).find_one({'_id':f'{GUILD_ID}:{action["command"]}','enabled':True}):raise ValueError('Choose an enabled saved reply.')
         except ValueError as exc:raise web.HTTPBadRequest(text=str(exc)) from None
         target = collection(db)
+        from .change_history import begin, finish
         if request.method == 'POST':
+            history_id = await begin(db, API+'/text-commands/'+values['command'], actor, {},
+                                     getattr(request, 'history_action', 'create'))
             row.update(_id=f'{GUILD_ID}:{values["command"]}', created_at=now, created_by=actor['user_id'])
             try:
                 await target.insert_one(row)
             except DuplicateKeyError:
-                raise web.HTTPConflict(text='This command already exists. Select it to edit.') from None
+                raise web.HTTPConflict(text='This command name is already taken. Choose another name or edit the existing command.') from None
+            await finish(db, history_id, values)
         else:
             try:
                 name = command_name(request.match_info['name'])
@@ -83,21 +138,31 @@ async def save(request):
             before = await target.find_one({'_id': f'{GUILD_ID}:{name}'})
             if not before or before.get('revision') != body['revision']:
                 raise web.HTTPConflict(text='This command changed or was deleted. Reload before saving.')
+            # Old tabs and history snapshots omit scope; only explicit [] clears it.
+            for key in ('allowed_channel_ids', 'allowed_role_ids'):
+                if key not in body['values']:
+                    values[key] = list(before.get(key, []))
+                    row[key] = values[key]
             from .change_history import begin, finish
             history_id = await begin(db, API+'/text-commands/'+name, actor,
-                                     {key:value for key,value in public(before).items()
-                                      if key not in ('revision', 'last_delete_error')},
-                                     getattr(request,'history_action','edit'))
-            result = await target.update_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']}, {'$set': row})
+                                     history_values(before),
+                                     getattr(request, 'history_action', 'on' if values['enabled'] and not before.get('enabled', True) else 'off' if not values['enabled'] and before.get('enabled', True) else 'edit'))
+            update = {'$set': row}
+            if not values['delete_trigger']:
+                update['$unset'] = {'last_delete_error': ''}
+            result = await target.update_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']}, update)
             if not result.matched_count:
                 raise web.HTTPConflict(text='This command changed or was deleted. Reload before saving.')
             await finish(db, history_id, values)
-    return web.json_response(public({**(before or {}), **row}),
+    response_row = {**(before or {}), **row}
+    if not values['delete_trigger']:
+        response_row.pop('last_delete_error', None)
+    return web.json_response(public(response_row),
                              status=201 if request.method == 'POST' else 200)
 
 
 async def delete(request):
-    await require_manage(request, 'text_commands', write=True)
+    actor = await require_manage(request, 'text_commands', write=True)
     body = await request.json()
     if not isinstance(body, dict) or not isinstance(body.get('revision'), str) or not body['revision']:
         raise web.HTTPBadRequest(text='Reload this command before deleting.')
@@ -106,9 +171,16 @@ async def delete(request):
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from None
     async with mongo(request) as db:
-        result = await collection(db).delete_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']})
-    if not result.deleted_count:
-        raise web.HTTPConflict(text='This command changed or was deleted. Reload before deleting.')
+        target = collection(db)
+        before = await target.find_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']})
+        if not before or before.get('revision') != body['revision']:
+            raise web.HTTPConflict(text='This command changed or was deleted. Reload before deleting.')
+        from .change_history import begin, finish
+        token = await begin(db, API+'/text-commands/'+name, actor, history_values(before), 'delete')
+        result = await target.delete_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']})
+        if not result.deleted_count:
+            raise web.HTTPConflict(text='This command changed or was deleted. Reload before deleting.')
+        await finish(db, token, {})
     return web.json_response({'ok': True})
 
 async def mention_lookup(request):
@@ -177,7 +249,7 @@ async def upload_file(request):
     return web.json_response(result)
 
 
-routes = [web.get(API + '/text-command-activity', role_activity),web.get(API + '/text-command-roles', role_options),web.post(API + '/text-command-files', upload_file),web.get(API + '/text-command-mentions', mention_lookup),web.get(API + '/text-commands', listing), web.post(API + '/text-commands', save), web.patch(API + '/text-commands/{name}', save), web.delete(API + '/text-commands/{name}', delete)]
+routes = [web.get(API + '/text-command-scope', scope_options), web.get(API + '/text-command-deleted', deleted_commands),web.get(API + '/text-command-activity', role_activity),web.get(API + '/text-command-roles', role_options),web.post(API + '/text-command-files', upload_file),web.get(API + '/text-command-mentions', mention_lookup),web.get(API + '/text-commands', listing), web.post(API + '/text-commands', save), web.patch(API + '/text-commands/{name}', save), web.delete(API + '/text-commands/{name}', delete)]
 
 from .command_images import routes as image_routes
 routes.extend(image_routes)

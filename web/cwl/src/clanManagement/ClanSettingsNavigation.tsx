@@ -25,7 +25,7 @@ export default function ClanSettingsNavigation<T extends string>({
           id={`clan-section-${index}`}
           role="tab"
           aria-selected={value === section}
-          aria-controls="clan-settings-panel"
+          aria-controls={`clan-panel-${index}`}
           tabIndex={value === section ? 0 : -1}
           disabled={disabled}
           onClick={() => onChange(section)}

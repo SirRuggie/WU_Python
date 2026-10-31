@@ -532,3 +532,75 @@ Later: the separately reviewed linked-weight follow-up handles historical Clear,
 permission notices, legacy bot fallback and export labeling. Archived-weight
 freezing was explicitly dropped by the owner; old-season weights may track the
 current global effective value.
+
+## family-clans-2 — October30,2026
+
+PR[#92](https://github.com/SirRuggie/WU_Python/pull/92), tag `family-clans-2`,
+frontend/backend/bot `5f8fb1427e488bc69a1f67eb82f4e97615af621b`.
+Claude ACCEPT162 and read-only smoke167 passed:25 clans (Tactical1, Flexible Fun7,
+FWA7, CWL10), clan URL/section cards, zero unsaved changes, no overflow or4xx/5xx
+at360px. Legacy Discord clan management is read-only. No live test messages,
+settings saves or removal tests were performed in production.
+
+Integrated validation:5090 backend passed,21 skipped,162 subtests;1107 frontend
+passed; TypeScript/build. Bot PID3909926 reached gateway readiness; backend
+PID3910041 ran from the matching immutable archive. Two consecutive public config
+200s, clean invocation journals, anonymous clan/roster401s, and public entry/feature
+hashes passed. Entry `index-DuK7p2QP.js` SHA256
+`b13da49ba7f3121a0a9c9b51c3867820819d0f667d69ad9a891fdfacfbe9088a`.
+
+Protected signups, assignments and locks were identical:155 signups and155 roster
+entries. Outside-family counts before/after:Main26 accounts/0 outside;Lazy129/6;
+no unavailable locations. Artwork cleanup ran with zero total deletions and zero
+deletions of referenced or recoverable images. SQLite backup SHA256
+`df9a7e0ec3b9d100493e4540f16be2fa9de17c739616770b59b9fe95064bfdbd`;
+SQLite counts/integrity and Mongo clan/history archive hashes verified. Evidence
+lives in repository `.local/family-release-evidence/` (private data excluded from
+Git). The guarded `activate.py rollback` restores code only to frontend
+`fe0edfca34c282c7a73f2188f502670e3d4bcbb3`, backend/bot
+`b611af4781850a3bde8755d4d27d184f43a0cf93`; never restore the database for rollback.
+
+Scratch-tool corrections:recursive asset staging handles nested tour assets;
+archive import check uses cwl_web.clan_usage; botrunner imports use a readable,
+exact-revision temporary export. Production routing/storage drop-ins were retained.
+Later162/167 polish:close the old editor on Add;exact FWA effects;confirmation
+history labels and escaping/snapshot regressions;Off times labeled as saved.
+
+## command-triggers-2 — 2026-10-30
+
+Released tag `command-triggers-2`, revision
+`5d09708b8cdc6ac0349a20c75293bd8eae9153fc` (PR93). Frontend, backend and bot
+were activated together. Scope omission now preserves existing channel/role
+restrictions for old tabs and old history; explicit empty lists clear them.
+Cached thread parents satisfy channel scope. Navigation uses the in-app discard
+confirmation, and delete history has no unsupported Restore action.
+
+Integrated verification: 5111 backend passed, 21 skipped, 162 subtests; 1111
+frontend passed; TypeScript/build and 320/360/390/1440 isolated browser checks
+passed. The omitted-scope mutation failed both old-tab and old-history regressions.
+Earlier full layout and five runtime mutations passed. No live command was invoked.
+
+The SQLite backup SHA-256 is
+`98ce0c991417e22f9f94a754e2e12dcb6a828c78113f3a47025a955fe98cfb2d`.
+Mongo command/config/clan/history archives were read back and verified. All
+protected SQLite hashes and counts matched before and after activation; all three
+command definitions matched, excluding normal usage/outcome runtime fields.
+Evidence: `.local/command-triggers-release-evidence/`, including backup manifests,
+activation, postcheck and service journals. Readiness and runtime imports passed;
+bot PID3928340 and dashboard PID3928433 started from the release revision.
+
+Public entry `index-DBoE0wgU.js` SHA-256
+`d079b7fa7a53cf298c9828ba578f8dfd44dd85430bc8c8350b2235bca2b4c10c`
+and affected asset hashes matched the immutable release. Anonymous command access
+returned401; no new service errors were found.
+
+Claude handoff169: production smoke PASSED read-only at360px. Three enabled
+commands, channel/role scope lists, Delete the trigger message and Saved state
+were visible; no overflow, 4xx/5xx, tracebacks or IdentityLockBusy. Nothing saved
+or sent. Actual live command delivery remains untested; Ruggie may check it.
+
+Rollback code target for frontend/backend/bot:
+`5f8fb1427e488bc69a1f67eb82f4e97615af621b`. Retain immutable assets and use
+`.local/command-triggers-release-evidence/activate.py rollback` only while the
+current revision matches its guard. Never restore production data for code rollback.
+PR attachment UI failed with an MCP error; GitHub merge/release evidence is intact.
