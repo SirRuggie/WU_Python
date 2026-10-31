@@ -54,7 +54,9 @@ it("retains the override on a conflict and reloads its revision without overwrit
     state.setMakeDefault(true);
   });
   api.mockRejectedValueOnce(new Error("409 Test channel changed"));
-  await act(async () => { await expect(state.saveDefault()).rejects.toThrow("409"); });
+  await act(async () => {
+    await expect(state.saveDefault()).rejects.toThrow("409");
+  });
   expect(state.error).toContain("409");
   expect(state.channel).toBe("222222222222222222");
   expect(state.makeDefault).toBe(true);

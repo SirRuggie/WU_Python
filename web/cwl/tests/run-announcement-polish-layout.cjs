@@ -12,7 +12,7 @@ const server = spawn(
     "-I",
     path.join(__dirname, "fixtures/announcement_images.py"),
     path.join(root, "web/cwl/dist"),
-    "8991",
+    "0",
   ],
   {
     env: {
@@ -41,8 +41,20 @@ server.stdout.on("data", (chunk) => {
     const { port } = JSON.parse(line);
     child = spawn(
       process.execPath,
-      [path.join(__dirname, "announcement-polish-send.browser.cjs"), String(port)],
-      { stdio: "inherit", env: process.env },
+      [
+        path.join(__dirname, "announcement-polish-send.browser.cjs"),
+        String(port),
+      ],
+      {
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          WU_POLISH_EVIDENCE: path.join(
+            root,
+            ".local/announcement-polish-layout",
+          ),
+        },
+      },
     );
     child.on("error", (e) => {
       console.error(e);

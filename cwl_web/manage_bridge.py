@@ -1,4 +1,5 @@
 """Staff web facade over the native Manage CWL campaign and bot-owned queue."""
+from utils.cwl_roster_messages import roster_button
 import copy
 import os
 import re
@@ -206,7 +207,7 @@ async def save_variant(request):
             if item.get('buttons'):
                 item['buttons'][0]['url'] = url
             else:
-                item['buttons'] = [{'label': 'CWL Rosters', 'url': url, 'emoji': '📋'}]
+                item['buttons'] = [roster_button(url)]
             saved = await cwl_campaign.apply_draft(mongo, draft['_id'], int(session['user_id']), expected_revision=loaded['revision'], candidate_campaign=candidate)
             if cwl_campaign.occurrence_id(cycle, 'roster', pool) in saved.get('protected_sent', []):
                 raise web.HTTPConflict(text='Manage sent this announcement during your edit; its posted settings were preserved')
@@ -307,7 +308,7 @@ async def test_announcement(request):
         if item.get('buttons'):
             item['buttons'][0]['url'] = body['roster_url']
         else:
-            item['buttons'] = [{'label':'CWL Rosters','url':body['roster_url'],'emoji':'📋'}]
+            item['buttons'] = [roster_button(body['roster_url'])]
         try:
             components = await cwl_campaign.render_message(loaded,'roster',pool,preview=True)
         except ValueError as exc:

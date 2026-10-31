@@ -41,7 +41,13 @@ export default function RosterImagesTestPanel({
       footer={
         <Button
           variant="primary"
-          disabled={!canSend || busy || !channel || !data.published || !data.clans.length}
+          disabled={
+            !canSend ||
+            busy ||
+            !channel ||
+            !data.published ||
+            !data.clans.length
+          }
           onClick={() =>
             onConfirm(
               data.clans.map((clan) => ({

@@ -46,8 +46,8 @@ export default function useAnnouncementTestChannel(allowed: boolean) {
     let value: Setting;
     try {
       value = await api<Setting>(path, "PUT", {
-      channel_id: channel,
-      expected_revision: setting.revision,
+        channel_id: channel,
+        expected_revision: setting.revision,
       });
     } catch (e) {
       if (current === generation.current) setError((e as Error).message);

@@ -26,7 +26,13 @@ const base = `http://127.0.0.1:${port}`,
     fs.mkdirSync(out, { recursive: true });
     for (const card of await page.locator(".announcement-pool-card").all()) {
       for (const label of ["Preview", "Edit", "Clear", "Test full post"]) {
-        assert.equal(await card.getByRole("button", { name: label, exact: true }).isVisible(), false, label + " visible at rest");
+        assert.equal(
+          await card
+            .getByRole("button", { name: label, exact: true })
+            .isVisible(),
+          false,
+          label + " visible at rest",
+        );
       }
     }
     await page.screenshot({ path: `${out}/360-at-rest.png` });
@@ -42,11 +48,9 @@ const base = `http://127.0.0.1:${port}`,
       .getByRole("button", { name: "Queue both announcements" })
       .click();
     for (const name of ["main-cwl", "lazy-cwl"]) {
-      const done = page
-        .getByRole("dialog")
-        .filter({
-          has: page.getByRole("heading", { name: "Done", exact: true }),
-        });
+      const done = page.getByRole("dialog").filter({
+        has: page.getByRole("heading", { name: "Done", exact: true }),
+      });
       await done.waitFor({ timeout: 90000 });
       assert.match(await done.textContent(), new RegExp(name));
       assert.equal(await done.getByRole("button").count(), 1);

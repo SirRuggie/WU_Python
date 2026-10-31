@@ -1,4 +1,5 @@
 """Authorized review and status for isolated full-post test jobs."""
+from utils.cwl_roster_messages import roster_button
 import copy
 import re
 from urllib.parse import urlsplit
@@ -63,7 +64,7 @@ async def prepare(request):
         if item.get('buttons'):
             item['buttons'][0]['url'] = body['roster_url']
         else:
-            item['buttons'] = [{'label': 'CWL Rosters', 'url': body['roster_url'], 'emoji': '📋'}]
+            item['buttons'] = [roster_button(body['roster_url'])]
         try:
             components = await cwl_campaign.render_message(loaded, 'roster', pool, preview=True)
         except ValueError as exc:

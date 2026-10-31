@@ -10,7 +10,7 @@ from cwl_web import create_app
 from cwl_web.providers import ProviderUnavailable
 STATIC = Path(sys.argv[1])
 PORT = int(sys.argv[2])
-assert 8900 <= PORT <= 8999, 'Only isolated preview ports allowed'
+assert PORT == 0 or 8900 <= PORT <= 8999, 'Only isolated preview ports allowed'
 folder = tempfile.TemporaryDirectory(prefix='wu-finalize-fixture-')
 app = create_app(db_path=folder.name + '/isolated.sqlite', dev_fixture=True, secure_cookies=False, static_dir=STATIC)
 provider = app['providers']

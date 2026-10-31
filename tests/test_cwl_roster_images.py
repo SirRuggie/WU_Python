@@ -52,3 +52,16 @@ class RosterImageTests(unittest.IsolatedAsyncioTestCase):
         second=render({'label':'November'},{'version':1},group,2)
         self.assertEqual(Image.open(io.BytesIO(first)).height,1440)
         self.assertNotEqual(first,second)
+
+    async def test_single_clan_test_requires_send_scope_even_for_an_editor(self):
+        from aiohttp import web
+        await self.publish()
+        def require_send(request, *, send=False):
+            if send: raise web.HTTPForbidden(text='Send permission required')
+            return {'user_id':'editor'}
+        transport = AsyncMock()
+        with patch('cwl_web.roster_image_posts.staff', side_effect=require_send), patch('cwl_web.roster_images.discord', transport):
+            response = await self.call('POST', f'/seasons/{self.sid}/roster-images/%23C2Y/test', self.owner,
+                json={'channel_id':'123456789012345678','request_id':'e'*24,'version':1})
+            self.assertEqual(response.status,403)
+            transport.assert_not_called()

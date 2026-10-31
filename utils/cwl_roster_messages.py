@@ -29,3 +29,8 @@ def closing_message(*, test: bool = False) -> dict:
         'allowed_mentions': {'parse': [], 'roles': []} if test else {'parse': []},
         'components': link_button('My assignments', ASSIGNMENTS_URL),
     }
+
+
+def roster_button(url: str) -> dict:
+    """Default campaign button shared by save and both test paths."""
+    return {"label": "CWL Rosters", "url": url, "emoji": "📋"}
