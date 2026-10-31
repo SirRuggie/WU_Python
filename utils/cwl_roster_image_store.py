@@ -171,7 +171,8 @@ class RosterImageStore:
             if prior:
                 if tuple(prior[k] for k in ('season_id','pool','target_version','channel_id','actor_id','plan_json')) != values:
                     raise ImageConflict('Test request belongs to a different review')
-                return dict(prior)
+                first = db.execute("SELECT message_id FROM roster_image_test_receipts WHERE request_id=? AND step=0 AND status='posted'", (request_id,)).fetchone()
+                return dict(prior) | {'first_message_id': first['message_id'] if first else None}
             publication = db.execute('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
             if not publication or publication['version'] != version:
                 raise ImageConflict('Published roster changed; review the test again')
@@ -189,7 +190,13 @@ class RosterImageStore:
     def test_sequence(self, request_id):
         with self.store.tx() as db:
             row = db.execute('SELECT * FROM roster_image_test_sequences WHERE request_id=?', (request_id,)).fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            first = db.execute(
+                "SELECT message_id FROM roster_image_test_receipts WHERE request_id=? AND step=0 AND status='posted'",
+                (request_id,),
+            ).fetchone()
+            return dict(row) | {'first_message_id': first['message_id'] if first else None}
 
     def claim_test_step(self, request_id):
         """Never replay an in-flight test after a crash or uncertain response."""

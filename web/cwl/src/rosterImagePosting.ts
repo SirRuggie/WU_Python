@@ -215,6 +215,7 @@ export async function runImageJobs(
     active: () => boolean;
     progress: (text: string) => void;
     completed: () => Promise<void>;
+    delivered?: (url: string | null) => void;
     send?: typeof api;
     wait?: (ms: number) => Promise<void>;
   },
@@ -230,7 +231,11 @@ export async function runImageJobs(
     while (options.active()) {
       try {
         const test = job.operation === "test";
-        await send(
+        const result = await send<{
+          url?: string;
+          message_url?: string;
+          post?: { channel_id?: string; message_id?: string };
+        }>(
           `/seasons/${encodeURIComponent(season)}/${test ? "roster-images" : "roster-image-posts"}/${encodeURIComponent(job.clan.tag)}${test ? "/test" : job.operation === "post" ? "" : "/" + job.operation}`,
           "POST",
           test
@@ -249,6 +254,15 @@ export async function runImageJobs(
               },
         );
         if (options.active()) {
+          const post = result?.post;
+          const url =
+            post?.channel_id &&
+            post?.message_id &&
+            /^\d+$/.test(post.channel_id) &&
+            /^\d+$/.test(post.message_id)
+              ? `https://discord.com/channels/644963518025826315/${post.channel_id}/${post.message_id}`
+              : null;
+          options.delivered?.(result?.url || result?.message_url || url);
           options.progress(
             `${verb} ${i + 1} of ${jobs.length}… ✓ ${job.clan.name}`,
           );

@@ -612,7 +612,7 @@ export default function PublicationWorkspace({
             className="card"
             onToggle={(event) => setImagesOpen(event.currentTarget.open)}
           >
-            <summary>Clan roster images &amp; testing</summary>
+            <summary>Testing and images</summary>
             {imagesOpen && (
               <ClanRosterImages
                 key={seasonId}

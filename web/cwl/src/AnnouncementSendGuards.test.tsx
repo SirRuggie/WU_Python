@@ -144,7 +144,7 @@ const reads = () =>
   api.mock.calls.filter((c) => c[0] === "/seasons/1/manage-bridge" && !c[1]);
 it("workspace send ref rejects two simultaneous confirmations independently of the dialog", async () => {
   await mount();
-  await click("Review and send");
+  await click("Review both pools");
   const confirm = review.current!.onConfirm;
   const original = api.getMockImplementation()!;
   let release!: () => void;
@@ -182,7 +182,7 @@ it("stale draft generation cannot offer or queue a ready pool after polling", as
 });
 it("workspace rechecks ready pools when permission is lost after review opens", async () => {
   await mount();
-  await click("Review and send");
+  await click("Review both pools");
   expect(review.current!.pools).toHaveLength(2);
   await mount(false);
   await act(async () => review.current!.onConfirm());

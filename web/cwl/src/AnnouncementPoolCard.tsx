@@ -1,5 +1,6 @@
 import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
-import type { ReactNode } from "react";
+import { createContext, useState, type ReactNode } from "react";
+export const AnnouncementMoreContext = createContext<HTMLElement | null>(null);
 import { Eye, Pencil, Send } from "lucide-react";
 import { Button } from "./rosterUi/primitives";
 
@@ -16,6 +17,7 @@ export default function AnnouncementPoolCard({
   canSend,
   retry,
   sequence,
+  tests,
   onPreview,
   onEdit,
   onSend,
@@ -31,24 +33,21 @@ export default function AnnouncementPoolCard({
   canSend: boolean;
   retry: boolean;
   sequence?: ReactNode;
+  tests?: ReactNode;
   onPreview: () => void;
   onEdit: (trigger: HTMLElement) => void;
   onSend: () => void;
 }) {
+  const [moreTarget, setMoreTarget] = useState<HTMLDivElement | null>(null);
   return (
     <article className="announcement-pool-card" aria-label={poolLabel(pool)}>
       <h3>{poolLabel(pool)}</h3>
       <div className="announcement-pool-status" role="status">
         {status}
       </div>
-      {sequence}
-      <p>
-        {channel} · {roles}
-      </p>
-      <p className="announcement-muted">
-        Roster button:{" "}
-        {dashboardLink ? "opens My clan assignments ›" : "custom link"}
-      </p>
+      <AnnouncementMoreContext.Provider value={moreTarget}>
+        {sequence}
+      </AnnouncementMoreContext.Provider>
       {!enabled && <p>Disabled in CWL settings</p>}
       {changed && (
         <p className="announcement-muted">
@@ -56,23 +55,38 @@ export default function AnnouncementPoolCard({
         </p>
       )}
       <div className="announcement-card-actions">
-        <Button icon={Eye} onClick={onPreview}>
-          Preview
-        </Button>
-        {editable && (
-          <Button
-            icon={Pencil}
-            onClick={(event) => onEdit(event.currentTarget)}
-          >
-            Edit
-          </Button>
-        )}
         {canSend && (
           <Button icon={Send} onClick={onSend}>
-            {retry ? "Retry" : "Send"}
+            {retry ? "Review and retry" : "Review and send"}
           </Button>
         )}
       </div>
+      <details className="announcement-more">
+        <summary>More</summary>
+        <div ref={setMoreTarget} />
+        <p>
+          {channel} · {roles}
+        </p>
+        <p className="announcement-muted">
+          Roster button:{" "}
+          {dashboardLink ? "opens My clan assignments ›" : "custom link"}
+        </p>
+
+        <div className="announcement-card-actions">
+          <Button icon={Eye} onClick={onPreview}>
+            Preview
+          </Button>
+          {editable && (
+            <Button
+              icon={Pencil}
+              onClick={(event) => onEdit(event.currentTarget)}
+            >
+              Edit
+            </Button>
+          )}
+        </div>
+        {tests}
+      </details>
     </article>
   );
 }

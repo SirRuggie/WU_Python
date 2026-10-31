@@ -4,7 +4,13 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import AnnouncementFullTest from "./AnnouncementFullTest";
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
-vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
+vi.mock("./api", async (original) => ({
+  ...(await original<object>()),
+  api: (...args: unknown[]) =>
+    args[0] === "/manage/announcement-test-channel"
+      ? Promise.resolve({ channel_id: "", channel_name: "", revision: 0 })
+      : api(...args),
+}));
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 async function mount(allowed = true) {
   await act(async () =>
@@ -92,7 +98,9 @@ it("queues only after confirmation and preserves identity on an ambiguous HTTP r
   await click("Send full test");
   const first = api.mock.calls[0][2];
   expect(host.querySelector<HTMLInputElement>("input")!.disabled).toBe(true);
-  expect(host.querySelector<HTMLInputElement>("input")!.value).toContain("test-room");
+  expect(host.querySelector<HTMLInputElement>("input")!.value).toContain(
+    "test-room",
+  );
   await click("Test full post");
   expect(document.querySelector("dialog")?.textContent).toContain("#test-room");
   await click("Send full test");
@@ -114,8 +122,81 @@ it("permission loss closes a pending confirmation without sending", async () => 
 });
 it("unlocks the test channel after a definite rejection", async () => {
   const { ApiError } = await import("./api");
-  await mount(); await choose();
+  await mount();
+  await choose();
   api.mockRejectedValueOnce(new ApiError("Forbidden", 403));
-  await click("Test full post"); await click("Send full test");
+  await click("Test full post");
+  await click("Send full test");
   expect(host.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
+});
+it("replaces confirmation with done, first-message link and one Close action", async () => {
+  api.mockResolvedValue({
+    test: {
+      request_id: "id",
+      status: "complete",
+      next_step: 4,
+      steps: 4,
+      error: null,
+      channel_id: "123456789012345678",
+      message_url:
+        "https://discord.com/channels/644963518025826315/123456789012345678/123456789012345679",
+    },
+  });
+  await mount();
+  await choose();
+  await click("Test full post");
+  await click("Send full test");
+  const dialog = document.querySelector("dialog")!;
+  expect(dialog.textContent).toContain("Done");
+  expect(dialog.textContent).toContain("2 clan images");
+  expect(dialog.textContent).toContain("#test-room");
+  expect(dialog.querySelectorAll("button")).toHaveLength(1);
+  expect(dialog.querySelector("a")?.textContent).toBe("Open in Discord");
+  expect(dialog.textContent).not.toContain("Send full test");
+  await click("Close");
+  expect(document.querySelector("dialog")).toBeNull();
+  expect(host.textContent).toContain("Test posted to #test-room · no pings");
+});
+it("keeps live progress and a stopped result distinct from review", async () => {
+  api.mockResolvedValue({
+    test: {
+      request_id: "id",
+      status: "ready",
+      next_step: 1,
+      steps: 4,
+      error: null,
+      channel_id: "123456789012345678",
+    },
+  });
+  await mount();
+  await choose();
+  await click("Test full post");
+  await click("Send full test");
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Posting 2 of 4 messages",
+  );
+  await click("Close");
+});
+it("shows uncertain delivery without offering an automatic retry", async () => {
+  api.mockResolvedValue({
+    test: {
+      request_id: "id",
+      status: "uncertain",
+      next_step: 2,
+      steps: 4,
+      error: "Response lost",
+      channel_id: "123456789012345678",
+    },
+  });
+  await mount();
+  await choose();
+  await click("Test full post");
+  await click("Send full test");
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Stopped after 2 of 4 messages",
+  );
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Response lost",
+  );
+  expect(api).toHaveBeenCalledTimes(1);
 });

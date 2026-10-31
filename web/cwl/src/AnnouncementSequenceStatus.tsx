@@ -12,6 +12,9 @@ export default function AnnouncementSequenceStatus({
   announcementSent = false,
   channelName = "the reviewed channel",
   onRefresh,
+  resultOpen = false,
+  onResultClose,
+  messageUrl,
 }: {
   seasonId: string;
   pool: Pool;
@@ -20,7 +23,12 @@ export default function AnnouncementSequenceStatus({
   announcementSent?: boolean;
   channelName?: string;
   onRefresh: () => Promise<void>;
+  resultOpen?: boolean;
+  onResultClose?: () => void;
+  messageUrl?: string | null;
 }) {
+  const [showResult, setShowResult] = useState(false);
+  const [notice, setNotice] = useState("");
   const [waitExpired, setWaitExpired] = useState(false);
   useEffect(() => {
     setWaitExpired(false);
@@ -49,6 +57,7 @@ export default function AnnouncementSequenceStatus({
   }, []);
   useEffect(() => {
     if (!canSend) {
+      setShowResult(false);
       setConfirm(null);
       setResumeReview(false);
       setAssumeReview(false);
@@ -102,7 +111,11 @@ export default function AnnouncementSequenceStatus({
                 confirm_duplicate: true,
               },
       );
-      if (mounted.current) await onRefresh();
+      if (mounted.current) {
+        await onRefresh();
+        setShowResult(true);
+        setNotice("");
+      }
     } catch (caught) {
       if (mounted.current)
         setError(
@@ -115,8 +128,64 @@ export default function AnnouncementSequenceStatus({
       if (mounted.current) setBusy(false);
     }
   }
+  function closeResult() {
+    setShowResult(false);
+    onResultClose?.();
+    setNotice(
+      sequence?.status === "complete"
+        ? `Post complete · ${channelName}`
+        : "Posting status is shown below.",
+    );
+  }
   return (
     <div className="announcement-sequence">
+      {notice && <p role="status">{notice}</p>}
+      {(showResult || resultOpen) && canSend && (
+        <ConfirmDialog
+          heading={
+            sequence.status === "complete"
+              ? "Done"
+              : sequence.status === "stopped"
+                ? "Posting stopped"
+                : "Posting"
+          }
+          text={
+            sequence.status === "complete"
+              ? `Done · ${sequence.announcement_confirmed ? "1 announcement, " : ""}${sent} clan images and the closing note posted to ${channelName}${sequence.announcement_confirmed ? "" : " · announcement confirmation unavailable"}`
+              : sequence.status === "stopped"
+                ? `Stopped at ${stopped?.name || "closing note"}. ${sequence.error || "Review before continuing."}`
+                : `Posting ${sent} of ${sequence.clans.length} clan images to ${channelName}…`
+          }
+          confirmLabel="Close"
+          hideCancel
+          onCancel={closeResult}
+          onConfirm={closeResult}
+        >
+          {messageUrl &&
+            /^https:\/\/discord\.com\/channels\/\d+\/\d+\/\d+$/.test(
+              messageUrl,
+            ) && (
+              <a href={messageUrl} target="_blank" rel="noreferrer">
+                Open in Discord
+              </a>
+            )}
+          {sequence.status === "stopped" && sequence.announcement_confirmed && (
+            <Button
+              onClick={() => {
+                closeResult();
+                unknown
+                  ? setConfirm({
+                      sequenceId: sequence.sequence_id!,
+                      ...unknown,
+                    })
+                  : setResumeReview(true);
+              }}
+            >
+              {unknown ? "Check first" : "Resume"}
+            </Button>
+          )}
+        </ConfirmDialog>
+      )}
       <p role="status">
         {sequence.status === "complete"
           ? "Clan images and closing note posted"
@@ -159,7 +228,8 @@ export default function AnnouncementSequenceStatus({
       {canSend &&
         announcementSent &&
         !sequence.announcement_confirmed &&
-        (sequence.status === "stopped" || (sequence.status === "awaiting_announcement" && waitExpired)) && (
+        (sequence.status === "stopped" ||
+          (sequence.status === "awaiting_announcement" && waitExpired)) && (
           <>
             <p>
               Announcement shows as sent, but its message couldn't be confirmed.

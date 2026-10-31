@@ -18,7 +18,9 @@ from .server_management import discord, GUILD_ID
 def public_test(job):
     import json
     return {key: job[key] for key in ('request_id', 'status', 'next_step', 'error', 'channel_id')} | {
-        'steps': len(json.loads(job['plan_json']))}
+        'steps': len(json.loads(job['plan_json'])),
+        'message_url': (f"https://discord.com/channels/{GUILD_ID}/{job['channel_id']}/{job['first_message_id']}"
+                        if job.get('first_message_id') else None)}
 
 
 async def prepare(request):

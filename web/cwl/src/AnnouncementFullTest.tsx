@@ -1,3 +1,5 @@
+import useAnnouncementTestChannel from "./useAnnouncementTestChannel";
+import TestChannelDefault from "./TestChannelDefault";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Pool } from "./api";
 import type { AnnouncementDraft } from "./announcementDrafts";
@@ -12,6 +14,7 @@ type TestState = {
   steps: number;
   error: string | null;
   channel_id: string;
+  message_url?: string | null;
 };
 export default function AnnouncementFullTest({
   seasonId,
@@ -32,11 +35,16 @@ export default function AnnouncementFullTest({
   allowed: boolean;
   clanNames: string[];
 }) {
-  const [channel, setChannel] = useState("");
+  const destination = useAnnouncementTestChannel(allowed);
+  const { channel, setChannel } = destination;
   const [review, setReview] = useState(false);
   const [job, setJob] = useState<TestState | null>(null);
+  const [showResult, setShowResult] = useState(false);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const permission = useRef(allowed);
+  permission.current = allowed;
   const running = useRef(false);
   const pendingRequest = useRef<Record<string, unknown> | null>(null);
   const alive = useRef(true);
@@ -48,7 +56,11 @@ export default function AnnouncementFullTest({
     };
   }, []);
   useEffect(() => {
-    if (!allowed) setReview(false);
+    if (!allowed) {
+      setReview(false);
+      setShowResult(false);
+      setJob(null);
+    }
   }, [allowed]);
   useEffect(() => {
     if (!allowed || !job || !["ready", "sending"].includes(job.status)) return;
@@ -89,15 +101,26 @@ export default function AnnouncementFullTest({
         roster_url: draft.roster_url,
       };
     try {
+      await destination.saveDefault();
+      if (!alive.current || !permission.current) return;
       const result = await api<{ test: TestState }>(
         base,
         "POST",
         pendingRequest.current,
       );
       pendingRequest.current = null;
-      if (alive.current) setJob(result.test);
+      if (alive.current) {
+        setJob(result.test);
+        setShowResult(true);
+        setNotice("");
+      }
     } catch (e) {
-      if (e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 408)
+      if (
+        e instanceof ApiError &&
+        e.status >= 400 &&
+        e.status < 500 &&
+        e.status !== 408
+      )
         pendingRequest.current = null;
       if (alive.current) setError((e as Error).message);
     } finally {
@@ -106,11 +129,23 @@ export default function AnnouncementFullTest({
     }
   }
   const active = !!job && ["ready", "sending"].includes(job.status);
+  const channelName =
+    channels.find((c) => c.id === (job?.channel_id || channel))?.name ||
+    job?.channel_id ||
+    channel;
+  function closeResult() {
+    setShowResult(false);
+    setNotice(
+      job?.status === "complete"
+        ? `Test posted to #${channelName} · no pings`
+        : "Test status is shown below.",
+    );
+  }
   return (
     <details className="announcement-test">
       <summary>Test full post · no pings</summary>
       <p>
-        TEST announcement, clan images in order, then a closing note. Does not
+        The announcement, clan images in order, then a closing note. Does not
         mark announcements as sent.
       </p>
       <ChannelCombobox
@@ -125,6 +160,13 @@ export default function AnnouncementFullTest({
           job?.status === "uncertain"
         }
         onChange={setChannel}
+      />
+      <TestChannelDefault
+        checked={destination.makeDefault}
+        disabled={busy || !allowed}
+        error={destination.error}
+        onChange={destination.setMakeDefault}
+        onReload={destination.reload}
       />
       <button
         disabled={!allowed || !version || !channel || busy || active}
@@ -145,11 +187,43 @@ export default function AnnouncementFullTest({
           {job.error ? ` · ${job.error}` : ""}
         </p>
       )}
+      {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
+      {showResult && job && (
+        <ConfirmDialog
+          heading={
+            job.status === "complete"
+              ? "Done"
+              : active
+                ? "Posting test"
+                : "Test stopped"
+          }
+          text={
+            job.status === "complete"
+              ? `TEST posted to #${channelName} · no pings · 1 announcement, ${Math.max(0, job.steps - 2)} clan images and the closing note.`
+              : active
+                ? `Posting ${Math.min(job.next_step + 1, job.steps)} of ${job.steps} messages to #${channelName}…`
+                : `Stopped after ${job.next_step} of ${job.steps} messages. ${job.error || "Check Discord before another test; delivery may be uncertain."}`
+          }
+          confirmLabel="Close"
+          hideCancel
+          onConfirm={closeResult}
+          onCancel={closeResult}
+        >
+          {job.message_url &&
+            /^https:\/\/discord\.com\/channels\/\d+\/\d+\/\d+$/.test(
+              job.message_url,
+            ) && (
+              <a href={job.message_url} target="_blank" rel="noreferrer">
+                Open in Discord
+              </a>
+            )}
+        </ConfirmDialog>
+      )}
       {review && (
         <ConfirmDialog
           heading="Test full post"
-          text={`${job?.status === "uncertain" || error ? "Check Discord first: an earlier test may already have posted. Sending another can duplicate it. " : ""}Send 1 TEST announcement, ${clanNames.length} clan images (${clanNames.join(", ") || "none"}), then a closing note to #${channels.find((c) => c.id === channel)?.name || channel}? No pings. Production sent marks stay unchanged.`}
+          text={`${job?.status === "uncertain" || error ? "Check Discord first: an earlier test may already have posted. Sending another can duplicate it. " : ""}Send 1 announcement, ${clanNames.length} clan images (${clanNames.join(", ") || "none"}), then a closing note to #${channels.find((c) => c.id === channel)?.name || channel}? No pings. Production sent marks stay unchanged.`}
           confirmLabel="Send full test"
           onConfirm={() => void send()}
           onCancel={() => setReview(false)}

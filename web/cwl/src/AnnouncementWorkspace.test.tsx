@@ -197,7 +197,7 @@ it("keeps custom links and saving uses the current generation without sending", 
 it("reviews only ready pools and reports partial results; duplicate confirm cannot queue twice", async () => {
   await mount();
   expect(button("Send")).toBeUndefined();
-  await click("Review and send");
+  await click("Review both pools");
   expect(
     document.querySelectorAll(".announcement-send-review section"),
   ).toHaveLength(2);
@@ -226,12 +226,12 @@ it("offers Retry only for the ready failed pool and never for sent or uncertain"
   expect(cards[0].textContent).toContain("Check posted message");
   expect(
     [...cards[0].querySelectorAll("button")].some(
-      (button) => button.textContent === "Retry",
+      (button) => button.textContent === "Review and retry",
     ),
   ).toBe(false);
   expect(
     [...cards[1].querySelectorAll("button")].filter(
-      (button) => button.textContent === "Retry",
+      (button) => button.textContent === "Review and retry",
     ),
   ).toHaveLength(1);
   await click("Review and send");
@@ -239,7 +239,7 @@ it("offers Retry only for the ready failed pool and never for sent or uncertain"
     document.querySelectorAll(".announcement-send-review section"),
   ).toHaveLength(1);
   await click("Cancel");
-  expect(button("Retry")).toBeDefined();
+  expect(button("Review and retry")).toBeDefined();
 });
 it("without cwl_send no editing, binding, or send is enabled", async () => {
   await mount(false);
@@ -378,7 +378,7 @@ it.each([null, { status: "failed" } as const])(
     bridge.pools.main.delivery = { status: "sent" };
     bridge.pools.lazy.delivery = delivery;
     await mount();
-    await click(delivery ? "Retry" : "Send");
+    await click(delivery ? "Review and retry" : "Review and send");
     expect(
       document.querySelectorAll(".announcement-send-review section"),
     ).toHaveLength(1);

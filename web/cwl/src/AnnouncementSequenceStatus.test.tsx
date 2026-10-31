@@ -188,10 +188,38 @@ it("waits five seconds before offering missing-message recovery", async () => {
     expect(button("Post clan images now")).toBeUndefined();
     await act(async () => vi.advanceTimersByTime(1));
     expect(button("Post clan images now")).toBeDefined();
-  } finally { vi.useRealTimers(); }
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it("names a stop before announcement confirmation", async () => {
   sequence.announcement_confirmed = false;
   await mount();
-  expect(host.textContent).toContain("Stopped before the announcement was confirmed");
+  expect(host.textContent).toContain(
+    "Stopped before the announcement was confirmed",
+  );
+});
+
+it("switches a resumed post from progress to a single Close done dialog", async () => {
+  await mount();
+  await act(async () => button("Resume").click());
+  await act(async () => button("Resume").click());
+  sequence = { ...sequence, status: "ready" };
+  await mount();
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Posting 1 of 2 clan images",
+  );
+  sequence = {
+    ...sequence,
+    status: "complete",
+    clans: sequence.clans.map((clan) => ({ ...clan, status: "posted" })),
+  };
+  await mount();
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Done · 1 announcement, 2 clan images",
+  );
+  expect(document.querySelectorAll("dialog button")).toHaveLength(1);
+  await act(async () => button("Close").click());
+  expect(document.querySelector("dialog")).toBeNull();
+  expect(host.textContent).toContain("Post complete · #lazy-cwl");
 });

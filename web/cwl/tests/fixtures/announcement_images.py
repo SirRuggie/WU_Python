@@ -28,7 +28,9 @@ class Options:
 app['announcement_transport'] = Options()
 
 async def discord(method, path, **kwargs):
-    if method == 'GET': return {'guild_id': str(GUILD_ID), 'type': 0, 'roles': []}
+    if method == 'GET':
+        channel = next((item for item in channels if path == '/channels/' + item['id']), None)
+        return {'guild_id': str(GUILD_ID), 'type': 0, 'roles': [], **(channel or {})}
     assert method in ('POST', 'PATCH')
     payload = kwargs.get('json')
     images = []
