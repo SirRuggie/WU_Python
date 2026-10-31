@@ -28,6 +28,7 @@ export type ImageSequence = {
     status: string;
     request_id?: string;
   }[];
+  published_clans?: { tag: string; name: string; pages: number }[];
   closing?: { request_id: string; status: string; error: string | null } | null;
 };
 export type ManageButton = {

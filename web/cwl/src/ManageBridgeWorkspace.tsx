@@ -854,7 +854,7 @@ export default function ManageBridgeWorkspace({
                 !channelsError &&
                 draftGeneration === bridge.generation
               }
-              clanNames={(bridge.pools[editor.pool].sequence?.clans || []).map(
+              clanNames={(bridge.pools[editor.pool].sequence?.published_clans || []).map(
                 (clan) => clan.name,
               )}
             />

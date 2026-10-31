@@ -61,6 +61,12 @@ def describe(storage, sid, pool):
     import json
     sequence = storage.pool_sequence(sid, pool)
     publication = storage.publication(sid)
+    groups = groups_for(publication)[2].values() if publication else []
+    published_clans = [
+        {'tag': group['tag'], 'name': group['name'],
+         'pages': (len(group['accounts']) + 14) // 15, 'status': 'not_started'}
+        for group in ordered_roster_clans(groups) if group['pool'] == pool
+    ]
     if sequence:
         plan = json.loads(sequence['plan_json'])
         clans = [{'tag': item['tag'], 'name': item.get('name') or item['frozen']['name'],
@@ -68,10 +74,7 @@ def describe(storage, sid, pool):
                   'status': (storage.receipt(item['request_id']) or {}).get('status', 'pending')}
                  for item in plan['clans']]
     else:
-        groups = groups_for(publication)[2].values() if publication else []
-        clans = [{'tag': group['tag'], 'name': group['name'],
-                  'pages': (len(group['accounts']) + 14) // 15, 'status': 'not_started'}
-                 for group in ordered_roster_clans(groups) if group['pool'] == pool]
+        clans = published_clans
     closing = storage.closing_receipt(sequence['sequence_id']) if sequence else None
     return {
         'sequence_id': sequence['sequence_id'] if sequence else None,
@@ -82,6 +85,7 @@ def describe(storage, sid, pool):
         'channel_id': sequence['channel_id'] if sequence else None,
         'closing': ({key: closing.get(key) for key in ('request_id', 'status', 'error')} if closing else None),
         'clans': clans,
+        'published_clans': published_clans,
     }
 
 

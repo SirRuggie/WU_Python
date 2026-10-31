@@ -165,3 +165,16 @@ class SequenceStoreTests(unittest.TestCase):
         self.images.confirm_sequence_announcement('a' * 24, self.bridge)
         with self.assertRaises(ImageConflict):
             self.claim_image('#AAA', 'b' * 24, frozen)
+
+    def test_review_uses_current_publication_without_changing_frozen_sequence(self):
+        from unittest.mock import patch
+        from cwl_web.roster_sequence_review import describe
+        self.args['plan']['clans'] = [{'tag': '#ABC', 'name': 'Old clan',
+                                      'request_id': 'c' * 24, 'pages': 1}]
+        self.images.prepare_sequence(**self.args)
+        group = {'tag': '#NEW', 'name': 'Lazy.128', 'pool': 'lazy',
+                 'accounts': [{}], 'capacity': 15}
+        with patch('cwl_web.roster_sequence_review.groups_for', return_value=({}, {}, {'#NEW': group})):
+            state = describe(self.images, 1, 'lazy')
+        self.assertEqual([clan['name'] for clan in state['clans']], ['Old clan'])
+        self.assertEqual([clan['name'] for clan in state['published_clans']], ['Lazy.128'])
