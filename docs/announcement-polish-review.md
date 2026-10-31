@@ -58,7 +58,7 @@ rest, two Done dialogs, 12 fake messages and no browser errors.
   `.local/polish50-browser` and `.local/p51-browser-final` on the review host. Synthetic preview uses port 8905.
 
 These checks use isolated SQLite/Mongo fixtures and fake Discord, not live delivery.
-No production data, messages or service state changed for this batch. Keyboard and
+No production data, messages or service state changed during isolated validation. Keyboard and
 native dialog focus behavior use the existing components; this is not a complete
 assistive-technology audit. Release requires Claude acceptance and the usual backup,
 count, readiness, rollback and post-release smoke gates.
@@ -79,3 +79,25 @@ Its final run passed with 12 fake messages, two Done dialogs and no browser erro
 The final follow-up suite passed 5,346 backend tests (21 skipped, 221 subtests) and
 1,150 frontend tests. TypeScript/build passed. Prior full layout evidence remains;
 the changed announcement runner was rerun independently in network isolation.
+
+## Released 2026-10-31
+
+PR102 was merged and released as `announcement-polish-1` at
+`56c9ab4613c7ec5c1d052e4de17c32837dca4a50` after explicit chat approval.
+The clean tagged frontend and backend preserve PR103. Backend startup/imports,
+exact runtime directory, repeated configuration readiness and public asset hashes
+passed. The bot stayed at `248a5aa`, with unchanged PID and invocation ID.
+
+Fresh backup SHA256:
+`83774b2be09ef65232be728e321be76708473a0a38581e98e5a7b4dbca2c4ec1`.
+Archive integrity passed; clan counts were 25 before and after. Clan metadata,
+protected SQLite data and native campaign/send state were unchanged. Rollback
+frontend/backend assets at `248a5aa` are retained. Evidence is under
+`.local/polish-release-final` on the release host. Combined release regression
+checks passed 61 tests, and the clean tagged build passed.
+
+Claude's read-only production smoke (handoff entry 188) passed at 360px: each pool
+showed Send again and More with deleted-post status, Testing and images remained
+collapsed, and there were no HTTP errors or horizontal overflow. Public entry
+`index-CvIySAKQ.js` matched the release; no backend tracebacks were observed.
+Nothing was pressed or sent. This does not establish live Discord delivery.
