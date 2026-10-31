@@ -654,3 +654,11 @@ confirmation; intercepted500 tests kept the channel disabled and reused identica
 request bodies. These are isolated transport/UI checks, not live delivery proof.
 Backend5210 passed,21 skipped,221 subtests; frontend1084 passed; TypeScript/build
 passed. Thirteen backend mutations and a current-clan-list UI mutation were killed.
+
+## 2026-10-31 · Member signup status cards
+
+Member signup status cards (signed up, not signed up yet) live on My signups,
+not My clan assignments. Before publishing, My clan assignments shows a compact
+Not published yet card. Home is unchanged. My signups lists every signed-up
+account, keeps its green card when closed, and offers remaining accounts only
+while signups are open. Existing withdrawal and pool-change rules are unchanged.

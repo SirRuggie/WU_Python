@@ -2,7 +2,7 @@
 
 ## Member signup confirmation
 
-Home and My clan assignments share a green confirmation naming signed accounts and pools. When some accounts are signed up, remaining linked accounts appear in a separate red card below the green confirmation without account names. Zero signups keep the grey signup action. Closed signups remove mutation-navigation links, not read-only navigation. Partial published assignments retain their clan cards; hidden publications use unpublished wording.
+Home and My signups share a green confirmation naming signed accounts and pools. My signups lists every saved account and uses the account cards below for changes; My clan assignments uses a compact unpublished status or the published clan list. When some accounts are signed up, remaining linked accounts appear in a separate red card below the green confirmation without account names. Zero signups keep the grey signup action. Closed signups remove mutation-navigation links, not read-only navigation. Partial published assignments retain their clan cards; hidden publications use unpublished wording.
 
 Optional campaign guidance uses local dates and minute-updated relative time, or a muted taking-longer line. Missing guidance never hides saved signups. The member strip reuses the staff pattern: Sign up / My signups / My clan. My CWL starts expanded and remembers collapse.
 
