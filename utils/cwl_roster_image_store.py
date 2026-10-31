@@ -138,6 +138,35 @@ class RosterImageStore:
                 'SELECT * FROM roster_image_sequences WHERE sequence_id=?', (sequence_id,),
             ).fetchone())
 
+    def pool_sequence(self, sid, pool):
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_sequences WHERE season_id=? AND pool=?',
+                             (sid, pool)).fetchone()
+            return dict(row) if row else None
+
+    def revise_unsent_sequence(self, sequence_id, *, version, generation, channel, actor, plan):
+        """Refresh a known-unsent review; callers must first check the native queue.
+
+        Once the announcement is confirmed, its plan and destination never change.
+        """
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                             (sequence_id,)).fetchone()
+            if not row or row['announcement_message_id'] or row['status'] not in ('awaiting_announcement', 'stopped'):
+                raise ImageConflict('This sequence has already started; refresh its status')
+            latest = db.execute('SELECT version FROM roster_publications WHERE season_id=? '
+                                'AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1',
+                                (row['season_id'],)).fetchone()
+            if not latest or latest['version'] != version:
+                raise ImageConflict('Published roster changed; refresh and review')
+            db.execute("UPDATE roster_image_sequences SET target_version=?,generation=?,channel_id=?,"
+                       "actor_id=?,plan_json=?,status='awaiting_announcement',error=NULL,"
+                       'updated_at=CURRENT_TIMESTAMP WHERE sequence_id=?',
+                       (version, generation, channel, actor,
+                        json.dumps(plan, sort_keys=True, separators=(',', ':'), allow_nan=False), sequence_id))
+            return dict(db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                                   (sequence_id,)).fetchone())
+
     def pending_sequences(self):
         with self.store.tx() as db:
             return [dict(row) for row in db.execute(

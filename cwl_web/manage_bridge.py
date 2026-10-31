@@ -93,6 +93,11 @@ async def status(request):
     sid = _sid(request)
     cycle = _binding(request, sid)
     published = _store(request).one('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,))
+    from .roster_sequence_review import describe
+    from utils.cwl_roster_image_store import RosterImageStore
+    image_store = RosterImageStore(_store(request))
+    def sequence_status(sid, pool):
+        return describe(image_store, sid, pool)
     result = {'cycle': cycle, 'generation': None, 'worker_ready': False, 'pools': {},
               'published_version': published['version'] if published else None}
     if not cycle:
@@ -112,6 +117,7 @@ async def status(request):
                 'role_ids': [str(role) for role in item.get('role_ids', [])],
                 'enabled': loaded['campaign']['messages']['roster'].get('enabled', True) and item.get('enabled', True),
                 'delivery': _delivery(await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool)),
+                'sequence': sequence_status(sid, pool),
             }
     return web.json_response(result)
 
@@ -214,7 +220,9 @@ async def save_variant(request):
 async def send(request):
     from .app import _require, _sid, _json, _store, _season
     from utils.cwl_web_bridge import queue_roster_send, get_roster_send_status
-    session = _require(request, 'editor')
+    from .roster_image_posts import staff
+    from .roster_sequence_review import prepare
+    session = staff(request, send=True)
     sid = _sid(request)
     cycle = _required_binding(request, sid)
     pool = _pool(request)
@@ -234,10 +242,12 @@ async def send(request):
             raise web.HTTPServiceUnavailable(text='Manage delivery worker is unavailable; nothing queued')
         try:
             previous = await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool)
+            sequence = await prepare(request, sid, pool, cycle, body, session, previous)
             result = await queue_roster_send(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool,
                 publication_version=body['version'], expected_generation=body['generation'],
                 expected_channel_id=int(body['channel_id']), requested_by=int(session['user_id']),
-                retry_failed=bool(previous and previous.get('status') in ('failed', 'stale')))
+                retry_failed=bool(previous and previous.get('status') in ('failed', 'stale')),
+                sequence_id=sequence['sequence_id'])
         except (ValueError, RuntimeError) as exc:
             raise web.HTTPConflict(text=str(exc)) from exc
     return web.json_response({'delivery': _delivery(result)}, status=202)

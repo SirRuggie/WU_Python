@@ -48,12 +48,18 @@ class SequenceJobs:
                 bridge = await get_roster_send_status(mongo, GUILD_ID, job['cycle'], job['pool'])
                 if bridge is None:
                     # Recover a crash after SQLite intent but before native queue insertion.
-                    await queue_roster_send(
-                        mongo, guild_id=GUILD_ID, cycle=job['cycle'], pool=job['pool'],
-                        publication_version=job['target_version'], expected_generation=job['generation'],
-                        expected_channel_id=int(job['channel_id']), requested_by=int(job['actor_id']),
-                        sequence_id=sequence_id,
-                    )
+                    try:
+                        await queue_roster_send(
+                            mongo, guild_id=GUILD_ID, cycle=job['cycle'], pool=job['pool'],
+                            publication_version=job['target_version'], expected_generation=job['generation'],
+                            expected_channel_id=int(job['channel_id']), requested_by=int(job['actor_id']),
+                            sequence_id=sequence_id,
+                        )
+                    except BridgeConflict:
+                        # The HTTP sender may have queued this same saved intent concurrently.
+                        queued = await get_roster_send_status(mongo, GUILD_ID, job['cycle'], job['pool'])
+                        if not queued or queued.get('sequence_id') != sequence_id:
+                            raise
                     return
             if bridge.get('sequence_id') != sequence_id:
                 self.storage.stop_sequence(sequence_id, 'Announcement belongs to another review; refresh')

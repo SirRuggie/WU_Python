@@ -148,3 +148,40 @@ class DeliveryVersionTests(unittest.TestCase):
                 self.assertEqual(record, before)
         for value in ({'status': 'sent'}, {'status': 'pending', 'publication_version': None}):
             self.assertIsNone(_delivery(value)['publication_version'])
+
+
+class SequenceSendTests(ManageBridgeTests):
+    async def test_native_send_persists_frozen_sequence_before_queueing(self):
+        from utils.cwl_roster_image_store import RosterImageStore
+        await self.bind()
+        await self.publish()
+        data = await self.state()
+        await cwl_web_bridge.mark_worker_alive(self.mongo, GUILD_ID)
+        body = {'generation': data['generation'], 'channel_id': data['pools']['main']['channel_id'], 'version': 1}
+        original = cwl_web_bridge.queue_roster_send
+        async def inspect(mongo, **kwargs):
+            job = RosterImageStore(self.app['store']).sequence(kwargs['sequence_id'])
+            self.assertEqual(job['status'], 'awaiting_announcement')
+            self.assertEqual(job['channel_id'], body['channel_id'])
+            self.assertEqual(job['target_version'], 1)
+            return await original(mongo, **kwargs)
+        with patch('utils.cwl_web_bridge.queue_roster_send', inspect):
+            response = await self.call('POST', self.base + '/main/send', self.owner, json=body)
+        self.assertEqual(response.status, 202, await response.text())
+        state = await self.state()
+        self.assertEqual(state['pools']['main']['sequence']['status'], 'awaiting_announcement')
+        self.assertTrue(state['pools']['main']['sequence']['sequence_id'])
+
+    async def test_preexisting_sent_announcement_never_acquires_image_sequence(self):
+        from utils.cwl_roster_image_store import RosterImageStore
+        await self.bind()
+        await self.publish()
+        data = await self.state()
+        await cwl_web_bridge.mark_worker_alive(self.mongo, GUILD_ID)
+        await cwl_campaign.record_delivery(self.mongo, GUILD_ID, '2026-10', {
+            'occurrence_id': cwl_campaign.occurrence_id('2026-10', 'roster', 'main'),
+            'status': 'sent', 'channel_id': data['pools']['main']['channel_id'], 'message_id': 123})
+        body = {'generation': data['generation'], 'channel_id': data['pools']['main']['channel_id'], 'version': 1}
+        response = await self.call('POST', self.base + '/main/send', self.owner, json=body)
+        self.assertEqual(response.status, 409)
+        self.assertIsNone(RosterImageStore(self.app['store']).pool_sequence(self.sid, 'main'))
