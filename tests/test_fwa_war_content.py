@@ -105,6 +105,9 @@ def test_corrupt_saved_row_fails_closed():
 
 def test_public_war_plan_uses_saved_template_and_allows_only_clan_role_mentions(monkeypatch):
     db = mongo()
+    from tests.test_strike_streaks import Collection
+    db.fwa_war_plans = Collection()
+    db.fwa_war_plans.create_index = AsyncMock()
     db.clans = SimpleNamespace(find_one=AsyncMock(return_value={"tag": "#ABC", "announcement_id": 777}))
     monkeypatch.setattr(war_plans, "Clan", lambda data: SimpleNamespace(announcement_id=777))
     custom = content.default_template("win")
