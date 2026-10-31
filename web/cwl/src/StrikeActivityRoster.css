@@ -261,3 +261,57 @@
     text-align: center;
   }
 }
+
+/* Keep the inherited generic button centering out of the roster's grid. */
+.strikes-workspace .strike-activity-row {
+  justify-content: stretch;
+  align-items: stretch;
+}
+.strike-activity-main,
+.strike-activity-chips {
+  width: 100%;
+}
+.strikes-workspace.strikes-activity-overview
+  .strikes-toolbar:not(:has(.strikes-history-search)) {
+  display: flex;
+  width: 100%;
+  margin: 0 0 12px;
+  gap: 8px;
+}
+.strikes-workspace.strikes-activity-overview .strikes-toolbar > button {
+  margin-left: 0;
+  width: auto;
+}
+.strikes-activity-overview .strikes-tracking {
+  padding: 4px 12px;
+  margin-bottom: 12px;
+}
+.strikes-activity-overview .strikes-tracking summary {
+  gap: 4px 9px;
+}
+.strikes-activity-overview .page-head {
+  margin-bottom: 16px;
+}
+.strikes-activity-overview .page-head p:not(.eyebrow) {
+  margin-bottom: 10px;
+}
+@media (max-width: 650px) {
+  .strike-activity-roster {
+    gap: 10px;
+  }
+  .strike-activity-toolbar label,
+  .strike-activity-more > label {
+    gap: 0;
+  }
+  .strike-activity-toolbar label > input,
+  .strike-activity-toolbar label > select {
+    margin-top: 4px;
+  }
+  .strike-activity-filters {
+    gap: 5px 10px;
+    align-items: center;
+  }
+  .strikes-activity-overview .strikes-tracking summary {
+    font-size: 12px;
+  }
+}

@@ -2,12 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 from utils.strike_store import stamp
-
-
-def latest_raid_end(now):
-    now = stamp(now)
-    end = (now-timedelta(days=now.weekday())).replace(hour=7, minute=0, second=0, microsecond=0)
-    return end if end <= now else end-timedelta(days=7)
+from utils.player_activity_raids import latest_raid_end
 
 
 def skipped_weekends(weekends, now):

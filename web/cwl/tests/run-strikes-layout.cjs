@@ -50,7 +50,10 @@ server.listen(0, "127.0.0.1", () => {
   const test = spawn(
     process.execPath,
     [
-      path.join(__dirname, "strikes-ux.browser.cjs"),
+      path.join(
+        __dirname,
+        process.env.WU_STRIKES_BROWSER || "strikes-ux.browser.cjs",
+      ),
       String(server.address().port),
     ],
     { stdio: "inherit", env: process.env },

@@ -16,6 +16,8 @@ export type ActivityAccount = {
   discord_name?: string | null;
   priority?: ActivityPriority | null;
   marked_for_replacement: boolean;
+  replacement_eligible_low?: boolean;
+  departed_at?: string | null;
   status: ActivityStatus;
   quiet_days: number | null;
   last_seen_at?: string | null;
@@ -217,6 +219,7 @@ export function visibleActivityAccounts(
         (!filters.marked ||
           row.marked_for_replacement ||
           (filters.includeLow &&
+            row.replacement_eligible_low !== false &&
             row.active_strikes > 0 &&
             row.active_strikes < 3)) &&
         (!filters.townHalls.length ||

@@ -2,7 +2,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import StrikesWorkspace, { type Entry } from "./StrikesWorkspace";
-import ReplacementWorkspace from "./ReplacementWorkspace";
 import "./style.css";
 
 const now = new Date().toISOString();
@@ -119,9 +118,16 @@ for (const entry of entries) {
 }
 const wars = [
   {
-    war_key: "mismatch-war", clan_tag: "#FWA", clan_name: "Warriors United FWA",
-    opponent_tag: "#MISMATCH", opponent_name: "Mismatch opponent", war_end: now,
-    missed_accounts: 1, strikes: 0, one_missed: 0, mismatch: true,
+    war_key: "mismatch-war",
+    clan_tag: "#FWA",
+    clan_name: "Warriors United FWA",
+    opponent_tag: "#MISMATCH",
+    opponent_name: "Mismatch opponent",
+    war_end: now,
+    missed_accounts: 1,
+    strikes: 0,
+    one_missed: 0,
+    mismatch: true,
     source_label: "Clash API",
   },
   {
@@ -446,6 +452,90 @@ window.fetch = async (input, init) => {
   else if (path.endsWith("/strikes/tracking/retry")) {
     trackingQueued = true;
     data = { clan_tag: "#NORTH", retry_pending: true, retry_requested_at: now };
+  } else if (
+    path.endsWith("/strikes/accounts") &&
+    url.searchParams.get("activity") === "true"
+  ) {
+    const options = new URLSearchParams(location.search);
+    const count = [26, 65, 125].includes(Number(options.get("count")))
+      ? Number(options.get("count"))
+      : 125;
+    const clans = [
+      { tag: "#PQQ", name: "Warriors United FWA" },
+      { tag: "#PYY", name: "WU North" },
+      { tag: "#PJJ", name: "Lazy CWL 5" },
+    ];
+    data = {
+      clans,
+      accounts: Array.from({ length: count }, (_, index) => {
+        const clan = clans[index % 3];
+        const healthy = index === 1;
+        const unknown = index === 2;
+        const quiet = healthy
+          ? 0
+          : unknown
+            ? null
+            : index === 0
+              ? 48
+              : index % 18;
+        const strikes = healthy || unknown ? 0 : index === 0 ? 6 : index % 5;
+        return {
+          player_tag:
+            index === 0
+              ? "#P22ABC"
+              : `#P${index
+                  .toString(8)
+                  .padStart(6, "0")
+                  .replace(
+                    /[134567]/g,
+                    (c) =>
+                      ({
+                        "1": "Y",
+                        "3": "Q",
+                        "4": "G",
+                        "5": "R",
+                        "6": "J",
+                        "7": "C",
+                      })[c]!,
+                  )}`,
+          player_name:
+            index === 0
+              ? "CastleFox"
+              : healthy
+                ? "Healthy Birch"
+                : unknown
+                  ? "New tracker Aspen"
+                  : `Fixture player ${index + 1}`,
+          current_clan_tag: clan.tag,
+          current_clan_name: clan.name,
+          town_hall: 16 - (index % 4),
+          weight: 149000 - index * 100,
+          active_strikes: strikes,
+          total_strikes: index === 0 ? 28 : strikes,
+          marked_for_replacement: strikes >= 3,
+          replacement_eligible_low: strikes > 0 && strikes < 3,
+          priority: index === 0 ? "replace_first" : null,
+          status:
+            strikes >= 3 || (quiet !== null && quiet >= 14)
+              ? "risk"
+              : strikes > 0 || (quiet !== null && quiet >= 7)
+                ? "watch"
+                : "active",
+          quiet_days: quiet,
+          last_seen_at: unknown
+            ? null
+            : new Date(Date.now() - (quiet || 0) * 86400000).toISOString(),
+          last_seen_source: index === 3 ? "clashking_seed" : "clash_api",
+          tracking_started_at: now,
+          missed_attacks: index === 0 ? 28 : 0,
+          observed_attacks: index === 0 ? 28 : 0,
+          no_attack_wars: index === 0 ? 14 : 0,
+          skipped_raid_weekends: index === 0 ? 2 : 0,
+          discord_name: "Fixture member",
+          discord_id: "123456789012345678",
+        };
+      }),
+    };
   } else if (path.endsWith("/strikes/accounts")) {
     const accounts = Array.from({ length: 300 }, (_, index) => ({
       player_tag:
@@ -492,7 +582,8 @@ window.fetch = async (input, init) => {
           item.war_key === url.searchParams.get("war_key")) &&
         (!url.searchParams.get("query")?.startsWith("#") ||
           item.player_tag === url.searchParams.get("query")) &&
-        (url.searchParams.get("status") !== "mismatch" || item.kind === "mismatch") &&
+        (url.searchParams.get("status") !== "mismatch" ||
+          item.kind === "mismatch") &&
         (url.searchParams.get("status") !== "strikes" ||
           item.kind === "strike"),
     );
@@ -655,18 +746,14 @@ const fixturePermissions =
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}>
-      {new URLSearchParams(location.search).get("page") === "replacements" ? (
-        <ReplacementWorkspace
-          permissions={fixturePermissions}
-          isOwner={false}
-        />
-      ) : (
-        <StrikesWorkspace
-          permissions={fixturePermissions}
-          isOwner={false}
-          userId="fixture"
-        />
-      )}
+      <StrikesWorkspace
+        permissions={fixturePermissions}
+        isOwner={false}
+        userId="fixture"
+        markedDefault={
+          new URLSearchParams(location.search).get("page") === "replacements"
+        }
+      />
     </main>
   </React.StrictMode>,
 );

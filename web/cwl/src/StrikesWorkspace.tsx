@@ -1,3 +1,4 @@
+import ReplacementDeparture from "./ReplacementDeparture";
 import { parseActivityFilters } from "./strikeActivityView";
 import StrikeActivityRoster from "./StrikeActivityRoster";
 import StrikeReplacementRow from "./StrikeReplacementRow";
@@ -88,6 +89,9 @@ type Overview = {
   streak?: StrikeStreakState | null;
 };
 type StrikeAccount = {
+  left_clan?: boolean;
+  last_clan_name?: string | null;
+  departed_at?: string | null;
   player_tag: string;
   player_name: string;
   discord_id?: string | null;
@@ -307,7 +311,7 @@ export default function StrikesWorkspace({
   const [activityReload, setActivityReload] = useState(0);
   const [selectedAccount, setSelectedAccount] =
     useViewState<StrikeAccount | null>(memory, "selectedAccount", null);
-  const lastTarget = useRef(targetTag);
+  const lastTarget = useRef(targetTag || selectedAccount?.player_tag || "");
   const [status, setStatus] = useViewState(memory, "status", "all");
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [showWarSearch, setShowWarSearch] = useState(false);
@@ -653,6 +657,7 @@ export default function StrikesWorkspace({
     lastTarget.current = targetTag;
     if (!targetTag) {
       if (previous) {
+        returnPlayer.current = previous;
         setSelectedAccount(null);
         setSelectedWar(null);
       }
@@ -849,7 +854,7 @@ export default function StrikesWorkspace({
 
   return (
     <section
-      className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : ""}`}
+      className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
     >
       {onBack && (
         <button type="button" disabled={busy} onClick={onBack}>
@@ -860,10 +865,7 @@ export default function StrikesWorkspace({
         <div>
           <p className="eyebrow">Family clans</p>
           <h1>Strikes &amp; replacements</h1>
-          <p>
-            See family activity, strikes, replacement priorities, and approved
-            leave.
-          </p>
+          <p>Family activity, strikes and replacement priorities.</p>
           <StrikeHelp limit={settings?.strike_limit} />
         </div>
       </div>
@@ -1012,8 +1014,16 @@ export default function StrikesWorkspace({
                 {manualOpen ? "Close" : "Add strike"}
               </button>
             )}
+            {!selectedAccount && !selectedWar && (
+              <button
+                aria-expanded={showWarSearch}
+                onClick={() => setShowWarSearch((open) => !open)}
+              >
+                {showWarSearch ? "Close war search" : "Find war"}
+              </button>
+            )}
           </div>
-          {!selectedAccount && (
+          {!selectedAccount && selectedWar && (
             <div className="strikes-war-tools">
               {selectedWar && (
                 <button
@@ -1167,6 +1177,12 @@ export default function StrikesWorkspace({
                     >
                       Find replacements in this clan
                     </button>
+                  )}
+                  {selectedAccount.left_clan && (
+                    <ReplacementDeparture
+                      clan={selectedAccount.last_clan_name || "family"}
+                      seenAt={selectedAccount.departed_at}
+                    />
                   )}
                   <StrikeReplacementRow
                     key={selectedAccount.player_tag}

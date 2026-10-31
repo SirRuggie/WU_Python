@@ -619,3 +619,41 @@ it.each([1, 3])(
     );
   },
 );
+
+it("returns from a routed account to the filtered roster when browser history clears the tag", async () => {
+  const account = {
+    player_tag: "#P2Y",
+    player_name: "Routed Aspen",
+    active_strikes: 0,
+    total_strikes: 0,
+    status: "active",
+    quiet_days: null,
+    marked_for_replacement: false,
+  };
+  transport.mockImplementation(async (path: string) =>
+    path.startsWith("/strikes/accounts")
+      ? { accounts: [account], clans: [] }
+      : { entries: [], total: 0, clans: [] },
+  );
+  const memory = new Map<string, unknown>();
+  const props = {
+    permissions: ["strikes_remove"],
+    isOwner: false,
+    userId: "1",
+    memory,
+    activityState: "q=Routed",
+    onAccountRoute: vi.fn(),
+  };
+  await render(<StrikesWorkspace {...props} targetTag="#P2Y" />);
+  await settle();
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "Routed Aspen",
+  );
+  await render(<StrikesWorkspace {...props} targetTag="" />);
+  await settle();
+  expect(host.querySelector(".strikes-detail-context")).toBeNull();
+  expect(
+    host.querySelector<HTMLInputElement>('input[type="search"]')?.value,
+  ).toBe("Routed");
+  expect(host.querySelectorAll("[data-strike-player]")).toHaveLength(1);
+});

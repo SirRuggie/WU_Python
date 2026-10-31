@@ -574,8 +574,10 @@ class StrikeService:
 
     async def activity_context(self, guild_id, activity_tags):
         """Bounded family snapshot for the read-only activity overview."""
-        clans = await self.mongo.clans.find({}, {'tag': 1, 'name': 1}).to_list(length=None)
-        family = [row['tag'] for row in clans if row.get('tag')]
+        from utils.player_activity_polling import active_clan
+        clans = [row for row in await self.mongo.clans.find({}).to_list(length=None)
+                 if active_clan(row) and row.get('tag')]
+        family = [row['tag'] for row in clans]
         players = [tag(value) for value in activity_tags]
         now = datetime.now(timezone.utc)
         profiles = await self.mongo.strike_profiles.find({
@@ -591,7 +593,8 @@ class StrikeService:
                     {'kind': 'strike', 'expires_at': {'$gt': now}}]},
             {'player_tag': 1, 'war_key': 1, 'kind': 1, 'source': 1, 'war_type': 1,
              'occurred_at': 1, 'missed_attacks': 1, 'expires_at': 1, 'revoked_at': 1}).to_list(length=None)
-        return {'profiles': profiles, 'records': records, 'clans': clans}
+        return {'profiles': profiles, 'records': records, 'clans': clans,
+                'replacements': await self.replacement(guild_id, limit=None)}
 
     async def account_list(self, guild_id: int, *, query=None, clan_tag=None,
                            status='active', limit=25, skip=0, action='all') -> dict:

@@ -77,3 +77,35 @@ def test_route_uses_public_weight_owner_and_preserves_rows_on_upstream_failure()
             result=json.loads((await strikes.activity_accounts(request)).body)
             assert len(result['accounts'])==1 and result['weight_warning']
     asyncio.run(run())
+
+
+def test_replacement_filter_uses_owner_eligibility_and_departure_grace():
+    activity=[{'tag':'#PYY','current_clan_tag':None,'left_at':NOW}]
+    profile={'player_tag':'#PYY','departed_clan_tag':'#CLAN','replacement_listed':True,
+             'replacement_clan_tag':'#CLAN','replacement_priority':'high'}
+    clans=[{'tag':'#CLAN','name':'Family'}]
+    expired=family_activity_rows(activity,[profile],[],clans,replacements=[],now=NOW)[0]
+    assert not expired['marked_for_replacement'] and expired['priority'] is None
+    eligible={**profile,'replacement_listed':True,'active_strikes':0}
+    grace=family_activity_rows(activity,[profile],[],clans,replacements=[eligible],now=NOW)[0]
+    assert grace['marked_for_replacement'] and grace['priority']=='high'
+    assert grace['left_clan'] and grace['departed_at']==NOW
+
+
+def test_context_keeps_all_family_members_without_writes_and_reuses_eligibility():
+    import asyncio
+    from tests.test_strike_streaks import setup, PLAYER, CLAN, GUILD
+    from unittest.mock import AsyncMock
+    async def run():
+        db, ledger=setup()
+        db.clans.rows.clear()
+        await db.clans.insert_one({'_id':'family','tag':CLAN,'name':'Family'})
+        await db.clans.insert_one({'_id':'archived','tag':'#PYY','name':'Archived','archived':True})
+        await db.strike_profiles.insert_one({'_id':'profile','player_tag':PLAYER,'guild_id':GUILD,'current_clan_tag':CLAN})
+        ledger.replacement=AsyncMock(return_value=[{'player_tag':PLAYER}])
+        context=await ledger.activity_context(GUILD,[PLAYER])
+        assert [row['tag'] for row in context['clans']]==[CLAN]
+        assert len(context['profiles'])==1 and context['replacements']==[{'player_tag':PLAYER}]
+        ledger.replacement.assert_awaited_once_with(GUILD,limit=None)
+        assert len(db.strike_profiles.rows)==1 and not db.strike_records.rows
+    asyncio.run(run())

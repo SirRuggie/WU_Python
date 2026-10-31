@@ -3,7 +3,6 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import StrikesWorkspace from "./StrikesWorkspace";
-import ReplacementWorkspace from "./ReplacementWorkspace";
 
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({
@@ -105,75 +104,6 @@ it("shows the account-scoped streak independently of records and rejects late pr
     "Streak: 1 war played · 1 more to lose a strike",
   );
   expect(host.textContent).not.toContain("Streak: 5 wars played");
-  expect(
-    transport.mock.calls.every((call) => !call[1] || call[1] === "GET"),
-  ).toBe(true);
-});
-
-it("shows grace only for confirmed departures and names the last observed clan/time", async () => {
-  transport.mockResolvedValue({
-    clans: [],
-    groups: [
-      {
-        clan_tag: "#OLD",
-        clan_name: "Old Clan",
-        listed: 2,
-        at_three: 0,
-        chopping_block: 0,
-      },
-    ],
-    total: 2,
-    candidates: [
-      {
-        player_tag: "#LEFT",
-        player_name: "Departed",
-        active_strikes: 1,
-        clan_tag: "#OLD",
-        clan_name: "Old Clan",
-        departed: true,
-        last_seen_clan_tag: "#OLD",
-        last_seen_clan_name: "Observed Clan",
-        current_clan_tag: "#NEW",
-        current_clan_name: "New Clan",
-        last_seen_at: "2026-10-30T12:00:00Z",
-        clan_is_current: false,
-      },
-      {
-        player_tag: "#STALE",
-        player_name: "Stale roster",
-        active_strikes: 1,
-        clan_tag: "#OLD",
-        clan_name: "Old Clan",
-        clan_is_current: false,
-      },
-    ],
-  });
-  await act(async () =>
-    root.render(
-      <ReplacementWorkspace permissions={["strikes_remove"]} isOwner={false} />,
-    ),
-  );
-  await settle();
-  await act(async () =>
-    host
-      .querySelector<HTMLButtonElement>(".replacement-group-summary")!
-      .click(),
-  );
-  expect(host.querySelectorAll(".replacement-departure")).toHaveLength(1);
-  expect(host.textContent).toContain("Left Observed Clan");
-  expect(host.textContent).toContain("now in New Clan");
-  const departureDetails = host.querySelector(
-    ".replacement-departure details",
-  )!;
-  expect(departureDetails.hasAttribute("open")).toBe(false);
-  await act(async () =>
-    (departureDetails.querySelector("summary") as HTMLElement).click(),
-  );
-  expect(departureDetails.hasAttribute("open")).toBe(true);
-  expect(host.querySelector("time")?.getAttribute("datetime")).toBe(
-    "2026-10-30T12:00:00.000Z",
-  );
-  expect(host.querySelectorAll(".replacement-row")).toHaveLength(2);
   expect(
     transport.mock.calls.every((call) => !call[1] || call[1] === "GET"),
   ).toBe(true);

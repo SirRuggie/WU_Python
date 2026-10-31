@@ -254,21 +254,7 @@ export default function StrikeActivityRoster({
             <button onClick={() => change({ clans: [] })}>All clans</button>
           </fieldset>
         </details>
-        <fieldset className="strike-activity-status">
-          <legend>Status</legend>
-          {(["risk", "watch", "active"] as ActivityStatus[]).map((value) => (
-            <label key={value}>
-              <input
-                type="checkbox"
-                checked={filters.statuses.includes(value)}
-                onChange={() =>
-                  change({ statuses: toggle(filters.statuses, value) })
-                }
-              />
-              {activityStatusLabels[value]}
-            </label>
-          ))}
-        </fieldset>
+
         <label>
           <input
             type="checkbox"
@@ -291,12 +277,30 @@ export default function StrikeActivityRoster({
           <summary>
             More filters
             {filters.onlyStrikes ||
+            filters.statuses.length ||
             filters.townHalls.length ||
             filters.left !== "all"
               ? " · applied"
               : ""}
           </summary>
           <div className="strike-activity-more">
+            <fieldset className="strike-activity-status">
+              <legend>Status</legend>
+              {(["risk", "watch", "active"] as ActivityStatus[]).map(
+                (value) => (
+                  <label key={value}>
+                    <input
+                      type="checkbox"
+                      checked={filters.statuses.includes(value)}
+                      onChange={() =>
+                        change({ statuses: toggle(filters.statuses, value) })
+                      }
+                    />
+                    {activityStatusLabels[value]}
+                  </label>
+                ),
+              )}
+            </fieldset>
             <label>
               <input
                 type="checkbox"
