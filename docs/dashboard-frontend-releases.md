@@ -240,3 +240,31 @@ Public entry `index-DBoE0wgU.js`, SHA-256
 `d079b7fa7a53cf298c9828ba578f8dfd44dd85430bc8c8350b2235bca2b4c10c`,
 matched immutable assets. Claude read-only smoke169 passed at360px. See
 `command-triggers-review.md` for checks, backups, counts and guarded rollback.
+
+## Signup-cards-1 — October 31, 2026
+
+[PR #106](https://github.com/SirRuggie/WU_Python/pull/106), tag `signup-cards-1`,
+frontend `b8d7b6f800baa8588121e6839a46b85de60df86e` is live. Claude acceptance195
+and read-only production smoke196 passed. My signups owns the green/red signup
+cards; My clan keeps assignments. Desktop publication metadata stays inline.
+Clean tagged npm ci/build passed; reviewed revision passed1164 frontend tests,
+TypeScript and the complete layout suite. No service restart was needed.
+
+Public entry `index-DAigbCmj.js` SHA256
+`b3729886083302b9cb894e043ad8738e6a5811b66193528148c145abd35ff771`, index/CSS and
+MemberAssignments feature assets matched the release manifest. Backup and
+per-table count/hash evidence: `.local/signup-cards-release-evidence/` in the
+main repository (`dashboard.sqlite3`, `preflight.json`, `live.json`). SQLite
+backup integrity was OK; every table count and content hash remained unchanged.
+Backend PID256874 stayed unchanged at56c9ab4; both dashboard services were active.
+
+Smoke196 verified360 My signups lists all3 signed-up accounts and44 remaining,
+without Change signups or overflow; reads settle without a refetch loop. My clan
+has no signup cards, and Open Clan is visible at y472 with joining instructions
+present. At1440 the publication row stays inline. No live write test was sent.
+
+Retained frontend rollback: `56c9ab4613c7ec5c1d052e4de17c32837dca4a50`.
+Only at this release boundary, verify current resolves to b8d7b6f, then invoke
+`python3 /home/ruggie/.local/share/wu-dashboard/switch-release.py 56c9ab4613c7ec5c1d052e4de17c32837dca4a50`
+and verify public hashes against that manifest. Keep both immutable directories;
+frontend rollback requires no database restoration or service restart.
