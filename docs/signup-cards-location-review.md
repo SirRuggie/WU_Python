@@ -48,3 +48,16 @@ signup-card assertions now target My signups. Layout fixture ports can be overri
 to avoid existing review previews. No production ports, records or messages were
 used. Native links/buttons retain keyboard semantics and visible focus styles;
 this is not a complete screen-reader or physical-phone audit.
+
+Final results: 224 frontend test files / 1,162 tests passed. TypeScript and Vite
+build passed, as did the complete `test:layout` suite (including the new location
+gate, existing roster/member, moderation, weights, strikes, replacements, family
+and announcement gates). Scoped Prettier and `git diff --check` passed. Both
+required mutations were killed by behavior assertions. The first layout attempt
+used an occupied legacy staff fixture port; the final run used separate ports
+8915–8921 and exited successfully. No existing preview was stopped to free a port.
+The final 360px Open Clan button was at y=408 with height48, entirely visible.
+Four states at both widths were captured and visually inspected. Fixture dates
+exercise the existing late-placement guidance; unit tests also cover the future
+placement-date line. The 8914 preview serves `index-D9Eoul6Y.js`, SHA256
+`a0dcc3faa628166e33d103aa4c31a28cf2f72c08f9e8c9bfdaab9255eb7e8621`.
