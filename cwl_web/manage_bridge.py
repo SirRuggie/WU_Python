@@ -269,7 +269,8 @@ async def test_announcement(request):
     from .app import _require, _sid, _json, _store
     from .server_management import discord
     from utils.cwl_web_bridge import campaign_generation
-    actor = _require(request, 'editor')
+    from .roster_image_posts import staff
+    actor = staff(request, send=True)
     sid = _sid(request)
     cycle = _required_binding(request, sid)
     pool = _pool(request)

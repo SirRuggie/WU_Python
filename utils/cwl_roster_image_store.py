@@ -24,6 +24,23 @@ CREATE TABLE IF NOT EXISTS roster_image_requests (
  payload_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT, retry_after REAL, actor_id TEXT NOT NULL,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS roster_image_test_sequences (
+ request_id TEXT PRIMARY KEY,
+ season_id INTEGER NOT NULL REFERENCES seasons(id), pool TEXT NOT NULL,
+ target_version INTEGER NOT NULL, channel_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+ plan_json TEXT NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('ready','sending','failed','uncertain','complete')),
+ next_step INTEGER NOT NULL DEFAULT 0, error TEXT,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS roster_image_test_receipts (
+ request_id TEXT NOT NULL REFERENCES roster_image_test_sequences(request_id),
+ step INTEGER NOT NULL, nonce TEXT NOT NULL UNIQUE, message_id TEXT,
+ status TEXT NOT NULL CHECK(status IN ('sending','posted','failed','uncertain')),
+ error TEXT, PRIMARY KEY(request_id,step)
+);
+
 CREATE TABLE IF NOT EXISTS roster_image_sequences (
  sequence_id TEXT PRIMARY KEY,
  season_id INTEGER NOT NULL REFERENCES seasons(id),
@@ -88,6 +105,67 @@ def has_active_image_message(row):
 class RosterImageStore:
     def __init__(self, store):
         self.store = store
+
+    def prepare_test_sequence(self, *, request_id, sid, pool, version, channel, actor, plan):
+        """Freeze a test independently of production occurrence/post records."""
+        if (not isinstance(request_id, str) or not re.fullmatch(r'[a-f0-9]{24}', request_id)
+                or pool not in ('main', 'lazy') or type(version) is not int or version < 1
+                or not isinstance(channel, str) or not re.fullmatch(r'\d{15,22}', channel)
+                or not isinstance(actor, str) or not actor
+                or not isinstance(plan, list) or len(plan) < 2):
+            raise ImageConflict('Invalid full-test review')
+        if any(not isinstance(step, dict) or step.get('payload', {}).get('allowed_mentions') != {'parse': []}
+               for step in plan):
+            raise ImageConflict('Every test message must disable mentions')
+        frozen = json.dumps(plan, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        values = (sid, pool, version, channel, actor, frozen)
+        with self.store.tx() as db:
+            prior = db.execute('SELECT * FROM roster_image_test_sequences WHERE request_id=?', (request_id,)).fetchone()
+            if prior:
+                if tuple(prior[k] for k in ('season_id','pool','target_version','channel_id','actor_id','plan_json')) != values:
+                    raise ImageConflict('Test request belongs to a different review')
+                return dict(prior)
+            publication = db.execute('SELECT version FROM roster_publications WHERE season_id=? AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,)).fetchone()
+            if not publication or publication['version'] != version:
+                raise ImageConflict('Published roster changed; review the test again')
+            db.execute("INSERT INTO roster_image_test_sequences(request_id,season_id,pool,target_version,channel_id,actor_id,plan_json,status) VALUES(?,?,?,?,?,?,?,'ready')", (request_id, *values))
+        return self.test_sequence(request_id)
+
+    def test_sequence(self, request_id):
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_test_sequences WHERE request_id=?', (request_id,)).fetchone()
+            return dict(row) if row else None
+
+    def claim_test_step(self, request_id):
+        """Never replay an in-flight test after a crash or uncertain response."""
+        import hashlib
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_test_sequences WHERE request_id=?', (request_id,)).fetchone()
+            if not row or row['status'] != 'ready':
+                raise ImageConflict('Test is not ready; check its delivery before retrying')
+            step = row['next_step']
+            plan = json.loads(row['plan_json'])
+            if step >= len(plan):
+                raise ImageConflict('Test already completed')
+            nonce = hashlib.sha256(f'{request_id}:{step}'.encode()).hexdigest()[:24]
+            db.execute("INSERT INTO roster_image_test_receipts(request_id,step,nonce,status) VALUES(?,?,?,'sending')", (request_id, step, nonce))
+            db.execute("UPDATE roster_image_test_sequences SET status='sending',updated_at=CURRENT_TIMESTAMP WHERE request_id=?", (request_id,))
+            return {'step': step, 'nonce': nonce, 'item': plan[step]}
+
+    def finish_test_step(self, request_id, step, *, status, message_id=None, error=None):
+        if status not in ('posted', 'failed', 'uncertain'):
+            raise ImageConflict('Invalid test delivery result')
+        if status == 'posted' and (not isinstance(message_id, str) or not re.fullmatch(r'\d{15,22}', message_id)):
+            raise ImageConflict('A confirmed test message is required')
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_test_sequences WHERE request_id=?', (request_id,)).fetchone()
+            if not row or row['status'] != 'sending' or row['next_step'] != step:
+                raise ImageConflict('Test result no longer matches the active step')
+            db.execute("UPDATE roster_image_test_receipts SET status=?,message_id=?,error=? WHERE request_id=? AND step=? AND status='sending'", (status, message_id, error, request_id, step))
+            next_step = step + 1 if status == 'posted' else step
+            next_status = ('complete' if next_step == len(json.loads(row['plan_json'])) else 'ready') if status == 'posted' else status
+            db.execute('UPDATE roster_image_test_sequences SET status=?,next_step=?,error=?,updated_at=CURRENT_TIMESTAMP WHERE request_id=?', (next_status, next_step, error, request_id))
+        return self.test_sequence(request_id)
 
     def prepare_sequence(self, *, sequence_id, sid, pool, cycle, version,
                          generation, channel, actor, plan):
