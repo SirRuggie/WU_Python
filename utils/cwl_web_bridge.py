@@ -75,9 +75,14 @@ async def queue_roster_send(
     expected_channel_id: int,
     requested_by: int,
     retry_failed: bool = False,
+    sequence_id: str | None = None,
 ) -> dict:
     """Queue one reviewed native occurrence; never queue a second sent post."""
     key = request_id(guild_id, cycle, pool)
+    if sequence_id is not None and (
+        not isinstance(sequence_id, str) or not re.fullmatch(r'[a-f0-9]{24}', sequence_id)
+    ):
+        raise ValueError("Invalid image sequence ID")
     if publication_version < 1 or requested_by < 1 or expected_channel_id < 1:
         raise ValueError("A published roster, actor, and channel are required")
     loaded = await cwl_campaign.load_campaign(mongo, guild_id, cycle)
@@ -105,6 +110,7 @@ async def queue_roster_send(
                 "status": "pending", "publication_version": publication_version,
                 "generation": expected_generation, "channel_id": channel,
                 "requested_by": requested_by, "updated_at": stamp,
+                "sequence_id": sequence_id,
             }, "$unset": {"error": "", "receipt": "", "started_at": ""}},
         )
         if not result.matched_count:
@@ -119,6 +125,7 @@ async def queue_roster_send(
                     "publication_version": publication_version,
                     "generation": expected_generation, "channel_id": channel,
                     "requested_by": requested_by, "created_at": stamp,
+                    "sequence_id": sequence_id,
                     "updated_at": stamp,
                 }},
                 upsert=True,

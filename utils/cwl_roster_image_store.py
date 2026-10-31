@@ -1,5 +1,6 @@
 """Storage owner for global image destinations and per-clan delivery receipts."""
 import json
+import re
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roster_image_channels (
@@ -23,6 +24,21 @@ CREATE TABLE IF NOT EXISTS roster_image_requests (
  payload_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT, retry_after REAL, actor_id TEXT NOT NULL,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS roster_image_sequences (
+ sequence_id TEXT PRIMARY KEY,
+ season_id INTEGER NOT NULL REFERENCES seasons(id),
+ pool TEXT NOT NULL CHECK(pool IN ('main','lazy')),
+ cycle TEXT NOT NULL, target_version INTEGER NOT NULL,
+ generation TEXT NOT NULL, channel_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+ plan_json TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'awaiting_announcement'
+   CHECK(status IN ('awaiting_announcement','ready','stopped','complete')),
+ announcement_message_id TEXT,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(season_id,pool), UNIQUE(cycle,pool)
+);
+
 """
 
 
@@ -54,6 +70,107 @@ def has_active_image_message(row):
 class RosterImageStore:
     def __init__(self, store):
         self.store = store
+
+    def prepare_sequence(self, *, sequence_id, sid, pool, cycle, version,
+                         generation, channel, actor, plan):
+        """Freeze reviewed text/render inputs before queuing the announcement.
+
+        The native bridge will carry sequence_id so an older announcement cannot
+        unlock a newly created sequence. This method makes no external calls.
+        PNGs are regenerated from the immutable publication, never stored here.
+        """
+        if (not isinstance(sequence_id, str)
+                or not re.fullmatch(r'[a-f0-9]{24}', sequence_id)
+                or pool not in ('main', 'lazy')
+                or not re.fullmatch(r'20\d\d-(?:0[1-9]|1[0-2])', cycle)
+                or not re.fullmatch(r'\d{15,22}', channel)
+                or type(version) is not int or version < 1
+                or not isinstance(generation, str) or not generation
+                or not isinstance(actor, str) or not actor):
+            raise ImageConflict('Invalid reviewed sequence')
+        # JSON serialization rejects bytes, including accidental PNG payloads.
+        frozen = json.dumps(plan, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        expected = (sid, pool, cycle, version, generation, channel, actor, frozen)
+        with self.store.tx() as db:
+            prior = db.execute(
+                'SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                (sequence_id,),
+            ).fetchone()
+            if prior:
+                actual = tuple(prior[k] for k in (
+                    'season_id', 'pool', 'cycle', 'target_version', 'generation',
+                    'channel_id', 'actor_id', 'plan_json',
+                ))
+                if actual != expected:
+                    raise ImageConflict('Sequence ID belongs to a different review')
+                return dict(prior)
+            existing = db.execute(
+                'SELECT sequence_id FROM roster_image_sequences '
+                'WHERE (season_id=? AND pool=?) OR (cycle=? AND pool=?)',
+                (sid, pool, cycle, pool),
+            ).fetchone()
+            if existing:
+                raise ImageConflict('This pool already has a sequence; refresh its status')
+            season = db.execute('SELECT status FROM seasons WHERE id=?', (sid,)).fetchone()
+            latest = db.execute(
+                'SELECT version FROM roster_publications WHERE season_id=? '
+                'AND withdrawn_at IS NULL ORDER BY version DESC LIMIT 1', (sid,),
+            ).fetchone()
+            if not season or season['status'] != 'draft' or not latest or latest['version'] != version:
+                raise ImageConflict('Published roster changed; refresh and review')
+            db.execute(
+                'INSERT INTO roster_image_sequences(sequence_id,season_id,pool,cycle,'
+                'target_version,generation,channel_id,actor_id,plan_json) '
+                'VALUES(?,?,?,?,?,?,?,?,?)', (sequence_id, *expected),
+            )
+            return dict(db.execute(
+                'SELECT * FROM roster_image_sequences WHERE sequence_id=?', (sequence_id,),
+            ).fetchone())
+
+    def sequence(self, sequence_id):
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                             (sequence_id,)).fetchone()
+            return dict(row) if row else None
+
+    def confirm_sequence_announcement(self, sequence_id, bridge):
+        """Unlock only from this job's matching, confirmed native receipt.
+
+        The caller supplies a server-read bridge row, never browser evidence.
+        A bare sent-occurrence marker without a destination/message is insufficient.
+        """
+        with self.store.tx() as db:
+            row = db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                             (sequence_id,)).fetchone()
+            if not row:
+                raise ImageConflict('Sequence not found')
+            receipt = bridge.get('receipt') or {}
+            matches = (
+                bridge.get('sequence_id') == sequence_id
+                and bridge.get('status') == 'sent'
+                and bridge.get('cycle') == row['cycle']
+                and bridge.get('pool') == row['pool']
+                and bridge.get('generation') == row['generation']
+                and bridge.get('publication_version') == row['target_version']
+                and str(bridge.get('channel_id')) == row['channel_id']
+                and str(bridge.get('requested_by')) == row['actor_id']
+                and receipt.get('status') == 'sent'
+                and receipt.get('occurrence_id') == f"{row['cycle']}|roster|{row['pool']}"
+                and str(receipt.get('channel_id')) == row['channel_id']
+                and bool(receipt.get('message_id'))
+            )
+            if not matches:
+                raise ImageConflict('Announcement is not confirmed for this sequence')
+            message = str(receipt['message_id'])
+            if row['announcement_message_id'] and row['announcement_message_id'] != message:
+                raise ImageConflict('Announcement receipt changed; check before continuing')
+            db.execute(
+                "UPDATE roster_image_sequences SET status='ready',announcement_message_id=?,"
+                "updated_at=CURRENT_TIMESTAMP WHERE sequence_id=? AND status='awaiting_announcement'",
+                (message, sequence_id),
+            )
+            return dict(db.execute('SELECT * FROM roster_image_sequences WHERE sequence_id=?',
+                                   (sequence_id,)).fetchone())
 
     def channels(self):
         with self.store.tx() as db:

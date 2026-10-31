@@ -380,3 +380,26 @@ def test_revoked_roster_sender_never_reaches_discord():
         assert result['status'] == 'failed'
         sender.assert_not_awaited()
     run(scenario())
+
+
+def test_native_queue_carries_sequence_identity_without_reusing_sent_occurrence():
+    async def scenario():
+        mongo = MemoryMongo()
+        loaded = await cwl_campaign.load_campaign(mongo, GUILD, CYCLE)
+        arguments = settings(loaded)
+        row = await cwl_web_bridge.queue_roster_send(
+            mongo, **arguments, sequence_id='a' * 24,
+        )
+        assert row['sequence_id'] == 'a' * 24
+        with pytest.raises(cwl_web_bridge.BridgeConflict):
+            await cwl_web_bridge.queue_roster_send(mongo, **arguments, sequence_id='b' * 24)
+        await cwl_campaign.record_delivery(mongo, GUILD, CYCLE, {
+            'occurrence_id': cwl_campaign.occurrence_id(CYCLE, 'roster', 'main'),
+            'message_key': 'roster', 'variant': 'main', 'status': 'sent',
+            'channel_id': row['channel_id'], 'message_id': 123,
+        })
+        with pytest.raises(cwl_web_bridge.BridgeConflict):
+            await cwl_web_bridge.queue_roster_send(
+                mongo, **arguments, sequence_id='b' * 24, retry_failed=True,
+            )
+    asyncio.run(scenario())
