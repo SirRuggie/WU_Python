@@ -66,7 +66,7 @@ def test_route_uses_public_weight_owner_and_preserves_rows_on_upstream_failure()
         activity=[{'tag':'#PYY','name':'Healthy','current_clan_tag':'#CLAN','last_seen_at':NOW}]
         weights = AsyncMock(return_value={'#PYY':{'weight':149000}})
         with patch.object(strikes.shared,'mongo',mongo), patch.object(strikes,'service',AsyncMock(return_value=ledger)), \
-             patch('utils.player_activity_store.PlayerActivityStore.all_players',AsyncMock(return_value=activity)), \
+             patch('utils.player_activity_store.PlayerActivityStore.overview',AsyncMock(return_value=activity)), \
              patch.object(clan_weights,'source_weights',weights), \
              patch.object(clan_weights,'overlay_accounts',lambda store,payload: payload):
             result=json.loads((await strikes.activity_accounts(request)).body)
@@ -109,3 +109,16 @@ def test_context_keeps_all_family_members_without_writes_and_reuses_eligibility(
         ledger.replacement.assert_awaited_once_with(GUILD,limit=None)
         assert len(db.strike_profiles.rows)==1 and not db.strike_records.rows
     asyncio.run(run())
+
+
+def test_activity_overview_projects_out_the_large_unit_baseline():
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import Mock, AsyncMock
+    from utils.player_activity_store import PlayerActivityStore
+    collection=SimpleNamespace(find=Mock(return_value=SimpleNamespace(to_list=AsyncMock(return_value=[]))))
+    asyncio.run(PlayerActivityStore(SimpleNamespace(player_activity=collection)).overview())
+    query, fields=collection.find.call_args.args
+    assert query=={} and fields['baseline.townHallLevel']==1
+    assert 'baseline' not in fields and 'active_days' not in fields
+    assert fields['raid_weekends']==1 and fields['last_seen_at']==1

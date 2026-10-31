@@ -338,7 +338,7 @@ async def activity_accounts(request):
     from utils.player_activity_overview import family_activity_rows
     async with shared.mongo(request) as db:
         ledger = await service(request, db)
-        activity = await PlayerActivityStore(db).all_players()
+        activity = await PlayerActivityStore(db).overview()
         context = await ledger.activity_context(GUILD_ID, [row['tag'] for row in activity])
     rows = family_activity_rows(activity, **context)
     weight_warning = None

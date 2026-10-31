@@ -122,3 +122,68 @@ it("permission loss clears loaded protected rows", async () => {
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(0);
   expect(host.querySelector("[role=alert]")).not.toBeNull();
 });
+
+it("loads recruit matches only on request and ignores a response after the weight changes", async () => {
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  const disclosure = [...host.querySelectorAll("details")].find(
+    (node) =>
+      node.querySelector("summary")?.textContent === "Match a recruit’s weight",
+  )!;
+  expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    disclosure.open = true;
+    disclosure.dispatchEvent(new Event("toggle"));
+  });
+  let finish!: (response: Response) => void;
+  vi.mocked(fetch).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const input = host.querySelector<HTMLInputElement>(
+    ".strike-activity-recruit input",
+  )!;
+  async function weight(value: string) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+  await weight("149");
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent === "Find closest weights")!
+      .click(),
+  );
+  expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+  await weight("150");
+  await act(async () =>
+    finish(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              player_tag: "#PYY",
+              player_name: "Stale match",
+              weight: 149000,
+              clan_name: "Family",
+            },
+          ],
+        }),
+      ),
+    ),
+  );
+  expect(host.textContent).not.toContain("Stale match");
+  expect(input.value).toBe("150");
+  expect(
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === "Find closest weights",
+    )!.disabled,
+  ).toBe(false);
+});

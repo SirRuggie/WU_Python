@@ -15,7 +15,10 @@ fs.mkdirSync(output, { recursive: true });
   const measurements = [];
   for (const count of [26, 65, 125])
     for (const [width, height] of [
+      [320, 800],
       [360, 800],
+      [390, 800],
+      [360, 500],
       [1440, 1000],
     ]) {
       const page = await browser.newPage({ viewport: { width, height } }),
@@ -68,7 +71,7 @@ fs.mkdirSync(output, { recursive: true });
         );
         assert(measure.rowsAligned, "strike count stays beside identity");
         measurements.push({ count, width, name, ...measure });
-        if (count === 125)
+        if (count === 125 && (height === 800 || width === 1440))
           await page.screenshot({
             path: path.join(output, `${width}-${name}.png`),
             fullPage: name === "all-chips",

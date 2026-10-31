@@ -484,6 +484,8 @@ function RecruitWeightTool({
       const data = await api<{ candidates: typeof matches }>(
         `/strikes/replacements?weight=${Math.round(amount)}&limit=3`,
       );
+      if (!Array.isArray(data.candidates))
+        throw new Error("Weight matches are incomplete. Try again.");
       if (id === current.current) setMatches(data.candidates);
     } catch (cause) {
       if (id === current.current) {
@@ -504,7 +506,13 @@ function RecruitWeightTool({
         <input
           inputMode="decimal"
           value={weight}
-          onChange={(event) => setWeight(event.target.value)}
+          onChange={(event) => {
+            current.current++;
+            setBusy(false);
+            setMatches([]);
+            setError("");
+            setWeight(event.target.value);
+          }}
           placeholder="149 or 149000"
         />
       </label>

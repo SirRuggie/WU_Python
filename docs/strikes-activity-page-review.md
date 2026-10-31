@@ -16,7 +16,8 @@ request. Its results open the same account detail.
 `GET /api/cwl/strikes/accounts?activity=true` uses the existing strikes-read grant;
 there is no new write route. Its one response contains every current family
 account and recently departed tracked accounts, including accounts without
-strikes. The activity owner supplies bounded snapshots; the strike ledger supplies
+strikes. The activity owner projects page fields and the town-hall scalar, excluding the
+large per-unit baseline from this read; the strike ledger supplies
 retained records, profiles and its public replacement eligibility, preserving
 original-clan departure grace. Current weights use the existing public weight
 service and saved-weight overlay. An upstream outage preserves the roster and
