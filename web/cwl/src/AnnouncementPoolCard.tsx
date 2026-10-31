@@ -15,6 +15,7 @@ export default function AnnouncementPoolCard({
   editable,
   canSend,
   retry,
+  sequence,
   onPreview,
   onEdit,
   onSend,
@@ -29,6 +30,7 @@ export default function AnnouncementPoolCard({
   editable: boolean;
   canSend: boolean;
   retry: boolean;
+  sequence?: ReactNode;
   onPreview: () => void;
   onEdit: (trigger: HTMLElement) => void;
   onSend: () => void;
@@ -39,6 +41,7 @@ export default function AnnouncementPoolCard({
       <div className="announcement-pool-status" role="status">
         {status}
       </div>
+      {sequence}
       <p>
         {channel} · {roles}
       </p>

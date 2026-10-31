@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Pool } from "./api";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { Button } from "./rosterUi/primitives";
-import ChannelCombobox from "./ChannelCombobox";
 import type { AnnouncementChannel } from "./announcements";
 import ConfirmDialog from "./ConfirmDialog";
 import { hiddenPublicationStatus } from "./publicationStatus";
@@ -14,7 +13,6 @@ import {
   imagePoolStatus,
   imageRowStatus,
   runImageJobs,
-  type ImageChannel,
   type ImageData,
   type ImageJob,
 } from "./rosterImagePosting";
@@ -30,11 +28,6 @@ export default function ClanRosterImages({
   const canSend = useDashboardPermission("cwl_send");
   const [data, setData] = useState<ImageData | null>(null),
     [channels, setChannels] = useState<AnnouncementChannel[]>([]);
-  const [saved, setSaved] = useState<ImageChannel[]>([]),
-    [chosen, setChosen] = useState<Record<Pool, string>>({
-      main: "",
-      lazy: "",
-    });
   const [error, setError] = useState(""),
     [progress, setProgress] = useState(""),
     [busy, setBusy] = useState(false);
@@ -69,20 +62,10 @@ export default function ClanRosterImages({
       if (active.current === generation) setError(e.message);
     });
     if (canSend)
-      void Promise.all([
-        api<{ channels: ImageChannel[] }>("/roster-image-channels"),
-        api<{ channels: AnnouncementChannel[] }>("/announcement-channels"),
-      ])
-        .then(([config, choices]) => {
+      void api<{ channels: AnnouncementChannel[] }>("/announcement-channels")
+        .then((choices) => {
           if (active.current !== generation) return;
-          setSaved(config.channels);
           setChannels(choices.channels);
-          setChosen({
-            main:
-              config.channels.find((c) => c.pool === "main")?.channel_id || "",
-            lazy:
-              config.channels.find((c) => c.pool === "lazy")?.channel_id || "",
-          });
         })
         .catch((e) => {
           if (active.current === generation) setError(e.message);
@@ -91,28 +74,6 @@ export default function ClanRosterImages({
       active.current++;
     };
   }, [seasonId, version, canSend]);
-  async function save(pool: Pool) {
-    if (!canSend || running.current) return;
-    running.current = true;
-    setBusy(true);
-    setError("");
-    const generation = active.current;
-    try {
-      const row = await api<ImageChannel>("/roster-image-channels", "PUT", {
-        pool,
-        channel_id: chosen[pool],
-      });
-      if (generation === active.current)
-        setSaved((old) => [...old.filter((c) => c.pool !== pool), row]);
-    } catch (e) {
-      if (generation === active.current) setError((e as Error).message);
-    } finally {
-      if (generation === active.current) {
-        running.current = false;
-        setBusy(false);
-      }
-    }
-  }
   async function start() {
     if (!permission.current || running.current || !confirm || !data?.published)
       return;
@@ -133,6 +94,18 @@ export default function ClanRosterImages({
         },
         completed: () => reload(generation),
       });
+      if (jobs[0]?.operation !== "test") {
+        for (const pool of new Set(jobs.map((job) => job.clan.pool))) {
+          if (generation !== active.current || !permission.current) break;
+          const closing = data.closings?.[pool];
+          if (closing)
+            await api(
+              `/seasons/${seasonId}/manage-bridge/${pool}/sequence/closing/update`,
+              "POST",
+              closing,
+            );
+        }
+      }
     } catch (e) {
       if (generation === active.current) {
         setError((e as Error).message);
@@ -146,7 +119,15 @@ export default function ClanRosterImages({
     }
   }
   function open(jobs: ImageJob[], text: string) {
-    if (canSend && !running.current && jobs.length) setConfirm({ jobs, text });
+    if (canSend && !running.current && jobs.length)
+      setConfirm({
+        jobs,
+        text:
+          jobs[0]?.operation === "test"
+            ? text
+            : text +
+              " The closing note will also be checked; if Discord confirms it was deleted, it will be reposted without pings.",
+      });
   }
   return (
     <section className="roster-image-posting roster-ui">
@@ -173,8 +154,17 @@ export default function ClanRosterImages({
       ) : (
         <>
           {(["main", "lazy"] as Pool[]).map((pool) => {
-            const config = saved.find((c) => c.pool === pool),
-              status = imagePoolStatus(data, pool);
+            const destination = data.destinations?.[pool];
+            const config = destination?.channel_id
+              ? {
+                  channel_id: destination.channel_id,
+                  channel_name:
+                    channels.find(
+                      (channel) => channel.id === destination.channel_id,
+                    )?.name || destination.channel_id,
+                }
+              : undefined;
+            const status = imagePoolStatus(data, pool);
             const jobs = imageJobs(
               data,
               pool,
@@ -200,48 +190,33 @@ export default function ClanRosterImages({
             return (
               <section className="image-pool" key={pool}>
                 <h3>{pool === "main" ? "Main CWL" : "Lazy CWL"}</h3>
-                {canSend && (
-                  <>
-                    <ChannelCombobox
-                      label="Image channel"
-                      channels={channels}
-                      value={chosen[pool]}
-                      disabled={busy}
-                      onChange={(value) =>
-                        setChosen((old) => ({ ...old, [pool]: value }))
-                      }
-                    />
-                    <Button
-                      disabled={
-                        busy ||
-                        !chosen[pool] ||
-                        chosen[pool] === config?.channel_id
-                      }
-                      onClick={() => void save(pool)}
-                    >
-                      Save channel
-                    </Button>
-                    <p className="image-muted">
-                      {config
-                        ? `#${config.channel_name} · used every season until changed`
-                        : "Choose a channel before posting."}
-                    </p>
-                  </>
+                <p className="image-muted">
+                  Images follow the roster announcement in its channel. Existing
+                  messages stay in their original channels.
+                </p>
+                {destination?.reason && <p>{destination.reason}</p>}
+                {data.posts.some((post) => post.pool === pool) && (
+                  <p>New clans are appended after the closing message.</p>
                 )}
                 <p role="status">{status.label}</p>
-                {canSend && status.action && (
-                  <Button
-                    variant="primary"
-                    disabled={
-                      busy || !jobs.length || jobs.some((j) => !j.channel)
-                    }
-                    onClick={() =>
-                      open(jobs, imageConfirm(jobs, config?.channel_name || ""))
-                    }
-                  >
-                    {status.action}
-                  </Button>
-                )}
+                {canSend &&
+                  status.action &&
+                  !status.action.startsWith("Post ") && (
+                    <Button
+                      variant="primary"
+                      disabled={
+                        busy || !jobs.length || jobs.some((j) => !j.channel)
+                      }
+                      onClick={() =>
+                        open(
+                          jobs,
+                          imageConfirm(jobs, config?.channel_name || ""),
+                        )
+                      }
+                    >
+                      {status.action}
+                    </Button>
+                  )}
                 <details>
                   <summary>Clans · {rows.length}</summary>
                   <ul className="image-clan-list">
@@ -285,14 +260,14 @@ export default function ClanRosterImages({
                             post.error === "Message was deleted in Discord" &&
                             clan.pages > 0 && (
                               <Button
-                                disabled={busy || !config?.channel_id}
+                                disabled={busy || !post.channel_id}
                                 onClick={() =>
                                   open(
                                     [
                                       {
                                         clan,
                                         operation: "post",
-                                        channel: config!.channel_id,
+                                        channel: post.channel_id,
                                         version: data.published!.version,
                                       },
                                     ],
@@ -301,11 +276,11 @@ export default function ClanRosterImages({
                                         {
                                           clan,
                                           operation: "post",
-                                          channel: config!.channel_id,
+                                          channel: post.channel_id,
                                           version: data.published!.version,
                                         },
                                       ],
-                                      config!.channel_name,
+                                      config?.channel_name || post.channel_id,
                                     ),
                                   )
                                 }
@@ -322,10 +297,7 @@ export default function ClanRosterImages({
                                     {
                                       clan,
                                       operation: recoveryOperation!,
-                                      channel:
-                                        post.operation === "post"
-                                          ? config?.channel_id || ""
-                                          : post.channel_id,
+                                      channel: post.channel_id,
                                       version: data.published!.version,
                                       confirmDuplicate:
                                         recoveryOperation === "post",

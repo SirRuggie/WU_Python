@@ -1863,6 +1863,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app = web.Application(middlewares=[diagnostics, errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
     from .server_management import mongo_lifecycle
     app.cleanup_ctx.append(mongo_lifecycle)
+    from .roster_sequence_jobs import lifecycle as roster_sequence_lifecycle
+    app.cleanup_ctx.append(roster_sequence_lifecycle)
     app["store"] = Store(db_path, durability=durability)
     app["live_access"] = live_access
     if dev_fixture and providers is None:

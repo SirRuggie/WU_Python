@@ -1,4 +1,4 @@
-import type { Pool } from './api'
+import type { Pool } from "./api";
 export type ManageDelivery = {
   publication_version?: number | null;
   status: "pending" | "sending" | "sent" | "failed" | "uncertain" | "stale";
@@ -9,26 +9,113 @@ export type ManageDelivery = {
   started_at?: string | null;
   sent_at?: string | null;
 };
-export type ManageButton = { label: string; url: string; emoji?: string | null }
-export type ManagePool = { channel_id: string | null; title: string; body: string; media_url: string | null; buttons: ManageButton[]; role_ids: string[]; enabled: boolean; delivery: ManageDelivery | null; roster_url: string | null }
-export type ManageBridge = { cycle: string | null; generation: string | null; worker_ready: boolean; pools: Record<Pool, ManagePool>; published_version: number | null }
-const emptyPool = (): ManagePool => ({ channel_id: null, title: '', body: '', media_url: null, buttons: [], role_ids: [], enabled: false, delivery: null, roster_url: null })
+export type ImageSequence = {
+  sequence_id: string | null;
+  status:
+    | "not_started"
+    | "awaiting_announcement"
+    | "ready"
+    | "stopped"
+    | "complete";
+  announcement_confirmed: boolean;
+  version: number | null;
+  error: string | null;
+  channel_id: string | null;
+  clans: {
+    tag: string;
+    name: string;
+    pages: number;
+    status: string;
+    request_id?: string;
+  }[];
+  published_clans?: { tag: string; name: string; pages: number }[];
+  closing?: { request_id: string; status: string; error: string | null } | null;
+};
+export type ManageButton = {
+  label: string;
+  url: string;
+  emoji?: string | null;
+};
+export type ManagePool = {
+  sequence?: ImageSequence;
+  channel_id: string | null;
+  title: string;
+  body: string;
+  media_url: string | null;
+  buttons: ManageButton[];
+  role_ids: string[];
+  enabled: boolean;
+  delivery: ManageDelivery | null;
+  roster_url: string | null;
+};
+export type ManageBridge = {
+  cycle: string | null;
+  generation: string | null;
+  worker_ready: boolean;
+  pools: Record<Pool, ManagePool>;
+  published_version: number | null;
+};
+const emptyPool = (): ManagePool => ({
+  channel_id: null,
+  title: "",
+  body: "",
+  media_url: null,
+  buttons: [],
+  role_ids: [],
+  enabled: false,
+  delivery: null,
+  roster_url: null,
+});
 export function normalizeManageBridge(value: ManageBridge): ManageBridge {
-  return { ...value, pools: { main: value.pools?.main || emptyPool(), lazy: value.pools?.lazy || emptyPool() } }
+  return {
+    ...value,
+    pools: {
+      main: value.pools?.main || emptyPool(),
+      lazy: value.pools?.lazy || emptyPool(),
+    },
+  };
 }
-export function canQueueAnnouncement(bridge: ManageBridge | null, pool: Pool, channelId: string, unsaved: boolean): boolean {
-  if (!bridge?.cycle || !bridge.generation || !bridge.worker_ready || !bridge.published_version || unsaved) return false
-  const entry = bridge.pools[pool]
-  if (!entry.enabled || !entry.channel_id || entry.channel_id !== channelId) return false
-  return !entry.delivery || entry.delivery.status === 'failed' || entry.delivery.status === 'stale'
+export function canQueueAnnouncement(
+  bridge: ManageBridge | null,
+  pool: Pool,
+  channelId: string,
+  unsaved: boolean,
+): boolean {
+  if (
+    !bridge?.cycle ||
+    !bridge.generation ||
+    !bridge.worker_ready ||
+    !bridge.published_version ||
+    unsaved
+  )
+    return false;
+  const entry = bridge.pools[pool];
+  if (!entry.enabled || !entry.channel_id || entry.channel_id !== channelId)
+    return false;
+  return (
+    !entry.delivery ||
+    entry.delivery.status === "failed" ||
+    entry.delivery.status === "stale"
+  );
 }
 export function shouldPollBridge(bridge: ManageBridge | null): boolean {
-  return !!bridge && (['main', 'lazy'] as Pool[]).some(pool => ['pending', 'sending'].includes(bridge.pools[pool].delivery?.status || ''))
+  return (
+    !!bridge &&
+    (["main", "lazy"] as Pool[]).some(
+      (pool) =>
+        ["pending", "sending"].includes(
+          bridge.pools[pool].delivery?.status || "",
+        ) ||
+        ["awaiting_announcement", "ready"].includes(
+          bridge.pools[pool].sequence?.status || "",
+        ),
+    )
+  );
 }
 export function dashboardRosterUrl(origin: string, seasonId: string): string {
-  const url = new URL('/assignments', origin)
-  url.searchParams.set('season', seasonId)
-  return url.toString()
+  const url = new URL("/assignments", origin);
+  url.searchParams.set("season", seasonId);
+  return url.toString();
 }
 
 export function isSecureOrigin(): boolean {

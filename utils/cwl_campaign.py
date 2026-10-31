@@ -1147,6 +1147,64 @@ async def record_delivery(mongo, guild_id: int, cycle: str, entry: dict):
     await mongo.bot_config.update_one({"_id": cycle_id(guild_id, cycle)}, update, upsert=True)
 
 
+def roster_delivery_nonce(guild_id: int, occurrence: str, deliveries: list[dict]) -> str:
+    """Keep retries stable, but give an explicitly reopened receipt a fresh nonce."""
+    import hashlib
+    deleted = [item for item in deliveries if item.get("occurrence_id") == occurrence
+               and item.get("status") == "deleted_confirmed"]
+    identity = f"{guild_id}|{occurrence}"
+    if deleted:
+        identity += f"|deleted:{deleted[-1]['message_id']}"
+    return hashlib.blake2s(identity.encode("utf-8"), digest_size=10).hexdigest()
+
+
+async def reopen_deleted_roster_delivery(
+    mongo, guild_id: int, cycle: str, pool: str, *,
+    channel_id: int, message_id: int, actor_id: int,
+) -> dict:
+    """Archive an explicitly reviewed, confirmed-deleted roster occurrence.
+
+    The caller must verify Discord 404/10008 and receive explicit resend
+    confirmation first. This function never sends or schedules a notification.
+    Compare the complete receipt lists so a concurrent delivery cannot be erased.
+    """
+    if pool not in AUDIENCES or min(channel_id, message_id, actor_id) < 1:
+        raise ValueError("A roster pool, destination, message and actor are required")
+    key = cycle_id(guild_id, cycle)
+    row = await mongo.bot_config.find_one({"_id": key}) or {}
+    occurrence = occurrence_id(cycle, "roster", pool)
+    deliveries = copy.deepcopy(row.get("deliveries", []))
+    sent = [item for item in deliveries
+            if item.get("occurrence_id") == occurrence and item.get("status") == "sent"]
+    def matches(item):
+        return (str(item.get("channel_id")), str(item.get("message_id"))) == (str(channel_id), str(message_id))
+    if not sent:
+        previous = [item for item in deliveries if item.get("occurrence_id") == occurrence
+                    and item.get("status") == "deleted_confirmed" and matches(item)]
+        if previous and occurrence not in row.get("sent_occurrences", []):
+            return previous[-1]
+        raise ValueError("No matching sent announcement receipt; refresh before resending")
+    if not matches(sent[-1]):
+        raise ValueError("The announcement receipt changed; refresh before resending")
+    # Multiple live receipts are ambiguous: never discard another confirmed send.
+    if any(not matches(item) for item in sent):
+        raise ValueError("Multiple announcement receipts require reconciliation")
+    archived = None
+    for item in deliveries:
+        if item.get("occurrence_id") == occurrence and item.get("status") == "sent":
+            item.update(status="deleted_confirmed", deleted_at=_utcnow(), deleted_by=int(actor_id))
+            archived = item
+    query = {"_id": key, "deliveries": row.get("deliveries", [])}
+    query["sent_occurrences"] = row["sent_occurrences"] if "sent_occurrences" in row else {"$exists": False}
+    result = await mongo.bot_config.update_one(query, {"$set": {
+        "deliveries": deliveries,
+        "sent_occurrences": [value for value in row.get("sent_occurrences", []) if value != occurrence],
+    }})
+    if not result.matched_count:
+        raise ValueError("Announcement receipts changed; refresh before resending")
+    return archived
+
+
 async def history(mongo, guild_id: int, cycle: str | None = None, limit: int = 25) -> list[dict]:
     loaded = await load_campaign(mongo, guild_id, cycle)
     row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, loaded["cycle"])}) or {}

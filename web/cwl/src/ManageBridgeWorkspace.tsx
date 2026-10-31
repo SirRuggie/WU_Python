@@ -1,3 +1,6 @@
+import AnnouncementDeletedRecovery from "./AnnouncementDeletedRecovery";
+import AnnouncementFullTest from "./AnnouncementFullTest";
+import AnnouncementSequenceStatus from "./AnnouncementSequenceStatus";
 import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
 import AnnouncementPoolCard from "./AnnouncementPoolCard";
 import AnnouncementEditor from "./AnnouncementEditor";
@@ -647,6 +650,68 @@ export default function ManageBridgeWorkspace({
                     <AnnouncementPoolCard
                       key={pool}
                       pool={pool}
+                      sequence={
+                        <>
+                          <AnnouncementSequenceStatus
+                            key={`${seasonId}:${pool}`}
+                            seasonId={seasonId}
+                            pool={pool}
+                            sequence={entry.sequence}
+                            announcementSent={delivery?.status === "sent"}
+                            channelName={
+                              channels.find(
+                                (channel) =>
+                                  channel.id === entry.sequence?.channel_id,
+                              )?.name
+                                ? `#${channels.find((channel) => channel.id === entry.sequence?.channel_id)!.name}`
+                                : "the reviewed channel"
+                            }
+                            canSend={canManage && !busy}
+                            onRefresh={() => load(false)}
+                          />
+                          {delivery?.status === "sent" && (
+                            <AnnouncementDeletedRecovery
+                              key={`recovery:${seasonId}:${pool}`}
+                              seasonId={seasonId}
+                              pool={pool}
+                              cycle={bridge.cycle || ""}
+                              version={bridge.published_version}
+                              generation={bridge.generation || ""}
+                              channel={drafts[pool].channel_id}
+                              channelName={
+                                channels.find(
+                                  (channel) =>
+                                    channel.id === drafts[pool].channel_id,
+                                )?.name || drafts[pool].channel_id
+                              }
+                              roleNames={entry.role_ids.map(
+                                (id) =>
+                                  roles.items.find((role) => role.id === id)
+                                    ?.name || `Role ${id}`,
+                              )}
+                              clans={
+                                entry.sequence?.published_clans?.map(
+                                  (clan) => ({
+                                    ...clan,
+                                    status: "not_started",
+                                  }),
+                                ) || []
+                              }
+                              preview={preview(pool)}
+                              allowed={
+                                canManage &&
+                                !busy &&
+                                !loading &&
+                                !bridgeError &&
+                                !channelsError &&
+                                !unsaved(pool) &&
+                                draftGeneration === bridge.generation
+                              }
+                              onQueued={() => void load(false)}
+                            />
+                          )}
+                        </>
+                      }
                       enabled={entry.enabled}
                       changed={unsaved(pool)}
                       editable={canManage}
@@ -784,6 +849,7 @@ export default function ManageBridgeWorkspace({
                 roles.items.find((role) => role.id === id)?.name ||
                 `Role ${id}`,
             ),
+            clans: bridge.pools[pool].sequence?.published_clans,
             preview: preview(pool),
           }))}
           onCancel={() => setSendReview(null)}
@@ -823,6 +889,28 @@ export default function ManageBridgeWorkspace({
             !bridgeError &&
             !channelsError &&
             draftGeneration === bridge.generation
+          }
+          fullTest={
+            <AnnouncementFullTest
+              key={`${seasonId}:${editor.pool}`}
+              seasonId={seasonId}
+              pool={editor.pool}
+              version={bridge.published_version}
+              generation={bridge.generation || ""}
+              draft={drafts[editor.pool]}
+              channels={channels}
+              allowed={
+                canManage &&
+                !busy &&
+                !loading &&
+                !bridgeError &&
+                !channelsError &&
+                draftGeneration === bridge.generation
+              }
+              clanNames={(
+                bridge.pools[editor.pool].sequence?.published_clans || []
+              ).map((clan) => clan.name)}
+            />
           }
           testChannel={testChannel}
           testUrl={safeMessageUrl(testUrl) ? testUrl : ""}
