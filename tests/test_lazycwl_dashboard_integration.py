@@ -61,6 +61,7 @@ def test_section_clan_queries_use_live_main_categories_and_keep_fwa_strict(monke
         {"_id": 6, "name": "No tag", "type": "Tactical"},
         {"_id": 7, "tag": "#UNKNOWN", "name": "Unknown", "type": "Unknown"},
         {"_id": 8, "tag": "#GONE", "name": "Gone", "type": "CWL", "archived": True},
+        {"_id": 9, "tag": "#FWAGONE", "name": "Removed FWA", "type": "FWA", "removed": True},
     ])
     queries = []
     original_find = mongo.clans.find
@@ -75,7 +76,7 @@ def test_section_clan_queries_use_live_main_categories_and_keep_fwa_strict(monke
     main = asyncio.run(dashboard._clans(mongo, token))
 
     assert queries == [
-        {"type": "FWA"},
+        {"type": "FWA", "archived": {"$ne": True}, "removed": {"$ne": True}},
         {"type": {"$ne": "FWA"}, "archived": {"$ne": True}, "removed": {"$ne": True}},
     ]
     assert [clan["tag"] for clan in fwa] == ["#FWA"]
