@@ -9,6 +9,7 @@ type ReviewPool = {
   destination: string;
   roleNames: string[];
   preview: ReactNode;
+  clans?: { tag: string; name: string; pages: number }[];
 };
 
 export default function AnnouncementSendReview({
@@ -79,8 +80,10 @@ export default function AnnouncementSendReview({
       </header>
       <p className="announcement-review-warning">
         Confirming queues{" "}
-        {pools.length === 1 ? "this message" : "each message separately"}.
-        Selected roles will be notified. Nothing is sent when you cancel.
+        {pools.length === 1
+          ? "this pool’s post"
+          : "each pool’s post separately"}
+        . Selected roles will be notified. Nothing is sent when you cancel.
       </p>
       {pools.map((pool) => (
         <section key={pool.key} aria-label={`${pool.label} send review`}>
@@ -91,6 +94,29 @@ export default function AnnouncementSendReview({
             <strong>Roles notified: </strong>
             {pool.roleNames.length ? pool.roleNames.join(", ") : "None"}
           </p>
+          <p>
+            Posts to #{pool.destination}: 1 announcement
+            {pool.roleNames.length
+              ? ` (pings ${pool.roleNames.map((name) => `@${name}`).join(", ")})`
+              : " (no pings)"}
+            , then {pool.clans?.length || 0} clan images in order (no pings),
+            then a closing note (no pings).
+          </p>
+          {!!pool.clans?.length && (
+            <details>
+              <summary>Clan image order ({pool.clans.length})</summary>
+              <ol>
+                {pool.clans.map((clan) => (
+                  <li key={clan.tag}>
+                    {clan.name}
+                    {clan.pages > 1
+                      ? ` · ${clan.pages} pages in one message`
+                      : ""}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
           {pool.preview}
         </section>
       ))}

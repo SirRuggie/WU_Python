@@ -76,6 +76,7 @@ def describe(storage, sid, pool):
     return {
         'sequence_id': sequence['sequence_id'] if sequence else None,
         'status': sequence['status'] if sequence else 'not_started',
+        'announcement_confirmed': bool(sequence and sequence['announcement_message_id']),
         'error': sequence['error'] if sequence else None,
         'version': sequence['target_version'] if sequence else publication[1]['version'] if publication else None,
         'channel_id': sequence['channel_id'] if sequence else None,

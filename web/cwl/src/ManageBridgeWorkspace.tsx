@@ -1,3 +1,4 @@
+import AnnouncementSequenceStatus from "./AnnouncementSequenceStatus";
 import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
 import AnnouncementPoolCard from "./AnnouncementPoolCard";
 import AnnouncementEditor from "./AnnouncementEditor";
@@ -647,6 +648,16 @@ export default function ManageBridgeWorkspace({
                     <AnnouncementPoolCard
                       key={pool}
                       pool={pool}
+                      sequence={
+                        <AnnouncementSequenceStatus
+                          key={`${seasonId}:${pool}`}
+                          seasonId={seasonId}
+                          pool={pool}
+                          sequence={entry.sequence}
+                          canSend={canManage && !busy}
+                          onRefresh={() => load(false)}
+                        />
+                      }
                       enabled={entry.enabled}
                       changed={unsaved(pool)}
                       editable={canManage}
@@ -784,6 +795,7 @@ export default function ManageBridgeWorkspace({
                 roles.items.find((role) => role.id === id)?.name ||
                 `Role ${id}`,
             ),
+            clans: bridge.pools[pool].sequence?.clans,
             preview: preview(pool),
           }))}
           onCancel={() => setSendReview(null)}
