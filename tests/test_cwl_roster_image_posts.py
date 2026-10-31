@@ -43,9 +43,12 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             if self.mode == 'cancel':
                 import asyncio
                 raise asyncio.CancelledError()
+            if self.mode in ('404', 'repost-rate') and method == 'PATCH':
+                from cwl_web.server_management import DiscordItemNotFound
+                raise DiscordItemNotFound(10008)
             if self.mode == '404':
                 raise web.HTTPNotFound()
-            if self.mode == '429':
+            if self.mode in ('429', 'repost-rate'):
                 raise web.HTTPTooManyRequests(text=json.dumps({'retry_after': 0.01}), content_type='application/json')
             return {'id': '987654321098765432'}
         self.fake = fake
@@ -163,7 +166,7 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('no longer hosting', payload['content'])
             self.assertEqual([s[0] for s in self.sent], ['POST', 'PATCH', 'PATCH'])
 
-    async def test_update_retry_404_offers_new_post_and_rate_limit_receipt(self):
+    async def test_update_retry_deleted_message_repost_rate_limit_receipt(self):
         await self.setup_post()
         with patch('cwl_web.roster_image_posts.discord', self.fake):
             await self.send()
@@ -171,13 +174,8 @@ class ImagePostTests(unittest.IsolatedAsyncioTestCase):
             self.mode = 'timeout'
             await self.send('/update')
             self.body['request_id'] = 'c' * 24
-            self.mode = '404'
+            self.mode = 'repost-rate'
             response = await self.send('/update')
-            self.assertEqual(response.status, 400)
-            self.assertEqual((await response.json())['error'], 'Message was deleted in Discord')
-            self.body['request_id'] = 'd' * 24
-            self.mode = '429'
-            response = await self.send()
             self.assertEqual(response.status, 429)
             self.assertEqual((await response.json())['retry_after'], 0.01)
             self.body['request_id'] = 'e' * 24

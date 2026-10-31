@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS roster_image_requests (
  season_id INTEGER NOT NULL REFERENCES seasons(id), pool TEXT NOT NULL CHECK(pool IN ('main','lazy')),
  clan_tag TEXT NOT NULL, target_version INTEGER NOT NULL, channel_id TEXT NOT NULL, message_id TEXT,
  payload_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT, retry_after REAL, actor_id TEXT NOT NULL,
+ replacement_request_id TEXT,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS roster_image_test_sequences (
@@ -75,6 +76,8 @@ CREATE TABLE IF NOT EXISTS roster_image_sequence_closing_history (
 
 def migrate(db):
     """Extend the existing CHECK constraint without changing saved delivery data."""
+    if 'replacement_request_id' not in {row[1] for row in db.execute('PRAGMA table_info(roster_image_requests)')}:
+        db.execute('ALTER TABLE roster_image_requests ADD COLUMN replacement_request_id TEXT')
     if 'resume_requested' not in {row[1] for row in db.execute('PRAGMA table_info(roster_image_sequences)')}:
         db.execute('ALTER TABLE roster_image_sequences ADD COLUMN resume_requested INTEGER NOT NULL DEFAULT 0')
     if 'error' not in {row[1] for row in db.execute('PRAGMA table_info(roster_image_sequences)')}:
@@ -620,6 +623,23 @@ class RosterImageStore:
                        'ON CONFLICT(season_id,pool,clan_tag) DO UPDATE SET channel_id=excluded.channel_id,message_id=excluded.message_id,status=excluded.status,request_id=excluded.request_id,error=NULL,posted_by=excluded.posted_by,updated_at=CURRENT_TIMESTAMP',
                        (sid, pool, clan, channel, message, 'sending', request_id, actor))
             return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()), True
+
+    def repost_deleted(self, receipt):
+        """Convert a confirmed-deleted edit into a distinct durable NEW attempt."""
+        import hashlib
+        replacement = hashlib.sha256((receipt['request_id'] + ':deleted-repost').encode()).hexdigest()[:24]
+        with self.store.tx() as db:
+            current = db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (receipt['request_id'],)).fetchone()
+            post = db.execute('SELECT * FROM roster_image_posts WHERE request_id=?', (receipt['request_id'],)).fetchone()
+            if not current or not post or current['status'] != 'sending' or current['operation'] != 'update' or not current['message_id']:
+                raise ImageConflict('The edited message changed; refresh before reposting')
+            db.execute("UPDATE roster_image_requests SET status='deleted_confirmed',replacement_request_id=?,updated_at=CURRENT_TIMESTAMP WHERE request_id=?", (replacement, receipt['request_id']))
+            db.execute("INSERT INTO roster_image_requests(request_id,operation,season_id,pool,clan_tag,target_version,channel_id,payload_json,status,actor_id) VALUES(?,'post',?,?,?,?,?,?,'sending',?)",
+                       (replacement, current['season_id'], current['pool'], current['clan_tag'], current['target_version'], current['channel_id'], current['payload_json'], current['actor_id']))
+            db.execute("UPDATE roster_image_posts SET request_id=?,message_id=NULL,status='sending',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE request_id=?", (replacement, receipt['request_id']))
+            db.execute('INSERT INTO roster_audit(season_id,tag,actor_id,action,after_json) VALUES(?,?,?,?,?)',
+                       (current['season_id'], current['clan_tag'], current['actor_id'], 'roster_image_deleted', json.dumps({'message_id': current['message_id'], 'request_id': receipt['request_id'], 'replacement_request_id': replacement})))
+            return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (replacement,)).fetchone())
 
     def finish(self, receipt, status, message=None, error=None, retry_after=None, *, clear_message=False, sequence_id=None):
         with self.store.tx() as db:

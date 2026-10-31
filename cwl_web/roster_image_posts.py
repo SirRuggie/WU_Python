@@ -98,7 +98,7 @@ async def deliver(request):
     from .app import _json, _sid
     from .providers import tag as parse_tag
     from .roster_images import metadata, render
-    from .server_management import DiscordDeliveryUncertain
+    from .server_management import DiscordDeliveryUncertain, DiscordItemNotFound
     from utils.cwl_roster_image_store import ImageConflict
     actor = staff(request, send=True)
     body = await _json(request)
@@ -127,6 +127,8 @@ async def deliver(request):
     if old_request:
         if (old_request['season_id'], old_request['pool'], old_request['clan_tag'], old_request['target_version'], old_request['operation']) != (sid, pool, clan, version, operation):
             raise web.HTTPConflict(text='Request ID belongs to a different action')
+        if old_request.get('replacement_request_id'):
+            old_request = storage.receipt(old_request['replacement_request_id'])
         return delivery_response(old_request)
     publication = storage.publication(sid)
     if not publication:
@@ -207,26 +209,39 @@ async def deliver(request):
     payload['attachments'] = [{'id': i, 'filename': f'roster-{clan[1:]}-{i+1}.png'} for i in range(len(images))]
     method = 'POST' if operation == 'post' else 'PATCH'
     path = f'/channels/{channel}/messages' + (f'/{message_id}' if message_id else '')
-    try:
+    async def send_message():
         if images:
             form = aiohttp.FormData()
             form.add_field('payload_json', json.dumps(payload))
             for i, png in enumerate(images):
                 form.add_field(f'files[{i}]', png, filename=payload['attachments'][i]['filename'], content_type='image/png')
-            result = await discord(request, method, path, data=form, roster_delivery=True)
-        else:
-            result = await discord(request, method, path, json=payload, roster_delivery=True)
+            return await discord(request, method, path, data=form, roster_delivery=True)
+        return await discord(request, method, path, json=payload, roster_delivery=True)
+    reposted = False
+    try:
+        try:
+            result = await send_message()
+        except DiscordItemNotFound as exc:
+            if exc.discord_code != 10008 or operation != 'update':
+                raise
+            receipt = storage.repost_deleted(receipt)
+            method, path, message_id = 'POST', f'/channels/{channel}/messages', None
+            payload.update(nonce=receipt['request_id'], enforce_nonce=True)
+            reposted = True
+            result = await send_message()
         message_id = str((result or {}).get('id') or message_id or '')
         if not re.fullmatch(r'\d{15,22}', message_id):
             raise DiscordDeliveryUncertain('Discord did not return a message ID')
-        return delivery_response(storage.finish(receipt, 'dropped' if operation == 'drop' else 'posted', message_id))
+        return delivery_response(storage.finish(receipt, 'dropped' if operation == 'drop' else 'posted', message_id,
+                                               error='Reposted (old message was deleted)' if reposted else None))
     except web.HTTPTooManyRequests as exc:
         wait = float(json.loads(exc.text).get('retry_after', 1))
         storage.finish(receipt, 'failed', error='Discord rate limit', retry_after=wait)
         return web.json_response({'retry_after': wait, 'error': 'Discord rate limit'}, status=429)
-    except web.HTTPNotFound:
-        error = 'Channel or message not found in Discord' if operation == 'post' else 'Message was deleted in Discord'
-        return delivery_response(storage.finish(receipt, 'dropped' if operation == 'drop' else 'failed', error=error, clear_message=operation == 'update'))
+    except web.HTTPNotFound as exc:
+        deleted = isinstance(exc, DiscordItemNotFound) and exc.discord_code == 10008
+        error = 'Message was deleted in Discord' if deleted else 'Channel or message not found in Discord'
+        return delivery_response(storage.finish(receipt, 'dropped' if operation == 'drop' and deleted else 'failed', error=error, clear_message=operation == 'update' and deleted))
     except asyncio.CancelledError:
         storage.finish(receipt, 'uncertain', error='Check Discord: this clan may have posted')
         raise
