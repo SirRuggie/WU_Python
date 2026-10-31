@@ -40,7 +40,7 @@ rest, two Done dialogs, 12 fake messages and no browser errors.
 ## Validation and limits
 
 - Integrated frontend: 1,150 tests passed; TypeScript and Vite build passed.
-- Full network-isolated backend: 5,343 tests and 221 subtests passed, 21 skipped. Coverage includes channel
+- Full network-isolated backend: 5,346 tests and 221 subtests passed, 21 skipped. Coverage includes channel
   authorization/ownership/malformed inputs/revision conflicts, production renderer
   parity, no-ping enforcement, separate receipts, first-message links and restart
   handling. Existing aiohttp application-key warnings remain.
@@ -62,3 +62,20 @@ No production data, messages or service state changed for this batch. Keyboard a
 native dialog focus behavior use the existing components; this is not a complete
 assistive-technology audit. Release requires Claude acceptance and the usual backup,
 count, readiness, rollback and post-release smoke gates.
+
+## Acceptance follow-ups (entry 185)
+
+One shared `roster_button` builder now supplies the fallback label, URL and
+clipboard emoji to save, single announcement test and full-post test. HTTP tests
+cover both empty-button test paths and enforce single-clan send permission. Four
+additional mutations were killed: weakened send permission, missing emoji in each
+test path, and Check posted message rendered outside More. The parent render test
+asserts the exact visible primary-button list. Prettier checks pass for the
+changed frontend files and new browser scripts.
+
+The browser runner binds an OS-assigned port, then reports the actual port; it
+retains evidence in the worktree's `.local/announcement-polish-layout` directory.
+Its final run passed with 12 fake messages, two Done dialogs and no browser errors.
+The final follow-up suite passed 5,346 backend tests (21 skipped, 221 subtests) and
+1,150 frontend tests. TypeScript/build passed. Prior full layout evidence remains;
+the changed announcement runner was rerun independently in network isolation.
