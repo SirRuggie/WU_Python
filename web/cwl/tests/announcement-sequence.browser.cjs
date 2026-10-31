@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const port = Number(process.argv[2]);
 assert(port >= 8900 && port <= 8999);
 const base = `http://127.0.0.1:${port}`;
-const out = "/tmp/wu-announcement-sequence-review";
+const out = process.env.WU_SEQUENCE_EVIDENCE || "/tmp/wu-announcement-sequence-review";
 fs.mkdirSync(out, { recursive: true });
 (async () => {
   const browser = await chromium.launch({

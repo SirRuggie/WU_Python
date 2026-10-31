@@ -641,3 +641,16 @@ announcement message ID remains unknown. The guarded continuation permits only
 images and closing, never queues another announcement, and rejects a second
 confirmation. The assumption receipt is retained on rollback with other additive
 sequence tables.
+
+### Announcement rework47 verification
+
+Current-publication review, automatic deleted-message detection and locked-channel
+ambiguous full-test retry were inspected on the fake-Discord preview at360px;
+normal review and the resulting fake sequence were also checked at1440px. Twelve
+fake posts followed announcement → ordered clan images → closing for both pools,
+with no mentions in image/closing payloads and no browser errors. Intercepted
+10008-equivalent reads showed Send again automatically without opening a send
+confirmation; intercepted500 tests kept the channel disabled and reused identical
+request bodies. These are isolated transport/UI checks, not live delivery proof.
+Backend5210 passed,21 skipped,221 subtests; frontend1084 passed; TypeScript/build
+passed. Thirteen backend mutations and a current-clan-list UI mutation were killed.
