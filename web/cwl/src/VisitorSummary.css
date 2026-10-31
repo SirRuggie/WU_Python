@@ -1,0 +1,14 @@
+.visitor-summary {
+  border: 1px solid #505967;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.visitor-counts { display: flex; flex-wrap: wrap; gap: 24px; }
+.visitor-counts dd { margin: 6px 0 0; }
+.visitor-counts strong { display: block; font-size: 1.7rem; }
+.visitor-counts span, .visitor-note { font-size: .85rem; color: #c5cfdf; }
+.visitor-summary svg { display: block; width: 100%; max-width: 600px; height: 100px; color: #8fcbff; }
+.visitor-summary summary, .visitor-summary button { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.visitor-summary table { width: 100%; max-width: 600px; font-size: .85rem; }
+.visitor-summary th, .visitor-summary td { padding: 8px 4px; text-align: left; }

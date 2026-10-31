@@ -1,3 +1,4 @@
+import VisitorSummary from "./VisitorSummary";
 import DashboardIcon from "./DashboardIcon";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
@@ -86,6 +87,7 @@ export default function StaffOverview({
           {busy ? "Refreshing…" : "Refresh"}
         </button>
       </header>
+      <VisitorSummary refresh={refresh} />
       <div className="staff-overview-status">
         <span>
           {data

@@ -42,11 +42,19 @@ const base = `http://127.0.0.1:${port}`;
             : route.abort(),
         );
         await page.route("**/api/cwl/linked-accounts?*", async (route) => {
-          const response = await route.fetch();
-          const data = await response.json();
+          let response = await route.fetch();
+          let data = await response.json();
+          // Background snapshots can initially be empty while still loading.
+          for (let attempt = 0; data.updating && attempt < 100; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            response = await route.fetch();
+            data = await response.json();
+          }
+          assert.equal(data.updating, false, "fixture account snapshot must settle");
           const signed = data.accounts.filter((a) =>
             ["#P222222Y", "#Q222222Y"].includes(a.tag),
           );
+          assert.equal(signed.length, 2, "fixture retains both signed accounts");
           data.accounts = [
             ...signed,
             ...Array.from({ length: count }, (_, i) => ({
