@@ -8,31 +8,13 @@ from utils.strike_store import StrikeConflict, status_of, war_key
 from tests.test_strike_streaks import setup, war, capture, GUILD, PLAYER, Collection, links
 
 
-def test_no_attack_live_capture_is_neutral_even_with_missing_owner_service():
+def test_retired_opponent_exclusion_no_longer_suppresses_live_strikes():
     async def run():
         db, service = setup()
-        await capture(db, service, 0)
-        before = deepcopy(db.strike_profiles.rows)
+        db.strike_settings.rows[str(GUILD)] = {'_id': str(GUILD), 'no_attack_opponents': ['#2CYVV92R']}
         item = war(1, attacks=0)
         item['opponent_tag'] = '#2CYVV92R'
-        async def unavailable(_):
-            raise RuntimeError('No links service')
-        service.link_resolver = unavailable
-        key = war_key(item)
-        db.strike_war_snapshots.rows['snapshot'] = {
-            '_id': f'{GUILD}:{key}', 'status': 'observing', 'seen_active': True,
-            'guild_id': GUILD, 'war': item, 'war_key': key, 'end_time': item['end_time'],
-        }
-        # Collection queries by fields, so storage key need not be the document ID.
-        result = await service.process_war(GUILD, item, official_capture=True)
-        assert result['strikes'] == 0 and result['applied'] == 1
-        row = next(r for r in db.strike_records.rows.values() if r['war_key'] == key)
-        assert row['kind'] == 'no_attack' and status_of(row) == 'no_attack'
-        assert not row.get('streak_eligible')
-        assert db.strike_profiles.rows == before
-        assert (await service.process_war(GUILD, item, official_capture=True))['existing'] == 1
-        service.link_resolver = links
-        assert (await capture(db, service, 2))['deferred_count'] == 0
+        assert (await service.process_war(GUILD, item))['strikes'] == 1
     asyncio.run(run())
 
 
@@ -45,34 +27,30 @@ def test_matching_name_without_matching_tag_still_adds_strike():
     asyncio.run(run())
 
 
-def test_no_attack_setting_compare_and_swap_and_explicit_empty_list():
+def test_settings_reject_retired_opponents_and_clear_legacy_value_on_save():
     async def run():
-        _, service = setup()
-        assert (await service.settings(GUILD))['no_attack_opponents'] == ['#2CYVV92R']
-        receipt = await service.set_exempt_roles(GUILD, [], 9, expected_revision=0,
-                                                no_attack_opponents=['2cyvv92r', '#2CYVV92R'])
-        assert receipt['no_attack_opponents'] == ['#2CYVV92R']
+        db, service = setup()
+        db.strike_settings.rows[str(GUILD)] = {'_id': str(GUILD), 'no_attack_opponents': ['#2CYVV92R']}
+        assert 'no_attack_opponents' not in await service.settings(GUILD)
+        with pytest.raises(TypeError):
+            await service.set_exempt_roles(GUILD, [], 9, no_attack_opponents=['#P2Y'])
+        await service.set_exempt_roles(GUILD, [], 9, expected_revision=0)
+        assert db.strike_settings.rows[str(GUILD)]['no_attack_opponents'] == []
         with pytest.raises(StrikeConflict):
-            await service.set_exempt_roles(GUILD, [], 9, expected_revision=0, no_attack_opponents=[])
-        await service.set_exempt_roles(GUILD, [], 9, expected_revision=1, no_attack_opponents=[])
-        item = war(1, attacks=0)
-        item['opponent_tag'] = '#2CYVV92R'
-        assert (await service.process_war(GUILD, item))['strikes'] == 1
+            await service.set_exempt_roles(GUILD, [], 9, expected_revision=0)
     asyncio.run(run())
 
 
-def test_import_no_attack_is_history_only():
+def test_import_no_war_opponent_counts_normally():
     async def run():
         db, service = setup()
         db.strike_imports = Collection()
         item = war(1, attacks=0)
         item['opponent_tag'] = '#2CYVV92R'
         preview = await service.preview_import(GUILD, [item], 9)
-        assert preview['strikes'] == 0
-        assert preview['items'][0]['kind'] == 'no_attack'
+        assert preview['strikes'] == 1
         result = await service.apply_import(GUILD, preview['preview_id'], 9)
-        assert result['strikes'] == 0 and result['applied'] == 1
-        assert not db.strike_profiles.rows
+        assert result['strikes'] == 1 and result['applied'] == 1
     asyncio.run(run())
 
 

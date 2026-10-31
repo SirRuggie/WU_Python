@@ -17,7 +17,6 @@ STRIKE_LIMIT = 4
 REPLACEMENT_GRACE = timedelta(hours=48)
 STRIKE_DAYS = 60
 IMPORT_DAYS = 60
-DEFAULT_NO_ATTACK_OPPONENTS = ['#2CYVV92R']
 
 
 class StrikeConflict(RuntimeError):
@@ -156,9 +155,9 @@ class StrikeService:
 
     async def settings(self, guild_id: int) -> dict:
         saved = await self.mongo.strike_settings.find_one({'_id': str(int(guild_id))})
+        saved = {key: value for key, value in (saved or {}).items() if key != 'no_attack_opponents'}
         return {'guild_id': int(guild_id), 'exempt_role_ids': [DEFAULT_EXEMPT_ROLE],
                 'strike_limit': STRIKE_LIMIT, 'revision': 0,
-                'no_attack_opponents': list(DEFAULT_NO_ATTACK_OPPONENTS),
                 **(saved or {}), 'retention_days': STRIKE_DAYS}
 
     async def monitor_activation(self, guild_id: int) -> datetime:
@@ -193,13 +192,9 @@ class StrikeService:
         return changes
 
     async def set_exempt_roles(self, guild_id: int, role_ids, actor_id: int,
-                               *, expected_revision=None, strike_limit=None, no_attack_opponents=None) -> dict:
+                               *, expected_revision=None, strike_limit=None) -> dict:
         if expected_revision is not None:
             revision_match(expected_revision)
-        if no_attack_opponents is not None:
-            if not isinstance(no_attack_opponents, list) or len(no_attack_opponents) > 100:
-                raise ValueError('Choose up to 100 no-attack opponent tags.')
-            no_attack_opponents = sorted({tag(value) for value in no_attack_opponents})
         roles = sorted({int(role) for role in role_ids})
         if any(role <= 0 for role in roles):
             raise ValueError('Role IDs must be positive.')
@@ -211,15 +206,14 @@ class StrikeService:
                    'updated_at': datetime.now(timezone.utc), 'updated_by': int(actor_id)}
         if strike_limit is not None:
             changes['strike_limit'] = strike_limit
-        if no_attack_opponents is not None:
-            changes['no_attack_opponents'] = no_attack_opponents
+        # Retire legacy settings on any settings write; release clears old rows too.
+        changes['no_attack_opponents'] = []
         saved = await self._compare_write(self.mongo.strike_settings, key, previous,
                                           changes, expected_revision)
         # Return this successful write's receipt, not a later editor's revision.
         # Otherwise the caller could pair its old draft with that newer revision.
         return {'_id': key, 'guild_id': int(guild_id), 'exempt_role_ids': [DEFAULT_EXEMPT_ROLE],
                 'strike_limit': STRIKE_LIMIT,
-                'no_attack_opponents': list(DEFAULT_NO_ATTACK_OPPONENTS),
                 **(previous or {}), **saved,
                 'retention_days': STRIKE_DAYS}
 
@@ -1123,12 +1117,9 @@ class StrikeService:
         if not registered:
             raise ValueError('Clan is not registered.')
         settings = await self.settings(guild_id)
-        no_attack = tag(war['opponent_tag']) in settings['no_attack_opponents']
         members = war['members']
         tags = [tag(member['tag']) for member in members]
-        if no_attack:
-            owners, conflicts = {}, set()
-        elif owner_cache is None:
+        if owner_cache is None:
             owners, conflicts = await self._resolve_members(tags)
         else:
             missing = [player for player in tags if player not in owner_cache]
@@ -1152,7 +1143,7 @@ class StrikeService:
             if player in conflicts and not missed and not check_all:
                 continue
             exemption = None
-            if not no_attack and (missed or check_all) and reason is None:
+            if (missed or check_all) and reason is None:
                 exemption = await self._exemption(guild_id, player, owner, ended, exempt_roles, leave_cache=leave_cache)
                 if exemption == 'pending_role_check':
                     reason = 'Discord roles unavailable'
@@ -1165,18 +1156,16 @@ class StrikeService:
                                      'reason': reason})
                 continue
             kind = 'exempt' if missed and exemption else ('strike' if missed == 2 else ('missed' if missed == 1 else 'completed'))
-            if no_attack:
-                kind = 'no_attack'
             rows.append({'_id': row_id,
                          'guild_id': int(guild_id), 'player_tag': player,
-                         'member_id': owner, 'link_status': 'unknown' if no_attack else ('linked' if owner is not None else 'unlinked'),
+                         'member_id': owner, 'link_status': 'linked' if owner is not None else 'unlinked',
                          'player_name': member.get('name') or player,
                          'clan_tag': clan, 'clan_name': war.get('clan_name'),
                          'opponent_tag': tag(war['opponent_tag']),
                          'opponent_name': war.get('opponent_name'),
                          'war_key': key, 'kind': kind, 'source': 'war',
                          'capture_source': 'clash_api',
-                         'reason': 'No-attack war (no strike)' if no_attack else ('Both attacks missed' if missed == 2 else ('One attack missed' if missed else 'Both attacks used')),
+                         'reason': ('Both attacks missed' if missed == 2 else ('One attack missed' if missed else 'Both attacks used')),
                          'missed_attacks': missed, 'exemption': exemption,
                          'occurred_at': ended, 'expires_at': ended + timedelta(days=STRIKE_DAYS)})
         return rows

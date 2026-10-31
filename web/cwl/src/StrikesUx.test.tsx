@@ -78,8 +78,6 @@ const countText = (element: Element | null) => {
 const settings: StrikeSettings = {
   revision: 8,
   strike_limit: 7,
-  no_attack_opponents: ["#2CYVV92R"],
-  no_attack_names: { "#2CYVV92R": "NO WAR" },
   leaves: [],
   excluded_roles: [{ id: "9", name: "Old integration", managed: true }],
   roles: [
@@ -121,7 +119,6 @@ it("preserves server role order, hides only managed additions, and retains a con
     revision: 8,
     role_ids: ["9", "3"],
     strike_limit: 11,
-    no_attack_opponents: ["#2CYVV92R"],
   });
   expect(host.textContent).toContain("Changed by someone else · Reload");
   expect(
@@ -148,12 +145,10 @@ it("uses its successful revision receipt for the next save without a racing sett
     .mockResolvedValueOnce({
       revision: 9,
       strike_limit: 10,
-      no_attack_opponents: ["#2CYVV92R"],
     })
     .mockResolvedValueOnce({
       revision: 10,
       strike_limit: 11,
-      no_attack_opponents: ["#2CYVV92R"],
     });
   await render(<SettingsFixture />);
   await input('input[type="number"]', "10");
@@ -562,28 +557,10 @@ it("sends the selected leave revision and retains the date and accounts after a 
   ).toBe("2027-01-01");
 });
 
-it("preserves no-attack opponent edits on conflict and submits tags with the same revision", async () => {
-  transport.mockRejectedValueOnce(new ApiError("Conflict", 409));
+it("does not expose retired opponent exclusions", async () => {
   await render(<SettingsFixture />);
-  expect(host.textContent).toContain("NO WAR · #2CYVV92R");
-  expect(host.textContent).toContain(
-    "Wars against these clans never give strikes.",
-  );
-  const field = host.querySelector("textarea")!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(
-      HTMLTextAreaElement.prototype,
-      "value",
-    )!.set!.call(field, "#2CYVV92R\n#P2Y");
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await click("Save settings");
-  expect(transport.mock.calls[0][2]).toMatchObject({
-    revision: 8,
-    no_attack_opponents: ["#2CYVV92R", "#P2Y"],
-  });
-  expect(field.value).toBe("#2CYVV92R\n#P2Y");
-  expect(host.textContent).toContain("Changed by someone else · Reload");
+  expect(host.textContent).not.toContain("No-attack opponents");
+  expect(host.querySelector("textarea")).toBeNull();
 });
 it.each([1, 6, 7, 8])(
   "labels the strike limit correctly at %s",

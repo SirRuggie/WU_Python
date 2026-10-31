@@ -233,8 +233,6 @@ const candidates = [
 const settings = {
   revision: 1,
   strike_limit: 7,
-  no_attack_opponents: ["#2CYVV92R"],
-  no_attack_names: { "#2CYVV92R": "NO WAR" },
   excluded_roles: [{ id: "769130325460254740", name: "Strike exempt" }],
   roles: [
     { id: "769130325460254740", name: "Strike exempt" },
@@ -536,15 +534,12 @@ window.fetch = async (input, init) => {
     }
     settings.revision += 1;
     settings.strike_limit = body.strike_limit;
-    settings.no_attack_opponents = body.no_attack_opponents;
     settings.excluded_roles = settings.roles.filter((role) =>
       body.role_ids.includes(role.id),
     );
     data = {
       revision: settings.revision,
       strike_limit: settings.strike_limit,
-      no_attack_opponents: settings.no_attack_opponents,
-      no_attack_names: settings.no_attack_names,
     };
   } else if (path.endsWith("/settings")) data = settings;
   else if (path.endsWith("/replacement-roster"))

@@ -707,3 +707,17 @@ def test_name_and_linked_target_search_use_saved_th_and_current_clan_without_liv
                     'town_hall': 16, 'current_clan_tag': '#Q2Y', 'current_clan_name': 'Family'}]
             provider.player.assert_not_awaited()
     run(scenario())
+
+
+def test_http_settings_reject_retired_opponent_field_before_storage():
+    async def scenario():
+        request = SimpleNamespace(method='PUT', app={})
+        with patch.object(api.shared, 'require_manage', AsyncMock()), \
+             patch('cwl_web.app._json', AsyncMock(return_value={
+                 'revision': 0, 'role_ids': [], 'no_attack_opponents': ['#2CYVV92R']})), \
+             patch.object(api.shared, 'identity', AsyncMock()) as identity:
+            with pytest.raises(web.HTTPBadRequest) as error:
+                await api.save_roles(request)
+            assert 'Unknown field' in error.value.text
+            identity.assert_not_called()
+    run(scenario())
