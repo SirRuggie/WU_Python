@@ -53,3 +53,8 @@ snapshot rather than forcing loading data to settled; its all-signed assertion i
 preserved. A stale migration column expectation was updated for is_bot=0 on old
 sessions. Scratch setup corrections used the correct loopback namespace, working
 directory and WU_FIXTURE_BACKEND environment. No production data was used. Entry 173 release corrections pin WAL, the 200 ms busy timeout and mode 0600 in tests. Repeat cached visits skip staff scope resolution as well as visit database work. Owner browser verification at 360/1440 used synthetic data, with an accessible daily table and no overflow.
+
+After entry 173's release corrections and main integration: 5,130 backend tests
+passed (21 skipped, 162 subtests); 1,119 frontend tests, TypeScript/build and the
+360/1440 synthetic visitor browser checks passed. Mutations removing WAL,
+changing the busy timeout, or widening file permissions were all killed.
