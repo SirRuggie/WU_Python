@@ -59,3 +59,34 @@ Integrated release verification after main 28e37f0: 5,313 backend tests passed
 The synthetic two-pool browser sequence and deleted-message/frozen retry checks
 passed at 360/1440, with no page errors. Complete layout verification is recorded
 in the release handoff before activation.
+
+## announcement-images-1 release and smoke
+
+Released PR #98 as `47f5422f2541fed734f1ea86a7df59ded38194f5`, tagged
+`announcement-images-1`, after Ruggie's explicit approval. Backend and bot run
+that revision; frontend was built from its clean isolated tagged checkout.
+Public `index-CHeFTl6l.js` SHA256
+`27e8c37ef4bb1e230a2c611884d1707bb11d2474dfbc7cad20531516ee0fd5a0`
+and affected feature assets match the immutable release manifest.
+
+The integrated gates passed: 5,313 backend tests, 21 skipped, 221 subtests;
+1,135 frontend tests; TypeScript, build and full layout. Synthetic 360/1440
+checks exercised ordered two-pool delivery and deleted-post/frozen retry recovery.
+Backups verified; 25 clans before and after; protected SQLite and native campaign
+send receipts unchanged. Additive migration rehearsal preserved old rows. New
+image tables stayed empty and no replacement was queued at startup. Runtime
+imports, readiness and service journals passed. No live test messages were sent.
+
+Claude handoff 176 records read-only production smoke passed at 360px: matching
+frontend/backend/bot revision and public hash, no startup tracebacks or sequence
+activity, no HTTP errors or overflow. Both November pools correctly report the
+prior posts deleted, with Send again available. Nothing was pressed or sent.
+
+Rollback retains frontend/backend `d1c670877b03ae8bf19f4ca1fa675af3edaa1cd0`
+and bot `5d09708b8cdc6ac0349a20c75293bd8eae9153fc`; code rollback must not
+restore data over legitimate staff changes. Release evidence is retained in
+`.local/announcement-release-evidence` on the release host.
+
+Follow-up prompt 50 covers completion confirmation, a saved shared test channel,
+collapsed testing controls and the contradictory deleted-post resend copy.
+The accepted preflight/archive concurrency race remains documented above.
