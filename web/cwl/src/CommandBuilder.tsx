@@ -13,6 +13,9 @@ export type Command = {
  command:string; enabled:boolean; text:string; title:string; description:string
  image_url:string; color:string; blocks?:Block[]; allow_pings?:boolean
  choose_recipient?:boolean; recipient_ping?:boolean; delete_trigger?:boolean
+ allowed_channel_ids?:string[]; allowed_role_ids?:string[]
+ use_count?:number; last_used_at?:string|null
+ last_outcome?:{status:"ok"|"error";at:string;channel_id:string;reason:string}|null
  last_delete_error?:{at:string;channel_id:string;reason:string}|null; revision?:string
 }
 export function commandBlocks(value:Command):Block[]{return value.blocks??[...(value.title?[{type:'text' as const,text:'## '+value.title}]:[]),...(value.description?[{type:'text' as const,text:value.description}]:[]),...(value.image_url?[{type:'image' as const,url:value.image_url,description:'Reply image'}]:[])]}

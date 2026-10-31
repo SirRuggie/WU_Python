@@ -122,7 +122,10 @@ def test_trigger_cleanup_never_deletes_without_successful_opted_in_reply(mode):
              patch('utils.text_command_files.load_files',AsyncMock(return_value={})):
             assert await core.handle(event,None,NS(rest=rest)) is (mode not in ('disabled','unknown'))
         rest.delete_message.assert_not_awaited()
-        target.update_one.assert_not_awaited()
+        if mode in ('disabled', 'unknown'):
+            target.update_one.assert_not_awaited()
+        else:
+            assert target.update_one.await_args.args[1]['$set']['last_outcome']['status'] == ('error' if mode == 'reply_failed' else 'ok')
     asyncio.run(run())
 
 
@@ -211,7 +214,8 @@ def test_delete_setting_save_history_and_runtime_error_are_separate():
         import json
         saved=json.loads(response.text)
         assert saved['delete_trigger'] is False
-        assert saved['last_delete_error']==prior['last_delete_error']
+        assert saved['last_delete_error'] is None
+        assert target.update_one.await_args.args[1]['$unset']=={'last_delete_error':''}
         assert target.update_one.await_args.args[0]['revision']=='old-revision'
         assert target.update_one.await_args.args[1]['$set']['delete_trigger'] is False
         before_history=begin.await_args.args[3]
@@ -308,3 +312,29 @@ def test_named_gallery_and_sections_render_without_editor_metadata():
 ])
 def test_extended_blocks_reject_invalid_settings(block):
     with pytest.raises(ValueError):core.validate(values(blocks=[block]))
+
+
+def test_create_and_delete_history_only_confirms_successful_mutations():
+ async def run():
+  from contextlib import asynccontextmanager
+  from cwl_web import change_history
+  from test_recruit_question_content import ConfigCollection
+  history=ConfigCollection()
+  target=NS(find_one=AsyncMock(return_value={**values(),'revision':'r1'}),insert_one=AsyncMock(),delete_one=AsyncMock(return_value=NS(deleted_count=1)))
+  @asynccontextmanager
+  async def database(_):yield NS(bot_config=history)
+  req=NS(method='POST',match_info={'name':'!cwl'},json=AsyncMock(return_value={'values':values()}))
+  begin=AsyncMock(return_value='entry');finish=AsyncMock()
+  with patch.object(api,'mongo',database),patch.object(api,'require_manage',AsyncMock(return_value={'user_id':'1'})),patch.object(api,'collection',return_value=target),patch.object(change_history,'begin',begin),patch.object(change_history,'finish',finish):
+   await api.save(req)
+   assert begin.await_args.args[3:]==({},'create')
+   assert finish.await_args.args[2]['command']=='!cwl'
+   req.json.return_value={'revision':'r1'}
+   await api.delete(req)
+   assert begin.await_args.args[4]=='delete'
+   assert begin.await_args.args[3]['text']==values()['text']
+   assert finish.await_args.args[2]=={}
+   finish.reset_mock();target.delete_one.return_value=NS(deleted_count=0)
+   with pytest.raises(web.HTTPConflict):await api.delete(req)
+   finish.assert_not_awaited()
+ asyncio.run(run())

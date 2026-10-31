@@ -1,12 +1,13 @@
-import CommandTest from './CommandTest'
-import CommandActivity from './CommandActivity'
-import type { RoleChoice } from './CommandExtras'
-import MentionText, { namedMentions, type MentionNames } from './MentionText'
-import ChangeHistory from './ChangeHistory'
-import { useEffect, useState, useRef } from 'react'
-import { api, ApiError } from './api'
-import DiscordMessagePreview from './DiscordMessagePreview'
-import './TextCommands.css'
+import { relativeTime } from "./commandTime";
+import CommandTest from "./CommandTest";
+import CommandActivity from "./CommandActivity";
+import type { RoleChoice } from "./CommandExtras";
+import MentionText, { namedMentions, type MentionNames } from "./MentionText";
+import ChangeHistory from "./ChangeHistory";
+import { useEffect, useState, useRef } from "react";
+import { api, ApiError } from "./api";
+import DiscordMessagePreview from "./DiscordMessagePreview";
+import "./TextCommands.css";
 
 import CommandBuilder, {
   hasRoleActions,
@@ -14,187 +15,190 @@ import CommandBuilder, {
   commandPreview,
   mapBlockText,
   type Command,
-} from './CommandBuilder'
-export { commandPreview } from './CommandBuilder'
+} from "./CommandBuilder";
+export { commandPreview } from "./CommandBuilder";
 const blank = (): Command => ({
-  command: '!',
+  command: "!",
   enabled: true,
   delete_trigger: true,
-  text: '',
-  title: '',
-  description: '',
-  image_url: '',
-  color: '#e2b332',
+  text: "",
+  title: "",
+  description: "",
+  image_url: "",
+  color: "#e2b332",
   blocks: [],
   allow_pings: false,
   choose_recipient: false,
   recipient_ping: false,
-})
+});
 const normalizeCommand = (row: Command): Command => ({
   ...row,
   delete_trigger: row.delete_trigger ?? true,
-})
-const deleteWarning = (error: NonNullable<Command['last_delete_error']>) =>
-  `Last time the bot could not delete the trigger message in #${error.channel_id} (it needs Manage Messages there).`
+});
+const deleteWarning = (error: NonNullable<Command["last_delete_error"]>) =>
+  `Last time the bot could not delete the trigger message in #${error.channel_id} (it needs Manage Messages there).`;
 export default function TextCommands({
   onDirty,
 }: {
-  onDirty: (value: boolean) => void
+  onDirty: (value: boolean) => void;
 }) {
-  const heading = useRef<HTMLHeadingElement>(null)
-  const directory = useRef<HTMLHeadingElement>(null)
-  const mutation = useRef(false)
-  const sequence = useRef(0)
-  const [conflict, setConflict] = useState(false)
+  const heading = useRef<HTMLHeadingElement>(null);
+  const directory = useRef<HTMLHeadingElement>(null);
+  const mutation = useRef(false);
+  const sequence = useRef(0);
+  const [conflict, setConflict] = useState(false);
   function closeEditor() {
     if (
       busy ||
       mutation.current ||
-      (dirty && !window.confirm('Discard unsaved command changes?'))
+      (dirty && !window.confirm("Discard unsaved command changes?"))
     )
-      return
-    setDraft(null)
-    setSaved(null)
-    setConflict(false)
-    requestAnimationFrame(() => directory.current?.focus())
+      return;
+    setDraft(null);
+    setSaved(null);
+    setConflict(false);
+    requestAnimationFrame(() => directory.current?.focus());
   }
   const [rows, setRows] = useState<Command[]>([]),
-    [search, setSearch] = useState(''),
+    [search, setSearch] = useState(""),
     [draft, setDraft] = useState<Command | null>(null),
     [saved, setSaved] = useState<Command | null>(null),
-    [error, setError] = useState(''),
-    [notice, setNotice] = useState(''),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
-    [pane, setPane] = useState<'edit' | 'preview'>('edit')
+    [pane, setPane] = useState<"edit" | "preview">("edit");
   const [roles, setRoles] = useState<RoleChoice[]>([]),
-    [roleError, setRoleError] = useState('')
+    [roleError, setRoleError] = useState("");
   const rolesLoaded = useRef(false),
-    rolesLoading = useRef(false)
+    rolesLoading = useRef(false);
   async function loadRoles() {
-    if (rolesLoading.current) return
-    rolesLoading.current = true
+    if (rolesLoading.current) return;
+    rolesLoading.current = true;
     try {
       const data = await api<{ roles: RoleChoice[] }>(
-        '/manage/text-command-roles',
-      )
-      setRoles(data.roles)
-      setRoleError('')
-      rolesLoaded.current = true
+        "/manage/text-command-roles",
+      );
+      setRoles(data.roles);
+      setRoleError("");
+      rolesLoaded.current = true;
     } catch {
-      setRoleError('Could not load role choices.')
+      setRoleError("Could not load role choices.");
     } finally {
-      rolesLoading.current = false
+      rolesLoading.current = false;
     }
   }
-  const [mentionNames, setMentionNames] = useState<MentionNames>({})
+  const [mentionNames, setMentionNames] = useState<MentionNames>({});
   const rememberMention = (key: string, name: string) =>
     setMentionNames((current) =>
       current[key] === name ? current : { ...current, [key]: name },
-    )
-  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(saved)
+    );
+  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(saved);
   async function load() {
-    const turn = ++sequence.current
-    setLoading(true)
+    const turn = ++sequence.current;
+    setLoading(true);
     try {
-      const data = await api<{ commands: Command[] }>('/manage/text-commands')
-      if (turn !== sequence.current) return
-      setRows(data.commands.map(normalizeCommand))
-      setError('')
+      const data = await api<{ commands: Command[] }>("/manage/text-commands");
+      if (turn !== sequence.current) return;
+      setRows(data.commands.map(normalizeCommand));
+      setError("");
     } catch (e) {
-      if (turn !== sequence.current) return
+      if (turn !== sequence.current) return;
       if (e instanceof ApiError && [401, 403].includes(e.status)) {
-        setRows([])
-        setDraft(null)
-        setSaved(null)
+        setRows([]);
+        setDraft(null);
+        setSaved(null);
       }
-      setError(e instanceof Error ? e.message : 'Could not load commands.')
+      setError(e instanceof Error ? e.message : "Could not load commands.");
     } finally {
-      if (turn === sequence.current) setLoading(false)
+      if (turn === sequence.current) setLoading(false);
     }
   }
   useEffect(() => {
-    void load()
+    void load();
     return () => {
-      sequence.current++
-    }
-  }, [])
+      sequence.current++;
+    };
+  }, []);
   useEffect(() => {
-    onDirty(dirty || busy)
+    onDirty(dirty || busy);
     const guard = (e: BeforeUnloadEvent) => {
       if (dirty || busy) {
-        e.preventDefault()
-        e.returnValue = ''
+        e.preventDefault();
+        e.returnValue = "";
       }
-    }
-    window.addEventListener('beforeunload', guard)
+    };
+    window.addEventListener("beforeunload", guard);
     return () => {
-      onDirty(false)
-      window.removeEventListener('beforeunload', guard)
-    }
-  }, [dirty, busy, onDirty])
+      onDirty(false);
+      window.removeEventListener("beforeunload", guard);
+    };
+  }, [dirty, busy, onDirty]);
   function choose(row: Command | null) {
-    if (busy || loading || mutation.current) return
-    if (dirty && !window.confirm('Leave without saving your changes?')) return
-    if (!rolesLoaded.current) void loadRoles()
-    const selected = row ? normalizeCommand(row) : null
-    setSaved(selected)
-    setDraft(selected ? { ...selected } : blank())
-    setError('')
-    setNotice('')
-    setPane('edit')
-    setConflict(false)
-    requestAnimationFrame(() => heading.current?.focus())
+    if (busy || loading || mutation.current) return;
+    if (dirty && !window.confirm("Leave without saving your changes?")) return;
+    if (!rolesLoaded.current) void loadRoles();
+    const selected = row ? normalizeCommand(row) : null;
+    setSaved(selected);
+    setDraft(selected ? { ...selected } : blank());
+    setError("");
+    setNotice("");
+    setPane("edit");
+    setConflict(false);
+    requestAnimationFrame(() => heading.current?.focus());
   }
   function change(key: keyof Command, value: string | boolean) {
-    setDraft((current) => (current ? { ...current, [key]: value } : current))
-    setNotice('')
+    setDraft((current) => (current ? { ...current, [key]: value } : current));
+    setNotice("");
   }
   async function save() {
-    if (!draft || busy || mutation.current || conflict) return
-    mutation.current = true
-    setBusy(true)
-    setError('')
+    if (!draft || busy || mutation.current || conflict) return;
+    mutation.current = true;
+    setBusy(true);
+    setError("");
     try {
-      const { revision, ...values } = draft
-      delete values.last_delete_error
+      const { revision, ...values } = draft;
+      delete values.last_delete_error;
+      delete values.use_count;
+      delete values.last_used_at;
+      delete values.last_outcome;
       const result = await api<Command>(
-        '/manage/text-commands' +
-          (saved ? '/' + encodeURIComponent(saved.command) : ''),
-        saved ? 'PATCH' : 'POST',
+        "/manage/text-commands" +
+          (saved ? "/" + encodeURIComponent(saved.command) : ""),
+        saved ? "PATCH" : "POST",
         { values, revision },
-      )
+      );
       setRows((current) =>
         [
           ...current.filter((row) => row.command !== result.command),
           normalizeCommand(result),
         ].sort((a, b) => a.command.localeCompare(b.command)),
-      )
-      setSaved(normalizeCommand(result))
-      setDraft(normalizeCommand(result))
-      setConflict(false)
+      );
+      setSaved(normalizeCommand(result));
+      setDraft(normalizeCommand(result));
+      setConflict(false);
       setNotice(
         result.enabled
           ? `${result.command} is ready to use in Discord.`
           : `${result.command} is saved and turned off.`,
-      )
+      );
     } catch (e) {
-      setConflict(e instanceof ApiError && e.status === 409)
+      setConflict(e instanceof ApiError && e.status === 409);
       if (e instanceof ApiError && [401, 403].includes(e.status)) {
-        setRows([])
-        setDraft(null)
-        setSaved(null)
+        setRows([]);
+        setDraft(null);
+        setSaved(null);
       }
       setError(
         e instanceof ApiError && e.status === 409
-          ? 'This command changed elsewhere. Your draft is kept. Reload commands to review the saved version.'
+          ? "This command changed elsewhere. Your draft is kept. Reload commands to review the saved version."
           : e instanceof Error
             ? e.message
-            : 'Could not save command.',
-      )
+            : "Could not save command.",
+      );
     } finally {
-      mutation.current = false
-      setBusy(false)
+      mutation.current = false;
+      setBusy(false);
     }
   }
   async function remove() {
@@ -207,37 +211,37 @@ export default function TextCommands({
         `Delete ${saved.command}? Its saved reply will be removed.`,
       )
     )
-      return
-    mutation.current = true
-    setBusy(true)
-    setError('')
+      return;
+    mutation.current = true;
+    setBusy(true);
+    setError("");
     try {
       await api(
-        '/manage/text-commands/' + encodeURIComponent(saved.command),
-        'DELETE',
+        "/manage/text-commands/" + encodeURIComponent(saved.command),
+        "DELETE",
         { revision: saved.revision },
-      )
+      );
       setRows((current) =>
         current.filter((row) => row.command !== saved.command),
-      )
-      setDraft(null)
-      setSaved(null)
-      setNotice('Command deleted.')
-      requestAnimationFrame(() => directory.current?.focus())
+      );
+      setDraft(null);
+      setSaved(null);
+      setNotice("Command deleted.");
+      requestAnimationFrame(() => directory.current?.focus());
     } catch (e) {
       if (e instanceof ApiError && [401, 403].includes(e.status)) {
-        setRows([])
-        setDraft(null)
-        setSaved(null)
+        setRows([]);
+        setDraft(null);
+        setSaved(null);
       }
-      setError(e instanceof Error ? e.message : 'Could not delete command.')
+      setError(e instanceof Error ? e.message : "Could not delete command.");
     } finally {
-      mutation.current = false
-      setBusy(false)
+      mutation.current = false;
+      setBusy(false);
     }
   }
   return (
-    <section className={`text-commands ${draft ? 'command-is-editing' : ''}`}>
+    <section className={`text-commands ${draft ? "command-is-editing" : ""}`}>
       <div className="page-head">
         <div>
           <p className="eyebrow">SERVER TOOLS</p>
@@ -263,12 +267,12 @@ export default function TextCommands({
             onClick={async () => {
               if (
                 dirty &&
-                !window.confirm('Discard edits and reload commands?')
+                !window.confirm("Discard edits and reload commands?")
               )
-                return
-              setDraft(null)
-              setSaved(null)
-              await load()
+                return;
+              setDraft(null);
+              setSaved(null);
+              await load();
             }}
           >
             Reload commands
@@ -286,7 +290,7 @@ export default function TextCommands({
             Saved commands
           </h2>
           <p className="small">
-            {rows.length} commands · {rows.filter((row) => row.enabled).length}{' '}
+            {rows.length} commands · {rows.filter((row) => row.enabled).length}{" "}
             enabled
           </p>
           <label>
@@ -319,11 +323,16 @@ export default function TextCommands({
                   >
                     <span className="text-command-row-info">
                       <strong>{row.command}</strong>
+                      <small>
+                        Used {row.use_count ?? 0}{" "}
+                        {(row.use_count ?? 0) === 1 ? "time" : "times"} · last{" "}
+                        {relativeTime(row.last_used_at)}
+                      </small>
                       {row.last_delete_error && (
                         <small>{deleteWarning(row.last_delete_error)}</small>
                       )}
                     </span>
-                    <span>{row.enabled ? 'On' : 'Off'}</span>
+                    <span>{row.enabled ? "On" : "Off"}</span>
                   </button>
                 ))}
               {rows.length > 0 &&
@@ -337,7 +346,7 @@ export default function TextCommands({
           <section>
             <div className="command-editor-heading">
               <h2 ref={heading} tabIndex={-1}>
-                {saved ? saved.command : 'New command'}
+                {saved ? saved.command : "New command"}
               </h2>
               <button
                 type="button"
@@ -348,6 +357,17 @@ export default function TextCommands({
                 ← Commands
               </button>
             </div>
+            {draft.last_outcome && (
+              <p role="status">
+                {draft.last_outcome.status === "ok"
+                  ? "Last reply sent"
+                  : "Last failed"}{" "}
+                {relativeTime(draft.last_outcome.at)}
+                {draft.last_outcome.reason
+                  ? ` · ${draft.last_outcome.reason}`
+                  : ""}
+              </p>
+            )}
             {draft.last_delete_error && (
               <p className="notice error command-delete-warning" role="alert">
                 {deleteWarning(draft.last_delete_error)}
@@ -359,14 +379,14 @@ export default function TextCommands({
               aria-label="Command editor view"
             >
               <button
-                aria-pressed={pane === 'edit'}
-                onClick={() => setPane('edit')}
+                aria-pressed={pane === "edit"}
+                onClick={() => setPane("edit")}
               >
                 Edit reply
               </button>
               <button
-                aria-pressed={pane === 'preview'}
-                onClick={() => setPane('preview')}
+                aria-pressed={pane === "preview"}
+                onClick={() => setPane("preview")}
               >
                 Preview
               </button>
@@ -376,13 +396,13 @@ export default function TextCommands({
                 className="card"
                 id="command-reply-form"
                 onSubmit={(e) => {
-                  e.preventDefault()
-                  void save()
+                  e.preventDefault();
+                  void save();
                 }}
               >
                 <fieldset disabled={busy}>
                   <legend className="command-sr-only">
-                    {saved ? 'Edit ' + saved.command : 'New command'}
+                    {saved ? "Edit " + saved.command : "New command"}
                   </legend>
                   <label>
                     Command
@@ -393,7 +413,7 @@ export default function TextCommands({
                       pattern="![a-zA-Z0-9][a-zA-Z0-9_-]{0,31}"
                       maxLength={33}
                       placeholder="!trigger"
-                      onChange={(e) => change('command', e.target.value)}
+                      onChange={(e) => change("command", e.target.value)}
                     />
                     <small>
                       One word starting with !. Uppercase and lowercase work the
@@ -404,7 +424,7 @@ export default function TextCommands({
                     <input
                       type="checkbox"
                       checked={draft.enabled}
-                      onChange={(e) => change('enabled', e.target.checked)}
+                      onChange={(e) => change("enabled", e.target.checked)}
                     />
                     Enabled in Discord
                   </label>
@@ -413,7 +433,7 @@ export default function TextCommands({
                       type="checkbox"
                       checked={draft.delete_trigger ?? true}
                       onChange={(e) =>
-                        change('delete_trigger', e.target.checked)
+                        change("delete_trigger", e.target.checked)
                       }
                     />
                     Delete the trigger message
@@ -424,13 +444,13 @@ export default function TextCommands({
                     value={draft.text}
                     maxLength={2000}
                     placeholder="Text shown above the embed…"
-                    onChange={(text) => change('text', text)}
+                    onChange={(text) => change("text", text)}
                     onMention={rememberMention}
                   />
 
                   {roleError && (
                     <p role="status">
-                      {roleError}{' '}
+                      {roleError}{" "}
                       <button type="button" onClick={() => void loadRoles()}>
                         Retry roles
                       </button>
@@ -442,7 +462,7 @@ export default function TextCommands({
                       .filter((row) => row.enabled)
                       .map((row) => row.command)}
                     onBusy={setBusy}
-                    key={draft.command + ':' + (draft.revision || 'new')}
+                    key={draft.command + ":" + (draft.revision || "new")}
                     onMention={rememberMention}
                     value={draft}
                     onChange={(blocks) => {
@@ -451,28 +471,28 @@ export default function TextCommands({
                           ? {
                               ...current,
                               blocks,
-                              title: '',
-                              description: '',
-                              image_url: '',
+                              title: "",
+                              description: "",
+                              image_url: "",
                             }
                           : current,
-                      )
-                      setNotice('')
+                      );
+                      setNotice("");
                     }}
                   />
                   <details className="command-recipient-settings">
                     <summary>
-                      Mentions &amp; recipients ·{' '}
+                      Mentions &amp; recipients ·{" "}
                       {draft.allow_pings || draft.choose_recipient
-                        ? 'On'
-                        : 'Off'}
+                        ? "On"
+                        : "Off"}
                     </summary>
                     <label className="text-command-enable">
                       <input
                         type="checkbox"
                         checked={draft.allow_pings ?? false}
                         onChange={(e) =>
-                          change('allow_pings', e.target.checked)
+                          change("allow_pings", e.target.checked)
                         }
                       />
                       Allow pings in message and embed
@@ -487,7 +507,7 @@ export default function TextCommands({
                         type="checkbox"
                         checked={draft.choose_recipient ?? false}
                         onChange={(e) =>
-                          change('choose_recipient', e.target.checked)
+                          change("choose_recipient", e.target.checked)
                         }
                       />
                       Mention a user or role with the trigger
@@ -498,7 +518,7 @@ export default function TextCommands({
                     </small>
                   </details>
                   <details className="command-appearance">
-                    <summary>Appearance</summary>{' '}
+                    <summary>Appearance</summary>{" "}
                     <div className="command-color">
                       <label>
                         Embed color
@@ -507,9 +527,9 @@ export default function TextCommands({
                           value={
                             /^#[0-9a-f]{6}$/i.test(draft.color)
                               ? draft.color
-                              : '#e2b332'
+                              : "#e2b332"
                           }
-                          onChange={(e) => change('color', e.target.value)}
+                          onChange={(e) => change("color", e.target.value)}
                         />
                       </label>
                       <label>
@@ -525,10 +545,10 @@ export default function TextCommands({
                           aria-invalid={!/^#[0-9a-f]{6}$/i.test(draft.color)}
                           onChange={(e) =>
                             change(
-                              'color',
-                              e.target.value.startsWith('#')
+                              "color",
+                              e.target.value.startsWith("#")
                                 ? e.target.value
-                                : '#' + e.target.value,
+                                : "#" + e.target.value,
                             )
                           }
                         />
@@ -546,7 +566,7 @@ export default function TextCommands({
                   </p>
                 </fieldset>
               </form>
-              {pane === 'preview' && (
+              {pane === "preview" && (
                 <DiscordMessagePreview
                   parts={commandPreview({
                     ...draft,
@@ -559,31 +579,31 @@ export default function TextCommands({
                   })}
                   caption={
                     draft.choose_recipient
-                      ? 'The mention goes inside the embed, or above the text if there is no embed. Saving does not post.'
-                      : 'Preview only. Saving does not post a message.'
+                      ? "The mention goes inside the embed, or above the text if there is no embed. Saving does not post."
+                      : "Preview only. Saving does not post a message."
                   }
                 />
               )}
             </div>
             <div className="text-command-save" aria-label="Save command">
               <span role="status">
-                {busy ? 'Working…' : dirty ? 'Unsaved changes' : 'Saved'}
+                {busy ? "Working…" : dirty ? "Unsaved changes" : "Saved"}
               </span>
               <button
                 type="button"
                 className="primary"
                 disabled={busy || !dirty || conflict}
                 onClick={() => {
-                  setPane('edit')
+                  setPane("edit");
                   requestAnimationFrame(
                     () =>
-                      document.getElementById('command-reply-form') &&
+                      document.getElementById("command-reply-form") &&
                       (
                         document.getElementById(
-                          'command-reply-form',
+                          "command-reply-form",
                         ) as HTMLFormElement
                       ).requestSubmit(),
-                  )
+                  );
                 }}
               >
                 Save command
@@ -608,39 +628,39 @@ export default function TextCommands({
             )}
             {saved && hasRoleActions(commandBlocks(saved)) && (
               <CommandActivity
-                key={'activity:' + saved.command}
+                key={"activity:" + saved.command}
                 command={saved.command}
               />
             )}
             {saved?.revision && (
               <ChangeHistory
                 onBusy={setBusy}
-                key={'history:' + saved.command}
+                key={"history:" + saved.command}
                 target={
-                  '/manage/text-commands/' + encodeURIComponent(saved.command)
+                  "/manage/text-commands/" + encodeURIComponent(saved.command)
                 }
                 revision={saved.revision}
                 disabled={busy || dirty}
                 labels={{
-                  text: 'Reply message',
-                  title: 'Card title',
-                  description: 'Card text',
-                  image_url: 'Card image',
-                  color: 'Card color',
-                  enabled: 'Enabled',
-                  delete_trigger: 'Delete the trigger message',
+                  text: "Reply message",
+                  title: "Card title",
+                  description: "Card text",
+                  image_url: "Card image",
+                  color: "Card color",
+                  enabled: "Enabled",
+                  delete_trigger: "Delete the trigger message",
                 }}
                 onRestored={async () => {
                   const data = await api<{ commands: Command[] }>(
-                    '/manage/text-commands',
-                  )
-                  setRows(data.commands.map(normalizeCommand))
+                    "/manage/text-commands",
+                  );
+                  setRows(data.commands.map(normalizeCommand));
                   const row =
                     data.commands.find(
                       (item) => item.command === saved.command,
-                    ) || null
-                  setSaved(row ? normalizeCommand(row) : null)
-                  setDraft(row ? normalizeCommand(row) : null)
+                    ) || null;
+                  setSaved(row ? normalizeCommand(row) : null);
+                  setDraft(row ? normalizeCommand(row) : null);
                 }}
               />
             )}
@@ -654,5 +674,5 @@ export default function TextCommands({
         )}
       </div>
     </section>
-  )
+  );
 }

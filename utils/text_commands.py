@@ -293,6 +293,36 @@ async def record_delete_outcome(db, row, *, channel_id, error=None):
         log.warning('Could not record trigger deletion outcome', exc_info=True)
 
 
+def safe_outcome_reason(error):
+    if isinstance(error, hikari.ForbiddenError):
+        return 'Discord denied the reply. Check bot permissions.'
+    if isinstance(error, hikari.NotFoundError):
+        return 'The channel or linked item was not found.'
+    if isinstance(error, (TimeoutError, hikari.InternalServerError)):
+        return 'Delivery was not confirmed. Check Discord before trying again.'
+    if isinstance(error, ValueError) and str(error) in (
+        'An attachment is missing or changed. Upload it again.',
+        'An attachment is unreadable. Upload it again.',
+    ):
+        return str(error)
+    return 'The reply could not be delivered. Check its content and bot permissions.'
+
+
+async def record_use(db, row, channel_id, error=None):
+    at = datetime.now(timezone.utc).isoformat()
+    selector = {'_id': f'{GUILD_ID}:{row["command"]}',
+                'revision': row['revision'] if 'revision' in row else {'$exists': False}}
+    outcome = {'status': 'error' if error else 'ok', 'at': at,
+               'channel_id': str(channel_id), 'reason': safe_outcome_reason(error) if error else ''}
+    try:
+        await collection(db).update_one(selector, {
+            '$inc': {'use_count': 1},
+            '$set': {'last_used_at': at, 'last_outcome': outcome},
+        })
+    except Exception:
+        log.warning('Could not record command usage outcome', exc_info=True)
+
+
 async def within_scope(row, event, bot):
     channels = row['allowed_channel_ids']
     if channels and str(event.channel_id) not in channels:
@@ -318,6 +348,8 @@ async def handle(event, db, bot):
             return False
     except ValueError:
         return False
+    row = None
+    attempted = False
     try:
         row = await collection(db).find_one({'_id': f'{GUILD_ID}:{name}', 'enabled': True})
         if not row:
@@ -371,7 +403,9 @@ async def handle(event, db, bot):
         elif mention is not None:
             return False
         from utils.text_command_files import load_files
+        attempted = True
         await bot.rest.create_message(event.channel_id, **payload(clean,await load_files(db,clean),recipient=recipient))
+        await record_use(db, row, event.channel_id)
         if clean['delete_trigger']:
             try:
                 await bot.rest.delete_message(event.channel_id, message.id)
@@ -385,6 +419,8 @@ async def handle(event, db, bot):
             else:
                 await record_delete_outcome(db, row, channel_id=event.channel_id)
         return True
-    except Exception:
+    except Exception as error:
+        if row is not None and attempted:
+            await record_use(db, row, event.channel_id, error)
         log.exception('Text command could not be delivered: %s', name)
         return True

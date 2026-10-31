@@ -27,11 +27,19 @@ def public(row):
         'recipient_ping': row.get('recipient_ping', False),
         'delete_trigger': row.get('delete_trigger', True),
         'last_delete_error': error,
+        'use_count': max(0, row.get('use_count', 0)) if type(row.get('use_count', 0)) is int else 0,
+        'last_used_at': row.get('last_used_at'),
+        'last_outcome': row.get('last_outcome'),
         'allowed_channel_ids': row.get('allowed_channel_ids', []),
         'allowed_role_ids': row.get('allowed_role_ids', []),
         'blocks': row.get('blocks', legacy_blocks(row)),
         'revision': row['revision'],
     }
+
+
+def history_values(row):
+    return {key: value for key, value in public(row).items()
+            if key not in ('revision', 'last_delete_error', 'use_count', 'last_used_at', 'last_outcome')}
 
 
 async def listing(request):
@@ -83,12 +91,16 @@ async def save(request):
                 if action['command']!=values['command'] and not await collection(db).find_one({'_id':f'{GUILD_ID}:{action["command"]}','enabled':True}):raise ValueError('Choose an enabled saved reply.')
         except ValueError as exc:raise web.HTTPBadRequest(text=str(exc)) from None
         target = collection(db)
+        from .change_history import begin, finish
         if request.method == 'POST':
+            history_id = await begin(db, API+'/text-commands/'+values['command'], actor, {},
+                                     getattr(request, 'history_action', 'create'))
             row.update(_id=f'{GUILD_ID}:{values["command"]}', created_at=now, created_by=actor['user_id'])
             try:
                 await target.insert_one(row)
             except DuplicateKeyError:
-                raise web.HTTPConflict(text='This command already exists. Select it to edit.') from None
+                raise web.HTTPConflict(text='This command name is already taken. Choose another name or edit the existing command.') from None
+            await finish(db, history_id, values)
         else:
             try:
                 name = command_name(request.match_info['name'])
@@ -103,19 +115,24 @@ async def save(request):
                 raise web.HTTPConflict(text='This command changed or was deleted. Reload before saving.')
             from .change_history import begin, finish
             history_id = await begin(db, API+'/text-commands/'+name, actor,
-                                     {key:value for key,value in public(before).items()
-                                      if key not in ('revision', 'last_delete_error')},
-                                     getattr(request,'history_action','edit'))
-            result = await target.update_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']}, {'$set': row})
+                                     history_values(before),
+                                     getattr(request, 'history_action', 'on' if values['enabled'] and not before.get('enabled', True) else 'off' if not values['enabled'] and before.get('enabled', True) else 'edit'))
+            update = {'$set': row}
+            if not values['delete_trigger']:
+                update['$unset'] = {'last_delete_error': ''}
+            result = await target.update_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']}, update)
             if not result.matched_count:
                 raise web.HTTPConflict(text='This command changed or was deleted. Reload before saving.')
             await finish(db, history_id, values)
-    return web.json_response(public({**(before or {}), **row}),
+    response_row = {**(before or {}), **row}
+    if not values['delete_trigger']:
+        response_row.pop('last_delete_error', None)
+    return web.json_response(public(response_row),
                              status=201 if request.method == 'POST' else 200)
 
 
 async def delete(request):
-    await require_manage(request, 'text_commands', write=True)
+    actor = await require_manage(request, 'text_commands', write=True)
     body = await request.json()
     if not isinstance(body, dict) or not isinstance(body.get('revision'), str) or not body['revision']:
         raise web.HTTPBadRequest(text='Reload this command before deleting.')
@@ -124,9 +141,16 @@ async def delete(request):
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from None
     async with mongo(request) as db:
-        result = await collection(db).delete_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']})
-    if not result.deleted_count:
-        raise web.HTTPConflict(text='This command changed or was deleted. Reload before deleting.')
+        target = collection(db)
+        before = await target.find_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']})
+        if not before or before.get('revision') != body['revision']:
+            raise web.HTTPConflict(text='This command changed or was deleted. Reload before deleting.')
+        from .change_history import begin, finish
+        token = await begin(db, API+'/text-commands/'+name, actor, history_values(before), 'delete')
+        result = await target.delete_one({'_id': f'{GUILD_ID}:{name}', 'revision': body['revision']})
+        if not result.deleted_count:
+            raise web.HTTPConflict(text='This command changed or was deleted. Reload before deleting.')
+        await finish(db, token, {})
     return web.json_response({'ok': True})
 
 async def mention_lookup(request):
