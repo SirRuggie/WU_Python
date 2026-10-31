@@ -60,3 +60,13 @@
   font-size: 13px;
   text-decoration: underline;
 }
+
+.member-signup-summary a {
+  color: #f2d892;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.member-signup-summary a:focus-visible {
+  outline: 2px solid #f2d892;
+  outline-offset: 4px;
+}

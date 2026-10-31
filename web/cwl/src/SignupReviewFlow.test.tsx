@@ -252,3 +252,128 @@ it("allows choosing a pool after an account-load error and shows the error on th
     host.remove();
   }
 });
+
+it.each([false, true])(
+  "My signups remaining respects refused navigation (%s) without writes",
+  async (refuse) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    history.replaceState({}, "", "/my-signups");
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(
+      () => {},
+    );
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    vi.spyOn(window, "matchMedia").mockReturnValue({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    } as unknown as MediaQueryList);
+    const rows = [{ tag: "#A", player_name: "Signed fixture", pool: "main" }];
+    const writes: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).replace("/api/cwl", "");
+        if (init?.method && init.method !== "GET") writes.push(path);
+        const data =
+          path === "/auth/me"
+            ? {
+                user: { id: "1", username: "Member" },
+                authenticated: true,
+                csrf_token: "fixture",
+                can_edit: false,
+              }
+            : path === "/seasons"
+              ? {
+                  seasons: [
+                    {
+                      id: 1,
+                      label: "November",
+                      status: "draft",
+                      signup_open: true,
+                    },
+                  ],
+                  member_season: { season_id: 1, revision: 0 },
+                }
+              : path.startsWith("/linked-accounts")
+                ? {
+                    accounts: [
+                      { tag: "#A", name: "Signed fixture" },
+                      { tag: "#B", name: "Reserve" },
+                    ],
+                    updating: false,
+                    error: null,
+                  }
+                : path.endsWith("/my-assignments")
+                  ? { published: null, accounts: rows }
+                  : { signups: rows };
+        return new Response(JSON.stringify(data), { status: 200 });
+      }),
+    );
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<App />));
+      for (let i = 0; i < 4; i++)
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      const button = (text: string) =>
+        [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+          (b) => b.textContent?.trim() === text,
+        )!;
+      if (refuse) {
+        await act(async () =>
+          host
+            .querySelector<HTMLButtonElement>(
+              ".member-signup-remaining button",
+            )!
+            .click(),
+        );
+        await act(async () =>
+          [
+            ...host.querySelectorAll<HTMLButtonElement>(
+              ".pool-choice-grid button",
+            ),
+          ]
+            .find((b) => b.querySelector("strong")?.textContent === "Lazy CWL")!
+            .click(),
+        );
+        await act(async () => button("My signups").click());
+        await act(async () => button("Change CWL pool").click());
+        await act(async () => button("Choose Lazy CWL").click());
+        vi.stubGlobal(
+          "confirm",
+          vi.fn(() => false),
+        );
+      }
+      const summary = host.querySelector(".registered .member-signup-summary")!;
+      expect(summary).not.toBeNull();
+      expect(summary.nextElementSibling?.textContent).toContain(
+        "Signed-up accounts",
+      );
+      expect(summary.textContent).not.toContain("Change signups");
+      await act(async () =>
+        summary
+          .querySelector<HTMLButtonElement>(".member-signup-remaining button")!
+          .click(),
+      );
+      if (refuse) {
+        expect(window.confirm).toHaveBeenCalled();
+        expect(location.pathname).toBe("/my-signups");
+        expect(host.textContent).toContain("Not saved yet");
+        await act(async () => button("Undo change").click());
+        await act(async () => button("Sign up").click());
+        expect(host.querySelector(".pool-choice-grid")).toBeNull();
+        expect(host.textContent).toContain("Select linked accounts");
+      } else expect(host.querySelector(".pool-choice-grid")).not.toBeNull();
+      expect(location.pathname).toBe("/signup");
+      expect(writes).toEqual([]);
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  },
+);

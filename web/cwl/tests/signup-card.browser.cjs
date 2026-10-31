@@ -50,11 +50,19 @@ const base = `http://127.0.0.1:${port}`;
             response = await route.fetch();
             data = await response.json();
           }
-          assert.equal(data.updating, false, "fixture account snapshot must settle");
+          assert.equal(
+            data.updating,
+            false,
+            "fixture account snapshot must settle",
+          );
           const signed = data.accounts.filter((a) =>
             ["#P222222Y", "#Q222222Y"].includes(a.tag),
           );
-          assert.equal(signed.length, 2, "fixture retains both signed accounts");
+          assert.equal(
+            signed.length,
+            2,
+            "fixture retains both signed accounts",
+          );
           data.accounts = [
             ...signed,
             ...Array.from({ length: count }, (_, i) => ({
@@ -80,15 +88,22 @@ const base = `http://127.0.0.1:${port}`;
         try {
           await page.locator(".member-signup-success").waitFor();
         } catch (error) {
-          console.error(JSON.stringify({ scenario, width, url: page.url(), errors,
-            fixtureBody: await page.locator("body").innerText() }));
+          console.error(
+            JSON.stringify({
+              scenario,
+              width,
+              url: page.url(),
+              errors,
+              fixtureBody: await page.locator("body").innerText(),
+            }),
+          );
           throw error;
         }
         page.on("request", (r) => {
           if (!["GET", "HEAD"].includes(r.method()))
             writes.push(r.method() + " " + r.url());
         });
-        for (const path of ["/", "/assignments"]) {
+        for (const path of ["/", "/my-signups"]) {
           if (path !== "/") await page.goto(base + path);
           await page.locator(".member-signup-success").waitFor();
           const red = page.locator(".member-signup-remaining");
@@ -176,11 +191,7 @@ const base = `http://127.0.0.1:${port}`;
           results.push({ width, scenario, path, ...measured });
         }
         if (!closed && count) {
-          const loaded = page.waitForResponse((r) =>
-            r.url().includes("/api/cwl/linked-accounts?"),
-          );
           await page.locator(".member-signup-remaining button").click();
-          await loaded;
           await page.waitForTimeout(300);
           await page
             .locator('.pool-choice-grid [data-tour-target="signup-pool"]')

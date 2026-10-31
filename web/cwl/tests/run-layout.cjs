@@ -13,7 +13,7 @@ if (!existsSync(chrome)) {
   rmSync(temp, { recursive: true, force: true });
   process.exit(2);
 }
-const port = 8952;
+const port = Number(process.env.WU_LAYOUT_PLAYER_PORT || 8952);
 const python =
   process.env.WU_TEST_PYTHON || path.join(root, ".venv/bin/python");
 if (!existsSync(python)) {
@@ -58,7 +58,7 @@ server.stdout.on("data", (chunk) => {
       server.kill();
       return;
     }
-    const tourPort = 8976;
+    const tourPort = Number(process.env.WU_LAYOUT_TOUR_PORT || 8976);
     const tourServer = spawn(
       python,
       [
@@ -93,6 +93,7 @@ server.stdout.on("data", (chunk) => {
           "member-tour.browser.cjs",
           "member-tour-cleanup.browser.cjs",
           "signup-card.browser.cjs",
+          "signup-location.browser.cjs",
           "signup-polish.browser.cjs",
           "owner-prank-art.browser.cjs",
         ]) {
@@ -161,7 +162,9 @@ server.stdout.on("data", (chunk) => {
           }
         }
         if (!process.exitCode) {
-          const readabilityPort = 8986;
+          const readabilityPort = Number(
+            process.env.WU_LAYOUT_READABILITY_PORT || 8986,
+          );
           await new Promise((resolve, reject) => {
             const probe = require("node:net").createServer();
             probe.once("error", reject);
@@ -222,7 +225,7 @@ server.stdout.on("data", (chunk) => {
           }
         }
         if (!process.exitCode) {
-          const hotfixPort = 8988;
+          const hotfixPort = Number(process.env.WU_LAYOUT_HOTFIX_PORT || 8988);
           await new Promise((resolve, reject) => {
             const probe = require("node:net").createServer();
             probe.once("error", reject);
@@ -278,7 +281,7 @@ server.stdout.on("data", (chunk) => {
           }
         }
         if (!process.exitCode) {
-          const totalsPort = 8987;
+          const totalsPort = Number(process.env.WU_LAYOUT_TOTALS_PORT || 8987);
           await new Promise((resolve, reject) => {
             const probe = require("node:net").createServer();
             probe.once("error", reject);
@@ -335,11 +338,15 @@ server.stdout.on("data", (chunk) => {
           }
         }
         if (!process.exitCode) {
-          const moderationPort = Number(process.env.WU_LAYOUT_MODERATION_PORT || 8983);
+          const moderationPort = Number(
+            process.env.WU_LAYOUT_MODERATION_PORT || 8983,
+          );
           await new Promise((resolve, reject) => {
             const probe = require("node:net").createServer();
             probe.once("error", reject);
-            probe.listen(moderationPort, "127.0.0.1", () => probe.close(resolve));
+            probe.listen(moderationPort, "127.0.0.1", () =>
+              probe.close(resolve),
+            );
           });
           const moderationServer = spawn(
             python,
@@ -365,7 +372,9 @@ server.stdout.on("data", (chunk) => {
                 throw new Error("Moderation fixture exited");
               try {
                 ready = (
-                  await fetch(`http://127.0.0.1:${moderationPort}/api/cwl/config`)
+                  await fetch(
+                    `http://127.0.0.1:${moderationPort}/api/cwl/config`,
+                  )
                 ).ok;
               } catch {
                 /* Starting isolated fixture. */
@@ -377,7 +386,10 @@ server.stdout.on("data", (chunk) => {
             const code = await new Promise((resolve) => {
               const child = spawn(
                 process.execPath,
-                [path.join(__dirname, "moderation-logs.browser.cjs"), String(moderationPort)],
+                [
+                  path.join(__dirname, "moderation-logs.browser.cjs"),
+                  String(moderationPort),
+                ],
                 { stdio: "inherit", env: process.env },
               );
               child.on("exit", resolve);
