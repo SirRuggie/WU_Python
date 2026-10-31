@@ -164,14 +164,24 @@ test without confirmation, raw leader ID, duplicate save bar, restored legacy
 write, copied channel, skipped copy revision, silent existing add, fresh setup
 retaining reminders, missing type warning, and keeping replaced artwork.
 
-Latest completed backend full run: 5,081 passed / 21 skipped / 162 subtests;
-latest frontend full run: 1,097 passed / 213 files; tsc/build and the war-reminder
-gate passed. A further backend run covers the final channel-history change.
-The shared `npm run test:layout` hit a timeout at
-`signup-card.browser.cjs:72` waiting for `.member-signup-success`. This blocks
-READY; the affected signup source/test/fixture are unchanged from the branch
-base. Do not treat the successful Family-specific browser checks as a substitute
-for resolving that shared gate. No deployment is authorized by this checkpoint.
+Final backend full run: **5,082 passed / 21 skipped / 162 subtests**;
+frontend full run: **1,097 passed / 213 files**. Type checking, production build,
+war-reminder gate, and the complete `npm run test:layout` pass. The latter ran
+inside a loopback-only network namespace to avoid existing preview-port collisions.
+
+An earlier shared-layout run timed out at `signup-card.browser.cjs:72` waiting for
+`.member-signup-success`. Investigation against a clean `origin/main` export at
+4938a1a passed both signup-card alone and its preceding tour/cleanup sequence.
+Family also passed signup-card alone and then the full layout rerun without any
+application or fixture modification. The initial timeout is unreproduced; this is
+not evidence of a fixed application defect or an expired fixture. Logs:
+`/tmp/wu-signup-baseline-browser.log`, `/tmp/wu-signup-baseline-ordered.log`,
+`/tmp/wu-family-signup-only.log`, and `/tmp/wu-family-layout-rerun.log`.
+
+Review uses synthetic fixture data and no real Discord delivery. The preview
+intentionally rejects management writes; add/restore, copying, CAS conflicts,
+cleanup retries and write authorization are covered by isolated automated tests.
+No production release has occurred for this batch.
 
 Current queue per Claude 149–150: Family 29 → Announcements with images 45 →
 carousel 44 → triggers 31 → 19. Clan Games remains on ClashPerk.
