@@ -48,6 +48,7 @@ def test_reminder_history_has_durable_before_image_and_no_false_confirmation(sto
     from utils import clan_dashboard_history as history
     value, _ = store
     audit = AsyncMock(return_value='event')
+    monkeypatch.setattr(history, 'abandon_change', AsyncMock())
     finish = AsyncMock()
     monkeypatch.setattr(history, 'audit', audit)
     monkeypatch.setattr(history, 'finish_change', finish)
@@ -82,6 +83,7 @@ def test_reminder_history_freezes_supplied_channel_names(store, monkeypatch):
     from utils import clan_dashboard_history as history
     value, _ = store
     monkeypatch.setattr(history, 'audit', AsyncMock(return_value='event'))
+    monkeypatch.setattr(history, 'abandon_change', AsyncMock())
     finish = AsyncMock()
     monkeypatch.setattr(history, 'finish_change', finish)
     value.settings.update_one.return_value = NS(matched_count=1, upserted_id=None)
@@ -89,3 +91,24 @@ def test_reminder_history_freezes_supplied_channel_names(store, monkeypatch):
     asyncio.run(value.save_settings('#P2Y', {'version': 1}, {'channel_id': '123'}, 'staff',
         history_context=({'tag': '#P2Y'}, {'user_id': 'staff'}), history_names=names))
     assert finish.await_args.kwargs['names'] == names
+
+
+@pytest.mark.parametrize('failure', [SettingsConflict(), RuntimeError('Mongo unavailable')])
+def test_failed_save_is_abandoned_and_cannot_render_changed(store, monkeypatch, failure):
+    from utils import clan_dashboard_history as history
+    from cwl_web.clan_history import history_label, public_changes
+    value, _ = store
+    event = {'action': 'reminders'}
+    monkeypatch.setattr(history, 'audit', AsyncMock(return_value='event'))
+    async def abandon(db, event_id):
+        assert event_id == 'event'
+        event['abandoned'] = True
+    monkeypatch.setattr(history, 'abandon_change', abandon)
+    value.settings.update_one.side_effect = failure
+    with pytest.raises(type(failure)):
+        asyncio.run(value.save_settings('#P2Y', {'version': 2}, {'enabled': True}, 'staff',
+            history_context=({'tag': '#P2Y'}, {'user_id': 'staff'})))
+    assert history_label(event) == 'Not saved'
+    assert public_changes(event) == []
+    assert history_label({'action': 'reminders'}) == 'Saved snapshot'
+    assert history_label({'action': 'reminders', 'confirmed': True}) == 'War reminders changed'

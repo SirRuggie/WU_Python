@@ -82,6 +82,14 @@ async def cleanup_artwork(db, media):
                 if await db.clans.find_one({'$or': [{'logo': url}, {'banner': url}, {'profile': url}]}, {'_id': 1}):
                     held = True
                     continue
+                # Removal before-images can be restored even after a clan leaves
+                # the live directory. Retain their artwork conservatively.
+                if await collection(db).find_one({
+                    'action': 'before_remove',
+                    '$or': [{'clan.logo': url}, {'clan.banner': url}, {'clan.profile': url}],
+                }, {'_id': 1}):
+                    held = True
+                    continue
                 await media.delete_url(url)
             if not held:
                 await collection(db).update_one({'_id': event['_id']},
@@ -96,3 +104,12 @@ async def cleanup_artwork(db, media):
                 }})
             except Exception:
                 logging.getLogger(__name__).exception('Could not record artwork cleanup check')
+
+
+async def abandon_change(db, event_id):
+    """Best-effort failure marker; unconfirmed snapshots remain non-changes."""
+    import logging
+    try:
+        await collection(db).update_one({'_id': event_id}, {'$set': {'abandoned': True}})
+    except Exception:
+        logging.getLogger(__name__).exception('Could not mark failed clan change event=%s', event_id)

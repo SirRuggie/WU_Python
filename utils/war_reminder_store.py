@@ -78,10 +78,15 @@ class WarReminderStore:
         update = {'$set': {**values, 'updated_by': actor, 'updated_at': datetime.now(timezone.utc)}, '$inc': {'version': 1}}
         try:
             result = await self.settings.update_one(query, update, upsert=before is None)
-        except DuplicateKeyError as exc:
-            raise SettingsConflict from exc
-        if not result.matched_count and not result.upserted_id:
-            raise SettingsConflict
+            if not result.matched_count and not result.upserted_id:
+                raise SettingsConflict
+        except Exception as exc:
+            if event_id:
+                from utils.clan_dashboard_history import abandon_change
+                await abandon_change(self.db, event_id)
+            if isinstance(exc, DuplicateKeyError):
+                raise SettingsConflict from exc
+            raise
         if event_id:
             from utils.clan_dashboard_history import finish_change
             await finish_change(self.db, event_id,

@@ -36,6 +36,12 @@ def history_value(field, value):
         return {'remaining': 'Players with attacks left', 'zero': 'Players with no attacks used'}.get(value, 'Unknown')
     return str(value)
 
+def history_label(row):
+    if row['action'] == 'reminders' and not row.get('confirmed'):
+        return 'Not saved' if row.get('abandoned') else 'Saved snapshot'
+    return LABELS.get(row['action'], 'Saved snapshot')
+
+
 def public_changes(row):
     if not row.get('confirmed'):
         return []
@@ -82,7 +88,7 @@ async def history(request):
         events = []
         for row in rows[:15]:
             clan = row['clan'];date = row.get('at')
-            events.append({'id':row['_id'],'action':LABELS.get(row['action'],'Saved snapshot'),
+            events.append({'id':row['_id'],'action':history_label(row),
                 'at':(date if date.tzinfo else date.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat() if date else None,'actor':row.get('actor_name') or 'Staff member (name unavailable)',
                 'source':row.get('source','Dashboard'),'clan':public(clan),
                 'changes':public_changes(row),
