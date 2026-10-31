@@ -24,15 +24,15 @@ Siege Sharer, Friend in Need and Sharing is Caring are excluded.
 ## Rate and lifecycle
 
 The bot task takes a complete family roster sweep, then spreads player reads
-across an hour.125 players mean125 player calls/hour, one every28.8seconds;
-1000 mean1000/hour, one every3.6seconds. Catch-up is capped at one player request
+across an hour.125 players mean125 player calls/hour, one every28.8 seconds;
+1000 mean1000/hour, one every3.6 seconds. Catch-up is capped at one player request
 per second. Clan roster and raid reads add one each per family clan per sweep. A shared
 pacer caps this feature at one logical official API call/second, including clan
 reads; SDK transport retries retain the existing client retry/throttle policy.
-For125accounts in3fixture clans the budget is131logical calls/hour; for
-1000accounts and25estimated clans it is1050/hour, with the same1/second peak.
+For125 accounts in3fixture clans the budget is131 logical calls/hour; for
+1000 accounts and25estimated clans it is1050/hour, with the same1/second peak.
 The player schedule uses the remainder of the hour after clan reads, about
-28.8seconds or3.55seconds per player respectively. Worker cancellation propagates, and stopping awaits cleanup.
+28.8 seconds or3.55 seconds per player respectively. Worker cancellation propagates, and stopping awaits cleanup.
 Duplicate lifecycle starts do not create a second worker. No activity notification
 is sent. A failed clan roster sweep never marks anyone as having left.
 
@@ -44,12 +44,14 @@ weekends, and stores current clan, departure time, last-seen/source and revision
 Optimistic comparisons protect concurrent updates and delayed responses. A seed
 cannot replace an official reading. Membership observations use bounded timestamp
 fields rather than a growing membership-event history. Leaving sets `left_at`;
-returning clears it. Backup-gated migration enables expiry90days after departure.
+returning clears it. Backup-gated migration enables expiry90 days after departure.
 
-Recent ended raid logs are merged across family clans. A raid attack in any family
+Recent ended raid logs are merged across family clans. The UTC Monday07:00
+weekend-end calendar also handles a family with no raid log entries at all; it
+supplies only the weekend identity, while the same membership/read gates apply. A raid attack in any family
 clan wins over a skip, including a move between clans. Historical logs can prove
 attacks only. Skips require a complete clan read and observed membership on both
-sides of the weekend end, no more than90minutes apart. Outages or new tracking
+sides of the weekend end, no more than90 minutes apart. Outages or new tracking
 therefore leave unknown weekends unknown. Eight retained observations are bounded.
 
 For N players and400 simulated days, document count stays N. Day/weekend arrays
@@ -63,9 +65,9 @@ online-presence guarantee.
 
 Strike profiles already persist `streak_count`, the latest war watermark and
 pending delivery receipts. Retention never recomputes those values from history.
-Records expire90days after `occurred_at` (war end or manual creation); snapshots
-expire30days after war end. Strike active expiry remains60days. Imports already
-reject wars older than60days; direct ingestion also rejects outside90days.
+Records expire90 days after `occurred_at` (war end or manual creation); snapshots
+expire30 days after war end. Strike active expiry remains60 days. Imports already
+reject wars older than60 days; direct ingestion also rejects outside90 days.
 Replacement marks, notes, leave/settings data and exempt roles receive no TTL.
 
 Before enabling TTLs, run the explicit maintenance module with the approved
@@ -96,7 +98,7 @@ it may be older than the player's actual activity. PR B labels seeded values.
 Empty data, non-200, malformed data and timeouts never create a guessed date.
 
 After the first official sweep the bot launches a background seed with at most
-five concurrent reads, a30second request timeout and a120second overall deadline.
+five concurrent reads, a30 second request timeout and a120 second overall deadline.
 Results are logged as seeded, existing/official, unavailable, non-200, timeout and
 failed counts. Attempt version/status are bounded fields on each player document.
 Completed attempts are not automatically repeated; the coordinator supports an
@@ -104,8 +106,17 @@ explicit safe rerun. A canceled deadline leaves unattempted players eligible; pe
 after the next hourly sweep or on restart, while completed attempts remain skipped; every write is conditional and cannot override official activity.
 Bot shutdown cancels and awaits the seed and closes the HTTP session.
 
-Fixture evidence:125players over400days retained125documents (110250 BSON bytes,
-max882bytes with the minimal fixture counters; full unit baselines are larger).
+Fixture evidence:125 players over400 days retained125documents (110250 BSON bytes,
+max882 bytes with the minimal fixture counters; full unit baselines are larger).
 Real isolated Mongo7 checks passed for backup/restore, exact TTL metadata,
 purge invariance and official/seed concurrency. These are synthetic fixture
 results, not evidence of production activity or a production restore.
+
+
+Capacity planning: at roughly one regular war every two days,90 days retains
+about45N per-player war rows for N lineup accounts, plus manual/CWL rows in
+that window;30 days retains about15C clan-war snapshots for C clans. TTL deletion
+is asynchronous, so allow a background-sweep margin and index/storage overhead.
+The activity collection adds only one bounded document per current or recently
+departed player. Full unit baselines are larger than the minimal882byte fixture;
+actual collStats before/after, not that lower-bound fixture, govern rollout size.

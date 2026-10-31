@@ -33,3 +33,19 @@ def test_family_move_attack_and_observed_skip_but_never_historical_skip():
         await capture_raids(store, NS(get_raid_log=partial), [CLAN, '#8GG8'], now=NOW+timedelta(days=8))
         assert (await store.get(other))['raid_weekends']==skipped
     asyncio.run(run())
+
+
+def test_entire_family_without_raid_entries_can_have_an_observed_skip():
+    from datetime import datetime, timezone
+    async def run():
+        end = datetime(2026, 11, 2, 7, tzinfo=timezone.utc)
+        store = PlayerActivityStore(NS(player_activity=ActivityCollection()))
+        await store.record({'tag': PLAYER, 'attackWins': 1}, CLAN, now=end-timedelta(hours=2))
+        await store.reconcile_membership({PLAYER: CLAN}, now=end-timedelta(minutes=30))
+        await store.reconcile_membership({PLAYER: CLAN}, now=end+timedelta(minutes=30))
+        async def empty(*args, **kwargs):
+            return []
+        await capture_raids(store, NS(get_raid_log=empty), [CLAN], now=end+timedelta(minutes=30))
+        rows = (await store.get(PLAYER))['raid_weekends']
+        assert rows == [{'weekend_id': end.isoformat(), 'attacked': False, 'attacks': 0}]
+    asyncio.run(run())

@@ -10,10 +10,16 @@ def timestamp(value):
 
 
 async def capture_raids(store, client, clan_tags, *, now=None):
-    now = now or datetime.now(timezone.utc)
-    weekends = {}
-    complete = True
-    for clan in sorted(set(clan_tags)):
+    now = timestamp(now or datetime.now(timezone.utc))
+    latest_end = (now - timedelta(days=now.weekday())).replace(hour=7, minute=0, second=0, microsecond=0)
+    if latest_end > now:
+        latest_end -= timedelta(days=7)
+    # An entirely quiet family may have no log entry for the ended weekend.
+    # Calendar evidence supplies the weekend identity, never membership evidence.
+    weekends = {latest_end.isoformat(): {'end': latest_end, 'attacks': {}}}
+    clan_tags = sorted(set(clan_tags))
+    complete = bool(clan_tags)
+    for clan in clan_tags:
         try:
             entries = await client.get_raid_log(clan, limit=8)
             # coc exposes an async iterator; fixtures may supply ordinary lists.

@@ -1285,7 +1285,7 @@ class StrikeService:
         Older unresolved captured wars block newer account events. The reservation
         freezes both the next count and target strikes before any revoke; a crash
         or another worker may safely finish it. Completed event receipts stay on
-        the permanent war ledger, and the account watermark rejects old replays.
+        the retained war ledger; the permanent profile watermark rejects old replays.
         """
         guild_id, player = row['guild_id'], row['player_tag']
         profile_id = f'{guild_id}:{player}'

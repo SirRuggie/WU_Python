@@ -50,3 +50,13 @@ Final counts and review SHA are recorded in the handoff READY after the final
 run completes. Production remains gated on Claude review, backup/test-restore,
 protected-state/collection-size verification, first-hour worker logs, readiness
 and rollback. The fixture evidence does not imply any production TTL was enabled.
+
+
+Final validation: full guarded backend5407passed/19skipped (221subtests), full
+frontend1164passed/224files, actual isolated Mongo2passed. Final post-suite raid
+calendar/empty-family regression and review cleanup passed the24-test targeted
+suite (2optional Mongo tests skipped there; they passed in their explicit lane).
+All four required mutations were refreshed and killed, then source was restored.
+The raid calendar supplies only the ended weekend identity when every clan log
+is empty; it never substitutes for observed membership. Backup directories use
+private0700 permissions. No live Discord or notification test was sent.

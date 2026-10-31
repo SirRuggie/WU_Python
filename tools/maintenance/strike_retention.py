@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from datetime import datetime, timezone
 from uuid import uuid4
 
 from bson import json_util
@@ -29,7 +28,7 @@ def digest(rows):
 
 def migrate(client, routes, destination, *, apply=False):
     destination = Path(destination)
-    destination.mkdir(parents=True, exist_ok=False)
+    destination.mkdir(parents=True, exist_ok=False, mode=0o700)
     restore_name = 'wu_retention_restore_' + uuid4().hex
     restore = client[restore_name]
     manifest = {'collections': {}, 'restored': False, 'ttl_applied': False}
