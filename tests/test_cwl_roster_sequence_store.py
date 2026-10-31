@@ -178,3 +178,33 @@ class SequenceStoreTests(unittest.TestCase):
             state = describe(self.images, 1, 'lazy')
         self.assertEqual([clan['name'] for clan in state['clans']], ['Old clan'])
         self.assertEqual([clan['name'] for clan in state['published_clans']], ['Lazy.128'])
+
+    def test_explicit_deleted_announcement_archive_is_replay_safe(self):
+        self.images.prepare_sequence(**self.args)
+        message = '987654321098765432'
+        with self.store.tx() as db:
+            db.execute("UPDATE roster_image_sequences SET status='complete',announcement_message_id=?", (message,))
+        self.assertTrue(self.images.archive_deleted_sequence(1, 'lazy', message, 'staff'))
+        self.assertIsNone(self.images.pool_sequence(1, 'lazy'))
+        self.images.prepare_sequence(**(self.args | {'sequence_id': 'b' * 24}))
+        self.assertFalse(self.images.archive_deleted_sequence(1, 'lazy', message, 'staff'))
+        self.assertEqual(self.images.pool_sequence(1, 'lazy')['sequence_id'], 'b' * 24)
+        archive = self.store.one('SELECT * FROM roster_image_sequence_archives')
+        self.assertEqual(json.loads(archive['sequence_json'])['announcement_message_id'], message)
+
+    def test_deleted_announcement_archive_rejects_inflight_or_changed_sequence(self):
+        self.images.prepare_sequence(**self.args)
+        with self.assertRaises(ImageConflict):
+            self.images.archive_deleted_sequence(1, 'lazy', '987654321098765432', 'staff')
+        self.assertIsNotNone(self.images.pool_sequence(1, 'lazy'))
+        self.assertIsNone(self.store.one('SELECT * FROM roster_image_sequence_archives'))
+
+    def test_archive_preserves_legacy_message_mapping_and_other_pool(self):
+        with self.store.tx() as db:
+            for pool in ('main', 'lazy'):
+                db.execute("INSERT INTO roster_image_posts(season_id,pool,clan_tag,channel_id,message_id,posted_version,status,request_id,posted_by) VALUES(1,?,'#ABC','123456789012345678','987654321098765433',1,'posted',?,'staff')", (pool, pool))
+        self.images.archive_deleted_sequence(1, 'lazy', '987654321098765432', 'staff')
+        self.assertIsNone(self.images.current(1, 'lazy', '#ABC'))
+        self.assertEqual(self.images.current(1, 'main', '#ABC')['message_id'], '987654321098765433')
+        archive = self.store.one('SELECT posts_json FROM roster_image_sequence_archives')
+        self.assertEqual(json.loads(archive['posts_json'])[0]['message_id'], '987654321098765433')

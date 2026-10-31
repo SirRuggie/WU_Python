@@ -222,9 +222,18 @@ it("offers Retry only for the ready failed pool and never for sent or uncertain"
   bridge.pools.main.delivery = { status: "sent" };
   bridge.pools.lazy.delivery = { status: "failed" };
   await mount();
-  expect(host.querySelectorAll(".announcement-pool-card button")).toHaveLength(
-    5,
-  );
+  const cards = host.querySelectorAll(".announcement-pool-card");
+  expect(cards[0].textContent).toContain("Check posted message");
+  expect(
+    [...cards[0].querySelectorAll("button")].some(
+      (button) => button.textContent === "Retry",
+    ),
+  ).toBe(false);
+  expect(
+    [...cards[1].querySelectorAll("button")].filter(
+      (button) => button.textContent === "Retry",
+    ),
+  ).toHaveLength(1);
   await click("Review and send");
   expect(
     document.querySelectorAll(".announcement-send-review section"),

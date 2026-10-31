@@ -227,7 +227,9 @@ async def send(request):
     cycle = _required_binding(request, sid)
     pool = _pool(request)
     body = await _json(request)
-    if set(body) != {'generation', 'channel_id', 'version'} or type(body.get('version')) is not int:
+    resend = 'deleted_message_id' in body or 'confirm_resend' in body
+    expected_keys = {'generation', 'channel_id', 'version'} | ({'deleted_message_id', 'confirm_resend'} if resend else set())
+    if set(body) != expected_keys or type(body.get('version')) is not int:
         raise web.HTTPBadRequest(text='Review the published version, channel and Manage settings before sending')
     with _store(request).tx() as db:
         if _season(db, sid)['status'] != 'draft':
@@ -242,6 +244,10 @@ async def send(request):
             raise web.HTTPServiceUnavailable(text='Manage delivery worker is unavailable; nothing queued')
         try:
             previous = await get_roster_send_status(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool)
+            if resend:
+                from .announcement_recovery import prepare_resend
+                previous = await prepare_resend(request, mongo, sid=sid, cycle=cycle, pool=pool,
+                                                body=body, actor=session, previous=previous)
             sequence = await prepare(request, sid, pool, cycle, body, session, previous)
             result = await queue_roster_send(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool,
                 publication_version=body['version'], expected_generation=body['generation'],

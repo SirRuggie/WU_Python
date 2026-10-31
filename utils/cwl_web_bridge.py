@@ -137,6 +137,33 @@ async def queue_roster_send(
     return await mongo.bot_config.find_one({"_id": key})
 
 
+async def reopen_deleted_request(mongo, *, guild_id, cycle, pool, receipt, actor_id):
+    """Reopen only the staff-confirmed deleted receipt, never an uncertain send."""
+    key = request_id(guild_id, cycle, pool)
+    row = await mongo.bot_config.find_one({"_id": key})
+    if row and row.get("status") in {"pending", "sending", "uncertain"}:
+        raise BridgeConflict("Resolve the in-progress announcement before resending")
+    if await _pending_ledger_receipt(mongo, guild_id, cycle, pool):
+        raise BridgeConflict("The announcement receipt is still being saved; retry later")
+    archived = await cwl_campaign.reopen_deleted_roster_delivery(
+        mongo, guild_id, cycle, pool, channel_id=int(receipt['channel_id']),
+        message_id=int(receipt['message_id']), actor_id=int(actor_id),
+    )
+    if row:
+        if row.get('deleted_message_id') == str(receipt['message_id']) and row.get('status') == 'failed':
+            return archived
+        result = await mongo.bot_config.update_one(
+            {'_id': key, 'status': row.get('status')},
+            {'$set': {'status': 'failed', 'deleted_message_id': str(receipt['message_id']),
+                      'error': 'Previous announcement was deleted; explicit resend confirmed',
+                      'updated_at': _now()},
+             '$push': {'previous_receipts': {'$each': [archived]}}},
+        )
+        if not result.matched_count:
+            raise BridgeConflict('Announcement request changed; refresh before resending')
+    return archived
+
+
 async def _pending_ledger_receipt(mongo, guild_id: int, cycle: str, pool: str) -> dict | None:
     collection = getattr(mongo, "cwl_pending_reminders", None)
     if collection is None:

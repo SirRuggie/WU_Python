@@ -1,3 +1,4 @@
+import AnnouncementDeletedRecovery from "./AnnouncementDeletedRecovery";
 import AnnouncementFullTest from "./AnnouncementFullTest";
 import AnnouncementSequenceStatus from "./AnnouncementSequenceStatus";
 import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
@@ -650,14 +651,57 @@ export default function ManageBridgeWorkspace({
                       key={pool}
                       pool={pool}
                       sequence={
-                        <AnnouncementSequenceStatus
-                          key={`${seasonId}:${pool}`}
-                          seasonId={seasonId}
-                          pool={pool}
-                          sequence={entry.sequence}
-                          canSend={canManage && !busy}
-                          onRefresh={() => load(false)}
-                        />
+                        <>
+                          <AnnouncementSequenceStatus
+                            key={`${seasonId}:${pool}`}
+                            seasonId={seasonId}
+                            pool={pool}
+                            sequence={entry.sequence}
+                            canSend={canManage && !busy}
+                            onRefresh={() => load(false)}
+                          />
+                          {delivery?.status === "sent" && (
+                            <AnnouncementDeletedRecovery
+                              key={`recovery:${seasonId}:${pool}`}
+                              seasonId={seasonId}
+                              pool={pool}
+                              cycle={bridge.cycle || ""}
+                              version={bridge.published_version}
+                              generation={bridge.generation || ""}
+                              channel={drafts[pool].channel_id}
+                              channelName={
+                                channels.find(
+                                  (channel) =>
+                                    channel.id === drafts[pool].channel_id,
+                                )?.name || drafts[pool].channel_id
+                              }
+                              roleNames={entry.role_ids.map(
+                                (id) =>
+                                  roles.items.find((role) => role.id === id)
+                                    ?.name || `Role ${id}`,
+                              )}
+                              clans={
+                                entry.sequence?.published_clans?.map(
+                                  (clan) => ({
+                                    ...clan,
+                                    status: "not_started",
+                                  }),
+                                ) || []
+                              }
+                              preview={preview(pool)}
+                              allowed={
+                                canManage &&
+                                !busy &&
+                                !loading &&
+                                !bridgeError &&
+                                !channelsError &&
+                                !unsaved(pool) &&
+                                draftGeneration === bridge.generation
+                              }
+                              onQueued={() => void load(false)}
+                            />
+                          )}
+                        </>
                       }
                       enabled={entry.enabled}
                       changed={unsaved(pool)}
@@ -854,9 +898,9 @@ export default function ManageBridgeWorkspace({
                 !channelsError &&
                 draftGeneration === bridge.generation
               }
-              clanNames={(bridge.pools[editor.pool].sequence?.published_clans || []).map(
-                (clan) => clan.name,
-              )}
+              clanNames={(
+                bridge.pools[editor.pool].sequence?.published_clans || []
+              ).map((clan) => clan.name)}
             />
           }
           testChannel={testChannel}

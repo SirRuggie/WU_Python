@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 
 type ReviewPool = {
   key: string;
+  resend?: boolean;
   label: string;
   destination: string;
   roleNames: string[];
@@ -87,6 +88,13 @@ export default function AnnouncementSendReview({
       </p>
       {pools.map((pool) => (
         <section key={pool.key} aria-label={`${pool.label} send review`}>
+          {pool.resend && (
+            <p role="alert">
+              The previous announcement was deleted. Send again will ping the
+              configured roles again, followed by fresh clan images and a
+              closing note. Earlier image posts stay in Discord.
+            </p>
+          )}
           <h3>
             {pool.label} → #{pool.destination}
           </h3>
@@ -130,7 +138,9 @@ export default function AnnouncementSendReview({
             onConfirm();
           }}
         >
-          Queue {pools.length === 1 ? "announcement" : "both announcements"}
+          {pools.some((pool) => pool.resend)
+            ? "Send again — ping again"
+            : `Queue ${pools.length === 1 ? "announcement" : "both announcements"}`}
         </Button>
       </footer>
     </dialog>,

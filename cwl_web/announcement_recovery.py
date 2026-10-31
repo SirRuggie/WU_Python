@@ -48,3 +48,32 @@ async def check(request):
         if not after or after.get('status') != 'sent' or receipt_target(after.get('receipt')) != (channel, message):
             raise web.HTTPConflict(text='The announcement receipt changed during the check; review again')
     return web.json_response({'deleted': deleted, 'channel_id': channel, 'message_id': message})
+
+
+async def prepare_resend(request, mongo, *, sid, cycle, pool, body, actor, previous):
+    """Apply the staff's explicit resend confirmation after a fresh Discord check."""
+    from utils import cwl_campaign
+    from utils.cwl_web_bridge import campaign_generation, reopen_deleted_request, get_roster_send_status
+    from utils.cwl_roster_image_store import RosterImageStore, ImageConflict
+    from .roster_sequence_review import _not_active
+    if body.get('confirm_resend') is not True or not isinstance(body.get('deleted_message_id'), str):
+        raise web.HTTPBadRequest(text='Confirm Send again: the announcement will ping its roles again')
+    receipt = (previous or {}).get('receipt')
+    channel, message = receipt_target(receipt)
+    if message != body['deleted_message_id'] or (previous or {}).get('status') not in ('sent', 'failed'):
+        raise web.HTTPConflict(text='The reviewed announcement changed; check it again')
+    loaded = await cwl_campaign.load_campaign(mongo, GUILD_ID, cycle)
+    configured = loaded['campaign']['messages']['roster']['variants'][pool].get('destination_channel_id')
+    if campaign_generation(loaded) != body['generation'] or str(configured) != body['channel_id']:
+        raise web.HTTPConflict(text='Announcement settings changed; review again')
+    if not await deleted_in_discord(request, receipt):
+        raise web.HTTPConflict(text='The announcement still exists; it cannot be sent again')
+    storage = RosterImageStore(request.app['store'])
+    _not_active(request, storage.pool_sequence(sid, pool))
+    try:
+        storage.archive_deleted_sequence(sid, pool, message, actor['user_id'])
+        await reopen_deleted_request(mongo, guild_id=GUILD_ID, cycle=cycle, pool=pool,
+                                     receipt=receipt, actor_id=actor['user_id'])
+    except (ValueError, ImageConflict) as exc:
+        raise web.HTTPConflict(text=str(exc)) from None
+    return await get_roster_send_status(mongo, GUILD_ID, cycle, pool)

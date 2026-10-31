@@ -63,3 +63,26 @@ def test_confirmed_deleted_message_changes_nonce_but_retry_is_stable():
     assert replacement != original
     assert campaign.roster_delivery_nonce(22, occurrence, deleted) == replacement
     assert campaign.roster_delivery_nonce(22, occurrence, deleted + [dict(deleted[0], message_id=456)]) != replacement
+
+
+def test_reopened_request_can_queue_once_and_old_receipt_survives():
+    from utils import cwl_web_bridge as bridge
+    from test_cwl_web_bridge import settings, GUILD, CYCLE
+    async def scenario():
+        mongo = MemoryMongo()
+        loaded = await campaign.load_campaign(mongo, GUILD, CYCLE)
+        args = settings(loaded)
+        queued = await bridge.queue_roster_send(mongo, **args)
+        receipt = {'occurrence_id': campaign.occurrence_id(CYCLE, 'roster', 'main'),
+                   'status': 'sent', 'channel_id': queued['channel_id'], 'message_id': 123}
+        await campaign.record_delivery(mongo, GUILD, CYCLE, receipt)
+        await mongo.bot_config.update_one({'_id': queued['_id']}, {'$set': {'status': 'sent', 'receipt': receipt}})
+        await bridge.reopen_deleted_request(mongo, guild_id=GUILD, cycle=CYCLE, pool='main', receipt=receipt, actor_id=42)
+        row = await bridge.queue_roster_send(mongo, **args, retry_failed=True)
+        assert row['status'] == 'pending'
+        assert row['previous_receipts'][-1]['message_id'] == 123
+        with pytest.raises(bridge.BridgeConflict):
+            await bridge.reopen_deleted_request(mongo, guild_id=GUILD, cycle=CYCLE, pool='main', receipt=receipt, actor_id=42)
+        with pytest.raises(bridge.BridgeConflict):
+            await bridge.queue_roster_send(mongo, **args, retry_failed=True)
+    asyncio.run(scenario())

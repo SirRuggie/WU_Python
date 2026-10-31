@@ -68,3 +68,33 @@ class RecoveryHTTPTests(ManageBridgeTests):
         after = await cwl_campaign.load_campaign(mongo, GUILD_ID, cycle)
         self.assertEqual(after['deliveries'], before['deliveries'])
         self.assertEqual(after['sent_occurrences'], before['sent_occurrences'])
+
+    async def test_explicit_resend_rechecks_deleted_message_and_queues_once(self):
+        from utils import cwl_web_bridge
+        from cwl_web.manage_bridge import GUILD_ID
+        await self.bind()
+        await self.publish()
+        await cwl_web_bridge.mark_worker_alive(self.mongo, GUILD_ID)
+        state = await self.state()
+        receipt = {'occurrence_id': cwl_campaign.occurrence_id(state['cycle'], 'roster', 'main'),
+                   'status': 'sent', **RECEIPT}
+        await cwl_campaign.record_delivery(self.mongo, GUILD_ID, state['cycle'], receipt)
+        body = {'version': 1, 'generation': state['generation'],
+                'channel_id': state['pools']['main']['channel_id'],
+                'deleted_message_id': RECEIPT['message_id'], 'confirm_resend': True}
+        path = self.base + '/main/send'
+        fake = AsyncMock(side_effect=[CHANNEL, {'id': RECEIPT['message_id']}, CHANNEL, DiscordItemNotFound(10008)])
+        with patch('cwl_web.announcement_recovery.discord', fake):
+            exists = await self.call('POST', path, self.owner, json=body)
+            self.assertEqual(exists.status, 409)
+            sent = await self.call('POST', path, self.owner, json=body)
+            self.assertEqual(sent.status, 202, await sent.text())
+            duplicate = await self.call('POST', path, self.owner, json=body)
+            self.assertEqual(duplicate.status, 409)
+        self.assertEqual(fake.await_count, 4)
+        self.assertTrue(all(call.args[1] == 'GET' for call in fake.call_args_list))
+        current = await self.state()
+        self.assertEqual(current['pools']['main']['delivery']['status'], 'pending')
+        self.assertFalse(current['pools']['main']['sequence']['announcement_confirmed'])
+        history = await cwl_campaign.load_campaign(self.mongo, GUILD_ID, state['cycle'])
+        self.assertEqual(history['deliveries'][-1]['status'], 'deleted_confirmed')

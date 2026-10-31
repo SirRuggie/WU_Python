@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS roster_image_sequence_closing (
  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS roster_image_sequence_archives (
+ season_id INTEGER NOT NULL, pool TEXT NOT NULL, deleted_message_id TEXT NOT NULL,
+ sequence_json TEXT, closing_json TEXT, posts_json TEXT NOT NULL,
+ actor_id TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY(season_id,pool,deleted_message_id)
+);
+
 CREATE TABLE IF NOT EXISTS roster_image_sequence_closing_history (
  request_id TEXT PRIMARY KEY, sequence_id TEXT NOT NULL,
  receipt_json TEXT NOT NULL
@@ -623,6 +630,42 @@ class RosterImageStore:
                        'ON CONFLICT(season_id,pool,clan_tag) DO UPDATE SET channel_id=excluded.channel_id,message_id=excluded.message_id,status=excluded.status,request_id=excluded.request_id,error=NULL,posted_by=excluded.posted_by,updated_at=CURRENT_TIMESTAMP',
                        (sid, pool, clan, channel, message, 'sending', request_id, actor))
             return dict(db.execute('SELECT * FROM roster_image_requests WHERE request_id=?', (request_id,)).fetchone()), True
+
+    def archive_deleted_sequence(self, sid, pool, deleted_message_id, actor):
+        """Retain the old sequence/mappings before an explicit fresh resend.
+
+        No Discord messages or individual delivery receipts are deleted. Replay
+        of the same confirmed announcement deletion cannot erase its replacement.
+        """
+        if pool not in ('main', 'lazy') or not re.fullmatch(r'\d{15,22}', str(deleted_message_id)):
+            raise ImageConflict('A confirmed deleted announcement receipt is required')
+        with self.store.tx() as db:
+            previous = db.execute(
+                'SELECT 1 FROM roster_image_sequence_archives WHERE season_id=? AND pool=? AND deleted_message_id=?',
+                (sid, pool, str(deleted_message_id)),
+            ).fetchone()
+            if previous:
+                return False
+            sequence = db.execute('SELECT * FROM roster_image_sequences WHERE season_id=? AND pool=?', (sid, pool)).fetchone()
+            posts = db.execute('SELECT * FROM roster_image_posts WHERE season_id=? AND pool=?', (sid, pool)).fetchall()
+            if any(post['status'] in ('sending', 'uncertain') for post in posts):
+                raise ImageConflict('Check unfinished image deliveries before resending the announcement')
+            closing = None
+            if sequence:
+                if (sequence['announcement_message_id'] != str(deleted_message_id)
+                        or sequence['status'] not in ('complete', 'stopped')):
+                    raise ImageConflict('The previous image sequence must finish or stop before resending')
+                closing = db.execute('SELECT * FROM roster_image_sequence_closing WHERE sequence_id=?', (sequence['sequence_id'],)).fetchone()
+                if closing and closing['status'] in ('sending', 'uncertain'):
+                    raise ImageConflict('Check the unfinished closing message before resending')
+            db.execute('INSERT INTO roster_image_sequence_archives(season_id,pool,deleted_message_id,sequence_json,closing_json,posts_json,actor_id) VALUES(?,?,?,?,?,?,?)',
+                       (sid, pool, str(deleted_message_id), json.dumps(dict(sequence)) if sequence else None,
+                        json.dumps(dict(closing)) if closing else None, json.dumps([dict(post) for post in posts]), str(actor)))
+            if sequence:
+                db.execute('DELETE FROM roster_image_sequence_closing WHERE sequence_id=?', (sequence['sequence_id'],))
+                db.execute('DELETE FROM roster_image_sequences WHERE sequence_id=?', (sequence['sequence_id'],))
+            db.execute('DELETE FROM roster_image_posts WHERE season_id=? AND pool=?', (sid, pool))
+            return True
 
     def repost_deleted(self, receipt):
         """Convert a confirmed-deleted edit into a distinct durable NEW attempt."""
