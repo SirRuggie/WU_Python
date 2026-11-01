@@ -54,8 +54,7 @@ one owned real Mongo test covers exact boolean/filter/projection behavior,
 response size and full native generation loading; six behavioral mutants fail
 for full-response loading, missing revision/edit/recurring/cycle fields and
 inactive-campaign selection. Required war-reminder checks pass (213 backend,
-one skip, 35 frontend, TypeScript and isolated build). Full guarded backend run
-is pending at this development checkpoint. No live notification was sent.
+one skip, 35 frontend, TypeScript and isolated build). Full guarded backend passes: 5,718 tests, 59 skipped and 224 subtests. No live notification was sent.
 
 Only the bot needs the new shared function loaded. Release requires Claude
 ACCEPT under owner approval303/314, a fresh backup and isolated test restore,
