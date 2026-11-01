@@ -278,13 +278,16 @@ def test_page_does_not_wait_for_names_and_failure_refresh_is_cached(monkeypatch)
         monkeypatch.setattr(clan_weights,'overlay_accounts',lambda store,payload:payload)
         for _ in range(3):
             response=await asyncio.wait_for(strikes.activity_accounts(request),.1)
-            assert json.loads(response.body)['identity_warning']
+            body=json.loads(response.body)
+            assert body['identity_warning']
+            assert body['identity_updating'] is True
         await asyncio.sleep(0)
         assert recruit_links.resolve_players.await_count==1, repr(request.app)
         blocked.set()
         await request.app['activity_identity_cache']['task']
         for _ in range(3):
-            await asyncio.wait_for(strikes.activity_accounts(request),.1)
+            response=await asyncio.wait_for(strikes.activity_accounts(request),.1)
+            assert json.loads(response.body)['identity_updating'] is False
         assert recruit_links.resolve_players.await_count==1
     asyncio.run(run())
 

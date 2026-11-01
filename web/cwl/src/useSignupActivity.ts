@@ -43,7 +43,7 @@ export default function useSignupActivity(seasonId: string) {
       }
     }
     void load(true);
-    const timer = window.setInterval(() => void load(), 30000);
+    const timer = window.setInterval(() => void load(true), 30000);
     const onVisibility = () => void load();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {

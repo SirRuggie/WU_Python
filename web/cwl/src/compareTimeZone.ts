@@ -42,7 +42,7 @@ const offsets: Record<string, number> = {
 };
 export function ownerTimeZone(nickname?: string | null): OwnerTimeZone | null {
   if (!nickname || !nickname.includes(" | ")) return null;
-  const label = nickname
+  const rawLabel = nickname
     .slice(nickname.lastIndexOf(" | ") + 3)
     .normalize("NFKC")
     .replace(
@@ -50,8 +50,10 @@ export function ownerTimeZone(nickname?: string | null): OwnerTimeZone | null {
       "",
     )
     .trim()
-    .replace(/\s+/g, " ")
-    .toUpperCase();
+    .replace(/\s+/g, " ");
+  const label = rawLabel.toUpperCase();
+  if (["MT", "MTN"].includes(label) && rawLabel !== label)
+    return { label, offsetMinutes: null };
   if (!label) return null;
   if (Object.hasOwn(offsets, label))
     return { label, offsetMinutes: offsets[label] };

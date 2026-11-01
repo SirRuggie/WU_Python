@@ -21,9 +21,10 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
-it("bounds repeated visible events and rerenders to one read per30seconds", async () => {
+it("throttles visibility bursts while regular interval reads continue", async () => {
   await act(async () => root.render(<Fixture render={0} />));
   for (let n = 1; n <= 30; n++)
     await act(async () => {
@@ -36,4 +37,25 @@ it("bounds repeated visible events and rerenders to one read per30seconds", asyn
   expect(api).toHaveBeenCalledTimes(2);
   await act(async () => vi.advanceTimersByTimeAsync(30000));
   expect(api).toHaveBeenCalledTimes(3);
+});
+
+it("does not skip interval ticks that fire just under thirty seconds", async () => {
+  let tick!: () => void;
+  vi.spyOn(window, "setInterval").mockImplementation((handler, delay) => {
+    expect(delay).toBe(30000);
+    tick = handler as () => void;
+    return 123 as unknown as ReturnType<typeof window.setInterval>;
+  });
+  await act(async () => root.render(<Fixture render={0} />));
+  for (let count = 1; count <= 3; count++) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29980);
+      tick();
+    });
+    expect(api).toHaveBeenCalledTimes(count + 1);
+    await act(async () =>
+      document.dispatchEvent(new Event("visibilitychange")),
+    );
+    expect(api).toHaveBeenCalledTimes(count + 1);
+  }
 });

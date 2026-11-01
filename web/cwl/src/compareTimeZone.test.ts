@@ -161,7 +161,20 @@ it.each([
   expect(ownerTimeZone(`Name | ${label}`)?.offsetMinutes).toBe(offset),
 );
 
-it("normalizes decorated Unicode zone letters while retaining ambiguous annotations",()=>{
- expect(ownerTimeZone("Name | 𝔼𝕊𝕋")).toEqual({label:"EST",offsetMinutes:-300});
- expect(ownerTimeZone("Name | GMT+8 (NEW)")).toEqual({label:"GMT+8 (NEW)",offsetMinutes:null});
+it("normalizes decorated Unicode zone letters while retaining ambiguous annotations", () => {
+  expect(ownerTimeZone("Name | 𝔼𝕊𝕋")).toEqual({
+    label: "EST",
+    offsetMinutes: -300,
+  });
+  expect(ownerTimeZone("Name | GMT+8 (NEW)")).toEqual({
+    label: "GMT+8 (NEW)",
+    offsetMinutes: null,
+  });
 });
+
+it.each(["Mt", "mt", "mT", "Mtn", "mtn"])(
+  "does not infer Mountain time from the mixed-case word %s",
+  (label) => {
+    expect(ownerTimeZone(`Rick | ${label}`)?.offsetMinutes).toBeNull();
+  },
+);
