@@ -297,7 +297,6 @@ async def process_pending_roster_requests(mongo, sender, *, guild_id: int, limit
     return len(rows[:limit])
 
 
-
 async def reconcile_campaign_changes(mongo, sync_all, *, guild_id: int) -> bool:
     """Reuse the native scheduler when a web or Discord edit changes a campaign.
 
@@ -307,20 +306,58 @@ async def reconcile_campaign_changes(mongo, sync_all, *, guild_id: int) -> bool:
     """
     import hashlib
     import json
-    rows = await mongo.bot_config.find({'guild_id': int(guild_id)}).to_list(length=None)
-    rows = [row for row in rows if row.get('kind') in ('cwl_campaign_defaults', 'cwl_campaign_cycle') and row.get('activated') is True]
-    signature = hashlib.sha256(json.dumps(sorted(
-        (str(row['_id']), int(row.get('revision', 0)), str(row.get('updated_at', '')), str(row.get('recurring_updated_at', '')))
-        for row in rows), separators=(',', ':')).encode()).hexdigest()
-    worker = await mongo.bot_config.find_one({'_id': worker_id(guild_id)}) or {}
-    if worker.get('schedule_fingerprint') == signature:
+
+    # Only these active records participate in change detection. Do not fetch
+    # unrelated profile manifests, child receipts or campaign bodies every tick.
+    rows = await mongo.bot_config.find(
+        {
+            "guild_id": int(guild_id),
+            "kind": {"$in": ["cwl_campaign_defaults", "cwl_campaign_cycle"]},
+            "activated": True,
+        },
+        {
+            "_id": 1,
+            "revision": 1,
+            "updated_at": 1,
+            "recurring_updated_at": 1,
+            "cycle": 1,
+        },
+    ).to_list(length=None)
+    signature = hashlib.sha256(
+        json.dumps(
+            sorted(
+                (
+                    str(row["_id"]),
+                    int(row.get("revision", 0)),
+                    str(row.get("updated_at", "")),
+                    str(row.get("recurring_updated_at", "")),
+                )
+                for row in rows
+            ),
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    worker = await mongo.bot_config.find_one({"_id": worker_id(guild_id)}) or {}
+    if worker.get("schedule_fingerprint") == signature:
         return False
-    cycles = {row['cycle'] for row in rows if row.get('cycle')}
+    cycles = {row["cycle"] for row in rows if row.get("cycle")}
     # Capture generations before sync; never acknowledge a later concurrent edit.
-    generations = {cycle: campaign_generation(await cwl_campaign.load_campaign(mongo, guild_id, cycle)) for cycle in cycles}
+    generations = {
+        cycle: campaign_generation(
+            await cwl_campaign.load_campaign(mongo, guild_id, cycle)
+        )
+        for cycle in cycles
+    }
     await sync_all()
-    await mongo.bot_config.update_one({'_id': worker_id(guild_id)}, {'$set': {
-        'schedule_fingerprint': signature, 'schedule_generations': generations,
-        'schedule_sync_at': _now(),
-    }}, upsert=True)
+    await mongo.bot_config.update_one(
+        {"_id": worker_id(guild_id)},
+        {
+            "$set": {
+                "schedule_fingerprint": signature,
+                "schedule_generations": generations,
+                "schedule_sync_at": _now(),
+            }
+        },
+        upsert=True,
+    )
     return True
