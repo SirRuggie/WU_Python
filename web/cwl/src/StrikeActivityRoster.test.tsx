@@ -80,7 +80,7 @@ it("loads the family once, keeps weight tool closed, and row selection only navi
   expect(host.textContent).not.toContain("at risk");
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(2);
   expect(host.textContent).toContain("Quiet 0d");
-  expect(host.textContent).toContain("0 of 3 wars");
+  expect(host.textContent).toContain("Missed last 3 wars");
   expect(vi.mocked(fetch).mock.calls).toHaveLength(1);
   await act(async () =>
     host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click(),

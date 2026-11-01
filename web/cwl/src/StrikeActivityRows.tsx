@@ -4,16 +4,20 @@ import {
   hasNoActivity,
   quietDays,
   knownWars,
+  warsWithoutAttacking,
   count,
   knownRaidMisses,
   type ActivitySort,
   type ActivityFilters,
 } from "./strikeActivityFilters";
 const warRatio = (row: ActivityAccount) => {
+  const chain = warsWithoutAttacking(row);
+  if (chain !== null && chain >= 1)
+    return chain === 1 ? "Missed last war" : `Missed last ${chain} wars`;
   const total = knownWars(row),
     attacked = count(row.attacked_wars);
   return total !== null && attacked !== null && attacked <= total
-    ? `${attacked} of ${total}`
+    ? `${attacked} of ${total} wars`
     : null;
 };
 const raidRatio = (row: ActivityAccount) =>
@@ -38,7 +42,7 @@ export function compactActivitySummary(row: ActivityAccount) {
       : hasNoActivity(row)
         ? "No activity yet"
         : null,
-    wars ? `${wars} wars` : null,
+    wars,
     raids ? `${raids} raids` : null,
   ]
     .filter(Boolean)

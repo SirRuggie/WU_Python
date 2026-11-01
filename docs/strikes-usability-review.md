@@ -82,3 +82,10 @@ are retained in.local/p65-final-evidence; no required gate remains pending. Earl
 role, counted checkbox label, panel-entry URL restoration and teardown races) were
 corrected; failed runs are not counted as passes. No production65 write or
 activation occurred.
+
+Claude addendum 236: compact mobile summaries and the desktop Wars column now show
+“Missed last war” / “Missed last N wars” for a known consecutive no-attack chain.
+A zero chain retains the known attacked/observed ratio; unknown observations remain
+hidden. Full detail keeps the attacked/observed count. Wars sorting continues to
+use the unchanged prompt 60 chain. Targeted regression tests cover singular,
+plural, zero and unavailable values.
