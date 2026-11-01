@@ -32,6 +32,11 @@ export type ActivityAccount = {
   missed_attacks: number;
   observed_attacks: number;
   no_attack_wars: number;
+  observed_wars?: number | null;
+  attacked_wars?: number | null;
+  last_attacked_war_end?: string | null;
+  observed_raid_weekends?: number | null;
+  attacked_raid_weekends?: number | null;
   skipped_raid_weekends: number;
 };
 export const activitySorts = [

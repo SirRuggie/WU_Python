@@ -3,6 +3,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { Menu as AriaMenu, MenuItem } from "react-aria-components";
 import type { LucideIcon } from "lucide-react";
 import ActionPanel from "../ActionPanel";
+import { Input } from "./primitives";
 import "./tokens.css";
 import "./primitives.css";
 
@@ -21,6 +22,8 @@ export type RosterMenuProps = {
   options: RosterMenuOption[];
   disabled?: boolean;
   autoFocus?: boolean;
+  searchable?: boolean;
+  searchLabel?: string;
   id?: string;
   "aria-label"?: string;
 };
@@ -48,13 +51,26 @@ export default function RosterMenu({
   options,
   disabled = false,
   autoFocus = false,
+  searchable = false,
+  searchLabel = "Find a clan",
   id,
   "aria-label": ariaLabel,
 }: RosterMenuProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [trigger, setTrigger] = useState<HTMLElement | null>(null);
   const selected = options.find((option) => option.value === value);
+  const normalizedSearch = search.trim().normalize("NFKC").toLocaleLowerCase();
+  const matching = options.filter(
+    (option) =>
+      !searchable ||
+      `${option.label} ${option.value}`
+        .normalize("NFKC")
+        .toLocaleLowerCase()
+        .includes(normalizedSearch),
+  );
   const openMenu = (event: MouseEvent<HTMLButtonElement>) => {
+    setSearch("");
     setTrigger(event.currentTarget);
     setOpen(true);
   };
@@ -92,13 +108,27 @@ export default function RosterMenu({
           trigger={trigger}
           onClose={() => setOpen(false)}
           className="roster-ui"
+          expandOnSearchFocus={searchable}
         >
           <div className="roster-ui roster-menu-panel">
+            {searchable && (
+              <Input
+                label={searchLabel}
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Clan name or tag"
+                autoFocus
+              />
+            )}
+            {searchable && !matching.length && (
+              <p>No clans match this search.</p>
+            )}
             <AriaMenu
               aria-label={ariaLabel || label}
               className="roster-menu-list"
             >
-              {options.map((option) => {
+              {matching.map((option) => {
                 const Icon = option.icon;
                 return (
                   <RosterMenuItem
