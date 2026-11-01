@@ -17,16 +17,15 @@ export default function MemberTimezones({
     [query, setQuery] = useState(""),
     [status, setStatus] = useState("All"),
     [page, setPage] = useState(0),
-    [requestKind, setRequestKind] = useState<"save" | "import" | null>(null),
+    [requestKind, setRequestKind] = useState<"save" | null>(null),
     [requestMember, setRequestMember] = useState<string | null>(null),
     [editing, setEditing] = useState<Member | null>(null),
     [dirty, setDirty] = useState(false),
     [request, setRequest] = useState<RequestState | null>(null),
-    [sending, setSending] = useState(false),
+    [reviewBusy, setReviewBusy] = useState(false),
     [loaded, setLoaded] = useState("");
   const alive = useRef(true),
     generation = useRef(0),
-    importId = useRef(crypto.randomUUID()),
     rowButton = useRef<string | null>(null),
     returnScroll = useRef(0),
     directoryHeading = useRef<HTMLHeadingElement | null>(null);
@@ -91,7 +90,8 @@ export default function MemberTimezones({
   }, [editing, data]);
 
   const busy =
-    sending || (!!request && ["pending", "running"].includes(request.status));
+    reviewBusy ||
+    (!!request && ["pending", "running"].includes(request.status));
   useEffect(() => {
     if (!request || !["pending", "running"].includes(request.status)) return;
     let cancelled = false,
@@ -113,7 +113,7 @@ export default function MemberTimezones({
             setDirty(false);
             onDirty(false);
             void load();
-          } else setError(result.message);
+          }
         }
       } catch (e) {
         if (!cancelled) fail(e);
@@ -135,32 +135,6 @@ export default function MemberTimezones({
     setDirty(false);
     onDirty(false);
   };
-  async function importCurrent() {
-    if (
-      !window.confirm(
-        "Import parsed nickname time zones? Existing saved profiles and all Discord nicknames stay unchanged.",
-      )
-    )
-      return;
-    setSending(true);
-    setError("");
-    try {
-      if (requestKind === "import" && request?.status === "failed")
-        importId.current = crypto.randomUUID();
-      setRequestKind("import");
-      setRequestMember(null);
-      setRequest(null);
-      setRequest(
-        await api<RequestState>("/manage/member-timezones/import", "POST", {
-          request_id: importId.current,
-        }),
-      );
-    } catch (e) {
-      fail(e);
-    } finally {
-      if (alive.current) setSending(false);
-    }
-  }
   const rows = (data?.members || [])
     .filter(
       (m) =>
@@ -196,7 +170,7 @@ export default function MemberTimezones({
           Refresh members
         </button>
       )}
-      {request && (
+      {request && !editing && (
         <p role="status">
           {request.status}: {request.message}
           {request.result?.counts &&
@@ -214,26 +188,15 @@ export default function MemberTimezones({
       ) : (
         <>
           <div className="mt-top-actions" hidden={!!editing}>
-            <details>
-              <summary aria-label="Import existing nicknames">
-                Import nicknames
-              </summary>
-              <p>
-                Fill profiles from recognized time zone labels. No nickname
-                changes; existing saved and imported choices are preserved.
-              </p>
-              <button disabled={busy} onClick={() => void importCurrent()}>
-                Import nickname time zones
-              </button>
-            </details>
             <Standardize
               disabled={busy}
               onDenied={denied}
               members={data.members}
+              onBusy={setReviewBusy}
+              onImported={() => void load()}
+              onRefresh={() => void load()}
+              refreshing={loading}
             />
-            <button disabled={loading || busy} onClick={() => void load()}>
-              Refresh members
-            </button>
           </div>
           {editing ? (
             <MemberTimezoneEditor

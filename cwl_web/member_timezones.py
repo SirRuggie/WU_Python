@@ -245,34 +245,8 @@ async def import_current(request):
 async def standardize_preview(request):
     actor = await require_manage(request, "member_profiles", write=True)
     rows = await inventory(request)
-    preview = []
-    for row in rows:
-        profile = row["profile"]
-        item = dict(
-            discord_id=row["discord_id"],
-            name=row["name"],
-            old_nickname=row["nickname"],
-            new_nickname=None,
-            revision=(profile or {}).get("revision", 0),
-            skip_reason=row["skip_reason"],
-            needs_review=False,
-        )
-        if not item["skip_reason"]:
-            if not profile or not profile.get("country"):
-                item["skip_reason"] = "Save a time zone and country first"
-            else:
-                parsed_name = nickname_name(row["nickname"], row["name"])
-                name = parsed_name["name"]
-                item["needs_review"] = parsed_name["needs_review"]
-                try:
-                    item["new_nickname"] = nickname(
-                        name, profile["zone_id"], profile["country"]
-                    )
-                    if item["new_nickname"] == item["old_nickname"]:
-                        item["skip_reason"] = "Already standardized"
-                except ValueError as error:
-                    item["skip_reason"] = str(error)
-        preview.append(item)
+    from utils.member_timezone_review import preview_rows
+    preview = preview_rows(rows)
     from utils.member_profile_runs import ProfileRuns
 
     async with mongo(request) as db:

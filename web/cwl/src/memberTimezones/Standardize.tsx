@@ -1,386 +1,351 @@
-import DiscordIdentity, { discordIdentityName } from "../DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
-import type { Change, Run, Member } from "./types";
-
+import { discordIdentityName } from "../DiscordIdentity";
+import NicknameReview from "./NicknameReview";
+import NicknameRun from "./NicknameRun";
+import type { Change, Run, Member, RequestState } from "./types";
+const interrupted =
+  "Import stopped early. No nicknames changed. Press Import again to continue.";
 export default function Standardize({
   disabled,
   onDenied,
   members = [],
+  onBusy = () => {},
+  onImported = () => {},
+  onRefresh,
+  refreshing = false,
 }: {
   disabled: boolean;
   onDenied: () => void;
   members?: Member[];
+  onBusy?: (busy: boolean) => void;
+  onImported?: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
-  const [open, setOpen] = useState(false),
-    [preview, setPreview] = useState<{ token: string; rows: Change[] } | null>(
-      null,
-    ),
+  const [preview, setPreview] = useState<{
+      token: string;
+      rows: Change[];
+    } | null>(null),
     [selected, setSelected] = useState<Set<string>>(new Set()),
     [run, setRun] = useState<Run | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
+    [phase, setPhase] = useState(""),
+    [past, setPast] = useState(false),
     [history, setHistory] = useState<
       { run_id: string; state: string; started_by?: string }[]
     >([]);
-  const [reviewOnly, setReviewOnly] = useState(false);
-  const actorProfile = (id?: string) =>
-    members.find((m) => m.discord_id === id)?.discord_profile || null;
-  const actorName = (id?: string) =>
-    discordIdentityName(
-      id,
-      actorProfile(id),
-      members.find((m) => m.discord_id === id)?.name,
-    );
-
   const alive = useRef(true),
-    generation = useRef(0);
+    generation = useRef(0),
+    working = useRef(false),
+    importId = useRef(crypto.randomUUID()),
+    receipt = useRef<RequestState | null>(null),
+    controller = useRef<AbortController | null>(null);
+  const callbacks = useRef({ onBusy, onImported, onDenied });
+  callbacks.current = { onBusy, onImported, onDenied };
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
       generation.current++;
+      controller.current?.abort();
+      callbacks.current.onBusy(false);
     };
   }, []);
-  const fail = (e: unknown) => {
+  function fail(cause: unknown) {
     if (!alive.current) return;
-    if (e instanceof ApiError && [401, 403].includes(e.status)) {
+    if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
       setPreview(null);
       setRun(null);
       setHistory([]);
-      onDenied();
+      callbacks.current.onDenied();
     } else
-      setError(e instanceof Error ? e.message : "Standardize is unavailable.");
-  };
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Nickname review is unavailable.",
+      );
+  }
+  function start() {
+    if (working.current || disabled) return false;
+    working.current = true;
+    setBusy(true);
+    callbacks.current.onBusy(true);
+    setError("");
+    return true;
+  }
+  function finish() {
+    working.current = false;
+    if (alive.current) {
+      setBusy(false);
+      setPhase("");
+      callbacks.current.onBusy(false);
+    }
+  }
   useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    api<{ runs: { run_id: string; state: string; started_by?: string }[] }>(
-      "/manage/member-timezones/runs",
-    )
-      .then((result) => {
-        if (!cancelled) setHistory(result.runs);
+    if (!past) return;
+    let active = true;
+    void api<{ runs: typeof history }>("/manage/member-timezones/runs")
+      .then((r) => {
+        if (active) setHistory(r.runs);
       })
-      .catch(fail);
+      .catch((e) => {
+        if (active) fail(e);
+      });
     return () => {
-      cancelled = true;
+      active = false;
     };
-  }, [open]);
+  }, [past]);
   useEffect(() => {
-    if (!open || !run || ["done", "stopped"].includes(run.state)) return;
-    let cancelled = false,
+    if (!run || !["queued", "stopping"].includes(run.state)) return;
+    let active = true,
       inflight = false;
     const id = run.run_id;
-    const load = async () => {
-      if (cancelled || inflight || document.visibilityState === "hidden")
+    const poll = async () => {
+      if (
+        !active ||
+        inflight ||
+        working.current ||
+        document.visibilityState === "hidden"
+      )
         return;
       inflight = true;
-      const current = generation.current;
+      const version = generation.current;
       try {
-        const result = await api<Run>(
+        const next = await api<Run>(
           `/manage/member-timezones/runs/${encodeURIComponent(id)}`,
         );
-        if (!cancelled && generation.current === current) setRun(result);
+        if (active && version === generation.current) setRun(next);
       } catch (e) {
-        if (!cancelled) fail(e);
+        if (active) fail(e);
       } finally {
         inflight = false;
       }
     };
-    const timer = setInterval(() => void load(), 3000);
+    const timer = setInterval(() => void poll(), 3000);
     return () => {
-      cancelled = true;
+      active = false;
       clearInterval(timer);
     };
-  }, [open, run?.run_id, run?.state]);
-  async function build() {
-    setBusy(true);
-    setError("");
-    const current = ++generation.current;
+  }, [run?.run_id, run?.state]);
+  async function review() {
+    if (!start()) return;
+    const version = ++generation.current;
+    const abort = new AbortController();
+    controller.current = abort;
+    setPreview(null);
+    setRun(null);
+    setPhase("Importing time zones…");
     try {
-      const result = await api<{ token: string; rows: Change[] }>(
+      if (
+        receipt.current &&
+        ["done", "failed", "uncertain", "stopped"].includes(
+          receipt.current.status,
+        )
+      ) {
+        importId.current = crypto.randomUUID();
+        receipt.current = null;
+      }
+      let result = await api<RequestState>(
+        "/manage/member-timezones/import",
+        "POST",
+        { request_id: importId.current },
+      );
+      receipt.current = result;
+      while (["pending", "running"].includes(result.status)) {
+        if (abort.signal.aborted) return;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(done, 1000);
+          function done() {
+            clearTimeout(timer);
+            abort.signal.removeEventListener("abort", done);
+            resolve();
+          }
+          abort.signal.addEventListener("abort", done, { once: true });
+        });
+        if (abort.signal.aborted) return;
+        if (document.visibilityState === "hidden") continue;
+        result = await api<RequestState>(result.status_url, "GET", undefined, {
+          signal: abort.signal,
+        });
+        receipt.current = result;
+      }
+      if (!alive.current || version !== generation.current) return;
+      if (result.status !== "done") {
+        setError(interrupted);
+        return;
+      }
+      setPhase("Building review…");
+      const next = await api<{ token: string; rows: Change[] }>(
         "/manage/member-timezones/preview",
         "POST",
         {},
+        { signal: abort.signal },
       );
-      if (!alive.current || generation.current !== current) return;
-      setPreview(result);
+      if (!alive.current || version !== generation.current) return;
+      setPreview(next);
       setSelected(
         new Set(
-          result.rows
-            .filter((r) => !r.skip_reason && !r.needs_review)
+          next.rows
+            .filter(
+              (r) =>
+                r.category === "will_change" &&
+                !r.skip_reason &&
+                !r.needs_review,
+            )
             .map((r) => r.discord_id),
         ),
       );
-      setRun(null);
+      callbacks.current.onImported();
     } catch (e) {
-      fail(e);
+      if (!abort.signal.aborted && version === generation.current) fail(e);
     } finally {
-      if (alive.current) setBusy(false);
+      finish();
     }
   }
   async function confirm() {
-    if (!preview) return;
-    setBusy(true);
-    setError("");
+    if (!preview || !selected.size || !start()) return;
+    const version = ++generation.current;
     try {
-      const result = await api<{ run_id: string; state: string }>(
+      const result = await api<{ run_id: string }>(
         "/manage/member-timezones/confirm",
         "POST",
         { token: preview.token, selected: [...selected] },
       );
-      const fresh = await api<Run>(
+      const next = await api<Run>(
         `/manage/member-timezones/runs/${encodeURIComponent(result.run_id)}`,
       );
-      if (alive.current) {
-        setRun(fresh);
+      if (alive.current && version === generation.current) {
+        setRun(next);
         setPreview(null);
       }
     } catch (e) {
-      fail(e);
+      if (version === generation.current) fail(e);
     } finally {
-      if (alive.current) setBusy(false);
+      finish();
     }
   }
-  async function review(id: string) {
-    setBusy(true);
-    setError("");
+  async function openRun(id: string) {
+    if (!start()) return;
+    const version = ++generation.current;
     try {
-      const result = await api<Run>(
+      const next = await api<Run>(
         `/manage/member-timezones/runs/${encodeURIComponent(id)}`,
       );
-      if (alive.current) {
-        setRun(result);
+      if (alive.current && version === generation.current) {
+        setRun(next);
         setPreview(null);
       }
     } catch (e) {
       fail(e);
     } finally {
-      if (alive.current) setBusy(false);
+      finish();
     }
   }
-  async function stopRun() {
-    if (!run) return;
-    setBusy(true);
-    setError("");
-    const current = ++generation.current;
+  async function stop() {
+    if (!run || !start()) return;
+    const version = ++generation.current;
     try {
       await api(
         `/manage/member-timezones/runs/${encodeURIComponent(run.run_id)}/stop`,
         "POST",
         {},
       );
-      const result = await api<Run>(
+      const next = await api<Run>(
         `/manage/member-timezones/runs/${encodeURIComponent(run.run_id)}`,
       );
-      if (alive.current && generation.current === current) setRun(result);
+      if (alive.current && version === generation.current) setRun(next);
     } catch (e) {
       fail(e);
     } finally {
-      if (alive.current) setBusy(false);
+      finish();
     }
   }
+  function close() {
+    generation.current++;
+    controller.current?.abort();
+    setPreview(null);
+    setRun(null);
+    setError("");
+  }
   return (
-    <section>
-      {error && <p role="alert">{error}</p>}
-      <details
-        open={open}
-        onToggle={(e) => {
-          setOpen(e.currentTarget.open);
-          if (!e.currentTarget.open) {
-            generation.current++;
-            setPreview(null);
-          }
-        }}
-      >
-        <summary>Standardize nicknames</summary>
-        <p>
-          Review every old → new nickname, then untick anyone to leave
-          unchanged. The bot works one member at a time. Stop prevents new
-          members from starting; the current member may finish. Stopped runs
-          never resume. Uncertain changes require manual review and are never
-          repeated automatically.
-        </p>
+    <section className="mt-nickname-review">
+      <div className="mt-review-entry">
         <button
           disabled={
-            busy ||
             disabled ||
-            ["queued", "stopping"].includes(run?.state || "")
+            busy ||
+            (!!run && ["queued", "stopping"].includes(run.state))
           }
-          onClick={() => void build()}
+          onClick={() => void review()}
         >
-          Preview all nickname changes
+          Review nicknames
         </button>
-        {history.length > 0 && (
-          <label>
-            Review a previous run
-            <select
-              value={run?.run_id || ""}
-              disabled={busy || disabled}
-              onChange={(e) => {
-                if (e.target.value) void review(e.target.value);
-              }}
-            >
-              <option value="">Choose a run</option>
-              {history.map((r) => (
-                <option key={r.run_id} value={r.run_id}>
-                  {r.state} · {r.run_id.slice(-10)}
-                  {r.started_by
-                    ? ` · Started by ${actorName(r.started_by) || "Discord member unavailable"}`
-                    : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+        {onRefresh && (
+          <button disabled={busy || disabled || refreshing} onClick={onRefresh}>
+            Refresh members
+          </button>
         )}
-        {preview && (
-          <>
-            <h2>Review all {preview.rows.length} members</h2>
-            <div className="mt-standardize-actions">
-              <strong>{selected.size} members selected</strong>
-              <button
-                disabled={busy || disabled || !selected.size}
-                onClick={() => void confirm()}
-              >
-                Rename {selected.size} members
-              </button>
-              <button
-                disabled={busy || disabled || !selected.size}
-                onClick={() => setSelected(new Set())}
-              >
-                Unselect all
-              </button>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={reviewOnly}
-                  onChange={(e) => setReviewOnly(e.target.checked)}
-                />
-                Needs review only
-              </label>
-            </div>
-            <ul className="mt-list">
-              {preview.rows
-                .filter((r) => !reviewOnly || r.needs_review)
-                .map((r) => (
-                  <li key={r.discord_id}>
-                    <label className="mt-check">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(r.discord_id)}
-                        disabled={!!r.skip_reason || busy || disabled}
-                        onChange={(e) => {
-                          const next = new Set(selected);
-                          if (e.target.checked) next.add(r.discord_id);
-                          else next.delete(r.discord_id);
-                          setSelected(next);
-                        }}
-                      />
-                      <DiscordIdentity
-                        userId={r.discord_id}
-                        displayName={r.name}
-                        resolvedMember={
-                          members.find(
-                            (member) => member.discord_id === r.discord_id,
-                          )?.discord_profile || null
-                        }
-                        variant="compact"
-                        contact={false}
-                      />
-                    </label>
-                    <p>
-                      {r.old_nickname || "(no nickname)"} →{" "}
-                      {r.new_nickname || "(no change)"}
-                    </p>
-                    {r.needs_review && (
-                      <p>
-                        Needs review: no recognized zone suffix; the complete
-                        name was kept.
-                      </p>
-                    )}
-                    {r.skip_reason && <p>Skipped: {r.skip_reason}</p>}
-                  </li>
-                ))}
-            </ul>
-          </>
-        )}
-        {run && (
-          <>
-            <h2>
-              Standardize progress ·{" "}
-              {run.state === "done"
-                ? "Finished"
-                : run.state === "stopped"
-                  ? "Stopped"
-                  : run.state === "stopping"
-                    ? "Stopping after current member"
-                    : "Working"}
-            </h2>
-            <div>
-              <span>Started by</span>
-              <DiscordIdentity
-                userId={run.started_by}
-                displayName={actorName(run.started_by)}
-                resolvedMember={actorProfile(run.started_by)}
-                variant="compact"
-                contact={false}
-              />
-              {run.stopped_by && (
-                <>
-                  <span>Stopped by</span>
-                  <DiscordIdentity
-                    userId={run.stopped_by}
-                    displayName={actorName(run.stopped_by)}
-                    resolvedMember={actorProfile(run.stopped_by)}
-                    variant="compact"
-                    contact={false}
-                  />
-                </>
-              )}
-            </div>
-            {["queued", "stopping"].includes(run.state) && (
-              <button
-                disabled={busy || disabled || run.state === "stopping"}
-                onClick={() => void stopRun()}
-              >
-                Stop run
-              </button>
-            )}
-            <p role="status">
-              {run.rows.filter((r) => r.status === "done").length} changed ·{" "}
-              {
-                run.rows.filter(
-                  (r) => r.status === "skipped" || r.status === "stopped",
-                ).length
-              }{" "}
-              skipped or stopped ·{" "}
-              {run.rows.filter((r) => r.status === "failed").length} failed ·{" "}
-              {run.rows.filter((r) => r.status === "uncertain").length} need
-              manual checking
-            </p>
-            <ul className="mt-list">
-              {run.rows.map((r) => (
-                <li key={r.discord_id}>
-                  <DiscordIdentity
-                    userId={r.discord_id}
-                    displayName={r.name || r.old_nickname}
-                    resolvedMember={
-                      members.find(
-                        (member) => member.discord_id === r.discord_id,
-                      )?.discord_profile || null
-                    }
-                    variant="compact"
-                  />
-                  {r.new_nickname && <p>→ {r.new_nickname}</p>}
-                  <p>
-                    {r.status}: {r.message}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </details>
+        <button
+          className="link-button"
+          disabled={busy}
+          onClick={() => setPast(!past)}
+        >
+          Past runs
+        </button>
+      </div>
+      <p className="mt-review-help">
+        Saves time zones from nicknames, then shows the changes. Nobody is
+        renamed until you confirm.
+      </p>
+      {error && <p role="alert">{error}</p>}
+      {busy && phase && <p role="status">{phase}</p>}
+      {(busy || preview || run) && (
+        <button disabled={busy && !phase} onClick={close}>
+          Back to members
+        </button>
+      )}
+      {past && (
+        <label>
+          Past runs
+          <select
+            disabled={busy || disabled}
+            value={run?.run_id || ""}
+            onChange={(e) => {
+              if (e.target.value) void openRun(e.target.value);
+            }}
+          >
+            <option value="">Choose a run</option>
+            {history.map((r) => (
+              <option key={r.run_id} value={r.run_id}>
+                {r.state} · {r.run_id.slice(-10)}
+                {r.started_by
+                  ? ` · ${discordIdentityName(r.started_by, members.find((m) => m.discord_id === r.started_by)?.discord_profile, members.find((m) => m.discord_id === r.started_by)?.name) || "Discord member unavailable"}`
+                  : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {preview && (
+        <NicknameReview
+          rows={preview.rows}
+          members={members}
+          selected={selected}
+          onSelect={setSelected}
+          onConfirm={() => void confirm()}
+          disabled={busy || disabled}
+        />
+      )}{" "}
+      {run && (
+        <NicknameRun
+          run={run}
+          members={members}
+          disabled={busy || disabled}
+          onStop={() => void stop()}
+        />
+      )}
     </section>
   );
 }

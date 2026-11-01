@@ -35,7 +35,7 @@ members = [
         nickname=nick,
         bot=False,
         status=labels[i],
-        profile=profiles[i],
+        profile=deepcopy(profiles[0]) if i==2 else profiles[i],
         parsed=parsed,
         skip_reason=None,
     )
@@ -68,15 +68,15 @@ members.append(
         skip_reason="The server owner cannot be changed by this tool.",
     )
 )
-for i in range(555):
+for i in range(1442):
     members.append(
         dict(
             discord_id=str(123456789012346000 + i),
             name=f"Member {i:03}",
-            nickname=f"Member {i:03} | EST 🇺🇸",
-            bot=False,
+            nickname=f"Member {i:03} | {'GMT-5' if i==2 else 'EST'} 🇺🇸",
+            bot=i>=1405,
             status="Saved",
-            profile=deepcopy(profiles[0]),
+            profile=dict(deepcopy(profiles[0]),country=None,source="nickname_import") if i==1 else deepcopy(profiles[0]),
             parsed=dict(label="EST", offsetMinutes=-300),
             skip_reason=None,
         )
@@ -148,20 +148,16 @@ async def sample(request, handler):
         return web.json_response(
             dict(status="done", message="Profile saved. Nickname unchanged.", result={})
         )
+    if request.path.endswith("/import"):
+        from utils.member_timezone_import import profile_zone,canonical_zone,nickname_country
+        for m in members:
+            parsed=profile_zone(m['nickname'])
+            if not m['bot'] and not m['profile'] and parsed and parsed['offsetMinutes'] is not None:
+                m['profile']=dict(canonical_zone(parsed['offsetMinutes']),country=nickname_country(m['nickname']),revision=1,source='nickname_import')
+        return web.json_response(dict(request_id='profile-import',status='done',status_url='/manage/requests/profile-import',message='Imported fixture profiles'))
     if request.path.endswith("/preview"):
-        rows = [
-            dict(
-                discord_id=m["discord_id"],
-                name=m["name"],
-                old_nickname=m["nickname"],
-                new_nickname=nickname_name(m["nickname"], m["name"])["name"]
-                + " | GMT-5 🇺🇸",
-                revision=3,
-                needs_review=nickname_name(m["nickname"], m["name"])["needs_review"],
-                skip_reason=m["skip_reason"],
-            )
-            for m in members
-        ]
+        from utils.member_timezone_review import preview_rows
+        rows=preview_rows(members)
         state["preview"] = rows
         return web.json_response(dict(token="fixture-token", rows=rows))
     if request.path == BASE + "/runs":

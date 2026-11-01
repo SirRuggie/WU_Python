@@ -275,23 +275,6 @@
   min-width: 0;
   padding-inline: 6px;
 }
-.strike-activity-tabs {
-  display: flex;
-  gap: 4px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-.strike-activity-tabs button {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.strike-activity-tabs button[aria-pressed="true"] {
-  border-color: #c6ae70;
-  background: #393326;
-}
 .strike-activity-applied {
   display: flex;
   flex-wrap: wrap;

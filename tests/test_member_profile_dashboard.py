@@ -253,7 +253,7 @@ def test_partial_import_reports_no_renames_and_safe_rerun(monkeypatch):
         bot = S(rest=S(edit_member=AsyncMock()))
         row = dict(guild_id=actions.GUILD_ID, action="import", user_id=ACTOR, values={})
         with pytest.raises(
-            ProfileOutcomeUncertain, match="No Discord nicknames were changed"
+            ProfileOutcomeUncertain, match="No nicknames changed"
         ):
             await actions.apply(bot, None, row)
         bot.rest.edit_member.assert_not_awaited()

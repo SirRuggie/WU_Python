@@ -249,6 +249,7 @@ async def _poll(bot, mongo):
             update={'status':'stopped','message':str(exc)[:400]}
         except ProfileOutcomeUncertain as exc:
             update={'status':'uncertain','message':str(exc)[:400]}
+            if isinstance(getattr(exc,'counts',None),dict):update['result']={'counts':exc.counts}
         except ValueError as exc:
             update={'status':'failed','message':str(exc)[:400]}
         except Exception:

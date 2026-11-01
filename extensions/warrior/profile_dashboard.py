@@ -62,6 +62,11 @@ async def apply(bot, mongo, row):
     store = MemberProfiles(mongo)
     values = row["values"]
     if row["action"] == "import":
+        import logging
+        import time
+
+        started = time.monotonic()
+        progress = {}
         try:
             async with asyncio.timeout(100):
                 members = await directory(bot)
@@ -72,13 +77,27 @@ async def apply(bot, mongo, row):
                         for m in members
                     ],
                     actor_id=row["user_id"],
+                    progress=progress,
                 )
         except ValueError:
             raise
         except Exception as error:
-            raise ProfileOutcomeUncertain(
-                "Import did not finish confirming all profile writes. No Discord nicknames were changed. Refresh and rerun safely after the service recovers."
-            ) from error
+            logging.getLogger(__name__).warning(
+                "Nickname import stopped early cause=%s elapsed=%.2fs counts=%s",
+                type(error).__name__,
+                time.monotonic() - started,
+                progress,
+            )
+            outcome = ProfileOutcomeUncertain(
+                "Import stopped early. No nicknames changed. Press Import again to continue."
+            )
+            outcome.counts = dict(progress)
+            raise outcome from error
+        logging.getLogger(__name__).info(
+            "Nickname import finished elapsed=%.2fs counts=%s",
+            time.monotonic() - started,
+            counts,
+        )
         return dict(
             message="Nickname import finished. No nicknames were changed.",
             counts=counts,

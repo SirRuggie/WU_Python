@@ -42,13 +42,14 @@ class MemberProfiles:
     async def get(self, discord_id):
         return await self.collection.find_one({"_id": member_id(discord_id)})
 
-    async def for_members(self, discord_ids):
+    async def for_members(self, discord_ids, *, include_departed=False):
         keys = sorted({member_id(value) for value in discord_ids})
         if not keys:
             return {}
-        rows = await self.collection.find(
-            {"_id": {"$in": keys}, "left_at": None}
-        ).to_list(length=None)
+        query = {"_id": {"$in": keys}}
+        if not include_departed:
+            query["left_at"] = None
+        rows = await self.collection.find(query).to_list(length=None)
         return {row["discord_id"]: row for row in rows}
 
     async def membership_rows(self):
@@ -177,7 +178,7 @@ class MemberProfiles:
         if (
             source == "nickname_import"
             and current
-            and current.get("source") in ("warrior", "staff")
+            and current.get("source") in ("warrior", "staff", "nickname_import")
         ):
             return current
         checked = profile_fields(fields, source=source)

@@ -657,3 +657,29 @@ def test_cross_staff_stop_and_uncertain_receipt_survives_newer_history():
             await client.close()
 
     asyncio.run(run())
+
+
+def test_real_import_batch_preserves_saved_imported_and_concurrent_cas():
+    from utils.member_timezone_import import import_nicknames
+    assert URI == 'mongodb://127.0.0.1:27154'
+    async def run():
+        client=AsyncMongoClient(URI);db=client['wu_import_fixture_'+uuid4().hex]
+        store=MemberProfiles(S(member_profiles=db.member_profiles,component_state=db.component_state,button_store=db.button_store))
+        ids=[str(123456789012340000+i) for i in range(48)]
+        try:
+            saved=await store.write(ids[0],FIELDS,expected_revision=0,updated_by=ACTOR,source='staff')
+            imported=await store.write(ids[1],FIELDS,expected_revision=0,updated_by=ACTOR,source='nickname_import')
+            saved=await store.get(ids[0]);imported=await store.get(ids[1])
+            rows=[dict(discord_id=uid,nickname='N | GMT+5:45 🇳🇵') for uid in ids]
+            counts=await import_nicknames(store,rows,actor_id=ACTOR)
+            assert counts['imported']==46 and counts['preserved']==2
+            assert await store.get(ids[0])==saved and await store.get(ids[1])==imported
+            snapshot=await store.for_members(ids)
+            again=await import_nicknames(store,rows,actor_id=ACTOR)
+            assert again['imported']==0 and again['preserved']==48
+            assert await store.for_members(ids)==snapshot
+            with pytest.raises(ProfileConflict):
+                await store.write(ids[2],FIELDS,expected_revision=0,updated_by=ACTOR,source='nickname_import')
+        finally:
+            await client.drop_database(db.name);await client.close()
+    asyncio.run(run())

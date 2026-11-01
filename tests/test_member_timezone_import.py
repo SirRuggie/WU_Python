@@ -46,14 +46,12 @@ def test_import_preserves_every_prior_decision_and_reports_conflicts():
     async def run():
         ids = [str(123456789012345670 + i) for i in range(7)]
         store = SimpleNamespace(
-            get=AsyncMock(
-                side_effect=[
-                    {"source": "staff"},
-                    {"source": "warrior"},
-                    {"source": "nickname_import"},
-                    None,
-                    None,
-                ]
+            for_members=AsyncMock(
+                return_value={
+                    ids[0]: {"source": "staff"},
+                    ids[1]: {"source": "warrior"},
+                    ids[2]: {"source": "nickname_import"},
+                }
             ),
             write=AsyncMock(
                 side_effect=[{"source": "nickname_import"}, ProfileConflict("race")]
@@ -70,10 +68,10 @@ def test_import_preserves_every_prior_decision_and_reports_conflicts():
         )
         assert store.write.await_count == 2
         assert store.write.await_args_list[0].args[1]["country"] is None
-        store.get.reset_mock()
+        store.for_members.reset_mock()
         with pytest.raises(ValueError):
             await import_nicknames(store, rows + rows, actor_id=ids[0])
-        store.get.assert_not_awaited()
+        store.for_members.assert_not_awaited()
 
     asyncio.run(run())
 
@@ -116,7 +114,7 @@ def test_profile_import_uses_standard_time_without_changing_compare_literals(
 
     async def run():
         store = SimpleNamespace(
-            get=AsyncMock(return_value=None),
+            for_members=AsyncMock(return_value={}),
             write=AsyncMock(return_value={"source": "nickname_import"}),
         )
         await import_nicknames(
@@ -132,7 +130,8 @@ def test_profile_import_uses_standard_time_without_changing_compare_literals(
 def test_non_menu_offset_import_persists_literal_minutes():
     async def run():
         store = SimpleNamespace(
-            get=AsyncMock(return_value=None), write=AsyncMock(return_value={"source": "nickname_import"})
+            for_members=AsyncMock(return_value={}),
+            write=AsyncMock(return_value={"source": "nickname_import"}),
         )
         result = await import_nicknames(
             store,
@@ -143,5 +142,81 @@ def test_non_menu_offset_import_persists_literal_minutes():
         fields = store.write.await_args.args[1]
         assert fields["zone_id"] == "gmt+5:45" and fields["utc_offset_minutes"] == 345
         assert fields["country"] == "NP"
+
+    asyncio.run(run())
+
+
+def test_1447_members_complete_with_scaled_atlas_latency_inside_budget():
+    async def run():
+        active = peak = 0
+
+        async def write(*args, **kwargs):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            try:
+                # 20ms represents 200ms per lease/CAS write path (10x time scale).
+                await asyncio.sleep(0.02)
+                return {"source": "nickname_import"}
+            finally:
+                active -= 1
+
+        store = SimpleNamespace(for_members=AsyncMock(return_value={}), write=write)
+        members = [
+            dict(discord_id=str(123456789012340000 + i), nickname="N | EST 🇺🇸")
+            for i in range(1447)
+        ]
+        async with asyncio.timeout(10):
+            result = await import_nicknames(
+                store, members, actor_id="234567890123456789"
+            )
+        assert result["imported"] == 1447 and peak == 8 and active == 0
+        store.for_members.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_partial_import_drains_workers_then_rerun_preserves_saved_and_imported():
+    async def run():
+        from copy import deepcopy
+
+        ids = [str(123456789012340000 + i) for i in range(80)]
+        saved = {
+            ids[0]: {"source": "staff", "revision": 4},
+            ids[1]: {"source": "warrior", "revision": 9},
+        }
+        protected = deepcopy(saved)
+        failed = False
+        active = 0
+        writes = {}
+
+        async def batch(*args, **kwargs):
+            return deepcopy(saved)
+
+        async def write(uid, *args, **kwargs):
+            nonlocal failed, active
+            active += 1
+            try:
+                await asyncio.sleep(0.001)
+                if uid == ids[25] and not failed:
+                    failed = True
+                    raise RuntimeError("temporary Atlas failure")
+                assert uid not in saved
+                saved[uid] = {"source": "nickname_import", "revision": 1}
+                writes[uid] = writes.get(uid, 0) + 1
+                return saved[uid]
+            finally:
+                active -= 1
+
+        store = SimpleNamespace(for_members=batch, write=write)
+        members = [dict(discord_id=uid, nickname="N | EST 🇺🇸") for uid in ids]
+        progress = {}
+        with pytest.raises(ExceptionGroup):
+            await import_nicknames(store, members, actor_id=ids[0], progress=progress)
+        assert active == 0 and 0 < progress["imported"] < 78
+        result = await import_nicknames(store, members, actor_id=ids[0])
+        assert len(saved) == 80 and result["preserved"] >= 2
+        assert all(n == 1 for n in writes.values())
+        assert all(saved[k] == v for k, v in protected.items())
 
     asyncio.run(run())
