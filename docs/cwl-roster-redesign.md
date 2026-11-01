@@ -1030,6 +1030,27 @@ metadata compare-and-swap. This never updates or poisons the core head. Release
 capture comparison now rejects thin equal snapshots with empty active/replacement
 state, even when a streak row and profile proof are present.
 
-Focused evidence is recorded in `.local/p98-*`; development remains incomplete
-until all requested mutation, full-suite, build and layout gates pass. No real
-Discord role grant, removal, nickname change or notification has been tested.
+Prompt98 checks passed: full guarded backend 5796 / 67 skipped / 227 subtests;
+92 focused integrated cases after the accepted campaign-read merge; 10 final
+owned-Mongo role cases (the earlier combined profile/role run passed 25); full
+frontend 1404 tests in 250 files; TypeScript and production/preview builds;
+all eight requested survivor mutants; required war-reminder 213 backend /
+1 skipped plus 35 frontend tests and build. The full backend run preceded the
+final public CLI/additional regression cases and captured-revision race guard;
+the focused integration and owned-Mongo checks cover those final changes.
+
+The disconnected preview passed 24 read-only states at 320/360/390/1440 and
+four confirmation/cancel/focus/in-memory-save cases. Narrow outage/ineligible
+and wide pending screenshots were visually reviewed. The earlier preview
+server had exited; a persistent foreground server was restored before the
+successful browser run. Evidence is in `.local/p98-*`. No real Discord role
+grant, removal, nickname change or notification has been tested. A real campaign
+edit after PR142 remains an unverified live observation, not a role-test claim.
+
+The reviewable pre-switch gate entry is
+`python tools/release_protected_state.py <private-evidence-directory> <before-name> <after-name>`.
+It calls `compare_capture_files` then `compare_protected`, and exits nonzero
+without a success receipt for empty, thin, incomplete or unproven captures.
+A release coordinator must require that success before any switch; the gate
+itself cannot switch services or restore data. Tests cover this public entry,
+not only a private `.local` coordinator.

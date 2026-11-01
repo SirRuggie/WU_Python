@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const origin = "http://127.0.0.1:44792";
-const out = path.resolve(__dirname, "../../../.local/p95-layout");
+const out = path.resolve(__dirname, "../../../.local/p98-layout");
 fs.mkdirSync(out, { recursive: true });
 (async () => {
   const browser = await chromium.launch({
@@ -13,7 +13,14 @@ fs.mkdirSync(out, { recursive: true });
   });
   const results = [];
   try {
-    for (const state of ["blank", "pending", "failure", "scan", "outage"])
+    for (const state of [
+      "blank",
+      "pending",
+      "failure",
+      "scan",
+      "outage",
+      "ineligible",
+    ])
       for (const width of [320, 360, 390, 1440]) {
         const page = await browser.newPage({
           viewport: { width, height: 1000 },
@@ -37,6 +44,35 @@ fs.mkdirSync(out, { recursive: true });
           assert(
             !(await page.locator("body").innerText()).includes("unavailable"),
           );
+        if (!["blank", "outage"].includes(state)) {
+          assert((await page.locator("select").first().inputValue()) !== "");
+          assert(
+            (
+              await page
+                .locator("select")
+                .first()
+                .locator("option:checked")
+                .innerText()
+            ).startsWith("CWL participants"),
+            "Saved name must appear before opening picker",
+          );
+        }
+        if (state === "outage")
+          assert.equal(
+            await page
+              .locator("select")
+              .first()
+              .locator("option:checked")
+              .innerText(),
+            "Saved role",
+          );
+        if (state === "ineligible")
+          await page
+            .getByText(
+              "Saved role is no longer eligible. Choose another role or turn it off.",
+            )
+            .first()
+            .waitFor();
         await page.getByRole("combobox", { name: /^Main role/ }).focus();
         await page.waitForFunction(() =>
           window.fixtureMethods.some((line) => line.includes("choices=1")),

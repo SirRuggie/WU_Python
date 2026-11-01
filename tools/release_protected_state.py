@@ -164,3 +164,22 @@ def compare_capture_files(directory, before_name, after_name):
     )
     report.chmod(0o600)
     return evidence
+
+
+def main(argv=None):
+    """Public pre-switch gate: nonzero exit forbids a coordinator switch."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("directory", type=Path)
+    parser.add_argument("before")
+    parser.add_argument("after")
+    args = parser.parse_args(argv)
+    evidence = compare_capture_files(args.directory, args.before, args.after)
+    print(
+        json.dumps({"protected_gate_passed": True, "proven_departures": len(evidence)})
+    )
+
+
+if __name__ == "__main__":
+    main()

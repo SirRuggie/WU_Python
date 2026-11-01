@@ -289,9 +289,10 @@ class MongoDashboardState:
     def save_role_progress(self, image):
         """Independent coalesced role recovery copy; never fences the main head."""
         self.check()
+        revision = self.revision
         document = {
             **image,
-            "dashboard_revision": self.revision,
+            "dashboard_revision": revision,
             "saved_at": utcnow(),
             "writer": self.owner,
         }
@@ -308,14 +309,15 @@ class MongoDashboardState:
         if (
             not head
             or head.get("owner") != self.owner
-            or head.get("revision") != self.revision
+            or head.get("revision") != revision
+            or self.revision != revision
             or not isinstance(head.get("lease_until"), datetime)
             or head["lease_until"] <= utcnow()
         ):
             raise DashboardDurabilityError("Role backup writer lease was lost.")
         if (
             prior
-            and prior.get("dashboard_revision") == self.revision
+            and prior.get("dashboard_revision") == revision
             and prior.get("version", -1) > image["version"]
         ):
             return False

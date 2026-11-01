@@ -192,3 +192,24 @@ def test_thin_nonempty_streak_snapshot_cannot_bypass_coordinator(tmp_path, repla
         )
     with pytest.raises(ValueError, match="empty or incomplete"):
         compare_capture_files(tmp_path, "before", "after")
+
+
+def test_public_coordinator_gate_entry_rejects_thin_capture_without_success(
+    tmp_path, capsys
+):
+    from tools.release_protected_state import main
+    from bson import json_util
+    import json
+
+    old, _, p, _ = fixture()
+    old.update(active=[], replacement={})
+    for name in ("before", "after"):
+        (tmp_path / (name + ".json")).write_text(json.dumps(old))
+        (tmp_path / (name + "-profiles.json")).write_text(
+            json_util.dumps(
+                {"started": NOW, "ended": NOW, "profiles": list(p.values())}
+            )
+        )
+    with pytest.raises(ValueError, match="empty or incomplete"):
+        main([str(tmp_path), "before", "after"])
+    assert "protected_gate_passed" not in capsys.readouterr().out

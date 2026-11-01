@@ -373,3 +373,38 @@ def test_crash_after_restore_preserves_unconsumed_proof_and_pauses(tmp_path):
             state.close()
         client.drop_database(db.name)
         client.close()
+
+
+def test_role_copy_uses_one_captured_head_revision_during_core_save(tmp_path):
+    from unittest.mock import patch
+    from utils.cwl_dashboard_state import DashboardDurabilityError
+
+    client = MongoClient(URI, tz_aware=True)
+    db = client["wu_roles_core_race_" + uuid4().hex]
+    state = None
+    try:
+        state, store = seed(tmp_path, db)
+        save(store)
+        with store.role_tx(track=False) as sql:
+            image = roles.progress_image(sql)
+        original = state.collection.find_one
+
+        def read(query, *args, **kwargs):
+            value = original(query, *args, **kwargs)
+            if query["_id"].endswith(":pool-roles-progress"):
+                # A successful concurrent core save advances both the head and
+                # this process's revision after role backup captured its image.
+                db.state.update_one({"_id": state.key}, {"$inc": {"revision": 1}})
+                state.revision += 1
+            return value
+
+        with patch.object(state.collection, "find_one", side_effect=read):
+            with pytest.raises(DashboardDurabilityError, match="writer lease"):
+                state.save_role_progress(image)
+        assert not db.state.find_one({"_id": state.key + ":pool-roles-progress"})
+        assert not state.poisoned
+    finally:
+        if state:
+            state.close()
+        client.drop_database(db.name)
+        client.close()

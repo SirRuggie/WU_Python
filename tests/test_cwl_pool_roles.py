@@ -887,3 +887,44 @@ def test_post_cutoff_signup_then_cancel_other_account_keeps_the_role(store):
         bot.rest.remove_role_from_member.assert_not_awaited()
 
     asyncio.run(run())
+
+
+def test_post_cutoff_cancel_is_not_a_reason_to_skip_expiry_removal(store):
+    import time
+
+    signup(store, "A")
+    save(store)
+    cutoff = time.time() - 1
+    with store.tx() as db:
+        db.execute("DELETE FROM signups WHERE tag='A'")
+        db.execute("UPDATE cwl_pool_role_jobs SET requested_at=?", (cutoff + 1,))
+        assert (
+            db.execute("SELECT intent FROM cwl_pool_role_jobs").fetchone()[0]
+            == "cancel"
+        )
+        assert not roles.skip_change(
+            db,
+            {
+                "kind": "remove",
+                "user_id": USER,
+                "role_id": ROLE,
+                "cycle_cutoff": cutoff,
+            },
+        )
+
+
+def test_lease_with_wrong_setting_revision_cannot_validate_or_finish(store):
+    signup(store)
+    save(store)
+    job = claim(store)
+    with store.role_tx() as db:
+        db.execute(
+            "UPDATE cwl_pool_role_jobs SET setting_revision=setting_revision+100 WHERE id=?",
+            (job["id"],),
+        )
+        assert not roles.validate(db, job["id"], job["lease_token"], job["generation"])[
+            "valid"
+        ]
+        assert not roles.finish(db, job["id"], job["lease_token"], job["generation"])[
+            "accepted"
+        ]

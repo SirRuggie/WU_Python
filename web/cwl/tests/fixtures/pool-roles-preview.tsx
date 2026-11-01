@@ -50,14 +50,25 @@ window.fetch = async (input, options) => {
   }
   return Response.json({
     pools,
-    ...(url.includes("choices=1")
+    ...(url.includes("choices=1") ||
+    (mode !== "blank" && !url.includes("status=1"))
       ? mode === "outage"
         ? {
             roles: [],
             roles_error:
               "Role choices unavailable. Refresh or turn off a saved role.",
           }
-        : { roles }
+        : {
+            roles: mode === "ineligible" ? [] : roles,
+            saved_roles: Object.fromEntries(
+              pools
+                .filter((row) => row.role_id)
+                .map((row) => [
+                  row.pool,
+                  { name: roles[0].name, allowed: mode !== "ineligible" },
+                ]),
+            ),
+          }
       : {}),
   });
 };
