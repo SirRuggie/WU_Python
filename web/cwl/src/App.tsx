@@ -384,6 +384,8 @@ function App() {
     if (view === 'signup' && (signupDirty || savedSignupDirty) && !window.confirm('Leave without submitting your CWL selections? Your saved signups will stay unchanged.')) return false
     if (['participation', 'bonuses'].includes(view) && cwlDirty) return window.confirm('Leave this CWL workspace? Unsaved edits will be discarded. If a save is in progress, wait for it to finish first.')
     if (view === 'access' && cwlDirty) return window.confirm('Discard unsaved access changes?')
+    if (view === 'declaration' && rosterBusy) return false
+    if (view === 'declaration' && cwlDirty) return window.confirm('Discard the unsaved ping channel change?')
     if (view === 'publication' && publicationBusy) return false
     if (view === 'publication' && publicationDirty) return window.confirm('Leave without saving publication or announcement changes?')
     if ((isManagementArea(view) || ['member-timezones','manage','text-commands','clan-management','moderation','member-activity'].includes(view)) && manageDirty) return window.confirm('Leave without saving your changes?')
@@ -1103,6 +1105,8 @@ function App() {
                 <ArrivalCheck
                   key={seasonId}
                   seasonId={seasonId}
+                  onDirty={setCwlDirty}
+                  onWorking={setRosterBusy}
                 />
               )}
             </>

@@ -1,0 +1,1605 @@
+{
+  "26": {
+    "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mode": "live",
+    "channel": {
+      "id": "234567890123456789",
+      "name": "lazy-cwl-declaration"
+    },
+    "count": 26,
+    "unknown": 3,
+    "unlinked": 2,
+    "chunks": 1,
+    "groups": [
+      {
+        "tag": "#PQQ",
+        "name": "W. U. Lazy .123",
+        "accounts": [
+          {
+            "tag": "#P02",
+            "name": "Fixture player 2",
+            "user_id": "123456789012345678"
+          },
+          {
+            "tag": "#P0J",
+            "name": "Fixture player 11",
+            "user_id": "123456789012345683"
+          },
+          {
+            "tag": "#P0P",
+            "name": "Fixture player 5",
+            "user_id": "123456789012345680"
+          },
+          {
+            "tag": "#P0Q",
+            "name": "Fixture player 8",
+            "user_id": "123456789012345681"
+          },
+          {
+            "tag": "#P0V",
+            "name": "Fixture player 14",
+            "user_id": "123456789012345684"
+          },
+          {
+            "tag": "#P28",
+            "name": "Fixture player 17",
+            "user_id": "123456789012345686"
+          },
+          {
+            "tag": "#P2C",
+            "name": "Fixture player 26",
+            "user_id": "123456789012345690"
+          },
+          {
+            "tag": "#P2G",
+            "name": "Fixture player 23",
+            "user_id": "123456789012345689"
+          },
+          {
+            "tag": "#P2Y",
+            "name": "Fixture player 20",
+            "user_id": "123456789012345687"
+          }
+        ],
+        "users": [
+          "123456789012345678",
+          "123456789012345680",
+          "123456789012345681",
+          "123456789012345683",
+          "123456789012345684",
+          "123456789012345686",
+          "123456789012345687",
+          "123456789012345689",
+          "123456789012345690"
+        ],
+        "unlinked": []
+      },
+      {
+        "tag": "#PCC",
+        "name": "W. U. Lazy .124",
+        "accounts": [
+          {
+            "tag": "#P08",
+            "name": "Fixture player 3",
+            "user_id": "123456789012345679"
+          },
+          {
+            "tag": "#P0C",
+            "name": "Fixture player 12",
+            "user_id": "123456789012345683"
+          },
+          {
+            "tag": "#P0G",
+            "name": "Fixture player 9",
+            "user_id": "123456789012345682"
+          },
+          {
+            "tag": "#P0Y",
+            "name": "Fixture player 6",
+            "user_id": "123456789012345680"
+          },
+          {
+            "tag": "#P20",
+            "name": "Fixture player 15",
+            "user_id": "123456789012345685"
+          },
+          {
+            "tag": "#P29",
+            "name": "Fixture player 18",
+            "user_id": null
+          },
+          {
+            "tag": "#P2L",
+            "name": "Fixture player 21",
+            "user_id": "123456789012345688"
+          },
+          {
+            "tag": "#P2R",
+            "name": "Fixture player 24",
+            "user_id": "123456789012345689"
+          }
+        ],
+        "users": [
+          "123456789012345679",
+          "123456789012345680",
+          "123456789012345682",
+          "123456789012345683",
+          "123456789012345685",
+          "123456789012345688",
+          "123456789012345689"
+        ],
+        "unlinked": [
+          {
+            "tag": "#P29",
+            "name": "Fixture player 18",
+            "user_id": null
+          }
+        ]
+      },
+      {
+        "tag": "#PYY",
+        "name": "W. U. Lazy .125",
+        "accounts": [
+          {
+            "tag": "#P00",
+            "name": "Fixture player 1",
+            "user_id": null
+          },
+          {
+            "tag": "#P09",
+            "name": "Fixture player 4",
+            "user_id": "123456789012345679"
+          },
+          {
+            "tag": "#P0L",
+            "name": "Fixture player 7",
+            "user_id": "123456789012345681"
+          },
+          {
+            "tag": "#P0R",
+            "name": "Fixture player 10",
+            "user_id": "123456789012345682"
+          },
+          {
+            "tag": "#P0U",
+            "name": "Fixture player 13",
+            "user_id": "123456789012345684"
+          },
+          {
+            "tag": "#P22",
+            "name": "Fixture player 16",
+            "user_id": "123456789012345685"
+          },
+          {
+            "tag": "#P2J",
+            "name": "Fixture player 25",
+            "user_id": "123456789012345690"
+          },
+          {
+            "tag": "#P2P",
+            "name": "Fixture player 19",
+            "user_id": "123456789012345687"
+          },
+          {
+            "tag": "#P2Q",
+            "name": "Fixture player 22",
+            "user_id": "123456789012345688"
+          }
+        ],
+        "users": [
+          "123456789012345679",
+          "123456789012345681",
+          "123456789012345682",
+          "123456789012345684",
+          "123456789012345685",
+          "123456789012345687",
+          "123456789012345688",
+          "123456789012345690"
+        ],
+        "unlinked": [
+          {
+            "tag": "#P00",
+            "name": "Fixture player 1",
+            "user_id": null
+          }
+        ]
+      }
+    ],
+    "previews": [
+      [
+        {
+          "type": "container",
+          "children": [
+            {
+              "type": "text",
+              "text": "## \u2694\ufe0f CWL declaration: join your clan\nW. U. Lazy .123  \u00b7  <@123456789012345678> <@123456789012345680> <@123456789012345681> <@123456789012345683> <@123456789012345684> <@123456789012345686> <@123456789012345687> <@123456789012345689> <@123456789012345690>\nW. U. Lazy .124  \u00b7  <@123456789012345679> <@123456789012345680> <@123456789012345682> <@123456789012345683> <@123456789012345685> <@123456789012345688> <@123456789012345689> Fixture player 18 (`#P29`)\nW. U. Lazy .125  \u00b7  <@123456789012345679> <@123456789012345681> <@123456789012345682> <@123456789012345684> <@123456789012345685> <@123456789012345687> <@123456789012345688> <@123456789012345690> Fixture player 1 (`#P00`)\nTotal missing: 26"
+            },
+            {
+              "type": "row",
+              "children": [
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .123",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PQQ"
+                },
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .124",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PCC"
+                },
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .125",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PYY"
+                }
+              ]
+            }
+          ],
+          "accent": "#d4a017"
+        }
+      ]
+    ]
+  },
+  "65": {
+    "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mode": "live",
+    "channel": {
+      "id": "234567890123456789",
+      "name": "lazy-cwl-declaration"
+    },
+    "count": 65,
+    "unknown": 3,
+    "unlinked": 4,
+    "chunks": 1,
+    "groups": [
+      {
+        "tag": "#PQQ",
+        "name": "W. U. Lazy .123",
+        "accounts": [
+          {
+            "tag": "#P02",
+            "name": "Fixture player 2",
+            "user_id": "123456789012345678"
+          },
+          {
+            "tag": "#P0J",
+            "name": "Fixture player 11",
+            "user_id": "123456789012345683"
+          },
+          {
+            "tag": "#P0P",
+            "name": "Fixture player 5",
+            "user_id": "123456789012345680"
+          },
+          {
+            "tag": "#P0Q",
+            "name": "Fixture player 8",
+            "user_id": "123456789012345681"
+          },
+          {
+            "tag": "#P0V",
+            "name": "Fixture player 14",
+            "user_id": "123456789012345684"
+          },
+          {
+            "tag": "#P28",
+            "name": "Fixture player 17",
+            "user_id": "123456789012345686"
+          },
+          {
+            "tag": "#P2C",
+            "name": "Fixture player 26",
+            "user_id": "123456789012345690"
+          },
+          {
+            "tag": "#P2G",
+            "name": "Fixture player 23",
+            "user_id": "123456789012345689"
+          },
+          {
+            "tag": "#P2Y",
+            "name": "Fixture player 20",
+            "user_id": "123456789012345687"
+          },
+          {
+            "tag": "#P80",
+            "name": "Fixture player 29",
+            "user_id": "123456789012345692"
+          },
+          {
+            "tag": "#P89",
+            "name": "Fixture player 32",
+            "user_id": "123456789012345693"
+          },
+          {
+            "tag": "#P8L",
+            "name": "Fixture player 35",
+            "user_id": null
+          },
+          {
+            "tag": "#P8R",
+            "name": "Fixture player 38",
+            "user_id": "123456789012345696"
+          },
+          {
+            "tag": "#P8U",
+            "name": "Fixture player 41",
+            "user_id": "123456789012345698"
+          },
+          {
+            "tag": "#P92",
+            "name": "Fixture player 44",
+            "user_id": "123456789012345699"
+          },
+          {
+            "tag": "#P9J",
+            "name": "Fixture player 53",
+            "user_id": "123456789012345704"
+          },
+          {
+            "tag": "#P9P",
+            "name": "Fixture player 47",
+            "user_id": "123456789012345701"
+          },
+          {
+            "tag": "#P9Q",
+            "name": "Fixture player 50",
+            "user_id": "123456789012345702"
+          },
+          {
+            "tag": "#P9V",
+            "name": "Fixture player 56",
+            "user_id": "123456789012345705"
+          },
+          {
+            "tag": "#PP8",
+            "name": "Fixture player 59",
+            "user_id": "123456789012345707"
+          },
+          {
+            "tag": "#PPG",
+            "name": "Fixture player 65",
+            "user_id": "123456789012345710"
+          },
+          {
+            "tag": "#PPY",
+            "name": "Fixture player 62",
+            "user_id": "123456789012345708"
+          }
+        ],
+        "users": [
+          "123456789012345678",
+          "123456789012345680",
+          "123456789012345681",
+          "123456789012345683",
+          "123456789012345684",
+          "123456789012345686",
+          "123456789012345687",
+          "123456789012345689",
+          "123456789012345690",
+          "123456789012345692",
+          "123456789012345693",
+          "123456789012345696",
+          "123456789012345698",
+          "123456789012345699",
+          "123456789012345701",
+          "123456789012345702",
+          "123456789012345704",
+          "123456789012345705",
+          "123456789012345707",
+          "123456789012345708",
+          "123456789012345710"
+        ],
+        "unlinked": [
+          {
+            "tag": "#P8L",
+            "name": "Fixture player 35",
+            "user_id": null
+          }
+        ]
+      },
+      {
+        "tag": "#PCC",
+        "name": "W. U. Lazy .124",
+        "accounts": [
+          {
+            "tag": "#P08",
+            "name": "Fixture player 3",
+            "user_id": "123456789012345679"
+          },
+          {
+            "tag": "#P0C",
+            "name": "Fixture player 12",
+            "user_id": "123456789012345683"
+          },
+          {
+            "tag": "#P0G",
+            "name": "Fixture player 9",
+            "user_id": "123456789012345682"
+          },
+          {
+            "tag": "#P0Y",
+            "name": "Fixture player 6",
+            "user_id": "123456789012345680"
+          },
+          {
+            "tag": "#P20",
+            "name": "Fixture player 15",
+            "user_id": "123456789012345685"
+          },
+          {
+            "tag": "#P29",
+            "name": "Fixture player 18",
+            "user_id": null
+          },
+          {
+            "tag": "#P2L",
+            "name": "Fixture player 21",
+            "user_id": "123456789012345688"
+          },
+          {
+            "tag": "#P2R",
+            "name": "Fixture player 24",
+            "user_id": "123456789012345689"
+          },
+          {
+            "tag": "#P2U",
+            "name": "Fixture player 27",
+            "user_id": "123456789012345691"
+          },
+          {
+            "tag": "#P82",
+            "name": "Fixture player 30",
+            "user_id": "123456789012345692"
+          },
+          {
+            "tag": "#P8J",
+            "name": "Fixture player 39",
+            "user_id": "123456789012345697"
+          },
+          {
+            "tag": "#P8P",
+            "name": "Fixture player 33",
+            "user_id": "123456789012345694"
+          },
+          {
+            "tag": "#P8Q",
+            "name": "Fixture player 36",
+            "user_id": "123456789012345695"
+          },
+          {
+            "tag": "#P8V",
+            "name": "Fixture player 42",
+            "user_id": "123456789012345698"
+          },
+          {
+            "tag": "#P98",
+            "name": "Fixture player 45",
+            "user_id": "123456789012345700"
+          },
+          {
+            "tag": "#P9C",
+            "name": "Fixture player 54",
+            "user_id": "123456789012345704"
+          },
+          {
+            "tag": "#P9G",
+            "name": "Fixture player 51",
+            "user_id": "123456789012345703"
+          },
+          {
+            "tag": "#P9Y",
+            "name": "Fixture player 48",
+            "user_id": "123456789012345701"
+          },
+          {
+            "tag": "#PP0",
+            "name": "Fixture player 57",
+            "user_id": "123456789012345706"
+          },
+          {
+            "tag": "#PP9",
+            "name": "Fixture player 60",
+            "user_id": "123456789012345707"
+          },
+          {
+            "tag": "#PPL",
+            "name": "Fixture player 63",
+            "user_id": "123456789012345709"
+          }
+        ],
+        "users": [
+          "123456789012345679",
+          "123456789012345680",
+          "123456789012345682",
+          "123456789012345683",
+          "123456789012345685",
+          "123456789012345688",
+          "123456789012345689",
+          "123456789012345691",
+          "123456789012345692",
+          "123456789012345694",
+          "123456789012345695",
+          "123456789012345697",
+          "123456789012345698",
+          "123456789012345700",
+          "123456789012345701",
+          "123456789012345703",
+          "123456789012345704",
+          "123456789012345706",
+          "123456789012345707",
+          "123456789012345709"
+        ],
+        "unlinked": [
+          {
+            "tag": "#P29",
+            "name": "Fixture player 18",
+            "user_id": null
+          }
+        ]
+      },
+      {
+        "tag": "#PYY",
+        "name": "W. U. Lazy .125",
+        "accounts": [
+          {
+            "tag": "#P00",
+            "name": "Fixture player 1",
+            "user_id": null
+          },
+          {
+            "tag": "#P09",
+            "name": "Fixture player 4",
+            "user_id": "123456789012345679"
+          },
+          {
+            "tag": "#P0L",
+            "name": "Fixture player 7",
+            "user_id": "123456789012345681"
+          },
+          {
+            "tag": "#P0R",
+            "name": "Fixture player 10",
+            "user_id": "123456789012345682"
+          },
+          {
+            "tag": "#P0U",
+            "name": "Fixture player 13",
+            "user_id": "123456789012345684"
+          },
+          {
+            "tag": "#P22",
+            "name": "Fixture player 16",
+            "user_id": "123456789012345685"
+          },
+          {
+            "tag": "#P2J",
+            "name": "Fixture player 25",
+            "user_id": "123456789012345690"
+          },
+          {
+            "tag": "#P2P",
+            "name": "Fixture player 19",
+            "user_id": "123456789012345687"
+          },
+          {
+            "tag": "#P2Q",
+            "name": "Fixture player 22",
+            "user_id": "123456789012345688"
+          },
+          {
+            "tag": "#P2V",
+            "name": "Fixture player 28",
+            "user_id": "123456789012345691"
+          },
+          {
+            "tag": "#P88",
+            "name": "Fixture player 31",
+            "user_id": "123456789012345693"
+          },
+          {
+            "tag": "#P8C",
+            "name": "Fixture player 40",
+            "user_id": "123456789012345697"
+          },
+          {
+            "tag": "#P8G",
+            "name": "Fixture player 37",
+            "user_id": "123456789012345696"
+          },
+          {
+            "tag": "#P8Y",
+            "name": "Fixture player 34",
+            "user_id": "123456789012345694"
+          },
+          {
+            "tag": "#P90",
+            "name": "Fixture player 43",
+            "user_id": "123456789012345699"
+          },
+          {
+            "tag": "#P99",
+            "name": "Fixture player 46",
+            "user_id": "123456789012345700"
+          },
+          {
+            "tag": "#P9L",
+            "name": "Fixture player 49",
+            "user_id": "123456789012345702"
+          },
+          {
+            "tag": "#P9R",
+            "name": "Fixture player 52",
+            "user_id": null
+          },
+          {
+            "tag": "#P9U",
+            "name": "Fixture player 55",
+            "user_id": "123456789012345705"
+          },
+          {
+            "tag": "#PP2",
+            "name": "Fixture player 58",
+            "user_id": "123456789012345706"
+          },
+          {
+            "tag": "#PPP",
+            "name": "Fixture player 61",
+            "user_id": "123456789012345708"
+          },
+          {
+            "tag": "#PPQ",
+            "name": "Fixture player 64",
+            "user_id": "123456789012345709"
+          }
+        ],
+        "users": [
+          "123456789012345679",
+          "123456789012345681",
+          "123456789012345682",
+          "123456789012345684",
+          "123456789012345685",
+          "123456789012345687",
+          "123456789012345688",
+          "123456789012345690",
+          "123456789012345691",
+          "123456789012345693",
+          "123456789012345694",
+          "123456789012345696",
+          "123456789012345697",
+          "123456789012345699",
+          "123456789012345700",
+          "123456789012345702",
+          "123456789012345705",
+          "123456789012345706",
+          "123456789012345708",
+          "123456789012345709"
+        ],
+        "unlinked": [
+          {
+            "tag": "#P00",
+            "name": "Fixture player 1",
+            "user_id": null
+          },
+          {
+            "tag": "#P9R",
+            "name": "Fixture player 52",
+            "user_id": null
+          }
+        ]
+      }
+    ],
+    "previews": [
+      [
+        {
+          "type": "container",
+          "children": [
+            {
+              "type": "text",
+              "text": "## \u2694\ufe0f CWL declaration: join your clan\nW. U. Lazy .123  \u00b7  <@123456789012345678> <@123456789012345680> <@123456789012345681> <@123456789012345683> <@123456789012345684> <@123456789012345686> <@123456789012345687> <@123456789012345689> <@123456789012345690> <@123456789012345692> <@123456789012345693> <@123456789012345696> <@123456789012345698> <@123456789012345699> <@123456789012345701> <@123456789012345702> <@123456789012345704> <@123456789012345705> <@123456789012345707> <@123456789012345708> <@123456789012345710> Fixture player 35 (`#P8L`)\nW. U. Lazy .124  \u00b7  <@123456789012345679> <@123456789012345680> <@123456789012345682> <@123456789012345683> <@123456789012345685> <@123456789012345688> <@123456789012345689> <@123456789012345691> <@123456789012345692> <@123456789012345694> <@123456789012345695> <@123456789012345697> <@123456789012345698> <@123456789012345700> <@123456789012345701> <@123456789012345703> <@123456789012345704> <@123456789012345706> <@123456789012345707> <@123456789012345709> Fixture player 18 (`#P29`)\nW. U. Lazy .125  \u00b7  <@123456789012345679> <@123456789012345681> <@123456789012345682> <@123456789012345684> <@123456789012345685> <@123456789012345687> <@123456789012345688> <@123456789012345690> <@123456789012345691> <@123456789012345693> <@123456789012345694> <@123456789012345696> <@123456789012345697> <@123456789012345699> <@123456789012345700> <@123456789012345702> <@123456789012345705> <@123456789012345706> <@123456789012345708> <@123456789012345709> Fixture player 1 (`#P00`) Fixture player 52 (`#P9R`)\nTotal missing: 65"
+            },
+            {
+              "type": "row",
+              "children": [
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .123",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PQQ"
+                },
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .124",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PCC"
+                },
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .125",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PYY"
+                }
+              ]
+            }
+          ],
+          "accent": "#d4a017"
+        }
+      ]
+    ]
+  },
+  "125": {
+    "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mode": "live",
+    "channel": {
+      "id": "234567890123456789",
+      "name": "lazy-cwl-declaration"
+    },
+    "count": 125,
+    "unknown": 3,
+    "unlinked": 8,
+    "chunks": 1,
+    "groups": [
+      {
+        "tag": "#PQQ",
+        "name": "W. U. Lazy .123",
+        "accounts": [
+          {
+            "tag": "#P02",
+            "name": "Fixture player 2",
+            "user_id": "123456789012345678"
+          },
+          {
+            "tag": "#P0J",
+            "name": "Fixture player 11",
+            "user_id": "123456789012345683"
+          },
+          {
+            "tag": "#P0P",
+            "name": "Fixture player 5",
+            "user_id": "123456789012345680"
+          },
+          {
+            "tag": "#P0Q",
+            "name": "Fixture player 8",
+            "user_id": "123456789012345681"
+          },
+          {
+            "tag": "#P0V",
+            "name": "Fixture player 14",
+            "user_id": "123456789012345684"
+          },
+          {
+            "tag": "#P28",
+            "name": "Fixture player 17",
+            "user_id": "123456789012345686"
+          },
+          {
+            "tag": "#P2C",
+            "name": "Fixture player 26",
+            "user_id": "123456789012345690"
+          },
+          {
+            "tag": "#P2G",
+            "name": "Fixture player 23",
+            "user_id": "123456789012345689"
+          },
+          {
+            "tag": "#P2Y",
+            "name": "Fixture player 20",
+            "user_id": "123456789012345687"
+          },
+          {
+            "tag": "#P80",
+            "name": "Fixture player 29",
+            "user_id": "123456789012345692"
+          },
+          {
+            "tag": "#P89",
+            "name": "Fixture player 32",
+            "user_id": "123456789012345693"
+          },
+          {
+            "tag": "#P8L",
+            "name": "Fixture player 35",
+            "user_id": null
+          },
+          {
+            "tag": "#P8R",
+            "name": "Fixture player 38",
+            "user_id": "123456789012345696"
+          },
+          {
+            "tag": "#P8U",
+            "name": "Fixture player 41",
+            "user_id": "123456789012345698"
+          },
+          {
+            "tag": "#P92",
+            "name": "Fixture player 44",
+            "user_id": "123456789012345699"
+          },
+          {
+            "tag": "#P9J",
+            "name": "Fixture player 53",
+            "user_id": "123456789012345704"
+          },
+          {
+            "tag": "#P9P",
+            "name": "Fixture player 47",
+            "user_id": "123456789012345701"
+          },
+          {
+            "tag": "#P9Q",
+            "name": "Fixture player 50",
+            "user_id": "123456789012345702"
+          },
+          {
+            "tag": "#P9V",
+            "name": "Fixture player 56",
+            "user_id": "123456789012345705"
+          },
+          {
+            "tag": "#PG0",
+            "name": "Fixture player 113",
+            "user_id": "123456789012345734"
+          },
+          {
+            "tag": "#PG9",
+            "name": "Fixture player 116",
+            "user_id": "123456789012345735"
+          },
+          {
+            "tag": "#PGL",
+            "name": "Fixture player 119",
+            "user_id": "123456789012345737"
+          },
+          {
+            "tag": "#PGR",
+            "name": "Fixture player 122",
+            "user_id": "123456789012345738"
+          },
+          {
+            "tag": "#PGU",
+            "name": "Fixture player 125",
+            "user_id": "123456789012345740"
+          },
+          {
+            "tag": "#PL2",
+            "name": "Fixture player 86",
+            "user_id": null
+          },
+          {
+            "tag": "#PLJ",
+            "name": "Fixture player 95",
+            "user_id": "123456789012345725"
+          },
+          {
+            "tag": "#PLP",
+            "name": "Fixture player 89",
+            "user_id": "123456789012345722"
+          },
+          {
+            "tag": "#PLQ",
+            "name": "Fixture player 92",
+            "user_id": "123456789012345723"
+          },
+          {
+            "tag": "#PLV",
+            "name": "Fixture player 98",
+            "user_id": "123456789012345726"
+          },
+          {
+            "tag": "#PP8",
+            "name": "Fixture player 59",
+            "user_id": "123456789012345707"
+          },
+          {
+            "tag": "#PPC",
+            "name": "Fixture player 68",
+            "user_id": "123456789012345711"
+          },
+          {
+            "tag": "#PPG",
+            "name": "Fixture player 65",
+            "user_id": "123456789012345710"
+          },
+          {
+            "tag": "#PPY",
+            "name": "Fixture player 62",
+            "user_id": "123456789012345708"
+          },
+          {
+            "tag": "#PQ8",
+            "name": "Fixture player 101",
+            "user_id": "123456789012345728"
+          },
+          {
+            "tag": "#PQC",
+            "name": "Fixture player 110",
+            "user_id": "123456789012345732"
+          },
+          {
+            "tag": "#PQG",
+            "name": "Fixture player 107",
+            "user_id": "123456789012345731"
+          },
+          {
+            "tag": "#PQY",
+            "name": "Fixture player 104",
+            "user_id": "123456789012345729"
+          },
+          {
+            "tag": "#PY0",
+            "name": "Fixture player 71",
+            "user_id": "123456789012345713"
+          },
+          {
+            "tag": "#PY9",
+            "name": "Fixture player 74",
+            "user_id": "123456789012345714"
+          },
+          {
+            "tag": "#PYL",
+            "name": "Fixture player 77",
+            "user_id": "123456789012345716"
+          },
+          {
+            "tag": "#PYR",
+            "name": "Fixture player 80",
+            "user_id": "123456789012345717"
+          },
+          {
+            "tag": "#PYU",
+            "name": "Fixture player 83",
+            "user_id": "123456789012345719"
+          }
+        ],
+        "users": [
+          "123456789012345678",
+          "123456789012345680",
+          "123456789012345681",
+          "123456789012345683",
+          "123456789012345684",
+          "123456789012345686",
+          "123456789012345687",
+          "123456789012345689",
+          "123456789012345690",
+          "123456789012345692",
+          "123456789012345693",
+          "123456789012345696",
+          "123456789012345698",
+          "123456789012345699",
+          "123456789012345701",
+          "123456789012345702",
+          "123456789012345704",
+          "123456789012345705",
+          "123456789012345707",
+          "123456789012345708",
+          "123456789012345710",
+          "123456789012345711",
+          "123456789012345713",
+          "123456789012345714",
+          "123456789012345716",
+          "123456789012345717",
+          "123456789012345719",
+          "123456789012345722",
+          "123456789012345723",
+          "123456789012345725",
+          "123456789012345726",
+          "123456789012345728",
+          "123456789012345729",
+          "123456789012345731",
+          "123456789012345732",
+          "123456789012345734",
+          "123456789012345735",
+          "123456789012345737",
+          "123456789012345738",
+          "123456789012345740"
+        ],
+        "unlinked": [
+          {
+            "tag": "#P8L",
+            "name": "Fixture player 35",
+            "user_id": null
+          },
+          {
+            "tag": "#PL2",
+            "name": "Fixture player 86",
+            "user_id": null
+          }
+        ]
+      },
+      {
+        "tag": "#PCC",
+        "name": "W. U. Lazy .124",
+        "accounts": [
+          {
+            "tag": "#P08",
+            "name": "Fixture player 3",
+            "user_id": "123456789012345679"
+          },
+          {
+            "tag": "#P0C",
+            "name": "Fixture player 12",
+            "user_id": "123456789012345683"
+          },
+          {
+            "tag": "#P0G",
+            "name": "Fixture player 9",
+            "user_id": "123456789012345682"
+          },
+          {
+            "tag": "#P0Y",
+            "name": "Fixture player 6",
+            "user_id": "123456789012345680"
+          },
+          {
+            "tag": "#P20",
+            "name": "Fixture player 15",
+            "user_id": "123456789012345685"
+          },
+          {
+            "tag": "#P29",
+            "name": "Fixture player 18",
+            "user_id": null
+          },
+          {
+            "tag": "#P2L",
+            "name": "Fixture player 21",
+            "user_id": "123456789012345688"
+          },
+          {
+            "tag": "#P2R",
+            "name": "Fixture player 24",
+            "user_id": "123456789012345689"
+          },
+          {
+            "tag": "#P2U",
+            "name": "Fixture player 27",
+            "user_id": "123456789012345691"
+          },
+          {
+            "tag": "#P82",
+            "name": "Fixture player 30",
+            "user_id": "123456789012345692"
+          },
+          {
+            "tag": "#P8J",
+            "name": "Fixture player 39",
+            "user_id": "123456789012345697"
+          },
+          {
+            "tag": "#P8P",
+            "name": "Fixture player 33",
+            "user_id": "123456789012345694"
+          },
+          {
+            "tag": "#P8Q",
+            "name": "Fixture player 36",
+            "user_id": "123456789012345695"
+          },
+          {
+            "tag": "#P8V",
+            "name": "Fixture player 42",
+            "user_id": "123456789012345698"
+          },
+          {
+            "tag": "#P98",
+            "name": "Fixture player 45",
+            "user_id": "123456789012345700"
+          },
+          {
+            "tag": "#P9C",
+            "name": "Fixture player 54",
+            "user_id": "123456789012345704"
+          },
+          {
+            "tag": "#P9G",
+            "name": "Fixture player 51",
+            "user_id": "123456789012345703"
+          },
+          {
+            "tag": "#P9Y",
+            "name": "Fixture player 48",
+            "user_id": "123456789012345701"
+          },
+          {
+            "tag": "#PG2",
+            "name": "Fixture player 114",
+            "user_id": "123456789012345734"
+          },
+          {
+            "tag": "#PGJ",
+            "name": "Fixture player 123",
+            "user_id": "123456789012345739"
+          },
+          {
+            "tag": "#PGP",
+            "name": "Fixture player 117",
+            "user_id": "123456789012345736"
+          },
+          {
+            "tag": "#PGQ",
+            "name": "Fixture player 120",
+            "user_id": null
+          },
+          {
+            "tag": "#PL8",
+            "name": "Fixture player 87",
+            "user_id": "123456789012345721"
+          },
+          {
+            "tag": "#PLC",
+            "name": "Fixture player 96",
+            "user_id": "123456789012345725"
+          },
+          {
+            "tag": "#PLG",
+            "name": "Fixture player 93",
+            "user_id": "123456789012345724"
+          },
+          {
+            "tag": "#PLY",
+            "name": "Fixture player 90",
+            "user_id": "123456789012345722"
+          },
+          {
+            "tag": "#PP0",
+            "name": "Fixture player 57",
+            "user_id": "123456789012345706"
+          },
+          {
+            "tag": "#PP9",
+            "name": "Fixture player 60",
+            "user_id": "123456789012345707"
+          },
+          {
+            "tag": "#PPL",
+            "name": "Fixture player 63",
+            "user_id": "123456789012345709"
+          },
+          {
+            "tag": "#PPR",
+            "name": "Fixture player 66",
+            "user_id": "123456789012345710"
+          },
+          {
+            "tag": "#PPU",
+            "name": "Fixture player 69",
+            "user_id": null
+          },
+          {
+            "tag": "#PQ0",
+            "name": "Fixture player 99",
+            "user_id": "123456789012345727"
+          },
+          {
+            "tag": "#PQ9",
+            "name": "Fixture player 102",
+            "user_id": "123456789012345728"
+          },
+          {
+            "tag": "#PQL",
+            "name": "Fixture player 105",
+            "user_id": "123456789012345730"
+          },
+          {
+            "tag": "#PQR",
+            "name": "Fixture player 108",
+            "user_id": "123456789012345731"
+          },
+          {
+            "tag": "#PQU",
+            "name": "Fixture player 111",
+            "user_id": "123456789012345733"
+          },
+          {
+            "tag": "#PY2",
+            "name": "Fixture player 72",
+            "user_id": "123456789012345713"
+          },
+          {
+            "tag": "#PYJ",
+            "name": "Fixture player 81",
+            "user_id": "123456789012345718"
+          },
+          {
+            "tag": "#PYP",
+            "name": "Fixture player 75",
+            "user_id": "123456789012345715"
+          },
+          {
+            "tag": "#PYQ",
+            "name": "Fixture player 78",
+            "user_id": "123456789012345716"
+          },
+          {
+            "tag": "#PYV",
+            "name": "Fixture player 84",
+            "user_id": "123456789012345719"
+          }
+        ],
+        "users": [
+          "123456789012345679",
+          "123456789012345680",
+          "123456789012345682",
+          "123456789012345683",
+          "123456789012345685",
+          "123456789012345688",
+          "123456789012345689",
+          "123456789012345691",
+          "123456789012345692",
+          "123456789012345694",
+          "123456789012345695",
+          "123456789012345697",
+          "123456789012345698",
+          "123456789012345700",
+          "123456789012345701",
+          "123456789012345703",
+          "123456789012345704",
+          "123456789012345706",
+          "123456789012345707",
+          "123456789012345709",
+          "123456789012345710",
+          "123456789012345713",
+          "123456789012345715",
+          "123456789012345716",
+          "123456789012345718",
+          "123456789012345719",
+          "123456789012345721",
+          "123456789012345722",
+          "123456789012345724",
+          "123456789012345725",
+          "123456789012345727",
+          "123456789012345728",
+          "123456789012345730",
+          "123456789012345731",
+          "123456789012345733",
+          "123456789012345734",
+          "123456789012345736",
+          "123456789012345739"
+        ],
+        "unlinked": [
+          {
+            "tag": "#P29",
+            "name": "Fixture player 18",
+            "user_id": null
+          },
+          {
+            "tag": "#PGQ",
+            "name": "Fixture player 120",
+            "user_id": null
+          },
+          {
+            "tag": "#PPU",
+            "name": "Fixture player 69",
+            "user_id": null
+          }
+        ]
+      },
+      {
+        "tag": "#PYY",
+        "name": "W. U. Lazy .125",
+        "accounts": [
+          {
+            "tag": "#P00",
+            "name": "Fixture player 1",
+            "user_id": null
+          },
+          {
+            "tag": "#P09",
+            "name": "Fixture player 4",
+            "user_id": "123456789012345679"
+          },
+          {
+            "tag": "#P0L",
+            "name": "Fixture player 7",
+            "user_id": "123456789012345681"
+          },
+          {
+            "tag": "#P0R",
+            "name": "Fixture player 10",
+            "user_id": "123456789012345682"
+          },
+          {
+            "tag": "#P0U",
+            "name": "Fixture player 13",
+            "user_id": "123456789012345684"
+          },
+          {
+            "tag": "#P22",
+            "name": "Fixture player 16",
+            "user_id": "123456789012345685"
+          },
+          {
+            "tag": "#P2J",
+            "name": "Fixture player 25",
+            "user_id": "123456789012345690"
+          },
+          {
+            "tag": "#P2P",
+            "name": "Fixture player 19",
+            "user_id": "123456789012345687"
+          },
+          {
+            "tag": "#P2Q",
+            "name": "Fixture player 22",
+            "user_id": "123456789012345688"
+          },
+          {
+            "tag": "#P2V",
+            "name": "Fixture player 28",
+            "user_id": "123456789012345691"
+          },
+          {
+            "tag": "#P88",
+            "name": "Fixture player 31",
+            "user_id": "123456789012345693"
+          },
+          {
+            "tag": "#P8C",
+            "name": "Fixture player 40",
+            "user_id": "123456789012345697"
+          },
+          {
+            "tag": "#P8G",
+            "name": "Fixture player 37",
+            "user_id": "123456789012345696"
+          },
+          {
+            "tag": "#P8Y",
+            "name": "Fixture player 34",
+            "user_id": "123456789012345694"
+          },
+          {
+            "tag": "#P90",
+            "name": "Fixture player 43",
+            "user_id": "123456789012345699"
+          },
+          {
+            "tag": "#P99",
+            "name": "Fixture player 46",
+            "user_id": "123456789012345700"
+          },
+          {
+            "tag": "#P9L",
+            "name": "Fixture player 49",
+            "user_id": "123456789012345702"
+          },
+          {
+            "tag": "#P9R",
+            "name": "Fixture player 52",
+            "user_id": null
+          },
+          {
+            "tag": "#P9U",
+            "name": "Fixture player 55",
+            "user_id": "123456789012345705"
+          },
+          {
+            "tag": "#PG8",
+            "name": "Fixture player 115",
+            "user_id": "123456789012345735"
+          },
+          {
+            "tag": "#PGC",
+            "name": "Fixture player 124",
+            "user_id": "123456789012345739"
+          },
+          {
+            "tag": "#PGG",
+            "name": "Fixture player 121",
+            "user_id": "123456789012345738"
+          },
+          {
+            "tag": "#PGY",
+            "name": "Fixture player 118",
+            "user_id": "123456789012345736"
+          },
+          {
+            "tag": "#PL0",
+            "name": "Fixture player 85",
+            "user_id": "123456789012345720"
+          },
+          {
+            "tag": "#PL9",
+            "name": "Fixture player 88",
+            "user_id": "123456789012345721"
+          },
+          {
+            "tag": "#PLL",
+            "name": "Fixture player 91",
+            "user_id": "123456789012345723"
+          },
+          {
+            "tag": "#PLR",
+            "name": "Fixture player 94",
+            "user_id": "123456789012345724"
+          },
+          {
+            "tag": "#PLU",
+            "name": "Fixture player 97",
+            "user_id": "123456789012345726"
+          },
+          {
+            "tag": "#PP2",
+            "name": "Fixture player 58",
+            "user_id": "123456789012345706"
+          },
+          {
+            "tag": "#PPJ",
+            "name": "Fixture player 67",
+            "user_id": "123456789012345711"
+          },
+          {
+            "tag": "#PPP",
+            "name": "Fixture player 61",
+            "user_id": "123456789012345708"
+          },
+          {
+            "tag": "#PPQ",
+            "name": "Fixture player 64",
+            "user_id": "123456789012345709"
+          },
+          {
+            "tag": "#PPV",
+            "name": "Fixture player 70",
+            "user_id": "123456789012345712"
+          },
+          {
+            "tag": "#PQ2",
+            "name": "Fixture player 100",
+            "user_id": "123456789012345727"
+          },
+          {
+            "tag": "#PQJ",
+            "name": "Fixture player 109",
+            "user_id": "123456789012345732"
+          },
+          {
+            "tag": "#PQP",
+            "name": "Fixture player 103",
+            "user_id": null
+          },
+          {
+            "tag": "#PQQ",
+            "name": "Fixture player 106",
+            "user_id": "123456789012345730"
+          },
+          {
+            "tag": "#PQV",
+            "name": "Fixture player 112",
+            "user_id": "123456789012345733"
+          },
+          {
+            "tag": "#PY8",
+            "name": "Fixture player 73",
+            "user_id": "123456789012345714"
+          },
+          {
+            "tag": "#PYC",
+            "name": "Fixture player 82",
+            "user_id": "123456789012345718"
+          },
+          {
+            "tag": "#PYG",
+            "name": "Fixture player 79",
+            "user_id": "123456789012345717"
+          },
+          {
+            "tag": "#PYY",
+            "name": "Fixture player 76",
+            "user_id": "123456789012345715"
+          }
+        ],
+        "users": [
+          "123456789012345679",
+          "123456789012345681",
+          "123456789012345682",
+          "123456789012345684",
+          "123456789012345685",
+          "123456789012345687",
+          "123456789012345688",
+          "123456789012345690",
+          "123456789012345691",
+          "123456789012345693",
+          "123456789012345694",
+          "123456789012345696",
+          "123456789012345697",
+          "123456789012345699",
+          "123456789012345700",
+          "123456789012345702",
+          "123456789012345705",
+          "123456789012345706",
+          "123456789012345708",
+          "123456789012345709",
+          "123456789012345711",
+          "123456789012345712",
+          "123456789012345714",
+          "123456789012345715",
+          "123456789012345717",
+          "123456789012345718",
+          "123456789012345720",
+          "123456789012345721",
+          "123456789012345723",
+          "123456789012345724",
+          "123456789012345726",
+          "123456789012345727",
+          "123456789012345730",
+          "123456789012345732",
+          "123456789012345733",
+          "123456789012345735",
+          "123456789012345736",
+          "123456789012345738",
+          "123456789012345739"
+        ],
+        "unlinked": [
+          {
+            "tag": "#P00",
+            "name": "Fixture player 1",
+            "user_id": null
+          },
+          {
+            "tag": "#P9R",
+            "name": "Fixture player 52",
+            "user_id": null
+          },
+          {
+            "tag": "#PQP",
+            "name": "Fixture player 103",
+            "user_id": null
+          }
+        ]
+      }
+    ],
+    "previews": [
+      [
+        {
+          "type": "container",
+          "children": [
+            {
+              "type": "text",
+              "text": "## \u2694\ufe0f CWL declaration: join your clan\nW. U. Lazy .123  \u00b7  <@123456789012345678> <@123456789012345680> <@123456789012345681> <@123456789012345683> <@123456789012345684> <@123456789012345686> <@123456789012345687> <@123456789012345689> <@123456789012345690> <@123456789012345692> <@123456789012345693> <@123456789012345696> <@123456789012345698> <@123456789012345699> <@123456789012345701> <@123456789012345702> <@123456789012345704> <@123456789012345705> <@123456789012345707> <@123456789012345708> <@123456789012345710> <@123456789012345711> <@123456789012345713> <@123456789012345714> <@123456789012345716> <@123456789012345717> <@123456789012345719> <@123456789012345722> <@123456789012345723> <@123456789012345725> <@123456789012345726> <@123456789012345728> <@123456789012345729> <@123456789012345731> <@123456789012345732> <@123456789012345734> <@123456789012345735> <@123456789012345737> <@123456789012345738> <@123456789012345740> Fixture player 35 (`#P8L`) Fixture player 86 (`#PL2`)\nW. U. Lazy .124  \u00b7  <@123456789012345679> <@123456789012345680> <@123456789012345682> <@123456789012345683> <@123456789012345685> <@123456789012345688> <@123456789012345689> <@123456789012345691> <@123456789012345692> <@123456789012345694> <@123456789012345695> <@123456789012345697> <@123456789012345698> <@123456789012345700> <@123456789012345701> <@123456789012345703> <@123456789012345704> <@123456789012345706> <@123456789012345707> <@123456789012345709> <@123456789012345710> <@123456789012345713> <@123456789012345715> <@123456789012345716> <@123456789012345718> <@123456789012345719> <@123456789012345721> <@123456789012345722> <@123456789012345724> <@123456789012345725> <@123456789012345727> <@123456789012345728> <@123456789012345730> <@123456789012345731> <@123456789012345733> <@123456789012345734> <@123456789012345736> <@123456789012345739> Fixture player 18 (`#P29`) Fixture player 120 (`#PGQ`) Fixture player 69 (`#PPU`)\nW. U. Lazy .125  \u00b7  <@123456789012345679> <@123456789012345681> <@123456789012345682> <@123456789012345684> <@123456789012345685> <@123456789012345687> <@123456789012345688> <@123456789012345690> <@123456789012345691> <@123456789012345693> <@123456789012345694> <@123456789012345696> <@123456789012345697> <@123456789012345699> <@123456789012345700> <@123456789012345702> <@123456789012345705> <@123456789012345706> <@123456789012345708> <@123456789012345709> <@123456789012345711> <@123456789012345712> <@123456789012345714> <@123456789012345715> <@123456789012345717> <@123456789012345718> <@123456789012345720> <@123456789012345721> <@123456789012345723> <@123456789012345724> <@123456789012345726> <@123456789012345727> <@123456789012345730> <@123456789012345732> <@123456789012345733> <@123456789012345735> <@123456789012345736> <@123456789012345738> <@123456789012345739> Fixture player 1 (`#P00`) Fixture player 52 (`#P9R`) Fixture player 103 (`#PQP`)\nTotal missing: 125"
+            },
+            {
+              "type": "row",
+              "children": [
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .123",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PQQ"
+                },
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .124",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PCC"
+                },
+                {
+                  "type": "button",
+                  "label": "Open W. U. Lazy .125",
+                  "style": 5,
+                  "emoji": null,
+                  "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag=%23PYY"
+                }
+              ]
+            }
+          ],
+          "accent": "#d4a017"
+        }
+      ]
+    ]
+  }
+}

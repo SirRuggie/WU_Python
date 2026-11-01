@@ -1082,11 +1082,16 @@ async def roster(request):
 
 async def arrival_check(request):
     _require(request, "editor")
+    return web.json_response(await arrival_snapshot(request))
+
+
+async def arrival_snapshot(request, *, source=None, force=None):
+    """The existing arrival read, shared by explicit reviewed declaration pings."""
     sid = _sid(request)
     with _store(request).tx() as db:
         _season(db, sid)
         latest = _latest_publication(db, sid)
-        requested_source = request.query.get('source', 'draft')
+        requested_source = source if source is not None else request.query.get('source', 'draft')
         if requested_source not in ('draft', 'published'):
             _fail(400, 'Invalid roster source')
         published = latest is not None and requested_source == 'published'
@@ -1105,22 +1110,22 @@ async def arrival_check(request):
             account['hosting_pool'] = clan_pools.get(account['assigned_clan_tag']) or account['pool']
     from .roster_locations import enrich, background_enrich
     updating = False
-    if request.query.get('background') == '1':
+    if force is None and request.query.get('background') == '1':
         updating = await background_enrich(request, accounts, force=request.query.get('refresh') == '1')
     else:
-        await enrich(request, accounts, force=request.query.get('refresh') == '1')
+        await enrich(request, accounts, force=force if force is not None else request.query.get('refresh') == '1')
     family = await _family_tags(request)
     for account in accounts:
         current = account['current_clan_status'] == 'current'
         account['arrival_status'] = ('unassigned' if not account['assigned_clan_tag'] else
             'unknown' if not current else 'arrived' if account['current_clan_tag'] == account['assigned_clan_tag'] else 'missing')
         account['outside_family'] = current and family is not None and account['current_clan_tag'] not in family
-    return web.json_response({'source':'published' if published else 'draft',
+    return {'source':'published' if published else 'draft',
         'version':latest['version'] if published else None, 'accounts':accounts, 'updating':updating,
         'publication_available': latest is not None, 'publication_outdated': publication_outdated,
         'published_at': latest['published_at'] if latest else None,
         'removed_since_publication': len(published_tags - current_tags),
-        'added_since_publication': len(current_tags - published_tags) if latest else 0})
+        'added_since_publication': len(current_tags - published_tags) if latest else 0}
 
 
 async def update_lineup_rules(request):
@@ -1878,6 +1883,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app = web.Application(middlewares=[diagnostics, errors, canonical_host, access_context, auth_diagnostics], client_max_size=32 * 1024)
     from .server_management import mongo_lifecycle
     app.cleanup_ctx.append(mongo_lifecycle)
+    from .declaration_delivery import lifecycle as declaration_lifecycle
+    app.cleanup_ctx.append(declaration_lifecycle)
     from .roster_sequence_jobs import lifecycle as roster_sequence_lifecycle
     app.cleanup_ctx.append(roster_sequence_lifecycle)
     app["store"] = Store(db_path, durability=durability)
@@ -1969,6 +1976,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes.extend(roster_image_routes())
     from .roster_image_posts import routes as roster_image_post_routes
     routes.extend(roster_image_post_routes())
+    from .declaration_pings import routes as declaration_ping_routes
+    routes.extend(declaration_ping_routes())
     routes.extend(participation_routes())
     routes.extend(participation_sync_routes())
     routes.extend(bonus_routes())

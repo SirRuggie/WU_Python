@@ -321,3 +321,25 @@ The table caption remains accessible without consuming visual space and mobile
 priority labels remain visible while the summary truncates. Full detail holds
 the unabridged evidence and notes. Isolated fake transport never proves live
 Discord or clipboard permissions on another browser.
+## Declaration ping interaction
+
+Keep a saved destination, its revisioned save action and `Ping N missing` next to
+the active pool. Reuse ChannelCombobox and the shared accessible ConfirmDialog.
+The initial click reads fresh arrivals; only the confirmation can enqueue delivery.
+Show clan counts, unlinked names, excluded unknown locations and the destination
+before Send. Put the approximate rendered message and occasional no-ping test in
+labeled disclosures. Preview controls never send or open in-game links.
+
+Preserve a channel draft on errors and ask before discarding it on pool, season or
+page changes. Block local conflicting actions during short requests; after a job
+is queued, navigation is safe because its real delivery receipt is durable. Show
+confirmed chunk IDs and an explicit uncertain state, not a generic success toast.
+Never let a status reload resend a notification. Refresh only active, visible
+delivery views, with one read in flight; do not re-fetch the channel directory on
+each progress poll. Permission loss clears protected controls and an open review.
+
+Check the controls, confirmation, test review and rendered sample at 320/360/390
+and wide widths with 26, 65 and 125 missing-account fixtures. Verify keyboard/focus,
+44px controls, no horizontal overflow and read-only state. This is scoped product
+QA, not a claim of full assistive-technology certification or live Discord delivery.
+

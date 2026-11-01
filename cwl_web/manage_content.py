@@ -164,7 +164,10 @@ def serialize_components(components, item_id):
     attachments = {}
     payloads = []
     for component in components:
-        payload, resources = component.build()
+        if isinstance(component, dict):
+            payload, resources = component, []  # Already rendered server-owned V2 payload.
+        else:
+            payload, resources = component.build()
         payloads.append(payload)
         for resource in resources:
             path = getattr(resource, 'path', None)

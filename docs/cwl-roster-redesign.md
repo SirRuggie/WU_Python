@@ -662,3 +662,52 @@ not My clan assignments. Before publishing, My clan assignments shows a compact
 Not published yet card. Home is unchanged. My signups lists every signed-up
 account, keeps its green card when closed, and offers remaining accounts only
 while signups are open. Existing withdrawal and pool-change rules are unchanged.
+## Manual Declaration pings
+
+Declaration check has one shared posting channel per Main/Lazy pool. Staff with
+`cwl_send` save the searchable text/announcement channel with a revision check;
+other staff see the saved destination and delivery state. A failed save preserves
+the draft channel. Navigation asks before discarding it, and short mutations block
+conflicting local actions.
+
+`Ping N missing` performs a fresh check of the current published lineup and opens
+a review by assigned clan. Confirming performs another fresh check; changed
+recipients, pool assignments or channel require a new review. The lineup guard
+compares only this pool’s account tag, owner and assigned clan; weight changes and
+other-pool edits do not invalidate it. Exact changed accounts appear before Ping. Unknown
+locations and Awaiting placement are excluded. Linked members are mentioned once
+per clan; unlinked accounts appear by name. External names cannot introduce
+Discord mentions. Components V2 payloads split only between whole tokens, within
+3,800 aggregate UTF-16 units including button labels, 100 allowed users, 40 nested
+components and five buttons per row. Chunks contain at most 30 clan buttons. `allowed_mentions` explicitly contains
+only reviewed user IDs, never roles or everyone.
+
+The send is manual: there is no scheduled send, restart resume or automatic POST
+retry. The pool has one active durable claim, per-chunk in-flight and accepted
+message IDs, a five-minute cooldown after accepted/uncertain delivery, a deliberate
+Send again review and the latest 20 receipts. Permissions and channel ownership are
+rechecked before each chunk. Once confirmed, the immutable reviewed list finishes
+even if the lineup changes concurrently. A refused
+later chunk leaves an exact partial receipt. A timeout or missing receipt is
+uncertain: inspect the channel before any new review. Closing an interrupted
+receipt sends nothing and never replays a chunk.
+
+The storage owner is `utils/declaration_ping_store.py`. Lane and five-minute
+preview records use the existing routed `bot_config` collection and its unique
+`_id`; no collection migration or TTL index is added. Claim/in-flight/receipt writes
+use majority+journal acknowledgement. Lane records are guild/pool scoped; previews
+are also bound to actor, season, destination, mode and a recipient fingerprint.
+Expired previews are pruned by the owner on review creation. There is one dashboard
+process; shutdown cancels and joins its delivery tasks before the Mongo pool closes.
+An interrupted job is never resumed by a new process.
+
+The collapsed no-ping test tool uses the existing shared Test channel from
+Announcements. It requires its own fresh review and confirmation and has empty
+parse/users/roles mention lists. It holds an in-flight pool lock, but writes no
+real ping receipt, last-ping time or cooldown. Test progress is ephemeral. No
+production Send or test-send is part of agent validation; Ruggie performs the first
+real test after the accepted release.
+
+Validation evidence is recorded with the batch READY entry. Fixture notification
+tests and approximate rendered posts do not prove live Discord delivery.
+

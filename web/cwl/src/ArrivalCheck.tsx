@@ -4,14 +4,25 @@ import useDeclarationData from "./useDeclarationData";
 import { declarationSnapshot } from "./declarationData";
 import { declarationGroups } from "./declarationGroups";
 import DeclarationClan from "./DeclarationClan";
+import DeclarationPingPanel from "./DeclarationPingPanel";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import { useCwlPool } from "./CwlPoolTabs";
 import { hiddenPublicationStatus } from "./publicationStatus";
-import { comparisonAge } from "./comparisonLocation";
+import { comparisonAge, comparisonLocation } from "./comparisonLocation";
 import { Button, Input } from "./rosterUi/primitives";
 import "./ArrivalCheck.css";
 
-export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
+export default function ArrivalCheck({
+  seasonId,
+  onDirty = () => {},
+  onWorking = () => {},
+}: {
+  seasonId: string;
+  onDirty?: (dirty: boolean) => void;
+  onWorking?: (working: boolean) => void;
+}) {
+  const pingDirty = useRef(false);
+  const pingWorking = useRef(false);
   const { data, error, refresh, records, now, checkedAt, checking } =
     useDeclarationData(seasonId);
   const [pool, setPool] = useCwlPool();
@@ -171,6 +182,14 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
                 key={p}
                 aria-pressed={pool === p}
                 onClick={() => {
+                  if (pingWorking.current) return;
+                  if (
+                    pingDirty.current &&
+                    !window.confirm("Discard the unsaved ping channel change?")
+                  )
+                    return;
+                  pingDirty.current = false;
+                  onDirty(false);
                   setPool(p);
                   setActiveClan("");
                 }}
@@ -181,6 +200,31 @@ export default function ArrivalCheck({ seasonId }: { seasonId: string }) {
               </Button>
             ))}
           </div>
+          <DeclarationPingPanel
+            key={`${seasonId}:${pool}`}
+            seasonId={seasonId}
+            pool={pool}
+            missing={visible.reduce(
+              (count, g) =>
+                count +
+                (g.tag
+                  ? g.accounts.filter(
+                      (a) =>
+                        comparisonLocation(records[a.tag], g.tag, now, g.name)
+                          .state === "missing",
+                    ).length
+                  : 0),
+              0,
+            )}
+            onWorking={(working) => {
+              pingWorking.current = working;
+              onWorking(working);
+            }}
+            onDirty={(dirty) => {
+              pingDirty.current = dirty;
+              onDirty(dirty);
+            }}
+          />
           <Input
             label="Find a player or clan"
             type="search"
