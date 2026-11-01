@@ -495,13 +495,15 @@ it("keeps open extra lists and observations while marking five rows without live
   const transport = vi.spyOn(await import("./api"), "api");
   let revision = 1;
   transport.mockImplementation(
-    async (path: string, _method?: unknown, body?: any) =>
-      ({
+    async (path: string, _method?: unknown, body?: any) => {
+      expect(body.revision).toBe(revision);
+      return {
         tag: decodeURIComponent(path.split("/").at(-1)!),
         revision: ++revision,
         roster_filler: true,
         mark_revision: body.mark_revision + 1,
-      }) as any,
+      } as any;
+    },
   );
   for (const a of state.value.data.arrival.accounts) {
     a.pool = "lazy";
@@ -632,4 +634,92 @@ it("hides marks on archived seasons and Ping uses the shared observed filler loc
   expect(
     host.querySelector("[data-ping-count]")?.getAttribute("data-ping-count"),
   ).toBe("0");
+});
+it("two rapid confirmed marks retain both overlays and send the newest revision next", async () => {
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  const { staffDetailsPageEvent } = await import("./useStaffDetailsPage");
+  let page: any;
+  const capture = (e: Event) => {
+    page = (e as CustomEvent).detail;
+  };
+  window.addEventListener(staffDetailsPageEvent, capture);
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <ArrivalCheck seasonId="1" />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+    const [a, b] = state.value.data.arrival.accounts;
+    await act(async () => {
+      page.onFillerChanged({
+        tag: a.tag,
+        revision: 2,
+        roster_filler: true,
+        mark_revision: 5,
+      });
+      page.onFillerChanged({
+        tag: b.tag,
+        revision: 3,
+        roster_filler: true,
+        mark_revision: 6,
+      });
+    });
+    const saved = page.publishedSnapshot.roster;
+    expect(saved.revision).toBe(3);
+    expect(saved.accounts.find((r: any) => r.tag === a.tag)).toMatchObject({
+      roster_filler: true,
+      roster_filler_revision: 5,
+    });
+    expect(saved.accounts.find((r: any) => r.tag === b.tag)).toMatchObject({
+      roster_filler: true,
+      roster_filler_revision: 6,
+    });
+    expect(state.value.refresh).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener(staffDetailsPageEvent, capture);
+  }
+});
+it("does not offer filler controls without roster permission", async () => {
+  const extrasView = vi.spyOn(await import("./DeclarationExtras"), "default");
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  extraState.value = {
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+    data: {
+      source: "published",
+      basis: 1,
+      revision: 1,
+      clans: [
+        {
+          tag: "#A",
+          name: "Amber",
+          status: "current",
+          count: 1,
+          extras: [
+            {
+              tag: "#EX",
+              name: "Extra",
+              town_hall: 16,
+              assigned_clan_tag: null,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider
+        value={{ owner: false, permissions: ["cwl_declaration"] }}
+      >
+        <ArrivalCheck seasonId="1" />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  expect(host.querySelector('[aria-label^="Filler:"]')).toBeNull();
+  expect(extrasView.mock.calls.at(-1)?.[0].markControl).toBeUndefined();
+  extrasView.mockRestore();
 });

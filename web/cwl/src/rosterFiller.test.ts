@@ -179,3 +179,10 @@ it("Ping missing count uses the same observation as late and excludes newer off-
   expect(group.missingCount).toBe(0);
   expect(group.readiness.arrivedCount).toBe(1);
 });
+it("unavailable filler observations cannot add off-roster readiness", () => {
+  const { roster, data, extra } = fixture();
+  extra.status = "unavailable";
+  const group = declarationGroups(data, roster, {}, now, [extra])[0];
+  expect(group.readiness.arrivedCount).toBe(0);
+  expect(group.late).toHaveLength(1);
+});

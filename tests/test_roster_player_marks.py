@@ -339,6 +339,13 @@ class FillerWorkflowHTTP(unittest.IsolatedAsyncioTestCase):
                 self.owner,
             )
         ).json()
+        self.assertFalse(arrival["season_archived"])
+        with self.app["store"].tx() as db:
+            db.execute("UPDATE seasons SET status='archived' WHERE id=?", (self.sid,))
+        archived_arrival = await (await self.call("GET", f"/seasons/{self.sid}/arrival-check?source=published&background=1", self.owner)).json()
+        self.assertTrue(archived_arrival["season_archived"])
+        with self.app["store"].tx() as db:
+            db.execute("UPDATE seasons SET status='draft' WHERE id=?", (self.sid,))
         self.assertTrue(
             next(a for a in arrival["accounts"] if a["tag"] == "#Q2Y")["roster_filler"]
         )

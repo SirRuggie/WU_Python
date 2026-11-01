@@ -1497,13 +1497,14 @@ async def undo_roster(request):
                 occupancy_delta[restored_host] = occupancy_delta.get(restored_host, 0) + 1
         for host in restored_hosts:
             capacity = _active_destination_capacity(db, sid, host)
-            count = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? "
-                               "AND assigned_clan_tag=?", (sid, host)).fetchone()["n"]
+            count, fillers = roster_player_marks.assigned_counts(db, sid, host)
             regular_restored = [c['tag'] for c in changes if c['before']['assigned_clan_tag'] == host
                                 and c['after']['assigned_clan_tag'] != host]
             regular_restored = roster_player_marks.incoming_regular(db, regular_restored)
-            leaving = sum(c['after']['assigned_clan_tag'] == host and c['before']['assigned_clan_tag'] != host for c in changes)
-            if regular_restored and count - leaving + len(regular_restored) > capacity:
+            leaving_tags = [c['tag'] for c in changes if c['after']['assigned_clan_tag'] == host
+                            and c['before']['assigned_clan_tag'] != host]
+            regular_leaving = roster_player_marks.incoming_regular(db, leaving_tags)
+            if regular_restored and count - fillers - len(regular_leaving) + len(regular_restored) > capacity:
                 _fail(409, "Undo would exceed hosting clan capacity")
         for change in changes:
             player_tag = change["tag"]

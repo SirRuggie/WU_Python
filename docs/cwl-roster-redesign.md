@@ -843,3 +843,16 @@ The failed-save case exercises RosterWorkspace itself; five successive marks and
 Undo retain an open Declaration list with no recheck. Regression cases include
 season revision, archived writes, eight-second optional identity lookup, planner
 weight, swaps, actual over-capacity chip state and newer location evidence.
+
+
+Prompt 94 closes the Undo difference: both swap and move Undo restore the prior
+placement when overflow is filler-only, accounting for regular leaving/restored
+seats. Revision and true new regular-overflow guards remain. Swap is API-only;
+the dashboard has no swap control. Filler-only overflow uses normal room styling,
+while a clan full of regulars stays amber. If a confirmed filler save is followed
+by a failed roster read, retain its receipt/Undo and say “Saved. Refresh to see
+the latest.” The fallback overlays the confirmed mark and revision locally.
+Regression checks cover rapid receipt updates, actual hook state, permission
+controls, revision-aware writes, mark revision, optional fallback callbacks,
+archived arrival response, filler readiness and publication labels/weight bands.
+No real DM link click or production rollback has been tested.

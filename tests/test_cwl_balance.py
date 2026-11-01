@@ -84,3 +84,11 @@ def test_random_capacity_no_unselected_moves_determinism():
         assert (plan, skipped) == balance_accounts(list(reversed(accounts)), hosts(), chosen, ['2', '1'])
         assert max(Counter(c for c, _ in resulting(accounts, plan)).values()) <= 15
         assert all(p['tag'] in chosen and not next(a for a in accounts if a['tag'] == p['tag'])['kept'] for p in plan)
+
+
+def test_filler_weight_band_is_retained_when_replanning_equal_weight_candidates():
+    rows = [account('f', 100000, '0', roster_filler=True), account('heavy', 200000, '1', kept=True), account('x', 100000), account('y', 100000)]
+    plan, skipped = balance_accounts(rows, hosts()[:2], ['f', 'x', 'y'], ['0', '1'])
+    assert {'tag':'f','reason':'filler_manual_only'} in skipped
+    assert not any(p['tag']=='f' for p in plan)
+    assert plan[0] == {'tag':'x','assigned_clan_tag':'1'}

@@ -67,6 +67,7 @@ for (const cap of [15, 30])
         const host = document.createElement("div");
         host.innerHTML = renderToStaticMarkup(view);
         expect(!!host.querySelector(".is-over")).toBe(!filler);
+        if (filler) expect(host.querySelector(".is-full")).toBeNull();
         if (filler) expect(host.textContent).toContain("+1 filler");
       }
       const host = document.createElement("div");
@@ -76,3 +77,15 @@ for (const cap of [15, 30])
           host.querySelector(".roster-clan-chip-count")?.textContent,
         ).toContain("+1 filler");
     });
+
+it("regular capacity alone stays full while filler-only overflow uses room styling", () => {
+  expect(
+    clanCapacity(
+      Array.from({ length: 15 }, () => ({
+        assigned_clan_tag: "A",
+      })) as RosterAccount[],
+      "A",
+      15,
+    ).barClass,
+  ).toBe("is-full");
+});

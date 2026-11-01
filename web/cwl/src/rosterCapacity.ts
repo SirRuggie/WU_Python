@@ -10,7 +10,7 @@ export function rosterCapacity(
   const regularOverflow =
     capacity === null ? 0 : Math.max(0, count - fillerCount - capacity);
   const over = regularOverflow > 0;
-  const full = capacity !== null && count >= capacity;
+  const full = capacity !== null && count === capacity && fillerCount === 0;
   return {
     count,
     fillerCount,

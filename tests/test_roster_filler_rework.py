@@ -118,6 +118,62 @@ class FillerReworkHTTP(unittest.IsolatedAsyncioTestCase):
         denied = await swap("#P2Y", "#V2Y")
         self.assertEqual(denied.status, 409)
 
+    async def test_swap_and_move_undo_restore_filler_overflow_exactly(self):
+        for tag in ("#P2Y", "#Q2Y", "#G2Y"):
+            await self.signup("lazy", tag)
+        await self.host("#J2Y", "lazy")
+        await self.host("#R2Y", "lazy")
+        with self.app["store"].tx() as db:
+            self.seats(db, "#J2Y", 14)
+            marks.save(db, "#Q2Y", True, 0, "staff")
+            for tag, host in (("#P2Y", "#J2Y"), ("#Q2Y", "#J2Y"), ("#G2Y", "#R2Y")):
+                db.execute(
+                    "INSERT INTO roster_entries(season_id,tag,assigned_clan_tag) VALUES (?,?,?)",
+                    (self.sid, tag, host),
+                )
+
+        def placements():
+            with self.app["store"].tx() as db:
+                return [
+                    tuple(r)
+                    for r in db.execute(
+                        "SELECT tag,assigned_clan_tag,kept FROM roster_entries WHERE season_id=? ORDER BY tag",
+                        (self.sid,),
+                    )
+                ]
+
+        for mode in ("swap", "move"):
+            before = placements()
+            if mode == "swap":
+                response = await self.call(
+                    "POST",
+                    f"/seasons/{self.sid}/roster/swap",
+                    self.owner,
+                    json=dict(
+                        revision=await self.revision(),
+                        left_tag="#P2Y",
+                        right_tag="#G2Y",
+                    ),
+                )
+            else:
+                response = await self.call(
+                    "PATCH",
+                    f"/seasons/{self.sid}/roster/%23P2Y",
+                    self.owner,
+                    json=dict(revision=await self.revision(), assigned_clan_tag="#R2Y"),
+                )
+            self.assertEqual(response.status, 200, await response.text())
+            roster = await self.call("GET", f"/seasons/{self.sid}/roster", self.owner)
+            receipt = (await roster.json())["undo"]
+            undone = await self.call(
+                "POST",
+                f"/seasons/{self.sid}/roster/undo",
+                self.owner,
+                json=dict(revision=await self.revision(), undo_id=receipt["id"]),
+            )
+            self.assertEqual(undone.status, 200, await undone.text())
+            self.assertEqual(placements(), before)
+
 
 def test_auto_and_balance_include_immovable_filler_weight(tmp_path):
     store = Store(str(tmp_path / "weights.sqlite"))

@@ -228,16 +228,26 @@ export default function StaffDetailsPanel({
               return;
             }
             const id = generation.current;
-            const latest = await api<RosterSnapshot>(
-              `/seasons/${encodeURIComponent(request.seasonId)}/roster`,
-            );
+            let latest: RosterSnapshot | null = null;
+            try {
+              latest = await api<RosterSnapshot>(
+                `/seasons/${encodeURIComponent(request.seasonId)}/roster`,
+              );
+            } catch {
+              if (id !== generation.current) return;
+              setError("Saved. Refresh to see the latest.");
+            }
             if (id !== generation.current) return;
             setSnapshot((previous) =>
               previous
-                ? mergeRosterMarks(previous, latest, {
-                    tag: request.tag,
-                    ...saved,
-                  })
+                ? mergeRosterMarks(
+                    previous,
+                    latest || { ...previous, revision: saved.revision },
+                    {
+                      tag: request.tag,
+                      ...saved,
+                    },
+                  )
                 : latest,
             );
             receipt.current = saved?.undo || null;

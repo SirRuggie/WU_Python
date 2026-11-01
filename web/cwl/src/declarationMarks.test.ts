@@ -56,5 +56,6 @@ it("patches only membership classifications and revision, preserving observation
   });
   expect(data.clans[0].count).toBe(1);
   expect(data.clans[0].extras?.[0].tag).toBe("0");
+  expect(data.clans[0].extras?.[0].roster_filler_revision).toBe(2);
   expect(data.basis).toBe(3);
 });
