@@ -346,6 +346,8 @@ class Store:
             migrate(db)
             from utils.clan_weight_store import initialize as initialize_clan_weights
             initialize_clan_weights(db)
+            from utils.cwl_pool_roles import initialize as initialize_pool_roles
+            initialize_pool_roles(db)
         self.durability = durability
 
     @contextmanager

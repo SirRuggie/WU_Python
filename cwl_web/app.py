@@ -2010,7 +2010,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(lineup_lifecycle)
     from .signup_activity import routes as signup_activity_routes
     from .discord_member import routes as discord_member_routes
-    routes = [*discord_member_routes, *staff_signup_change_routes, *weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
+    from .cwl_pool_roles import routes as pool_role_routes
+    routes = [*pool_role_routes, *discord_member_routes, *staff_signup_change_routes, *weight_trial_routes, *ticket_browser_routes, *staff_tag_signup_routes, *signup_activity_routes,
         web.get(API + "/config", config), web.get(API + "/auth/me", me), web.get(API + "/auth/discord", auth_start), web.get(API + "/auth/callback", auth_callback), web.post(API + "/auth/logout", logout), web.post(API + "/dev/login", dev_login),
         web.put(API + "/member-season", set_member_season), web.get(API + "/seasons", seasons), web.post(API + "/seasons", create_season), web.patch(API + "/seasons/{season_id}", update_season),
         web.get(API + "/clans", clans), web.get(API + "/clans/lookup", lookup_clan), web.post(API + "/clans", create_clan), web.patch(API + "/clans/{tag}", archive_clan),

@@ -864,3 +864,34 @@ war-reminder check 213 backend / 1 skip plus 35 frontend/build; Prettier on all
 Screenshots inspected: 26-account overview at 360/1440, 65-account Details at 360
 and 125-account marked state at 1440. Full guarded backend passed 5,707 tests /
 58 skipped / 224 subtests. No production action was used for these checks.
+
+## CWL pool roles (prompt92, development)
+
+Seasons provides optional Main and Lazy role settings, initially blank. A blank
+setting creates no role job and makes no Discord call on signup, cancellation,
+staff edits, expiry or bot startup. An explicit Save confirms the distinct member
+count and checks both the setting revision and membership fingerprint. It queues
+current signups; changing or clearing a role never removes the previous role.
+
+The shared SQLite owner uses signup triggers in the same durable transaction, so
+dashboard, Discord and staff paths cannot diverge. Discord failures cannot affect
+the committed signup. Membership means signed-up accounts in active draft seasons;
+cancelling one account preserves the role while another remains. If both pools
+use the same physical role, it remains while either pool has an active signup.
+
+The bot uses the authenticated loopback bridge and the shared serialized
+management lane. Jobs, generations, lease tokens, pacing and receipts are durable.
+A restarted/uncertain operation reads actual member roles before another write.
+The web process never performs a role write. Both server and bot reject everyone,
+managed, administrator and above-bot roles; Seasons rights, CSRF, revisions and
+setting audit apply.
+
+At00:00UTC on the16th, the saved-list expiry calculation schedules a durable
+paged scan of every role holder, including people without signups. Removal runs
+once per due cycle and catches up after downtime. Signups and settings remain.
+No automatic startup backfill re-adds old signups after expiry; only signup changes
+or explicit Save do that. Progress and failure stay in one short line per pool.
+
+This feature requires a bot restart when released after review. No real role is
+configured or changed by the agent. Full regression, fake-Discord transport,
+recovery, expiry, mutation and layout gates remain before READY.

@@ -43,3 +43,9 @@ def role_is_manageable(
     )
     top_position = bot_top_role_position(guild, bot)
     return has_permission and top_position is not None and role.position < top_position
+
+
+def role_is_safe_for_pool(guild, bot, role) -> bool:
+    """Automatic CWL roles may never grant administrator permission."""
+    return bool(role_is_manageable(guild, bot, role)
+                and not (role.permissions & hikari.Permissions.ADMINISTRATOR))
