@@ -653,7 +653,8 @@ async def _process_requests(bot, mongo):
                 1000 * (time.perf_counter() - claimed),
             )
             result = await asyncio.wait_for(
-                dispatch(bot, mongo, row, ctx), 120
+                dispatch(bot, mongo, row, ctx),
+                200 if row["section"] == "member_profiles" else 120,
             )
             update = {
                 "status": "done",

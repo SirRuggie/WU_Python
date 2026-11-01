@@ -2111,7 +2111,10 @@ def _silence_fast_job_logs():
 
     class FastJobFilter(logging.Filter):
         def filter(self, record):
-            return "_poll_web_management_fast" not in record.getMessage()
+            return (
+                record.levelno > logging.INFO
+                or "_poll_web_management_fast" not in record.getMessage()
+            )
 
     logger = logging.getLogger("apscheduler.executors.default")
     if not any(getattr(f, "_wu_fast_job", False) for f in logger.filters):
@@ -2121,8 +2124,8 @@ def _silence_fast_job_logs():
 
 
 async def _reconcile_cwl_startup() -> None:
-    _silence_fast_job_logs()
     """Idempotently restore durable CWL jobs after dependencies are ready."""
+    _silence_fast_job_logs()
     if not getattr(scheduler, "running", True):
         scheduler.start()
     scheduler.add_job(

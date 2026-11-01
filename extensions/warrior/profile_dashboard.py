@@ -36,8 +36,9 @@ async def directory(bot):
 
 _RUN_ENVIRONMENTS = OrderedDict()
 ENVIRONMENT_TTL_SECONDS = 60
-EDIT_TIMEOUT_SECONDS = 20
-ENVIRONMENT_PREPARE_AGE = ENVIRONMENT_TTL_SECONDS - EDIT_TIMEOUT_SECONDS - 5
+EDIT_TIMEOUT_SECONDS = 150
+PREPARE_TIMEOUT_SECONDS = 20
+ENVIRONMENT_PREPARE_AGE = ENVIRONMENT_TTL_SECONDS - PREPARE_TIMEOUT_SECONDS - 5
 
 
 async def environment(bot, run_id, *, max_age=ENVIRONMENT_TTL_SECONDS):
@@ -334,6 +335,7 @@ async def apply(bot, mongo, row, *, request_context=None):
                 fields,
                 change=change,
                 prepare=prepare,
+                lease_seconds=200,
                 expected_revision=revision,
                 updated_by=row["user_id"],
                 source="staff",

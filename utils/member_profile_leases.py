@@ -7,7 +7,7 @@ import asyncio
 from pymongo.errors import DuplicateKeyError
 from utils.component_state import insert_state, update_state, get_state
 
-LEASE = timedelta(seconds=60)
+DEFAULT_LEASE_SECONDS = 60
 
 
 class ProfileBusy(ValueError):
@@ -15,7 +15,11 @@ class ProfileBusy(ValueError):
 
 
 @asynccontextmanager
-async def editing(mongo, discord_id):
+async def editing(mongo, discord_id, *, lease_seconds=DEFAULT_LEASE_SECONDS):
+    if type(lease_seconds) is not int or not 60 <= lease_seconds <= 200:
+        raise ValueError("Invalid member edit lease duration.")
+    lease = timedelta(seconds=lease_seconds)
+    retention = lease + timedelta(seconds=60)
     key = "member_profile_edit:" + str(discord_id)
     owner = uuid4().hex
     now = datetime.now(timezone.utc)
@@ -23,19 +27,23 @@ async def editing(mongo, discord_id):
         "_id": key,
         "type": "member_profile_edit",
         "owner": owner,
-        "lease_until": now + LEASE,
+        "lease_until": now + lease,
     }
     try:
-        await insert_state(mongo, claim, ttl=timedelta(minutes=2))
+        await insert_state(mongo, claim, ttl=retention)
     except DuplicateKeyError:
         result = await update_state(
             mongo,
-            {"_id": key, "type": "member_profile_edit", "lease_until": {"$lte": now}},
+            {
+                "_id": key,
+                "type": "member_profile_edit",
+                "lease_until": {"$lte": now},
+            },
             {
                 "$set": {
                     "owner": owner,
-                    "lease_until": now + LEASE,
-                    "expires_at": now + timedelta(minutes=2),
+                    "lease_until": now + lease,
+                    "expires_at": now + retention,
                 }
             },
         )

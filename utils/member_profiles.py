@@ -125,6 +125,7 @@ class MemberProfiles:
         updated_by,
         source,
         prepare=None,
+        lease_seconds=60,
     ):
         """Serialize the external edit with CAS; failed edits never save a profile.
 
@@ -142,7 +143,9 @@ class MemberProfiles:
             raise ValueError("Invalid profile edit source or revision.")
         member_id(updated_by)
         await self.ensure_indexes()
-        async with editing(self.mongo, member_id(discord_id)) as claim:
+        async with editing(
+            self.mongo, member_id(discord_id), lease_seconds=lease_seconds
+        ) as claim:
             current = await self.get(discord_id)
             if int((current or {}).get("revision", 0)) != expected_revision:
                 raise ProfileConflict(

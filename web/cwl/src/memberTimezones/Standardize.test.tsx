@@ -340,6 +340,28 @@ it('keeps confirmed run and Stop when a subsequent read fails, then polling reco
   expect(host.textContent).not.toContain('Search nicknames');
   await act(async()=>vi.advanceTimersByTimeAsync(1000));
   expect(host.textContent).toContain('Done. 1 changed.');
+  expect(host.querySelector('[role=alert]')).toBeNull();
   expect(host.textContent).toContain('Member 0');
   expect(host.textContent).not.toContain('Member 1 |');
+});
+
+it('shows attribution only when viewing a past run, not when the history control is open on a new run', async () => {
+  await mount();
+  await click('Past runs');
+  await click('Review nicknames');
+  expect(host.querySelector('.mt-review-help')).toBeNull();
+  await click('Rename');
+  expect(host.textContent).not.toContain('Started by');
+  expect(host.textContent).not.toContain('Stopped by');
+});
+
+it('hides one-page review pagers and restores entry help only after Back', async () => {
+  await mount();
+  expect(host.querySelector('.mt-review-entry .mt-review-help')).not.toBeNull();
+  await click('Review nicknames');
+  expect(host.querySelector('.mt-review-help')).toBeNull();
+  await click('Needs flag');
+  expect(host.querySelector('nav[aria-label="Review pages"]')).toBeNull();
+  await click('Back to members');
+  expect(host.querySelector('.mt-review-help')).not.toBeNull();
 });

@@ -5,7 +5,11 @@ from types import SimpleNamespace as S
 from unittest.mock import AsyncMock
 import pytest
 from pymongo.errors import DuplicateKeyError
-from utils.member_profiles import MemberProfiles, ProfileConflict, LEFT_TTL_SECONDS
+from utils.member_profiles import (
+    MemberProfiles,
+    ProfileConflict,
+    LEFT_TTL_SECONDS,
+)
 from utils.member_timezones import (
     highest_account,
     nickname,
@@ -45,7 +49,9 @@ def test_bounded_revision_writer_import_protection_and_membership_ttl():
         store = MemberProfiles(S(member_profiles=coll))
         await store.ensure_indexes()
         coll.create_index.assert_awaited_once_with(
-            "left_at", name="member_profile_left_90d", expireAfterSeconds=90 * 86400
+            "left_at",
+            name="member_profile_left_90d",
+            expireAfterSeconds=90 * 86400,
         )
         first = await store.write(
             USER, FIELDS, expected_revision=0, updated_by=ACTOR, source="staff"
@@ -53,7 +59,11 @@ def test_bounded_revision_writer_import_protection_and_membership_ttl():
         assert first["revision"] == 1 and coll.row["gmt_label"] == "GMT-5"
         with pytest.raises(ProfileConflict):
             await store.write(
-                USER, FIELDS, expected_revision=0, updated_by=ACTOR, source="warrior"
+                USER,
+                FIELDS,
+                expected_revision=0,
+                updated_by=ACTOR,
+                source="warrior",
             )
         before = deepcopy(coll.row)
         assert (
@@ -94,9 +104,9 @@ def test_zone_country_limits_format_and_length():
     assert nickname("Sir Ruggie", "gmt-5", "us") == "Sir Ruggie | GMT-5 🇺🇸"
     assert nickname("Name", "gmt+5:30", "IN") == "Name | GMT+5:30 🇮🇳"
     assert (
-        profile_fields(dict(FIELDS, utc_offset_minutes=99, gmt_label="untrusted"))[
-            "utc_offset_minutes"
-        ]
+        profile_fields(
+            dict(FIELDS, utc_offset_minutes=99, gmt_label="untrusted")
+        )["utc_offset_minutes"]
         == -300
     )
     for name in ("", "a" * 32, "bad\nname"):
@@ -142,7 +152,7 @@ def isolated_lease(monkeypatch):
     from utils import member_profile_leases
 
     @asynccontextmanager
-    async def claim(*args):
+    async def claim(*args, **kwargs):
         yield {"owner": "test"}
 
     monkeypatch.setattr(member_profile_leases, "editing", claim)
@@ -209,7 +219,11 @@ def test_delayed_departure_cannot_expire_a_newer_rejoin():
         await store.membership(USER, left_at=departed, observed_at=departed)
         assert coll.row["left_at"] is None and coll.row["revision"] == revision
         await store.write(
-            USER, FIELDS, expected_revision=revision, updated_by=ACTOR, source="staff"
+            USER,
+            FIELDS,
+            expected_revision=revision,
+            updated_by=ACTOR,
+            source="staff",
         )
         assert coll.row["membership_at"] >= joined
 
@@ -248,7 +262,10 @@ def test_lease_lost_during_confirmed_edit_never_commits_a_profile(monkeypatch):
             member_profile_leases,
             "verify",
             AsyncMock(
-                side_effect=[None, member_profile_leases.ProfileBusy("Lease replaced")]
+                side_effect=[
+                    None,
+                    member_profile_leases.ProfileBusy("Lease replaced"),
+                ]
             ),
         )
         with pytest.raises(member_profile_leases.ProfileBusy):
@@ -281,12 +298,18 @@ def test_preview_cannot_be_consumed_for_another_target_actor_or_guild():
             def value(path):
                 current = row
                 for key in path.split("."):
-                    current = current.get(key) if isinstance(current, dict) else None
+                    current = (
+                        current.get(key) if isinstance(current, dict) else None
+                    )
                 return current
 
-            matched = all(value(key) == expected for key, expected in query.items())
+            matched = all(
+                value(key) == expected for key, expected in query.items()
+            )
             if matched:
-                row["nickname_setup"]["step"] = change["$set"]["nickname_setup.step"]
+                row["nickname_setup"]["step"] = change["$set"][
+                    "nickname_setup.step"
+                ]
             return S(matched_count=int(matched), upserted_id=None)
 
         store = MemberProfiles(
@@ -329,7 +352,9 @@ def test_consume_preview_rejects_a_replaced_nonce(monkeypatch):
         }
 
         async def update(mongo, query, change):
-            matched = all(record.get(key) == value for key, value in query.items())
+            matched = all(
+                record.get(key) == value for key, value in query.items()
+            )
             if matched:
                 record.update(change["$set"])
             return S(matched_count=int(matched))
@@ -361,11 +386,17 @@ def test_country_picker_mapping_and_nickname_alias_separation():
         )
         if code in SINGLE_ZONE:
             assert [r[0] for r in choices] == [SINGLE_ZONE[code]]
-    assert [r[0] for r in zones_for_country("AU")] == ["gmt+10", "gmt+9:30", "gmt+8"]
+    assert [r[0] for r in zones_for_country("AU")] == [
+        "gmt+10",
+        "gmt+9:30",
+        "gmt+8",
+    ]
     assert zones_for_country("AU")[-1][2] == "West (AWST)"
     assert len(zones_for_country("US")) == 6
     assert len(zones_for_country("US", show_all=True)) == len(ZONE_CHOICES)
-    assert "EST/EDT" in next(r[2] for r in zones_for_country("US") if r[0] == "gmt-5")
+    assert "EST/EDT" in next(
+        r[2] for r in zones_for_country("US") if r[0] == "gmt-5"
+    )
     for key, _, _ in ZONE_CHOICES:
         assert nickname("Example", key, "AU") == f"Example | {key.upper()} 🇦🇺"
     assert nickname("Example", "gmt+9:30", "AU") == "Example | GMT+9:30 🇦🇺"

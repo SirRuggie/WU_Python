@@ -1016,3 +1016,174 @@ def test_ready_work_partial_index_avoids_archived_manifest_scan():
             await client.close()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("stop", [False, True])
+def test_real_hikari_seventy_second_429_finishes_four_members_without_uncertainty(
+    monkeypatch, stop
+):
+    """Actual Hikari bucket wait, loopback HTTP, owned Mongo; never Discord."""
+    assert URI == "mongodb://127.0.0.1:27154"
+    import time
+    import hikari
+    from aiohttp import web
+    from tests.fixtures.nickname_speed import Rest, Mongo, ACTOR as STAFF, BOT
+    from utils import manage_web_worker as worker, dashboard_access
+    from utils.member_profile_runs import ProfileRuns
+
+    async def run():
+        client = AsyncMongoClient(URI)
+        db = client["wu_real_429_fixture_" + uuid4().hex]
+        mongo = Mongo(db)
+        calls = []
+        accepted = []
+        limited_until = [None]
+        first_request = asyncio.Event()
+
+        async def edit(request):
+            now = time.monotonic()
+            uid = request.match_info["uid"]
+            body = await request.json()
+            calls.append((uid, now))
+            first_request.set()
+            if limited_until[0] is None:
+                limited_until[0] = now + (2 if stop else 70)
+            remaining = limited_until[0] - now
+            if remaining > 0:
+                return web.json_response(
+                    {
+                        "message": "Fixture rate limit",
+                        "retry_after": remaining,
+                        "global": False,
+                    },
+                    status=429,
+                    headers={
+                        "X-RateLimit-Bucket": "fixture-nickname",
+                        "X-RateLimit-Limit": "1",
+                        "X-RateLimit-Remaining": "0",
+                        "X-RateLimit-Reset-After": str(remaining),
+                    },
+                )
+            accepted.append(uid)
+            return web.json_response(
+                dict(
+                    user=dict(
+                        id=uid,
+                        username="Fixture",
+                        discriminator="0000",
+                        avatar=None,
+                    ),
+                    roles=[],
+                    joined_at="2020-01-01T00:00:00+00:00",
+                    deaf=False,
+                    mute=False,
+                    flags=0,
+                    nick=body["nick"],
+                ),
+                headers={
+                    "X-RateLimit-Bucket": "fixture-nickname",
+                    "X-RateLimit-Limit": "100",
+                    "X-RateLimit-Remaining": "99",
+                    "X-RateLimit-Reset-After": "1",
+                },
+            )
+
+        app = web.Application()
+        app.router.add_patch("/guilds/{guild}/members/{uid}", edit)
+        server = web.AppRunner(app)
+        await server.setup()
+        site = web.TCPSite(server, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        rest_app = hikari.impl.RESTApp(
+            url=f"http://127.0.0.1:{port}", max_rate_limit=120.0
+        )
+        await rest_app.start()
+        fake = Rest(4)
+        monkeypatch.setattr(
+            dashboard_access, "dashboard_allowed", AsyncMock(return_value=True)
+        )
+        errors = []
+        original_dispatch = worker.dispatch
+
+        async def traced_dispatch(*args, **kwargs):
+            try:
+                return await original_dispatch(*args, **kwargs)
+            except Exception as error:
+                errors.append((type(error).__name__, str(error)))
+                raise
+
+        monkeypatch.setattr(worker, "dispatch", traced_dispatch)
+        try:
+            async with rest_app.acquire(
+                "fixture.fake.token", hikari.TokenType.BOT
+            ) as real:
+                fake.edit_member = real.edit_member
+                bot = S(rest=fake, get_me=lambda: S(id=BOT))
+                rows = []
+                store = MemberProfiles(mongo)
+                for i in range(4):
+                    uid = str(123456789012340000 + i)
+                    await store.write(
+                        uid,
+                        FIELDS,
+                        expected_revision=0,
+                        updated_by=str(STAFF),
+                        source="staff",
+                    )
+                    rows.append(
+                        dict(
+                            discord_id=uid,
+                            old_nickname=f"Member {i} | EST 🇺🇸",
+                            new_nickname=f"Member {i} | GMT-5 🇺🇸",
+                            revision=1,
+                        )
+                    )
+                parent = await ProfileRuns(mongo).create(
+                    actor_id=str(STAFF),
+                    guild_id=worker.GUILD_ID,
+                    request_id=str(uuid4()),
+                    preview=rows,
+                    selected=[r["discord_id"] for r in rows],
+                )
+                started = time.monotonic()
+                task = asyncio.create_task(worker.fast_poll(bot, mongo))
+                if stop:
+                    await asyncio.wait_for(first_request.wait(), 5)
+                    await ProfileRuns(mongo).stop(
+                        parent["_id"],
+                        actor_id=str(STAFF),
+                        guild_id=worker.GUILD_ID,
+                    )
+                await asyncio.wait_for(task, timeout=115)
+                elapsed = time.monotonic() - started
+                current = await db.bot_config.find_one({"_id": parent["_id"]})
+                children = await db.bot_config.find(
+                    {"parent_id": parent["_id"]}
+                ).to_list(length=10)
+                expected = 1 if stop else 4
+                assert current["state"] == ("stopped" if stop else "done")
+                assert [r["status"] for r in children] == [
+                    "done"
+                ] * expected, errors
+                assert (
+                    len(calls) == expected + 1
+                    and len(set(accepted)) == expected
+                    and len(accepted) == expected
+                )
+                assert (2 if stop else 70) <= elapsed < 110
+                assert calls[1][1] - calls[0][1] >= (1.9 if stop else 69)
+                assert [
+                    (await store.get(r["discord_id"]))["revision"]
+                    for r in rows
+                ] == ([2, 1, 1, 1] if stop else [2] * 4)
+                print(
+                    f"REAL_HIKARI_429 elapsed={elapsed:.3f}s requests={len(calls)} confirmed={len(accepted)} uncertain=0"
+                )
+        finally:
+            await rest_app.close()
+            await server.cleanup()
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())

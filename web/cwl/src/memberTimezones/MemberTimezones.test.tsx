@@ -382,3 +382,33 @@ it("shows uncertain saves in the editor and gives an explicit retry a fresh rece
   expect(saves).toHaveLength(2);
   expect(saves[0][2].request_id).not.toBe(saves[1][2].request_id);
 });
+
+it("replaces the member list and search with review and restores them on Back", async () => {
+  transport.mockImplementation(async (path: string) => {
+    if (path.endsWith("/import"))
+      return { request_id: "import", status: "done", status_url: "/receipt" };
+    if (path.endsWith("/preview"))
+      return {
+        token: "preview",
+        rows: [
+          {
+            discord_id: uid,
+            name: "Ada",
+            old_nickname: "Old",
+            new_nickname: "Ada | GMT-5 🇺🇸",
+            revision: 3,
+            category: "will_change",
+          },
+        ],
+      };
+    return directory;
+  });
+  await renderPage();
+  await click("Review nicknames");
+  expect(host.querySelector(".mt-member-list")).toBeNull();
+  expect(host.textContent).not.toContain("Search members");
+  expect(host.textContent).toContain("Search nicknames");
+  await click("Back to members");
+  expect(host.querySelector(".mt-member-list")).not.toBeNull();
+  expect(host.textContent).toContain("Search members");
+});

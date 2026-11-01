@@ -35,6 +35,7 @@ export default function Standardize({
     [busy, setBusy] = useState(false),
     [phase, setPhase] = useState(""),
     [past, setPast] = useState(false),
+    [viewingPast, setViewingPast] = useState(false),
     [history, setHistory] = useState<
       { run_id: string; state: string; started_by?: string }[]
     >([]);
@@ -121,7 +122,10 @@ export default function Standardize({
         const next = await api<Run>(
           `/manage/member-timezones/runs/${encodeURIComponent(id)}`,
         );
-        if (active && version === generation.current) setRun(next);
+        if (active && version === generation.current) {
+          setRun(next);
+          setError("");
+        }
       } catch (e) {
         if (active) fail(e);
       } finally {
@@ -142,6 +146,7 @@ export default function Standardize({
     controller.current = abort;
     setPreview(null);
     setRun(null);
+    setViewingPast(false);
     setPhase("Importing time zones…");
     try {
       if (
@@ -247,6 +252,7 @@ export default function Standardize({
       );
       if (alive.current && version === generation.current) {
         setRun(next);
+        setViewingPast(true);
         setPreview(null);
       }
     } catch (e) {
@@ -356,7 +362,7 @@ export default function Standardize({
         <NicknameRun
           key={run.run_id || "submitting"}
           run={run}
-          showAttribution={past}
+          showAttribution={viewingPast}
           members={members}
           disabled={busy || disabled}
           onStop={() => void stop()}
