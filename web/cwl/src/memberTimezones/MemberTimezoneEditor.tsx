@@ -54,7 +54,7 @@ export default function MemberTimezoneEditor({
   });
   const retryNeeded = useRef(false);
   useEffect(() => {
-    if (outcome?.status === "failed") {
+    if (outcome && ["failed", "uncertain"].includes(outcome.status)) {
       retryNeeded.current = true;
       setError(outcome.message);
     }

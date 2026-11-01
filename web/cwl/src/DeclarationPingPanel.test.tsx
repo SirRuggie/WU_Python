@@ -110,6 +110,7 @@ it("fresh review is separate from explicit send and cancel sends nothing", async
     "Ping 26 players in #pings?",
   );
   expect(document.body.textContent).toContain("Unlinked player");
+  expect(document.body.textContent).toContain("Finishes even if the lineup changes.");
   expect(mock.api.mock.calls.some((c) => c[0].endsWith("/send"))).toBe(false);
   await act(async () => button("Cancel").click());
   expect(document.querySelector("dialog")).toBeNull();
@@ -240,7 +241,7 @@ it("shows exact changed pool accounts before allowing a ping", async () => {
   expect(host.textContent).toContain("Changed player (#PYY)");
   expect(host.textContent).toContain("#PQQ → unassigned");
   expect(button("Ping 26 missing").disabled).toBe(true);
-  expect(host.textContent).toContain("the reviewed list finishes");
+  expect(host.textContent).not.toContain("the reviewed list finishes");
 });
 
 it("shows the saved sender name instead of the audit ID", async () => {
@@ -264,4 +265,37 @@ it("shows the saved sender name instead of the audit ID", async () => {
   await mount();
   expect(host.textContent).toContain("Fixture staff");
   expect(host.textContent).not.toContain("123456789012345678");
+});
+
+it("shows channel actions only after editing and blocks Ping until saved or discarded", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    channels: [
+      ...state.channels,
+      { id: "987654321098765432", name: "other", type: 0, can_send: true },
+    ],
+  });
+  await mount();
+  expect(button("Save channel")).toBeUndefined();
+  expect(button("Discard")).toBeUndefined();
+  expect(host.textContent).not.toContain(
+    "Send permission is checked before every message.",
+  );
+  const input = host.querySelector<HTMLInputElement>("[role=combobox]")!;
+  await act(async () => input.focus());
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("[role=option]")]
+      .find((b) => b.textContent?.includes("#other"))!
+      .click(),
+  );
+  expect(button("Save channel")).toBeTruthy();
+  expect(button("Discard")).toBeTruthy();
+  expect(button("Ping 26 missing").disabled).toBe(true);
+  await act(async () => button("Ping 26 missing").click());
+  expect(
+    mock.api.mock.calls.some((c) => String(c[0]).endsWith("/preview")),
+  ).toBe(false);
+  await act(async () => button("Discard").click());
+  expect(button("Save channel")).toBeUndefined();
+  expect(button("Ping 26 missing").disabled).toBe(false);
 });

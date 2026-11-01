@@ -30,6 +30,7 @@ export default function DeclarationPingReview({
       disabled={busy}
     >
       <div className="declaration-ping-review">
+        {review.mode === "live" && <p>Finishes even if the lineup changes.</p>}
         <ul>
           {review.groups.map((g) => (
             <li key={g.tag}>

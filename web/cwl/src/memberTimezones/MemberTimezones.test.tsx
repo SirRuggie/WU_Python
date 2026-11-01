@@ -9,7 +9,6 @@ vi.mock("../api", async (original) => ({
 }));
 import { ApiError } from "../api";
 import MemberTimezones from "./MemberTimezones";
-import Standardize from "./Standardize";
 import type { Directory } from "./types";
 const uid = "123456789012345678";
 const directory: Directory = {
@@ -110,164 +109,6 @@ it("preserves the editor after a conflict and never silently queues a nickname c
   expect(posted[2].rename).toBe(false);
   expect(posted[2].revision).toBe(3);
 });
-it("unticked preview members are excluded from confirmation and uncertain results have no retry button", async () => {
-  const rows = [
-    {
-      discord_id: uid,
-      name: "Ada",
-      old_nickname: "Old",
-      new_nickname: "Ada | GMT-5 🇺🇸",
-      revision: 3,
-    },
-    {
-      discord_id: "234567890123456789",
-      name: "Bob",
-      old_nickname: "Bob",
-      new_nickname: "Bob | GMT-5 🇺🇸",
-      revision: 1,
-    },
-  ];
-  transport.mockImplementation(async (path: string) => {
-    if (path.endsWith("/runs")) return { runs: [] };
-    if (path.endsWith("/preview")) return { token: "token", rows };
-    if (path.endsWith("/confirm")) return { run_id: "run", state: "queued" };
-    return {
-      run_id: "run",
-      state: "done",
-      rows: [
-        {
-          ...rows[0],
-          status: "uncertain",
-          message: "Check Discord before repeating",
-        },
-      ],
-    };
-  });
-  await act(async () =>
-    root.render(<Standardize disabled={false} onDenied={() => {}} />),
-  );
-  const detail = host.querySelector("details")!;
-  await act(async () => {
-    detail.open = true;
-    detail.dispatchEvent(new Event("toggle"));
-  });
-  await click("Preview all nickname changes");
-  const checks = host.querySelectorAll<HTMLInputElement>(
-    ".mt-list input[type=checkbox]",
-  );
-  await act(async () => checks[1].click());
-  await click("Rename 1 members");
-  const call = transport.mock.calls.find((c) =>
-    String(c[0]).endsWith("/confirm"),
-  )!;
-  expect(call[2].selected).toEqual([uid]);
-  expect(host.textContent).toContain("need manual checking");
-  expect(
-    [...host.querySelectorAll("button")].some((b) =>
-      /retry/i.test(b.textContent || ""),
-    ),
-  ).toBe(false);
-});
-
-it("leaves a preserved unknown suffix unticked for explicit review", async () => {
-  const rows = [
-    {
-      discord_id: uid,
-      name: "Bob",
-      old_nickname: "Bob | Co-Leader",
-      new_nickname: "Bob | Co-Leader | GMT-5 🇺🇸",
-      revision: 1,
-      needs_review: true,
-    },
-  ];
-  transport.mockImplementation(async (path: string) =>
-    path.endsWith("/runs") ? { runs: [] } : { token: "token", rows },
-  );
-  await act(async () =>
-    root.render(<Standardize disabled={false} onDenied={() => {}} />),
-  );
-  const details = host.querySelector("details")!;
-  await act(async () => {
-    details.open = true;
-    details.dispatchEvent(new Event("toggle"));
-  });
-  await click("Preview all nickname changes");
-  expect(
-    host.querySelector<HTMLInputElement>("input[type=checkbox]")!.checked,
-  ).toBe(false);
-  expect(host.textContent).toContain("Needs review");
-  expect(host.textContent).toContain("Bob | Co-Leader | GMT-5");
-});
-it("stops a run, lists named skipped outcomes and never resumes terminal polling", async () => {
-  vi.useFakeTimers();
-  let stopped = false;
-  transport.mockImplementation(async (path: string, method = "GET") => {
-    if (path.endsWith("/runs"))
-      return { runs: [{ run_id: "run", state: "queued" }] };
-    if (path.endsWith("/stop")) {
-      expect(method).toBe("POST");
-      stopped = true;
-      return { run_id: "run", state: "stopped" };
-    }
-    return {
-      run_id: "run",
-      state: stopped ? "stopped" : "queued",
-      rows: [
-        {
-          discord_id: uid,
-          name: "Ada",
-          old_nickname: "Old",
-          new_nickname: "New",
-          revision: 1,
-          status: "done",
-          message: "Changed",
-        },
-        {
-          discord_id: "234567890123456789",
-          name: "Skipped member",
-          revision: 1,
-          status: "skipped",
-          message: "Above bot",
-        },
-        {
-          discord_id: "345678901234567890",
-          name: "Waiting member",
-          revision: 1,
-          status: stopped ? "stopped" : "waiting",
-          message: stopped ? "Stopped before this member started." : "Waiting",
-        },
-      ],
-    };
-  });
-  await act(async () =>
-    root.render(<Standardize disabled={false} onDenied={() => {}} />),
-  );
-  await act(async () => host.querySelector("summary")!.click());
-  await act(async () => {
-    const select = host.querySelector("select")!;
-    select.value = "run";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  const stop = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-    (b) => b.textContent === "Stop run",
-  )!;
-  await act(async () => stop.click());
-  expect(host.textContent).toContain("Stopped");
-  expect(host.textContent).toContain("Skipped member");
-  expect(host.textContent).toContain("Above bot");
-  expect(host.textContent).toContain("Waiting member");
-  expect(host.textContent).toContain("Stopped before this member started.");
-  const count = transport.mock.calls.length;
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(30_000);
-  });
-  expect(transport.mock.calls).toHaveLength(count);
-  expect(
-    [...host.querySelectorAll("button")].some(
-      (b) => b.textContent === "Stop run",
-    ),
-  ).toBe(false);
-});
 it("pages 560 compact members and keeps occasional actions above the directory", async () => {
   const many = {
     ...directory,
@@ -367,10 +208,6 @@ it("uses a fresh identity only on an explicit retry of a confirmed failed save o
   await click("Save profile");
   expect(posts[0].body.request_id).not.toBe(posts[1].body.request_id);
   await click("Cancel");
-  await click("Import nickname time zones");
-  await click("Import nickname time zones");
-  expect(posts[2].path).toContain("/import");
-  expect(posts[2].body.request_id).not.toBe(posts[3].body.request_id);
 });
 it("retains the request identity after an unconfirmed transport failure", async () => {
   const ids: string[] = [];
@@ -414,7 +251,7 @@ it("makes complete row metadata accessible and exposes hierarchy reasons in the 
   await click("Edit Ada");
   expect(host.querySelector(".mt-editor")!.textContent).toContain(guard);
 });
-it("retains the selected run and progress when editing a member and returning", async () => {
+it("hides the member directory during a run and returns to it through Back", async () => {
   transport.mockImplementation(async (path: string) => {
     if (path.endsWith("/runs"))
       return { runs: [{ run_id: "run", state: "queued" }] };
@@ -438,82 +275,34 @@ it("retains the selected run and progress when editing a member and returning", 
     return directory;
   });
   await renderPage();
-  const details = [...host.querySelectorAll("details")].find(
-    (d) => d.querySelector("summary")?.textContent === "Standardize nicknames",
-  )!;
-  await act(async () => {
-    details.open = true;
-    details.dispatchEvent(new Event("toggle"));
-  });
+  await click("Past runs");
+  const details = host.querySelector(".mt-nickname-review")!;
   await act(async () => {
     const select = details.querySelector("select")!;
     select.value = "run";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(details.textContent).toContain("Standardize progress");
-  await click("Edit Ada");
-  await click("Cancel");
+  expect(details.textContent).toContain("Renaming");
+  expect(host.querySelector(".mt-member-list")).toBeNull();
+  expect(host.textContent).not.toContain("Search members");
   const actions = host.querySelector(".mt-top-actions")!;
   expect(actions.textContent).toContain("Started by");
   expect(actions.textContent).toContain("Stopped by");
   expect(actions.textContent).not.toContain(uid);
-  expect(transport.mock.calls.some(([path])=>String(path).includes("staff-signup-members"))).toBe(false);
+  expect(
+    transport.mock.calls.some(([path]) =>
+      String(path).includes("staff-signup-members"),
+    ),
+  ).toBe(false);
   expect(
     [...actions.querySelectorAll(".user-display-name")].map(
       (n) => n.textContent,
     ),
   ).toContain("Ada");
-  expect(host.querySelector(".mt-top-actions")?.textContent).toContain(
-    "Standardize progress",
-  );
-});
-it("unselects the whole preview and filters Needs review without changing selection", async () => {
-  transport.mockImplementation(async (path: string) =>
-    path.endsWith("/runs")
-      ? { runs: [] }
-      : {
-          token: "fixture",
-          rows: [
-            {
-              discord_id: uid,
-              name: "Known",
-              old_nickname: "Old",
-              new_nickname: "New",
-              revision: 1,
-            },
-            {
-              discord_id: "234567890123456789",
-              name: "Unknown",
-              old_nickname: "Old",
-              new_nickname: "New",
-              revision: 1,
-              needs_review: true,
-            },
-          ],
-        },
-  );
-  await act(async () =>
-    root.render(<Standardize disabled={false} onDenied={() => {}} />),
-  );
-  const details = host.querySelector("details")!;
-  await act(async () => {
-    details.open = true;
-    details.dispatchEvent(new Event("toggle"));
-  });
-  await click("Preview all nickname changes");
-  await act(async () =>
-    host
-      .querySelector<HTMLInputElement>(".mt-standardize-actions input")!
-      .click(),
-  );
-  expect(host.querySelectorAll(".mt-list li")).toHaveLength(1);
-  expect(host.querySelector(".mt-list")?.textContent).toContain("Unknown");
-  await click("Unselect all");
-  expect(
-    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-      (b) => b.textContent === "Rename 0 members",
-    )?.disabled,
-  ).toBe(true);
+  await click("Back to members");
+  expect(host.querySelector(".mt-member-list")).not.toBeNull();
+  await click("Edit Ada");
+  await click("Cancel");
 });
 it("narrows the dashboard zone menu by country and supports Show all without nickname aliases", async () => {
   const au = [
@@ -564,4 +353,62 @@ it("narrows the dashboard zone menu by country and supports Show all without nic
   expect(host.textContent).toContain("Ada | GMT+9:30 🇦🇺");
   await click("Show all zones");
   expect(zone.options).toHaveLength(5);
+});
+
+it("shows uncertain saves in the editor and gives an explicit retry a fresh receipt identity", async () => {
+  transport.mockImplementation(
+    async (path: string, _method?: string, body?: { request_id: string }) => {
+      if (path.endsWith("/choices")) return { accounts: [], complete: true };
+      if (path.endsWith("/save"))
+        return {
+          request_id: body!.request_id,
+          status: "uncertain",
+          status_url: "/receipt",
+          message: "Check Discord before repeating this save.",
+        };
+      return directory;
+    },
+  );
+  await renderPage();
+  await click("Edit Ada");
+  await click("Save profile");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Check Discord",
+  );
+  await click("Save profile");
+  const saves = transport.mock.calls.filter((c) =>
+    String(c[0]).endsWith("/save"),
+  );
+  expect(saves).toHaveLength(2);
+  expect(saves[0][2].request_id).not.toBe(saves[1][2].request_id);
+});
+
+it("replaces the member list and search with review and restores them on Back", async () => {
+  transport.mockImplementation(async (path: string) => {
+    if (path.endsWith("/import"))
+      return { request_id: "import", status: "done", status_url: "/receipt" };
+    if (path.endsWith("/preview"))
+      return {
+        token: "preview",
+        rows: [
+          {
+            discord_id: uid,
+            name: "Ada",
+            old_nickname: "Old",
+            new_nickname: "Ada | GMT-5 🇺🇸",
+            revision: 3,
+            category: "will_change",
+          },
+        ],
+      };
+    return directory;
+  });
+  await renderPage();
+  await click("Review nicknames");
+  expect(host.querySelector(".mt-member-list")).toBeNull();
+  expect(host.textContent).not.toContain("Search members");
+  expect(host.textContent).toContain("Search nicknames");
+  await click("Back to members");
+  expect(host.querySelector(".mt-member-list")).not.toBeNull();
+  expect(host.textContent).toContain("Search members");
 });

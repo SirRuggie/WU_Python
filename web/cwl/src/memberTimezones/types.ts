@@ -1,4 +1,4 @@
-import type {DiscordProfile} from "../DiscordIdentity";
+import type { DiscordProfile } from "../DiscordIdentity";
 export type Profile = {
   zone_id: string;
   gmt_label: string;
@@ -32,7 +32,15 @@ export type Directory = {
   zones: { id: string; label: string }[];
   permission: string;
 };
+export type ReviewCategory =
+  | "will_change"
+  | "needs_flag"
+  | "no_time_zone"
+  | "already_done"
+  | "cant_rename"
+  | "check_name";
 export type Change = {
+  category?: ReviewCategory;
   discord_id: string;
   name?: string;
   old_nickname: string | null;

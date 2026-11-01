@@ -43,7 +43,12 @@ def test_every_profile_route_checks_existing_member_roles_access(monkeypatch):
 
 def test_changed_nickname_never_reaches_discord_or_storage(monkeypatch):
     async def run():
-        store = S(commit_after=AsyncMock(), write=AsyncMock())
+        async def commit(*args, change, **kwargs):
+            if kwargs.get("prepare") is not None:
+                await kwargs["prepare"]()
+            await change()
+
+        store = S(commit_after=AsyncMock(side_effect=commit), write=AsyncMock())
         monkeypatch.setattr(actions, "MemberProfiles", lambda db: store)
         monkeypatch.setattr(
             actions,
@@ -72,7 +77,7 @@ def test_changed_nickname_never_reaches_discord_or_storage(monkeypatch):
         )
         with pytest.raises(ValueError, match="Nickname changed"):
             await actions.apply(bot, None, row)
-        store.commit_after.assert_not_awaited()
+        store.commit_after.assert_awaited_once()
         store.write.assert_not_awaited()
         bot.rest.edit_member.assert_not_awaited()
 
@@ -148,7 +153,12 @@ def test_partial_member_directory_refuses_import(monkeypatch):
 
 def test_already_matching_nickname_is_not_sent_again(monkeypatch):
     async def run():
-        store = S(commit_after=AsyncMock(), write=AsyncMock())
+        async def commit(*args, change, **kwargs):
+            if kwargs.get("prepare") is not None:
+                await kwargs["prepare"]()
+            await change()
+
+        store = S(commit_after=AsyncMock(side_effect=commit), write=AsyncMock())
         monkeypatch.setattr(actions, "MemberProfiles", lambda db: store)
         monkeypatch.setattr(
             actions,
@@ -171,8 +181,8 @@ def test_already_matching_nickname_is_not_sent_again(monkeypatch):
         )
         await actions.apply(bot, None, row)
         bot.rest.edit_member.assert_not_awaited()
-        store.commit_after.assert_not_awaited()
-        store.write.assert_awaited_once()
+        store.commit_after.assert_awaited_once()
+        store.write.assert_not_awaited()
 
     asyncio.run(run())
 
@@ -186,10 +196,12 @@ def test_roles_are_rechecked_inside_edit_and_split_outcome_is_explicit(monkeypat
             bot_permissions=hikari.Permissions.MANAGE_NICKNAMES,
         )
         stale = dict(member=S(nickname="Old"), bot_permissions=0)
-        lookup = AsyncMock(side_effect=[initial, stale])
+        lookup = AsyncMock(side_effect=[stale])
         monkeypatch.setattr(actions, "target_context", lookup)
 
         async def commit(*args, change, **kwargs):
+            if kwargs.get("prepare") is not None:
+                await kwargs["prepare"]()
             await change()
             raise RuntimeError("Mongo down after Discord")
 
@@ -213,14 +225,11 @@ def test_roles_are_rechecked_inside_edit_and_split_outcome_is_explicit(monkeypat
         with pytest.raises(ValueError, match="Manage Nicknames"):
             await actions.apply(bot, None, row)
         bot.rest.edit_member.assert_not_awaited()
-        lookup.side_effect = [
-            initial,
-            dict(initial, member=S(nickname="Manual change")),
-        ]
+        lookup.side_effect = [dict(initial, member=S(nickname="Manual change"))]
         with pytest.raises(ValueError, match="Nickname changed"):
             await actions.apply(bot, None, row)
         bot.rest.edit_member.assert_not_awaited()
-        lookup.side_effect = [initial, initial]
+        lookup.side_effect = [initial]
         with pytest.raises(
             ProfileOutcomeUncertain,
             match="Nickname changed in Discord; profile save was not confirmed",
@@ -252,9 +261,7 @@ def test_partial_import_reports_no_renames_and_safe_rerun(monkeypatch):
         )
         bot = S(rest=S(edit_member=AsyncMock()))
         row = dict(guild_id=actions.GUILD_ID, action="import", user_id=ACTOR, values={})
-        with pytest.raises(
-            ProfileOutcomeUncertain, match="No Discord nicknames were changed"
-        ):
+        with pytest.raises(ProfileOutcomeUncertain, match="No nicknames changed"):
             await actions.apply(bot, None, row)
         bot.rest.edit_member.assert_not_awaited()
 
@@ -303,6 +310,8 @@ def test_real_discord_form_error_preserves_dashboard_nickname_reason(monkeypatch
         committed = []
 
         async def commit(*args, change, **kwargs):
+            if kwargs.get("prepare") is not None:
+                await kwargs["prepare"]()
             await change()
             committed.append(True)
 
@@ -457,5 +466,53 @@ def test_staff_can_list_and_read_another_staff_members_run(monkeypatch):
             for query in queries
             if "parent_id" not in query
         )
+
+    asyncio.run(run())
+
+
+def test_run_status_never_lists_unselected_legacy_skips(monkeypatch):
+    from contextlib import asynccontextmanager
+    import json
+
+    async def run():
+        monkeypatch.setattr(
+            routes, "require_manage", AsyncMock(return_value={"user_id": ACTOR})
+        )
+        items = [
+            dict(
+                discord_id=UID,
+                name="Selected",
+                old_nickname="Old",
+                new_nickname="New",
+                revision=1,
+            )
+        ]
+        parent = dict(
+            _id="run",
+            kind="member_profile_standardize",
+            guild_id=actions.GUILD_ID,
+            user_id=ACTOR,
+            state="queued",
+            items=items,
+            skipped=[
+                dict(
+                    discord_id="345678901234567890", name="Unselected", status="skipped"
+                )
+            ],
+        )
+        coll = S(
+            find_one=AsyncMock(return_value=parent),
+            find=lambda *a, **kw: S(to_list=AsyncMock(return_value=[])),
+        )
+
+        @asynccontextmanager
+        async def mongo(_):
+            yield S(bot_config=coll)
+
+        monkeypatch.setattr(routes, "mongo", mongo)
+        response = await routes.standardize_status(S(match_info={"run_id": "run"}))
+        body = json.loads(response.text)
+        assert len(body["rows"]) == 1 and body["rows"][0]["name"] == "Selected"
+        assert "Unselected" not in response.text
 
     asyncio.run(run())

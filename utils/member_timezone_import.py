@@ -1,5 +1,6 @@
 """Nickname classification and rerunnable import; never performs Discord writes."""
 
+import asyncio
 import json
 import re
 import unicodedata
@@ -88,7 +89,7 @@ def nickname_country(nickname):
     return "".join(chr(ord(c) - 127397) for c in pairs.pop())
 
 
-async def import_nicknames(store, members, *, actor_id):
+async def import_nicknames(store, members, *, actor_id, progress=None):
     # Reject incomplete/oversize directory results before any write.
     if not isinstance(members, list) or len(members) > 10000:
         raise ValueError("A complete bounded member directory is required.")
@@ -99,9 +100,12 @@ async def import_nicknames(store, members, *, actor_id):
         raise ValueError("Duplicate member in directory.")
     for key in ids:
         member_id(key)
-    counts = dict(
+    counts = progress if progress is not None else {}
+    counts.update(
         known=0, unknown=0, none=0, imported=0, preserved=0, conflicts=0, bots=0
     )
+    existing = await store.for_members(ids, include_departed=True)
+    candidates = []
     for row in members:
         if row.get("bot"):
             counts["bots"] += 1
@@ -115,26 +119,41 @@ async def import_nicknames(store, members, *, actor_id):
         counts[state] += 1
         if state != "known":
             continue
-        current = await store.get(row["discord_id"])
+        current = existing.get(row["discord_id"])
         if current and current.get("source") in ("warrior", "staff", "nickname_import"):
-            # One-time import never overwrites any prior saved/imported decision.
             counts["preserved"] += 1
             continue
-        fields = dict(
-            canonical_zone(parsed["offsetMinutes"]),
-            country=nickname_country(row.get("nickname")),
-        )
-        try:
-            saved = await store.write(
-                row["discord_id"],
-                fields,
-                expected_revision=int((current or {}).get("revision", 0)),
-                updated_by=actor_id,
-                source="nickname_import",
+        candidates.append((row, parsed, current))
+
+    pending = iter(candidates)
+
+    async def worker():
+        for row, parsed, current in pending:
+            fields = dict(
+                canonical_zone(parsed["offsetMinutes"]),
+                country=nickname_country(row.get("nickname")),
             )
-            counts[
-                "imported" if saved.get("source") == "nickname_import" else "preserved"
-            ] += 1
-        except (ProfileConflict, ProfileBusy):
-            counts["conflicts"] += 1
+            try:
+                saved = await store.write(
+                    row["discord_id"],
+                    fields,
+                    expected_revision=int((current or {}).get("revision", 0)),
+                    updated_by=actor_id,
+                    source="nickname_import",
+                )
+                counts[
+                    (
+                        "imported"
+                        if saved.get("source") == "nickname_import"
+                        else "preserved"
+                    )
+                ] += 1
+            except (ProfileConflict, ProfileBusy):
+                counts["conflicts"] += 1
+
+    # TaskGroup cancels and drains all siblings before returning a partial failure.
+    # Every write still owns its per-member lease and rechecks revision/source.
+    async with asyncio.TaskGroup() as group:
+        for _ in range(min(8, len(candidates))):
+            group.create_task(worker())
     return counts

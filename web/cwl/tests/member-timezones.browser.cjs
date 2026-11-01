@@ -16,7 +16,9 @@ fs.mkdirSync(output, { recursive: true });
   const evidence = [];
   try {
     for (const [width, height] of [
+      [320, 800],
       [360, 800],
+      [390, 800],
       [1440, 1000],
     ]) {
       const page = await browser.newPage({ viewport: { width, height } });
@@ -51,7 +53,7 @@ fs.mkdirSync(output, { recursive: true });
         .waitFor();
       const scope = page.locator(".member-timezones");
       assert.equal(await page.locator(".mt-member-row").count(), 25);
-      await page.getByText("560 of 560 members", { exact: false }).waitFor();
+      await page.getByText("1447 of 1447 members", { exact: false }).waitFor();
       const compact = await page
         .locator(".mt-member-row")
         .first()
@@ -138,82 +140,90 @@ fs.mkdirSync(output, { recursive: true });
         ),
         "123456789012345670",
       );
-      await page.getByText("Standardize nicknames", { exact: true }).click();
       await page
-        .getByRole("button", {
-          name: "Preview all nickname changes",
-          exact: true,
-        })
+        .getByRole("button", { name: "Review nicknames", exact: true })
         .click();
       await page
-        .getByRole("heading", { name: "Review all 560 members" })
+        .getByRole("heading", { name: "Review nicknames", exact: true })
         .waitFor();
-      const checks = scope.locator(".mt-list input[type=checkbox]");
+      const review = scope.locator('[aria-label="Nickname review"]');
+      assert.equal(await review.locator(".mt-list li").count(), 25);
+      const chips = await review
+        .locator(".filter-chips button")
+        .allTextContents();
+      const counts = chips.map((text) => Number(text.match(/(\d+)$/)[1]));
+      assert.equal(
+        counts.reduce((a, b) => a + b, 0),
+        1410,
+        "bots excluded from review counts",
+      );
+      await review.getByRole("button", { name: /^Check name/ }).click();
       assert(
-        !(await checks.nth(2).isChecked()),
-        "Unknown suffix is never default selected",
+        !(await review.locator("input[type=checkbox]").first().isChecked()),
       );
-      await checks.nth(1).uncheck();
-      const confirmed = await checks.evaluateAll(
-        (inputs) => inputs.filter((e) => e.checked).length,
-      );
-      await page.evaluate(() => window.scrollTo(0, 0));
+      assert((await review.textContent()).includes("Cedar"));
+      await page.screenshot({
+        path: `${output}/${width}-check-name.png`,
+        fullPage: false,
+      });
+      await review.getByRole("button", { name: /^Will change/ }).click();
+      await review.locator("input[type=checkbox]").nth(1).uncheck();
+      const rename = review.getByRole("button", { name: /^Rename \d+$/ });
+      const confirmed = Number((await rename.textContent()).match(/\d+/)[0]);
+      await review.getByRole("button", { name: "Next review members" }).click();
+      assert.equal(await review.locator(".mt-list li").count(), 25);
+      await review.getByRole("button", { name: /^Needs flag/ }).click();
+      assert((await review.textContent()).includes(`${confirmed} hidden`));
+      await review.getByRole("button", { name: `${confirmed} hidden` }).click();
       await page.screenshot({
         path: `${output}/${width}-preview.png`,
         fullPage: false,
       });
-      await scope
-        .locator(".mt-list li")
-        .filter({ hasText: "Cedar" })
-        .scrollIntoViewIfNeeded();
-      await page.screenshot({ path: `${output}/${width}-needs-review.png` });
-      const action = page.getByRole("button", {
-        name: `Rename ${confirmed} members`,
-        exact: true,
-      });
-      const actionBox = await action.boundingBox();
+      await review.locator(".mt-list li").last().scrollIntoViewIfNeeded();
+      const actionBox = await rename.boundingBox();
       assert(
         actionBox &&
           actionBox.y >= 0 &&
           actionBox.y + actionBox.height <= height,
         JSON.stringify(actionBox),
       );
-      assert(actionBox.height >= 44, "Rename target at least44px");
-
-      await page
-        .getByRole("button", {
-          name: `Rename ${confirmed} members`,
-          exact: true,
-        })
+      assert(actionBox.height >= 44);
+      const tiny = await review.evaluate((node) =>
+        [...node.querySelectorAll("*")]
+          .filter(
+            (e) =>
+              e.getBoundingClientRect().height &&
+              [...e.childNodes].some(
+                (n) => n.nodeType === 3 && n.textContent.trim(),
+              ) &&
+              parseFloat(getComputedStyle(e).fontSize) < 12,
+          )
+          .map((e) => e.textContent),
+      );
+      assert.equal(tiny.length, 0, JSON.stringify(tiny));
+      await review.getByRole("button", { name: "Clear", exact: true }).click();
+      await review.getByRole("button", { name: /^Will change/ }).click();
+      await review.locator("input[type=checkbox]").nth(0).check();
+      await review.locator("input[type=checkbox]").nth(1).check();
+      await review
+        .getByRole("button", { name: "Rename 2", exact: true })
         .click();
-      await page.getByText(/1 need manual checking/).waitFor();
+      await page
+        .getByRole("heading", { name: /Renaming/ })
+        .waitFor();
       await page.getByRole("button", { name: "Stop run", exact: true }).click();
       await page
-        .getByRole("heading", { name: /Standardize progress · Stopped/ })
+        .getByRole("heading", { name: /Stopped\./ })
         .waitFor();
-      assert(
-        !(await scope.textContent()).includes("700731132936978456"),
-        "run actors use shared profiles, never numeric labels",
-      );
-      assert((await scope.textContent()).includes("Started by"));
-      assert((await scope.textContent()).includes("Stopped by"));
-      const actor=scope.locator('.discord-identity-compact').filter({hasText:'Discord member unavailable'}).first();
-      await actor.scrollIntoViewIfNeeded();
-      await page.screenshot({path:`${output}/${width}-run-actors.png`,fullPage:false});
-      assert(
-        (await scope.textContent()).includes(
-          "Stopped before this member started.",
-        ),
-      );
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await page
-        .getByRole("heading", { name: /Standardize progress · Stopped/ })
-        .scrollIntoViewIfNeeded();
+      assert(!(await scope.textContent()).includes("700731132936978456"));
+      await page.getByRole("button", { name: /^Check manually/ }).click();
       await page.screenshot({
         path: `${output}/${width}-results.png`,
         fullPage: false,
       });
-      await page.getByText("Standardize nicknames", { exact: true }).click();
+      await page
+        .getByRole("button", { name: "Back to members", exact: true })
+        .click();
       await page
         .getByLabel("Search members", { exact: true })
         .fill("Server owner");
@@ -241,7 +251,7 @@ fs.mkdirSync(output, { recursive: true });
       assert.equal(errors.length, 0, errors.join("\n"));
       assert(
         writes.every((r) =>
-          /\/dev\/login$|\/manage\/member-timezones\/(save|preview|confirm|runs\/fixture-run\/stop)$/.test(
+          /\/dev\/login$|\/manage\/member-timezones\/(save|import|preview|confirm|runs\/fixture-run\/stop)$/.test(
             r.path,
           ),
         ),

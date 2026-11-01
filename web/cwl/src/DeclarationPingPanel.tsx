@@ -236,10 +236,6 @@ export default function DeclarationPingPanel({
           </ul>
         </div>
       )}
-      <p>
-        Once confirmed, the reviewed list finishes even if the lineup changes.
-        Send permission is checked before every message.
-      </p>
       {!state && !error && <p role="status">Loading ping settings…</p>}
       {error && (
         <p role="alert">
@@ -260,21 +256,21 @@ export default function DeclarationPingPanel({
               disabled={busy || !!active || state.test_running}
               onChange={choose}
             />
-            <button
-              disabled={
-                !edited || busy || !!active || state.test_running || !!reason
-              }
-              onClick={() => void save()}
-            >
-              Save channel
-            </button>
             {edited && (
-              <button
-                disabled={busy}
-                onClick={() => choose(state.channel?.id || "")}
-              >
-                Discard channel change
-              </button>
+              <>
+                <button
+                  disabled={busy || !!active || state.test_running || !!reason}
+                  onClick={() => void save()}
+                >
+                  Save channel
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() => choose(state.channel?.id || "")}
+                >
+                  Discard
+                </button>
+              </>
             )}
             <button
               disabled={

@@ -4,6 +4,7 @@ The existing management worker owns each child's claim before Discord transport.
 This storage owner materializes just one child at a time with a fresh expiry.
 """
 
+import logging
 import hashlib
 import json
 import time
@@ -65,14 +66,23 @@ def selected_manifest(preview, selected):
                 old_nickname=old,
                 new_nickname=new,
                 revision=revision,
-                **({"name": str(item["name"])[:100]} if item.get("name") else {}),
+                **(
+                    {"name": str(item["name"])[:100]}
+                    if item.get("name")
+                    else {}
+                ),
             )
         )
     if chosen - known or not result:
-        raise ValueError("Choose at least one available member from this preview.")
+        raise ValueError(
+            "Choose at least one available member from this preview."
+        )
     if len(json.dumps(result).encode()) > MAX_BYTES:
         raise ValueError("Member preview is too large; nothing was queued.")
     return result
+
+
+_LAST_PRUNE = {}
 
 
 class ProfileRuns:
@@ -84,7 +94,10 @@ class ProfileRuns:
         from datetime import datetime, timezone, timedelta
 
         actor = member_id(actor_id)
-        if len(rows) > MAX_MEMBERS or len(json.dumps(rows).encode()) > MAX_BYTES:
+        if (
+            len(rows) > MAX_MEMBERS
+            or len(json.dumps(rows).encode()) > MAX_BYTES
+        ):
             raise ValueError(
                 "Full preview exceeds the supported size; nothing was queued."
             )
@@ -124,15 +137,21 @@ class ProfileRuns:
             }
         )
         if not row:
-            raise ValueError("Preview was replaced. Review the complete changes again.")
+            raise ValueError(
+                "Preview was replaced. Review the complete changes again."
+            )
         expiry = row["expires_at"]
         if expiry.tzinfo is None:
             expiry = expiry.replace(tzinfo=timezone.utc)
         if expiry <= datetime.now(timezone.utc):
-            raise ValueError("Preview expired. Review the complete changes again.")
+            raise ValueError(
+                "Preview expired. Review the complete changes again."
+            )
         items = selected_manifest(row["rows"], selected)
         selection_hash = fingerprint(items)
-        key = "member-profile-run:" + fingerprint([actor, str(uuid.UUID(nonce))])
+        key = "member-profile-run:" + fingerprint(
+            [actor, str(uuid.UUID(nonce))]
+        )
         consumed = await self.mongo.component_state.update_one(
             {"_id": row["_id"], "nonce": nonce, "state": "draft"},
             {
@@ -177,7 +196,9 @@ class ProfileRuns:
             selected=selected,
         )
 
-    async def create(self, *, actor_id, guild_id, request_id, preview, selected):
+    async def create(
+        self, *, actor_id, guild_id, request_id, preview, selected
+    ):
         actor = member_id(actor_id)
         request_id = str(uuid.UUID(request_id))
         items = selected_manifest(preview, selected)
@@ -199,7 +220,9 @@ class ProfileRuns:
                     "This run identifier already belongs to another selection."
                 )
             return existing
-        active = await self.collection.find_one({"kind": KIND, "state": "queued"})
+        active = await self.collection.find_one(
+            {"kind": KIND, "state": "queued"}
+        )
         if active:
             raise ValueError(
                 "Another Standardize run is still working. Review its progress first."
@@ -213,25 +236,15 @@ class ProfileRuns:
             cursor=0,
             created_at=time.time(),
             next_at=0,
-            skipped=[
-                dict(
-                    discord_id=str(item["discord_id"]),
-                    name=str(
-                        item.get("name")
-                        or item.get("display_name")
-                        or item["discord_id"]
-                    )[:100],
-                    status="skipped",
-                    message=item.get("skip_reason")
-                    or "Not selected in the reviewed preview.",
-                )
-                for item in preview
-                if str(item["discord_id"]) not in {row["discord_id"] for row in items}
-            ],
             **payload,
         )
         try:
             await self.collection.insert_one(row)
+            logging.getLogger(__name__).info(
+                "Management timing stage=queued run=%s members=%s",
+                key,
+                len(items),
+            )
         except DuplicateKeyError:
             old = await self.collection.find_one({"_id": key})
             if not old or old.get("payload_hash") != digest:
@@ -239,9 +252,38 @@ class ProfileRuns:
             return old
         return row
 
+    async def ensure_work_index(self):
+        await self.collection.create_index(
+            [("kind", 1), ("status", 1), ("state", 1)],
+            name="management_ready_work",
+            partialFilterExpression={
+                "$or": [
+                    {"kind": "manage_web_request", "status": "pending"},
+                    {"kind": KIND, "state": "queued"},
+                ]
+            },
+        )
+
+    async def ready_work(self):
+        return await self.collection.find_one(
+            {
+                "$or": [
+                    {"kind": "manage_web_request", "status": "pending"},
+                    {"kind": KIND, "state": "queued"},
+                ]
+            },
+            {"_id": 1, "kind": 1, "next_at": 1},
+            hint="management_ready_work",
+        )
+
+    async def queued(self):
+        return await self.collection.find_one(
+            {"kind": KIND, "state": "queued"}, {"_id": 1, "next_at": 1}
+        )
+
     async def advance(self, *, now=None):
         at = time.time() if now is None else now
-        await self.prune()
+        await self.prune_throttled(at)
         parent = await self.collection.find_one(
             {"kind": KIND, "state": "queued"}, sort=[("created_at", 1)]
         )
@@ -265,10 +307,24 @@ class ProfileRuns:
         child = await self.collection.find_one({"_id": child_id})
         if child:
             if child["status"] in TERMINAL:
+                # Pace from the confirmed completion, not from a later scheduler tick.
+                next_index = index + 1
+                done = next_index >= len(parent["items"])
+                changes = dict(
+                    cursor=next_index,
+                    next_at=max(
+                        child.get("finished_at", at) + PACE_SECONDS,
+                        child.get("retry_not_before", 0),
+                    ),
+                )
+                if done:
+                    changes.update(state="done", finished_at=at)
                 await self.collection.update_one(
                     {"_id": parent["_id"], "state": "queued", "cursor": index},
-                    {"$set": {"cursor": index + 1, "next_at": at + PACE_SECONDS}},
+                    {"$set": changes},
                 )
+                if done:
+                    await self.prune()
             # Pending/running/uncertain children are never re-created or reset.
             return
         child = dict(
@@ -340,9 +396,25 @@ class ProfileRuns:
         )
         if not running:
             await self.collection.update_one(
-                {"_id": parent["_id"], "state": "queued", "stop_requested": True},
+                {
+                    "_id": parent["_id"],
+                    "state": "queued",
+                    "stop_requested": True,
+                },
                 {"$set": {"state": "stopped", "finished_at": at}},
             )
+            await self.prune()
+
+    async def prune_throttled(self, at):
+        # One process-wide cadence per collection; terminal transitions still prune.
+        key = id(self.mongo)
+        previous = _LAST_PRUNE.get(key)
+        if previous is not None and at - previous < 60:
+            return
+        _LAST_PRUNE[key] = at
+        if len(_LAST_PRUNE) > 32:
+            _LAST_PRUNE.pop(next(iter(_LAST_PRUNE)))
+        await self.prune()
 
     async def prune(self):
         # Keep 20 terminal runs at most, for at most 30 days. Never touch active work.
@@ -363,7 +435,9 @@ class ProfileRuns:
                     "status": "uncertain",
                 }
             )
-            if (row in rows[:20] or uncertain) and row.get("finished_at", 0) >= cutoff:
+            if (row in rows[:20] or uncertain) and row.get(
+                "finished_at", 0
+            ) >= cutoff:
                 continue
             await self.collection.delete_many(
                 {
@@ -373,7 +447,11 @@ class ProfileRuns:
                 }
             )
             await self.collection.delete_one(
-                {"_id": row["_id"], "kind": KIND, "state": {"$in": ["done", "stopped"]}}
+                {
+                    "_id": row["_id"],
+                    "kind": KIND,
+                    "state": {"$in": ["done", "stopped"]},
+                }
             )
 
         # Older crashed requests had no completion timestamp. Establish it once

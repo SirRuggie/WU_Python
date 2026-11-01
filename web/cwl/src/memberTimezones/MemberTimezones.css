@@ -87,19 +87,7 @@
     width: 100%;
   }
 }
-.mt-top-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  align-items: start;
-}
-.mt-top-actions details {
-  margin-top: 0;
-}
-.mt-top-actions > details[open],
-.mt-top-actions > section:has(details[open]) {
-  grid-column: 1 / -1;
-}
+
 .mt-search-toolbar {
   position: sticky;
   top: 0;
@@ -171,9 +159,7 @@
   font-size: 12px;
   margin: 6px 0 10px;
 }
-.mt-top-actions {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
+
 .member-timezones .mt-top-actions :is(summary, button) {
   font-size: 12px;
   padding: 6px 8px;
@@ -231,3 +217,75 @@
 .mt-top-actions[hidden] {
   display: none;
 }
+/* Nickname review reuses the directory pager and extracted activity chips. */
+
+.mt-nickname-review {
+  flex: 1 1 400px;
+  min-width: 0;
+}
+.mt-review-entry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 4px 8px;
+}
+.mt-review-entry .link-button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+@media (min-width: 600px) {
+  .mt-review-entry { grid-template-columns: max-content max-content max-content; }
+  .mt-review-entry .link-button { grid-column: 3; grid-row: 1; }
+}
+.mt-review-help {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  margin: 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 70ch;
+}
+.mt-nickname-review label {
+  min-width: 0;
+}
+.mt-nickname-review label:has(input[type="search"]) {
+  display: grid;
+  gap: 4px;
+  margin-block: 10px;
+  font-size: 12px;
+}
+.mt-nickname-review input[type="search"] {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.mt-nickname-review .mt-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.mt-nickname-review .mt-list li {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.mt-nickname-review .mt-list small {
+  font-size: 12px;
+}
+.mt-nickname-review .mt-standardize-actions {
+  top: 64px;
+}
+@media (max-height: 600px) {
+  .mt-nickname-review .mt-standardize-actions {
+    position: static;
+  }
+}
+
+.mt-top-actions {
+  display: block;
+}
+
+.mt-nickname-review progress {display:block;width:100%;height:6px;accent-color:#d4a017;}
+
+.mt-review-entry .link-button {border:0;background:none;text-decoration:underline;font-size:12px;}
