@@ -224,6 +224,7 @@ def test_role_change_or_clear_cancels_old_work_without_removing_old_role(store):
         bot.rest.add_role_to_member.assert_not_awaited()
         bot.rest.remove_role_from_member.assert_not_awaited()
         assert members[USER].role_ids == [int(ROLE)]
+        bot.rest.fetch_roles.assert_not_awaited()
 
     asyncio.run(run())
 
@@ -287,3 +288,333 @@ def test_durable_pacing_and_stale_tokens(store):
             "accepted"
         ]
     assert replacement["lease_token"] != job["lease_token"]
+
+
+@pytest.mark.parametrize(
+    "failure", ["network", "missing_member", "missing_permission", "deleted_role"]
+)
+def test_discord_failure_matrix_keeps_signup_and_records_outcome(store, failure):
+    import hikari
+
+    save(store)
+    signup(store)
+
+    async def run():
+        bot, _, role, top = bot_fixture()
+        if failure == "network":
+            bot.rest.fetch_roles.side_effect = TimeoutError()
+        elif failure == "missing_member":
+            original = bot.rest.fetch_member.side_effect
+
+            async def read(guild, uid):
+                if int(uid) == int(USER):
+                    raise hikari.NotFoundError(
+                        "http://fixture", {}, b"", "Unknown Member", 10007
+                    )
+                return await original(guild, uid)
+
+            bot.rest.fetch_member.side_effect = read
+        elif failure == "missing_permission":
+            top.permissions = 0
+        else:
+            bot.rest.fetch_roles.return_value = [top]
+        await worker.process_job(bot, claim(store), send=send_for(store))
+        bot.rest.add_role_to_member.assert_not_awaited()
+        with store.tx() as db:
+            assert db.execute("SELECT COUNT(*) FROM signups").fetchone()[0] == 1
+            row = db.execute("SELECT * FROM cwl_pool_role_jobs").fetchone()
+            assert row["state"] == (
+                "pending" if failure in ("network", "missing_permission") else "failed"
+            )
+            assert any(r["failure"] for r in roles.snapshot(db)["pools"])
+
+    asyncio.run(run())
+
+
+def test_expiry_supersedes_old_signup_jobs_but_preserves_new_signup_intent(store):
+    save(store, now=datetime(2026, 12, 1, tzinfo=timezone.utc))
+    signup(store)
+    now = datetime(2026, 12, 16, tzinfo=timezone.utc)
+    scan = claim(store, now)
+    with store.tx() as db:
+        assert (
+            db.execute(
+                "SELECT state FROM cwl_pool_role_jobs WHERE kind='sync'"
+            ).fetchone()[0]
+            == "superseded"
+        )
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[USER],
+            cursor=USER,
+        )
+    # A later signup is represented by its durable post-cutoff request time.
+    signup(store, "Q", OTHER)
+    with store.tx() as db:
+        db.execute(
+            "UPDATE cwl_pool_role_jobs SET requested_at=? WHERE user_id=? AND kind='sync'",
+            (now.timestamp() + 1, OTHER),
+        )
+    scan = claim(store, now)
+    with store.tx() as db:
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[],
+            cursor=USER,
+        )
+    removal = claim(store, now)
+    assert removal["kind"] == "remove"
+    with store.tx() as db:
+        roles.finish(db, removal["id"], removal["lease_token"], removal["generation"])
+    newer = claim(store, now)
+    assert newer["kind"] == "sync" and newer["user_id"] == OTHER and newer["desired"]
+    with store.tx() as db:
+        roles.finish(db, newer["id"], newer["lease_token"], newer["generation"])
+    assert claim(store, now) is None
+
+
+def test_same_role_save_does_not_skip_overdue_expiry_and_multi_month_catchup_is_once(
+    store,
+):
+    save(store, now=datetime(2026, 11, 1, tzinfo=timezone.utc))
+    save(store, now=datetime(2027, 2, 20, tzinfo=timezone.utc))
+    now = datetime(2027, 2, 20, tzinfo=timezone.utc)
+    scan = claim(store, now)
+    assert scan["kind"] == "scan" and "2027-02-16" in scan["job_key"]
+    with store.tx() as db:
+        roles.finish(
+            db, scan["id"], scan["lease_token"], scan["generation"], page=[], cursor="0"
+        )
+        assert next(r for r in roles.snapshot(db)["pools"] if r["pool"] == "main")[
+            "next_expiry"
+        ].startswith("2027-03-16")
+    assert claim(store, now) is None
+
+
+def test_expired_lease_and_forged_pagination_are_refused(store):
+    save(store)
+    signup(store)
+    job = claim(store)
+    with store.tx() as db:
+        db.execute("UPDATE cwl_pool_role_jobs SET lease_until=0")
+        assert not roles.validate(db, job["id"], job["lease_token"], job["generation"])[
+            "valid"
+        ]
+    scan = claim(store, datetime(2027, 1, 16, tzinfo=timezone.utc))
+    with store.tx() as db:
+        with pytest.raises(ValueError):
+            roles.finish(
+                db,
+                scan["id"],
+                scan["lease_token"],
+                scan["generation"],
+                page=[USER],
+                cursor="0",
+            )
+
+
+def test_blank_slow_bridge_never_holds_management_lane(store):
+    async def run():
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def slow(action, **body):
+            assert action == "claim"
+            entered.set()
+            await release.wait()
+            return {"job": None}
+
+        bot, _, _, _ = bot_fixture()
+        task = asyncio.create_task(worker.poll_once(bot, send=slow))
+        await entered.wait()
+        assert not worker.queue_lock().locked()
+        async with worker.queue_lock():
+            pass
+        release.set()
+        await task
+        bot.rest.fetch_roles.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_actual_role_write_uses_shared_lane(store):
+    save(store)
+    signup(store)
+
+    async def run():
+        bot, _, _, _ = bot_fixture()
+        real = bot.rest.add_role_to_member.side_effect
+
+        async def add(*args, **kwargs):
+            assert worker.queue_lock().locked()
+            return await real(*args, **kwargs)
+
+        bot.rest.add_role_to_member.side_effect = add
+        await worker.poll_once(bot, send=send_for(store))
+        bot.rest.add_role_to_member.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_progress_excludes_internal_scan_and_superseded_old_signup_work(store):
+    save(store, now=datetime(2026, 12, 1, tzinfo=timezone.utc))
+    signup(store)
+    now = datetime(2026, 12, 16, tzinfo=timezone.utc)
+    scan = claim(store, now)
+    with store.tx() as db:
+        row = next(r for r in roles.snapshot(db)["pools"] if r["pool"] == "main")
+        assert row["scanning"] and row["progress"] == {}
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[USER],
+            cursor=USER,
+        )
+    scan = claim(store, now)
+    with store.tx() as db:
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[],
+            cursor=USER,
+        )
+        row = next(r for r in roles.snapshot(db)["pools"] if r["pool"] == "main")
+        assert not row["scanning"] and row["progress"] == {"pending": 1}
+
+
+def test_same_physical_role_is_retained_while_either_pool_has_signup(store):
+    save(store)
+    save(store, "lazy", ROLE)
+    signup(store)
+    signup(store, "Q", pool="lazy")
+    with store.tx() as db:
+        db.execute("DELETE FROM signups WHERE tag='P'")
+        for job in db.execute("SELECT * FROM cwl_pool_role_jobs"):
+            assert roles.desired(db, job)
+
+
+def test_unlinked_and_invalid_legacy_owners_never_create_role_targets(store):
+    save(store)
+    for i, uid in enumerate(["", "100", "000000000000000000"]):
+        signup(store, str(i), uid=uid)
+    with store.tx() as db:
+        assert db.execute("SELECT COUNT(*) FROM cwl_pool_role_jobs").fetchone()[0] == 0
+
+
+def test_shutdown_is_quiet_when_bridge_is_unconfigured(store, caplog, monkeypatch):
+    import logging
+
+    monkeypatch.setenv("CWL_DISCORD_BRIDGE_SECRET", "")
+
+    async def run():
+        bot, _, _, _ = bot_fixture()
+        with patch_sleep_cancel():
+            with pytest.raises(asyncio.CancelledError):
+                await worker.run(bot)
+        bot.rest.fetch_roles.assert_not_awaited()
+
+    from unittest.mock import patch
+
+    def patch_sleep_cancel():
+        return patch.object(
+            worker.asyncio, "sleep", AsyncMock(side_effect=asyncio.CancelledError)
+        )
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(run())
+    assert not caplog.records
+
+
+def test_role_job_and_receipt_retention_does_not_delete_settings_audit_or_pending(
+    store,
+):
+    save(store)
+    signup(store)
+    job = claim(store)
+    with store.tx() as db:
+        roles.finish(db, job["id"], job["lease_token"], job["generation"])
+        db.execute("UPDATE cwl_pool_role_jobs SET created_at=0")
+        db.execute("UPDATE cwl_pool_role_audit SET created_at='2000-01-01'")
+        db.execute("UPDATE cwl_pool_role_clock SET last_prune=0,next_at=0")
+        roles.claim(db)
+        assert db.execute("SELECT COUNT(*) FROM cwl_pool_role_jobs").fetchone()[0] == 0
+        assert (
+            db.execute("SELECT action FROM cwl_pool_role_audit").fetchall()[0][0]
+            == "setting_saved"
+        )
+
+
+def test_every_holder_expiry_includes_unlinked_and_bot_members_once_and_resumes_after_remove(
+    store,
+):
+    from unittest.mock import Mock
+
+    save(store, now=datetime(2026, 12, 1, tzinfo=timezone.utc))
+    signup(store)
+    now = datetime(2026, 12, 16, tzinfo=timezone.utc)
+
+    async def run():
+        bot, members, _, _ = bot_fixture()
+        third = "444444444444444444"
+        members[third] = NS(id=int(third), role_ids=[int(ROLE)], is_bot=True)
+        members[USER].role_ids = [int(ROLE)]
+        members[OTHER].role_ids = [int(ROLE)]
+
+        class Page:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def limit(self, n):
+                self.rows = self.rows[:n]
+                return self
+
+            async def __aiter__(self):
+                for row in self.rows:
+                    yield row
+
+        bot.rest.fetch_members = Mock(
+            side_effect=lambda guild, *, start_at: Page(
+                sorted(
+                    [m for m in members.values() if m.id > start_at], key=lambda m: m.id
+                )
+            )
+        )
+        real = send_for(store)
+        await worker.process_job(bot, claim(store, now), send=real)
+        await worker.process_job(bot, claim(store, now), send=real)
+        first = claim(store, now)
+        assert first["kind"] == "remove"
+
+        async def lost(action, **body):
+            if action == "finish":
+                raise worker.BridgeUnavailable()
+            return await real(action, **body)
+
+        await worker.process_job(bot, first, send=lost)
+        with store.tx() as db:
+            db.execute(
+                "UPDATE cwl_pool_role_jobs SET lease_until=0 WHERE id=?", (first["id"],)
+            )
+        resumed = claim(store, now)
+        assert resumed["id"] == first["id"]
+        await worker.process_job(bot, resumed, send=real)
+        while (job := claim(store, now)) is not None:
+            await worker.process_job(bot, job, send=real)
+        assert bot.rest.remove_role_from_member.await_count == 3
+        bot.rest.add_role_to_member.assert_not_awaited()
+        assert all(int(ROLE) not in m.role_ids for m in members.values())
+        # A manual grant after the finished cycle stays until the next cycle.
+        members[OTHER].role_ids.append(int(ROLE))
+        assert claim(store, now) is None
+        assert bot.rest.remove_role_from_member.await_count == 3
+
+    asyncio.run(run())

@@ -144,7 +144,7 @@ it("active progress polls only status and stops when work is complete", async ()
   vi.mocked(api).mockResolvedValue(complete);
   await act(async () => vi.advanceTimersByTime(5000));
   expect(vi.mocked(api).mock.calls[1][0]).toBe("/pool-roles?status=1");
-  expect(host.textContent).toContain("3 of 3 updated");
+  expect(host.textContent).toContain("3 of 3 done");
   const count = vi.mocked(api).mock.calls.length;
   await act(async () => vi.advanceTimersByTime(30000));
   expect(api).toHaveBeenCalledTimes(count);
@@ -172,4 +172,60 @@ it("an old progress response cannot replace a later confirmed role save", async 
   await act(async () => old(initial));
   expect(host.querySelector("select")?.value).toBe(ROLE);
   expect(host.textContent).toContain("Role saved.");
+});
+it("turns a saved role off using status-only review during a role-choice outage", async () => {
+  const offline = {
+    ...data(),
+    roles: [],
+    roles_error: "Role choices unavailable. Refresh or turn off a saved role.",
+  };
+  offline.pools[0].role_id = ROLE;
+  vi.mocked(api).mockResolvedValue(offline);
+  await render();
+  expect(host.textContent).toContain("Role choices unavailable.");
+  await choose("");
+  await act(async () => button("Save Main role").click());
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toBe("/pool-roles?status=1");
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Existing roles stay",
+  );
+  const cleared = data();
+  vi.mocked(api).mockResolvedValue(cleared);
+  await act(async () => button("Turn off role").click());
+  expect(vi.mocked(api).mock.calls.at(-1)?.[2]).toMatchObject({
+    role_id: null,
+  });
+  expect(host.textContent).toContain("Role turned off. Existing roles stay.");
+});
+it("malformed save receipts never report success or discard the role edit", async () => {
+  await render();
+  await choose();
+  await act(async () => button("Save Main role").click());
+  vi.mocked(api).mockResolvedValueOnce(null as never);
+  await act(async () => button("Save role").click());
+  expect(host.textContent).toContain("Save could not be confirmed.");
+  expect(host.textContent).not.toContain("Role saved.");
+  expect(host.querySelector("select")?.value).toBe(ROLE);
+});
+it("Seasons scope alone enables this setting, while roster-only access does not", async () => {
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider
+        value={{ owner: false, permissions: ["cwl_settings"] }}
+      >
+        <CwlPoolRoles />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  expect(host.querySelectorAll("select")).toHaveLength(2);
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider
+        value={{ owner: false, permissions: ["cwl_roster"] }}
+      >
+        <CwlPoolRoles />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  expect(host.querySelector("select")).toBeNull();
 });

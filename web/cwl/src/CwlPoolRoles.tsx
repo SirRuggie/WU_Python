@@ -16,8 +16,41 @@ type Setting = {
   member_count: number;
   progress: Record<string, number>;
   failure: string | null;
+  scanning?: boolean;
 };
-type State = { pools: Setting[]; roles?: RoleChoice[] };
+type State = { pools: Setting[]; roles?: RoleChoice[]; roles_error?: string };
+function validState(value: State) {
+  return (
+    !!value &&
+    Array.isArray(value.pools) &&
+    value.pools.length === 2 &&
+    new Set(value.pools.map((row) => row?.pool)).size === 2 &&
+    value.pools.every(
+      (row) =>
+        row &&
+        ["main", "lazy"].includes(row.pool) &&
+        (row.role_id === null || typeof row.role_id === "string") &&
+        Number.isSafeInteger(row.revision) &&
+        row.revision >= 0 &&
+        Number.isSafeInteger(row.member_count) &&
+        row.member_count >= 0 &&
+        typeof row.member_basis === "string" &&
+        !!row.progress &&
+        typeof row.progress === "object" &&
+        Object.values(row.progress).every(
+          (count) => Number.isSafeInteger(count) && count >= 0,
+        ) &&
+        (row.failure === null || typeof row.failure === "string"),
+    ) &&
+    (value.roles === undefined ||
+      (Array.isArray(value.roles) &&
+        value.roles.every(
+          (role) =>
+            typeof role.id === "string" && typeof role.name === "string",
+        ))) &&
+    (value.roles_error === undefined || typeof value.roles_error === "string")
+  );
+}
 const title = (pool: Pool) => (pool === "main" ? "Main" : "Lazy");
 const nothing = () => {};
 
@@ -72,14 +105,13 @@ export default function CwlPoolRoles({
       "/pool-roles" + (status ? "?status=1" : ""),
     );
     if (!mounted.current || generation !== sequence.current) return undefined;
-    if (
-      !Array.isArray(result.pools) ||
-      (!status && !Array.isArray(result.roles))
-    )
+    if (!validState(result) || (!status && !Array.isArray(result.roles)))
       throw new Error("Could not load CWL roles.");
     setData((previous) => ({
       ...result,
       roles: result.roles || previous?.roles || [],
+      roles_error:
+        result.roles === undefined ? previous?.roles_error : result.roles_error,
     }));
     return result;
   }
@@ -108,7 +140,9 @@ export default function CwlPoolRoles({
     };
   }, [allowed]);
   const active = data?.pools.some(
-    (row) => (row.progress.pending || 0) + (row.progress.leased || 0) > 0,
+    (row) =>
+      row.scanning ||
+      (row.progress.pending || 0) + (row.progress.leased || 0) > 0,
   );
   useEffect(() => {
     if (!allowed || !active || saving || confirmation) return;
@@ -144,7 +178,11 @@ export default function CwlPoolRoles({
     setError("");
     setNotice("");
     try {
-      const latest = await read();
+      const clearing =
+        (drafts[pool] ??
+          data?.pools.find((row) => row.pool === pool)?.role_id ??
+          "") === "";
+      const latest = await read(clearing);
       const row = latest?.pools.find((item) => item.pool === pool);
       if (row)
         setConfirmation({ row, role: drafts[pool] ?? row.role_id ?? "" });
@@ -171,9 +209,17 @@ export default function CwlPoolRoles({
         member_basis: choice.row.member_basis,
       });
       if (!mounted.current || generation !== sequence.current) return;
+      if (!validState(result))
+        throw new Error(
+          "Save could not be confirmed. Refresh roles before trying again.",
+        );
       setData((previous) => ({
         ...result,
         roles: result.roles || previous?.roles || [],
+        roles_error:
+          result.roles === undefined
+            ? previous?.roles_error
+            : result.roles_error,
       }));
       setDrafts((current) => {
         const next = { ...current };
@@ -207,6 +253,7 @@ export default function CwlPoolRoles({
       </p>
       {loading && <p role="status">Loading roles…</p>}
       {error && <p role="alert">{error}</p>}
+      {data?.roles_error && <p role="status">{data.roles_error}</p>}
       {notice && <p role="status">{notice}</p>}
       {data?.pools.map((row) => {
         const selected = drafts[row.pool] ?? row.role_id ?? "";
@@ -232,11 +279,15 @@ export default function CwlPoolRoles({
               Save {title(row.pool)} role
             </Button>
             <p role="status">
-              {total
-                ? `${done} of ${total} updated${progress.failed ? ` · ${progress.failed} failed` : ""}`
-                : row.role_id
-                  ? "Role is on."
-                  : "Off."}
+              {row.scanning
+                ? "Checking role holders…"
+                : total
+                  ? `${done} of ${total} done${progress.failed ? ` · ${progress.failed} failed` : ""}`
+                  : row.failure
+                    ? "Needs attention."
+                    : row.role_id
+                      ? "Role is on."
+                      : "Off."}
               {row.failure && ` · ${row.failure}`}
             </p>
           </fieldset>

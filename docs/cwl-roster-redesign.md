@@ -895,3 +895,34 @@ or explicit Save do that. Progress and failure stay in one short line per pool.
 This feature requires a bot restart when released after review. No real role is
 configured or changed by the agent. Full regression, fake-Discord transport,
 recovery, expiry, mutation and layout gates remain before READY.
+
+Expiry supersedes queued signup intents recorded before the due cutoff, while
+retaining signup changes made afterward. Saving an unchanged role preserves an
+overdue cleanup. Expired leases cannot acknowledge work. Completed work and
+operation receipts retain 90 days; setting audit and unfinished work remain.
+The off/unavailable bridge path does not hold the shared management lock.
+Progress excludes internal scans and superseded work; scanning is labeled
+separately. Clearing remains available when Discord role choices are unavailable.
+
+Prompt 92 recovery and review checks include a real owned Mongo checkpoint with
+fake Discord transport: an accepted role change followed by a lost receipt, and
+an accepted checkpoint followed by a lost acknowledgement, both recover without
+another role write. Eighteen Mongo cases pass. Five requested behavioural
+mutants fail genuine assertions: coupling signup to role failure, a Discord read
+while off, removing with an account remaining, repeating expiry removal, and
+accepting administrator roles. No result proves live Discord delivery.
+
+Release tooling now has a pure, fail-closed protected-state comparator. It accepts
+only an exact roster-sync departure proven by contemporaneous raw profiles and an
+observation timestamp inside the activation window. All other protected metrics,
+replacement membership/priority/listed state and profile fields stay strict. The
+next coordinator must capture matching raw evidence and use this comparator; it
+must never ignore all departure flags or restore over legitimate activity.
+Eleven synthetic cases cover acceptance and rejection; production integration is
+an activation gate, not claimed complete by these tests.
+
+Claude smoke 296's first Declaration extras failure had no captured status and
+has not been reproduced. The existing read helper already retries network errors
+and HTTP 500/502/503/504. A 409 means the roster basis changed during a read and
+requires fresh roster context; retrying that same stale basis is inappropriate.
+No extra retry or unproven cache/provider diagnosis was added.

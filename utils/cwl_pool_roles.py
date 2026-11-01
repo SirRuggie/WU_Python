@@ -29,17 +29,18 @@ CREATE TABLE IF NOT EXISTS cwl_pool_role_jobs (
  id TEXT PRIMARY KEY, job_key TEXT NOT NULL UNIQUE, pool TEXT NOT NULL,
  role_id TEXT NOT NULL, setting_revision INTEGER NOT NULL,
  kind TEXT NOT NULL, user_id TEXT, cursor TEXT NOT NULL DEFAULT '0',
- generation INTEGER NOT NULL DEFAULT 1, state TEXT NOT NULL DEFAULT 'pending',
+ generation INTEGER NOT NULL DEFAULT 1, requested_at REAL NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT 'pending',
  attempts INTEGER NOT NULL DEFAULT 0, next_at REAL NOT NULL DEFAULT 0,
  lease_token TEXT, lease_until REAL, message TEXT,
  created_at REAL NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS cwl_pool_roles_ready
  ON cwl_pool_role_jobs(state,next_at,created_at);
+CREATE INDEX IF NOT EXISTS cwl_pool_roles_pool ON cwl_pool_role_jobs(pool,setting_revision,kind,state);
 CREATE TABLE IF NOT EXISTS cwl_pool_role_clock (
- id INTEGER PRIMARY KEY CHECK(id=1), next_at REAL NOT NULL
+ id INTEGER PRIMARY KEY CHECK(id=1), next_at REAL NOT NULL, last_prune REAL NOT NULL DEFAULT 0
 );
-INSERT OR IGNORE INTO cwl_pool_role_clock VALUES (1,0);
+INSERT OR IGNORE INTO cwl_pool_role_clock(id,next_at) VALUES (1,0);
 CREATE TABLE IF NOT EXISTS cwl_pool_role_audit (
  id INTEGER PRIMARY KEY, pool TEXT NOT NULL, role_id TEXT, user_id TEXT,
  actor_id TEXT, action TEXT NOT NULL, details_json TEXT NOT NULL,
@@ -71,22 +72,36 @@ def member_basis(db, pool):
 
 def initialize(db):
     db.executescript(SCHEMA)
+    if "requested_at" not in {
+        r[1] for r in db.execute("PRAGMA table_info(cwl_pool_role_jobs)")
+    }:
+        db.execute(
+            "ALTER TABLE cwl_pool_role_jobs ADD COLUMN requested_at REAL NOT NULL DEFAULT 0"
+        )
+        db.execute("UPDATE cwl_pool_role_jobs SET requested_at=created_at")
+
+    if "last_prune" not in {
+        r[1] for r in db.execute("PRAGMA table_info(cwl_pool_role_clock)")
+    }:
+        db.execute(
+            "ALTER TABLE cwl_pool_role_clock ADD COLUMN last_prune REAL NOT NULL DEFAULT 0"
+        )
 
     # Every signup source, including staff changes, uses this same atomic outbox.
     # Blank settings bypass it entirely. No network failure can fail a signup.
     def enqueue(uid, pool):
         return f"""
         INSERT INTO cwl_pool_role_jobs
-          (id,job_key,pool,role_id,setting_revision,kind,user_id)
+          (id,job_key,pool,role_id,setting_revision,kind,user_id,requested_at)
         SELECT lower(hex(randomblob(16))),
           'sync:'||r.pool||':'||{uid}||':'||r.revision,
-          r.pool,r.role_id,r.revision,'sync',{uid}
+          r.pool,r.role_id,r.revision,'sync',{uid},unixepoch()
         FROM cwl_pool_role_settings r WHERE r.pool={pool}
           AND r.role_id IS NOT NULL AND {uid}<>''
           AND {uid} NOT GLOB '*[^0-9]*' AND length({uid}) BETWEEN 15 AND 22
           AND substr({uid},1,1)<>'0'
         ON CONFLICT(job_key) DO UPDATE SET generation=generation+1,
-          state='pending',attempts=0,next_at=0,lease_token=NULL,lease_until=NULL;
+          state='pending',attempts=0,next_at=0,lease_token=NULL,lease_until=NULL,requested_at=unixepoch();
         """
 
     for event, name, body in (
@@ -98,8 +113,9 @@ def initialize(db):
             enqueue("OLD.user_id", "OLD.pool") + enqueue("NEW.user_id", "NEW.pool"),
         ),
     ):
+        db.execute(f"DROP TRIGGER IF EXISTS cwl_pool_role_{name}")
         db.executescript(
-            f"CREATE TRIGGER IF NOT EXISTS cwl_pool_role_{name} "
+            f"CREATE TRIGGER IF NOT EXISTS cwl_pool_role_{name}_v2 "
             f"AFTER {event} ON signups BEGIN {body} END;"
         )
 
@@ -116,23 +132,62 @@ def snapshot(db):
     result = []
     for row in db.execute("SELECT * FROM cwl_pool_role_settings ORDER BY pool"):
         setting = dict(row)
+        scan = db.execute(
+            "SELECT * FROM cwl_pool_role_jobs WHERE pool=? AND setting_revision=? "
+            "AND kind='scan' AND state<>'superseded' ORDER BY created_at DESC,id DESC LIMIT 1",
+            (row["pool"], row["revision"]),
+        ).fetchone()
+        base = "pool=? AND setting_revision=? AND state<>'superseded'"
+        args = [row["pool"], row["revision"]]
+        condition = base + " AND kind='sync'"
+        stage = "signup"
+        scanning = bool(scan and scan["state"] in ("pending", "leased"))
+        if scan:
+            prefix = f"expiry:{row['pool']}:{row['revision']}:"
+            cutoff = datetime.fromisoformat(scan["job_key"][len(prefix) :]).timestamp()
+            removal = base + " AND kind='remove' AND job_key LIKE ?"
+            removal_args = [*args, scan["job_key"] + ":%"]
+            waiting = db.execute(
+                "SELECT 1 FROM cwl_pool_role_jobs WHERE "
+                + removal
+                + " AND state IN ('pending','leased') LIMIT 1",
+                removal_args,
+            ).fetchone()
+            newer = db.execute(
+                "SELECT 1 FROM cwl_pool_role_jobs WHERE "
+                + base
+                + " AND kind='sync' AND requested_at>=? LIMIT 1",
+                [*args, cutoff],
+            ).fetchone()
+            if scanning or waiting or not newer:
+                condition, args, stage = removal, removal_args, "expiry"
+            else:
+                condition += " AND requested_at>=?"
+                args.append(cutoff)
         counts = {
             r[0]: r[1]
             for r in db.execute(
-                "SELECT state,COUNT(*) FROM cwl_pool_role_jobs WHERE pool=? "
-                "AND setting_revision=? GROUP BY state",
-                (row["pool"], row["revision"]),
+                "SELECT state,COUNT(*) FROM cwl_pool_role_jobs WHERE "
+                + condition
+                + " GROUP BY state",
+                args,
             )
         }
         failure = db.execute(
-            "SELECT message FROM cwl_pool_role_jobs WHERE pool=? AND "
-            "setting_revision=? AND message<>'' AND state IN ('failed','pending') ORDER BY created_at DESC LIMIT 1",
-            (row["pool"], row["revision"]),
+            "SELECT message FROM cwl_pool_role_jobs WHERE "
+            + condition
+            + " AND message<>'' AND state IN ('failed','pending') "
+            "ORDER BY requested_at DESC,created_at DESC LIMIT 1",
+            args,
         ).fetchone()
+        if scan and scan["state"] in ("failed", "pending") and scan["message"]:
+            failure = [scan["message"]]
         setting.update(
             member_count=len(members(db, row["pool"])),
             member_basis=member_basis(db, row["pool"]),
             progress=counts,
+            scanning=scanning,
+            stage=stage,
             failure=failure[0] if failure else None,
         )
         result.append(setting)
@@ -142,7 +197,7 @@ def snapshot(db):
 def _insert(db, key, setting, kind, uid=None):
     db.execute(
         "INSERT OR IGNORE INTO cwl_pool_role_jobs"
-        "(id,job_key,pool,role_id,setting_revision,kind,user_id) VALUES (?,?,?,?,?,?,?)",
+        "(id,job_key,pool,role_id,setting_revision,kind,user_id,requested_at) VALUES (?,?,?,?,?,?,?,unixepoch())",
         (
             uuid4().hex,
             key,
@@ -171,6 +226,8 @@ def save(db, pool, role_id, revision, basis, actor, *, now=None):
         if role_id
         else None
     )
+    if role_id is not None and role_id == old["role_id"] and old["next_expiry"]:
+        next_expiry = old["next_expiry"]
     db.execute(
         "UPDATE cwl_pool_role_settings SET role_id=?,revision=revision+1,next_expiry=?,"
         "updated_by=? WHERE pool=?",
@@ -211,6 +268,12 @@ def _due(db, now):
             due, following = following, expires_at_for(
                 following, section="MAIN" if row["pool"] == "main" else "FWA"
             )
+        db.execute(
+            "UPDATE cwl_pool_role_jobs SET state='superseded',lease_token=NULL "
+            "WHERE pool=? AND setting_revision=? AND kind='sync' "
+            "AND state IN ('pending','leased') AND requested_at<?",
+            (row["pool"], row["revision"], due.timestamp()),
+        )
         setting = dict(row)
         _insert(
             db,
@@ -249,6 +312,24 @@ def claim(db, *, now=None):
     now = now or datetime.now(timezone.utc)
     _due(db, now)
     stamp = now.timestamp()
+    last = db.execute(
+        "SELECT last_prune FROM cwl_pool_role_clock WHERE id=1"
+    ).fetchone()[0]
+    if (
+        stamp - last > 86400
+        and db.execute(
+            "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
+        ).fetchone()
+    ):
+        db.execute(
+            "DELETE FROM cwl_pool_role_jobs WHERE state IN ('done','failed','superseded') AND created_at<?",
+            (stamp - 90 * 86400,),
+        )
+        db.execute(
+            "DELETE FROM cwl_pool_role_audit WHERE action<>'setting_saved' AND unixepoch(created_at)<?",
+            (stamp - 90 * 86400,),
+        )
+        db.execute("UPDATE cwl_pool_role_clock SET last_prune=? WHERE id=1", (stamp,))
     db.execute(
         "UPDATE cwl_pool_role_jobs SET state='pending',lease_token=NULL WHERE state='leased' "
         "AND lease_until<=?",
@@ -292,7 +373,14 @@ def owned(db, job_id, token, generation):
         "AND lease_token=? AND generation=?",
         (job_id, token, generation),
     ).fetchone()
-    return dict(row) if row and _valid(db, row) else None
+    return (
+        dict(row)
+        if row
+        and row["lease_until"]
+        and row["lease_until"] > time.time()
+        and _valid(db, row)
+        else None
+    )
 
 
 def validate(db, job_id, token, generation):
@@ -350,15 +438,16 @@ def finish(
                 job_id,
             ),
         )
-        audit(
-            db,
-            job["pool"],
-            "role_retry",
-            {"job_id": job_id, "message": message[:250]},
-            role_id=job["role_id"],
-            user_id=job["user_id"],
-            actor_id="bot",
-        )
+        if job["attempts"] == 1 or job.get("message") != message[:250]:
+            audit(
+                db,
+                job["pool"],
+                "role_retry",
+                {"job_id": job_id, "message": message[:250]},
+                role_id=job["role_id"],
+                user_id=job["user_id"],
+                actor_id="bot",
+            )
         return {"accepted": True}
     status = "failed" if failed else "done"
     db.execute(

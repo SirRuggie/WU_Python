@@ -34,12 +34,21 @@ async def get(request):
     from .app import _store
 
     require_settings(request)
-    options = None if request.query.get("status") == "1" else await choices(request)
     with _store(request).tx() as db:
         result = service.snapshot(db)
-    return web.json_response(
-        result | ({"roles": options} if options is not None else {})
-    )
+    if request.query.get("status") == "1":
+        return web.json_response(result)
+    try:
+        options = await choices(request)
+    except web.HTTPServiceUnavailable:
+        return web.json_response(
+            result
+            | {
+                "roles": [],
+                "roles_error": "Role choices unavailable. Refresh or turn off a saved role.",
+            }
+        )
+    return web.json_response(result | {"roles": options})
 
 
 async def save(request):

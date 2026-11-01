@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from types import SimpleNamespace as NS
 
 import aiohttp
@@ -76,7 +77,15 @@ async def process_job(bot, job, *, send=bridge):
         return await send("finish", **receipt, **values)
 
     try:
-        async with asyncio.timeout(120):
+        budget = min(120, job["lease_until"] - time.time() - 15)
+        if budget <= 0:
+            return
+        async with asyncio.timeout(budget):
+            if job["kind"] not in {"sync", "scan", "remove"}:
+                raise ValueError("Invalid role work.")
+            current = await send("validate", **receipt)
+            if current.get("valid") is not True:
+                return
             await safe_role(bot, job["role_id"])
             if job["kind"] == "scan":
                 page = [
@@ -113,7 +122,6 @@ async def process_job(bot, job, *, send=bridge):
                 int(job["role_id"]),
                 reason="CWL " + job["pool"] + " role",
             )
-            await finish(message="Role added." if desired else "Role removed.")
             log.info(
                 "CWL pool role changed pool=%s member=%s role=%s added=%s",
                 job["pool"],
@@ -121,6 +129,7 @@ async def process_job(bot, job, *, send=bridge):
                 job["role_id"],
                 desired,
             )
+            await finish(message="Role added." if desired else "Role removed.")
     except asyncio.CancelledError:
         # Lease recovery reads actual roles before deciding whether another write is needed.
         raise
@@ -139,10 +148,26 @@ async def process_job(bot, job, *, send=bridge):
 
 
 async def poll_once(bot, *, send=bridge):
-    async with queue_lock():
-        result = await send("claim")
-        if result.get("job"):
-            await process_job(bot, result["job"], send=send)
+    lock = queue_lock()
+    if lock.locked():
+        return
+    # An off/unavailable bridge never occupies the Discord mutation lane.
+    result = await send("claim")
+    job = result.get("job")
+    if not job:
+        return
+    wait = min(60, job["lease_until"] - time.time() - 135)
+    if wait <= 0:
+        return
+    try:
+        async with asyncio.timeout(wait):
+            await lock.acquire()
+    except TimeoutError:
+        return
+    try:
+        await process_job(bot, job, send=send)
+    finally:
+        lock.release()
 
 
 async def run(bot):
