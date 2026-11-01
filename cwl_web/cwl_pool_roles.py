@@ -23,18 +23,21 @@ async def role_context(request):
     actor = await identity(request)
     roles, guild, bot, person = await hierarchy(request, actor)
     forbidden = await dashboard_grant_roles(request, actor, include_owner=True)
+    safe = {
+        str(role.id)
+        for role in roles.values()
+        if str(role.id) not in forbidden and role_is_safe_for_pool(guild, bot, role)
+    }
     options = [
         {"id": str(role.id), "name": role.name}
         for role in roles.values()
-        if str(role.id) not in forbidden
-        and role_is_safe_for_pool(guild, bot, role)
-        and actor_can_manage_role(person, guild, role)
+        if str(role.id) in safe and actor_can_manage_role(person, guild, role)
     ]
-    return options, {str(role.id): role.name for role in roles.values()}
+    return options, {str(role.id): role.name for role in roles.values()}, safe
 
 
 async def choices(request):
-    options, _ = await role_context(request)
+    options, _, _ = await role_context(request)
     return options
 
 
@@ -61,7 +64,7 @@ async def get(request):
     ):
         return web.json_response(result)
     try:
-        options, names = await role_context(request)
+        options, names, safe = await role_context(request)
     except (web.HTTPServiceUnavailable, web.HTTPForbidden, web.HTTPNotFound):
         return web.json_response(
             result
@@ -73,7 +76,7 @@ async def get(request):
     saved = {
         row["pool"]: {
             "name": names.get(row["role_id"], "Saved role"),
-            "allowed": any(role["id"] == row["role_id"] for role in options),
+            "allowed": row["role_id"] in safe,
         }
         for row in result["pools"]
         if row["role_id"]
@@ -103,9 +106,9 @@ async def save(request):
         or not isinstance(body["member_basis"], str)
     ):
         _fail(400, "Invalid pool role setting.")
-    options = (
-        None if body["role_id"] is None else await choices(request)
-    )  # Clearing cannot grant a role.
+    # Clearing cannot grant a role and remains available during a read outage.
+    context = None if body["role_id"] is None else await role_context(request)
+    options = context[0] if context else None
     if body["role_id"] is not None and body["role_id"] not in {
         r["id"] for r in (options or [])
     }:
@@ -120,15 +123,28 @@ async def save(request):
                 body["member_basis"],
                 actor["user_id"],
             )
+            paused = service.recovery_paused(db)
     except service.Conflict as exc:
         _fail(409, str(exc))
     except (ValueError, TypeError) as exc:
         _fail(400, str(exc))
-    if all(row["role_id"] is None for row in result["pools"]):
+    if not paused:
         _store(request).role_recovery_error = None
-    return web.json_response(
-        result | ({"roles": options} if options is not None else {})
-    )
+    metadata = {}
+    if context:
+        _, names, safe = context
+        metadata = {
+            "roles": options,
+            "saved_roles": {
+                row["pool"]: {
+                    "name": names.get(row["role_id"], "Saved role"),
+                    "allowed": row["role_id"] in safe,
+                }
+                for row in result["pools"]
+                if row["role_id"]
+            },
+        }
+    return web.json_response(result | metadata)
 
 
 def schedule_progress_backup(request):
@@ -199,12 +215,7 @@ async def bridge(request):
 
         store.role_last_contact = time.time()
         with store.role_tx() as db:
-            if (
-                store.role_recovery_error
-                and not db.execute(
-                    "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
-                ).fetchone()
-            ):
+            if service.clear_pause_if_off(db):
                 store.role_recovery_error = None
             job = None if store.role_recovery_error else service.claim(db)
         schedule_progress_backup(request)

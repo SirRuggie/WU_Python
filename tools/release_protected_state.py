@@ -31,6 +31,9 @@ def compare_protected(
     Profile maps use (str(guild_id), player_tag) keys. Raw BSON-decoded profiles
     must be captured alongside each metrics snapshot, not reconstructed later.
     """
+    started, ended = _utc(started), _utc(ended)
+    if ended < started:
+        raise ValueError("Protected capture interval is reversed")
     required = {
         "active",
         "streaks",
@@ -59,6 +62,15 @@ def compare_protected(
             )
         ):
             raise ValueError("Protected snapshot is empty or incomplete.")
+        for rows in snapshot["replacement"].values():
+            if not isinstance(rows, list) or any(
+                not isinstance(row, list)
+                or len(row) != 5
+                or not isinstance(row[0], str)
+                or not row[0]
+                for row in rows
+            ):
+                raise ValueError("Protected replacement rows are malformed")
     left, right = deepcopy(before), deepcopy(after)
     a, b = left.pop("replacement"), right.pop("replacement")
     if left != right or set(a) != set(b):
@@ -128,10 +140,20 @@ def compare_protected(
 
 def compare_capture_files(directory, before_name, after_name):
     directory = Path(directory)
+    before_path, after_path = (
+        directory / (name + ".json") for name in (before_name, after_name)
+    )
+    if before_path.resolve() == after_path.resolve() or before_path.samefile(
+        after_path
+    ):
+        raise ValueError("Two independent protected captures are required")
 
     def load(name):
         metrics = json.loads((directory / (name + ".json")).read_text())
         proof = json_util.loads((directory / (name + "-profiles.json")).read_text())
+        started, ended = _utc(proof["started"]), _utc(proof["ended"])
+        if ended < started:
+            raise ValueError("Protected capture interval is reversed")
         profiles = proof["profiles"]
         if not isinstance(profiles, list) or not profiles:
             raise ValueError("Missing contemporaneous profile evidence")

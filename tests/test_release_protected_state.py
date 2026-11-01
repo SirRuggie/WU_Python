@@ -213,3 +213,64 @@ def test_public_coordinator_gate_entry_rejects_thin_capture_without_success(
     with pytest.raises(ValueError, match="empty or incomplete"):
         main([str(tmp_path), "before", "after"])
     assert "protected_gate_passed" not in capsys.readouterr().out
+
+
+def test_cli_rejects_same_capture_for_both_sides(tmp_path, capsys):
+    from tools.release_protected_state import main
+
+    before, _, p, _ = fixture()
+    write_capture(tmp_path, "before", before, p)
+    with pytest.raises(ValueError, match="independent"):
+        main([str(tmp_path), "before", "before"])
+    assert "protected_gate_passed" not in capsys.readouterr().out
+
+
+def test_cli_rejects_equal_replacement_junk(tmp_path, capsys):
+    from tools.release_protected_state import main
+
+    before, _, p, _ = fixture()
+    before["replacement"] = {"1": "junk"}
+    write_capture(tmp_path, "before", before, p)
+    write_capture(tmp_path, "after", before, p)
+    with pytest.raises(ValueError, match="malformed"):
+        main([str(tmp_path), "before", "after"])
+    assert "protected_gate_passed" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "capture,field",
+    [
+        ("before", "started"),
+        ("before", "ended"),
+        ("after", "started"),
+        ("after", "ended"),
+    ],
+)
+def test_cli_rejects_unparseable_capture_times_without_departures(
+    tmp_path, capsys, capture, field
+):
+    from tools.release_protected_state import main
+    from bson import json_util
+
+    before, _, p, _ = fixture()
+    write_capture(tmp_path, "before", before, p)
+    write_capture(tmp_path, "after", before, p)
+    proof = tmp_path / (capture + "-profiles.json")
+    data = json_util.loads(proof.read_text())
+    data[field] = "not-a-date"
+    proof.write_text(json_util.dumps(data))
+    with pytest.raises(ValueError, match="timestamp"):
+        main([str(tmp_path), "before", "after"])
+    assert "protected_gate_passed" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("field,empty", [("active", []), ("replacement", {})])
+def test_cli_rejects_independently_empty_active_or_replacement(tmp_path, field, empty):
+    from tools.release_protected_state import main
+
+    before, _, p, _ = fixture()
+    before[field] = empty
+    write_capture(tmp_path, "before", before, p)
+    write_capture(tmp_path, "after", before, p)
+    with pytest.raises(ValueError, match="empty or incomplete"):
+        main([str(tmp_path), "before", "after"])

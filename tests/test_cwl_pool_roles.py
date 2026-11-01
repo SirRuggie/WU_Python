@@ -928,3 +928,101 @@ def test_lease_with_wrong_setting_revision_cannot_validate_or_finish(store):
         assert not roles.finish(db, job["id"], job["lease_token"], job["generation"])[
             "accepted"
         ]
+
+
+def test_pause_clears_only_after_both_roles_are_off_and_blocks_owned_lease(store):
+    signup(store)
+    save(store)
+    save(store, pool="lazy")
+    job = claim(store)
+    with store.role_tx() as db:
+        roles.pause_recovery(db)
+        assert roles.owned(db, job["id"], job["lease_token"], job["generation"]) is None
+    save(store, role=None)
+    with store.role_tx(track=False) as db:
+        assert roles.recovery_paused(db)
+    save(store, pool="lazy", role=None)
+    with store.role_tx(track=False) as db:
+        assert not roles.recovery_paused(db)
+
+
+def test_season_switch_backfill_never_crosses_main_and_lazy(store):
+    lazy_role = "444444444444444444"
+    save(store)
+    save(store, pool="lazy", role=lazy_role)
+    with store.tx() as db:
+        db.execute("INSERT INTO seasons(id,label) VALUES(2,'Next')")
+        for tag, uid, pool in [("A", USER, "main"), ("B", OTHER, "lazy")]:
+            db.execute(
+                "INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall) VALUES(2,?,?,?,0,'Fixture',16)",
+                (tag, uid, pool),
+            )
+        db.execute("UPDATE member_season SET season_id=2 WHERE id=1")
+        jobs = {
+            (r["user_id"], r["pool"], r["role_id"])
+            for r in db.execute("SELECT * FROM cwl_pool_role_jobs WHERE season_id=2")
+        }
+        assert jobs == {(USER, "main", ROLE), (OTHER, "lazy", lazy_role)}
+
+
+def test_season_round_trip_cannot_resurrect_an_expired_add(store):
+    from datetime import timedelta
+
+    signup(store)
+    save(store)
+    first = claim(store)
+    bot, people, _, _ = bot_fixture()
+
+    class Page:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def limit(self, n):
+            self.rows = self.rows[:n]
+            return self
+
+        async def __aiter__(self):
+            for row in self.rows:
+                yield row
+
+    bot.rest.fetch_members = lambda guild, *, start_at: Page(
+        sorted((p for p in people.values() if p.id > start_at), key=lambda p: p.id)
+    )
+    asyncio.run(worker.process_job(bot, first, send=send_for(store)))
+    assert people[USER].role_ids == [int(ROLE)]
+    cutoff = datetime.fromisoformat(
+        store.one("SELECT next_expiry FROM cwl_pool_role_settings WHERE pool='main'")[
+            "next_expiry"
+        ]
+    )
+    with store.tx() as db:
+        db.execute(
+            "UPDATE cwl_pool_role_jobs SET requested_at=? WHERE id=?",
+            (cutoff.timestamp() - 10, first["id"]),
+        )
+    for i in range(6):
+        job = claim(store, now=cutoff + timedelta(seconds=4 * i + 1))
+        if job:
+            asyncio.run(worker.process_job(bot, job, send=send_for(store)))
+    assert people[USER].role_ids == []
+    adds = bot.rest.add_role_to_member.await_count
+    with store.tx() as db:
+        before = dict(
+            db.execute(
+                "SELECT * FROM cwl_pool_role_jobs WHERE id=?", (first["id"],)
+            ).fetchone()
+        )
+        db.execute("INSERT INTO seasons(id,label) VALUES(2,'Other')")
+        db.execute("UPDATE member_season SET season_id=2 WHERE id=1")
+        db.execute("UPDATE member_season SET season_id=1 WHERE id=1")
+        after = dict(
+            db.execute(
+                "SELECT * FROM cwl_pool_role_jobs WHERE id=?", (first["id"],)
+            ).fetchone()
+        )
+        assert before == after
+    job = claim(store, now=cutoff + timedelta(seconds=100))
+    if job:
+        asyncio.run(worker.process_job(bot, job, send=send_for(store)))
+    assert people[USER].role_ids == []
+    assert bot.rest.add_role_to_member.await_count == adds

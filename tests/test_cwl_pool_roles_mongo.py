@@ -351,6 +351,9 @@ def test_crash_after_restore_preserves_unconsumed_proof_and_pauses(tmp_path):
         assert proof.read_bytes() == before
         recovered = Store(str(path), durability=final)
         assert recovered.role_recovery_error
+        assert not list(
+            Path(path).parent.glob(Path(path).name + ".before-mongo.pending-*")
+        )
         with recovered.role_tx(track=False) as sql:
             assert roles.recovery_paused(sql)
             assert (
@@ -360,11 +363,15 @@ def test_crash_after_restore_preserves_unconsumed_proof_and_pauses(tmp_path):
                 == "done"
             )
             assert roles.claim(sql) is None
+        # A crash after receipt rename but before cleanup leaves a consumed copy.
+        stale = proof.with_name(proof.name + ".pending-" + uuid4().hex)
+        stale.write_bytes(proof.read_bytes())
         final.close()
         again = MongoDashboardState(db.state)
         states.append(again)
         again.restore(path)
         recovered_again = Store(str(path), durability=again)
+        assert not stale.exists()
         assert recovered_again.role_recovery_error
         with recovered_again.role_tx(track=False) as sql:
             assert roles.recovery_paused(sql)
@@ -402,6 +409,68 @@ def test_role_copy_uses_one_captured_head_revision_during_core_save(tmp_path):
             with pytest.raises(DashboardDurabilityError, match="writer lease"):
                 state.save_role_progress(image)
         assert not db.state.find_one({"_id": state.key + ":pool-roles-progress"})
+        assert not state.poisoned
+    finally:
+        if state:
+            state.close()
+        client.drop_database(db.name)
+        client.close()
+
+
+def test_role_copy_cas_race_keeps_the_concurrent_copy(tmp_path):
+    from unittest.mock import patch
+
+    client = MongoClient(URI, tz_aware=True)
+    db = client["wu_roles_cas_" + uuid4().hex]
+    state = None
+    try:
+        state, store = seed(tmp_path, db)
+        save(store)
+        signup(store)
+        job = claim(store)
+        with store.role_tx(track=False) as sql:
+            first = roles.progress_image(sql)
+        assert state.save_role_progress(first)
+        with store.role_tx() as sql:
+            roles.finish(sql, job["id"], job["lease_token"], job["generation"])
+        with store.role_tx(track=False) as sql:
+            second = roles.progress_image(sql)
+        real = state.collection.find_one
+        key = state.key + ":pool-roles-progress"
+
+        def read(query, *args, **kwargs):
+            value = real(query, *args, **kwargs)
+            if query["_id"] == state.key:
+                db.state.update_one({"_id": key}, {"$inc": {"version": 10}})
+            return value
+
+        with patch.object(state.collection, "find_one", side_effect=read):
+            assert state.save_role_progress(second) is False
+        assert db.state.find_one({"_id": key})["version"] == first["version"] + 10
+        assert not state.poisoned
+    finally:
+        if state:
+            state.close()
+        client.drop_database(db.name)
+        client.close()
+
+
+def test_role_copy_rejects_changed_head_revision_even_with_same_owner(tmp_path):
+    from utils.cwl_dashboard_state import DashboardDurabilityError
+
+    client = MongoClient(URI, tz_aware=True)
+    db = client["wu_roles_head_revision_" + uuid4().hex]
+    state = None
+    try:
+        state, store = seed(tmp_path, db)
+        save(store)
+        claim(store)
+        with store.role_tx(track=False) as sql:
+            image = roles.progress_image(sql)
+        db.state.update_one({"_id": state.key}, {"$inc": {"revision": 1}})
+        with pytest.raises(DashboardDurabilityError, match="writer lease"):
+            state.save_role_progress(image)
+        assert db.state.find_one({"_id": state.key + ":pool-roles-progress"}) is None
         assert not state.poisoned
     finally:
         if state:

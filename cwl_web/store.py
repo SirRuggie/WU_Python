@@ -588,7 +588,8 @@ class Store:
             )
             image = roles.progress_image(db)
         try:
-            self.durability.save_role_progress(image)
+            if self.durability.save_role_progress(image) is not True:
+                raise RuntimeError("Role backup compare-and-swap was not accepted")
         except Exception:
             # This writes a separate recovery document, never the dashboard head.
             # A lost acknowledgement is safe to replace after the minute cooldown.

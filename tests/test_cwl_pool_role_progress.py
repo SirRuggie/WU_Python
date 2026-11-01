@@ -372,3 +372,60 @@ def test_local_copy_missing_a_new_authoritative_intent_is_not_complete_proof(tmp
     )
     with store.role_tx() as db:
         assert roles.recover_progress(db, image)["uncovered"]
+
+
+def test_backup_compare_and_swap_rejection_keeps_dirty_and_reports_not_published(
+    tmp_path,
+):
+    store, publisher = seeded(tmp_path)
+    claim(store)
+    publisher.save_role_progress = lambda image: False
+    before = store.one("SELECT last_backup_version FROM cwl_pool_role_clock")[
+        "last_backup_version"
+    ]
+    result = store.flush_role_progress()
+    assert result["attempted"] and result["published"] is False
+    assert store.role_dirty and store.role_backup_error and not publisher.poisoned
+    assert (
+        store.one("SELECT last_backup_version FROM cwl_pool_role_clock")[
+            "last_backup_version"
+        ]
+        == before
+    )
+
+
+def test_recovery_exception_persists_pause_in_sqlite_not_only_memory(tmp_path):
+    store, _ = seeded(tmp_path)
+    broken = Publisher()
+
+    def fail():
+        raise RuntimeError("Fixture unavailable recovery copy")
+
+    broken.load_role_progress = fail
+    recovered = Store(store.path, durability=broken)
+    assert recovered.role_recovery_error and recovered.role_dirty
+    with recovered.role_tx(track=False) as db:
+        assert roles.recovery_paused(db)
+        assert roles.claim(db) is None
+
+
+@pytest.mark.parametrize("mode", ["older", "uncovered"])
+def test_local_recovery_flags_require_persistent_pause(tmp_path, mode):
+    store, _ = seeded(tmp_path)
+    proof = tmp_path / "local-proof.sqlite"
+    with sqlite3.connect(store.path) as source, sqlite3.connect(proof) as dest:
+        source.backup(dest)
+    if mode == "older":
+        claim(store)
+    else:
+        signup(store, "NEW", uid=OTHER)
+        with sqlite3.connect(proof) as db:
+            db.execute(
+                "UPDATE cwl_pool_role_clock SET progress_version=progress_version+100 WHERE id=1"
+            )
+    publisher = Publisher()
+    publisher.previous_local_path = proof
+    recovered = Store(store.path, durability=publisher)
+    assert recovered.role_recovery_error
+    with recovered.role_tx(track=False) as db:
+        assert roles.recovery_paused(db)

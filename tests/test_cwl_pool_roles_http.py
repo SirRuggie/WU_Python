@@ -630,3 +630,59 @@ class PoolRolesHTTP(unittest.IsolatedAsyncioTestCase):
             state["saved_roles"]["main"], {"name": "CWL", "allowed": False}
         )
         self.assertNotIn(ROLE, [role["id"] for role in state["roles"]])
+
+    async def test_save_replaces_ineligible_saved_metadata_without_refresh(self):
+        store = self.app["store"]
+        from test_cwl_pool_roles import save
+
+        save(store, role="444444444444444444")
+        response = await self.call("GET", "/pool-roles", self.owner)
+        self.assertFalse((await response.json())["saved_roles"]["main"]["allowed"])
+        response = await self.configure()
+        self.assertEqual(response.status, 200)
+        result = await response.json()
+        self.assertEqual(
+            result["saved_roles"]["main"], {"name": "CWL", "allowed": True}
+        )
+
+    async def test_saved_safety_does_not_depend_on_viewer_rank(self):
+        import json
+
+        self.assertEqual((await self.configure()).status, 200)
+        actor = http.identity.return_value
+        actor["user_id"] = USER
+        actor["member"] = {"user": {"id": USER}, "roles": []}
+        with self.app["store"].tx() as db:
+            db.execute(
+                "INSERT INTO grants(user_id,granted_by,permissions) VALUES(?,?,?)",
+                (USER, OWNER, json.dumps(["cwl_settings"])),
+            )
+        response = await self.call("GET", "/pool-roles", self.member)
+        self.assertEqual(response.status, 200)
+        result = await response.json()
+        self.assertNotIn(ROLE, [r["id"] for r in result["roles"]])
+        self.assertTrue(result["saved_roles"]["main"]["allowed"])
+
+    async def test_blank_pause_clears_flag_and_warning_before_later_configuration(self):
+        store = self.app["store"]
+        with store.role_tx() as db:
+            service.pause_recovery(db)
+        store.role_recovery_error = "Fixture recovery pause"
+        headers = {"X-CWL-Discord-Secret": "s" * 40}
+        response = await self.call(
+            "POST",
+            "/discord/pool-roles",
+            headers,
+            json={"action": "claim", "guild_id": str(service.GUILD_ID)},
+        )
+        self.assertEqual(response.status, 200)
+        with store.role_tx(track=False) as db:
+            self.assertFalse(service.recovery_paused(db))
+        self.assertIsNone(store.role_recovery_error)
+        with store.role_tx() as db:
+            service.pause_recovery(db)
+        store.role_recovery_error = "Fixture recovery pause"
+        self.assertEqual((await self.configure()).status, 200)
+        with store.role_tx(track=False) as db:
+            self.assertFalse(service.recovery_paused(db))
+        self.assertIsNone(store.role_recovery_error)

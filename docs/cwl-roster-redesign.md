@@ -1030,14 +1030,14 @@ metadata compare-and-swap. This never updates or poisons the core head. Release
 capture comparison now rejects thin equal snapshots with empty active/replacement
 state, even when a streak row and profile proof are present.
 
-Prompt98 checks passed: full guarded backend 5796 / 67 skipped / 227 subtests;
-92 focused integrated cases after the accepted campaign-read merge; 10 final
-owned-Mongo role cases (the earlier combined profile/role run passed 25); full
-frontend 1404 tests in 250 files; TypeScript and production/preview builds;
-all eight requested survivor mutants; required war-reminder 213 backend /
-1 skipped plus 35 frontend tests and build. The full backend run preceded the
-final public CLI/additional regression cases and captured-revision race guard;
-the focused integration and owned-Mongo checks cover those final changes.
+Latest prompt99 checks passed: full guarded backend 5826 / 71 skipped / 227 subtests;
+120 focused backend cases / 1 skip / 3 subtests, plus the additional timestamp
+parameter cases included in the full run; 12 owned-Mongo role cases and an
+authenticated local Mongo recovery drill; full frontend 1405 tests in 250 files; TypeScript and production/preview builds;
+the eight prompt98 survivor mutants and eleven new prompt99 gap mutants;
+required war-reminder 213 backend / 1 skipped plus 35 frontend tests and build.
+The full prompt99 backend run covers the final operational guards and all new
+regression cases. No extra production role/nickname/message tests were run.
 
 The disconnected preview passed 24 read-only states at 320/360/390/1440 and
 four confirmation/cancel/focus/in-memory-save cases. Narrow outage/ineligible
@@ -1054,3 +1054,27 @@ without a success receipt for empty, thin, incomplete or unproven captures.
 A release coordinator must require that success before any switch; the gate
 itself cannot switch services or restore data. Tests cover this public entry,
 not only a private `.local` coordinator.
+
+
+### Prompt99 small corrections
+
+Save returns fresh name/safety metadata, so an eligible replacement cannot retain
+the previous role's warning. Saved eligibility describes bot/role safety, not the
+viewer's rank; role choices and Save still enforce the viewer's permissions.
+A blank configuration clears recovery pause in SQL and memory before later
+configuration. A rejected independent-copy CAS stays dirty, reports unpublished,
+and retains the backup warning rather than claiming success.
+
+The public release gate requires different capture files, validates every proof
+interval even without a departure, and validates replacement row structure before
+comparing unchanged values. It rejects the reported same-capture, junk-map and
+invalid-time cases, as well as independently empty active/replacement state.
+The actual completed PR142 capture pair also passed the strengthened gate.
+
+Season backfill stays pool-scoped. On returning to a previously active season it
+keeps the original intent time; work from before the last expiry is not requeued.
+Actual new signups retain their separate current-time behavior. Recovery removes
+owned pending copies only after the recovered SQL state and consumed receipt are
+committed, retaining the base investigation proof. Tests cover pause persistence,
+both-off reset, owned leases, older/uncovered proof, pool scope, season round-trip,
+CAS race and head revision. All eleven new behavioral mutants were killed.

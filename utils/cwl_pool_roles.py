@@ -184,8 +184,9 @@ def initialize(db):
         )
 
     # Only a deliberate season switch backfills its existing signups.
+    db.execute("DROP TRIGGER IF EXISTS cwl_pool_role_season_v1")
     db.executescript(f"""
-        CREATE TRIGGER IF NOT EXISTS cwl_pool_role_season_v1
+        CREATE TRIGGER IF NOT EXISTS cwl_pool_role_season_v2
         AFTER UPDATE OF season_id ON member_season
         WHEN OLD.season_id IS NOT NEW.season_id
         BEGIN
@@ -203,7 +204,11 @@ def initialize(db):
             AND substr(s.user_id,1,1)<>'0'
           ON CONFLICT(job_key) DO UPDATE SET generation=generation+1,
             intent='add',state='pending',attempts=0,next_at=0,
-            lease_token=NULL,lease_until=NULL,requested_at={stamp};
+            lease_token=NULL,lease_until=NULL
+          WHERE cwl_pool_role_jobs.requested_at >= COALESCE((
+            SELECT CAST(strftime('%s',next_expiry,'-1 month') AS REAL)
+            FROM cwl_pool_role_settings WHERE pool=excluded.pool
+          ),0);
         END;
     """)
 
@@ -214,6 +219,17 @@ def recovery_paused(db):
             "SELECT recovery_paused FROM cwl_pool_role_clock WHERE id=1"
         ).fetchone()[0]
     )
+
+
+def clear_pause_if_off(db):
+    if db.execute(
+        "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
+    ).fetchone():
+        return False
+    db.execute(
+        "UPDATE cwl_pool_role_clock SET recovery_paused=0,progress_version=progress_version+1 WHERE id=1 AND recovery_paused=1"
+    )
+    return True
 
 
 def pause_recovery(db):
@@ -326,6 +342,7 @@ def save(db, pool, role_id, revision, basis, actor, *, now=None):
     ).fetchone()
     if old["revision"] != revision or member_basis(db, pool) != basis:
         raise Conflict("Signups or settings changed. Review the count again.")
+    clear_pause_if_off(db)
     if role_id == old["role_id"]:
         return snapshot(db)  # A same-role Save never discards cleanup/cancel work.
     now = now or datetime.now(timezone.utc)
@@ -344,10 +361,7 @@ def save(db, pool, role_id, revision, basis, actor, *, now=None):
         "WHERE pool=? AND state IN ('pending','leased')",
         (pool,),
     )
-    if not db.execute(
-        "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
-    ).fetchone():
-        db.execute("UPDATE cwl_pool_role_clock SET recovery_paused=0 WHERE id=1")
+    clear_pause_if_off(db)
 
     setting = dict(old) | {
         "role_id": role_id,

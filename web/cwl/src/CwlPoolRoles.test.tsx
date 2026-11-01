@@ -314,3 +314,27 @@ it("offers a plain saved-role fallback and turn-off when names are unavailable",
   await choose("");
   expect(button("Save Main role").disabled).toBe(false);
 });
+
+it("saving an eligible replacement clears old ineligible metadata immediately", async () => {
+  const old = {
+    ...data(),
+    saved_roles: { main: { name: "Old unsafe role", allowed: false } },
+  };
+  old.pools[0].role_id = "444444444444444444";
+  const saved = {
+    ...data(),
+    saved_roles: { main: { name: "CWL & <safe text>", allowed: true } },
+  };
+  saved.pools[0].role_id = ROLE;
+  saved.pools[0].revision = 1;
+  vi.mocked(api).mockImplementation(async (_path, method) =>
+    method === "POST" ? saved : old,
+  );
+  await render();
+  expect(host.textContent).toContain("Saved role is no longer eligible");
+  await choose(ROLE);
+  await act(async () => button("Save Main role").click());
+  await act(async () => button("Save role").click());
+  expect(host.textContent).toContain("Role saved. Updates are queued.");
+  expect(host.textContent).not.toContain("Saved role is no longer eligible");
+});

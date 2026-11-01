@@ -220,6 +220,9 @@ class MongoDashboardState:
             self.local_recovery_interrupted = backup.exists() and not consumed
             if backup.exists() and not consumed:
                 self.previous_local_paths.append(backup)
+                self.previous_local_paths.extend(
+                    sorted(backup.parent.glob(backup.name + ".pending-*"))
+                )
             if target.exists() and target.stat().st_size:
                 destination = (
                     backup.with_name(backup.name + ".pending-" + uuid.uuid4().hex)
@@ -278,6 +281,12 @@ class MongoDashboardState:
                 os.fsync(saved.fileno())
             os.chmod(name, 0o600)
             os.replace(name, receipt)
+            # Include consumed copies left if a prior boot died after receipt
+            # rename but before cleanup; retain the base investigation proof.
+            for pending in backup.parent.glob(backup.name + ".pending-*"):
+                suffix = pending.name.removeprefix(backup.name + ".pending-")
+                if len(suffix) == 32 and all(char in "0123456789abcdef" for char in suffix):
+                    pending.unlink(missing_ok=True)
             directory = os.open(receipt.parent, os.O_RDONLY)
             try:
                 os.fsync(directory)
