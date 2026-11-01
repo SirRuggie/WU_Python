@@ -56,6 +56,14 @@ window.fetch = async (input, options) => {
             war_base_image: "/sample-war-base.svg",
             has_details: false,
           },
+          ...Array.from({ length: 7 }, (_, i) => ({
+            key: `th${15 - i}`,
+            town_hall: 15 - i,
+            variant: "merged",
+            link,
+            war_base_image: null,
+            has_details: false,
+          })),
           {
             key: "th16",
             town_hall: 16,

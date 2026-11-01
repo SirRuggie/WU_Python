@@ -35,6 +35,20 @@ fs.mkdirSync(out, { recursive: true });
         })
         .waitFor();
       assert.equal(await page.evaluate(() => window.detailReads()), 0);
+      const chips = await page
+        .locator(".base-bank-levels button")
+        .evaluateAll((rows) =>
+          rows.map((r) => ({
+            y: r.getBoundingClientRect().y,
+            active: r.getAttribute("aria-pressed"),
+            x: r.getBoundingClientRect().x,
+            right: r.getBoundingClientRect().right,
+          })),
+        );
+      assert.equal(chips.length, 10);
+      assert.equal(new Set(chips.map((r) => r.y)).size, 1);
+      const active = chips.find((r) => r.active === "true");
+      assert(active.x >= 0 && active.right <= width);
       assert.deepEqual(
         await page
           .locator(".base-bank-card")

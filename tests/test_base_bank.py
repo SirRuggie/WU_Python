@@ -51,7 +51,7 @@ def test_missing_and_malformed_fields_never_invent_base_links():
     assert rows[0]["link"] is None and not rows[0]["has_details"]
     assert details["th18"]["base_information"] == ""
     rows, _ = public_bases({"base_information": {"th17": "Some details"}})
-    assert rows[0]["war_base_image"] is None and rows[0]["has_details"]
+    assert rows == []
     for bad in (
         "javascript:alert(1)",
         "http://link.clashofclans.com/?action=OpenLayout&id=x",

@@ -79,6 +79,13 @@ export default function BaseBank({
           bases || [],
           townHalls === undefined ? linkedHalls : townHalls,
         );
+  useEffect(() => {
+    document
+      .querySelector<HTMLButtonElement>(
+        `.base-bank-levels button[aria-pressed="true"]`,
+      )
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [selected]);
   return (
     <section className="base-bank" aria-labelledby="base-bank-heading">
       <header>

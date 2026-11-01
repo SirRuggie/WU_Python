@@ -73,7 +73,7 @@ def public_bases(document):
         info = {name: text if text.strip() else "" for name, text in info.items()}
         link = https_url(fields["fwa_base_links"].get(key), clash=True)
         image = https_url(fields["war_base_images"].get(key))
-        if not link and not image and not any(info.values()):
+        if not link and not image:
             continue
         rows.append(
             dict(

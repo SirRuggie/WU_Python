@@ -57,6 +57,7 @@ export function memberTarget(
       "todo",
       "signup",
       "assignments",
+      "bases",
     ].includes(value || "")
       ? value
       : "home"

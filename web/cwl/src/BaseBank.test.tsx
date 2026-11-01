@@ -10,6 +10,7 @@ vi.mock("./api", async (original) => ({
 vi.mock("./accountDisplay", () => ({ loadAccountDisplay: mock.accounts }));
 import { ApiError } from "./api";
 import BaseBank from "./BaseBank";
+import { loginPath } from "./memberLinks";
 import { defaultTownHall, baseLink, type BankBase } from "./baseBank";
 const link = "https://link.clashofclans.com/en?action=OpenLayout&id=fixture";
 const bases: BankBase[] = [
@@ -145,4 +146,16 @@ it("direct member route loads linked accounts independently of a CWL signup visi
   expect(host.querySelector('button[aria-pressed="true"]')?.textContent).toBe(
     "17",
   );
+});
+
+it("keeps the signed-out bases destination through login", () => {
+  expect(loginPath("", false, "/bases")).toContain("bases");
+});
+it("never exposes an unvalidated upstream copy link", async () => {
+  mock.api.mockResolvedValue({
+    bases: [{ ...bases[0], link: "javascript:alert(1)" }],
+  });
+  await mount();
+  expect(host.querySelector("a")).toBeNull();
+  expect(host.textContent).toContain("Base link coming soon");
 });

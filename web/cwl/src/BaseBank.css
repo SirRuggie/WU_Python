@@ -9,11 +9,14 @@
 .base-bank-levels {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 6px;
   margin-block: 24px;
 }
 .base-bank-levels button {
   min-width: 48px;
+  flex: 0 0 auto;
   min-height: 44px;
   border-radius: 24px;
   font-size: 16px;
@@ -59,7 +62,9 @@
 }
 .base-bank-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 6px;
   gap: 8px;
   margin-bottom: 16px;
 }
