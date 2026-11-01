@@ -23,3 +23,11 @@ are added. Existing activity status and replacement logic are unchanged.
 Current targeted checks: eighteen filter/sort/URL/copy cases and twenty-two
 activity signal cases pass. Full feature validation and required mutations will
 follow the completed UI. No live writes or deployment have occurred.
+
+The tracking panel now skips hidden-tab interval reads, coalesces in-flight
+reads and throttles focus/visibility bursts to one read per thirty seconds.
+Explicit checks and retry completion may refresh immediately. Its pre-change
+thirty-second timer explains two tracking reads per minute; this alone is not
+proof of a render loop. Five component regressions pass, including a hung read,
+ninety seconds hidden and repeated focus events. Real browser cadence measurement
+and the full UI review remain pending.
