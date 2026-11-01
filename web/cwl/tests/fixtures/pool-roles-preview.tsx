@@ -50,13 +50,15 @@ window.fetch = async (input, options) => {
   }
   return Response.json({
     pools,
-    ...(mode === "outage"
-      ? {
-          roles: [],
-          roles_error:
-            "Role choices unavailable. Refresh or turn off a saved role.",
-        }
-      : { roles }),
+    ...(url.includes("choices=1")
+      ? mode === "outage"
+        ? {
+            roles: [],
+            roles_error:
+              "Role choices unavailable. Refresh or turn off a saved role.",
+          }
+        : { roles }
+      : {}),
   });
 };
 createRoot(document.getElementById("root")!).render(

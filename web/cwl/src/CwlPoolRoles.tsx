@@ -18,7 +18,12 @@ type Setting = {
   failure: string | null;
   scanning?: boolean;
 };
-type State = { pools: Setting[]; roles?: RoleChoice[]; roles_error?: string; worker_warning?: string };
+type State = {
+  pools: Setting[];
+  roles?: RoleChoice[];
+  roles_error?: string;
+  worker_warning?: string;
+};
 function validState(value: State) {
   return (
     !!value &&
@@ -48,8 +53,10 @@ function validState(value: State) {
           (role) =>
             typeof role.id === "string" && typeof role.name === "string",
         ))) &&
-    (value.roles_error === undefined || typeof value.roles_error === "string") &&
-    (value.worker_warning === undefined || typeof value.worker_warning === "string")
+    (value.roles_error === undefined ||
+      typeof value.roles_error === "string") &&
+    (value.worker_warning === undefined ||
+      typeof value.worker_warning === "string")
   );
 }
 const title = (pool: Pool) => (pool === "main" ? "Main" : "Lazy");
@@ -75,6 +82,7 @@ export default function CwlPoolRoles({
   const [notice, setNotice] = useState("");
   const sequence = useRef(0);
   const choosing = useRef(false);
+  const choicesRequested = useRef(false);
   const [choicesLoaded, setChoicesLoaded] = useState(false);
   const [choicesLoading, setChoicesLoading] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
@@ -99,6 +107,8 @@ export default function CwlPoolRoles({
       setData(undefined);
       setDrafts({});
       setConfirmation(undefined);
+      setChoicesLoaded(false);
+      choicesRequested.current = false;
     }
     setError(
       cause instanceof Error ? cause.message : "Could not load CWL roles.",
@@ -122,14 +132,21 @@ export default function CwlPoolRoles({
   }
   async function openChoices() {
     if (choosing.current || choicesLoaded || !allowed) return;
+    choicesRequested.current = true;
     choosing.current = true;
     setChoicesLoading(true);
     try {
       const result = await read(false, true);
       if (result && !result.roles_error) setChoicesLoaded(true);
     } catch (cause) {
-      if (mounted.current)
-        setError("Role choices unavailable. Refresh or turn off a saved role.");
+      if (mounted.current) {
+        if (cause instanceof ApiError && [401, 403].includes(cause.status))
+          failure(cause);
+        else
+          setError(
+            "Role choices unavailable. Refresh or turn off a saved role.",
+          );
+      }
     } finally {
       choosing.current = false;
       if (mounted.current) setChoicesLoading(false);
@@ -138,7 +155,7 @@ export default function CwlPoolRoles({
   async function refresh() {
     setLoading(true);
     try {
-      await read();
+      await read(false, choicesRequested.current);
       setError("");
     } catch (cause) {
       if (mounted.current) failure(cause);
@@ -150,6 +167,8 @@ export default function CwlPoolRoles({
     mounted.current = true;
     if (allowed) void refresh();
     else {
+      setChoicesLoaded(false);
+      choicesRequested.current = false;
       setData(undefined);
       setDrafts({});
       setConfirmation(undefined);
@@ -289,6 +308,11 @@ export default function CwlPoolRoles({
             <RoleSelect
               label={title(row.pool) + " role"}
               roles={data.roles || []}
+              unavailableLabel={
+                choicesRequested.current
+                  ? "Unavailable role"
+                  : "Saved role · open to load names"
+              }
               value={selected}
               disabled={loading || saving}
               onOpen={() => void openChoices()}

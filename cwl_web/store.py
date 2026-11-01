@@ -295,6 +295,7 @@ class Store:
         self.durability = None
         self.role_dirty = False
         self.role_backup_error = None
+        self.role_next_backup = 0
         self.role_recovery_error = None
         import time
         self.role_started_at = time.time()

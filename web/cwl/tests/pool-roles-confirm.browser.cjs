@@ -13,6 +13,10 @@ const path = require("node:path");
       const p = await b.newPage({ viewport: { width, height: 1000 } });
       await p.goto("http://127.0.0.1:44792/pool-roles-preview.html");
       const select = p.getByRole("combobox", { name: /^Main role/ });
+      await select.focus();
+      await p.waitForFunction(() =>
+        window.fixtureMethods.some((line) => line.includes("choices=1")),
+      );
       await select.selectOption("333333333333333333");
       await p
         .getByRole("button", { name: "Save Main role", exact: true })
@@ -52,7 +56,7 @@ const path = require("node:path");
       await p.screenshot({
         path: path.resolve(
           __dirname,
-          `../../../.local/p92-layout/confirm-${width}.png`,
+          `../../../.local/p95-layout/confirm-${width}.png`,
         ),
         fullPage: true,
       });

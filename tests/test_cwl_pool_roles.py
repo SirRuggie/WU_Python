@@ -765,9 +765,9 @@ def test_dashboard_grant_rechecked_before_any_bot_role_write(store, denied_at):
         return result
 
     asyncio.run(worker.process_job(bot, job, send=send))
-    assert validations == denied_at
     bot.rest.add_role_to_member.assert_not_awaited()
     bot.rest.remove_role_from_member.assert_not_awaited()
+    assert validations == denied_at
     assert (
         store.one("SELECT state FROM cwl_pool_role_jobs WHERE id=?", (job["id"],))[
             "state"

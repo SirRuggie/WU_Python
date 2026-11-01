@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const origin = "http://127.0.0.1:44792";
-const out = path.resolve(__dirname, "../../../.local/p92-layout");
+const out = path.resolve(__dirname, "../../../.local/p95-layout");
 fs.mkdirSync(out, { recursive: true });
 (async () => {
   const browser = await chromium.launch({
@@ -28,6 +28,26 @@ fs.mkdirSync(out, { recursive: true });
         await page.goto(`${origin}/pool-roles-preview.html?state=${state}`);
         await page.locator(".cwl-pool-role").first().waitFor();
         assert.equal(await page.locator(".cwl-pool-role").count(), 2);
+        const initial = await page.evaluate(() => window.fixtureMethods);
+        assert(
+          initial.every((line) => !line.includes("choices=1")),
+          "choices fetched before picker opened",
+        );
+        if (state === "blank")
+          assert(
+            !(await page.locator("body").innerText()).includes("unavailable"),
+          );
+        await page.getByRole("combobox", { name: /^Main role/ }).focus();
+        await page.waitForFunction(() =>
+          window.fixtureMethods.some((line) => line.includes("choices=1")),
+        );
+        if (state === "outage")
+          await page
+            .getByText(
+              "Role choices unavailable. Refresh or turn off a saved role.",
+            )
+            .waitFor();
+
         assert.deepEqual(errors, []);
         assert(
           await page.evaluate(

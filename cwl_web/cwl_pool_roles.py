@@ -117,20 +117,28 @@ async def save(request):
 def schedule_progress_backup(request):
     from .app import _store
     import asyncio
+    import time
 
     store = _store(request)
     previous = request.app.get("pool_role_backup_task")
     if (
         store.durability is not None
         and store.role_dirty
+        and time.time() >= store.role_next_backup
         and (previous is None or previous.done())
     ):
+        # Also bound serialization/SQLite failures before a durable attempt stamp.
+        store.role_next_backup = time.time() + 60
 
         async def flush():
             try:
                 await asyncio.to_thread(store.flush_role_progress)
             except Exception:
                 import logging
+
+                store.role_backup_error = (
+                    "Role progress backup is unavailable. Signups are unchanged."
+                )
 
                 logging.getLogger(__name__).warning(
                     "Role progress backup task unavailable"

@@ -167,3 +167,58 @@ def test_role_image_checksum_rejected_without_overwriting_progress(tmp_path):
         ]
         == "leased"
     )
+
+
+def test_concurrent_backup_is_coalesced_and_new_progress_remains_dirty(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    store, publisher = seeded(tmp_path)
+    job = claim(store)
+    entered, release = Event(), Event()
+    original = publisher.save_role_progress
+
+    def slow(image):
+        entered.set()
+        assert release.wait(5)
+        return original(image)
+
+    publisher.save_role_progress = slow
+    start = datetime.now(timezone.utc).timestamp()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(store.flush_role_progress, now=start)
+        assert entered.wait(5)
+        try:
+            assert not store.flush_role_progress(now=start + 1)["attempted"]
+            with store.role_tx() as db:
+                roles.finish(db, job["id"], job["lease_token"], job["generation"])
+        finally:
+            release.set()
+        assert future.result(5)["published"]
+    assert len(publisher.progress) == 1 and store.role_dirty
+    assert store.flush_role_progress(now=start + 60)["published"]
+    assert not store.role_dirty
+
+
+def test_serialization_failure_warns_staff_without_hot_loop_or_signup_poison(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from cwl_web.cwl_pool_roles import schedule_progress_backup
+
+    store, publisher = seeded(tmp_path)
+    claim(store)
+    store.flush_role_progress = Mock(side_effect=ValueError("oversize fixture"))
+    request = SimpleNamespace(app={"store": store})
+
+    async def run():
+        schedule_progress_backup(request)
+        first = request.app["pool_role_backup_task"]
+        await first
+        schedule_progress_backup(request)
+        assert request.app["pool_role_backup_task"] is first
+
+    asyncio.run(run())
+    assert store.flush_role_progress.call_count == 1
+    assert store.role_backup_error and not publisher.poisoned
+    signup(store, "NEW", uid=OTHER)

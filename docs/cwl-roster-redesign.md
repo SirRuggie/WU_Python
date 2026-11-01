@@ -975,10 +975,32 @@ A 91-job protocol fixture records 182 local role transactions, zero role-initiat
 full dashboard publishes, five independent backups during 270 virtual seconds
 and a final backup at 300 seconds. Owned real Mongo protocol time was 0.909s,
 with a final 4,901-byte compressed recovery image. This excludes Discord and
-production network latency. Initial recovery/protocol Mongo tests passed; full
-rework, mutation and layout gates are still pending, so this is not READY.
+production network latency. Recovery/protocol Mongo tests passed; final rework checks are recorded below.
 
 M12's removed Save supersede UPDATE is redundant with claim-time invalidation
 for changed settings; unchanged Save no longer enters either replacement path.
 Preserving both pending expiry and cancel work is tested directly. No artificial
 mutation-kill claim is made for an equivalent implementation.
+
+
+Prompt95 final checks: full guarded backend 5,779 passed / 64 skipped / 227
+subtests; full frontend 1,402 in 250 files; TypeScript and production build;
+46 focused service/HTTP transport cases plus three subtests, seven progress
+coalescing/failure/concurrency cases and nineteen protected-capture guard cases;
+22 owned Mongo fixtures; nine new behavioural mutants killed (including M4, M8,
+M11 and M15); required war-reminder check 213 backend / one skip and 35 frontend
+plus build. Twenty disconnected layout states at 320/360/390/1440 include proof
+that choices are absent until picker focus; four confirmation/cancel/focus cases
+perform exactly one in-memory save. Blank 360 and outage 1440 were visually
+reviewed. An initial full frontend command used the wrong working directory and
+failed relative-file fixtures; the corrected complete run passes. The initial
+backend full run passed before two final progress regressions; the final full run
+includes them. No live Discord, configured production role or activation occurred.
+
+A serialization/SQLite failure before the durable backup-attempt stamp now also
+sets the staff warning and is throttled in memory. Concurrent backups are
+coalesced; progress committed during an in-flight copy remains dirty for the next
+copy. An owned empty-schema migration/reopen rehearsal preserves all old table
+counts and rows and accepts only the exact additive default role rows. This is
+not a production-copy rehearsal; fresh backup/restore, current runtime boundaries
+and no queued Standardize remain activation requirements after Claude ACCEPT.

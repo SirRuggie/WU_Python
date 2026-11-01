@@ -229,3 +229,45 @@ it("Seasons scope alone enables this setting, while roster-only access does not"
   );
   expect(host.querySelector("select")).toBeNull();
 });
+
+it("loads choices only on picker focus and retries a choice outage on Refresh", async () => {
+  const blank = { ...data(), roles: undefined };
+  vi.mocked(api).mockResolvedValue(blank);
+  await render();
+  expect(vi.mocked(api).mock.calls.map((call) => call[0])).toEqual([
+    "/pool-roles",
+  ]);
+  expect(host.textContent).not.toContain("unavailable");
+  vi.mocked(api).mockResolvedValueOnce({
+    ...data(),
+    roles: [],
+    roles_error: "Role choices unavailable.",
+  });
+  await act(async () =>
+    host.querySelector<HTMLSelectElement>("select")!.focus(),
+  );
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toBe("/pool-roles?choices=1");
+  expect(host.textContent).toContain("Role choices unavailable.");
+  vi.mocked(api).mockResolvedValue(data());
+  await act(async () => button("Refresh roles").click());
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toBe("/pool-roles?choices=1");
+  expect(host.textContent).not.toContain("Role choices unavailable.");
+});
+
+it("disables unchanged Save during cleanup and clears controls on picker permission loss", async () => {
+  const current = { ...data(), roles: undefined };
+  current.pools[0].role_id = ROLE;
+  current.pools[0].progress = { pending: 1 };
+  vi.mocked(api).mockResolvedValue(current);
+  await render();
+  expect(button("Save Main role").disabled).toBe(true);
+  vi.mocked(api).mockRejectedValueOnce(new ApiError("Access changed", 403));
+  await act(async () =>
+    host.querySelector<HTMLSelectElement>("select")!.focus(),
+  );
+  expect(host.querySelector("select")).toBeNull();
+  expect(host.textContent).toContain("Access changed");
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
+  ).toHaveLength(0);
+});

@@ -8,6 +8,7 @@ export default function RoleSelect({
   disabled = false,
   label = "Role",
   onOpen,
+  unavailableLabel = "Unavailable role",
 }: {
   roles: RoleChoice[];
   value: string;
@@ -15,6 +16,7 @@ export default function RoleSelect({
   disabled?: boolean;
   label?: string;
   onOpen?: () => void;
+  unavailableLabel?: string;
 }) {
   const [search, setSearch] = useState("");
   return (
@@ -40,7 +42,7 @@ export default function RoleSelect({
         >
           <option value="">Choose a role</option>
           {value && !roles.some((role) => role.id === value) && (
-            <option value={value}>Unavailable role</option>
+            <option value={value}>{unavailableLabel}</option>
           )}
           {roles
             .filter(
