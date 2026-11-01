@@ -1,5 +1,5 @@
 /* npm run test:layout: isolated fixture, working-tree backend and frontend, no live services. */
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const { mkdtempSync, existsSync, rmSync } = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
@@ -24,7 +24,14 @@ if (!existsSync(python)) {
   process.exit(1);
 }
 
-const server = spawn(
+function spawnFixture(interpreter, args, options) {
+  const selectedPort = Number(args.at(-1));
+  const probe = spawnSync(interpreter, ["-I", "-c", "import socket,sys; s=socket.socket(); s.bind(('127.0.0.1',int(sys.argv[1]))); s.close()", String(selectedPort)], {encoding:"utf8"});
+  if (probe.status !== 0) throw new Error(`Fixture port ${selectedPort} is occupied; refusing to contact another server`);
+  return spawn(interpreter,args,options);
+}
+
+const server = spawnFixture(
   python,
   [
     "-I",
@@ -59,7 +66,7 @@ server.stdout.on("data", (chunk) => {
       return;
     }
     const tourPort = Number(process.env.WU_LAYOUT_TOUR_PORT || 8976);
-    const tourServer = spawn(
+    const tourServer = spawnFixture(
       python,
       [
         "-I",
@@ -112,7 +119,7 @@ server.stdout.on("data", (chunk) => {
         }
         if (!process.exitCode) {
           const staffPort = Number(process.env.WU_LAYOUT_STAFF_PORT || 8981);
-          const staffServer = spawn(
+          const staffServer = spawnFixture(
             python,
             [
               "-I",
@@ -172,7 +179,7 @@ server.stdout.on("data", (chunk) => {
               probe.close(resolve),
             );
           });
-          const readabilityServer = spawn(
+          const readabilityServer = spawnFixture(
             python,
             [
               "-I",
@@ -231,7 +238,7 @@ server.stdout.on("data", (chunk) => {
             probe.once("error", reject);
             probe.listen(hotfixPort, "127.0.0.1", () => probe.close(resolve));
           });
-          const hotfixServer = spawn(
+          const hotfixServer = spawnFixture(
             python,
             [
               "-I",
@@ -287,7 +294,7 @@ server.stdout.on("data", (chunk) => {
             probe.once("error", reject);
             probe.listen(totalsPort, "127.0.0.1", () => probe.close(resolve));
           });
-          const totalsServer = spawn(
+          const totalsServer = spawnFixture(
             python,
             [
               "-I",
@@ -348,7 +355,7 @@ server.stdout.on("data", (chunk) => {
               probe.close(resolve),
             );
           });
-          const moderationServer = spawn(
+          const moderationServer = spawnFixture(
             python,
             [
               "-I",

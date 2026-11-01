@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 from cwl_web.roster_owner_names import cached_owner_nicknames, lifecycle
 
 
-def test_immediate_cache_cooldown_scope_and_shutdown(monkeypatch):
+def test_immediate_cache_cooldown_scope_and_shutdown(monkeypatch, caplog):
     from cwl_web import manage_roles
 
     async def run():
@@ -33,6 +33,7 @@ def test_immediate_cache_cooldown_scope_and_shutdown(monkeypatch):
         provider.side_effect = RuntimeError("offline")
         assert cached_owner_nicknames(request, {"1"}) == {"1": "Owner | IST 🇮🇳"}
         await state["task"]
+        assert "Roster owner nickname refresh failed (RuntimeError)" in caplog.text
         cached_owner_nicknames(request, {"1"})
         assert provider.await_count == 2
         event.clear()
