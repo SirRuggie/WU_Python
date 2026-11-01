@@ -1,0 +1,89 @@
+.member-timezones {
+  max-width: 1000px;
+  margin: auto;
+  padding: 16px;
+}
+.member-timezones h1 {
+  margin-top: 0;
+}
+.mt-toolbar,
+.mt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-block: 16px;
+}
+.member-timezones label {
+  display: grid;
+  gap: 6px;
+  margin-block: 10px;
+}
+.member-timezones input:not([type="checkbox"]),
+.member-timezones select {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+.member-timezones button,
+.member-timezones summary {
+  min-height: 44px;
+  padding: 10px 12px;
+}
+.member-timezones :focus-visible {
+  outline: 3px solid #eebc48;
+  outline-offset: 3px;
+}
+.mt-list {
+  list-style: none;
+  padding: 0;
+}
+.mt-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #657080;
+  overflow-wrap: anywhere;
+}
+.mt-list li > div {
+  min-width: 0;
+}
+.mt-list p {
+  margin: 5px 0;
+}
+.member-timezones .mt-check {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 10px;
+}
+.mt-check input {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.mt-editor {
+  max-width: 560px;
+}
+.member-timezones details {
+  margin-top: 20px;
+  border-top: 1px solid #657080;
+  padding-top: 8px;
+}
+@media (max-width: 500px) {
+  .mt-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .mt-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .mt-list button {
+    width: 100%;
+  }
+}

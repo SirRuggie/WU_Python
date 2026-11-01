@@ -14,6 +14,7 @@ export const dashboardViews = [
   "strikes",
   "replacements",
   "members-settings",
+  "member-timezones",
   "member-activity",
   "moderation",
   "applications-settings",
@@ -253,6 +254,12 @@ const sections: Section[] = [
       {
         view: "members-settings",
         label: "Members & roles",
+        icon: "memberRoles",
+        permissions: ["member_roles"],
+      },
+      {
+        view: "member-timezones",
+        label: "Member time zones",
         icon: "memberRoles",
         permissions: ["member_roles"],
       },

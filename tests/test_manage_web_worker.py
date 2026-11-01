@@ -16,7 +16,7 @@ class EmptyCursor:
 
 class ManageWorkerTests(unittest.IsolatedAsyncioTestCase):
     def db(self,row):
-        config=SimpleNamespace(find=lambda query: EmptyCursor(),update_one=AsyncMock(),update_many=AsyncMock(),find_one_and_update=AsyncMock(side_effect=[row,None]))
+        config=SimpleNamespace(find_one=AsyncMock(return_value=None),find=lambda query: EmptyCursor(),update_one=AsyncMock(),update_many=AsyncMock(),find_one_and_update=AsyncMock(side_effect=[row,None]))
         return SimpleNamespace(bot_config=config,fwa_data=SimpleNamespace(find_one=AsyncMock(return_value={})))
 
     def row(self,**kw):

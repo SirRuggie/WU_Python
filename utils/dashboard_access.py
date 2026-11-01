@@ -125,6 +125,7 @@ async def dashboard_allowed(actor, section, db):
 
 
 SECTION_SCOPE = {
+    'member_profiles': 'member_roles',
     'strikes': 'strikes', 'strikes_add': 'strikes_add', 'strikes_remove': 'strikes_remove',
     'clans': 'clans', 'text_commands': 'text_commands',
     **dict.fromkeys(('recruit', 'recruitment_questions', 'recruitment_staff_thread'), 'recruitment'),
