@@ -71,7 +71,7 @@ async def _require_fwa_representative(ctx) -> bool:
     return await require_dashboard_role(ctx, FWA_REP_ROLE_ID, "FWA Representative")
 
 # TH levels we support for FWA (ordered from highest to lowest)
-FWA_TH_LEVELS = ["th18_new", "th18", "th17_new", "th17", "th16_new", "th16", "th15", "th14", "th13", "th12", "th11", "th10", "th9"]
+from utils.base_bank import FWA_TH_LEVELS
 
 def get_th_emoji(th_level: str):
     """Get the appropriate TH emoji object"""

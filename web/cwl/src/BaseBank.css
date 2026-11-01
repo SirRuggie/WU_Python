@@ -1,0 +1,112 @@
+.base-bank {
+  max-width: 1100px;
+  margin-inline: auto;
+}
+.base-bank header p,
+.base-bank-muted {
+  color: var(--muted, #b4b7bf);
+}
+.base-bank-levels {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-block: 24px;
+}
+.base-bank-levels button {
+  min-width: 48px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  border-radius: 24px;
+  font-size: 16px;
+}
+.base-bank-levels button[aria-pressed="true"] {
+  background: #d4a017;
+  border-color: #d4a017;
+  color: #17130a;
+  font-weight: 700;
+}
+.base-bank-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.base-bank-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #444750;
+  border-radius: 16px;
+  background: #191b20;
+}
+.base-bank-image {
+  aspect-ratio: 1;
+  background: #101216;
+  display: grid;
+  place-items: center;
+}
+.base-bank-image img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+.base-bank-image p {
+  color: #b4b7bf;
+  font-size: 14px;
+  padding: 16px;
+}
+.base-bank-card-body {
+  padding: 20px;
+}
+.base-bank-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.base-bank-tags span {
+  background: #292c33;
+  border-radius: 18px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+.base-bank-copy {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: 700;
+}
+.base-bank-card details {
+  margin-top: 14px;
+  font-size: 14px;
+}
+.base-bank-card summary {
+  cursor: pointer;
+  min-height: 44px;
+  align-content: center;
+  color: #c1c4cc;
+}
+.base-bank-details p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.base-bank button:focus-visible,
+.base-bank a:focus-visible,
+.base-bank summary:focus-visible {
+  outline: 3px solid #e8b72c;
+  outline-offset: 3px;
+}
+@media (max-width: 650px) {
+  .base-bank-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .base-bank-card-body {
+    padding: 16px;
+  }
+}
