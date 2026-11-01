@@ -363,3 +363,35 @@ reads, alt identities, published/draft changes, Main exclusion, stale responses,
 filtering and an unchanged pool-wide ping count. This feature has no notification
 delivery to prove and no production test send.
 
+
+## Members page (prompt 93, in development)
+
+Use one directory, search, filter state, pager and ID selection set for member
+roles and profiles. Selecting a page never selects hidden pages or bots. Selection
+survives query, filter and page changes; hidden selections stay in the count.
+Freeze the reviewed IDs before a bulk confirmation, and derive the sent count
+from those exact IDs. A row opener and its checkbox are separate targets.
+
+Reuse DiscordIdentity with the batch directory profile, FilterChips, RoleSelect,
+DetailsFrame, the existing timezone editor and the nickname result/run surface.
+Keep frequent controls visible; occasional history belongs in a disclosure.
+New Members strings live together in src/members/strings.ts. Narrow filters use
+one sideways removable-chip row; status and errors do not rely on colour.
+
+Permission clarification (Claude 298): keep the existing member_roles grant for
+both roles and profiles. There is no member_profiles grant today; this batch
+adds no grant or migration and nobody gains or loses access. A viewer without
+member_roles must be rejected by every server route as well as the UI.
+
+Bulk roles extend the existing ProfileRuns storage owner, legacy parent kind and
+single queued lane. A role manifest is explicitly typed; nickname confirmations,
+status and Stop cannot consume role manifests. Existing profile manifests keep
+their old shape. One child is materialized at a time with fresh expiry; terminal
+or uncertain children never reset on restart. Stop prevents later writes; an
+already accepted Discord operation is never automatically replayed. Each role
+write checks fresh actor, target, bot member, roles and guild, plus current access,
+hierarchy, protected-role confirmation and the exact reviewed role state. Confirmed
+role changes leave a durable audit receipt in the same child's storage owner.
+No real roles or nicknames have been changed in development. Final page wiring,
+API failure-mode tests, recovery fixtures, mutants, full gates and layouts remain
+before READY; these notes are not a completion claim.

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { membersText } from "../members/strings";
 import DiscordIdentity from "../DiscordIdentity";
 import FilterChips from "../FilterChips";
 import { MemberPages } from "./NicknameReview";
@@ -26,12 +27,14 @@ export default function NicknameRun({
   onStop,
   disabled,
   showAttribution = false,
+  mode = "nicknames",
 }: {
   run: Run;
   members: Member[];
   onStop: () => void;
   disabled: boolean;
   showAttribution?: boolean;
+  mode?: "nicknames" | "roles";
 }) {
   const [filter, setFilter] = useState<keyof typeof labels>("changed"),
     [page, setPage] = useState(0);
@@ -39,14 +42,31 @@ export default function NicknameRun({
     current = Math.min(page, Math.max(0, Math.ceil(rows.length / 25) - 1));
   const profile = (id?: string) => members.find((m) => m.discord_id === id);
   return (
-    <section aria-label="Standardize run">
+    <section
+      aria-label={mode === "roles" ? membersText.roleRun : "Standardize run"}
+    >
       <h2 aria-live="polite">
         {["done", "stopped"].includes(run.state)
           ? `${run.state === "done" ? "Done" : "Stopped"}. ${run.rows.filter((r) => r.status === "done").length} changed.${run.rows.some((r) => r.status === "failed") ? ` ${run.rows.filter((r) => r.status === "failed").length} failed.` : ""}${run.rows.some((r) => r.status === "uncertain") ? ` ${run.rows.filter((r) => r.status === "uncertain").length} check manually.` : ""}`
-          : `Renaming ${run.rows.filter((r) => ["done", "failed", "uncertain", "stopped", "skipped"].includes(r.status || "")).length} of ${run.rows.length}`}
+          : mode === "roles"
+            ? membersText.updatingRoles(
+                run.rows.filter((r) =>
+                  [
+                    "done",
+                    "failed",
+                    "uncertain",
+                    "stopped",
+                    "skipped",
+                  ].includes(r.status || ""),
+                ).length,
+                run.rows.length,
+              )
+            : `Renaming ${run.rows.filter((r) => ["done", "failed", "uncertain", "stopped", "skipped"].includes(r.status || "")).length} of ${run.rows.length}`}
       </h2>
       <progress
-        aria-label="Rename progress"
+        aria-label={
+          mode === "roles" ? membersText.roleProgress : "Rename progress"
+        }
         max={Math.max(1, run.rows.length)}
         value={
           run.rows.filter((r) =>
@@ -56,29 +76,37 @@ export default function NicknameRun({
           ).length
         }
       />
-      <p>Renames one at a time. You can stop anytime.</p>
-      {showAttribution && <div>
-        <span>Started by</span>
-        <DiscordIdentity
-          userId={run.started_by}
-          displayName={profile(run.started_by)?.name}
-          resolvedMember={profile(run.started_by)?.discord_profile || null}
-          variant="compact"
-          contact={false}
-        />
-        {run.stopped_by && (
-          <>
-            <span>Stopped by</span>
-            <DiscordIdentity
-              userId={run.stopped_by}
-              displayName={profile(run.stopped_by)?.name}
-              resolvedMember={profile(run.stopped_by)?.discord_profile || null}
-              variant="compact"
-              contact={false}
-            />
-          </>
-        )}
-      </div>}
+      <p>
+        {mode === "roles"
+          ? membersText.rolePacing
+          : "Renames one at a time. You can stop anytime."}
+      </p>
+      {showAttribution && (
+        <div>
+          <span>Started by</span>
+          <DiscordIdentity
+            userId={run.started_by}
+            displayName={profile(run.started_by)?.name}
+            resolvedMember={profile(run.started_by)?.discord_profile || null}
+            variant="compact"
+            contact={false}
+          />
+          {run.stopped_by && (
+            <>
+              <span>Stopped by</span>
+              <DiscordIdentity
+                userId={run.stopped_by}
+                displayName={profile(run.stopped_by)?.name}
+                resolvedMember={
+                  profile(run.stopped_by)?.discord_profile || null
+                }
+                variant="compact"
+                contact={false}
+              />
+            </>
+          )}
+        </div>
+      )}
       {["queued", "stopping"].includes(run.state) && (
         <button
           disabled={disabled || run.state === "stopping"}
@@ -116,12 +144,14 @@ export default function NicknameRun({
               variant="compact"
               contact={false}
             />
-            <p>
-              {r.old_nickname || r.name}
-              {r.new_nickname && r.new_nickname !== r.old_nickname
-                ? ` → ${r.new_nickname}`
-                : ""}
-            </p>
+            {mode === "nicknames" && (
+              <p>
+                {r.old_nickname || r.name}
+                {r.new_nickname && r.new_nickname !== r.old_nickname
+                  ? ` → ${r.new_nickname}`
+                  : ""}
+              </p>
+            )}
             {r.message && <small>{r.message}</small>}
           </li>
         ))}

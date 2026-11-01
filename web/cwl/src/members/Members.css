@@ -1,0 +1,112 @@
+.members-filters {
+  display: grid;
+  gap: 12px;
+}
+.members-filters > label {
+  display: grid;
+  gap: 6px;
+}
+.members-filters input[type="search"],
+.members-filter-tools select {
+  min-height: 44px;
+  width: 100%;
+  min-width: 0;
+}
+.members-filter-tools {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+.members-filter-tools > div {
+  min-width: 0;
+  flex: 1 1 260px;
+  max-width: 520px;
+}
+.members-filter-tools label {
+  display: grid;
+  gap: 6px;
+}
+.members-checkbox {
+  display: flex !important;
+  align-items: center;
+  min-height: 44px;
+  gap: 10px;
+}
+.members-checkbox input {
+  width: 22px;
+  height: 22px;
+}
+.members-active-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-block: 4px;
+}
+.members-active-filters button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 44px;
+}
+.members-bulk-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  background: var(--surface, #24252a);
+  border: 1px solid #656771;
+  padding: 12px;
+}
+.members-bulk-bar button {
+  min-height: 44px;
+}
+.members-list {
+  padding-bottom: 12px;
+}
+@media (max-height: 500px) {
+  .members-bulk-bar {
+    position: static;
+  }
+}
+.members-person {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+  padding-block: 10px;
+  border-bottom: 1px solid #45464d;
+}
+.members-row-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+.members-row-select input {
+  width: 22px;
+  height: 22px;
+}
+.members-person-open {
+  min-width: 0;
+  min-height: 64px;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  padding: 8px;
+  white-space: normal;
+  border-radius: 10px;
+}
+.members-person-zone {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+.members-person > p {
+  grid-column: 2;
+  margin: 0;
+}

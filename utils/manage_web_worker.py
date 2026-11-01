@@ -13,6 +13,7 @@ from utils.member_profiles import ProfileOutcomeUncertain
 WORKER_ID = "manage-web-worker:644963518025826315"
 GUILD_ID = 644963518025826315
 ACTIONS = {
+    ("roles", "bulk_one"),
     *{("member_profiles", x) for x in ("save", "import", "standardize_one")},
     ("clans", "emoji"),
     ("clans", "thread"),
@@ -58,6 +59,10 @@ async def context(bot, mongo, row):
     from extensions.commands.recruit.perms import guild_permissions
     from utils.dashboard_access import dashboard_allowed as allowed
 
+    if row.get("section") == "roles":
+        from extensions.member_role_dashboard import request_context
+
+        return await request_context(bot, mongo, row)
     if row.get("section") == "member_profiles":
         from extensions.warrior.profile_dashboard import request_context
 
@@ -119,6 +124,10 @@ async def dispatch(bot, mongo, row, ctx):
     section, action, values = row["section"], row["action"], row["values"]
     if (section, action) not in ACTIONS or not isinstance(values, dict):
         raise ValueError("Unknown management action.")
+    if section == "roles":
+        from extensions.member_role_dashboard import apply
+
+        return await apply(bot, mongo, row, ctx)
     if section == "member_profiles":
         from extensions.warrior.profile_dashboard import apply
 
@@ -681,11 +690,10 @@ async def _process_requests(bot, mongo):
             update["status"],
             1000 * (time.perf_counter() - claimed),
         )
-        if (
-            row.get("parent_id")
-            and row.get("section") == "member_profiles"
-            and row.get("action") == "standardize_one"
-        ):
+        if row.get("parent_id") and (row.get("section"), row.get("action")) in {
+            ("member_profiles", "standardize_one"),
+            ("roles", "bulk_one"),
+        }:
             try:
                 await ProfileRuns(mongo).advance()
             except Exception:

@@ -62,7 +62,7 @@ async def directory(request):
     return rows
 
 
-async def inventory(request):
+async def inventory(request, *, with_role_context=False):
     actor = await require_manage(request, "member_profiles")
     raw = await directory(request)
     roles, guild, bot, acting = await hierarchy(request, actor)
@@ -118,6 +118,7 @@ async def inventory(request):
         rows.append(
             dict(
                 discord_id=uid,
+                role_ids=sorted(map(str, data.get("roles", []))),
                 discord_profile={
                     key: identity.get(key)
                     for key in ("id", "display_name", "username", "avatar_url")
@@ -149,11 +150,10 @@ async def inventory(request):
                 skip_reason=skip,
             )
         )
-    return rows
+    return (rows, roles, guild, bot, acting, actor) if with_role_context else rows
 
 
-async def overview(request):
-    rows = await inventory(request)
+def directory_response(rows, **extra):
     return web.json_response(
         dict(
             members=rows,
@@ -175,8 +175,38 @@ async def overview(request):
                 for key, _, description in ZONE_CHOICES
             ],
             permission="member_roles",
+            **extra,
         )
     )
+
+
+async def overview(request):
+    return directory_response(await inventory(request))
+
+
+async def members_overview(request):
+    # Same authorization, directory, profiles and identity renderer inputs.
+    rows, roles, guild, bot, acting, actor = await inventory(
+        request, with_role_context=True
+    )
+    from .manage_roles import dashboard_grant_roles
+    from extensions.commands.recruit.perms import actor_can_manage_role
+    from utils.role_permissions import role_is_manageable
+
+    protected = await dashboard_grant_roles(request, actor)
+    options = [
+        dict(id=str(role.id), name=role.name)
+        for role in roles.values()
+        if str(role.id) not in protected
+        and role_is_manageable(guild, bot, role)
+        and actor_can_manage_role(acting, guild, role)
+    ]
+    all_roles = [
+        dict(id=str(role.id), name=role.name)
+        for role in roles.values()
+        if role.id != GUILD_ID
+    ]
+    return directory_response(rows, roles=all_roles, manageable_roles=options)
 
 
 async def choices(request):
@@ -370,21 +400,15 @@ async def standardize_stop(request):
 
 async def standardize_status(request):
     actor = await require_manage(request, "member_profiles")
-    from utils.member_profile_runs import KIND
+    from utils.member_profile_runs import ProfileRuns
 
     async with mongo(request) as db:
-        run = await db.bot_config.find_one(
-            {
-                "_id": request.match_info["run_id"],
-                "kind": KIND,
-                "guild_id": GUILD_ID,
-            }
-        )
-        if not run:
-            raise web.HTTPNotFound(text="This run is no longer available.")
-        children = await db.bot_config.find(
-            {"parent_id": run["_id"], "kind": "manage_web_request"}
-        ).to_list(length=10000)
+        try:
+            run, children = await ProfileRuns(db).status(
+                request.match_info["run_id"], guild_id=GUILD_ID
+            )
+        except ValueError as error:
+            raise web.HTTPNotFound(text=str(error)) from error
     statuses = {row["_id"]: row for row in children}
     rows = []
     for index, item in enumerate(run["items"]):
@@ -421,6 +445,7 @@ async def standardize_status(request):
 
 
 routes = [
+    web.get(API + "/members", members_overview),
     web.get(API + "/member-timezones/runs", standardize_runs),
     web.post(API + "/member-timezones/preview", standardize_preview),
     web.post(API + "/member-timezones/confirm", standardize_confirm),
