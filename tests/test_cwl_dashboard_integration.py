@@ -88,6 +88,9 @@ class MemoryCollection:
             elif isinstance(expected, dict) and "$lte" in expected:
                 if actual is missing or actual > expected["$lte"]:
                     return False
+            elif isinstance(expected, dict) and "$in" in expected:
+                if actual is missing or actual not in expected["$in"]:
+                    return False
             elif isinstance(expected, dict) and "$ne" in expected:
                 if actual is not missing and (
                     expected["$ne"] in actual if isinstance(actual, list)
@@ -123,11 +126,20 @@ class MemoryCollection:
                 return deepcopy(document)
         return None
 
-    def find(self, query=None):
+    def find(self, query=None, projection=None):
         documents = [
-            deepcopy(document) for document in self.documents.values()
+            deepcopy(document)
+            for document in self.documents.values()
             if self._matches(document, query or {})
         ]
+        if projection:
+            included = {name for name, enabled in projection.items() if enabled}
+            if projection.get("_id", 1):
+                included.add("_id")
+            documents = [
+                {key: value for key, value in row.items() if key in included}
+                for row in documents
+            ]
         return SimpleNamespace(to_list=AsyncMock(return_value=documents))
 
     async def update_one(self, query, update, upsert=False):
