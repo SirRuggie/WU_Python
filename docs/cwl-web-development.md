@@ -455,7 +455,7 @@ was invented. The small wrapper is `tools/backup/cwl_backup.py`.
 
 - `cwl-backup.timer`: every 5 minutes; consistent SQLite snapshot, CWL private
   environment, user service definitions, source/build assets, and recovery config.
-- `cwl-mongo-backup.timer`: every 15 minutes; all visible application databases,
+- `cwl-mongo-backup.timer`: hourly at minute 02; all visible application databases,
   excluding Mongo internal `admin`, `local`, and `config` databases. Includes
   production `settings` and `database`; the bot stays online.
 - `cwl-backup-check.timer`: daily at 04:17 host local time; reads all repository
@@ -540,7 +540,7 @@ September Mongo recovery manifest; installed copies now live persistently in
 ### Recovery limits and verified evidence
 
 No system guarantees zero loss. With successful jobs, the intended local
-recovery windows are 5 minutes for CWL and 15 minutes for Mongo, plus job runtime.
+recovery windows are 5 minutes for CWL and 60 minutes for Mongo, plus job runtime.
 Failed jobs, downtime or loss of this machine can widen that window. Mongo is an
 online logical dump, **not** a cross-collection or cross-database point-in-time
 snapshot; no Atlas continuous-backup configuration was changed. SQLite and Mongo
@@ -580,7 +580,7 @@ server and a clearly labeled setup message was delivered successfully.
 
 Failure signals: missing/failed service, disabled/stopped backup timer, disabled
 R2 copying, or missing/invalid/overdue local and remote success timestamps.
-Freshness allowances are 20 minutes for CWL, 45 minutes for Mongo, and 30 hours
+Freshness allowances are 20 minutes for CWL, 90 minutes for Mongo, and 30 hours
 for daily restore verification. Inspection failure is itself an incident.
 An independent lock allows this monitor to detect backups stuck holding the
 backup lock. No production data is changed to simulate failures.
@@ -1285,3 +1285,16 @@ signup and linked-owner lookup in an isolated browser, optional ID controls and
 lock, duplicates, wrong/changing owner, missing links versus lookup outage,
 reverse-lookup normalization, and roster inclusion without Discord. Production
 assets and unauthenticated lookup protection checked. No live signup was added.
+
+
+### Hourly Mongo backups (2026-11-01)
+
+Ruggie approved moving only `cwl-mongo-backup.timer` to hourly at minute 02.
+The source timer keeps `Persistent=true`; dump format/compression, retention,
+Restic copying and verification are unchanged. The Mongo freshness allowance is
+90 minutes (one hourly interval plus a 30-minute grace). A failed job still
+alerts immediately through the existing service-result check. The separate
+dashboard `cwl-backup.timer` remains every five minutes. This reduces full Mongo
+dumps from 96 to 24 per day; actual client-transfer estimates belong to the
+read-only Mongo audit rather than assuming stored/compressed size equals wire
+traffic. The intended Mongo recovery window becomes one hour plus job runtime.
