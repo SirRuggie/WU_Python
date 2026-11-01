@@ -76,3 +76,54 @@ def test_import_preserves_every_prior_decision_and_reports_conflicts():
         store.get.assert_not_awaited()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "value,name,review",
+    [
+        ("Sir | Ruggie | EST 🇺🇸", "Sir | Ruggie", False),
+        ("Bob | Co-Leader", "Bob | Co-Leader", True),
+        ("Alice", "Alice", True),
+        ("Ana | UTC+5:45 🇳🇵", "Ana", False),
+    ],
+)
+def test_nickname_name_only_removes_the_last_recognized_zone(value, name, review):
+    from utils.member_timezone_import import nickname_name
+
+    assert nickname_name(value) == {"name": name, "needs_review": review}
+
+
+@pytest.mark.parametrize(
+    "literal,offset",
+    [
+        ("EDT", -300),
+        ("CDT", -360),
+        ("MDT", -420),
+        ("PDT", -480),
+        ("BST", 0),
+        ("CEST", 60),
+        ("EEST", 120),
+        ("AEDT", 600),
+        ("NZDT", 720),
+    ],
+)
+def test_profile_import_uses_standard_time_without_changing_compare_literals(
+    literal, offset
+):
+    from utils.member_timezone_import import profile_zone
+
+    assert profile_zone(f"Name | {literal}")["offsetMinutes"] == offset
+
+    async def run():
+        store = SimpleNamespace(
+            get=AsyncMock(return_value=None),
+            write=AsyncMock(return_value={"source": "nickname_import"}),
+        )
+        await import_nicknames(
+            store,
+            [{"discord_id": "123456789012345678", "nickname": f"Name | {literal}"}],
+            actor_id="234567890123456789",
+        )
+        assert store.write.await_args.args[1]["utc_offset_minutes"] == offset
+
+    asyncio.run(run())

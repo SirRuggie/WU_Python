@@ -146,3 +146,14 @@ class MemberProfileOutcomeTests(unittest.IsolatedAsyncioTestCase):
         update=db.bot_config.update_one.call_args.args[1]['$set']
         self.assertEqual(update['status'],'uncertain')
         self.assertEqual(update['message'],message)
+
+
+class RecoveredReceiptTests(unittest.IsolatedAsyncioTestCase):
+    async def test_crash_recovery_establishes_a_completion_time(self):
+        helper=ManageWorkerTests();db=helper.db(None)
+        await worker.poll(None,db)
+        recovery=[call for call in db.bot_config.update_many.await_args_list if call.args[0].get('status')=='running']
+        self.assertEqual(len(recovery),1)
+        update=recovery[0].args[1]['$set']
+        self.assertEqual(update['status'],'uncertain')
+        self.assertIsInstance(update['finished_at'],float)

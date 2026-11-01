@@ -11,7 +11,7 @@ from utils.member_timezones import (
     nickname,
     SINGLE_ZONE,
 )
-from utils.member_timezone_import import parsed_zone
+from utils.member_timezone_import import profile_zone, nickname_name
 from .server_management import (
     API,
     GUILD_ID,
@@ -76,7 +76,7 @@ async def inventory(request):
     for data in raw:
         uid = str(data["user"]["id"])
         profile = profiles.get(uid)
-        parsed = parsed_zone(data.get("nick"))
+        parsed = profile_zone(data.get("nick"))
         status = (
             "Saved"
             if profile and profile["source"] in ("staff", "warrior")
@@ -250,12 +250,15 @@ async def standardize_preview(request):
             new_nickname=None,
             revision=(profile or {}).get("revision", 0),
             skip_reason=row["skip_reason"],
+            needs_review=False,
         )
         if not item["skip_reason"]:
             if not profile or not profile.get("country"):
                 item["skip_reason"] = "Save a time zone and country first"
             else:
-                name = (row["nickname"] or row["name"]).split(" | ", 1)[0].strip()
+                parsed_name = nickname_name(row["nickname"], row["name"])
+                name = parsed_name["name"]
+                item["needs_review"] = parsed_name["needs_review"]
                 try:
                     item["new_nickname"] = nickname(
                         name, profile["zone_id"], profile["country"]

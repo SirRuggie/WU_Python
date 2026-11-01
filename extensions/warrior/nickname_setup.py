@@ -12,6 +12,7 @@ from hikari.impl import (
 )
 from extensions.components import register_action
 from extensions.warrior import core
+from extensions.warrior.nickname_audit import edit_nickname
 from utils.component_state import update_state
 from utils.member_profiles import MemberProfiles
 from utils.member_timezones import (
@@ -206,11 +207,15 @@ async def save(ctx, data, c, mongo, state, bot):
             )
             authorize(fresh)
             try:
-                await bot.rest.edit_member(
+                await edit_nickname(
+                    bot.rest,
                     c["guild"].id,
                     c["member"].id,
                     nickname=value,
                     reason=f"Warrior Setup by {ctx.user.id}",
+                    actor_id=ctx.user.id,
+                    old_nickname=getattr(fresh["member"], "nickname", None),
+                    source="warrior",
                 )
             except (
                 hikari.ForbiddenError,

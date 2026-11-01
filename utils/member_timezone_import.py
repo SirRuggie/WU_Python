@@ -12,9 +12,9 @@ _DATA = json.loads(Path(__file__).with_name("member_timezone_data.json").read_te
 
 
 def parsed_zone(nickname):
-    if not isinstance(nickname, str) or " | " not in nickname:
+    if not isinstance(nickname, str) or "|" not in nickname:
         return None
-    raw = unicodedata.normalize("NFKC", nickname.rsplit(" | ", 1)[1])
+    raw = unicodedata.normalize("NFKC", nickname.rsplit("|", 1)[1])
     clean = "".join(
         c
         for c in raw
@@ -36,6 +36,35 @@ def parsed_zone(nickname):
             if hours < 14 or hours == 14 and minutes == 0:
                 offset = (-1 if numeric[1] == "-" else 1) * (hours * 60 + minutes)
     return {"label": label, "offsetMinutes": offset}
+
+
+_STANDARD_DAYLIGHT = {
+    "EDT": -300,
+    "CDT": -360,
+    "MDT": -420,
+    "PDT": -480,
+    "BST": 0,
+    "CEST": 60,
+    "EEST": 120,
+    "AEDT": 600,
+    "NZDT": 720,
+}
+
+
+def profile_zone(nickname):
+    """Profile labels use standard time; Compare retains its literal offset parser."""
+    parsed = parsed_zone(nickname)
+    if parsed and parsed["label"] in _STANDARD_DAYLIGHT:
+        return dict(parsed, offsetMinutes=_STANDARD_DAYLIGHT[parsed["label"]])
+    return parsed
+
+
+def nickname_name(nickname, fallback=""):
+    value = (nickname or fallback or "").strip()
+    parsed = parsed_zone(value)
+    if parsed and parsed["offsetMinutes"] is not None:
+        return {"name": value.rsplit("|", 1)[0].strip(), "needs_review": False}
+    return {"name": value, "needs_review": True}
 
 
 def canonical_zone(offset):
@@ -77,7 +106,7 @@ async def import_nicknames(store, members, *, actor_id):
         if row.get("bot"):
             counts["bots"] += 1
             continue
-        parsed = parsed_zone(row.get("nickname"))
+        parsed = profile_zone(row.get("nickname"))
         state = (
             "none"
             if parsed is None

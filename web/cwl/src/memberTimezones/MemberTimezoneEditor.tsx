@@ -1,3 +1,4 @@
+import { nicknameName } from "./nicknameName";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import type { Directory, Member, RequestState } from "./types";
@@ -21,7 +22,7 @@ export default function MemberTimezoneEditor({
   onDenied: () => void;
 }) {
   const [name, setName] = useState(
-    (member.nickname || member.name).split(" | ")[0],
+    nicknameName(member.nickname, member.name).name,
   );
   const [zone, setZone] = useState(member.profile?.zone_id || "");
   const [country, setCountry] = useState(member.profile?.country || "");
@@ -45,7 +46,7 @@ export default function MemberTimezoneEditor({
       .then((result) => {
         if (cancelled) return;
         setAccounts(result.accounts);
-        if (result.suggested && !edited.current) {
+        if (result.suggested && !edited.current && !member.nickname) {
           setName(result.suggested.name);
           setTag(result.suggested.tag);
         }

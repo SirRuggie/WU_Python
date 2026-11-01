@@ -91,7 +91,9 @@ export default function Standardize({
       setPreview(result);
       setSelected(
         new Set(
-          result.rows.filter((r) => !r.skip_reason).map((r) => r.discord_id),
+          result.rows
+            .filter((r) => !r.skip_reason && !r.needs_review)
+            .map((r) => r.discord_id),
         ),
       );
       setRun(null);
@@ -210,6 +212,12 @@ export default function Standardize({
                     {r.old_nickname || "(no nickname)"} →{" "}
                     {r.new_nickname || "(no change)"}
                   </p>
+                  {r.needs_review && (
+                    <p>
+                      Needs review: no recognized zone suffix; the complete name
+                      was kept.
+                    </p>
+                  )}
                   {r.skip_reason && <p>Skipped: {r.skip_reason}</p>}
                 </li>
               ))}

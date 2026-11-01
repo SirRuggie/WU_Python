@@ -3,6 +3,7 @@
 import asyncio
 import hikari
 from extensions.warrior import core
+from extensions.warrior.nickname_audit import edit_nickname
 from utils.member_profiles import (
     MemberProfiles,
     ProfileConflict,
@@ -164,11 +165,19 @@ async def apply(bot, mongo, row):
                 )
             # No retries: a timeout may follow an accepted Discord edit.
             async with asyncio.timeout(20):
-                await bot.rest.edit_member(
+                await edit_nickname(
+                    bot.rest,
                     GUILD_ID,
                     int(uid),
                     nickname=new_nickname,
                     reason="Reviewed dashboard member timezone update",
+                    actor_id=row["user_id"],
+                    old_nickname=fresh["member"].nickname,
+                    source=(
+                        "standardize"
+                        if row["action"] == "standardize_one"
+                        else "dashboard"
+                    ),
                 )
                 discord_confirmed = True
 

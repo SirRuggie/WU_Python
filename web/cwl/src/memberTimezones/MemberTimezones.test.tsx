@@ -45,7 +45,10 @@ beforeEach(() => {
   root = createRoot(host);
   transport.mockReset();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("confirm", vi.fn(() => true));
+  vi.stubGlobal(
+    "confirm",
+    vi.fn(() => true),
+  );
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -164,4 +167,34 @@ it("unticked preview members are excluded from confirmation and uncertain result
       /retry/i.test(b.textContent || ""),
     ),
   ).toBe(false);
+});
+
+it("leaves a preserved unknown suffix unticked for explicit review", async () => {
+  const rows = [
+    {
+      discord_id: uid,
+      name: "Bob",
+      old_nickname: "Bob | Co-Leader",
+      new_nickname: "Bob | Co-Leader | GMT-5 🇺🇸",
+      revision: 1,
+      needs_review: true,
+    },
+  ];
+  transport.mockImplementation(async (path: string) =>
+    path.endsWith("/runs") ? { runs: [] } : { token: "token", rows },
+  );
+  await act(async () =>
+    root.render(<Standardize disabled={false} onDenied={() => {}} />),
+  );
+  const details = host.querySelector("details")!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  await click("Preview all nickname changes");
+  expect(
+    host.querySelector<HTMLInputElement>("input[type=checkbox]")!.checked,
+  ).toBe(false);
+  expect(host.textContent).toContain("Needs review");
+  expect(host.textContent).toContain("Bob | Co-Leader | GMT-5");
 });

@@ -36,6 +36,7 @@ export type Change = {
   new_nickname: string | null;
   revision: number;
   skip_reason?: string | null;
+  needs_review?: boolean;
   status?: string;
   message?: string;
 };

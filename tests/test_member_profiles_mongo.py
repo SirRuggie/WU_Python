@@ -157,7 +157,7 @@ def test_consumed_preview_survives_restart_after_discord_success_storage_failure
         try:
             await ui.save(ctx, {"_id": "wizard"}, c, mongo, state, bot)
             assert ctx.respond.await_args.args[0].startswith(
-                "Nickname changed in Discord; profile not saved"
+                "Nickname changed in Discord; profile save not confirmed"
             )
             assert await db.member_profiles.count_documents({}) == 0
             # A fresh wrapper represents a restarted worker reading the durable receipt.
@@ -354,6 +354,67 @@ def test_real_standardize_selection_restart_pacing_and_bounded_receipts():
                 == 20
             )
             assert await db.bot_config.find_one({"_id": "other"})
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_uncertain_receipt_missing_completion_is_retained_for_its_full_lifetime(
+    monkeypatch,
+):
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def run():
+        from utils import member_profile_runs as module
+
+        clock = [1_800_000_000.0]
+        monkeypatch.setattr(module.time, "time", lambda: clock[0])
+        client = AsyncMongoClient(URI)
+        db = client["wu_receipt_fixture_" + uuid4().hex]
+        try:
+            await db.bot_config.insert_many(
+                [
+                    {
+                        "_id": "uncertain",
+                        "kind": "manage_web_request",
+                        "section": "member_profiles",
+                        "status": "uncertain",
+                        "created_at": clock[0] - 600,
+                    },
+                    {
+                        "_id": "other",
+                        "kind": "manage_web_request",
+                        "section": "unrelated",
+                        "status": "uncertain",
+                    },
+                    {
+                        "_id": "active",
+                        "kind": "manage_web_request",
+                        "section": "member_profiles",
+                        "status": "running",
+                    },
+                ]
+            )
+            store = module.ProfileRuns(S(bot_config=db.bot_config))
+            await store.prune()
+            row = await db.bot_config.find_one({"_id": "uncertain"})
+            assert row["finished_at"] == clock[0]
+            finish = row["finished_at"]
+            clock[0] += 100
+            await store.prune()
+            assert (await db.bot_config.find_one({"_id": "uncertain"}))[
+                "finished_at"
+            ] == finish
+            clock[0] = finish + 30 * 86400 - 1
+            await store.prune()
+            assert await db.bot_config.find_one({"_id": "uncertain"})
+            clock[0] = finish + 30 * 86400 + 1
+            await store.prune()
+            assert not await db.bot_config.find_one({"_id": "uncertain"})
+            assert await db.bot_config.find_one({"_id": "other"})
+            assert await db.bot_config.find_one({"_id": "active"})
         finally:
             await client.drop_database(db.name)
             await client.close()

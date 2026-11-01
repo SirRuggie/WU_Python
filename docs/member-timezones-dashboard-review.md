@@ -43,3 +43,31 @@ uses fake HTTP transport; real-Mongo cases use an owned local daemon that stoppe
 No test proves live Discord delivery. Production import and Standardize have not
 run. Release is gated on PR 1 LIVE plus Ruggie's real Warrior test and Claude's
 verdict; only authorized staff will press Standardize in production.
+
+## Rework67/233 checkpoint — not READY
+
+The last recognized zone suffix is removed from a name; earlier pipes remain.
+Unknown/no-zone suffixes retain the complete nickname and start unticked with
+Needs review. The editor does not overwrite an existing nickname with a late
+account suggestion. Import maps named daylight zones to standard profile offsets;
+Compare keeps literal offset meaning. Both parsers now recognize the two approved
+hand styles (tight pipe/flag and non-menu GMT+5:45), with shared vectors.
+
+Recovered uncertain requests receive a completion timestamp. Legacy missing
+completion times are established once before the twenty-receipt/thirty-day prune,
+so a new uncertain receipt is not lost or continually renewed. The stale Mongo
+assertion is corrected. Five actual Mongo cases pass, including lifetime repair;
+the owned daemon stopped.84 focused backend and20 targeted frontend cases,
+TypeScript/build pass. These are current runs, not applicability inferred from
+an earlier revision.
+
+Both nickname transports now journal attempted/confirmed/refused/unconfirmed
+outcomes with source, actor, target and old/new values. Repr formatting prevents
+newlines from becoming extra journal entries; no request is retried. Logging is
+not proof of delivery unless Discord confirmed the call. No production code was
+activated and no nickname edit was performed by Codex.
+
+Still pending: Stop and complete skipped-result reporting, compact/paged top-action
+UI, conflict reload/reapply and fresh explicit retry IDs, final regressions/layouts
+and required rework mutations. PR119 remains unready and human-gated. Prompt68
+starts on an independent branch now that prompt65 is READY.

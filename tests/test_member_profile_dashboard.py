@@ -341,3 +341,49 @@ def test_real_discord_form_error_preserves_dashboard_nickname_reason(monkeypatch
         bot.rest.edit_member.assert_awaited_once()
 
     asyncio.run(run())
+
+
+def test_standardize_preview_preserves_pipe_names_and_marks_unknown_suffix_for_review(
+    monkeypatch,
+):
+    from contextlib import asynccontextmanager
+    import json
+    from utils import member_profile_runs
+
+    async def run():
+        rows = [
+            dict(
+                discord_id=UID,
+                name="Sir Ruggie",
+                nickname="Sir | Ruggie | EST 🇺🇸",
+                profile=dict(FIELDS, revision=1),
+                skip_reason=None,
+            ),
+            dict(
+                discord_id=ACTOR,
+                name="Bob",
+                nickname="Bob | Co-Leader",
+                profile=dict(FIELDS, revision=1),
+                skip_reason=None,
+            ),
+        ]
+        monkeypatch.setattr(routes, "inventory", AsyncMock(return_value=rows))
+        monkeypatch.setattr(
+            routes, "require_manage", AsyncMock(return_value={"user_id": ACTOR})
+        )
+        store = S(preview=AsyncMock(return_value="token"))
+        monkeypatch.setattr(member_profile_runs, "ProfileRuns", lambda db: store)
+
+        @asynccontextmanager
+        async def database(request):
+            yield object()
+
+        monkeypatch.setattr(routes, "mongo", database)
+        response = await routes.standardize_preview(object())
+        values = json.loads(response.text)["rows"]
+        assert values[0]["new_nickname"] == "Sir | Ruggie | GMT-5 🇺🇸"
+        assert not values[0]["needs_review"]
+        assert values[1]["new_nickname"] == "Bob | Co-Leader | GMT-5 🇺🇸"
+        assert values[1]["needs_review"]
+
+    asyncio.run(run())

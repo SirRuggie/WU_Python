@@ -16,9 +16,9 @@ export function ownerTimeZone(
     )
       return checked;
   }
-  if (!nickname || !nickname.includes(" | ")) return null;
+  if (!nickname || !nickname.includes("|")) return null;
   const rawLabel = nickname
-    .slice(nickname.lastIndexOf(" | ") + 3)
+    .slice(nickname.lastIndexOf("|") + 1)
     .normalize("NFKC");
   const cleanLabel = Array.from(rawLabel)
     .filter((character) => {

@@ -267,7 +267,8 @@ class ProfileRuns:
             .sort("finished_at", -1)
             .to_list(length=10001)
         )
-        cutoff = time.time() - 30 * 86400
+        now = time.time()
+        cutoff = now - 30 * 86400
         for row in rows:
             if row in rows[:20] and row.get("finished_at", 0) >= cutoff:
                 continue
@@ -282,6 +283,18 @@ class ProfileRuns:
                 {"_id": row["_id"], "kind": KIND, "state": "done"}
             )
 
+        # Older crashed requests had no completion timestamp. Establish it once
+        # before sorting/pruning, retaining the newest uncertain receipt correctly.
+        await self.collection.update_many(
+            {
+                "kind": "manage_web_request",
+                "section": "member_profiles",
+                "parent_id": {"$exists": False},
+                "status": {"$in": list(TERMINAL)},
+                "finished_at": None,
+            },
+            {"$set": {"finished_at": now}},
+        )
         standalone = (
             await self.collection.find(
                 {

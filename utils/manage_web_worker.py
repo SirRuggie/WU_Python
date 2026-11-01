@@ -234,7 +234,7 @@ async def _poll(bot, mongo):
         logging.getLogger(__name__).warning('Member profile run scheduling unavailable',exc_info=True)
     # A crashed sending claim is never replayed: the Discord effect may exist.
     await mongo.bot_config.update_many({'kind':'manage_web_request','status':'running','started_at':{'$lt':time.time()-300}},
-        {'$set':{'status':'uncertain','message':'The bot stopped before confirming this action. Check Discord before repeating it.'}})
+        {'$set':{'status':'uncertain','finished_at':time.time(),'message':'The bot stopped before confirming this action. Check Discord before repeating it.'}})
     for _ in range(5):
         row=await mongo.bot_config.find_one_and_update({'kind':'manage_web_request','status':'pending'},
             {'$set':{'status':'running','started_at':time.time()}},return_document=ReturnDocument.AFTER)

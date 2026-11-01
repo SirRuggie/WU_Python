@@ -55,6 +55,26 @@
       "offsetMinutes": 720
     }
   ],
-  ["Name", null],
-  ["Name | 🇺🇸", null]
+  [
+    "Name",
+    null
+  ],
+  [
+    "Name | 🇺🇸",
+    null
+  ],
+  [
+    "aha tamatar| GMT+5:30 🇮🇳",
+    {
+      "label": "GMT+5:30",
+      "offsetMinutes": 330
+    }
+  ],
+  [
+    "Ameyatma/Ashtavakra | GMT+5:45🇳🇵",
+    {
+      "label": "GMT+5:45",
+      "offsetMinutes": 345
+    }
+  ]
 ]
