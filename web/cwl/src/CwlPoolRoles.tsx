@@ -73,6 +73,7 @@ export default function CwlPoolRoles({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const sequence = useRef(0);
+  const opener = useRef<HTMLElement | null>(null);
   const pending = useRef(false);
   const mounted = useRef(true);
   const dirty = !!data?.pools.some(
@@ -171,7 +172,8 @@ export default function CwlPoolRoles({
     };
   }, [allowed, active, saving, confirmation]);
 
-  async function review(pool: Pool) {
+  async function review(pool: Pool, trigger: HTMLElement) {
+    opener.current = trigger;
     if (pending.current) return;
     pending.current = true;
     setLoading(true);
@@ -274,7 +276,7 @@ export default function CwlPoolRoles({
             />
             <Button
               disabled={loading || saving || (!selected && !row.role_id)}
-              onClick={() => void review(row.pool)}
+              onClick={(event) => void review(row.pool, event.currentTarget)}
             >
               Save {title(row.pool)} role
             </Button>
@@ -295,6 +297,7 @@ export default function CwlPoolRoles({
       })}
       {confirmation && (
         <ConfirmDialog
+          returnFocus={() => opener.current}
           heading={title(confirmation.row.pool) + " CWL role"}
           text={
             confirmation.role
