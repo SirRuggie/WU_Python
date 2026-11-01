@@ -186,10 +186,23 @@ async def apply(bot, mongo, row):
             hikari.NotFoundError,
             hikari.BadRequestError,
         ) as error:
+            reason = str(error.message or "Check permissions and role hierarchy.")
+            if isinstance(error, hikari.BadRequestError) and isinstance(
+                error.errors, dict
+            ):
+                nick = error.errors.get("nick", {})
+                details = nick.get("_errors", []) if isinstance(nick, dict) else []
+                messages = [
+                    str(item["message"])
+                    for item in details
+                    if isinstance(item, dict) and item.get("message")
+                ]
+                if messages:
+                    reason += ". nick: " + "; ".join(messages)[:900]
             raise ValueError(
                 "Discord refused the nickname: "
-                + str(error.message or "Check permissions and role hierarchy.")
-                + " No profile was saved."
+                + reason.rstrip(" .!?")
+                + ". No profile was saved."
             ) from error
         except Exception as error:
             if discord_confirmed:

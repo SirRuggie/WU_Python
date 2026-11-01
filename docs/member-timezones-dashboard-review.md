@@ -19,10 +19,27 @@ uncertain results have no automatic retry. Screenshots were inspected. Browser
 writes were confined to the named isolated fixture's login/save/preview/confirm
 routes. This is simulated UI transport, not live Discord proof.
 
-Not READY: prompt 64 PR 1 and released polish are integrated. Integrate the
-new prompt 66 delta, complete final adversarial review and update final evidence.
-The navigation browser expectation now includes Member time zones; signup-card
-fixture routes finish before page teardown, preventing a route.fetch close race.
-Earlier Chrome startup failed from a long temporary socket path; the passing run
-uses a short /tmp path. These were fixture/harness failures, not passing runs. Release also waits for Ruggie's real Warrior test. Existing profile
-rows and unrelated work are preserved throughout.
+Final integrated source includes PR 1 prompt 66. The matching dashboard rename
+path now preserves real hikari nickname field errors too, with a real-error
+regression proving no profile commit after Discord refusal. Final guarded backend:
+5,564 passed, 30 skipped, 224 subtests. Fifty-five focused cases pass. Frontend
+source is unchanged from the passing 1,262-case integrated run and build; the nine
+layout stages and four real-Mongo cases remain applicable. Seven required mutants
+and the additional real-Mongo consumed-confirmation replay mutant were killed.
+
+Completion review checked existing member_roles authorization in HTTP and fresh
+worker context, guild/actor/target binding, bots and hierarchy, malformed fields,
+partial directory/player data, exact old nickname and revision inside the edit
+lease, unticked members, consumed confirmation retries, one active run, restart
+uncertainty and bounded receipt pruning. Only unattempted children resume; an
+uncertain Discord edit is never replayed automatically. The preview is complete
+rather than silently truncated, and unrelated profiles/receipts remain owned by
+their existing storage classes.
+
+Harness corrections: navigation expects Member time zones; signup-card route
+callbacks finish before page close. Earlier Chrome socket-path, sandbox bind and
+teardown failures were corrected before the passing nine-stage run. UI evidence
+uses fake HTTP transport; real-Mongo cases use an owned local daemon that stopped.
+No test proves live Discord delivery. Production import and Standardize have not
+run. Release is gated on PR 1 LIVE plus Ruggie's real Warrior test and Claude's
+verdict; only authorized staff will press Standardize in production.

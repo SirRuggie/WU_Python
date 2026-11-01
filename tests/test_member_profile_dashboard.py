@@ -212,9 +212,12 @@ def test_roles_are_rechecked_inside_edit_and_split_outcome_is_explicit(monkeypat
         with pytest.raises(ValueError, match="Manage Nicknames"):
             await actions.apply(bot, None, row)
         bot.rest.edit_member.assert_not_awaited()
-        lookup.side_effect = [initial, dict(initial,member=S(nickname="Manual change"))]
-        with pytest.raises(ValueError,match="Nickname changed"):
-            await actions.apply(bot,None,row)
+        lookup.side_effect = [
+            initial,
+            dict(initial, member=S(nickname="Manual change")),
+        ]
+        with pytest.raises(ValueError, match="Nickname changed"):
+            await actions.apply(bot, None, row)
         bot.rest.edit_member.assert_not_awaited()
         lookup.side_effect = [initial, initial]
         with pytest.raises(
@@ -285,5 +288,56 @@ def test_public_account_lookup_never_suggests_malformed_or_wrong_tag(
         body = json.loads(response.text)
         assert body["complete"] is False and body["suggested"] is None
         assert body["accounts"] == [dict(tag="#PYY", name="Known", townHallLevel=18)]
+
+    asyncio.run(run())
+
+
+def test_real_discord_form_error_preserves_dashboard_nickname_reason(monkeypatch):
+    async def run():
+        initial = dict(
+            member=S(nickname="Old"),
+            bot_permissions=hikari.Permissions.MANAGE_NICKNAMES,
+        )
+        monkeypatch.setattr(actions, "target_context", AsyncMock(return_value=initial))
+        committed = []
+
+        async def commit(*args, change, **kwargs):
+            await change()
+            committed.append(True)
+
+        monkeypatch.setattr(
+            actions, "MemberProfiles", lambda db: S(commit_after=commit)
+        )
+        error = hikari.BadRequestError(
+            url="https://discord.com/api",
+            headers={},
+            raw_body="",
+            message="Invalid Form Body",
+            code=50035,
+            errors={
+                "nick": {"_errors": [{"message": "Must be 32 or fewer in length"}]}
+            },
+        )
+        bot = S(rest=S(edit_member=AsyncMock(side_effect=error)))
+        row = dict(
+            guild_id=actions.GUILD_ID,
+            action="save",
+            user_id=ACTOR,
+            revision=0,
+            values=dict(
+                discord_id=UID,
+                fields=FIELDS,
+                rename=True,
+                name="Name",
+                old_nickname="Old",
+            ),
+        )
+        with pytest.raises(
+            ValueError,
+            match="nick: Must be 32 or fewer in length. No profile was saved",
+        ):
+            await actions.apply(bot, None, row)
+        assert not committed
+        bot.rest.edit_member.assert_awaited_once()
 
     asyncio.run(run())
