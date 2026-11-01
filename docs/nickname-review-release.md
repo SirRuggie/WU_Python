@@ -39,8 +39,8 @@ Evidence is retained under `.local/p83-evidence`, `.local/p86-evidence`, `.local
 | Fixture | Members | Elapsed | First edit |
 |---|---:|---:|---:|
 | before | 2 | 50.739 s | 10.335 s |
-| after | 2 | 3.547 s | 0.221 s |
-| after | 25 | 76.758 s | 0.224 s |
+| after | 2 | 3.547 s | 0.279 s |
+| after | 25 | 76.758 s | 0.291 s |
 
 The final 25-member fixture refreshes roles and the bot member three times with the preparation safety margin, with exactly one fresh target read per member. Its edit gaps remain above three seconds. Baseline source is the pre-speed commit aeef3fe; only the after cases were rerun after the final safety fix.
 
