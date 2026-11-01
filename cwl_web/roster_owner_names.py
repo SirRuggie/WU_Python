@@ -49,7 +49,23 @@ async def lifecycle(app):
 
 
 def enrich(request, result):
-    result['owner_nicknames'] = cached_owner_nicknames(
-        request, {row['user_id'] for row in result['accounts']})
-    task = request.app.get('roster_owner_nicknames', {}).get('task')
-    result['metadata_updating'] = bool(result.get('metadata_updating') or task and not task.done())
+    from .roster_profile_zones import cached_profile_zones
+
+    result["owner_timezones"] = cached_profile_zones(
+        request, {row["user_id"] for row in result["accounts"]}
+    )
+    result["owner_timezones_warning"] = request.app.get("roster_profile_zones", {}).get(
+        "warning"
+    )
+    result["owner_nicknames"] = cached_owner_nicknames(
+        request, {row["user_id"] for row in result["accounts"]}
+    )
+    task = request.app.get("roster_owner_nicknames", {}).get("task")
+    profile_task = request.app.get("roster_profile_zones", {}).get("task")
+    result["metadata_updating"] = bool(
+        result.get("metadata_updating")
+        or task
+        and not task.done()
+        or profile_task
+        and not profile_task.done()
+    )

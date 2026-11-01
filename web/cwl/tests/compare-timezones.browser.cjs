@@ -5,6 +5,7 @@ const port = Number(process.argv[2]);
 assert(port >= 8900 && port <= 8999);
 const origin = `http://127.0.0.1:${port}`;
 const output = process.env.WU_TIMEZONE_OUTPUT || "/tmp/wu-timezone-layout";
+const profiles = process.env.WU_PROFILE_EXPECTED === "1";
 fs.mkdirSync(output, { recursive: true });
 (async () => {
   const browser = await chromium.launch({
@@ -83,14 +84,16 @@ fs.mkdirSync(output, { recursive: true });
       );
       const groups = owners.filter((owner, i) => owner !== owners[i - 1]);
       const ids = Object.keys(roster.owner_nicknames).sort();
-      assert.deepEqual(groups, [
-        ids[0],
-        ids[1],
-        ids[2],
-        ids[5],
-        ids[3],
-        ids[4],
-      ]);
+      assert.deepEqual(
+        groups,
+        profiles
+          ? [ids[0], ids[2], ids[1], ids[3], ids[5], ids[4]]
+          : [ids[0], ids[1], ids[2], ids[5], ids[3], ids[4]],
+      );
+      if (profiles) {
+        assert.equal(roster.owner_timezones[ids[2]].label, "GMT-8");
+        assert.equal(roster.owner_timezones[ids[3]].label, "GMT+1");
+      }
       const layout = await column.evaluate((el) => ({
         width: innerWidth,
         scroll: document.documentElement.scrollWidth,
@@ -106,7 +109,11 @@ fs.mkdirSync(output, { recursive: true });
       }));
       assert(layout.scroll <= width);
       assert(layout.rows.every((h) => h <= 20));
-      const knownOwners = new Set([ids[0], ids[1], ids[2], ids[5]]);
+      const knownOwners = new Set(
+        profiles
+          ? [ids[0], ids[1], ids[2], ids[3], ids[5]]
+          : [ids[0], ids[1], ids[2], ids[5]],
+      );
       const expectedLabels = roster.accounts.filter(
         (a) => a.assigned_clan_tag === "#P2Y" && knownOwners.has(a.user_id),
       ).length;

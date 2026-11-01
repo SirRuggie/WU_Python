@@ -132,6 +132,14 @@ it("ties owner nicknames by user ID before account weight", () => {
   ).toEqual(["one", "two"]);
 });
 
+it("prefers a valid saved profile over the nickname, falling back on malformed profiles", () => {
+  expect(
+    ownerTimeZone("Name | PST", { label: "GMT+5:30", offsetMinutes: 330 }),
+  ).toEqual({ label: "GMT+5:30", offsetMinutes: 330 });
+  expect(
+    ownerTimeZone("Name | PST", { label: "bogus", offsetMinutes: 330 }),
+  ).toEqual({ label: "PST", offsetMinutes: -480 });
+});
 it.each([
   "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
   "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
