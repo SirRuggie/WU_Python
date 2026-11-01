@@ -75,6 +75,7 @@
   }
 }
 .members-person {
+  position: relative;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   gap: 8px;
@@ -111,7 +112,6 @@
   margin: 0;
 }
 .members-workspace {
-  height: calc(100dvh - 180px);
   min-height: 420px;
   display: flex;
   flex-direction: column;
@@ -130,8 +130,9 @@
 }
 .members-directory-scroll {
   overflow: auto;
-  flex: 1 1 auto;
-  min-height: 120px;
+  flex: 0 0 auto;
+  height: min(60dvh, 680px);
+  min-height: 320px;
   min-width: 0;
   padding: 4px;
 }
@@ -184,9 +185,6 @@
   .members-workspace.has-panel {
     margin-right: 0;
   }
-  .members-workspace {
-    height: calc(100dvh - 180px);
-  }
 }
 @media (max-height: 500px) {
   .members-workspace {
@@ -225,8 +223,9 @@
 .members-more-filters label {
   margin-block: 8px;
 }
-.members-person-open {
+.members-workspace .members-person-open {
   justify-items: start;
+  justify-content: stretch;
 }
 .members-person-open .roster-discord-identity {
   justify-self: start;
