@@ -5,6 +5,9 @@ import pytest
 from aiohttp import web
 from hikari import Permissions
 from cwl_web.declaration_destinations import issue, destination, channels
+from cwl_web.declaration_destinations import authorized
+from contextlib import asynccontextmanager
+from unittest.mock import patch
 from cwl_web.server_management import GUILD_ID
 
 BOT = "123456789012345678"
@@ -82,5 +85,39 @@ def test_live_directory_excludes_foreign_voice_and_marks_unavailable_channels():
         assert (await destination(request, CHANNEL))["id"] == CHANNEL
         with pytest.raises(ValueError):
             await destination(request, "@everyone")
+
+    asyncio.run(run())
+
+
+def test_job_authorization_rereads_roles_and_fails_closed_on_outage():
+    async def run():
+        actor = "456789012345678901"
+        role = "567890123456789012"
+        policy = {
+            "revision": 1,
+            "grants": [{"kind": "role", "id": role, "permissions": ["cwl_send"]}],
+        }
+        provider = AsyncMock(return_value={"roles": [role]})
+
+        @asynccontextmanager
+        async def mongo(request):
+            yield SimpleNamespace(bot_config=None)
+
+        request = SimpleNamespace(app={})
+        with patch("cwl_web.declaration_destinations.discord", provider), patch(
+            "cwl_web.server_management.mongo", mongo
+        ), patch(
+            "cwl_web.access_settings.repository",
+            return_value=SimpleNamespace(read=AsyncMock(return_value=policy)),
+        ):
+            assert await authorized(request, actor)
+            provider.return_value = {"roles": []}
+            assert not await authorized(request, actor)
+            provider.side_effect = web.HTTPServiceUnavailable(
+                text="Fixture Discord outage"
+            )
+            with pytest.raises(web.HTTPServiceUnavailable):
+                await authorized(request, actor)
+            assert provider.await_count == 3
 
     asyncio.run(run())

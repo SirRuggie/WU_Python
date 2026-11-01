@@ -29,11 +29,11 @@ class DeclarationPingTransport:
             or allowed.get("roles") != []
             or not isinstance(users, list)
             or len(users) > 100
-            or len(set(users)) != len(users)
             or any(
                 not isinstance(uid, str) or not re.fullmatch(r"[1-9][0-9]{14,21}", uid)
                 for uid in users
             )
+            or len(set(users)) != len(users)
             or (test and users)
         ):
             raise ValueError(
@@ -49,6 +49,7 @@ class DeclarationPingTransport:
                 async with session.post(
                     f"https://discord.com/api/v10/channels/{channel_id}/messages",
                     json=body,
+                    allow_redirects=False,
                     headers={"Authorization": "Bot " + self.token},
                 ) as response:
                     if response.status in (400, 401, 403, 404, 429):

@@ -37,7 +37,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
-  .declaration-ping-controls button {
+  .declaration-ping-controls > button {
     width: 100%;
   }
 }

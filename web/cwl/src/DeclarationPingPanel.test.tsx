@@ -70,27 +70,25 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  mock.api
-    .mockReset()
-    .mockImplementation(async (path: string) =>
-      path.endsWith("/preview")
-        ? review
-        : path.endsWith("/send")
-          ? {
-              receipt: {
-                token: review.token,
-                actor_id: "owner",
-                state: "done",
-                created_at: 1,
-                count: 26,
-                chunks: 1,
-                posted: [{ chunk: 0, message_id: "456789012345678901" }],
-                attempting: null,
-                channel: state.channel,
-              },
-            }
-          : state,
-    );
+  mock.api.mockReset().mockImplementation(async (path: string) =>
+    path.endsWith("/preview")
+      ? review
+      : path.endsWith("/send")
+        ? {
+            receipt: {
+              token: review.token,
+              actor_id: "owner",
+              state: "done",
+              created_at: 1,
+              count: 26,
+              chunks: 1,
+              posted: [{ chunk: 0, message_id: "456789012345678901" }],
+              attempting: null,
+              channel: state.channel,
+            },
+          }
+        : state,
+  );
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -185,4 +183,43 @@ it("ignores an abandoned pool response", async () => {
   await flush();
   expect(host.textContent).not.toContain("old abandoned pool");
   expect(button("Ping 65 missing")).toBeDefined();
+});
+
+it("a late settings reload cannot replace a newer response", async () => {
+  await mount();
+  mock.api.mockRejectedValueOnce(new Error("fixture read outage"));
+  await act(async () => button("Ping 26 missing").click());
+  await flush();
+  const pending: ((value: unknown) => void)[] = [];
+  mock.api.mockImplementation(
+    () => new Promise((resolve) => pending.push(resolve)),
+  );
+  await act(async () => {
+    button("Reload latest settings").click();
+    button("Reload latest settings").click();
+  });
+  expect(pending).toHaveLength(2);
+  await act(async () =>
+    pending[1]({
+      ...state,
+      channel: { id: "345678901234567890", name: "newer" },
+      channels: [
+        { id: "345678901234567890", name: "newer", type: 0, can_send: true },
+      ],
+    }),
+  );
+  await flush();
+  await act(async () =>
+    pending[0]({
+      ...state,
+      channel: { id: "234567890123456789", name: "older" },
+      channels: [
+        { id: "234567890123456789", name: "older", type: 0, can_send: true },
+      ],
+    }),
+  );
+  await flush();
+  expect(
+    (host.querySelector("[role=combobox]") as HTMLInputElement).value,
+  ).toBe("#newer");
 });

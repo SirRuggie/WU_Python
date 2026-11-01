@@ -132,3 +132,72 @@ def test_test_mode_consumes_review_without_receipt_or_cooldown():
             await client.close()
 
     asyncio.run(run())
+
+
+def test_pool_isolation_history_bound_and_preview_ownership():
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def run():
+        client = AsyncMongoClient(URI)
+        db = client["wu_declaration_retention_" + uuid4().hex]
+        store = DeclarationPingStore(S(bot_config=db.bot_config), GUILD)
+        try:
+            for pool in ("main", "lazy"):
+                await store.configure(pool, CHANNEL, "fixture", ACTOR, 0, now=1000)
+            first = None
+            for index in range(22):
+                at = 1000 + index * 301
+                preview = await store.preview(
+                    "main", ACTOR, 1, GROUPS, 3, "hash", 1, now=at
+                )
+                if first is None:
+                    first = preview
+                with pytest.raises(PingConflict):
+                    await store.review(
+                        "main", "456789012345678901", 1, preview["token"], now=at
+                    )
+                await store.claim(
+                    "main",
+                    ACTOR,
+                    1,
+                    preview["token"],
+                    "hash",
+                    PLAN,
+                    "runtime",
+                    send_again=index > 0,
+                    now=at,
+                )
+                if index == 0:
+                    other = await store.preview(
+                        "lazy", ACTOR, 1, GROUPS, 3, "hash", 1, now=at
+                    )
+                    assert (
+                        await store.claim(
+                            "lazy",
+                            ACTOR,
+                            1,
+                            other["token"],
+                            "hash",
+                            PLAN,
+                            "runtime",
+                            now=at,
+                        )
+                    )[0]
+                    await store.finish("lazy", other["token"], "failed", now=at)
+                await store.begin_chunk("main", preview["token"], 0)
+                await store.posted("main", preview["token"], 0, "345678901234567890")
+                await store.finish("main", preview["token"], "done", now=at)
+            lane = await store.read("main")
+            assert len(lane["history"]) == 20
+            assert all(
+                "plan" not in row and "runtime" not in row for row in lane["history"]
+            )
+            assert not await store.receipt("main", first["token"])
+            with pytest.raises(PingConflict):
+                await store.review("main", ACTOR, 1, first["token"], now=9000)
+            assert (await store.read("lazy"))["last_attempt_at"] == 0
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())

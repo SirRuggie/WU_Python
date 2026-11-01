@@ -28,7 +28,9 @@ export default function DeclarationPingPanel({
   const [closing, setClosing] = useState(false);
   const [receipt, setReceipt] = useState<PingReceipt>();
   const [clock, setClock] = useState(Date.now() / 1000);
+  const receiptStatus = useRef<HTMLParagraphElement>(null);
   const generation = useRef(0),
+    readSequence = useRef(0),
     locked = useRef(false),
     dirty = useRef(false);
   const active =
@@ -36,6 +38,7 @@ export default function DeclarationPingPanel({
   const waiting = Math.max(0, Math.ceil((state?.cooldown_until || 0) - clock));
   async function load(signal?: AbortSignal, includeChannels = true) {
     const current = generation.current;
+    const sequence = ++readSequence.current;
     try {
       const value = await api<PingState>(
         base + (includeChannels ? "" : "?channels=0"),
@@ -43,7 +46,13 @@ export default function DeclarationPingPanel({
         undefined,
         { signal },
       );
-      if (current !== generation.current || signal?.aborted) return;
+      if (
+        current !== generation.current ||
+        sequence !== readSequence.current ||
+        signal?.aborted
+      )
+        return;
+      setError("");
       setState((old) =>
         includeChannels || !value.can_send
           ? value
@@ -56,7 +65,11 @@ export default function DeclarationPingPanel({
         onDirty(false);
       }
     } catch (e) {
-      if (current === generation.current && !signal?.aborted) {
+      if (
+        current === generation.current &&
+        sequence === readSequence.current &&
+        !signal?.aborted
+      ) {
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
           setState(undefined);
           setReview(undefined);
@@ -95,7 +108,17 @@ export default function DeclarationPingPanel({
         }
         if (!stopped) await load(undefined, false);
       } catch (e) {
-        if (!stopped) setError((e as Error).message);
+        if (!stopped) {
+          if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+            setState(undefined);
+            setReview(undefined);
+            setReceipt(undefined);
+            setClosing(false);
+            dirty.current = false;
+            onDirty(false);
+          }
+          setError((e as Error).message);
+        }
       } finally {
         pending = false;
       }
@@ -181,6 +204,9 @@ export default function DeclarationPingPanel({
       setReceipt(result.receipt);
       await load();
     });
+    requestAnimationFrame(() =>
+      receiptStatus.current?.focus({ preventScroll: true }),
+    );
   }
   const last = [receipt, state?.active, state?.history[0]]
     .filter((r): r is PingReceipt => !!r)
@@ -307,7 +333,7 @@ export default function DeclarationPingPanel({
         />
       )}
       {last && (
-        <p role="status">
+        <p ref={receiptStatus} tabIndex={-1} role="status">
           {last.test
             ? "No-ping test " + last.state
             : last.state === "done"
