@@ -238,81 +238,119 @@ def role_allowed(c, role):
 
 async def change_roles(bot, mongo, c, *, add=(), remove=()):
     result = {"added": [], "removed": [], "unchanged": [], "failed": []}
-    for operation, ids in (
-        ("added", set(map(int, add))),
-        ("removed", set(map(int, remove))),
-    ):
-        for rid in sorted(ids):
-            c = await context(bot, mongo, c["guild"].id, c["actor"].id, c["member"].id)
-            manageable_target(c)
-            role = next((r for r in c["roles"] if int(r.id) == rid), None)
-            name = role.name if role else f"Missing role {rid}"
-            if not role_allowed(c, role):
-                result["failed"].append(f"{name} (missing or not permitted)")
-                continue
-            current = c["member"]
-            if (rid in current.role_ids) == (operation == "added"):
-                result["unchanged"].append(name)
-                continue
-            try:
-                fn = (
-                    bot.rest.add_role_to_member
-                    if operation == "added"
-                    else bot.rest.remove_role_from_member
-                )
-                await read(
-                    "rest.role_write",
-                    fn(
+    try:
+        c = await context(bot, mongo, c["guild"].id, c["actor"].id, c["member"].id)
+        manageable_target(c)
+        first = True
+        for operation, ids in (
+            ("added", set(map(int, add))),
+            ("removed", set(map(int, remove))),
+        ):
+            for rid in sorted(ids):
+                if not first:
+                    c = await context(
+                        bot, mongo, c["guild"].id, c["actor"].id, c["member"].id
+                    )
+                first = False
+                manageable_target(c)
+                role = next((r for r in c["roles"] if int(r.id) == rid), None)
+                name = role.name if role else f"Missing role {rid}"
+                if not role_allowed(c, role):
+                    result["failed"].append(f"{name} (missing or not permitted)")
+                    continue
+                current = c["member"]
+                if (rid in current.role_ids) == (operation == "added"):
+                    result["unchanged"].append(name)
+                    continue
+                try:
+                    fn = (
+                        bot.rest.add_role_to_member
+                        if operation == "added"
+                        else bot.rest.remove_role_from_member
+                    )
+                    await read(
+                        "rest.role_write",
+                        fn(
+                            c["guild"].id,
+                            c["member"].id,
+                            rid,
+                            reason=f'Warrior Setup by {c["actor"].id}',
+                        ),
+                        guild_id=int(c["guild"].id),
+                        target_id=int(c["member"].id),
+                        role_id=rid,
+                    )
+                    result[operation].append(name)
+                except hikari.HTTPError as error:
+                    log.warning(
+                        "warrior role mutation failed guild=%s member=%s role=%s error=%s",
                         c["guild"].id,
                         c["member"].id,
                         rid,
-                        reason=f'Warrior Setup by {c["actor"].id}',
-                    ),
-                    guild_id=int(c["guild"].id),
-                    target_id=int(c["member"].id),
-                    role_id=rid,
-                )
-                result[operation].append(name)
-            except hikari.HTTPError as error:
-                log.warning(
-                    "warrior role mutation failed guild=%s member=%s role=%s error=%s",
-                    c["guild"].id,
-                    c["member"].id,
-                    rid,
-                    type(error).__name__,
-                )
-                result["failed"].append(f"{name} ({type(error).__name__})")
-    await mongo.warrior_audit.update_one(
-        {"_id": f'warrior_audit:{c["guild"].id}:{c["member"].id}'},
-        {
-            "$setOnInsert": {
-                "schema_version": SCHEMA_VERSION,
-                "guild_id": int(c["guild"].id),
-                "user_id": int(c["member"].id),
-            },
-            "$push": {
-                "events": {
-                    "$each": [
-                        {"at": now(), "actor_id": int(c["actor"].id), "result": result}
-                    ],
-                    "$slice": -100,
-                }
-            },
-        },
-        upsert=True,
-    )
+                        type(error).__name__,
+                    )
+                    result["failed"].append(f"{name} ({type(error).__name__})")
+    except asyncio.CancelledError:
+        result["failed"].append(
+            "Role batch interrupted. Check current member roles before repeating it."
+        )
+        raise
+    except Exception as error:
+        had_results = any(result.values())
+        result["failed"].append(
+            f"Stopped before further changes ({type(error).__name__}): {str(error)[:250]}"
+        )
+        if not had_results:
+            raise
+    finally:
+        try:
+            await mongo.warrior_audit.update_one(
+                {"_id": f'warrior_audit:{c["guild"].id}:{c["member"].id}'},
+                {
+                    "$setOnInsert": {
+                        "schema_version": SCHEMA_VERSION,
+                        "guild_id": int(c["guild"].id),
+                        "user_id": int(c["member"].id),
+                    },
+                    "$push": {
+                        "events": {
+                            "$each": [
+                                {
+                                    "at": now(),
+                                    "actor_id": int(c["actor"].id),
+                                    "result": result,
+                                }
+                            ],
+                            "$slice": -100,
+                        }
+                    },
+                },
+                upsert=True,
+            )
+        except Exception as error:
+            log.error(
+                "warrior role audit unavailable guild=%s actor=%s target=%s applied=%s error=%s",
+                c["guild"].id,
+                c["actor"].id,
+                c["member"].id,
+                len(result["added"]) + len(result["removed"]),
+                type(error).__name__,
+            )
+            result["failed"].append(
+                "Role audit save not confirmed. Confirmed role changes are listed separately; check the member before another attempt."
+            )
     return result
 
 
 def result_text(result):
-    return (
-        "\n".join(
-            f"**{key.title()}:** " + ", ".join(values)
-            for key, values in result.items()
-            if values
-        )[:2800]
-        or "No changes needed."
+    # Surface an interruption even when a large successful batch fills the panel.
+    keys = ["failed", *(key for key in result if key != "failed")]
+    text = "\n".join(
+        f"**{key.title()}:** " + ", ".join(result[key])
+        for key in keys
+        if result.get(key)
     )
+    return (text[:2799] + "…" if len(text) > 2800 else text) or "No changes needed."
 
 
 async def open_ticket(mongo, guild_id, user_id, *, ticket_id=None):

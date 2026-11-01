@@ -432,8 +432,10 @@ def modal_value(ctx, name):
 
 @register_action("warrior", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
-@nickname_setup.serialized
 @click
+@nickname_setup.serialized(
+    modal=lambda ctx, action_id: action_id.partition(":")[2] == "setting"
+)
 async def action(
     ctx,
     action_id,
@@ -446,7 +448,6 @@ async def action(
     # Modals acknowledge immediately; all authorization and bounds are checked
     # again on submission before touching a member or configuration.
     if verb == "nick":
-        await ctx.defer(edit=True)
         try:
             data, c = await core.session(ctx, bot, mongo, sid)
             await nickname_setup.begin(ctx, data, c, mongo, coc_client)
@@ -465,12 +466,9 @@ async def action(
             ],
         )
         return
-    await ctx.defer(edit=True)
     try:
         data, c = await core.session(ctx, bot, mongo, sid)
         await nickname_setup.abandon(mongo, data)
-        if data.get("nickname_setup"):
-            await update_state(mongo, sid, {"$unset": {"nickname_setup": ""}})
         cfg = await core.settings(mongo, c["guild"].id)
         if verb == "home":
             output = await home(data, c, mongo)
@@ -577,6 +575,10 @@ async def action(
             output = confirm(data, operation + ":" + token, descriptions[operation])
         elif verb.startswith("apply:"):
             _, operation, token = verb.split(":")
+            if operation == "restart":
+                c = await core.context(
+                    bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+                )
             consumed = await mongo.component_state.find_one_and_update(
                 {
                     "_id": sid,
@@ -693,6 +695,9 @@ async def action(
                 c["member"].id,
                 ticket_id=existing_run["ticket_id"],
             )
+            c = await core.context(
+                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+            )
             await mongo.warrior_walkthroughs.update_one(
                 {
                     "_id": walkthrough.run_id(c["guild"].id, c["member"].id),
@@ -743,8 +748,8 @@ async def action(
 
 @register_action("warrior_form", is_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
-@nickname_setup.serialized
 @click
+@nickname_setup.serialized(form=True)
 async def form(
     ctx,
     action_id,
@@ -752,9 +757,6 @@ async def form(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs,
 ):
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
     sid, _, verb = action_id.partition(":")
     try:
         data, c = await core.session(ctx, bot, mongo, sid)

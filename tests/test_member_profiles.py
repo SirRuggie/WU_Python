@@ -90,7 +90,7 @@ def test_highest_tie_no_links_and_partial_results_never_silently_pick():
 
 
 def test_zone_country_limits_format_and_length():
-    assert len(ZONE_CHOICES) == 19 and len(COUNTRY_CHOICES) + 1 <= 25
+    assert len(ZONE_CHOICES) <= 25 and len(COUNTRY_CHOICES[:24]) + 1 <= 25
     assert nickname("Sir Ruggie", "gmt-5", "us") == "Sir Ruggie | GMT-5 🇺🇸"
     assert nickname("Name", "gmt+5:30", "IN") == "Name | GMT+5:30 🇮🇳"
     assert (
@@ -346,3 +346,25 @@ def test_consume_preview_rejects_a_replaced_nonce(monkeypatch):
         assert record["nickname_setup.step"] == "applying"
 
     asyncio.run(run())
+
+
+def test_country_picker_mapping_and_nickname_alias_separation():
+    from utils.member_timezones import zones_for_country, SINGLE_ZONE
+
+    ids = {row[0] for row in ZONE_CHOICES}
+    for code, _ in COUNTRY_CHOICES:
+        choices = zones_for_country(code)
+        assert choices and len(choices) <= 25
+        assert all(
+            key in ids and len(f"{key.upper()} · {label}") <= 100
+            for key, _, label in choices
+        )
+        if code in SINGLE_ZONE:
+            assert [r[0] for r in choices] == [SINGLE_ZONE[code]]
+    assert [r[0] for r in zones_for_country("AU")] == ["gmt+10", "gmt+9:30", "gmt+8"]
+    assert len(zones_for_country("US")) == 6
+    assert len(zones_for_country("US", show_all=True)) == len(ZONE_CHOICES)
+    assert "EST/EDT" in next(r[2] for r in zones_for_country("US") if r[0] == "gmt-5")
+    for key, _, _ in ZONE_CHOICES:
+        assert nickname("Example", key, "AU") == f"Example | {key.upper()} 🇦🇺"
+    assert nickname("Example", "gmt+9:30", "AU") == "Example | GMT+9:30 🇦🇺"

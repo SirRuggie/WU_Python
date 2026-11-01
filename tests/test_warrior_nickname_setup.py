@@ -45,7 +45,7 @@ def test_tied_accounts_paginate_without_silently_choosing_and_menus_fit():
     state["step"] = "country"
     assert len(options(ui.render(data, state))[0]) == 25
     state["step"] = "zone"
-    assert len(options(ui.render(data, state))[0]) == 19
+    assert len(options(ui.render(data, state))[0]) == 25
 
 
 def test_preview_bounds_offer_shortening_without_a_save_button():
@@ -452,3 +452,21 @@ def test_each_persist_guard_preserves_newer_or_consumed_state(
             assert record == original
 
     asyncio.run(run())
+
+
+def test_country_zone_menus_and_all_zones():
+    for country, wanted in [
+        ("AU", ["gmt+10", "gmt+9:30", "gmt+8"]),
+        ("US", ["gmt-5", "gmt-6", "gmt-7", "gmt-8", "gmt-9", "gmt-10"]),
+    ]:
+        state = dict(nonce="n", step="zone", country=country)
+        result = options(ui.render({"_id": "fixture"}, state))[0]
+        assert [row["value"] for row in result] == wanted
+        assert all(len(row["label"]) <= 100 for row in result)
+        assert "Show all zones" in repr(ui.render({"_id": "fixture"}, state))
+        state["all_zones"] = True
+        assert len(options(ui.render({"_id": "fixture"}, state))[0]) == 25
+    country_page = options(
+        ui.render({"_id": "fixture"}, dict(nonce="n", step="country", country_page=1))
+    )[0]
+    assert [row["value"] for row in country_page] == ["RU", "MX", "OTHER"]

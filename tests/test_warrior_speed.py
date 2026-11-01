@@ -89,9 +89,15 @@ def test_each_role_write_rechecks_authorization():
             c["actor"].role_ids = []
 
         b.rest.add_role_to_member.side_effect = added
-        with pytest.raises(core.SetupError):
-            await core.change_roles(b, m, c, add=[60, 61])
+        result = await core.change_roles(b, m, c, add=[60, 61])
+        assert result["added"] == ["Role 60"]
+        assert result["failed"] and "Stopped" in result["failed"][0]
         assert b.rest.add_role_to_member.await_count == 1
+        m.warrior_audit.update_one.assert_awaited_once()
+        recorded = m.warrior_audit.update_one.call_args.args[1]["$push"]["events"][
+            "$each"
+        ][0]["result"]
+        assert recorded == result
 
     asyncio.run(check())
 
@@ -195,3 +201,307 @@ def test_abandon_removes_only_current_nickname_state(monkeypatch):
     asyncio.run(nick.abandon(object(), {"_id": "1", "nickname_setup": {"nonce": "n"}}))
     assert update.call_args.args[1] == {"_id": "1", "nickname_setup.nonce": "n"}
     assert update.call_args.args[2] == {"$unset": {"nickname_setup": ""}}
+
+
+def test_nickname_commit_rejects_demoted_actor_despite_stale_display_cache(monkeypatch):
+    async def check():
+        c, m, b, by_id = fixture()
+        b.rest.edit_member = AsyncMock()
+        lost = copy.copy(c["actor"])
+        lost.role_ids = []
+        b.rest.fetch_member.side_effect = lambda g, u: lost if u == 20 else by_id[u]
+
+        async def commit(*args, change, **kwargs):
+            await change()
+
+        store = S(
+            consume_preview=AsyncMock(return_value=True),
+            preview_current=AsyncMock(return_value=True),
+            finish_preview=AsyncMock(return_value=True),
+            commit_after=commit,
+        )
+        monkeypatch.setattr(nick, "GUILD_ID", 10)
+        monkeypatch.setattr(nick, "MemberProfiles", lambda m: store)
+        ctx = S(
+            user=S(id=20),
+            respond=AsyncMock(),
+            interaction=S(edit_initial_response=AsyncMock()),
+        )
+        state = dict(
+            nonce="n",
+            step="preview",
+            name="Fixture",
+            zone_id="gmt-5",
+            country="US",
+            profile_revision=0,
+        )
+        with pytest.raises(core.SetupError, match="Recruitment Team"):
+            await nick.save(ctx, {"_id": "s"}, c, m, state, b)
+        b.rest.edit_member.assert_not_awaited()
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize("verb", ["apply:restart:token", "retry"])
+def test_demotion_blocks_restart_and_retry_writes(monkeypatch, verb):
+    async def check():
+        from extensions.commands import warrior
+
+        c, m, b, by_id = fixture()
+        lost = copy.copy(c["actor"])
+        lost.role_ids = []
+        b.rest.fetch_member.side_effect = lambda g, u: lost if u == 20 else by_id[u]
+        m.warrior_walkthroughs.find_one = AsyncMock(
+            return_value={"ticket_id": "ticket", "state": "paused", "token": "old"}
+        )
+        m.warrior_walkthroughs.delete_one = AsyncMock()
+        m.warrior_history = S(replace_one=AsyncMock())
+        monkeypatch.setattr(core, "session", AsyncMock(return_value=({"_id": "s"}, c)))
+        monkeypatch.setattr(
+            core, "open_ticket", AsyncMock(return_value={"_id": "ticket"})
+        )
+        ctx = S(
+            guild_id=10,
+            user=S(id=20),
+            defer=AsyncMock(),
+            interaction=S(values=[], edit_initial_response=AsyncMock()),
+        )
+        await warrior.action(ctx, "s:" + verb, mongo=m, bot=b, coc_client=None)
+        m.warrior_walkthroughs.delete_one.assert_not_awaited()
+        m.warrior_walkthroughs.update_one.assert_not_awaited()
+        m.warrior_history.replace_one.assert_not_awaited()
+        assert b.rest.fetch_member.await_count == 3
+
+    asyncio.run(check())
+
+
+def test_prepare_does_not_grant_thread_access_or_queue_for_demoted_actor(monkeypatch):
+    async def check():
+        from extensions.warrior import walkthrough
+
+        c, m, b, by_id = fixture()
+        lost = copy.copy(c["actor"])
+        lost.role_ids = []
+        b.rest.fetch_member.side_effect = lambda g, u: lost if u == 20 else by_id[u]
+        m.warrior_walkthroughs.insert_one = AsyncMock()
+        access = AsyncMock()
+        monkeypatch.setattr(
+            walkthrough.thread_service, "ensure_candidate_thread_access", access
+        )
+        monkeypatch.setattr(
+            core,
+            "open_ticket",
+            AsyncMock(return_value={"_id": "ticket", "location": {"id": 123}}),
+        )
+        with pytest.raises(core.SetupError, match="Recruitment Team"):
+            await walkthrough.prepare(b, m, c, {}, {})
+        access.assert_not_awaited()
+        m.warrior_walkthroughs.insert_one.assert_not_awaited()
+
+    asyncio.run(check())
+
+
+def test_settings_submission_does_not_trust_cached_administrator(monkeypatch):
+    async def check():
+        from extensions.commands import warrior
+
+        c, m, b, by_id = fixture()
+        c["actor"].role_ids.append(63)
+        c["actor_permissions"] = __import__("hikari").Permissions.ADMINISTRATOR
+        fresh = copy.copy(c["actor"])
+        fresh.role_ids = [40]
+        b.rest.fetch_member.side_effect = lambda g, u: fresh if u == 20 else by_id[u]
+        m.warrior_settings.update_one = AsyncMock()
+        monkeypatch.setattr(core, "session", AsyncMock(return_value=({"_id": "s"}, c)))
+        monkeypatch.setattr(core, "clans", AsyncMock(return_value=[]))
+        monkeypatch.setattr(warrior, "modal_value", lambda *a: "60")
+        ctx = S(
+            guild_id=10,
+            user=S(id=20),
+            interaction=S(
+                create_initial_response=AsyncMock(), edit_initial_response=AsyncMock()
+            ),
+        )
+        await warrior.form(ctx, "s:setting:roles:family", mongo=m, bot=b)
+        m.warrior_settings.update_one.assert_not_awaited()
+        assert "Administrator" in repr(ctx.interaction.edit_initial_response.call_args)
+
+    asyncio.run(check())
+
+
+def test_second_click_acknowledges_before_waiting_for_the_panel_lock():
+    async def check():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        running = 0
+        maximum = 0
+
+        @nick.serialized()
+        async def handler(ctx, action_id):
+            nonlocal running, maximum
+            running += 1
+            maximum = max(maximum, running)
+            entered.set()
+            await release.wait()
+            running -= 1
+
+        first = S(defer=AsyncMock())
+        second = S(defer=AsyncMock())
+        one = asyncio.create_task(handler(first, "sid:one"))
+        await entered.wait()
+        two = asyncio.create_task(handler(second, "sid:two"))
+        await asyncio.sleep(0)
+        second.defer.assert_awaited_once_with(edit=True)
+        release.set()
+        await asyncio.gather(one, two)
+        assert maximum == 1
+
+    asyncio.run(check())
+
+
+def test_background_message_update_is_serialized_with_a_newer_step(monkeypatch):
+    async def check():
+        from extensions.commands import warrior
+
+        shown = []
+        paused = asyncio.Event()
+        release = asyncio.Event()
+        db = {"nonce": "n", "step": "name", "accounts": []}
+
+        async def show(ctx, rendered):
+            if rendered == "name":
+                paused.set()
+                await release.wait()
+            shown.append(rendered)
+
+        monkeypatch.setattr(warrior, "show", show)
+        monkeypatch.setattr(nick, "render", lambda d, s: s["step"])
+        monkeypatch.setattr(
+            nick,
+            "get_state",
+            AsyncMock(side_effect=lambda *a: {"nickname_setup": dict(db)}),
+        )
+        monkeypatch.setattr(
+            nick, "update_state", AsyncMock(return_value=S(matched_count=1))
+        )
+        monkeypatch.setattr(
+            nick,
+            "name_choices",
+            AsyncMock(
+                return_value={"accounts": [], "suggested": None, "unavailable": False}
+            ),
+        )
+        ctx = S(defer=AsyncMock())
+
+        @nick.serialized()
+        async def next_step(ctx, action_id):
+            db.update(nonce="new", step="preview")
+            await show(ctx, "preview")
+
+        loader = asyncio.create_task(
+            nick.load_names(ctx, {"_id": "sid"}, object(), None, dict(db), 30)
+        )
+        await paused.wait()
+        newer = asyncio.create_task(next_step(ctx, "sid:new"))
+        await asyncio.sleep(0)
+        before = db["step"]
+        release.set()
+        await asyncio.gather(loader, newer)
+        assert before == "name" and shown == ["name", "preview"]
+
+    asyncio.run(check())
+
+
+def test_shutdown_cancels_and_awaits_pending_name_lookup():
+    async def check():
+        began = asyncio.Event()
+
+        async def pending():
+            began.set()
+            await asyncio.Event().wait()
+
+        task = asyncio.create_task(pending())
+        nick._tasks.add(task)
+        task.add_done_callback(nick._tasks.discard)
+        try:
+            await began.wait()
+            await nick.stop()
+            assert task.done() and task.cancelled()
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(check())
+
+
+def test_empty_role_batch_still_checks_member_hierarchy(monkeypatch):
+    async def check():
+        c, m, b, _ = fixture()
+        c["member"].id = 99
+        monkeypatch.setattr(core, "context", AsyncMock(return_value=c))
+        with pytest.raises(core.SetupError, match="server owner"):
+            await core.change_roles(b, m, c)
+        m.warrior_audit.update_one.assert_awaited_once()
+
+    asyncio.run(check())
+
+
+def test_confirmed_role_changes_are_reported_when_audit_storage_is_unavailable():
+    async def check():
+        c, m, b, _ = fixture()
+        m.warrior_audit.update_one.side_effect = RuntimeError(
+            "fixture storage unavailable"
+        )
+        result = await core.change_roles(b, m, c, add=[60])
+        assert result["added"] == ["Role 60"]
+        assert "audit save not confirmed" in result["failed"][0]
+
+    asyncio.run(check())
+
+
+def test_cancelled_role_batch_attempts_audit_with_confirmed_partial_results():
+    async def check():
+        import hikari
+
+        c, m, b, _ = fixture()
+        c["roles"].append(
+            S(
+                id=65,
+                position=5,
+                permissions=hikari.Permissions.NONE,
+                is_managed=False,
+                name="Role 65",
+            )
+        )
+        second = asyncio.Event()
+
+        async def added(g, u, r, **kwargs):
+            if r == 65:
+                second.set()
+                await asyncio.Event().wait()
+
+        b.rest.add_role_to_member.side_effect = added
+        task = asyncio.create_task(core.change_roles(b, m, c, add=[60, 65]))
+        await second.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        saved = m.warrior_audit.update_one.call_args.args[1]["$push"]["events"][
+            "$each"
+        ][0]["result"]
+        assert saved["added"] == ["Role 60"] and "interrupted" in saved["failed"][0]
+
+    asyncio.run(check())
+
+
+def test_large_partial_batch_never_truncates_its_interruption_notice():
+    value = core.result_text(
+        {
+            "added": ["Role " + str(i) + "x" * 90 for i in range(100)],
+            "removed": [],
+            "unchanged": [],
+            "failed": ["Stopped after authorization changed."],
+        }
+    )
+    assert value.startswith("**Failed:** Stopped after authorization changed.")
+    assert "**Added:**" in value and len(value) <= 2800 and value.endswith("…")

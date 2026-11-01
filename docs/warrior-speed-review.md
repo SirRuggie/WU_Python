@@ -14,6 +14,10 @@ still obtains fresh context inside the profile lease, after consuming the
 one-shot target-bound preview. Display cache cannot authorize either write.
 Role changes refresh only the target for the following display. Administrator
 setting submission also refreshes context rather than trusting the display cache.
+Restart, paused-run retry and public walkthrough preparation likewise refresh
+write authorization before changing progress or granting thread access. Even an
+empty role batch checks the current actor and target. Display cache never
+licenses those writes.
 
 Nickname opening renders Checking linked accounts… and Type a name before the
 linked-account lookup starts. Background completion edits the same private
@@ -21,7 +25,16 @@ response; lookup failure leaves manual entry available. Nonce/step CAS and a
 per-session update lock prevent a late result from replacing a newer step or
 Return screen. Opening a typed-name modal marks manual entry without changing its
 nonce: the lookup may populate choices but cannot auto-advance or invalidate the
-form. Background tasks are cancelled and awaited on bot shutdown.
+form. Non-modal interactions acknowledge before waiting for that lock; modal
+openers respond immediately without waiting. The background CAS preserves a
+concurrent manual-name choice. Background tasks are cancelled and awaited on
+bot shutdown.
+
+Role batches retain and audit confirmed partial results when authorization is
+lost after an earlier successful operation. Cancellation records an interrupted
+outcome before propagating. Audit-storage failures log an explicit warning and
+return confirmed Discord results without retrying the writes. Failure text is
+rendered first so a large result list cannot truncate the interruption warning.
 
 ## Measured fixtures
 
@@ -71,9 +84,16 @@ and public asset verification, rollback to the previous immutable release and
 Claude's post-release smoke. Ruggie's required real nickname test remains a
 separate human gate for PR119; record the revision that test actually covers.
 
-Final checks: 5542 guarded backend passed, 29 skipped, 221 subtests; 1248 frontend
-in 230 files; tsc/build; 72 focused Warrior cases; three actual isolated Mongo
-cases; both behavioral mutants killed. The first full backend run had one source
-scan failure because the owned mutant export was nested under .local; moving it
-outside the checkout and rerunning the complete frozen-source suite passed.
-All Mongo daemons owned by these checks were stopped. No migration or live rename.
+Prompt 70 validation: 84 focused Warrior cases and three actual isolated Mongo
+cases passed. Six behavioral mutants were killed: cached final rename guard,
+missing between-role authorization, missing interaction lock, missing background
+load lock, cached settings authorization and shutdown cancellation omitted.
+The full guarded backend result is recorded in the handoff once complete.
+The unchanged frontend checks from prompt 68 remain 1248 tests, tsc/build.
+All owned Mongo daemons stopped. No migration or live rename was performed.
+
+Prompt73 is included before READY so the zone picker shares the same bot restart.
+Its country maps and regional alias labels are shared data; country options page
+at24 plusOther, and full zone choices remain within25. Display abbreviations
+never enter a nickname. Dashboard editor integration is carried on PR119 before
+that feature's release. Full combined validation is recorded in the handoff.

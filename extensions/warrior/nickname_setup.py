@@ -21,6 +21,7 @@ from utils.member_timezones import (
     COUNTRY_CHOICES,
     ZONE_CHOICES,
     SINGLE_ZONE,
+    zones_for_country,
     flag,
     zone,
     nickname,
@@ -44,13 +45,35 @@ def panel_lock(sid):
     return lock
 
 
-def serialized(fn):
-    @wraps(fn)
-    async def guarded(ctx, action_id, *args, **kwargs):
-        async with panel_lock(action_id.split(":", 1)[0]):
-            return await fn(ctx, action_id, *args, **kwargs)
+def nickname_modal(ctx, action_id):
+    verb = action_id.split(":", 2)[-1]
+    selected = (getattr(ctx.interaction, "values", None) or [""])[0]
+    return (
+        verb == "type"
+        or (verb == "pick_name" and selected == "type")
+        or (verb == "pick_country" and selected == "OTHER")
+    )
 
-    return guarded
+
+def serialized(*, form=False, modal=None):
+    def decorate(fn):
+        @wraps(fn)
+        async def guarded(ctx, action_id, *args, **kwargs):
+            # A modal itself is the acknowledgement. Do not wait behind a slow edit.
+            if modal and modal(ctx, action_id):
+                return await fn(ctx, action_id, *args, **kwargs)
+            if form:
+                await ctx.interaction.create_initial_response(
+                    hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+                )
+            else:
+                await ctx.defer(edit=True)
+            async with panel_lock(action_id.split(":", 1)[0]):
+                return await fn(ctx, action_id, *args, **kwargs)
+
+        return guarded
+
+    return decorate
 
 
 async def stop():
@@ -112,10 +135,33 @@ async def load_names(ctx, data, mongo, coc_client, state, user_id):
                     "_id": data["_id"],
                     "nickname_setup.nonce": state["nonce"],
                     "nickname_setup.step": "name",
+                    "nickname_setup.manual_name": saved.get("manual_name"),
                 },
                 {"$set": {"nickname_setup": updated}},
             )
-            if result.matched_count:
+            if not result.matched_count:
+                # A modal may open without waiting for this lock. Heal metadata only;
+                # never auto-advance or overwrite the manually controlled name.
+                result = await update_state(
+                    mongo,
+                    {
+                        "_id": data["_id"],
+                        "nickname_setup.nonce": state["nonce"],
+                        "nickname_setup.step": "name",
+                        "nickname_setup.manual_name": True,
+                    },
+                    {
+                        "$set": {
+                            "nickname_setup.accounts": choices["accounts"],
+                            "nickname_setup.unavailable": choices["unavailable"],
+                            "nickname_setup.loading": False,
+                        }
+                    },
+                )
+                if result.matched_count:
+                    current = await get_state(mongo, data["_id"])
+                    updated = (current or {}).get("nickname_setup") or {}
+            if result.matched_count and updated.get("nonce") == state["nonce"]:
                 await show(ctx, render(data, updated))
     except Exception as error:
         log.warning(
@@ -203,19 +249,32 @@ def render(data, state, *, page=0):
             )
     elif step == "country":
         row, select = menu(data, state, "pick_country", "Choose country / region")
-        for code, label in COUNTRY_CHOICES:
+        page = state.get("country_page", 0)
+        for code, label in COUNTRY_CHOICES[page * 24 : (page + 1) * 24]:
             select.add_option(f"{flag(code)} {label}", code)
         select.add_option("Other country code", "OTHER")
         items = [row]
+        if len(COUNTRY_CHOICES) > 24:
+            items.append(
+                control(
+                    data,
+                    state,
+                    "country_page",
+                    "More countries" if not page else "Previous countries",
+                )
+            )
     elif step == "zone":
         row, select = menu(data, state, "pick_zone", "Choose standard time zone")
-        for key, offset, label in ZONE_CHOICES:
+        for key, offset, label in zones_for_country(
+            state.get("country"), show_all=state.get("all_zones", False)
+        ):
             select.add_option(f"{key.upper()} · {label}"[:100], key)
         items = [
             Text(
                 content="Choose their standard time zone. GMT labels can be an hour off during daylight saving."
             ),
             row,
+            control(data, state, "all_zones", "Show all zones"),
         ]
     elif step == "preview":
         try:
@@ -439,8 +498,8 @@ async def save(ctx, data, c, mongo, state, bot):
 
 @register_action("warrior_nick", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
-@serialized
 @click
+@serialized(modal=nickname_modal)
 async def action(
     ctx,
     action_id,
@@ -504,7 +563,6 @@ async def action(
             ],
         )
         return
-    await ctx.defer(edit=True)
     try:
         from extensions.commands.warrior import show
 
@@ -527,10 +585,16 @@ async def action(
             state.update(
                 name=account["name"], name_source_tag=account["tag"], step="country"
             )
+        elif verb == "country_page" and state["step"] == "country":
+            state["country_page"] = 1 - state.get("country_page", 0)
+        elif verb == "all_zones" and state["step"] == "zone":
+            state["all_zones"] = True
         elif verb == "pick_country" and state["step"] == "country":
             if selected not in dict(COUNTRY_CHOICES):
                 raise core.SetupError("Choose a listed country.")
-            state.update(country=selected, zone_id=SINGLE_ZONE.get(selected))
+            state.update(
+                country=selected, zone_id=SINGLE_ZONE.get(selected), all_zones=False
+            )
             state["step"] = "preview" if state["zone_id"] else "zone"
         elif verb == "pick_zone" and state["step"] == "zone":
             zone(selected)
@@ -563,8 +627,8 @@ async def failure(ctx, sid, error):
     "warrior_nick_form", is_modal=True, no_return=True, preload_state=False
 )
 @lightbulb.di.with_di
-@serialized
 @click
+@serialized(form=True)
 async def form(
     ctx,
     action_id,
@@ -572,9 +636,6 @@ async def form(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs,
 ):
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
     sid, nonce, kind = action_id.split(":", 2)
     try:
         from extensions.commands.warrior import modal_value, show
@@ -606,7 +667,9 @@ async def form(
         elif kind == "country":
             flag(value)
             country = value.upper()
-            state.update(country=country, zone_id=SINGLE_ZONE.get(country))
+            state.update(
+                country=country, zone_id=SINGLE_ZONE.get(country), all_zones=True
+            )
             state["step"] = "preview" if state["zone_id"] else "zone"
         else:
             raise core.SetupError("Unknown nickname form.")

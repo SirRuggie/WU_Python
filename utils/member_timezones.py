@@ -5,54 +5,14 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# Standard offsets are deliberate; labels can differ from summer civil time.
-ZONE_CHOICES = (
-    ("gmt-8", -480, "US Pacific"),
-    ("gmt-7", -420, "US Mountain"),
-    ("gmt-6", -360, "US Central"),
-    ("gmt-5", -300, "US Eastern"),
-    ("gmt-4", -240, "Atlantic"),
-    ("gmt-3", -180, "Brazil / Argentina"),
-    ("gmt", 0, "UK / Ireland / Portugal"),
-    ("gmt+1", 60, "Germany / France / Spain / Italy"),
-    ("gmt+2", 120, "Eastern Europe / South Africa"),
-    ("gmt+3", 180, "Turkey / Saudi / Moscow"),
-    ("gmt+4", 240, "UAE"),
-    ("gmt+5", 300, "Pakistan"),
-    ("gmt+5:30", 330, "India"),
-    ("gmt+6", 360, "Bangladesh"),
-    ("gmt+7", 420, "Thailand / Vietnam / Indonesia"),
-    ("gmt+8", 480, "Philippines / Malaysia / Singapore"),
-    ("gmt+9", 540, "Japan / Korea"),
-    ("gmt+10", 600, "Australia East"),
-    ("gmt+12", 720, "New Zealand"),
-)
-COUNTRY_CHOICES = (
-    ("US", "United States"),
-    ("IN", "India"),
-    ("CA", "Canada"),
-    ("GB", "United Kingdom"),
-    ("AU", "Australia"),
-    ("BD", "Bangladesh"),
-    ("DE", "Germany"),
-    ("PH", "Philippines"),
-    ("ID", "Indonesia"),
-    ("MY", "Malaysia"),
-    ("NZ", "New Zealand"),
-    ("ES", "Spain"),
-    ("NO", "Norway"),
-    ("PL", "Poland"),
-    ("AE", "United Arab Emirates"),
-    ("AL", "Albania"),
-    ("AR", "Argentina"),
-    ("BE", "Belgium"),
-    ("BG", "Bulgaria"),
-    ("BR", "Brazil"),
-    ("CO", "Colombia"),
-    ("HK", "Hong Kong"),
-    ("IE", "Ireland"),
-    ("KR", "South Korea"),
-)
+# Standard offsets are deliberate; familiar aliases are menu text only.
+import json
+from pathlib import Path
+
+_PICKER = json.loads(Path(__file__).with_name("member_timezone_data.json").read_text())
+ZONE_CHOICES = tuple(tuple(row) for row in _PICKER["zones"])
+COUNTRY_CHOICES = tuple(tuple(row) for row in _PICKER["countries"])
+COUNTRY_ZONES = _PICKER["countryZones"]
 
 SINGLE_ZONE = dict(
     GB="gmt",
@@ -72,7 +32,16 @@ SINGLE_ZONE = dict(
     BG="gmt+2",
     CO="gmt-5",
     HK="gmt+8",
+    NZ="gmt+12",
 )
+
+
+def zones_for_country(country, *, show_all=False):
+    keys = COUNTRY_ZONES.get(country) or (
+        [SINGLE_ZONE[country]] if country in SINGLE_ZONE else None
+    )
+    by_id = {row[0]: row for row in ZONE_CHOICES}
+    return ZONE_CHOICES if show_all or not keys else tuple(by_id[key] for key in keys)
 
 
 def flag(country):

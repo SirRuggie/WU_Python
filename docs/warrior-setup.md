@@ -41,14 +41,24 @@ not interrupt the remaining clan-channel tour.
 ## Authorization and role safety
 
 Recruitment Team, configured Main/FWA recruiter roles (including thread-specific
-roles), or administrators can open the command. Every action re-fetches the
-actor, target member, roles, and permissions from Discord. Private controls are
-bound to their recruiter and guild. Nickname/member hierarchy and bot capability
+roles), or administrators can open the command. Display-only actions use a
+complete gateway cache when available, with concurrent REST fallback. Private
+controls remain bound to their recruiter and guild. Fresh Discord authorization
+is required for each role operation, nickname commit inside its profile lease,
+server setting submission, completed-walkthrough restart (before archiving or
+deleting progress), paused-run retry, and tour preparation (before thread access
+or scheduling). Walkthrough Begin and each delivery also recheck fresh context.
+Session navigation and draft previews do not authorize those writes.
+Nickname/member hierarchy and bot capability
 checks run before changes. Managed roles, roles above the bot/actor, and roles
 that exceed a non-admin actor's permissions cannot be assigned.
 
 Role changes use individual add/remove endpoints, never full cached role-list
-replacement. Partial failures are visible. Permission or membership changes after
+replacement. The first role uses the batch's initial fresh authorization; later
+roles refresh after preceding awaits. Empty batches still check actor and target.
+Partial confirmed changes are audited and reported if later authorization fails;
+cancellation records interruption. Audit outages are explicit and never trigger
+a retry of Discord writes. Partial failures are visible. Permission or membership changes after
 the panel opened are respected. Isolated ticket testing cannot mutate live
 members through this command.
 
