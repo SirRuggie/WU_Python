@@ -153,3 +153,51 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
   host.remove();
   api.mockReset();
 });
+it("publication review exposes the explicit filler count without an over-capacity warning", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  api.mockResolvedValue({
+    last_publication: null,
+    next_version: 1,
+    draft_revision: 1,
+    draft_changed: true,
+    published: null,
+    preview: {
+      accounts: Array.from({ length: 16 }, (_, i) => ({
+        tag: String(i),
+        player_name: "Member",
+        pool: "main",
+        assigned_clan_tag: "#A",
+        roster_filler: i === 0,
+        effective_weight: 100000,
+        town_hall: 16,
+      })),
+      clans: [{ tag: "#A", name: "A", pool: "main", effective_capacity: 15 }],
+      assigned_count: 16,
+      unassigned_count: 0,
+    },
+  });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <PublicationWorkspace
+            seasonId="1"
+            seasons={[] as never}
+            onSeasonChange={() => {}}
+            onFix={() => {}}
+            step="review"
+            onStepChange={() => {}}
+          />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+    expect(host.textContent).toContain("+1 filler");
+    expect(host.querySelector(".publication-over")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

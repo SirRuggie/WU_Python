@@ -84,9 +84,7 @@ async def context(bot, mongo, row):
         "dashboard": True,
     }
     if not await allowed(actor, row["section"], mongo):
-        raise ValueError(
-            "Your Discord access changed. This action was not run."
-        )
+        raise ValueError("Your Discord access changed. This action was not run.")
 
     async def noop(*args, **kwargs):
         return None
@@ -132,12 +130,8 @@ async def dispatch(bot, mongo, row, ctx):
 
         clan = await mongo.clans.find_one({"tag": values.get("tag")})
         if not clan or revision(clan) != row["revision"]:
-            raise ValueError(
-                "Clan changed. Reload and review before trying again."
-            )
-        await audit(
-            mongo, {"user_id": row["user_id"]}, "before_" + action, clan
-        )
+            raise ValueError("Clan changed. Reload and review before trying again.")
+        await audit(mongo, {"user_id": row["user_id"]}, "before_" + action, clan)
         if action == "emoji":
             if not clan.get("logo"):
                 raise ValueError("Save a clan logo first.")
@@ -146,9 +140,7 @@ async def dispatch(bot, mongo, row, ctx):
             await ensure_thread(bot, mongo, clan, GUILD_ID)
         return {
             "message": (
-                "Clan emoji updated."
-                if action == "emoji"
-                else "Clan thread ready."
+                "Clan emoji updated." if action == "emoji" else "Clan thread ready."
             )
         }
     if section == "ticket_testing":
@@ -162,10 +154,7 @@ async def dispatch(bot, mongo, row, ctx):
                 )
             ):
                 raise ValueError("Choose up to 25 valid members or roles.")
-        if (
-            "allow_admins" in values
-            and type(values["allow_admins"]) is not bool
-        ):
+        if "allow_admins" in values and type(values["allow_admins"]) is not bool:
             raise ValueError("Choose whether administrators are allowed.")
     if section == "cwl_rosters" and action in {"start", "resume", "schedule"}:
         if type(values.get("every_minutes", 60)) is not int or values.get(
@@ -176,15 +165,11 @@ async def dispatch(bot, mongo, row, ctx):
         from utils.manage_operations_runtime import revision
 
         collection = (
-            mongo.fwa_points
-            if section == "fwa_points"
-            else mongo.fwa_sync_config
+            mongo.fwa_points if section == "fwa_points" else mongo.fwa_sync_config
         )
         current = await collection.find_one({"_id": "config"}) or {}
         if revision(current) != row["revision"]:
-            raise ValueError(
-                "Settings changed. Reload and review before trying again."
-            )
+            raise ValueError("Settings changed. Reload and review before trying again.")
         if section == "fwa_points":
             from extensions.tasks import fwa_points_monitor
 
@@ -217,11 +202,7 @@ async def dispatch(bot, mongo, row, ctx):
             int(row["user_id"]),
             sync.build_embed(
                 event,
-                (
-                    str(config["offsets"][0])
-                    if config["offsets"]
-                    else "discovery"
-                ),
+                (str(config["offsets"][0]) if config["offsets"] else "discovery"),
             ),
         )
         return {"message": "Test reminder sent to your Discord DMs."}
@@ -249,9 +230,7 @@ async def dispatch(bot, mongo, row, ctx):
         from cwl_web.manage_content import fingerprint
 
         if fingerprint(cfg) != row["revision"]:
-            raise ValueError(
-                "Ticket settings changed. Reload before trying again."
-            )
+            raise ValueError("Ticket settings changed. Reload before trying again.")
         if action == "save":
             from cwl_web.manage_tickets import validated_settings
 
@@ -263,9 +242,7 @@ async def dispatch(bot, mongo, row, ctx):
             actor = {
                 "user_id": str(row["user_id"]),
                 "member": {
-                    "nick": getattr(
-                        ctx.member, "display_name", str(row["user_id"])
-                    )
+                    "nick": getattr(ctx.member, "display_name", str(row["user_id"]))
                 },
             }
             for part in ("timers", "main", "fwa", "viewers"):
@@ -311,13 +288,9 @@ async def dispatch(bot, mongo, row, ctx):
         from extensions.commands.tickets import testing_service
         from cwl_web.manage_content import fingerprint
 
-        current = await testing_service.active_window(
-            testing_service.test_mongo(mongo)
-        )
+        current = await testing_service.active_window(testing_service.test_mongo(mongo))
         if fingerprint(current) != row["revision"]:
-            raise ValueError(
-                "The test window changed. Reload before trying again."
-            )
+            raise ValueError("The test window changed. Reload before trying again.")
         if action == "start":
             await control.start_window(
                 bot,
@@ -329,9 +302,7 @@ async def dispatch(bot, mongo, row, ctx):
         elif action == "end":
             await control.end_window(bot, mongo, ctx)
         elif action == "clear":
-            await testing_service.request_clear(
-                testing_service.test_mongo(mongo)
-            )
+            await testing_service.request_clear(testing_service.test_mongo(mongo))
         elif action == "access":
             await control.update_access(
                 bot,
@@ -343,10 +314,7 @@ async def dispatch(bot, mongo, row, ctx):
             )
         else:
             await control.open_test_ticket(ctx, bot, mongo, action)
-        return {
-            "message": "Test ticket action completed. "
-            + " ".join(ctx.captured)
-        }
+        return {"message": "Test ticket action completed. " + " ".join(ctx.captured)}
     if section == "cwl_rosters":
         from extensions.commands.fwa import lazy_cwl_service as service
         from utils import lazy_cwl_store as store
@@ -384,13 +352,9 @@ async def dispatch(bot, mongo, row, ctx):
                 )
         try:
             if action == "save":
-                result = await service.save_list(
-                    tag, int(row["user_id"]), **kwargs
-                )
+                result = await service.save_list(tag, int(row["user_id"]), **kwargs)
             elif action == "replace":
-                result = await service.replace_list(
-                    tag, int(row["user_id"]), **kwargs
-                )
+                result = await service.replace_list(tag, int(row["user_id"]), **kwargs)
             elif action == "clear":
                 result = await service.finish(tag, **kwargs)
             elif action == "add":
@@ -536,7 +500,16 @@ async def ready_work(mongo):
     if _WORK_INDEXES.get(loop) is not mongo:
         await ProfileRuns(mongo).ensure_work_index()
         _WORK_INDEXES[loop] = mongo
-    return await ProfileRuns(mongo).ready_work()
+    started = time.perf_counter()
+    work = await ProfileRuns(mongo).ready_work()
+    if work:
+        logging.getLogger(__name__).info(
+            "Management timing stage=ready_lookup run=%s elapsed_ms=%.2f next_in_ms=%.2f",
+            work.get("_id", "-"),
+            1000 * (time.perf_counter() - started),
+            1000 * max(0, work.get("next_at", 0) - time.time()),
+        )
+    return work
 
 
 async def fast_poll(bot, mongo):
@@ -546,10 +519,16 @@ async def fast_poll(bot, mongo):
     while work:
         handled = await poll(bot, mongo, fast=True, known_work=True)
         remaining = work.get("next_at", 0) - time.time()
-        await asyncio.sleep(
-            min(1, max(0.05, remaining))
-            if remaining > 0
-            else (0.05 if handled else 1)
+        delay = (
+            min(1, max(0.05, remaining)) if remaining > 0 else (0.05 if handled else 1)
+        )
+        sleep_started = time.perf_counter()
+        await asyncio.sleep(delay)
+        logging.getLogger(__name__).info(
+            "Management timing stage=scheduler_wake run=%s scheduled_ms=%.2f actual_ms=%.2f",
+            work.get("_id", "-"),
+            1000 * delay,
+            1000 * (time.perf_counter() - sleep_started),
         )
         work = await ready_work(mongo)
 
@@ -584,12 +563,15 @@ async def _poll(bot, mongo):
 async def _process_requests(bot, mongo):
     from utils.member_profile_runs import ProfileRuns, ProfileRunStopped
 
+    dispatch_started = time.perf_counter()
     try:
         await ProfileRuns(mongo).advance()
     except Exception:
         logging.getLogger(__name__).warning(
             "Member profile run scheduling unavailable", exc_info=True
         )
+    advance_ms = 1000 * (time.perf_counter() - dispatch_started)
+    sweep_started = time.perf_counter()
     # A crashed sending claim is never replayed: the Discord effect may exist.
     await mongo.bot_config.update_many(
         {
@@ -605,6 +587,7 @@ async def _process_requests(bot, mongo):
             }
         },
     )
+    sweep_ms = 1000 * (time.perf_counter() - sweep_started)
     handled = 0
     for _ in range(5):
         loop = asyncio.get_running_loop()
@@ -614,6 +597,7 @@ async def _process_requests(bot, mongo):
         query = {"kind": "manage_web_request", "status": "pending"}
         if used >= 5:
             query["section"] = "member_profiles"
+        claim_started = time.perf_counter()
         row = await mongo.bot_config.find_one_and_update(
             query,
             {"$set": {"status": "running", "started_at": time.time()}},
@@ -621,6 +605,15 @@ async def _process_requests(bot, mongo):
         )
         if not row:
             break
+        if row.get("section") == "member_profiles":
+            logging.getLogger(__name__).info(
+                "Management timing stage=claim_query request=%s elapsed_ms=%.2f advance_ms=%.2f expired_sweep_ms=%.2f dispatch_ms=%.2f",
+                row["_id"],
+                1000 * (time.perf_counter() - claim_started),
+                advance_ms,
+                sweep_ms,
+                1000 * (time.perf_counter() - dispatch_started),
+            )
         if row.get("section") != "member_profiles":
             used += 1
         _OTHER_WINDOWS[loop] = (window, used)

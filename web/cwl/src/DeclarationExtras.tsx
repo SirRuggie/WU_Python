@@ -1,14 +1,19 @@
+import DeclarationMemberMarks, {
+  type DeclarationMarkControl,
+} from "./DeclarationMemberMarks";
 import { comparisonAge } from "./comparisonLocation";
 import type { DeclarationExtraClan } from "./declarationExtras";
 import "./DeclarationExtras.css";
 
 export default function DeclarationExtras({
   row,
+  markControl,
   loading,
   error,
   now,
 }: {
   row?: DeclarationExtraClan;
+  markControl?: DeclarationMarkControl;
   loading: boolean;
   error: string;
   now: number;
@@ -34,30 +39,44 @@ export default function DeclarationExtras({
           : " · Never checked"}
       </p>
     );
-  if (!row.count)
-    return (
-      <p className="declaration-extras-status">
-        0 not on roster · Checked{" "}
-        {comparisonAge(row.checked_at || undefined, now)}
-      </p>
-    );
+  const otherFillers =
+    row.fillers?.filter(
+      (member) =>
+        !(
+          typeof member.town_hall === "number" &&
+          member.town_hall > 0 &&
+          member.town_hall <= 9
+        ),
+    ) || [];
   return (
-    <details className="declaration-extras">
-      <summary>⚠ {row.count} not on roster</summary>
-      <p>
-        Checked {comparisonAge(row.checked_at || undefined, now)} · Read-only
-        flag
-      </p>
-      <ul>
-        {row.extras?.map((member) => (
-          <li key={member.tag}>
-            <strong>{member.name}</strong> ·{" "}
-            {member.town_hall ? `TH ${member.town_hall}` : "TH unavailable"} ·{" "}
-            <code>{member.tag}</code>
-            <span>{member.context}</span>
-          </li>
-        ))}
-      </ul>
-    </details>
+    <>
+      {!!row.low_th?.length && (
+        <details className="declaration-low-th">
+          <summary>{row.low_th.length} low TH in clan</summary>
+          <DeclarationMemberMarks rows={row.low_th} control={markControl} />
+        </details>
+      )}
+      {!!otherFillers.length && (
+        <details className="declaration-fillers">
+          <summary>
+            {otherFillers.length} other filler
+            {otherFillers.length === 1 ? "" : "s"} in clan
+          </summary>
+          <DeclarationMemberMarks rows={otherFillers} control={markControl} />
+        </details>
+      )}
+      {!row.count ? (
+        <p className="declaration-extras-status">
+          0 not on roster · Checked{" "}
+          {comparisonAge(row.checked_at || undefined, now)}
+        </p>
+      ) : (
+        <details className="declaration-extras">
+          <summary>⚠ {row.count} not on roster</summary>
+          <p>Checked {comparisonAge(row.checked_at || undefined, now)}</p>
+          <DeclarationMemberMarks rows={row.extras} control={markControl} />
+        </details>
+      )}
+    </>
   );
 }

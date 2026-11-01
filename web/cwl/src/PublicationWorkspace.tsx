@@ -1,3 +1,4 @@
+import { clanCapacity } from "./rosterCapacity";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import RosterMenu from "./rosterUi/Menu";
 import TownHallIcon from "./TownHallIcon";
@@ -7,18 +8,18 @@ import JoiningInstructionsEditor from "./JoiningInstructionsEditor";
 import { capacityWarnings, finalizeStatus } from "./publicationStatus";
 import PublicationChanges from "./PublicationChanges";
 import ConfirmDialog from "./ConfirmDialog";
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError, type Season } from './api';
-import ClanRosterImages from './ClanRosterImages';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiError, type Season } from "./api";
+import ClanRosterImages from "./ClanRosterImages";
 
-import { useDashboardPermission } from './DashboardPermissions';
-import ManageBridgeWorkspace from './ManageBridgeWorkspace';
-import { type PublicationDraft, type PublicationMeta } from './publication';
-import { readinessAccounts, type ReadinessFilter } from './readiness';
-import StaffPlayerButton from './StaffPlayerButton';
-import './publicationFlow.css';
+import { useDashboardPermission } from "./DashboardPermissions";
+import ManageBridgeWorkspace from "./ManageBridgeWorkspace";
+import { type PublicationDraft, type PublicationMeta } from "./publication";
+import { readinessAccounts, type ReadinessFilter } from "./readiness";
+import StaffPlayerButton from "./StaffPlayerButton";
+import "./publicationFlow.css";
 
-type Step = 'review' | 'announce';
+type Step = "review" | "announce";
 type Props = {
   onPublication?: (draft: PublicationDraft) => void;
   onDeclaration?: () => void;
@@ -32,34 +33,49 @@ type Props = {
   onBusy?: (busy: boolean) => void;
 };
 
-const errorText = (error: unknown) => error instanceof Error
-  ? error.message
-  : 'Publication request failed. Try again.';
+const errorText = (error: unknown) =>
+  error instanceof Error
+    ? error.message
+    : "Publication request failed. Try again.";
 
 export default function PublicationWorkspace({
-  seasonId, seasons, onSeasonChange, onFix, step, onStepChange, onDirty, onBusy, onPublication, onDeclaration,
+  seasonId,
+  seasons,
+  onSeasonChange,
+  onFix,
+  step,
+  onStepChange,
+  onDirty,
+  onBusy,
+  onPublication,
+  onDeclaration,
 }: Props) {
-  const canManage = useDashboardPermission('cwl_publish');
+  const canManage = useDashboardPermission("cwl_publish");
   const publicationCallback = useRef(onPublication);
   publicationCallback.current = onPublication;
 
   const [imagesOpen, setImagesOpen] = useState(false);
   const [changesReady, setChangesReady] = useState(false);
   const [confirmRevision, setConfirmRevision] = useState<number | null>(null);
-  const [hideTarget, setHideTarget] = useState<{ revision: number; version: number } | null>(null);
+  const [hideTarget, setHideTarget] = useState<{
+    revision: number;
+    version: number;
+  } | null>(null);
   const [draft, setDraft] = useState<PublicationDraft | null>(null);
-  useEffect(() => { if (draft) publicationCallback.current?.(draft); }, [draft]);
-  const [rosterSearch, setRosterSearch] = useState('');
+  useEffect(() => {
+    if (draft) publicationCallback.current?.(draft);
+  }, [draft]);
+  const [rosterSearch, setRosterSearch] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
-  const [instructions, setInstructions] = useState('');
-  const [instructionsBaseline, setInstructionsBaseline] = useState('');
+  const [instructions, setInstructions] = useState("");
+  const [instructionsBaseline, setInstructionsBaseline] = useState("");
   const instructionsDirty = instructions !== instructionsBaseline;
   const instructionsDirtyRef = useRef(false);
   instructionsDirtyRef.current = instructionsDirty;
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [editDirty, setEditDirty] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -70,13 +86,15 @@ export default function PublicationWorkspace({
   const previousStep = useRef(step);
   useEffect(() => {
     if (previousStep.current !== step) {
-      requestAnimationFrame(() => pageHeading.current?.focus({ preventScroll: true }));
+      requestAnimationFrame(() =>
+        pageHeading.current?.focus({ preventScroll: true }),
+      );
       previousStep.current = step;
     }
   }, [step]);
   useEffect(() => {
     // The parent has already confirmed leaving the review step.
-    if (step !== 'review') setInstructions(instructionsBaseline);
+    if (step !== "review") setInstructions(instructionsBaseline);
   }, [step, instructionsBaseline]);
   const mutationPending = useRef(false);
   const currentSeason = useRef(seasonId);
@@ -91,10 +109,10 @@ export default function PublicationWorkspace({
     if (!instructionsDirty) return;
     const protect = (event: BeforeUnloadEvent) => {
       event.preventDefault();
-      event.returnValue = '';
+      event.returnValue = "";
     };
-    window.addEventListener('beforeunload', protect);
-    return () => window.removeEventListener('beforeunload', protect);
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
   }, [instructionsDirty]);
   useEffect(() => {
     onBusy?.(busy || editBusy || editOpen || announcementBusy);
@@ -106,12 +124,17 @@ export default function PublicationWorkspace({
     const sid = seasonId;
     const id = ++requestId.current;
     setLoading(true);
-    setError('');
+    setError("");
     try {
-      const result = await api<PublicationDraft>(`/seasons/${encodeURIComponent(sid)}/publication`);
+      const result = await api<PublicationDraft>(
+        `/seasons/${encodeURIComponent(sid)}/publication`,
+      );
       if (id !== requestId.current || currentSeason.current !== sid) return;
       setDraft(result);
-      const savedInstructions = result.published?.joining_instructions ?? result.last_publication?.joining_instructions ?? '';
+      const savedInstructions =
+        result.published?.joining_instructions ??
+        result.last_publication?.joining_instructions ??
+        "";
       if (!instructionsDirtyRef.current) setInstructions(savedInstructions);
       setInstructionsBaseline(savedInstructions);
       setAcknowledged(false);
@@ -122,55 +145,76 @@ export default function PublicationWorkspace({
         setError(errorText(cause));
       }
     } finally {
-      if (id === requestId.current && currentSeason.current === sid) setLoading(false);
+      if (id === requestId.current && currentSeason.current === sid)
+        setLoading(false);
     }
   }, [seasonId]);
 
   useEffect(() => {
     requestId.current += 1;
     setDraft(null);
-    setInstructions('');
-    setInstructionsBaseline('');
+    setInstructions("");
+    setInstructionsBaseline("");
     instructionsDirtyRef.current = false;
     setConfirmRevision(null);
     setHideTarget(null);
     setChangesReady(false);
     setAcknowledged(false);
-    setError('');
-    setSuccess('');
-    setRosterSearch('');
+    setError("");
+    setSuccess("");
+    setRosterSearch("");
     if (seasonId) void load();
-    return () => { requestId.current += 1; };
+    return () => {
+      requestId.current += 1;
+    };
   }, [seasonId, load]);
 
-  const archived = seasons.find(season => String(season.id) === seasonId)?.status.toLowerCase() === 'archived';
-  const overCapacity = draft ? capacityWarnings(draft) : { clans: 0, players: 0 };
-  const checks = (['unassigned', 'missing_weight', 'over_capacity'] as const).map(filter => ({
+  const archived =
+    seasons
+      .find((season) => String(season.id) === seasonId)
+      ?.status.toLowerCase() === "archived";
+  const overCapacity = draft
+    ? capacityWarnings(draft)
+    : { clans: 0, players: 0 };
+  const checks = (
+    ["unassigned", "missing_weight", "over_capacity"] as const
+  ).map((filter) => ({
     filter,
-    accounts: draft ? readinessAccounts(draft.preview.accounts, draft.preview.clans, filter) : [],
+    accounts: draft
+      ? readinessAccounts(draft.preview.accounts, draft.preview.clans, filter)
+      : [],
   }));
-  const hasWarnings = checks.some(check => check.accounts.length > 0);
-  const canPublish = Boolean(draft && canManage && !locked && !loading && !error && !archived
-    && instructions.length <= 2000 && changesReady && draft.preview.accounts.length
-    && (draft.preview.unassigned_count === 0 || acknowledged));
+  const hasWarnings = checks.some((check) => check.accounts.length > 0);
+  const canPublish = Boolean(
+    draft &&
+    canManage &&
+    !locked &&
+    !loading &&
+    !error &&
+    !archived &&
+    instructions.length <= 2000 &&
+    changesReady &&
+    draft.preview.accounts.length &&
+    (draft.preview.unassigned_count === 0 || acknowledged),
+  );
 
   async function publish() {
     if (!draft || !seasonId || !canPublish || mutationPending.current) return;
     if (confirmRevision !== draft.draft_revision) {
       setConfirmRevision(null);
-      setError('The draft changed. Review it again before publishing.');
+      setError("The draft changed. Review it again before publishing.");
       return;
     }
     setConfirmRevision(null);
     const sid = seasonId;
     mutationPending.current = true;
     setBusy(true);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
     try {
       const result = await api<{ published: PublicationMeta }>(
         `/seasons/${encodeURIComponent(sid)}/publication`,
-        'POST',
+        "POST",
         {
           revision: draft.draft_revision,
           acknowledge_unassigned: acknowledged,
@@ -178,17 +222,23 @@ export default function PublicationWorkspace({
         },
       );
       if (currentSeason.current !== sid) return;
-      setDraft(current => current ? {
-        ...current,
-        draft_revision: result.published.revision + 1,
-        draft_changed: false,
-        published: result.published,
-      } : current);
+      setDraft((current) =>
+        current
+          ? {
+              ...current,
+              draft_revision: result.published.revision + 1,
+              draft_changed: false,
+              published: result.published,
+            }
+          : current,
+      );
       setAcknowledged(false);
       setInstructionsBaseline(instructions);
       instructionsDirtyRef.current = false;
-      onStepChange('announce');
-      setSuccess(`Version ${result.published.version} published. Members can now view these assignments.`);
+      onStepChange("announce");
+      setSuccess(
+        `Version ${result.published.version} published. Members can now view these assignments.`,
+      );
       await load();
     } catch (cause) {
       if (currentSeason.current === sid) {
@@ -202,25 +252,46 @@ export default function PublicationWorkspace({
   }
 
   async function withdraw() {
-    if (!draft?.published || !seasonId || locked || loading || error || !canManage || mutationPending.current) return;
-    if (!hideTarget || hideTarget.revision !== draft.draft_revision || hideTarget.version !== draft.published.version) {
+    if (
+      !draft?.published ||
+      !seasonId ||
+      locked ||
+      loading ||
+      error ||
+      !canManage ||
+      mutationPending.current
+    )
+      return;
+    if (
+      !hideTarget ||
+      hideTarget.revision !== draft.draft_revision ||
+      hideTarget.version !== draft.published.version
+    ) {
       setHideTarget(null);
-      setError('The draft changed. Refresh draft and review it before hiding the roster.');
+      setError(
+        "The draft changed. Refresh draft and review it before hiding the roster.",
+      );
       return;
     }
     setHideTarget(null);
     const sid = seasonId;
     mutationPending.current = true;
     setBusy(true);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
     try {
-      await api(`/seasons/${encodeURIComponent(sid)}/publication/withdraw`, 'POST', {
-        revision: draft.draft_revision,
-        version: draft.published.version,
-      });
+      await api(
+        `/seasons/${encodeURIComponent(sid)}/publication/withdraw`,
+        "POST",
+        {
+          revision: draft.draft_revision,
+          version: draft.published.version,
+        },
+      );
       if (currentSeason.current !== sid) return;
-      setSuccess('Publication withdrawn. Members will see assignments only after you publish again.');
+      setSuccess(
+        "Publication withdrawn. Members will see assignments only after you publish again.",
+      );
       await load();
     } catch (cause) {
       if (currentSeason.current === sid) {
@@ -233,39 +304,74 @@ export default function PublicationWorkspace({
     }
   }
 
-  const clanNames = new Map(draft?.preview.clans.map(clan => [clan.tag, clan.name]));
-  const rosterGroups = new Map<string, {
-    name: string;
-    accounts: NonNullable<typeof draft>['preview']['accounts'];
-  }>();
+  const clanNames = new Map(
+    draft?.preview.clans.map((clan) => [clan.tag, clan.name]),
+  );
+  const rosterGroups = new Map<
+    string,
+    {
+      name: string;
+      accounts: NonNullable<typeof draft>["preview"]["accounts"];
+    }
+  >();
   const poolCounts = { main: 0, lazy: 0 };
   for (const account of draft?.preview.accounts || []) {
-    const hostingPool = draft?.preview.clans.find(clan => clan.tag === account.assigned_clan_tag)?.pool || account.pool;
+    const hostingPool =
+      draft?.preview.clans.find(
+        (clan) => clan.tag === account.assigned_clan_tag,
+      )?.pool || account.pool;
     poolCounts[hostingPool] += 1;
 
-    const key = account.assigned_clan_tag || 'unassigned';
+    const key = account.assigned_clan_tag || "unassigned";
     const name = account.assigned_clan_tag
       ? clanNames.get(account.assigned_clan_tag) || account.assigned_clan_tag
-      : 'Awaiting placement';
+      : "Awaiting placement";
     const group = rosterGroups.get(key) || { name, accounts: [] };
     group.accounts.push(account);
     rosterGroups.set(key, group);
   }
   const query = rosterSearch.trim().toLowerCase();
-  const visibleGroups = [...rosterGroups].map(([tag, group]) => ({
-    tag,
-    name: group.name,
-    total: group.accounts.length,
-    capacity: draft?.preview.clans.find(clan => clan.tag === tag)?.effective_capacity,
-    accounts: query ? group.accounts.filter(account =>
-      [account.player_name, account.tag, account.pool, group.name, tag]
-        .some(value => value.toLowerCase().includes(query))) : group.accounts,
-  })).filter(group => group.accounts.length).sort((left, right) => {
-    if (left.tag === 'unassigned') return 1;
-    if (right.tag === 'unassigned') return -1;
-    return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) || left.tag.localeCompare(right.tag);
-  });
-  const visibleCount = visibleGroups.reduce((total, group) => total + group.accounts.length, 0);
+  const visibleGroups = [...rosterGroups]
+    .map(([tag, group]) => ({
+      tag,
+      name: group.name,
+      total: group.accounts.length,
+      fillerCount: group.accounts.filter((account) => account.roster_filler)
+        .length,
+      occupancy: clanCapacity(
+        group.accounts,
+        tag,
+        draft?.preview.clans.find((clan) => clan.tag === tag)
+          ?.effective_capacity ?? null,
+      ),
+      capacity: draft?.preview.clans.find((clan) => clan.tag === tag)
+        ?.effective_capacity,
+      accounts: query
+        ? group.accounts.filter((account) =>
+            [
+              account.player_name,
+              account.tag,
+              account.pool,
+              group.name,
+              tag,
+            ].some((value) => value.toLowerCase().includes(query)),
+          )
+        : group.accounts,
+    }))
+    .filter((group) => group.accounts.length)
+    .sort((left, right) => {
+      if (left.tag === "unassigned") return 1;
+      if (right.tag === "unassigned") return -1;
+      return (
+        left.name.localeCompare(right.name, undefined, {
+          sensitivity: "base",
+        }) || left.tag.localeCompare(right.tag)
+      );
+    });
+  const visibleCount = visibleGroups.reduce(
+    (total, group) => total + group.accounts.length,
+    0,
+  );
 
   useStaffDetailsPage({
     seasonId,
@@ -523,8 +629,11 @@ export default function PublicationWorkspace({
                           {group.tag === "unassigned"
                             ? `${group.total} account${group.total === 1 ? "" : "s"}`
                             : `${group.tag} · ${group.total} / ${group.capacity ?? "—"}`}
-                          {group.capacity && group.total > group.capacity ? (
-                            <span className="publication-over">{` · +${group.total - group.capacity} over`}</span>
+                          {group.fillerCount > 0 && (
+                            <small>{` · +${group.fillerCount} filler${group.fillerCount === 1 ? "" : "s"}`}</small>
+                          )}
+                          {group.capacity && group.occupancy.over ? (
+                            <span className="publication-over">{` · +${group.occupancy.regularOverflow} over`}</span>
                           ) : null}
                         </span>
                       </summary>
@@ -566,10 +675,7 @@ export default function PublicationWorkspace({
                   ))}
                 </div>
               ) : draft.preview.accounts.length ? (
-                <p>
-                  No accounts match this
-                  view.
-                </p>
+                <p>No accounts match this view.</p>
               ) : (
                 <p>No signup accounts are in the working roster.</p>
               )}

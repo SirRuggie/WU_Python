@@ -1,3 +1,4 @@
+import { rosterCapacity } from "./rosterCapacity";
 import { useState } from "react";
 import { totalRosterWeight } from "./rosterTotalWeight";
 import type { Pool } from "./api";
@@ -16,6 +17,7 @@ type Props = {
 export type RosterClanChipSummary = {
   clan: RosterClan;
   assignedCount: number;
+  fillerCount: number;
   knownWeightCount: number;
   missingWeightCount: number;
   totalWeight: number | null;
@@ -36,16 +38,18 @@ export function buildRosterClanChipSummaries(
 ): RosterClanChipSummary[] {
   const byClan = new Map<
     string,
-    { count: number; known: number; weight: number }
+    { count: number; known: number; weight: number; fillers: number }
   >();
   for (const account of accounts) {
     if (!account.assigned_clan_tag) continue;
     const summary = byClan.get(account.assigned_clan_tag) || {
       count: 0,
+      fillers: 0,
       known: 0,
       weight: 0,
     };
     summary.count += 1;
+    summary.fillers += Number(!!account.roster_filler);
     if (
       account.effective_weight != null &&
       Number.isFinite(account.effective_weight)
@@ -66,12 +70,14 @@ export function buildRosterClanChipSummaries(
     .map((clan) => {
       const accountSummary = byClan.get(clan.tag) || {
         count: 0,
+        fillers: 0,
         known: 0,
         weight: 0,
       };
       return {
         clan,
         assignedCount: accountSummary.count,
+        fillerCount: accountSummary.fillers,
         knownWeightCount: accountSummary.known,
         missingWeightCount: accountSummary.count - accountSummary.known,
         totalWeight: accountSummary.known ? accountSummary.weight : null,
@@ -139,12 +145,12 @@ export default function RosterClanChips({
               )}
               {visible.map((summary) => {
                 const active = selected.has(summary.clan.tag);
-                const full =
-                  summary.capacity !== null &&
-                  summary.assignedCount >= summary.capacity;
-                const over =
-                  summary.capacity !== null &&
-                  summary.assignedCount > summary.capacity;
+                const capacity = rosterCapacity(
+                  summary.assignedCount,
+                  summary.fillerCount,
+                  summary.capacity,
+                );
+                const { full, over } = capacity;
                 const countLabel =
                   summary.capacity === null
                     ? `${summary.assignedCount} assigned`
@@ -180,6 +186,9 @@ export default function RosterClanChips({
                           {summary.capacity === null
                             ? ""
                             : ` / ${summary.capacity}`}
+                          {capacity.fillerLabel && (
+                            <small> · {capacity.fillerLabel}</small>
+                          )}
                         </span>
                       </span>
                       <span className="roster-clan-chip-meta">

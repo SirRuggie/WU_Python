@@ -1,9 +1,17 @@
-.declaration-extras {
+.declaration-extras,
+.declaration-low-th,
+.declaration-fillers {
   margin: 8px 12px;
-  color: #d9bd79;
   min-width: 0;
 }
-.declaration-extras summary {
+.declaration-extras {
+  color: #d9bd79;
+}
+.declaration-low-th,
+.declaration-fillers {
+  color: #b6afa1;
+}
+:is(.declaration-extras, .declaration-low-th, .declaration-fillers) summary {
   min-height: 44px;
   display: list-item;
   align-content: center;
@@ -17,18 +25,18 @@
   margin: 8px 12px;
   overflow-wrap: anywhere;
 }
-.declaration-extras ul {
+.declaration-member-list {
   list-style: none;
   padding: 0;
   display: grid;
   gap: 8px;
 }
-.declaration-extras li {
+.declaration-member-list > li {
   border-top: 1px solid #6f5c333b;
   padding-top: 8px;
   overflow-wrap: anywhere;
 }
-.declaration-extras li span {
+.declaration-member-context {
   display: block;
   color: #b6afa1;
   font-size: 0.85rem;

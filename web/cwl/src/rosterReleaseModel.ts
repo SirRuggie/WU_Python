@@ -1,3 +1,4 @@
+import { clanCapacity } from "./rosterCapacity";
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan } from "./roster";
 import { rosterMemberKey } from "./rosterGrouping";
@@ -9,6 +10,7 @@ export const ROSTER_RELEASE_STATUSES = [
   "over_capacity",
   "locked",
   "outside_family",
+  "filler",
 ] as const;
 export type RosterReleaseStatus = (typeof ROSTER_RELEASE_STATUSES)[number];
 export const ROSTER_RELEASE_SORTS = [
@@ -154,6 +156,7 @@ function statusFlags(
       overCapacity.has(account.assigned_clan_tag),
     locked: account.kept,
     outside_family: account.outside_family_and_hosts === true,
+    filler: !!account.roster_filler,
   };
 }
 
@@ -162,19 +165,10 @@ function overCapacityClans(
   accounts: RosterAccount[],
   clans: RosterClan[],
 ): Set<string> {
-  const assigned = new Map<string, number>();
-  for (const account of accounts) {
-    if (account.assigned_clan_tag) {
-      assigned.set(
-        account.assigned_clan_tag,
-        (assigned.get(account.assigned_clan_tag) || 0) + 1,
-      );
-    }
-  }
   return new Set(
     clans
-      .filter((clan) => (assigned.get(clan.tag) || 0) > clan.effective_capacity)
-      .map((clan) => clan.tag),
+      .filter((c) => clanCapacity(accounts, c.tag, c.effective_capacity).over)
+      .map((c) => c.tag),
   );
 }
 
@@ -251,6 +245,7 @@ export function deriveRosterRelease(
       over_capacity: 0,
       locked: 0,
       outside_family: 0,
+      filler: 0,
     },
     townHall: {},
     assignedClan: {},
@@ -395,7 +390,7 @@ export function progressiveRosterReleaseAccounts(
     };
   }
   const visible: RosterAccount[] = [];
-  for (let index = 0; index < ordered.length; ) {
+  for (let index = 0; index < ordered.length;) {
     if (visible.length >= count && visible.length > 0) break;
     const key = rosterMemberKey(ordered[index]);
     do {
@@ -434,7 +429,10 @@ export function addAllRosterMatches(
   selectedTags: string[],
   matches: RosterAccount[],
 ) {
-  const next = unique([...selectedTags, ...matches.map((account) => account.tag)]);
+  const next = unique([
+    ...selectedTags,
+    ...matches.map((account) => account.tag),
+  ]);
   return next.length <= MAX_ROSTER_SELECTION ? next : null;
 }
 

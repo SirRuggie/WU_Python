@@ -747,3 +747,120 @@ Main later requires an explicit policy change to the server's Lazy hosting filte
 the UI scope label and Main-exclusion tests, followed by review; there is no hidden
 client switch. No new persistent collection or production write is introduced.
 
+
+### Persistent roster filler marks — prompt 89 (development)
+
+Staff explicitly mark a player tag as Filler; TH never creates a mark. A separate
+SQLite roster-player mark owner retains the mark across seasons, audits who/when
+and on/off, and uses both the season revision and a per-tag revision. Marking and
+undo invalidate plans in all seasons. This does not reuse or change Strikes filler
+settings. Migration adds two empty tables; existing player/season rows are intact.
+
+Fillers occupy clan seats but manual assignment can exceed 15/30 capacity. Mixed
+assignment checks regular incoming accounts against all existing occupants before
+adding fillers. Balance and Auto-place never place or move fillers. Unmark never
+moves an account; normal capacity warnings may return. Publication remains a
+placement snapshot; current player marks are independently overlaid for staff.
+
+Declaration extras remain scoped to Lazy hosting clans. Marked fillers in an
+observed clan count toward readiness once, even without a roster assignment;
+assigned fillers outside their destination remain missing and pingable. Unmarked
+TH 9 and below are not intruders and do not count as fillers. Unknown TH retains
+the prior not-on-roster flag. Low TH and filler rows use collapsed neutral lists;
+explicit checkbox writes patch the view in place without a new live check. Open
+lists, publication basis, check time and readiness remain stable through mark/Undo.
+
+Rename screen: reconnect to an active run on page load, preserving Stop; Past runs
+has a loading label and summaries omit full member manifests. Existing production
+logs (read only) showed 256 profile saves with median 89 ms, authorization median
+288 ms, finished worker actions median 2.12 s, but median claim-to-claim gap 11.42 s
+(max 20.35 s), filtering to the 256 Standardize actions. No NetworkTimeout line appeared in the sampled bot invocation. Those
+logs do not instrument every query/scheduler boundary, so the residual gap cannot
+be attributed to Atlas or Discord with confidence. No production timing probe or
+rename was run. Do not claim the history projection proves the measured 3 s root
+cause. No risky worker optimization is included; live pace remains an explicit
+review limitation. No activation while any Standardize run remains queued.
+
+Validation: full guarded backend 5,700 passed / 58 skipped / 224 subtests; final
+focused backend 43 passed after the mark receipt/published-account audit. Full
+frontend 1,376 passed / 246 files, TypeScript and build passed. Sixteen real Mongo
+fixture tests passed, including large-manifest summary projection. The repository
+war-reminder check passed: 213 backend / 1 skip, 35 frontend, TypeScript/build.
+Twelve required UI states use 26/65/125 sample accounts at 320/360/390/1440; narrow
+and wide screenshots are inspected. Seven requested filler mutations, the prompt
+90 per-row lookup mutation and four audit mutations were caught. Owned Mongo and
+mutation exports were removed after preserving evidence. No live delivery, real
+DM click, production mark or rename is tested or claimed.
+
+End-to-end audit covered authorization and CSRF, malformed booleans/revisions,
+concurrent staff edits and double taps, additive migration with existing rows
+preserved, season carryover, mixed/manual/swap/undo capacity at 15 and 30, publish,
+unknown TH, off-roster readiness/deduplication, failed/stale identity reads,
+permission loss, external text/ID labels, and cached versus newer player locations.
+Mark Undo is exposed through the existing roster Undo control, including inline
+Declaration marks and published-only Details. Published placements stay immutable
+when current player marks change, including withdrawn signup tags. Low TH counts
+remain literal even after marking; a marked low-TH member keeps its checkbox in
+that list. A separate neutral disclosure retains other off-roster marked fillers.
+The Filler label appears in both responsive account card layouts.
+
+This is development/review evidence. Release requires Claude ACCEPT plus fresh
+backup/restore, protected counts, readiness, rollback and public hashes. Check for
+queued Standardize work immediately before activation and wait if any exists.
+One bot restart is required to load the new worker timing instrumentation, with
+a 210-second drain. Backend and frontend also change. Worker pacing, transport
+and storage contracts remain unchanged. Rollback can retain
+the two additive SQLite tables and their data; never restore a database blindly.
+
+Prompt 90 adds the shared compact DiscordIdentity and its staff-operated DM link
+on linked extra/low-TH rows. One optional ownership batch and one cached member
+directory read serve the entire check. Missing, conflicting or unavailable links
+never become an ID label or a guessed DM target. Optional lookup failures retain
+all member comparison rows. The bot sends nothing; no new polling is added.
+
+
+Prompt 91 rework uses one filler-aware capacity helper for Compare, Settings,
+chips, assignment, readiness and finalize. Filler overflow is neutral with an
+explicit count; true regular overflow stays red. Backend clan rules expose
+assigned filler counts. Seat-neutral swaps remain possible in filler overflow.
+Planners include immovable fillers in weight totals while excluding them from
+move candidates. Failed mark receipts cannot produce a saved-success message.
+Archived Declaration controls are hidden and writes still reject with 423.
+Observed location evidence drives both Ping counts and extra filler readiness.
+
+New timing logs cover ready lookup, scheduler wake, claim query, parent lookup,
+prune, child lookup/materialization, cursor CAS and history queries. HTTP history
+logs separate authorization, Mongo open/query/close, encoding and total time.
+These are diagnostics for the next owner-operated run, not a measured pacing fix.
+
+Rework validation: 82 focused backend tests, 1,385 frontend tests in 249 files,
+TypeScript/build, 16 real Mongo fixtures, all 15 targeted rework mutations, and
+the required war-reminder check (213 backend / 1 skip, 35 frontend/build) pass.
+Full guarded backend passed 5,705 tests / 58 skipped / 224 subtests. The final
+fixture checks cover 12 states at four widths and three account counts.
+Narrow/wide overview, Details and marked-state screenshots were inspected.
+The failed-save case exercises RosterWorkspace itself; five successive marks and
+Undo retain an open Declaration list with no recheck. Regression cases include
+season revision, archived writes, eight-second optional identity lookup, planner
+weight, swaps, actual over-capacity chip state and newer location evidence.
+
+
+Prompt 94 closes the Undo difference: both swap and move Undo restore the prior
+placement when overflow is filler-only, accounting for regular leaving/restored
+seats. Revision and true new regular-overflow guards remain. Swap is API-only;
+the dashboard has no swap control. Filler-only overflow uses normal room styling,
+while a clan full of regulars stays amber. If a confirmed filler save is followed
+by a failed roster read, retain its receipt/Undo and say “Saved. Refresh to see
+the latest.” The fallback overlays the confirmed mark and revision locally.
+Regression checks cover rapid receipt updates, actual hook state, permission
+controls, revision-aware writes, mark revision, optional fallback callbacks,
+archived arrival response, filler readiness and publication labels/weight bands.
+No real DM link click or production rollback has been tested.
+
+Prompt 94 validation: 84 focused backend tests; 1,392 frontend tests in 249 files;
+TypeScript/build; 16 owned real Mongo fixtures; 11 targeted mutations killed;
+war-reminder check 213 backend / 1 skip plus 35 frontend/build; Prettier on all
+50 changed UI files. Twelve layouts cover 26/65/125 accounts at four widths.
+Screenshots inspected: 26-account overview at 360/1440, 65-account Details at 360
+and 125-account marked state at 1440. Full guarded backend passed 5,707 tests /
+58 skipped / 224 subtests. No production action was used for these checks.

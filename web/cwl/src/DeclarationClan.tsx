@@ -1,3 +1,4 @@
+import type { DeclarationMarkControl } from "./DeclarationMemberMarks";
 import { useState } from "react";
 import { Button } from "./rosterUi/primitives";
 import {
@@ -10,6 +11,7 @@ import type { DeclarationExtraClan } from "./declarationExtras";
 import type { LocationRecords } from "./comparisonLocation";
 import type { StaffDetailsRequest } from "./staffDetailsRequest";
 export default function DeclarationClan({
+  markControl,
   group,
   open,
   onToggle,
@@ -22,6 +24,7 @@ export default function DeclarationClan({
   extraError = "",
   locationStatus,
 }: {
+  markControl?: DeclarationMarkControl;
   group: ReturnType<typeof declarationGroups>[number];
   open: boolean;
   onToggle: () => void;
@@ -87,6 +90,7 @@ export default function DeclarationClan({
       </h2>
       {group.tag && group.pool === "lazy" && (
         <DeclarationExtras
+          markControl={markControl}
           row={extra}
           loading={extraLoading}
           error={extraError}

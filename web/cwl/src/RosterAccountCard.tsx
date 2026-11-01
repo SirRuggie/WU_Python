@@ -108,6 +108,9 @@ export default function RosterAccountCard({
           </span>
           <span className="roster-account-column-pool">
             {account.pool === "main" ? "Main" : "Lazy"}
+            {account.roster_filler && (
+              <small className="roster-account-filler">Filler</small>
+            )}
           </span>
           <span
             className={`roster-account-column-assigned${status.inClan ? " is-in-clan" : ""}`}

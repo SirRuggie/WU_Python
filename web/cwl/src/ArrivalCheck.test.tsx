@@ -401,3 +401,331 @@ it("uses only the selected pool for Ping availability while another pool is stil
     "Checking locations…",
   );
 });
+
+it("offers revision-bound Undo after a declaration filler mark and guards double tap", async () => {
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  const transport = vi
+    .spyOn(await import("./api"), "api")
+    .mockImplementation(async (path: string) =>
+      path.includes("roster-filler")
+        ? ({
+            revision: 2,
+            roster_filler: true,
+            mark_revision: 1,
+            undo: { id: 77, label: "Change filler mark", revision: 2 },
+          } as any)
+        : ({
+            revision: 3,
+            tag: "#EXTRA",
+            roster_filler: false,
+            mark_revision: 2,
+          } as any),
+    );
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
+  extraState.value = {
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+    data: {
+      source: "published",
+      basis: 1,
+      revision: 1,
+      clans: [
+        {
+          tag: "#A",
+          name: "Amber",
+          capacity: 15,
+          status: "current",
+          checked_at: new Date(now).toISOString(),
+          count: 1,
+          extras: [
+            {
+              tag: "#EXTRA",
+              name: "Extra account",
+              town_hall: 16,
+              context: "Not signed up",
+              assigned_clan_tag: null,
+              roster_filler: false,
+              roster_filler_revision: 0,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider
+        value={{ owner: false, permissions: ["cwl_roster"] }}
+      >
+        <ArrivalCheck seasonId="7" />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  const box = host.querySelector<HTMLInputElement>(
+    'input[aria-label="Filler: Extra account"]',
+  )!;
+  expect(box).toBeTruthy();
+  await act(async () => box.click());
+  expect(host.textContent).toContain("Undo available: Change filler mark");
+  const undo = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Undo",
+  )!;
+  await act(async () => {
+    undo.click();
+    undo.click();
+  });
+  expect(
+    transport.mock.calls.filter((c) => c[0].endsWith("/roster/undo")),
+  ).toHaveLength(1);
+  expect(
+    transport.mock.calls.find((c) => c[0].endsWith("/roster/undo"))?.[2],
+  ).toEqual({ revision: 2, undo_id: 77 });
+  expect(state.value.refresh).not.toHaveBeenCalled();
+  expect(extraState.value.refresh).not.toHaveBeenCalled();
+});
+
+it("keeps open extra lists and observations while marking five rows without live rechecks", async () => {
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  const { patchDeclarationMark } = await import("./declarationMarks");
+  const transport = vi.spyOn(await import("./api"), "api");
+  let revision = 1;
+  transport.mockImplementation(
+    async (path: string, _method?: unknown, body?: any) => {
+      expect(body.revision).toBe(revision);
+      return {
+        tag: decodeURIComponent(path.split("/").at(-1)!),
+        revision: ++revision,
+        roster_filler: true,
+        mark_revision: body.mark_revision + 1,
+      } as any;
+    },
+  );
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
+  extraState.value = {
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+    data: {
+      source: "published",
+      basis: 1,
+      revision: 1,
+      clans: [
+        {
+          tag: "#A",
+          name: "Amber",
+          status: "current",
+          checked_at: new Date(now).toISOString(),
+          capacity: 15,
+          count: 5,
+          extras: Array.from({ length: 5 }, (_, i) => ({
+            tag: `#EXTRA${i}`,
+            name: `Extra ${i}`,
+            town_hall: 16,
+            context: "Not signed up",
+            assigned_clan_tag: null,
+            assigned_here: false,
+          })),
+        },
+      ],
+    },
+  };
+  (extraState.value as any).applyMark = vi.fn((saved: any) => {
+    extraState.value.data = patchDeclarationMark(extraState.value.data, saved);
+  });
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+        <ArrivalCheck seasonId="1" />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  const details = host.querySelector<HTMLDetailsElement>(
+    ".declaration-extras",
+  )!;
+  details.open = true;
+  for (let i = 0; i < 5; i++) {
+    const checkbox = host.querySelector<HTMLInputElement>(
+      `input[aria-label="Filler: Extra ${i}"]`,
+    )!;
+    await act(async () => checkbox.click());
+    if (i < 4) {
+      expect(host.querySelector(".declaration-extras")).toBe(details);
+      expect(details.open).toBe(true);
+    }
+  }
+  expect(transport).toHaveBeenCalledTimes(5);
+  expect(state.value.refresh).not.toHaveBeenCalled();
+  expect(extraState.value.refresh).not.toHaveBeenCalled();
+  expect(extraState.value.data.clans[0].checked_at).toBe(
+    new Date(now).toISOString(),
+  );
+  expect(extraState.value.data.clans[0].count).toBe(0);
+});
+it("hides marks on archived seasons and Ping uses the shared observed filler location", async () => {
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
+  state.value.data.arrival.season_archived = true;
+  const account = state.value.data.arrival.accounts[0];
+  account.roster_filler = true;
+  state.value.records[account.tag] = {
+    ...account,
+    current_clan_tag: "#OLD",
+    current_clan_checked_at: new Date(now - 1000).toISOString(),
+  };
+  extraState.value = {
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+    data: {
+      source: "published",
+      basis: 1,
+      revision: 1,
+      clans: [
+        {
+          tag: "#A",
+          name: "Amber",
+          status: "current",
+          checked_at: new Date(now).toISOString(),
+          capacity: 15,
+          count: 1,
+          extras: [
+            {
+              tag: "#E",
+              name: "Extra",
+              town_hall: 16,
+              context: "Not signed up",
+              assigned_clan_tag: null,
+            },
+          ],
+          fillers: [
+            {
+              tag: account.tag,
+              name: account.player_name,
+              town_hall: 16,
+              assigned_here: true,
+              roster_filler: true,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+        <ArrivalCheck seasonId="1" />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  expect(host.querySelector('[aria-label^="Filler:"]')).toBeNull();
+  expect(
+    host.querySelector("[data-ping-count]")?.getAttribute("data-ping-count"),
+  ).toBe("0");
+});
+it("two rapid confirmed marks retain both overlays and send the newest revision next", async () => {
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  const { staffDetailsPageEvent } = await import("./useStaffDetailsPage");
+  let page: any;
+  const capture = (e: Event) => {
+    page = (e as CustomEvent).detail;
+  };
+  window.addEventListener(staffDetailsPageEvent, capture);
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+          <ArrivalCheck seasonId="1" />
+        </DashboardPermissions.Provider>,
+      ),
+    );
+    const [a, b] = state.value.data.arrival.accounts;
+    await act(async () => {
+      page.onFillerChanged({
+        tag: a.tag,
+        revision: 2,
+        roster_filler: true,
+        mark_revision: 5,
+      });
+      page.onFillerChanged({
+        tag: b.tag,
+        revision: 3,
+        roster_filler: true,
+        mark_revision: 6,
+      });
+    });
+    const saved = page.publishedSnapshot.roster;
+    expect(saved.revision).toBe(3);
+    expect(saved.accounts.find((r: any) => r.tag === a.tag)).toMatchObject({
+      roster_filler: true,
+      roster_filler_revision: 5,
+    });
+    expect(saved.accounts.find((r: any) => r.tag === b.tag)).toMatchObject({
+      roster_filler: true,
+      roster_filler_revision: 6,
+    });
+    expect(state.value.refresh).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener(staffDetailsPageEvent, capture);
+  }
+});
+it("does not offer filler controls without roster permission", async () => {
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
+  const extrasView = vi.spyOn(await import("./DeclarationExtras"), "default");
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  extraState.value = {
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+    data: {
+      source: "published",
+      basis: 1,
+      revision: 1,
+      clans: [
+        {
+          tag: "#A",
+          name: "Amber",
+          status: "current",
+          count: 1,
+          extras: [
+            {
+              tag: "#EX",
+              name: "Extra",
+              town_hall: 16,
+              assigned_clan_tag: null,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider
+        value={{ owner: false, permissions: ["cwl_declaration"] }}
+      >
+        <ArrivalCheck seasonId="1" />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  expect(host.querySelector('[aria-label^="Filler:"]')).toBeNull();
+  expect(extrasView).toHaveBeenCalled();
+  expect(extrasView.mock.calls.at(-1)?.[0].markControl).toBeUndefined();
+  extrasView.mockRestore();
+});

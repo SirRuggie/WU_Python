@@ -30,6 +30,15 @@ export default function useStaffDetailsPage(page: StaffDetailsPage) {
       ...(page.openDirect
         ? { openDirect: (tag: string) => current.current.openDirect?.(tag) }
         : {}),
+      ...(page.onFillerChanged
+        ? {
+            onFillerChanged: (
+              saved: Parameters<
+                NonNullable<StaffDetailsRequest["onFillerChanged"]>
+              >[0],
+            ) => current.current.onFillerChanged?.(saved),
+          }
+        : {}),
       onChanged: () => current.current.onChanged?.(),
       onDirty: (dirty) => current.current.onDirty?.(dirty),
       onBusy: (busy) => current.current.onBusy?.(busy),
@@ -44,5 +53,6 @@ export default function useStaffDetailsPage(page: StaffDetailsPage) {
     page.archived,
     page.publishedSnapshot,
     page.enabled,
+    !!page.onFillerChanged,
   ]);
 }

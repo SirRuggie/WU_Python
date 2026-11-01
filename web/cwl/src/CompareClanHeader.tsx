@@ -1,3 +1,4 @@
+import { clanCapacity } from "./rosterCapacity";
 import type { ReactNode } from "react";
 import type { RosterAccount, RosterClan } from "./roster";
 import { clanSummary } from "./compare";
@@ -20,6 +21,7 @@ export default function CompareClanHeader({
   menu,
   compact = false,
 }: Props) {
+  const capacity = clanCapacity(accounts, clan.tag, clan.effective_capacity);
   const summary = clanSummary(accounts, clan.tag);
   const tally = comparisonTally(
     accounts.filter((a) => a.assigned_clan_tag === clan.tag).map((a) => a.tag),
@@ -34,6 +36,7 @@ export default function CompareClanHeader({
         <strong className="compare-clan-name">{clan.name}</strong>
         <strong>
           {summary.count} / {clan.effective_capacity}
+          {capacity.fillerLabel && <small> · {capacity.fillerLabel}</small>}
         </strong>
         {menu}
       </div>
@@ -96,13 +99,7 @@ export default function CompareClanHeader({
         )}
       </small>
       <ProgressBar
-        className={
-          summary.count > clan.effective_capacity
-            ? "is-over"
-            : summary.count === clan.effective_capacity
-              ? "is-full"
-              : "has-room"
-        }
+        className={capacity.barClass}
         value={summary.count}
         max={clan.effective_capacity}
         label={`${clan.name} capacity`}

@@ -1,3 +1,5 @@
+import { patchDeclarationMark } from "./declarationMarks";
+import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { DeclarationExtraResponse } from "./declarationExtras";
@@ -58,5 +60,14 @@ export default function useDeclarationExtras(
       clearTimeout(timer);
     };
   }, [season, source, basis, enabled, refreshNonce]);
-  return { data, loading, error, refresh: () => setRefreshNonce((n) => n + 1) };
+  return {
+    data,
+    loading,
+    error,
+    applyMark: (saved: FillerSaveResult) =>
+      setData((current) =>
+        current ? patchDeclarationMark(current, saved) : current,
+      ),
+    refresh: () => setRefreshNonce((n) => n + 1),
+  };
 }

@@ -35,6 +35,7 @@ export default function Standardize({
     [busy, setBusy] = useState(false),
     [phase, setPhase] = useState(""),
     [past, setPast] = useState(false),
+    [historyLoading, setHistoryLoading] = useState(false),
     [viewingPast, setViewingPast] = useState(false),
     [history, setHistory] = useState<
       { run_id: string; state: string; started_by?: string }[]
@@ -91,6 +92,7 @@ export default function Standardize({
   }
   useEffect(() => {
     if (!past) return;
+    setHistoryLoading(true);
     let active = true;
     void api<{ runs: typeof history }>("/manage/member-timezones/runs")
       .then((r) => {
@@ -98,11 +100,43 @@ export default function Standardize({
       })
       .catch((e) => {
         if (active) fail(e);
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
       });
     return () => {
       active = false;
     };
   }, [past]);
+  useEffect(() => {
+    let active = true;
+    const version = generation.current;
+    void api<{ runs: { run_id: string }[] }>(
+      "/manage/member-timezones/runs?active=1",
+    )
+      .then(async ({ runs }) => {
+        if (
+          !active ||
+          !runs.length ||
+          version !== generation.current ||
+          working.current
+        )
+          return;
+        const next = await api<Run>(
+          `/manage/member-timezones/runs/${encodeURIComponent(runs[0].run_id)}`,
+        );
+        if (active && version === generation.current && !working.current) {
+          setRun(next);
+          setViewingPast(false);
+        }
+      })
+      .catch((cause) => {
+        if (active && version === generation.current) fail(cause);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(() => {
     if (!run || !["queued", "stopping"].includes(run.state)) return;
     let active = true,
@@ -336,7 +370,9 @@ export default function Standardize({
               if (e.target.value) void openRun(e.target.value);
             }}
           >
-            <option value="">Choose a run</option>
+            <option value="">
+              {historyLoading ? "Loading…" : "Choose a run"}
+            </option>
             {history.map((r) => (
               <option key={r.run_id} value={r.run_id}>
                 {r.state} · {r.run_id.slice(-10)}

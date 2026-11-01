@@ -1187,3 +1187,28 @@ def test_real_hikari_seventy_second_429_finishes_four_members_without_uncertaint
             await client.close()
 
     asyncio.run(run())
+
+
+def test_real_run_summaries_exclude_large_manifests_and_find_shared_active():
+    assert URI == 'mongodb://127.0.0.1:27154'
+    from utils.member_profile_runs import ProfileRuns, KIND
+
+    async def run():
+        client = AsyncMongoClient(URI)
+        db = client['wu_profile_summaries_' + uuid4().hex]
+        try:
+            await db.bot_config.insert_many([
+                dict(_id='active', kind=KIND, guild_id=1, state='queued', user_id=USER,
+                     created_at=2, items=[{'private':'x'*1000} for _ in range(256)]),
+                dict(_id='past', kind=KIND, guild_id=1, state='done', user_id=ACTOR, created_at=1),
+                dict(_id='other', kind=KIND, guild_id=2, state='queued', created_at=3),
+            ])
+            store = ProfileRuns(S(bot_config=db.bot_config))
+            active = await store.summaries(1, active_only=True)
+            assert [r['_id'] for r in active] == ['active']
+            assert active[0]['user_id'] == USER and 'items' not in active[0]
+            assert [r['_id'] for r in await store.summaries(1)] == ['active', 'past']
+            assert len(str(active)) < 300
+        finally:
+            await client.drop_database(db.name);await client.close()
+    asyncio.run(run())

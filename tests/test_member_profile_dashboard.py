@@ -435,7 +435,9 @@ def test_staff_can_list_and_read_another_staff_members_run(monkeypatch):
             async def to_list(self, **kwargs):
                 return [parent] if self.parent else []
 
-        def find(query):
+        def find(query, projection=None):
+            if projection is not None:
+                assert "items" not in projection
             queries.append(query)
             cursor = Cursor()
             cursor.parent = "parent_id" not in query
@@ -455,7 +457,7 @@ def test_staff_can_list_and_read_another_staff_members_run(monkeypatch):
         monkeypatch.setattr(
             routes, "require_manage", AsyncMock(return_value={"user_id": ACTOR})
         )
-        request = S(match_info={"run_id": "run"})
+        request = S(match_info={"run_id": "run"}, query={})
         listed = json.loads((await routes.standardize_runs(request)).text)
         detail = json.loads((await routes.standardize_status(request)).text)
         assert listed["runs"][0]["started_by"] == creator

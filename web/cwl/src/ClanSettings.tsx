@@ -1,3 +1,4 @@
+import { rosterCapacity } from "./rosterCapacity";
 import HostingClanControls, { ArchiveHostingClan } from "./HostingClanControls";
 import { compactRosterWeight } from "./rosterCompactWeight";
 import {
@@ -117,7 +118,7 @@ export default function ClanSettings(props: Props) {
                 <Button
                   key={item.tag}
                   data-clan={item.tag}
-                  className={`roster-clan-chip clan-settings-row is-${capacityState(item.assigned_count, item.capacity)}${highlight === item.tag ? " is-selected" : ""}`}
+                  className={`roster-clan-chip clan-settings-row is-${capacityState(item.assigned_count, item.capacity, item.assigned_filler_count || 0)}${highlight === item.tag ? " is-selected" : ""}`}
                   disabled={props.busy}
                   onClick={(event) => {
                     setTrigger(event.currentTarget);
@@ -131,11 +132,40 @@ export default function ClanSettings(props: Props) {
                       <strong>{item.name}</strong>
                       <span className="roster-clan-chip-count">
                         {item.assigned_count} / {item.capacity ?? "—"}
+                        {rosterCapacity(
+                          item.assigned_count,
+                          item.assigned_filler_count || 0,
+                          item.capacity,
+                        ).fillerLabel && (
+                          <small>
+                            {" "}
+                            ·{" "}
+                            {
+                              rosterCapacity(
+                                item.assigned_count,
+                                item.assigned_filler_count || 0,
+                                item.capacity,
+                              ).fillerLabel
+                            }
+                          </small>
+                        )}
                         {item.capacity &&
-                          item.assigned_count > item.capacity && (
+                          rosterCapacity(
+                            item.assigned_count,
+                            item.assigned_filler_count || 0,
+                            item.capacity,
+                          ).over && (
                             <span className="clan-settings-over">
                               {" "}
-                              · +{item.assigned_count - item.capacity} over
+                              · +
+                              {
+                                rosterCapacity(
+                                  item.assigned_count,
+                                  item.assigned_filler_count || 0,
+                                  item.capacity,
+                                ).regularOverflow
+                              }{" "}
+                              over
                             </span>
                           )}
                       </span>
@@ -292,14 +322,32 @@ export function ClanSettingsEditor({
   const count = (
     <p className="clan-settings-count">
       {clan.assigned_count} assigned
+      {rosterCapacity(
+        clan.assigned_count,
+        clan.assigned_filler_count || 0,
+        capacity,
+      ).fillerLabel &&
+        ` · ${rosterCapacity(clan.assigned_count, clan.assigned_filler_count || 0, capacity).fillerLabel}`}
       {capacity && (
         <>
           {" "}
           · {capacity}v{capacity}
-          {clan.assigned_count > capacity && (
+          {rosterCapacity(
+            clan.assigned_count,
+            clan.assigned_filler_count || 0,
+            capacity,
+          ).over && (
             <span className="clan-settings-over">
               {" "}
-              · +{clan.assigned_count - capacity} over
+              · +
+              {
+                rosterCapacity(
+                  clan.assigned_count,
+                  clan.assigned_filler_count || 0,
+                  capacity,
+                ).regularOverflow
+              }{" "}
+              over
             </span>
           )}
         </>

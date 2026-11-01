@@ -210,3 +210,23 @@ it("keeps a conflicting weight editor mounted until explicit Reload and uses the
     weight_revision: 3,
   });
 });
+
+it("retains a confirmed filler receipt when follow-up roster read fails", async () => {
+  await render();
+  vi.mocked(api).mockRejectedValueOnce(new Error("Read offline"));
+  await act(async () =>
+    spy.props.onFillerChanged({
+      tag: "#PLAYER",
+      revision: 2,
+      roster_filler: true,
+      mark_revision: 4,
+      undo: { id: 12, label: "Change filler mark" },
+    }),
+  );
+  expect(host.textContent).toContain("Saved. Refresh to see the latest.");
+  expect(spy.props.account.roster_filler).toBe(true);
+  expect(spy.props.account.roster_filler_revision).toBe(4);
+  expect(spy.props.roster.revision).toBe(2);
+  expect(host.textContent).toContain("Undo");
+  expect(changed).toHaveBeenCalledTimes(1);
+});

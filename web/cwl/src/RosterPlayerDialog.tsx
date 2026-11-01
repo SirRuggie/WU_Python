@@ -1,3 +1,5 @@
+import type { FillerSaveResult } from "./RosterFillerCheckbox";
+import RosterFillerCheckbox from "./RosterFillerCheckbox";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import DetailsFrame from "./DetailsFrame";
 import ClanWeightSource from "./ClanWeightSource";
@@ -25,6 +27,8 @@ import "./PlayerCard.css";
 import "./RosterPlayerDialog.css";
 
 type Props = {
+  seasonId?: string;
+  onFillerChanged?: (saved?: FillerSaveResult) => Promise<void>;
   previous?: () => void;
   next?: () => void;
   onClanWeights?: (player?: string, clan?: string) => void;
@@ -71,6 +75,8 @@ export const detailsDate = (value?: string | null) =>
     : "Not recorded";
 
 export default function RosterPlayerDialog({
+  seasonId,
+  onFillerChanged,
   account,
   previous,
   next,
@@ -238,6 +244,21 @@ export default function RosterPlayerDialog({
           <PlayerCardMeta account={account} />
           <DiscordIdentity userId={account.user_id} />
         </header>
+        {seasonId && roster && rosterPermission && !archived && (
+          <RosterFillerCheckbox
+            seasonId={seasonId}
+            tag={account.tag}
+            name={account.player_name}
+            value={!!account.roster_filler}
+            markRevision={account.roster_filler_revision || 0}
+            revision={roster.revision}
+            disabled={busy || dirty}
+            onChanged={async (saved) => {
+              if (onFillerChanged) await onFillerChanged(saved);
+              else await onReload?.();
+            }}
+          />
+        )}
         {reason && (
           <p className="details-view-only">
             {viewOnly === "declaration" && !archived ? (

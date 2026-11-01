@@ -2,6 +2,8 @@ import type { ArrivalResponse } from "./locationTransport";
 import type { RosterAccount, RosterSnapshot } from "./roster";
 import type { PublicationDraft } from "./publication";
 export type DeclarationAccount = ArrivalResponse["accounts"][number] & {
+  roster_filler?: boolean;
+  roster_filler_revision?: number;
   player_name: string;
   user_id?: string | null;
   town_hall: number | null;
@@ -10,6 +12,7 @@ export type DeclarationAccount = ArrivalResponse["accounts"][number] & {
 };
 export type DeclarationArrival = Omit<ArrivalResponse, "accounts"> & {
   accounts: DeclarationAccount[];
+  season_archived?: boolean;
   publication_available: boolean;
   publication_outdated: boolean;
   version: number | null;
@@ -44,6 +47,12 @@ export function declarationSnapshot(data: DeclarationData): RosterSnapshot {
       manual_weight: null,
       effective_weight: null,
       ...data.publishedAccounts?.find((published) => published.tag === a.tag),
+      roster_filler:
+        data.roster.accounts.find((current) => current.tag === a.tag)
+          ?.roster_filler ?? a.roster_filler,
+      roster_filler_revision:
+        data.roster.accounts.find((current) => current.tag === a.tag)
+          ?.roster_filler_revision ?? a.roster_filler_revision,
       kept: Boolean(
         data.publishedAccounts?.find((published) => published.tag === a.tag)
           ?.kept,

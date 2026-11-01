@@ -1,3 +1,4 @@
+import { mergeRosterMarks } from "./roster";
 import {
   useEffect,
   useRef,
@@ -160,16 +161,30 @@ export default function StaffDetailsPanel({
     setUndo({ status: "pending", label: saved.label });
     try {
       const path = `/seasons/${encodeURIComponent(request.seasonId)}/roster`;
-      await api(`${path}/undo`, "POST", {
+      const restored = await api<{
+        tag?: string;
+        roster_filler?: boolean;
+        mark_revision?: number;
+      }>(`${path}/undo`, "POST", {
         revision: snapshot.revision,
         undo_id: saved.id,
       });
       const latest = await api<RosterSnapshot>(path);
       if (id === generation.current) {
-        setSnapshot(latest);
+        setSnapshot((previous) =>
+          request.viewOnly === "declaration" && previous
+            ? mergeRosterMarks(
+                previous,
+                latest,
+                restored.tag ? { ...restored, tag: restored.tag } : undefined,
+              )
+            : latest,
+        );
         setUndo(null);
         receipt.current = null;
-        await request.onChanged?.();
+        if (request.onFillerChanged && restored.tag)
+          request.onFillerChanged({ ...restored, revision: latest.revision });
+        else await request.onChanged?.();
       }
     } catch {
       if (id === generation.current) {
@@ -205,6 +220,46 @@ export default function StaffDetailsPanel({
       )}
       {request && snapshot && account && (
         <RosterPlayerDialog
+          seasonId={request.seasonId}
+          onFillerChanged={async (saved) => {
+            if (!saved) {
+              setSnapshot(null);
+              await request.onChanged?.();
+              return;
+            }
+            const id = generation.current;
+            let latest: RosterSnapshot | null = null;
+            try {
+              latest = await api<RosterSnapshot>(
+                `/seasons/${encodeURIComponent(request.seasonId)}/roster`,
+              );
+            } catch {
+              if (id !== generation.current) return;
+              setError("Saved. Refresh to see the latest.");
+            }
+            if (id !== generation.current) return;
+            setSnapshot((previous) =>
+              previous
+                ? mergeRosterMarks(
+                    previous,
+                    latest || { ...previous, revision: saved.revision },
+                    {
+                      tag: request.tag,
+                      ...saved,
+                    },
+                  )
+                : latest,
+            );
+            receipt.current = saved?.undo || null;
+            setUndo(
+              saved?.undo
+                ? { status: "available", label: saved.undo.label }
+                : null,
+            );
+            if (request.onFillerChanged)
+              request.onFillerChanged({ ...saved, tag: request.tag });
+            else request.onChanged?.();
+          }}
           account={account}
           archived={archived || request.archived}
           viewOnly={request.viewOnly}
@@ -251,7 +306,30 @@ export default function StaffDetailsPanel({
               `/seasons/${encodeURIComponent(request.seasonId)}/roster`,
             );
             if (id === generation.current) {
-              setSnapshot(latest);
+              setSnapshot((previous) =>
+                request.viewOnly === "declaration" && previous
+                  ? {
+                      ...previous,
+                      revision: latest.revision,
+                      accounts: previous.accounts.map((a) => {
+                        const current = latest.accounts.find(
+                          (x) => x.tag === a.tag,
+                        );
+                        return {
+                          ...a,
+                          roster_filler: current?.roster_filler,
+                          roster_filler_revision:
+                            current?.roster_filler_revision,
+                        };
+                      }),
+                    }
+                  : latest,
+              );
+              if (latest.undo && latest.undo.revision === latest.revision) {
+                receipt.current = latest.undo;
+                setUndo({ status: "available", label: latest.undo.label });
+              }
+              request.onChanged?.();
               setError("");
             }
           }}

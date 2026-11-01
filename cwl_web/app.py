@@ -1,3 +1,4 @@
+from utils import roster_player_marks
 from utils.clan_weights import source_weights, saved_sources, overlay_accounts
 from utils.cwl_dashboard_state import DashboardDurabilityError
 from .ticket_browser import routes as ticket_browser_routes
@@ -1011,7 +1012,7 @@ def _roster_rows(db, sid):
         row["effective_weight"] = (row["source_weight"] if row["clan_weight_managed"] else
                                    row["manual_weight"] if row["manual_weight"] is not None else row["source_weight"])
         result.append(row)
-    return result
+    return roster_player_marks.overlay(db, result)
 
 
 def _rule_rows(db, sid):
@@ -1027,6 +1028,7 @@ def _rule_rows(db, sid):
     result = []
     for raw in rows:
         row = dict(raw)
+        row["assigned_filler_count"] = roster_player_marks.assigned_counts(db, sid, row["tag"])[1]
         row["archived"] = bool(row["archived"])
         row["effective_capacity"] = row["capacity"] if row["capacity"] is not None else 50
         result.append(row)
@@ -1097,7 +1099,7 @@ async def arrival_snapshot(request, *, source=None, force=None):
     """The existing arrival read, shared by explicit reviewed declaration pings."""
     sid = _sid(request)
     with _store(request).tx() as db:
-        _season(db, sid)
+        season = _season(db, sid)
         latest = _latest_publication(db, sid)
         requested_source = source if source is not None else request.query.get('source', 'draft')
         if requested_source not in ('draft', 'published'):
@@ -1113,6 +1115,7 @@ async def arrival_snapshot(request, *, source=None, force=None):
             accounts = _roster_rows(db, sid)
             names = {row['tag']:row['name'] for row in db.execute('SELECT tag,name FROM clans')}
             for account in accounts: account['assigned_clan_name'] = names.get(account['assigned_clan_tag'])
+        roster_player_marks.overlay(db, accounts)
         clan_pools = {row['tag']: row['pool'] for row in _rule_rows(db, sid)}
         for account in accounts:
             account['hosting_pool'] = clan_pools.get(account['assigned_clan_tag']) or account['pool']
@@ -1128,7 +1131,7 @@ async def arrival_snapshot(request, *, source=None, force=None):
         account['arrival_status'] = ('unassigned' if not account['assigned_clan_tag'] else
             'unknown' if not current else 'arrived' if account['current_clan_tag'] == account['assigned_clan_tag'] else 'missing')
         account['outside_family'] = current and family is not None and account['current_clan_tag'] not in family
-    return {'source':'published' if published else 'draft',
+    return {'season_archived': season['status'] == 'archived', 'source':'published' if published else 'draft',
         'version':latest['version'] if published else None, 'accounts':accounts, 'updating':updating,
         'publication_available': latest is not None, 'publication_outdated': publication_outdated,
         'published_at': latest['published_at'] if latest else None,
@@ -1189,6 +1192,39 @@ def _active_destination_capacity(db, sid, clan_tag):
     return row["capacity"] if row["capacity"] is not None else 50
 
 
+async def update_roster_filler(request):
+    session = _require(request, 'editor')
+    body = await _json(request)
+    if set(body) != {'revision', 'roster_filler', 'mark_revision'}:
+        _fail(400, 'Expected revision, roster_filler and mark_revision')
+    try:
+        player_tag = tag(request.match_info['tag'])
+    except ValueError:
+        _fail(400, 'Invalid player tag')
+    sid = _sid(request)
+    with _store(request).tx() as db:
+        if _season(db, sid)['status'] != 'draft':
+            _fail(423, 'Season is archived')
+        _check_revision(db, sid, body['revision'])
+        try:
+            before, after = roster_player_marks.save(db, player_tag, body['roster_filler'],
+                                                     body['mark_revision'], session['user_id'])
+        except roster_player_marks.MarkConflict as exc:
+            _fail(409, str(exc))
+        except ValueError as exc:
+            _fail(400, str(exc))
+        if before != after:
+            _audit(db, sid, player_tag, session['user_id'], 'roster_filler', before, after)
+            _record_undo(db, sid, session['user_id'], 'Change filler mark', _revision(db, sid),
+                         [{'kind': 'roster_filler', 'tag': player_tag,
+                           'before': bool(before['roster_filler']), 'after': bool(after['roster_filler']),
+                           'mark_revision': after['revision']}])
+        return web.json_response({'revision': _revision(db, sid), 'tag': player_tag,
+                                  'roster_filler': bool(after['roster_filler']),
+                                  'mark_revision': after['revision'],
+                                  'undo': _current_undo(db, sid, session['user_id'])})
+
+
 async def bulk_assign_roster(request):
     session = _require(request, "editor")
     body = await _json(request)
@@ -1241,7 +1277,12 @@ async def bulk_assign_roster(request):
                 "SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?",
                 (sid, destination),
             ).fetchone()["n"]
-            if current - selected_already + len(tags) > capacity:
+            regular = roster_player_marks.incoming_regular(db, tags)
+            selected_already = sum(1 for value in regular if db.execute(
+                "SELECT 1 FROM roster_entries WHERE season_id=? AND tag=? AND assigned_clan_tag=?",
+                (sid, value, destination)).fetchone())
+            # Place regular selections first; filler seats may exceed the limit.
+            if regular and current - selected_already + len(regular) > capacity:
                 _fail(409, "Hosting clan is full")
             db.execute("INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)", (sid, destination))
         changes = []
@@ -1308,7 +1349,7 @@ async def update_roster_account(request):
             capacity = _active_destination_capacity(db, sid, assigned)
             count = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? "
                                "AND assigned_clan_tag=? AND tag<>?", (sid, assigned, player_tag)).fetchone()["n"]
-            if count >= capacity:
+            if count >= capacity and roster_player_marks.incoming_regular(db, [player_tag]):
                 _fail(409, "Hosting clan is full")
             db.execute("INSERT OR IGNORE INTO lineup(season_id,tag) VALUES (?,?)", (sid, assigned))
         kept = body.get("kept", True if "assigned_clan_tag" in body else bool(old["kept"]) if old else False)
@@ -1375,11 +1416,9 @@ async def swap_roster(request):
             _fail(409, "Accounts must be in different hosting clans")
         for host in (left_host, right_host):
             capacity = _active_destination_capacity(db, sid, host)
-            occupancy = db.execute(
-                "SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?",
-                (sid, host),
-            ).fetchone()["n"]
-            if occupancy > capacity:
+            occupancy, fillers = roster_player_marks.assigned_counts(db, sid, host)
+            incoming = left_tag if host == right_host else right_tag
+            if occupancy - fillers > capacity and roster_player_marks.incoming_regular(db, [incoming]):
                 _fail(409, "Hosting clan exceeds capacity")
         changes = []
         for player_tag, target in ((left_tag, right_host), (right_tag, left_host)):
@@ -1418,6 +1457,19 @@ async def undo_roster(request):
         changes = json.loads(undo["changes_json"])
         if not isinstance(changes, list) or not changes:
             _fail(409, "Invalid undo record")
+        if len(changes) == 1 and changes[0].get('kind') == 'roster_filler':
+            change = changes[0]
+            try:
+                _, restored = roster_player_marks.save(db, change['tag'], change['before'],
+                                                       change['mark_revision'], session['user_id'])
+            except (ValueError, roster_player_marks.MarkConflict) as exc:
+                _fail(409, str(exc))
+            db.execute("UPDATE roster_undo SET consumed_at=CURRENT_TIMESTAMP WHERE id=?", (undo['id'],))
+            _audit(db, sid, change['tag'], session['user_id'], 'roster_filler_undo',
+                   {'roster_filler': change['after']}, {'roster_filler': change['before']})
+            return web.json_response({'revision': _revision(db, sid), 'tag': change['tag'],
+                                      'roster_filler': bool(restored['roster_filler']),
+                                      'mark_revision': restored['revision']})
         current = {}
         occupancy_delta = {}
         restored_hosts = set()
@@ -1445,9 +1497,14 @@ async def undo_roster(request):
                 occupancy_delta[restored_host] = occupancy_delta.get(restored_host, 0) + 1
         for host in restored_hosts:
             capacity = _active_destination_capacity(db, sid, host)
-            count = db.execute("SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? "
-                               "AND assigned_clan_tag=?", (sid, host)).fetchone()["n"]
-            if count + occupancy_delta[host] > capacity:
+            count, fillers = roster_player_marks.assigned_counts(db, sid, host)
+            regular_restored = [c['tag'] for c in changes if c['before']['assigned_clan_tag'] == host
+                                and c['after']['assigned_clan_tag'] != host]
+            regular_restored = roster_player_marks.incoming_regular(db, regular_restored)
+            leaving_tags = [c['tag'] for c in changes if c['after']['assigned_clan_tag'] == host
+                            and c['before']['assigned_clan_tag'] != host]
+            regular_leaving = roster_player_marks.incoming_regular(db, leaving_tags)
+            if regular_restored and count - fillers - len(regular_leaving) + len(regular_restored) > capacity:
                 _fail(409, "Undo would exceed hosting clan capacity")
         for change in changes:
             player_tag = change["tag"]
@@ -1477,7 +1534,7 @@ def _auto_plan(db, sid, pool=None):
     for account in accounts:
         if account["assigned_clan_tag"] in totals and account["effective_weight"] is not None:
             totals[account["assigned_clan_tag"]] += account["effective_weight"]
-    candidates = sorted((a for a in accounts if a["assigned_clan_tag"] is None and (pool is None or a["pool"] == pool)),
+    candidates = sorted((a for a in accounts if not a.get("roster_filler") and a["assigned_clan_tag"] is None and (pool is None or a["pool"] == pool)),
                         key=lambda a: (-(a["effective_weight"] or 0), a["tag"]))
     placements = []
     unassigned = []
@@ -1964,6 +2021,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         web.post(API + "/seasons/{season_id}/roster/swap", swap_roster),
         web.post(API + "/seasons/{season_id}/roster/undo", undo_roster),
         web.patch(API + "/seasons/{season_id}/roster/{tag}", update_roster_account),
+        web.patch(API + "/seasons/{season_id}/roster-filler/{tag}", update_roster_filler),
         web.post(API + "/seasons/{season_id}/roster/auto-preview", auto_preview),
         web.post(API + "/seasons/{season_id}/roster/auto-apply", auto_apply),
         web.post(API + "/seasons/{season_id}/roster/refresh-weights", refresh_weights),

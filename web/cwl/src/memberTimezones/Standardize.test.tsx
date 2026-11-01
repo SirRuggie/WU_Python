@@ -3,9 +3,13 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 const transport = vi.hoisted(() => vi.fn());
+const activeLookup = vi.hoisted(() => vi.fn());
 vi.mock("../api", async (orig) => ({
   ...(await orig<object>()),
-  api: transport,
+  api: (...args: unknown[]) =>
+    args[0] === "/manage/member-timezones/runs?active=1"
+      ? activeLookup()
+      : transport(...args),
 }));
 import Standardize from "./Standardize";
 import type { Change } from "./types";
@@ -42,6 +46,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  activeLookup.mockReset().mockResolvedValue({ runs: [] });
   transport.mockReset().mockImplementation(async (path: string) =>
     path.endsWith("/import")
       ? { request_id: "request", status: "done", status_url: "/receipt" }
@@ -323,45 +328,88 @@ it("running status polls each second and stops as soon as finished", async () =>
   expect(transport.mock.calls).toHaveLength(count);
 });
 
-it('keeps confirmed run and Stop when a subsequent read fails, then polling recovers on Changed', async () => {
+it("keeps confirmed run and Stop when a subsequent read fails, then polling recovers on Changed", async () => {
   vi.useFakeTimers();
-  const original=transport.getMockImplementation()!;
-  let reads=0;
-  transport.mockImplementation(async (...args: unknown[])=>{
-    if(args[0]==='/manage/member-timezones/runs/run') {
-      if(++reads===1) throw new Error('Temporary read failure');
-      return {run_id:'run',state:'done',rows:[{...rows[0],status:'done'},{...rows[1],status:'uncertain'}]};
+  const original = transport.getMockImplementation()!;
+  let reads = 0;
+  transport.mockImplementation(async (...args: unknown[]) => {
+    if (args[0] === "/manage/member-timezones/runs/run") {
+      if (++reads === 1) throw new Error("Temporary read failure");
+      return {
+        run_id: "run",
+        state: "done",
+        rows: [
+          { ...rows[0], status: "done" },
+          { ...rows[1], status: "uncertain" },
+        ],
+      };
     }
     return original(...args);
   });
-  await mount(); await click('Review nicknames'); await click('Rename');
-  expect(host.textContent).toContain('Renaming');
-  expect(host.textContent).toContain('Stop run');
-  expect(host.textContent).not.toContain('Search nicknames');
-  await act(async()=>vi.advanceTimersByTimeAsync(1000));
-  expect(host.textContent).toContain('Done. 1 changed.');
-  expect(host.querySelector('[role=alert]')).toBeNull();
-  expect(host.textContent).toContain('Member 0');
-  expect(host.textContent).not.toContain('Member 1 |');
+  await mount();
+  await click("Review nicknames");
+  await click("Rename");
+  expect(host.textContent).toContain("Renaming");
+  expect(host.textContent).toContain("Stop run");
+  expect(host.textContent).not.toContain("Search nicknames");
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(host.textContent).toContain("Done. 1 changed.");
+  expect(host.querySelector("[role=alert]")).toBeNull();
+  expect(host.textContent).toContain("Member 0");
+  expect(host.textContent).not.toContain("Member 1 |");
 });
 
-it('shows attribution only when viewing a past run, not when the history control is open on a new run', async () => {
+it("shows attribution only when viewing a past run, not when the history control is open on a new run", async () => {
   await mount();
-  await click('Past runs');
-  await click('Review nicknames');
-  expect(host.querySelector('.mt-review-help')).toBeNull();
-  await click('Rename');
-  expect(host.textContent).not.toContain('Started by');
-  expect(host.textContent).not.toContain('Stopped by');
+  await click("Past runs");
+  await click("Review nicknames");
+  expect(host.querySelector(".mt-review-help")).toBeNull();
+  await click("Rename");
+  expect(host.textContent).not.toContain("Started by");
+  expect(host.textContent).not.toContain("Stopped by");
 });
 
-it('hides one-page review pagers and restores entry help only after Back', async () => {
+it("hides one-page review pagers and restores entry help only after Back", async () => {
   await mount();
-  expect(host.querySelector('.mt-review-entry .mt-review-help')).not.toBeNull();
-  await click('Review nicknames');
-  expect(host.querySelector('.mt-review-help')).toBeNull();
-  await click('Needs flag');
+  expect(host.querySelector(".mt-review-entry .mt-review-help")).not.toBeNull();
+  await click("Review nicknames");
+  expect(host.querySelector(".mt-review-help")).toBeNull();
+  await click("Needs flag");
   expect(host.querySelector('nav[aria-label="Review pages"]')).toBeNull();
-  await click('Back to members');
-  expect(host.querySelector('.mt-review-help')).not.toBeNull();
+  await click("Back to members");
+  expect(host.querySelector(".mt-review-help")).not.toBeNull();
+});
+
+it("reopens the shared queued run on another device with Stop and no writes", async () => {
+  activeLookup.mockResolvedValue({ runs: [{ run_id: "live" }] });
+  transport.mockImplementation(async (path: string) => {
+    expect(path).toBe("/manage/member-timezones/runs/live");
+    return {
+      run_id: "live",
+      state: "queued",
+      rows: rows.slice(0, 2).map((r) => ({ ...r, status: "waiting" })),
+    };
+  });
+  await mount();
+  expect(host.textContent).toContain("Renaming 0 of 2");
+  expect(
+    [...host.querySelectorAll("button")].some((b) =>
+      b.textContent?.includes("Stop"),
+    ),
+  ).toBe(true);
+  expect(transport.mock.calls.every((c) => !c[1] || c[1] === "GET")).toBe(true);
+});
+it("shows history loading until the summary request finishes", async () => {
+  let resolve!: (value: unknown) => void;
+  transport.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  await mount();
+  await click("Past runs");
+  expect(host.textContent).toContain("Loading…");
+  await act(async () => resolve({ runs: [] }));
+  expect(host.textContent).toContain("Choose a run");
 });

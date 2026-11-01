@@ -1,3 +1,7 @@
+import { api } from "./api";
+import RosterUndoToast from "./RosterUndoToast";
+import type { FillerSaveResult } from "./RosterFillerCheckbox";
+import { useDashboardPermission } from "./DashboardPermissions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import useDeclarationData from "./useDeclarationData";
@@ -10,7 +14,7 @@ import DeclarationExtras from "./DeclarationExtras";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import { useCwlPool } from "./CwlPoolTabs";
 import { hiddenPublicationStatus } from "./publicationStatus";
-import { comparisonAge, comparisonLocation } from "./comparisonLocation";
+import { comparisonAge } from "./comparisonLocation";
 import { Button, Input } from "./rosterUi/primitives";
 import "./ArrivalCheck.css";
 
@@ -23,10 +27,18 @@ export default function ArrivalCheck({
   onDirty?: (dirty: boolean) => void;
   onWorking?: (working: boolean) => void;
 }) {
+  const canMarkRosterFiller = useDashboardPermission("cwl_roster");
   const pingDirty = useRef(false);
   const pingWorking = useRef(false);
   const { data, error, refresh, records, now, checkedAt, checking } =
     useDeclarationData(seasonId);
+  const undoPending = useRef(false);
+  const [localMarks, setLocalMarks] = useState<
+    Record<string, FillerSaveResult>
+  >({});
+  const [markUndo, setMarkUndo] = useState<FillerSaveResult | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [undoError, setUndoError] = useState("");
   const [pool, setPool] = useCwlPool();
   const [helpOpen, setHelpOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -51,20 +63,92 @@ export default function ArrivalCheck({
     () =>
       data && published
         ? {
-            roster: declarationSnapshot(data),
+            roster: {
+              ...declarationSnapshot(data),
+              revision: Math.max(
+                data.roster.revision,
+                ...Object.values(localMarks).map((m) => m.revision),
+              ),
+              accounts: declarationSnapshot(data).accounts.map((a) => {
+                const mark = localMarks[a.tag];
+                return mark && mark.revision > data.roster.revision
+                  ? {
+                      ...a,
+                      roster_filler: mark.roster_filler,
+                      roster_filler_revision: mark.mark_revision,
+                    }
+                  : a;
+              }),
+            },
             version: data.arrival.version!,
             signupTags: data.roster.accounts.map((a) => a.tag),
           }
         : undefined,
-    [data, published],
+    [data, published, localMarks],
   );
   const groups = useMemo(
     () =>
       data && context
-        ? declarationGroups(data, context.roster, records, now)
+        ? declarationGroups(
+            data,
+            context.roster,
+            records,
+            now,
+            extras.data?.clans,
+          )
         : [],
-    [data, context, records, now],
+    [data, context, records, now, extras.data],
   );
+  function applySavedMark(saved?: FillerSaveResult) {
+    if (!saved?.tag || typeof saved.roster_filler !== "boolean") {
+      setMarkUndo(null);
+      refresh();
+      return;
+    }
+    setMarkUndo(saved.undo ? saved : null);
+    setUndoError("");
+    setLocalMarks((current) => ({ ...current, [saved.tag!]: saved }));
+    extras.applyMark?.(saved);
+  }
+  const markControl =
+    data &&
+    canMarkRosterFiller &&
+    !data.arrival.season_archived &&
+    !pingWorking.current
+      ? {
+          seasonId,
+          revision: Math.max(
+            data.roster.revision,
+            extras.data?.revision || 0,
+            ...Object.values(localMarks).map((m) => m.revision),
+          ),
+          disabled: checking || extras.loading || undoBusy,
+          onChanged: applySavedMark,
+        }
+      : undefined;
+  async function undoMark() {
+    if (!markUndo?.undo || undoPending.current) return;
+    undoPending.current = true;
+    setUndoBusy(true);
+    setUndoError("");
+    try {
+      const restored = await api<FillerSaveResult>(
+        `/seasons/${encodeURIComponent(seasonId)}/roster/undo`,
+        "POST",
+        { revision: markUndo.revision, undo_id: markUndo.undo.id },
+      );
+      setMarkUndo(null);
+      applySavedMark(restored);
+    } catch (cause) {
+      setMarkUndo(null);
+      setUndoError(
+        cause instanceof Error ? cause.message : "Could not undo filler mark.",
+      );
+    } finally {
+      undoPending.current = false;
+      setUndoBusy(false);
+    }
+  }
   const poolGroups = groups.filter((g) => g.pool === pool);
   const visible = poolGroups.filter(
     (g) =>
@@ -91,6 +175,9 @@ export default function ArrivalCheck({
       });
   }
   useEffect(() => {
+    setLocalMarks({});
+    setMarkUndo(null);
+    setUndoError("");
     setExpanded([]);
     setSearch("");
     setActiveClan("");
@@ -124,6 +211,8 @@ export default function ArrivalCheck({
     enabled: !!context,
     seasonId,
     viewOnly: "declaration",
+    archived: !!data?.arrival.season_archived,
+    onFillerChanged: applySavedMark,
     publishedSnapshot: context,
     order: ordered.map((a) => a.tag),
   });
@@ -296,18 +385,7 @@ export default function ArrivalCheck({
             key={`${seasonId}:${pool}`}
             seasonId={seasonId}
             pool={pool}
-            missing={poolGroups.reduce(
-              (count, g) =>
-                count +
-                (g.tag
-                  ? g.accounts.filter(
-                      (a) =>
-                        comparisonLocation(records[a.tag], g.tag, now, g.name)
-                          .state === "missing",
-                    ).length
-                  : 0),
-              0,
-            )}
+            missing={poolGroups.reduce((n, g) => n + g.missingCount, 0)}
             locationStatus={
               poolGroups.some((g) => !!locationStatus(g))
                 ? checking || data?.arrival.updating
@@ -342,6 +420,7 @@ export default function ArrivalCheck({
                     excluded from readiness.
                   </p>
                   <DeclarationExtras
+                    markControl={markControl}
                     row={c}
                     loading={extras.loading}
                     error={extras.error}
@@ -379,6 +458,7 @@ export default function ArrivalCheck({
             ) && <p>No matching players or clans.</p>}
           {visible.map((group) => (
             <DeclarationClan
+              markControl={markControl}
               key={group.key}
               group={group}
               records={records}
@@ -392,6 +472,11 @@ export default function ArrivalCheck({
                 seasonId,
                 viewOnly: "declaration",
                 publishedSnapshot: context,
+                archived: !!data.arrival.season_archived,
+                onFillerChanged: applySavedMark,
+                onChanged: () => {
+                  refresh();
+                },
               }}
               open={expanded.includes(group.key)}
               onToggle={() => {
@@ -402,6 +487,18 @@ export default function ArrivalCheck({
             />
           ))}
         </>
+      )}
+      {undoError && <p role="alert">{undoError}</p>}
+      {markUndo?.undo && (
+        <RosterUndoToast
+          state={
+            undoBusy
+              ? { status: "pending", label: markUndo.undo.label }
+              : { status: "available", label: markUndo.undo.label }
+          }
+          onUndo={() => void undoMark()}
+          onDismiss={() => setMarkUndo(null)}
+        />
       )}
     </section>
   );

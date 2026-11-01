@@ -26,6 +26,7 @@ type Props = {
   onPermissionError?: (error: ApiError) => void;
 };
 const reasons: Record<string, string> = {
+  filler_manual_only: "Filler · manual only",
   locked: "Locked placement",
   kept: "Locked placement",
   missing_weight: "Missing weight",

@@ -60,3 +60,49 @@ it("ignores old source replies and clears prior data after an unavailable read",
   expect(host.textContent).toBe("Couldn't check clan members");
   expect(current.data).toBeUndefined();
 });
+
+it("two quick receipt updates keep both members and mark revisions without fetching", async () => {
+  mock.api.mockResolvedValue({
+    source: "published",
+    basis: 1,
+    revision: 1,
+    clans: [
+      {
+        tag: "A",
+        status: "current",
+        checked_at: "now",
+        extras: [
+          { tag: "X", name: "X", town_hall: 16 },
+          { tag: "Y", name: "Y", town_hall: 16 },
+        ],
+        count: 2,
+      },
+    ],
+  });
+  await act(async () => root.render(<Probe />));
+  await act(async () => {
+    current.applyMark({
+      tag: "X",
+      revision: 2,
+      roster_filler: true,
+      mark_revision: 3,
+    });
+    current.applyMark({
+      tag: "Y",
+      revision: 3,
+      roster_filler: true,
+      mark_revision: 4,
+    });
+  });
+  expect(
+    current.data?.clans[0].fillers?.map((m) => [
+      m.tag,
+      m.roster_filler_revision,
+    ]),
+  ).toEqual([
+    ["X", 3],
+    ["Y", 4],
+  ]);
+  expect(current.data?.revision).toBe(3);
+  expect(mock.api).toHaveBeenCalledTimes(1);
+});

@@ -1,6 +1,8 @@
 import { retainFwaMembership } from "./clanWeightPolicy";
 import type { Pool } from "./api";
 export type RosterAccount = {
+  roster_filler?: boolean;
+  roster_filler_revision?: number;
   signed_up_at?: string | null;
   outside_family_and_hosts?: boolean;
   current_clan_checked_at?: string;
@@ -46,6 +48,7 @@ export type RosterClan = {
   min_weight: number | null;
   max_weight: number | null;
   assigned_count: number;
+  assigned_filler_count?: number;
 };
 export type RosterUndo = { id: number; label: string; revision: number };
 export type RosterSnapshot = {
@@ -204,5 +207,36 @@ export function retainRosterFwa(
       ...account,
       ...retainFwaMembership(previous.get(account.tag), account),
     })),
+  };
+}
+
+/** Player marks are current even when Details preserves a published placement. */
+export function mergeRosterMarks(
+  snapshot: RosterSnapshot,
+  latest: RosterSnapshot,
+  changed?: {
+    tag: string;
+    roster_filler?: boolean;
+    mark_revision?: number;
+  },
+): RosterSnapshot {
+  const current = new Map(latest.accounts.map((a) => [a.tag, a]));
+  return {
+    ...snapshot,
+    revision: latest.revision,
+    accounts: snapshot.accounts.map((a) => {
+      const saved = current.get(a.tag);
+      return {
+        ...a,
+        roster_filler:
+          changed?.tag === a.tag
+            ? changed.roster_filler
+            : (saved?.roster_filler ?? a.roster_filler),
+        roster_filler_revision:
+          changed?.tag === a.tag
+            ? changed.mark_revision
+            : (saved?.roster_filler_revision ?? a.roster_filler_revision),
+      };
+    }),
   };
 }
