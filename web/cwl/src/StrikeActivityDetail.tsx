@@ -1,5 +1,9 @@
 import type { ActivityAccount } from "./strikeActivityView";
-import { count } from "./strikeActivityFilters";
+import {
+  count,
+  warsWithoutAttacking,
+  hasNoActivity,
+} from "./strikeActivityFilters";
 const date = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString()
@@ -22,6 +26,7 @@ export default function StrikeActivityDetail({
   const raids = count(account.observed_raid_weekends),
     attackedRaids = count(account.attacked_raid_weekends);
   const available = !account.activity_unavailable;
+  const missedChain = warsWithoutAttacking(account as ActivityAccount);
   return (
     <details className="strike-activity-detail">
       <summary>Activity details</summary>
@@ -38,7 +43,8 @@ export default function StrikeActivityDetail({
         <dd>
           {available && account.last_seen_at
             ? `${date(account.last_seen_at)}${account.last_seen_source ? ` (${sourceName(account.last_seen_source)})` : ""}`
-            : available && account.tracking_started_at
+            : hasNoActivity(account as ActivityAccount) &&
+                account.tracking_started_at
               ? `Not seen since tracking began (${date(account.tracking_started_at)})`
               : "Unavailable"}
         </dd>
@@ -63,12 +69,10 @@ export default function StrikeActivityDetail({
         </dd>
         <dt>Consecutive wars without attacking</dt>
         <dd>
-          {available &&
-          wars !== null &&
-          wars > 0 &&
-          count(account.no_attack_wars) !== null &&
-          account.no_attack_wars! <= wars
-            ? `Didn't attack in their last ${account.no_attack_wars} known wars`
+          {missedChain !== null
+            ? missedChain === 0
+              ? "Attacked in their latest known war"
+              : `Didn't attack in their last ${missedChain} known wars`
             : "Unavailable"}
         </dd>
         <dt>War attack slots</dt>

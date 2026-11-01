@@ -255,6 +255,12 @@ export default function StrikeActivityRoster({
   const selectedRows = data.accounts.filter((row) =>
     selected.includes(row.player_tag),
   );
+  const clearedFilters = clearActivityFilters(filters);
+  const hasExtraFilters = appliedActivityFilters(filters, data.clans).some(
+    (filter) =>
+      JSON.stringify(normalizeActivityView({ ...filters, ...filter.clear })) !==
+      JSON.stringify(filters),
+  );
   return (
     <section
       className="strike-activity-roster"
@@ -320,7 +326,26 @@ export default function StrikeActivityRoster({
         >
           Filters
         </button>
-        <details className="strike-activity-actions">
+        <details
+          className="strike-activity-actions"
+          onToggle={(event) => {
+            const menu = event.currentTarget.querySelector<HTMLElement>(
+              ".strike-activity-action-menu",
+            );
+            if (!event.currentTarget.open || !menu) return;
+            const anchor = event.currentTarget.getBoundingClientRect();
+            const below = window.innerHeight - anchor.bottom - 8;
+            const above = anchor.top - 8;
+            const flip = below < menu.scrollHeight && above > below;
+            Object.assign(menu.style, {
+              top: flip ? "auto" : "48px",
+              bottom: flip ? "48px" : "auto",
+              maxHeight: `${Math.max(44, flip ? above : below)}px`,
+              overflowY: "auto",
+              boxSizing: "border-box",
+            });
+          }}
+        >
           <summary aria-label="Activity actions">⋯</summary>
           <div className="strike-activity-action-menu">
             {overviewActions}
@@ -450,12 +475,16 @@ export default function StrikeActivityRoster({
         <div className="card empty">
           <p>
             {data.accounts.length
-              ? `No accounts match these filters in the ${filters.view.replaceAll("_", " ")} tab.`
+              ? hasExtraFilters
+                ? `No accounts match these filters in the ${filters.view.replaceAll("_", " ")} tab.`
+                : `No accounts in the ${filters.view.replaceAll("_", " ")} tab.`
               : "No family accounts have been observed yet."}
           </p>
-          <button onClick={() => change(clearActivityFilters(filters))}>
-            Clear filters
-          </button>
+          {hasExtraFilters && (
+            <button onClick={() => change(clearedFilters)}>
+              Clear filters
+            </button>
+          )}
         </div>
       ) : null}
       {canManage && selecting && (

@@ -556,3 +556,22 @@ it("closes the Copy menu and clears a brief toast when filters change", async ()
     vi.useRealTimers();
   }
 });
+it("empty base tab has no dead Clear filters action", async () => {
+  vi.mocked(fetch).mockImplementation(
+    async () => new Response(JSON.stringify({ accounts: [row], clans: [] })),
+  );
+  await act(async () =>
+    root.render(
+      <StrikeActivityRoster
+        state="?activity_view=replacements"
+        onChoose={vi.fn()}
+      />,
+    ),
+  );
+  expect(host.textContent).toContain("No accounts in the replacements tab.");
+  expect(
+    [...host.querySelectorAll("button")].some(
+      (b) => b.textContent === "Clear filters",
+    ),
+  ).toBe(false);
+});

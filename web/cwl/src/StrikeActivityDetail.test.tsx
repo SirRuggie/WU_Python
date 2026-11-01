@@ -103,3 +103,32 @@ it("hides activity claims during a stall or a barrier war", () => {
     } as ActivityAccount),
   ).toBe("");
 });
+it("detail renders barriers and stalled unseen observations as unavailable", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <StrikeActivityDetail
+          account={{
+            observed_wars: 4,
+            attacked_wars: 0,
+            no_attack_wars: 0,
+            war_chain_unavailable: true,
+            activity_tracking_behind: true,
+            tracking_started_at: "2026-10-31",
+          }}
+        />,
+      ),
+    );
+    expect(host.textContent).not.toContain("last 0 known wars");
+    const chainLabel = [...host.querySelectorAll("dt")].find(
+      (node) => node.textContent === "Consecutive wars without attacking",
+    );
+    expect(chainLabel?.nextElementSibling?.textContent).toBe("Unavailable");
+    expect(host.textContent).not.toContain("Not seen since tracking began");
+    expect(host.textContent).toContain("Unavailable");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

@@ -134,3 +134,28 @@ and the remaining seven stages passed against unchanged application source.
 Logs and screenshots: .local/p69-final-evidence. No production activation, live
 Discord test or delivery proof is claimed. Eventual release remains backend plus
 frontend only; the bot can retain its independently deployed revision.
+
+## Prompt 71 delta
+
+Account detail reads now combine the canonical strike ledger (counts and link
+status) with activity observations, using the same path for deep links and
+post-action refreshes. Historical accounts absent from the family activity list
+keep their history and receive updated counts after removal. A late refresh
+cannot replace a subsequently selected account. Barrier-war details use the
+shared chain validity rule; stalled unseen observations say Unavailable.
+
+Find war closes the actions menu, reveals its search field and moves focus to
+it, including from a scrolled list. The actions popup flips above its trigger
+when needed and scrolls inside the available viewport. An empty base tab says
+that it is empty; Clear filters appears only when a removable extra predicate
+exists. The tracking browser test now builds and owns an ephemeral fixture
+server instead of contacting fixed port 8998.
+
+Validation: 1283 frontend tests in 233 files, tsc/build; focused historical
+removal/link-status, barrier/stall, empty-tab and extra-chain-filter regressions.
+Three mutants killed: extra chain predicate bypass, stale historical header,
+and invalid barrier chain rendered as known. Strikes flow covered 20 narrow/wide
+states; usability covered 16 width/population combinations, with Find war
+visible and focused after scrolling at 360/1440. Both screenshots were visually
+reviewed. Tracking and App-shell navigation fixtures passed. Evidence is under
+.local/p71-final-evidence. No production change or live delivery claim.

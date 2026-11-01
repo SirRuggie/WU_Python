@@ -190,6 +190,32 @@ fs.mkdirSync(output, { recursive: true });
         assert.deepEqual(errors, []);
         evidence.push({ ...metrics, count });
         await page.unrouteAll({ behavior: "wait" });
+        if (count === 560 && [360, 1440].includes(width)) {
+          await page.evaluate(() =>
+            window.scrollTo(0, document.body.scrollHeight),
+          );
+          await page.getByLabel("Activity actions").click();
+          await page
+            .getByRole("button", { name: "Find war", exact: true })
+            .click();
+          const search = page.getByPlaceholder("Opponent, clan, or date");
+          await search.waitFor();
+          assert(
+            await search.evaluate((node) => node === document.activeElement),
+          );
+          const box = await search.boundingBox();
+          assert(
+            box.y >= 0 && box.y + box.height <= (width === 1440 ? 1000 : 800),
+            JSON.stringify(box),
+          );
+          assert.equal(
+            await page.locator(".strike-activity-actions").getAttribute("open"),
+            null,
+          );
+          await page.screenshot({
+            path: path.join(output, `${width}-find-war-focused.png`),
+          });
+        }
         await context.close();
       }
     fs.writeFileSync(

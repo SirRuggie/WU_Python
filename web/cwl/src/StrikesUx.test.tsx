@@ -735,3 +735,77 @@ it("retains historical strike details when the activity directory has no such ac
     ),
   ).toBe(true);
 });
+it("refreshes canonical historical counts after removal and preserves direct-link status", async () => {
+  let active = 2;
+  transport.mockImplementation(async (path: string) => {
+    if (path.endsWith("/remove")) {
+      active = 1;
+      return {};
+    }
+    if (path.startsWith("/strikes/accounts"))
+      return {
+        clans: [],
+        accounts: path.includes("activity=true")
+          ? []
+          : [
+              {
+                player_tag: "#P2Y",
+                player_name: "Historical",
+                discord_id: "12345",
+                active_strikes: active,
+                total_strikes: 2,
+                link_status: "unlinked",
+              },
+            ],
+      };
+    if (path.startsWith("/strikes/overview"))
+      return {
+        total: 1,
+        clans: [],
+        entries: [
+          {
+            id: "historic",
+            player_tag: "#P2Y",
+            player_name: "Historical",
+            kind: "strike",
+            status: active === 2 ? "active" : "removed",
+            source: "manual",
+            reason: "Fixture",
+          },
+        ],
+      };
+    return { entries: [], total: 0, clans: [] };
+  });
+  await render(
+    <StrikesWorkspace
+      permissions={["strikes_remove"]}
+      isOwner={false}
+      userId="1"
+      targetTag="#P2Y"
+    />,
+  );
+  await settle();
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "Not linked",
+  );
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "2 active",
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".strike-row-more")!.click(),
+  );
+  await click("Remove strike");
+  await input(".strike-row-details form input", "Correction");
+  await act(async () =>
+    host
+      .querySelector(".strike-row-details form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  await settle();
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "1 active",
+  );
+  expect(
+    host.querySelector(".strikes-detail-context")?.textContent,
+  ).not.toContain("2 active");
+});

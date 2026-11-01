@@ -299,3 +299,18 @@ it("keeps the selected tab while clearing additional filters and restores legacy
   expect(clear.clans).toEqual([]);
   expect(parseActivityFilters("?marked=0").view).toBe("all");
 });
+it("extra chain filters narrow All and the Not attacking tab", () => {
+  const rows = [
+    row({ no_attack_wars: 3 }),
+    row({ no_attack_wars: 5 }),
+    row({ no_attack_wars: 10 }),
+  ];
+  for (const view of ["all", "not_attacking"]) {
+    const f = parseActivityFilters(`?activity_view=${view}&wars=5`);
+    expect(
+      visibleActivityAccounts(rows, f)
+        .map((r) => r.no_attack_wars)
+        .sort((a, b) => a! - b!),
+    ).toEqual([5, 10]);
+  }
+});
