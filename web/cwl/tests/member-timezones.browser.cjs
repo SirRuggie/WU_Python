@@ -50,13 +50,29 @@ fs.mkdirSync(output, { recursive: true });
         .getByRole("button", { name: "Edit Ada Champion", exact: true })
         .waitFor();
       const scope = page.locator(".member-timezones");
+      assert.equal(await page.locator(".mt-member-row").count(), 25);
+      await page.getByText("560 of 560 members", { exact: false }).waitFor();
+      const compact = await page
+        .locator(".mt-member-row")
+        .first()
+        .evaluate((e) => ({
+          height: e.getBoundingClientRect().height,
+          rows: document.querySelectorAll(".mt-member-row").length,
+          actionsAbove:
+            document.querySelector(".mt-top-actions").getBoundingClientRect()
+              .top < e.getBoundingClientRect().top,
+        }));
+      assert(
+        compact.height >= 70 && compact.height <= 90 && compact.actionsAbove,
+        JSON.stringify(compact),
+      );
       for (const state of ["Saved", "From nickname", "Unknown", "Missing"])
         assert((await scope.textContent()).includes(state));
       assert(!writes.some((r) => r.path.endsWith("/preview")));
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({
         path: `${output}/${width}-overview.png`,
-        fullPage: true,
+        fullPage: false,
       });
       await page
         .getByRole("button", { name: "Edit Ada Champion", exact: true })
@@ -85,7 +101,7 @@ fs.mkdirSync(output, { recursive: true });
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({
         path: `${output}/${width}-conflict.png`,
-        fullPage: true,
+        fullPage: false,
       });
       await page.request.post(origin + "/qa/member-timezones", {
         data: { conflict: false },
@@ -96,7 +112,12 @@ fs.mkdirSync(output, { recursive: true });
       await page
         .getByRole("button", { name: "Edit Ada Champion", exact: true })
         .waitFor();
-      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-member-id")), "123456789012345670");
+      assert.equal(
+        await page.evaluate(() =>
+          document.activeElement?.getAttribute("data-member-id"),
+        ),
+        "123456789012345670",
+      );
       await page.getByText("Standardize nicknames", { exact: true }).click();
       await page
         .getByRole("button", {
@@ -105,27 +126,64 @@ fs.mkdirSync(output, { recursive: true });
         })
         .click();
       await page
-        .getByRole("heading", { name: "Review all 5 members" })
+        .getByRole("heading", { name: "Review all 560 members" })
         .waitFor();
       const checks = scope.locator("input[type=checkbox]");
+      assert(
+        !(await checks.nth(2).isChecked()),
+        "Unknown suffix is never default selected",
+      );
       await checks.nth(1).uncheck();
+      const confirmed = await checks.evaluateAll(
+        (inputs) => inputs.filter((e) => e.checked).length,
+      );
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({
         path: `${output}/${width}-preview.png`,
-        fullPage: true,
+        fullPage: false,
       });
+      await scope
+        .locator(".mt-list li")
+        .filter({ hasText: "Cedar" })
+        .scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${output}/${width}-needs-review.png` });
       await page
         .getByRole("button", {
-          name: "Confirm 3 nickname changes",
+          name: `Confirm ${confirmed} nickname changes`,
           exact: true,
         })
         .click();
       await page.getByText(/1 need manual checking/).waitFor();
+      await page.getByRole("button", { name: "Stop run", exact: true }).click();
+      await page
+        .getByRole("heading", { name: /Standardize progress · Stopped/ })
+        .waitFor();
+      assert(
+        (await scope.textContent()).includes(
+          "Stopped before this member started.",
+        ),
+      );
       await page.evaluate(() => window.scrollTo(0, 0));
+      await page
+        .getByRole("heading", { name: /Standardize progress · Stopped/ })
+        .scrollIntoViewIfNeeded();
       await page.screenshot({
         path: `${output}/${width}-results.png`,
-        fullPage: true,
+        fullPage: false,
       });
+      await page.getByText("Standardize nicknames", { exact: true }).click();
+      await page
+        .getByLabel("Search members", { exact: true })
+        .fill("Server owner");
+      await page.getByRole("button", { name: /Edit Server owner/ }).click();
+      await page
+        .locator(".mt-editor")
+        .getByText("The server owner cannot be changed by this tool.", {
+          exact: true,
+        })
+        .waitFor();
+      await page.screenshot({ path: `${output}/${width}-owner-guard.png` });
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
       const geometry = await scope.evaluate((node) => ({
         overflow: document.documentElement.scrollWidth > innerWidth,
         small: [...node.querySelectorAll("button,select,summary")]
@@ -141,13 +199,13 @@ fs.mkdirSync(output, { recursive: true });
       assert.equal(errors.length, 0, errors.join("\n"));
       assert(
         writes.every((r) =>
-          /\/dev\/login$|\/manage\/member-timezones\/(save|preview|confirm)$/.test(
+          /\/dev\/login$|\/manage\/member-timezones\/(save|preview|confirm|runs\/fixture-run\/stop)$/.test(
             r.path,
           ),
         ),
         JSON.stringify(writes),
       );
-      evidence.push({ width, height, geometry, errors, writes });
+      evidence.push({ width, height, compact, geometry, errors, writes });
       await page.close();
     }
   } finally {

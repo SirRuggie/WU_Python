@@ -1,73 +1,83 @@
-# Member time zones PR 2 review checkpoint
+# Member time zones completion review
 
-Scope: shared nickname parser/import, existing-permission member page, optional
-profile/nickname edits and bounded restartable Standardize receipts. The backend
-uses public provider methods and the existing dashboard-to-bot request path.
-Discord transport remains in the Warrior extension; storage and receipts have
-explicit owners. No production import or nickname change has been performed.
+Prompt 62 PR 2 with rework 67/233. No production import, Standardize run or
+nickname change was performed by Codex. Release requires Claude ACCEPT and
+Ruggie's successful real Warrior test; isolated tests do not prove Discord
+transport delivery.
 
-Integrated checkpoint: 5,550 guarded backend cases (30 skips, 224 subtests),
-1,262 frontend cases, TypeScript/build and four real-Mongo cases passed. The owned
-Mongo stopped. All nine integrated layout stages passed. Seven required mutants
-and an additional consumed-confirmation replay mutant were killed; the real-Mongo
-baseline passed. Stronger regressions check an unticked manageable member and an
-old nickname changing inside the lease callback.
-The new browser stage passes 360×800 and 1440×1000 with no overflow, no page
-errors, all scoped button/select/summary targets at least 44 px, and focus restored
-to the edited row. Conflict input is retained; unticked members are excluded;
-uncertain results have no automatic retry. Screenshots were inspected. Browser
-writes were confined to the named isolated fixture's login/save/preview/confirm
-routes. This is simulated UI transport, not live Discord proof.
+The HTTP page uses the existing member_roles permission, CSRF protection and
+actor/guild-bound run receipts. Discord mutations remain in the Warrior extension
+with fresh worker authorization, hierarchy, exact old nickname and revision checks
+inside the profile edit lease. MemberProfiles owns profile storage and ProfileRuns
+owns reviewed manifests, concurrency and retention. No unrelated collections or
+routes migrate.
 
-Final integrated source includes PR 1 prompt 66. The matching dashboard rename
-path now preserves real hikari nickname field errors too, with a real-error
-regression proving no profile commit after Discord refusal. Final guarded backend:
-5,564 passed, 30 skipped, 224 subtests. Fifty-five focused cases pass. Frontend
-source is unchanged from the passing 1,262-case integrated run and build; the nine
-layout stages and four real-Mongo cases remain applicable. Seven required mutants
-and the additional real-Mongo consumed-confirmation replay mutant were killed.
+## Names, offsets and outcomes
 
-Completion review checked existing member_roles authorization in HTTP and fresh
-worker context, guild/actor/target binding, bots and hierarchy, malformed fields,
-partial directory/player data, exact old nickname and revision inside the edit
-lease, unticked members, consumed confirmation retries, one active run, restart
-uncertainty and bounded receipt pruning. Only unattempted children resume; an
-uncertain Discord edit is never replayed automatically. The preview is complete
-rather than silently truncated, and unrelated profiles/receipts remain owned by
-their existing storage classes.
+Only the last recognized zone suffix is stripped. Earlier pipes remain. An unknown
+suffix keeps the entire name, shows Needs review and starts unticked. Tight pipe /
+flag styles and GMT+5:45 retain names and non-menu offsets. Import maps the nine
+named daylight aliases to standard offsets; Compare keeps literal sort offsets.
+An existing nickname is never replaced by a late suggested account name. Import
+preserves all previous staff/Warrior/import decisions.
 
-Harness corrections: navigation expects Member time zones; signup-card route
-callbacks finish before page close. Earlier Chrome socket-path, sandbox bind and
-teardown failures were corrected before the passing nine-stage run. UI evidence
-uses fake HTTP transport; real-Mongo cases use an owned local daemon that stopped.
-No test proves live Discord delivery. Production import and Standardize have not
-run. Release is gated on PR 1 LIVE plus Ruggie's real Warrior test and Claude's
-verdict; only authorized staff will press Standardize in production.
+Wizard and dashboard nickname transports journal attempted, confirmed, refused or
+unconfirmed outcomes with source, actor, target, old and new values, using repr
+formatting to prevent extra journal lines. Nothing retries an uncertain Discord
+effect automatically. HTTP errors retain real Discord field reasons.
 
-## Rework67/233 checkpoint — not READY
+Recovered uncertain requests get a finished_at timestamp. Legacy missing stamps
+are repaired once before the twenty-receipt/thirty-day prune, without sliding their
+lifetime. The previous checkpoint's claim that four Mongo cases applied after
+prompt66 was incorrect: one stale assertion still expected “profile not saved”.
+It now expects the actual “profile save not confirmed” wording. The current seven
+real-Mongo cases pass, including uncertainty lifetime, Stop and replay.
 
-The last recognized zone suffix is removed from a name; earlier pipes remain.
-Unknown/no-zone suffixes retain the complete nickname and start unticked with
-Needs review. The editor does not overwrite an existing nickname with a late
-account suggestion. Import maps named daylight zones to standard profile offsets;
-Compare keeps literal offset meaning. Both parsers now recognize the two approved
-hand styles (tight pipe/flag and non-menu GMT+5:45), with shared vectors.
+## Stop and recovery
 
-Recovered uncertain requests receive a completion timestamp. Legacy missing
-completion times are established once before the twenty-receipt/thirty-day prune,
-so a new uncertain receipt is not lost or continually renewed. The stale Mongo
-assertion is corrected. Five actual Mongo cases pass, including lifetime repair;
-the owned daemon stopped.84 focused backend and20 targeted frontend cases,
-TypeScript/build pass. These are current runs, not applicability inferred from
-an earlier revision.
+A sticky stop_requested barrier cancels unclaimed work and keeps the single lane
+held while an already claimed member finishes. The parent then becomes stopped;
+confirmation replay returns that terminal run and cannot resume it. The transport
+checks the parent before a new nickname operation. Results retain changed,
+skipped/not-selected with reasons, failed, uncertain and stopped members by name.
+Stop has the same management scope and run owner/guild binding as status.
 
-Both nickname transports now journal attempted/confirmed/refused/unconfirmed
-outcomes with source, actor, target and old/new values. Repr formatting prevents
-newlines from becoming extra journal entries; no request is retried. Logging is
-not proof of delivery unless Discord confirmed the call. No production code was
-activated and no nickname edit was performed by Codex.
+Conflicts keep the draft. Reload latest refreshes its base revision/expected
+nickname; reapply is a separate Save. Confirmed failed save/import retries receive
+fresh request identities on explicit retry. An unconfirmed transport failure keeps
+its identity so an already accepted request is not duplicated. Cancel still asks
+before discarding changes. Successful return restores row focus and scroll, with
+an overview-heading fallback if the row disappeared.
 
-Still pending: Stop and complete skipped-result reporting, compact/paged top-action
-UI, conflict reload/reapply and fresh explicit retry IDs, final regressions/layouts
-and required rework mutations. PR119 remains unready and human-gated. Prompt68
-starts on an independent branch now that prompt65 is READY.
+The three-second minimum pace remains. The existing management worker ticks every
+ten seconds; completion observation and next materialization can take two ticks,
+before queue/API delays. A shorter minimum alone would not remove that latency,
+and this batch does not accelerate unrelated management jobs. [Discord's official
+rate-limit guidance](https://github.com/discord/discord-api-docs/blob/main/developers/topics/rate-limits.mdx)
+uses per-route/shared buckets plus a global ceiling, and directs clients to follow
+headers and Retry-After rather than assume a fixed nickname rate. Hikari's limiter
+remains authoritative; staff can now stop a long run safely.
+
+## Usability and validation
+
+The directory renders 25 members per page, with 86px tap rows at 360 and1440.
+Import/Standardize/Refresh sit above it, with a sticky search/status toolbar and
+compact count/paging controls. Row metadata remains available to screen readers;
+complete hierarchy explanations remain in the editor. An initial visual review
+showed too much header space and centered row text; the final header is trimmed
+and rows align left. Unknown suffixes remain unticked in the 560-member preview.
+
+Checks: 5586 guarded backend passed/32 skipped/224 subtests; 1274 frontend cases in
+233 files; TypeScript/build; seven actual isolated Mongo cases; five required
+behavioral mutants killed (first pipe, unknown default selection, daylight literal,
+early receipt deletion and a new rename after Stop). The Mongo TTL fixture initially
+used the daemon's default sweep interval; the correctly configured one-second
+isolated sweep and all seven cases pass. The owned daemon stopped.
+
+All nine integrated layout stages passed. The final feature lane was rerun after
+scoped header/accessibility/alignment polish and passes at360/1440 with560 members,
+25 rendered rows, no overflow/page errors, 44px controls, conflict draft retention,
+row focus return, Needs review, stopped named results and full owner guard text.
+Screenshots were visually inspected. Evidence: .local/p67-final-evidence.
+Browser writes were limited to the disposable fixture's login/save/preview/confirm/
+stop routes. This is sample transport, not proof of live Discord delivery.

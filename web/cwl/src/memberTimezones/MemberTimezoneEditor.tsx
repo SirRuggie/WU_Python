@@ -12,7 +12,9 @@ export default function MemberTimezoneEditor({
   onClose,
   onDirty,
   onDenied,
+  outcome,
 }: {
+  outcome?: RequestState | null;
   member: Member;
   data: Directory;
   busy: boolean;
@@ -33,6 +35,17 @@ export default function MemberTimezoneEditor({
     [warning, setWarning] = useState(""),
     [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [base, setBase] = useState({
+    revision: member.profile?.revision || 0,
+    nickname: member.nickname,
+  });
+  const retryNeeded = useRef(false);
+  useEffect(() => {
+    if (outcome?.status === "failed") {
+      retryNeeded.current = true;
+      setError(outcome.message);
+    }
+  }, [outcome?.request_id, outcome?.status]);
   busy = busy || saving;
   const requestId = useRef(crypto.randomUUID()),
     edited = useRef(false),
@@ -89,13 +102,17 @@ export default function MemberTimezoneEditor({
     setSaving(true);
     setError("");
     try {
+      if (retryNeeded.current) {
+        requestId.current = crypto.randomUUID();
+        retryNeeded.current = false;
+      }
       const result = await api<RequestState>(
         "/manage/member-timezones/save",
         "POST",
         {
           request_id: requestId.current,
           discord_id: member.discord_id,
-          revision: member.profile?.revision || 0,
+          revision: base.revision,
           fields: {
             zone_id: zone,
             country: country.toUpperCase(),
@@ -103,16 +120,51 @@ export default function MemberTimezoneEditor({
           },
           rename,
           name,
-          old_nickname: member.nickname,
+          old_nickname: base.nickname,
         },
       );
       if (alive.current) onQueue(result);
     } catch (e) {
       if (!alive.current) return;
       if (e instanceof ApiError && [401, 403].includes(e.status)) onDenied();
-      else
+      else {
+        if (e instanceof ApiError && [400, 409].includes(e.status))
+          retryNeeded.current = true;
         setError(
           e instanceof Error ? e.message : "Profile could not be queued.",
+        );
+      }
+    } finally {
+      if (alive.current) setSaving(false);
+    }
+  }
+  async function reloadBase() {
+    if (busy) return;
+    setSaving(true);
+    try {
+      const fresh = await api<Directory>("/manage/member-timezones");
+      if (!alive.current) return;
+      const current = fresh.members.find(
+        (row) => row.discord_id === member.discord_id,
+      );
+      if (!current) throw new Error("This member is no longer available.");
+      setBase({
+        revision: current.profile?.revision || 0,
+        nickname: current.nickname,
+      });
+      requestId.current = crypto.randomUUID();
+      retryNeeded.current = false;
+      setError("");
+      setWarning(
+        "Latest profile loaded. Your draft was kept; review the preview before saving again.",
+      );
+      onDirty(true);
+    } catch (e) {
+      if (!alive.current) return;
+      if (e instanceof ApiError && [401, 403].includes(e.status)) onDenied();
+      else
+        setError(
+          e instanceof Error ? e.message : "Could not reload the profile.",
         );
     } finally {
       if (alive.current) setSaving(false);
@@ -122,7 +174,14 @@ export default function MemberTimezoneEditor({
     <section className="mt-editor" aria-label={`Edit ${member.name}`}>
       <h2>Edit {member.name}</h2>
       {warning && <p role="status">{warning}</p>}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <div role="alert">
+          {error}
+          <button disabled={busy} onClick={() => void reloadBase()}>
+            Reload latest and keep draft
+          </button>
+        </div>
+      )}
       <label>
         In-game name
         <input

@@ -62,7 +62,7 @@ async function renderPage() {
 }
 async function click(text: string) {
   const button = [...host.querySelectorAll("button")].find(
-    (x) => x.textContent === text,
+    (x) => x.textContent === text || x.getAttribute("aria-label") === text,
   );
   expect(button).toBeTruthy();
   await act(async () => button!.click());
@@ -267,4 +267,150 @@ it("stops a run, lists named skipped outcomes and never resumes terminal polling
       (b) => b.textContent === "Stop run",
     ),
   ).toBe(false);
+});
+it("pages 560 compact members and keeps occasional actions above the directory", async () => {
+  const many = {
+    ...directory,
+    members: Array.from({ length: 560 }, (_, i) => ({
+      ...directory.members[0],
+      discord_id: String(123456789012345000n + BigInt(i)),
+      name: `Member ${String(i).padStart(3, "0")}`,
+    })),
+  };
+  transport.mockResolvedValue(many);
+  await renderPage();
+  expect(host.querySelectorAll(".mt-member-row")).toHaveLength(25);
+  expect(host.textContent).toContain("560 of 560");
+  const actions = host.querySelector(".mt-top-actions")!,
+    list = host.querySelector(".mt-member-list")!;
+  expect(
+    actions.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  await click("Next members");
+  expect(
+    host.querySelector(".mt-pagination span")?.getAttribute("aria-label"),
+  ).toBe("Page 2 of 23");
+  expect(host.querySelector(".mt-member-row")!.textContent).toContain(
+    "Member 025",
+  );
+});
+it("reloads a conflicting revision while keeping the draft for explicit reapply", async () => {
+  let latest = false;
+  const posts: unknown[] = [];
+  transport.mockImplementation(
+    async (path: string, method?: string, body?: unknown) => {
+      if (method === "POST") {
+        posts.push(body);
+        throw new ApiError("Profile changed", 409);
+      }
+      if (path.endsWith("/choices"))
+        return { accounts: [], suggested: null, complete: true };
+      return {
+        ...directory,
+        members: [
+          {
+            ...directory.members[0],
+            profile: {
+              ...directory.members[0].profile!,
+              revision: latest ? 4 : 3,
+            },
+          },
+        ],
+      };
+    },
+  );
+  await renderPage();
+  await click("Edit Ada");
+  await act(async () => {
+    const field = host.querySelector<HTMLInputElement>(".mt-editor input")!;
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(field, "Draft kept");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Save profile");
+  latest = true;
+  await click("Reload latest and keep draft");
+  expect(host.querySelector<HTMLInputElement>(".mt-editor input")!.value).toBe(
+    "Draft kept",
+  );
+  expect(host.textContent).toContain("Your draft was kept");
+  await click("Save profile");
+  const first = posts[0] as { request_id: string; revision: number },
+    second = posts[1] as { request_id: string; revision: number };
+  expect(first.revision).toBe(3);
+  expect(second.revision).toBe(4);
+  expect(first.request_id).not.toBe(second.request_id);
+});
+it("uses a fresh identity only on an explicit retry of a confirmed failed save or import", async () => {
+  const posts: { path: string; body: { request_id: string } }[] = [];
+  transport.mockImplementation(
+    async (path: string, method?: string, body?: { request_id: string }) => {
+      if (method === "POST") {
+        posts.push({ path, body: body! });
+        return {
+          request_id: `request${posts.length}`,
+          status: "failed",
+          status_url: "/fixture-status",
+          message: "Confirmed failure",
+        };
+      }
+      if (path.endsWith("/choices"))
+        return { accounts: [], suggested: null, complete: true };
+      return directory;
+    },
+  );
+  await renderPage();
+  await click("Edit Ada");
+  await click("Save profile");
+  await click("Save profile");
+  expect(posts[0].body.request_id).not.toBe(posts[1].body.request_id);
+  await click("Cancel");
+  await click("Import nickname time zones");
+  await click("Import nickname time zones");
+  expect(posts[2].path).toContain("/import");
+  expect(posts[2].body.request_id).not.toBe(posts[3].body.request_id);
+});
+it("retains the request identity after an unconfirmed transport failure", async () => {
+  const ids: string[] = [];
+  transport.mockImplementation(
+    async (path: string, method?: string, body?: { request_id: string }) => {
+      if (method === "POST") {
+        ids.push(body!.request_id);
+        throw new ApiError("Unconfirmed connection", 0);
+      }
+      if (path.endsWith("/choices"))
+        return { accounts: [], suggested: null, complete: true };
+      return directory;
+    },
+  );
+  await renderPage();
+  await click("Edit Ada");
+  await click("Save profile");
+  await click("Save profile");
+  expect(ids).toHaveLength(2);
+  expect(ids[0]).toBe(ids[1]);
+});
+it("makes complete row metadata accessible and exposes hierarchy reasons in the editor", async () => {
+  const guard = "The server owner cannot be changed by this tool.";
+  transport.mockImplementation(async (path: string) =>
+    path.endsWith("/choices")
+      ? { accounts: [], suggested: null, complete: true }
+      : {
+          ...directory,
+          members: [{ ...directory.members[0], skip_reason: guard }],
+        },
+  );
+  await renderPage();
+  const row = host.querySelector<HTMLButtonElement>(".mt-member-row")!;
+  const descriptions = row
+    .getAttribute("aria-describedby")!
+    .split(" ")
+    .map((id) => host.querySelector(`#${id}`)?.textContent)
+    .join(" ");
+  expect(descriptions).toContain("Ada | EST");
+  expect(descriptions).toContain(guard);
+  await click("Edit Ada");
+  expect(host.querySelector(".mt-editor")!.textContent).toContain(guard);
 });

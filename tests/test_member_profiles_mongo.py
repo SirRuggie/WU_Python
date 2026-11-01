@@ -452,6 +452,9 @@ def test_real_standardize_stop_retains_inflight_and_never_resumes(monkeypatch):
             item, discord_id=ACTOR, name="Skipped fixture", skip_reason="Above bot"
         )
         try:
+            await MemberProfiles(m).write(
+                USER, FIELDS, expected_revision=0, updated_by=ACTOR, source="staff"
+            )
             token = await runs.preview(
                 actor_id=ACTOR, guild_id=actions.GUILD_ID, rows=[item, other]
             )
@@ -468,7 +471,18 @@ def test_real_standardize_stop_retains_inflight_and_never_resumes(monkeypatch):
                 parent["_id"], actor_id=ACTOR, guild_id=actions.GUILD_ID
             )
             assert stopped["state"] == "queued" and stopped["stop_requested"]
-            monkeypatch.setattr(actions, "target_context", AsyncMock(return_value={}))
+            monkeypatch.setattr(
+                actions,
+                "target_context",
+                AsyncMock(
+                    return_value={
+                        "member": S(nickname="Old"),
+                        "bot_permissions": __import__(
+                            "hikari"
+                        ).Permissions.MANAGE_NICKNAMES,
+                    }
+                ),
+            )
             bot = S(rest=S(edit_member=AsyncMock()))
             with pytest.raises(ProfileRunStopped):
                 await actions.apply(bot, m, child)
@@ -491,6 +505,86 @@ def test_real_standardize_stop_retains_inflight_and_never_resumes(monkeypatch):
             )
             with pytest.raises(ValueError):
                 await runs.stop(parent["_id"], actor_id=USER, guild_id=actions.GUILD_ID)
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(check())
+
+
+def test_stopped_run_never_starts_the_next_member(monkeypatch):
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def check():
+        import time, hikari
+        from utils.member_profile_runs import ProfileRuns
+        from extensions.warrior import profile_dashboard as actions
+
+        client = AsyncMongoClient(URI)
+        db = client["wu_stop_next_" + uuid4().hex]
+        m = S(
+            bot_config=db.bot_config,
+            component_state=db.component_state,
+            member_profiles=db.member_profiles,
+        )
+        uid2 = "345678901234567890"
+        at = time.time()
+        runs = ProfileRuns(m)
+        try:
+            for uid in [USER, uid2]:
+                await MemberProfiles(m).write(
+                    uid, FIELDS, expected_revision=0, updated_by=ACTOR, source="staff"
+                )
+            rows = [
+                dict(
+                    discord_id=uid,
+                    name="Fixture " + uid[-2:],
+                    old_nickname="Old",
+                    new_nickname="Name | GMT-5 🇺🇸",
+                    revision=1,
+                )
+                for uid in [USER, uid2]
+            ]
+            token = await runs.preview(
+                actor_id=ACTOR, guild_id=actions.GUILD_ID, rows=rows
+            )
+            parent = await runs.confirm(
+                actor_id=ACTOR,
+                guild_id=actions.GUILD_ID,
+                nonce=token,
+                selected=[USER, uid2],
+            )
+            await runs.advance(now=at)
+            first = await db.bot_config.find_one({"parent_id": parent["_id"]})
+            await db.bot_config.update_one(
+                {"_id": first["_id"]}, {"$set": {"status": "running"}}
+            )
+            await runs.stop(parent["_id"], actor_id=ACTOR, guild_id=actions.GUILD_ID)
+            await db.bot_config.update_one(
+                {"_id": first["_id"]},
+                {"$set": {"status": "done", "finished_at": at + 1}},
+            )
+            await runs.advance(now=at + 2)
+            await runs.advance(now=at + 20)
+            next_child = await db.bot_config.find_one({"_id": parent["_id"] + ":1"})
+            bot = S(rest=S(edit_member=AsyncMock()))
+            monkeypatch.setattr(
+                actions,
+                "target_context",
+                AsyncMock(
+                    return_value={
+                        "member": S(nickname="Old"),
+                        "bot_permissions": hikari.Permissions.MANAGE_NICKNAMES,
+                    }
+                ),
+            )
+            if next_child:
+                await actions.apply(bot, m, next_child)
+            bot.rest.edit_member.assert_not_awaited()
+            assert next_child is None
+            assert (await db.bot_config.find_one({"_id": parent["_id"]}))[
+                "state"
+            ] == "stopped"
         finally:
             await client.drop_database(db.name)
             await client.close()

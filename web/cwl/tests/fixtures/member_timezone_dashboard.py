@@ -9,6 +9,7 @@ from aiohttp import web
 sys.path.insert(0, str(Path(__file__).parent))
 import player_cards as fixture
 from utils.member_timezones import COUNTRY_CHOICES, ZONE_CHOICES, SINGLE_ZONE, flag
+from utils.member_timezone_import import nickname_name
 
 BASE = "/api/cwl/manage/member-timezones"
 profiles = [
@@ -67,7 +68,27 @@ members.append(
         skip_reason="The server owner cannot be changed by this tool.",
     )
 )
-state = dict(denied=False, conflict=False, request=None, preview=None, run=None)
+for i in range(555):
+    members.append(
+        dict(
+            discord_id=str(123456789012346000 + i),
+            name=f"Member {i:03}",
+            nickname=f"Member {i:03} | EST 🇺🇸",
+            bot=False,
+            status="Saved",
+            profile=deepcopy(profiles[0]),
+            parsed=dict(label="EST", offsetMinutes=-300),
+            skip_reason=None,
+        )
+    )
+state = dict(
+    denied=False,
+    conflict=False,
+    request=None,
+    preview=None,
+    run=None,
+    run_state="queued",
+)
 
 
 @web.middleware
@@ -133,9 +154,10 @@ async def sample(request, handler):
                 discord_id=m["discord_id"],
                 name=m["name"],
                 old_nickname=m["nickname"],
-                new_nickname=(m["nickname"] or m["name"]).split(" | ")[0]
+                new_nickname=nickname_name(m["nickname"], m["name"])["name"]
                 + " | GMT-5 🇺🇸",
                 revision=3,
+                needs_review=nickname_name(m["nickname"], m["name"])["needs_review"],
                 skip_reason=m["skip_reason"],
             )
             for m in members
@@ -145,7 +167,11 @@ async def sample(request, handler):
     if request.path == BASE + "/runs":
         return web.json_response(
             dict(
-                runs=[dict(run_id="fixture-run", state="done")] if state["run"] else []
+                runs=(
+                    [dict(run_id="fixture-run", state=state["run_state"])]
+                    if state["run"]
+                    else []
+                )
             )
         )
     if request.path.endswith("/confirm"):
@@ -154,16 +180,42 @@ async def sample(request, handler):
         state["run"] = [
             dict(
                 row,
-                status="uncertain" if index == 0 else "done",
-                message="Check Discord before repeating" if index == 0 else "Saved",
+                status=(
+                    "skipped"
+                    if row["discord_id"] not in selected
+                    else (
+                        "uncertain"
+                        if index == 0
+                        else "done" if index == 1 else "waiting"
+                    )
+                ),
+                message=(
+                    (row.get("skip_reason") or "Not selected in the reviewed preview.")
+                    if row["discord_id"] not in selected
+                    else (
+                        "Check Discord before repeating"
+                        if index == 0
+                        else "Saved" if index == 1 else "Waiting"
+                    )
+                ),
             )
             for index, row in enumerate(state["preview"])
-            if row["discord_id"] in selected
         ]
-        return web.json_response(dict(run_id="fixture-run", state="done"))
+        state["run_state"] = "queued"
+        return web.json_response(dict(run_id="fixture-run", state="queued"))
+    if request.path == BASE + "/runs/fixture-run/stop":
+        state["run_state"] = "stopped"
+        for row in state["run"] or []:
+            if row["status"] == "waiting":
+                row.update(
+                    status="stopped", message="Stopped before this member started."
+                )
+        return web.json_response(dict(run_id="fixture-run", state="stopped"))
     if request.path == BASE + "/runs/fixture-run":
         return web.json_response(
-            dict(run_id="fixture-run", state="done", rows=state["run"] or [])
+            dict(
+                run_id="fixture-run", state=state["run_state"], rows=state["run"] or []
+            )
         )
     return web.json_response(
         {"error": "Unsupported isolated fixture action"}, status=400

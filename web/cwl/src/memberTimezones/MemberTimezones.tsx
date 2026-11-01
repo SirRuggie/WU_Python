@@ -15,6 +15,9 @@ export default function MemberTimezones({
     [error, setError] = useState(""),
     [query, setQuery] = useState(""),
     [status, setStatus] = useState("All"),
+    [page, setPage] = useState(0),
+    [requestKind, setRequestKind] = useState<"save" | "import" | null>(null),
+    [requestMember, setRequestMember] = useState<string | null>(null),
     [editing, setEditing] = useState<Member | null>(null),
     [dirty, setDirty] = useState(false),
     [request, setRequest] = useState<RequestState | null>(null),
@@ -23,7 +26,9 @@ export default function MemberTimezones({
   const alive = useRef(true),
     generation = useRef(0),
     importId = useRef(crypto.randomUUID()),
-    rowButton = useRef<string | null>(null);
+    rowButton = useRef<string | null>(null),
+    returnScroll = useRef(0),
+    directoryHeading = useRef<HTMLHeadingElement | null>(null);
   const denied = () => {
     generation.current++;
     setData(null);
@@ -49,7 +54,12 @@ export default function MemberTimezones({
       const next = await api<Directory>("/manage/member-timezones");
       if (alive.current && current === generation.current) {
         setData(next);
-        setLoaded(new Date().toLocaleTimeString());
+        setLoaded(
+          new Date().toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+        );
       }
     } catch (e) {
       if (current === generation.current) fail(e);
@@ -66,14 +76,19 @@ export default function MemberTimezones({
     };
   }, []);
   useEffect(() => {
-    if (!editing && rowButton.current) {
-      document
-        .querySelector<HTMLButtonElement>(
-          `[data-member-id="${rowButton.current}"]`,
-        )
-        ?.focus();
-    }
+    if (editing || !rowButton.current) return;
+    const saved = rowButton.current;
+    const frame = requestAnimationFrame(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        `[data-member-id="${saved}"]`,
+      );
+      (button || directoryHeading.current)?.focus({ preventScroll: true });
+      window.scrollTo?.(0, returnScroll.current);
+      rowButton.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
   }, [editing, data]);
+
   const busy =
     sending || (!!request && ["pending", "running"].includes(request.status));
   useEffect(() => {
@@ -129,6 +144,11 @@ export default function MemberTimezones({
     setSending(true);
     setError("");
     try {
+      if (requestKind === "import" && request?.status === "failed")
+        importId.current = crypto.randomUUID();
+      setRequestKind("import");
+      setRequestMember(null);
+      setRequest(null);
       setRequest(
         await api<RequestState>("/manage/member-timezones/import", "POST", {
           request_id: importId.current,
@@ -159,28 +179,22 @@ export default function MemberTimezones({
         a.discord_id.localeCompare(b.discord_id)
       );
     });
+  const lastPage = Math.max(0, Math.ceil(rows.length / 25) - 1),
+    currentPage = Math.min(page, lastPage);
   return (
     <main className="member-timezones">
-      <h1>Member time zones</h1>
-      <p>
-        Requires Members & roles access. GMT labels use standard time and may
-        differ from daylight saving time.
+      <h1 ref={directoryHeading} tabIndex={-1}>
+        Member time zones
+      </h1>
+      <p className="mt-intro">
+        GMT labels use standard time; daylight saving can differ.
       </p>
       {error && <p role="alert">{error}</p>}
-      <div className="mt-toolbar">
-        <button
-          disabled={loading || busy || !!editing}
-          onClick={() => void load()}
-        >
+      {!data && (
+        <button disabled={loading || busy} onClick={() => void load()}>
           Refresh members
         </button>
-        {loaded && (
-          <span>
-            Loaded {loaded}
-            {loading ? " · Refreshing…" : ""}
-          </span>
-        )}
-      </div>
+      )}
       {request && (
         <p role="status">
           {request.status}: {request.message}
@@ -204,6 +218,11 @@ export default function MemberTimezones({
               member={editing}
               data={data}
               busy={busy}
+              outcome={
+                requestKind === "save" && requestMember === editing.discord_id
+                  ? request
+                  : null
+              }
               onDirty={(value) => {
                 setDirty(value);
                 onDirty(value);
@@ -211,19 +230,42 @@ export default function MemberTimezones({
               onDenied={denied}
               onClose={close}
               onQueue={(result) => {
+                setRequestKind("save");
+                setRequestMember(editing.discord_id);
                 setRequest(result);
-                setDirty(false);
-                onDirty(false);
+                setDirty(true);
+                onDirty(true);
               }}
             />
           ) : (
             <>
-              <div className="mt-toolbar">
+              <div className="mt-top-actions">
+                <details>
+                  <summary aria-label="Import existing nicknames">
+                    Import nicknames
+                  </summary>
+                  <p>
+                    Fill profiles from recognized time zone labels. No nickname
+                    changes; existing saved and imported choices are preserved.
+                  </p>
+                  <button disabled={busy} onClick={() => void importCurrent()}>
+                    Import nickname time zones
+                  </button>
+                </details>
+                <Standardize disabled={busy} onDenied={denied} />
+                <button disabled={loading || busy} onClick={() => void load()}>
+                  Refresh members
+                </button>
+              </div>
+              <div className="mt-toolbar mt-search-toolbar">
                 <label>
                   Search members
                   <input
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setPage(0);
+                    }}
                     placeholder="Name, nickname or Discord ID"
                   />
                 </label>
@@ -231,7 +273,10 @@ export default function MemberTimezones({
                   Status
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value)}
+                    onChange={(e) => {
+                      setStatus(e.target.value);
+                      setPage(0);
+                    }}
                   >
                     {[
                       "All",
@@ -245,10 +290,6 @@ export default function MemberTimezones({
                   </select>
                 </label>
               </div>
-              <p>
-                {rows.length} of {data.members.length} members · sorted west to
-                east
-              </p>
               {!rows.length && (
                 <p>
                   {data.members.length
@@ -256,46 +297,84 @@ export default function MemberTimezones({
                     : "No server members were returned."}
                 </p>
               )}
-              <ul className="mt-list">
-                {rows.map((m) => (
-                  <li key={m.discord_id}>
-                    <div>
-                      <strong>{m.name}</strong>
-                      {m.bot && <span> · Bot</span>}
-                      <p>{m.nickname || "No nickname"}</p>
-                      <p>
-                        {m.profile?.gmt_label ||
-                          m.parsed?.label ||
-                          "No time zone"}{" "}
-                        {m.profile?.flag || ""} · {m.status}
-                      </p>
-                      {m.skip_reason && <p>{m.skip_reason}</p>}
-                    </div>
-                    <button
-                      disabled={busy || m.bot}
-                      data-member-id={m.discord_id}
-                      onClick={() => {
-                        rowButton.current = m.discord_id;
-                        setEditing(m);
-                        setDirty(false);
-                      }}
-                    >
-                      Edit {m.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <details>
-                <summary>Import existing nicknames</summary>
+              <div className="mt-directory-summary">
                 <p>
-                  Fill profiles from recognized time zone labels. No nickname
-                  changes; existing saved and imported choices are preserved.
+                  <span>
+                    {rows.length} of {data.members.length} members
+                  </span>
+                  <small>
+                    West → east{loaded ? ` · ${loaded}` : ""}
+                    {loading ? " · Refreshing…" : ""}
+                  </small>
                 </p>
-                <button disabled={busy} onClick={() => void importCurrent()}>
-                  Import nickname time zones
-                </button>
-              </details>
-              <Standardize disabled={busy} onDenied={denied} />
+                <nav className="mt-pagination" aria-label="Member pages">
+                  <button
+                    aria-label="Previous members"
+                    disabled={currentPage === 0}
+                    onClick={() => setPage(currentPage - 1)}
+                  >
+                    ←
+                  </button>
+                  <span
+                    aria-label={`Page ${currentPage + 1} of ${lastPage + 1}`}
+                  >
+                    {currentPage + 1}/{lastPage + 1}
+                  </span>
+                  <button
+                    aria-label="Next members"
+                    disabled={currentPage === lastPage}
+                    onClick={() => setPage(currentPage + 1)}
+                  >
+                    →
+                  </button>
+                </nav>
+              </div>
+
+              <ul className="mt-list mt-member-list">
+                {rows
+                  .slice(currentPage * 25, (currentPage + 1) * 25)
+                  .map((m) => (
+                    <li key={m.discord_id}>
+                      <button
+                        className="mt-member-row"
+                        disabled={busy || m.bot}
+                        data-member-id={m.discord_id}
+                        aria-label={`Edit ${m.name}`}
+                        aria-describedby={`mt-nick-${m.discord_id} mt-status-${m.discord_id}`}
+                        title={[m.name, m.nickname, m.skip_reason]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        onClick={() => {
+                          rowButton.current = m.discord_id;
+                          returnScroll.current = window.scrollY;
+                          setEditing(m);
+                          setDirty(false);
+                        }}
+                      >
+                        <strong>
+                          {m.name}
+                          {m.bot ? " · Bot" : ""}
+                        </strong>
+                        <span
+                          id={`mt-nick-${m.discord_id}`}
+                          className="mt-member-nickname"
+                        >
+                          {m.nickname || "No nickname"}
+                        </span>
+                        <span
+                          id={`mt-status-${m.discord_id}`}
+                          className="mt-member-zone"
+                        >
+                          {m.profile?.gmt_label ||
+                            m.parsed?.label ||
+                            "No time zone"}{" "}
+                          {m.profile?.flag || ""} · {m.status}
+                          {m.skip_reason ? ` · ${m.skip_reason}` : ""}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+              </ul>
             </>
           )}
         </>
