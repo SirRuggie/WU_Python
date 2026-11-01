@@ -34,6 +34,9 @@ scenarios = {
     "No links": dict(base, step="name", accounts=[]),
     "Country": dict(base, step="country"),
     "Time zone": dict(base, step="zone"),
+    "Australia zones": dict(base, step="zone", country="AU"),
+    "United States zones": dict(base, step="zone", country="US"),
+    "All zones": dict(base, step="zone", country="AU", all_zones=True),
     "Preview": dict(base, step="preview"),
     "Shorten a name": dict(
         base, step="preview", name="A very long example name that needs shortening"

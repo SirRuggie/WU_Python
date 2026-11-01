@@ -389,6 +389,9 @@ def test_pause_invalidates_an_older_open_draft(monkeypatch):
 
 
 def test_defaults_roll_into_new_month_without_becoming_cycle_revision(monkeypatch):
+    # This scenario deliberately saves October defaults before November starts.
+    # Freeze the calendar rather than changing meaning at the live month boundary.
+    monkeypatch.setattr(cwl_campaign.pendulum, "now", lambda tz=None: pendulum.datetime(2026, 10, 15, tz=tz or "UTC"))
     async def scenario():
         mongo = MemoryMongo()
         monkeypatch.setattr(cwl_reminder, "mongo_client", None)
