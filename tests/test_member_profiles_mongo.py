@@ -67,6 +67,14 @@ def test_real_profile_lease_concurrency_failure_cas_and_ttl():
                 updated_by=ACTOR,
                 source="warrior",
             )
+            from extensions.warrior import profile_membership
+
+            async def present(guild):
+                yield S(id=int(USER))
+
+            fake_bot = S(rest=S(fetch_members=present), get_me=lambda: S(id=int(USER)))
+            await profile_membership.reconcile(fake_bot, mongo)
+            await profile_membership.reconcile(fake_bot, mongo)
             current = await store.get(USER)
             assert current["revision"] == 1
             change.reset_mock()
@@ -123,7 +131,11 @@ def test_consumed_preview_survives_restart_after_discord_success_storage_failure
             AsyncMock(side_effect=RuntimeError("storage acknowledgement unavailable")),
         )
         bot = S(rest=S(edit_member=AsyncMock()))
-        ctx = S(user=S(id=int(ACTOR)), interaction=S(edit_initial_response=AsyncMock()))
+        ctx = S(
+            user=S(id=int(ACTOR)),
+            respond=AsyncMock(),
+            interaction=S(edit_initial_response=AsyncMock()),
+        )
         state = {
             "nonce": "preview",
             "step": "preview",
@@ -143,8 +155,10 @@ def test_consumed_preview_survives_restart_after_discord_success_storage_failure
             }
         )
         try:
-            with pytest.raises(core.SetupError, match="profile save was not confirmed"):
-                await ui.save(ctx, {"_id": "wizard"}, c, mongo, state, bot)
+            await ui.save(ctx, {"_id": "wizard"}, c, mongo, state, bot)
+            assert ctx.respond.await_args.args[0].startswith(
+                "Nickname changed in Discord; profile not saved"
+            )
             assert await db.member_profiles.count_documents({}) == 0
             # A fresh wrapper represents a restarted worker reading the durable receipt.
             restarted = S(
@@ -187,6 +201,15 @@ def test_receipt_nonce_cas_preserves_newer_drafts(monkeypatch):
                     "nickname_setup": {"nonce": "old", "step": "preview"},
                 }
             )
+            for wrong in (
+                dict(guild_id=11, discord_id=USER, actor_id=ACTOR),
+                dict(guild_id=10, discord_id=ACTOR, actor_id=ACTOR),
+                dict(guild_id=10, discord_id=USER, actor_id=USER),
+            ):
+                assert not await store.consume_preview("wizard", "old", **wrong)
+                assert (await db.component_state.find_one({"_id": "wizard"}))[
+                    "nickname_setup"
+                ]["step"] == "preview"
             assert await store.consume_preview(
                 "wizard", "old", guild_id=10, discord_id=USER, actor_id=ACTOR
             )

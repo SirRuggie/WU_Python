@@ -116,7 +116,7 @@ def nickname(name, zone_id, country):
     value = f"{name} | {zone(zone_id)['gmt_label']} {flag(country)}"
     if len(value) > 32:
         raise ValueError(
-            f"Nickname is {len(value)} characters; shorten the name to fit32."
+            f"Nickname is {len(value)} characters; shorten the name to fit 32."
         )
     return value
 

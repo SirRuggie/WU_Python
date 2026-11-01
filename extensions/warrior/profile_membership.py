@@ -33,8 +33,10 @@ async def reconcile(bot, mongo):
     for row in profiles:
         is_present = row["_id"] in members
         present += is_present
-        # Preserve the first confirmed departure; do not slide its90day lifetime.
+        # Preserve the first confirmed departure; do not slide its 90-day lifetime.
         left = None if is_present else row.get("left_at") or observed
+        if left == row.get("left_at"):
+            continue
         await store.membership(row["_id"], left_at=left, observed_at=observed)
     return {
         "profiles": len(profiles),
