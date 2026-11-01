@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 export const dashboardViews = [
   "weight-trial",
   "search",
+  "bases",
   "wars",
   "events",
   "declaration",
@@ -66,6 +67,7 @@ const sections: Section[] = [
     items: [
       { view: "home", label: "Home", icon: "home" },
       { view: "search", label: "Search", icon: "search" },
+      { view: "bases", label: "Base bank", icon: "baseBank" },
     ],
   },
   {

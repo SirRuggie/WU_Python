@@ -29,7 +29,7 @@ const markup = (
     }),
   );
 
-it("keeps member navigation unchanged and hides staff tools without grants", () => {
+it("includes Base bank for members and hides staff tools without grants", () => {
   const sections = visibleNavigationSections(false, false);
   expect(sections.map((section) => section.id)).toEqual(memberIds);
   expect(
@@ -37,6 +37,7 @@ it("keeps member navigation unchanged and hides staff tools without grants", () 
   ).toEqual([
     "home",
     "search",
+    "bases",
     "todo",
     "wars",
     "events",
@@ -130,7 +131,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
       (item) => `${item.view}:${item.step || item.signupPanel || ""}`,
     ),
   );
-  expect(destinations).toHaveLength(33);
+  expect(destinations).toHaveLength(34);
   expect(new Set(destinations).size).toBe(destinations.length);
   const html = markup("home", [], true);
   expect(html.indexOf("Staff overview")).toBeLessThan(

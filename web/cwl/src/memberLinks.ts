@@ -7,6 +7,7 @@ import { managementTarget } from "./managementLinks";
 import { cwlTarget } from "./staffLinks";
 export type MemberView =
   | "home"
+  | "bases"
   | "search"
   | "wars"
   | "events"
@@ -21,6 +22,7 @@ export const memberPaths: Record<string, string> = {
   wars: "/wars",
   events: "/events",
   search: "/search",
+  bases: "/bases",
 };
 export function savedSignupTarget(search: string, pathname = "/"): boolean {
   const params = new URLSearchParams(search);

@@ -148,6 +148,7 @@ it("uses clean member paths and only retains seasons on CWL staff pages", () => 
     ["events", "/events"],
     ["wars", "/wars"],
     ["search", "/search"],
+    ["bases", "/bases"],
   ] as const) {
     expect(dashboardPath({ view, season: "1" })).toBe(path);
     expect(dashboardTarget("", path).view).toBe(view);
