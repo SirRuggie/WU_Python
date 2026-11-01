@@ -1,3 +1,6 @@
+import useActivityIdentityRefresh, {
+  mergeIdentityAccounts,
+} from "./useActivityIdentityRefresh";
 import {
   useCallback,
   useEffect,
@@ -32,6 +35,7 @@ type Response = {
   identity_warning?: string;
   activity_warning?: string;
   history_warning?: string;
+  identity_updating?: boolean;
 };
 const sortNames: Record<ActivitySort, string> = {
   status: "Status",
@@ -163,6 +167,23 @@ export default function StrikeActivityRoster({
       pending.current = false;
     };
   }, [read, reload]);
+  useActivityIdentityRefresh({
+    enabled: !!data.identity_updating,
+    generation: request.current,
+    busy: () => pending.current || bulkBusy,
+    onResult: (result) =>
+      setData((current) => ({
+        ...current,
+        identity_warning: result.identity_warning ?? undefined,
+        identity_updating: result.identity_updating,
+        accounts: mergeIdentityAccounts(current.accounts, result.accounts),
+      })),
+    onDenied: () => {
+      setData({ accounts: [], clans: [] });
+      setError("Your activity access changed. Sign in or refresh permissions.");
+      callbacks.current.onDenied?.();
+    },
+  });
   const visible = useMemo(
     () => visibleActivityAccounts(data.accounts, filters),
     [data.accounts, filters],
@@ -442,7 +463,9 @@ export default function StrikeActivityRoster({
           {data.accounts.length ? " Showing the last loaded activity." : ""}
         </p>
       )}
-      {data.history_warning && <p className="notice error">{data.history_warning}</p>}
+      {data.history_warning && (
+        <p className="notice error">{data.history_warning}</p>
+      )}
       {data.activity_warning && (
         <p className="notice error">{data.activity_warning}</p>
       )}

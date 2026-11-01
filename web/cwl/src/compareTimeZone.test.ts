@@ -140,3 +140,49 @@ it("prefers a valid saved profile over the nickname, falling back on malformed p
     ownerTimeZone("Name | PST", { label: "bogus", offsetMinutes: 330 }),
   ).toEqual({ label: "PST", offsetMinutes: -480 });
 });
+it.each([
+  "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
+  "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+])("ignores subdivision flag tag characters %s", (flag) => {
+  expect(ownerTimeZone(`Name | GMT ${flag}`)).toEqual({
+    label: "GMT",
+    offsetMinutes: 0,
+  });
+});
+it("recognizes UK as standard GMT", () =>
+  expect(ownerTimeZone("Name | UK 🇬🇧")).toEqual({
+    label: "UK",
+    offsetMinutes: 0,
+  }));
+
+it("recognizes NZT as New Zealand standard time", () =>
+  expect(ownerTimeZone("Name | NZT 🇳🇿")).toEqual({
+    label: "NZT",
+    offsetMinutes: 720,
+  }));
+
+it.each([
+  ["MT", -420],
+  ["MTN", -420],
+  ["AET", 600],
+])("maps live standard-time alias %s", (label, offset) =>
+  expect(ownerTimeZone(`Name | ${label}`)?.offsetMinutes).toBe(offset),
+);
+
+it("normalizes decorated Unicode zone letters while retaining ambiguous annotations", () => {
+  expect(ownerTimeZone("Name | 𝔼𝕊𝕋")).toEqual({
+    label: "EST",
+    offsetMinutes: -300,
+  });
+  expect(ownerTimeZone("Name | GMT+8 (NEW)")).toEqual({
+    label: "GMT+8 (NEW)",
+    offsetMinutes: null,
+  });
+});
+
+it.each(["Mt", "mt", "mT", "Mtn", "mtn"])(
+  "does not infer Mountain time from the mixed-case word %s",
+  (label) => {
+    expect(ownerTimeZone(`Rick | ${label}`)?.offsetMinutes).toBeNull();
+  },
+);

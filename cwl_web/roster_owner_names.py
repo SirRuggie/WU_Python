@@ -1,7 +1,10 @@
 """Compare-only cached owner nicknames; reads never wait for Discord."""
 
+import logging
 import asyncio
 import time
+
+log = logging.getLogger(__name__)
 
 
 def cached_owner_nicknames(request, owner_ids):
@@ -28,8 +31,8 @@ def cached_owner_nicknames(request, owner_ids):
                     }
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                pass
+            except Exception as error:
+                log.warning("Roster owner nickname refresh failed (%s); retaining cached names", type(error).__name__)
             state["until"] = time.monotonic() + 120
 
         state["task"] = asyncio.create_task(refresh(), name="roster-owner-nicknames")

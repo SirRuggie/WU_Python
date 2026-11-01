@@ -65,3 +65,8 @@ async def account_identities(request, tags):
     cached = state.get("identities", {})
     result = {tag: cached[tag] for tag in wanted if tag in cached}
     return result, not any(row.get("discord_name") for row in result.values())
+
+
+def identity_updating(request):
+    task = request.app.get('activity_identity_cache', {}).get('task')
+    return bool(task is not None and not task.done())
