@@ -25,6 +25,7 @@ import {
   IdCard,
   KeyRound,
   LayoutDashboard,
+  LandPlot,
   ListChecks,
   LockKeyhole,
   Mail,
@@ -56,6 +57,7 @@ import "./dashboardIcons.css";
 
 const icons = {
   timeZones: Globe,
+  baseBank: LandPlot,
   search: Search,
   calendar: CalendarDays,
   raid: Tent,

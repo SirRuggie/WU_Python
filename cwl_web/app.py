@@ -286,14 +286,14 @@ def login_destination(query):
         return "/clan-weights" + ("?" + urlencode(params) if params else "")
     if view == "signups":
         view = "signup"
-    if view not in {"home", "search", "wars", "events", "todo", "signup", "assignments"}:
+    if view not in {"home", "search", "wars", "events", "todo", "signup", "assignments", "bases"}:
         return ""
     return {'home':'/', 'todo':'/tasks'}.get(view, '/' + view)
 
 
 def saved_login_destination(request):
     value = request.cookies.get(RETURN_COOKIE, "")
-    if value in {'/', '/signup', '/assignments', '/tasks', '/wars', '/events', '/search', '/clan-weights', '/my-signups'}:
+    if value in {'/', '/signup', '/assignments', '/tasks', '/wars', '/events', '/search', '/bases', '/clan-weights', '/my-signups'}:
         return value
     if len(value) <= 2048:
         path, _, query = value.partition('?')
@@ -1970,6 +1970,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
         web.get(API + "/access", access), web.post(API + "/access", grant), web.get(API + "/access/roles", access_roles),
         web.get(API + "/staff-signup-members", staff_signup_members), web.get(API + "/seasons/{season_id}/staff-signups/accounts", staff_signup_accounts), web.post(API + "/seasons/{season_id}/staff-signups", staff_add_signup), web.delete(API + "/seasons/{season_id}/staff-signups/{tag}", staff_remove_signup), web.get(API + "/linked-accounts", linked_accounts), web.get(API + "/dashboard/accounts", dashboard_accounts), web.get(API + "/seasons/{season_id}/signups", signups), web.post(API + "/seasons/{season_id}/signups", submit_signup), web.delete(API + "/seasons/{season_id}/signups/{tag}", withdraw),
     ]
+    from .base_bank import routes as base_bank_routes
+    routes.extend(base_bank_routes())
     routes.extend(announcement_routes())
     routes.extend(manage_bridge_routes())
     from .roster_images import routes as roster_image_routes
@@ -2022,7 +2024,7 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
             return response
         app.router.add_get("/", index_page)
         app.router.add_get("/index.html", index_page)
-        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values()), *(path.lstrip('/') for path in MANAGEMENT_PAGE_PATHS.values())):
+        for path in ('signup', 'assignments', 'tasks', 'wars', 'events', 'search', 'bases', 'clan-weights', 'weight', 'weights', 'weight-trial', 'my-signups', *(path.lstrip('/') for path in CWL_PAGE_PATHS.values()), *(path.lstrip('/') for path in MANAGEMENT_PAGE_PATHS.values())):
             app.router.add_get('/' + path, index_page)
             app.router.add_get('/' + path + '/', index_page)
         for page in ("reminders", "history", "strikes", "replacements"):
