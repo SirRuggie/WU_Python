@@ -212,6 +212,10 @@ def test_roles_are_rechecked_inside_edit_and_split_outcome_is_explicit(monkeypat
         with pytest.raises(ValueError, match="Manage Nicknames"):
             await actions.apply(bot, None, row)
         bot.rest.edit_member.assert_not_awaited()
+        lookup.side_effect = [initial, dict(initial,member=S(nickname="Manual change"))]
+        with pytest.raises(ValueError,match="Nickname changed"):
+            await actions.apply(bot,None,row)
+        bot.rest.edit_member.assert_not_awaited()
         lookup.side_effect = [initial, initial]
         with pytest.raises(
             ProfileOutcomeUncertain,

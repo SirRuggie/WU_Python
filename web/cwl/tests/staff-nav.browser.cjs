@@ -20,7 +20,7 @@ const expected = {
     CWL: ["Build roster", "Declaration check"],
     Moderation: null,
     Clans: ["Family clans", "Clan weights"],
-    Members: ["Members & roles", "Tickets", "Ticket settings"],
+    Members: ["Members & roles", "Member time zones", "Tickets", "Ticket settings"],
     Bot: ["Command triggers", "Image gallery"],
   },
   owner: {
@@ -44,7 +44,7 @@ const expected = {
       "Strikes & replacements",
       "FWA tools",
     ],
-    Members: ["Members & roles", "Tickets", "Ticket settings"],
+    Members: ["Members & roles", "Member time zones", "Tickets", "Ticket settings"],
     Bot: ["Command triggers", "Image gallery", "Integrations"],
     Admin: ["Staff access", "Dashboard issues"],
   },

@@ -18,6 +18,7 @@ ITEM = dict(
 def test_unticked_and_unmanageable_never_become_work():
     skipped = dict(ITEM, discord_id=ACTOR, skip_reason="Above bot")
     assert selected_manifest([ITEM, skipped], [UID]) == [ITEM]
+    assert selected_manifest([ITEM,dict(ITEM,discord_id=ACTOR)], [UID]) == [ITEM]
     with pytest.raises(ValueError):
         selected_manifest([ITEM, skipped], [ACTOR])
     with pytest.raises(ValueError):

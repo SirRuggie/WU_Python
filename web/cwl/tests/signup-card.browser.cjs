@@ -212,6 +212,7 @@ const base = `http://127.0.0.1:${port}`;
         }
         assert.deepEqual(errors, []);
         assert.deepEqual(writes, []);
+        await page.unrouteAll({ behavior: "wait" });
         await page.close();
       }
     }
