@@ -20,12 +20,13 @@ const row: ActivityAccount = {
   missed_attacks: 0,
   observed_attacks: 0,
   no_attack_wars: 0,
+  observed_wars: 3,
   skipped_raid_weekends: 0,
 };
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  history.replaceState({}, "", "/strikes");
+  history.replaceState({}, "", "/strikes?view=all");
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) =>
     setTimeout(() => fn(0), 0),
@@ -73,15 +74,16 @@ it("loads the family once, keeps weight tool closed, and row selection only navi
   await act(async () =>
     root.render(<StrikeActivityRoster onChoose={choose} />),
   );
-  expect(host.textContent).toContain("1 at risk · 0 watch · 1 active");
+  expect(host.textContent).toContain("2 matching accounts");
+  expect(host.textContent).not.toContain("at risk");
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(2);
-  expect(host.textContent).toContain("Active today");
-  expect(host.textContent).toContain("Didn't attack in their last 3 wars");
+  expect(host.textContent).toContain("Quiet 0d");
+  expect(host.textContent).toContain("No attacks in last 3 wars");
   expect(vi.mocked(fetch).mock.calls).toHaveLength(1);
   await act(async () =>
     host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click(),
   );
-  expect(choose.mock.calls[0][0].player_name).toBe("Risk fixture");
+  expect(choose.mock.calls[0][0].player_name).toBe("Fixture healthy");
   expect(
     vi
       .mocked(fetch)
@@ -91,14 +93,15 @@ it("loads the family once, keeps weight tool closed, and row selection only navi
   ).toBe(true);
 });
 it("replacements alias starts with marked filter and preserves URL changes", async () => {
+  history.replaceState({}, "", "/replacements");
   await act(async () =>
     root.render(<StrikeActivityRoster markedDefault onChoose={vi.fn()} />),
   );
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(1);
-  const toggle = host.querySelector<HTMLInputElement>(
-    'input[aria-label="Marked for replacement"]',
+  const remove = host.querySelector<HTMLButtonElement>(
+    '[aria-label="Remove Marked replacements"]',
   )!;
-  await act(async () => toggle.click());
+  await act(async () => remove.click());
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(2);
   expect(new URLSearchParams(location.search).get("marked")).toBe("0");
 });
@@ -222,14 +225,16 @@ it("failure shows unavailable counts instead of a false zero summary", async () 
   await act(async () =>
     root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
   );
-  expect(host.textContent).toContain("— at risk · — watch · — active");
+  expect(host.textContent).toContain("Activity unavailable");
   expect(host.textContent).toContain("Fixture unavailable");
 });
 
 it("state-driven filters and explicit Discard clear selection", async () => {
   const choose = vi.fn();
   await act(async () =>
-    root.render(<StrikeActivityRoster state="" onChoose={choose} canManage />),
+    root.render(
+      <StrikeActivityRoster state="?view=all" onChoose={choose} canManage />,
+    ),
   );
   await act(async () =>
     [...host.querySelectorAll("button")]
@@ -247,7 +252,11 @@ it("state-driven filters and explicit Discard clear selection", async () => {
   ).toContain("Fixture healthy");
   await act(async () =>
     root.render(
-      <StrikeActivityRoster state="?q=Risk" onChoose={choose} canManage />,
+      <StrikeActivityRoster
+        state="?view=all&q=Risk"
+        onChoose={choose}
+        canManage
+      />,
     ),
   );
   expect(
@@ -266,7 +275,7 @@ it("state-driven filters and explicit Discard clear selection", async () => {
   await act(async () =>
     root.render(
       <StrikeActivityRoster
-        state="?q=Risk"
+        state="?view=all&q=Risk"
         selectionReset={1}
         onChoose={choose}
         canManage
@@ -279,15 +288,34 @@ it("state-driven filters and explicit Discard clear selection", async () => {
 });
 
 it("disables oversized Select all and explains how to enable it", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-    accounts:Array.from({length:125},(_,n)=>({...row,player_tag:`#P${n}`})),
-    clans:[{tag:"#PQQ",name:"Family"}],
-  }))));
-  await act(async () => root.render(<StrikeActivityRoster state="" onChoose={vi.fn()} canManage />));
-  await act(async () => [...host.querySelectorAll("button")]
-    .find(button=>button.textContent==="Select accounts")!.click());
-  const selectAll=[...host.querySelectorAll("button")]
-    .find(button=>button.textContent==="Select all (125)")!;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            accounts: Array.from({ length: 125 }, (_, n) => ({
+              ...row,
+              player_tag: `#P${n}`,
+            })),
+            clans: [{ tag: "#PQQ", name: "Family" }],
+          }),
+        ),
+    ),
+  );
+  await act(async () =>
+    root.render(
+      <StrikeActivityRoster state="?view=all" onChoose={vi.fn()} canManage />,
+    ),
+  );
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Select accounts")!
+      .click(),
+  );
+  const selectAll = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Select all (125)",
+  )!;
   expect(selectAll.disabled).toBe(true);
   expect(host.textContent).toContain("Filter to 50 or fewer to select all.");
 });
@@ -295,18 +323,57 @@ it("disables oversized Select all and explains how to enable it", async () => {
 it("makes a cold Discord-name search find the row without reloading or replacing strike state", async () => {
   vi.useFakeTimers();
   try {
-    history.replaceState({}, "", "/strikes?q=Resolved%20member");
-    vi.mocked(fetch).mockReset()
-      .mockResolvedValueOnce(new Response(JSON.stringify({accounts:[row],clans:[],identity_updating:true,identity_warning:"Names loading"})))
-      .mockResolvedValueOnce(new Response(JSON.stringify({accounts:[{...row,discord_name:"Resolved member",active_strikes:99}],clans:[],identity_updating:false})));
-    const choose=vi.fn();
-    await act(async()=>root.render(<StrikeActivityRoster onChoose={choose}/>));
+    history.replaceState({}, "", "/strikes?view=all&q=Resolved%20member");
+    vi.mocked(fetch)
+      .mockReset()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            accounts: [row],
+            clans: [],
+            identity_updating: true,
+            identity_warning: "Names loading",
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            accounts: [
+              { ...row, discord_name: "Resolved member", active_strikes: 99 },
+            ],
+            clans: [],
+            identity_updating: false,
+          }),
+        ),
+      );
+    const choose = vi.fn();
+    await act(async () =>
+      root.render(<StrikeActivityRoster onChoose={choose} />),
+    );
     expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(0);
-    await act(async()=>vi.advanceTimersByTimeAsync(2000));
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
     expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(1);
-    await act(async()=>host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click());
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click(),
+    );
     expect(choose.mock.calls[0][0].discord_name).toBe("Resolved member");
     expect(choose.mock.calls[0][0].active_strikes).toBe(0);
     expect(fetch).toHaveBeenCalledTimes(2);
-  } finally { vi.useRealTimers(); }
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("defaults to known three-war misses and exposes the threshold chip", async () => {
+  history.replaceState({}, "", "/strikes");
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(1);
+  expect(host.querySelector(".strike-activity-row")!.textContent).toContain(
+    "Risk fixture",
+  );
+  expect(host.textContent).toContain("No attacks in last 3+ known wars");
+  expect(host.textContent).not.toContain("at risk");
 });

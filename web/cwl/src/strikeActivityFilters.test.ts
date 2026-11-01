@@ -247,3 +247,18 @@ it("copies all matching rows on one line each and neutralizes external mentions"
   expect(copy).toContain("@\u200beveryone <@\u200b123> #P0");
   expect(copy.split("\n").at(-1)).toBe("Name 64 #P64");
 });
+
+it("sort labels describe exactly the selected numeric or text value", () => {
+  expect(activitySorts.map((key) => activitySortLabels[key])).toEqual([
+    "Wars without attacking",
+    "Quiet days",
+    "Last attack (war end)",
+    "Strikes",
+    "Weight",
+    "Town hall",
+    "Missed attacks",
+    "Priority",
+    "Name",
+    "Clan",
+  ]);
+});

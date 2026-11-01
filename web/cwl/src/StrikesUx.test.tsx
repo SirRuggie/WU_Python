@@ -16,7 +16,7 @@ vi.mock("./api", async (original) => ({
 vi.mock("./StrikeTrackingStatus", () => ({ default: () => null }));
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {
-  history.replaceState({}, "", "/strikes");
+  history.replaceState({}, "", "/strikes?activity_view=all");
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.useFakeTimers();
   sessionStorage.clear();
@@ -183,7 +183,7 @@ it("loads the family once, filters locally and clears protected data on authoriz
     />,
   );
   await settle();
-  expect(host.textContent).toContain("1 at risk · 0 watch · 0 active");
+  expect(host.textContent).toContain("1 matching accounts");
   expect(host.textContent).toContain("Aspen");
   await input('input[type="search"]', "No match");
   await settle();
@@ -641,7 +641,7 @@ it("returns from a routed account to the filtered roster when browser history cl
     isOwner: false,
     userId: "1",
     memory,
-    activityState: "q=Routed",
+    activityState: "activity_view=all&q=Routed",
     onAccountRoute: vi.fn(),
   };
   await render(<StrikesWorkspace {...props} targetTag="#P2Y" />);

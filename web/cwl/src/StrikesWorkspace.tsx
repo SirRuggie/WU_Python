@@ -1,6 +1,8 @@
 import StrikeReviewResolution from "./StrikeReviewResolution";
 import ReplacementDeparture from "./ReplacementDeparture";
-import { parseActivityFilters } from "./strikeActivityView";
+import { parseActivityFilters } from "./strikeActivityFilters";
+import type { ActivityAccount } from "./strikeActivityView";
+import StrikeActivityDetail from "./StrikeActivityDetail";
 import StrikeActivityRoster from "./StrikeActivityRoster";
 import StrikeReplacementRow from "./StrikeReplacementRow";
 import {
@@ -89,7 +91,7 @@ type Overview = {
   total: number;
   streak?: StrikeStreakState | null;
 };
-type StrikeAccount = {
+type StrikeAccount = Partial<ActivityAccount> & {
   left_clan?: boolean;
   last_clan_name?: string | null;
   departed_at?: string | null;
@@ -1220,6 +1222,7 @@ export default function StrikesWorkspace({
                       seenAt={selectedAccount.departed_at}
                     />
                   )}
+                  <StrikeActivityDetail account={selectedAccount} />
                   <StrikeReplacementRow
                     key={selectedAccount.player_tag}
                     tag={selectedAccount.player_tag}

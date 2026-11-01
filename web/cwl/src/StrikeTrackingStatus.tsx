@@ -72,7 +72,6 @@ export default function StrikeTrackingStatus({
     window.addEventListener("focus", refreshVisible);
     return () => {
       mounted.current = false;
-      request.current++;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refreshVisible);
       window.removeEventListener("focus", refreshVisible);

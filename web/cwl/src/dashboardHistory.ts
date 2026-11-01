@@ -1,4 +1,4 @@
-import { activityFilterKeys } from "./strikeActivityView";
+import { activityFilterKeys } from "./strikeActivityFilters";
 import { clanRoute, clanPath, type ClanRoute } from "./clanManagement/routes";
 import { memberPaths, savedSignupTarget } from "./memberLinks";
 import { dashboardViews, type DashboardView } from "./SidebarNavigation";

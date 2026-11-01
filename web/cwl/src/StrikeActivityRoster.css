@@ -6,7 +6,12 @@
 .strike-activity-toolbar {
   display: grid;
   align-items: end;
-  grid-template-columns: minmax(0, 1fr) 110px 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(65px, 150px) 44px 56px 44px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #18191b;
+  padding: 4px 0;
   gap: 8px;
 }
 .strike-activity-toolbar > label:first-child {
@@ -37,12 +42,7 @@
   height: 19px;
   flex: 0 0 auto;
 }
-.strike-activity-filters {
-  display: flex;
-  align-items: center;
-  gap: 6px 12px;
-  flex-wrap: wrap;
-}
+
 .strike-activity-roster fieldset {
   border: 0;
   padding: 0;
@@ -56,9 +56,7 @@
   font-size: 12px;
   color: #b8b5ad;
 }
-.strike-activity-status {
-  display: flex;
-}
+
 .strike-activity-roster details {
   border: 1px solid #484238;
   border-radius: 10px;
@@ -102,14 +100,14 @@
 }
 .strike-activity-list {
   display: grid;
-  gap: 8px;
+  gap: 4px;
 }
 .strike-activity-row {
   display: grid;
-  gap: 9px;
+  gap: 3px;
   text-align: left;
   width: 100%;
-  padding: 14px;
+  padding: 8px 10px;
   border: 1px solid #3e3c38;
   border-radius: 12px;
   background: #18191b;
@@ -130,23 +128,7 @@
   gap: 10px;
   min-width: 0;
 }
-.strike-activity-badge {
-  flex: 0 0 auto;
-  border-radius: 16px;
-  font-size: 12px;
-  padding: 4px 8px;
-  background: #25402e;
-  color: #c4edce;
-  white-space: nowrap;
-}
-.strike-activity-badge.risk {
-  background: #562c29;
-  color: #ffd5cf;
-}
-.strike-activity-badge.watch {
-  background: #514222;
-  color: #f7df9f;
-}
+
 .strike-activity-identity {
   display: flex;
   align-items: baseline;
@@ -170,33 +152,7 @@
   flex: 0 0 auto;
   margin-left: auto;
 }
-.strike-activity-chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-.strike-activity-chip {
-  font-size: 12px;
-  line-height: 1.45;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: #35312b;
-  color: #ddd3bd;
-  overflow-wrap: anywhere;
-}
-.strike-activity-chip.bad {
-  background: #432c2a;
-  color: #f0c3bc;
-}
-.strike-activity-chip.warn {
-  background: #3c3525;
-  color: #e6d6a7;
-}
-.strike-activity-chip.good {
-  background: #24372a;
-  color: #b8ddc2;
-}
+
 .strike-activity-pages {
   display: flex;
   gap: 10px;
@@ -235,10 +191,7 @@
     align-items: start;
     gap: 7px;
   }
-  .strike-activity-badge {
-    font-size: 12px;
-    padding: 3px 6px;
-  }
+
   .strike-activity-identity {
     flex: 1;
     display: grid;
@@ -251,9 +204,7 @@
   .strike-activity-row {
     padding: 11px;
   }
-  .strike-activity-chips {
-    gap: 5px;
-  }
+
   .strike-activity-pages span {
     order: 3;
     flex-basis: 100%;
@@ -266,10 +217,7 @@
   justify-content: stretch;
   align-items: stretch;
 }
-.strike-activity-main,
-.strike-activity-chips {
-  width: 100%;
-}
+
 .strikes-workspace.strikes-activity-overview
   .strikes-toolbar:not(:has(.strikes-history-search)) {
   display: flex;
@@ -306,10 +254,7 @@
   .strike-activity-toolbar label > select {
     margin-top: 4px;
   }
-  .strike-activity-filters {
-    gap: 5px 10px;
-    align-items: center;
-  }
+
   .strikes-activity-overview .strikes-tracking summary {
     font-size: 12px;
   }
@@ -351,9 +296,6 @@
   border: 1px solid #59503d;
   border-radius: 8px;
 }
-.strike-activity-filters > details {
-  padding: 0 8px;
-}
 
 .strike-activity-entry {
   min-width: 0;
@@ -392,24 +334,6 @@
   min-width: 110px;
 }
 
-@media (min-width: 900px) {
-  .strike-activity-roster {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .strike-activity-roster > * {
-    grid-column: 1 / -1;
-  }
-  .strike-activity-roster > .strike-activity-toolbar {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .strike-activity-roster > .strike-activity-filters {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: end;
-  }
-}
-
 .strike-bulk-accounts {
   flex-basis: 100%;
   max-height: 200px;
@@ -418,4 +342,222 @@
   padding-left: 20px;
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.strike-activity-toolbar > input,
+.strike-activity-toolbar > select {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 6px;
+}
+.strike-activity-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.strike-activity-tabs button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.strike-activity-tabs button[aria-pressed="true"] {
+  border-color: #c6ae70;
+  background: #393326;
+}
+.strike-activity-applied {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.strike-activity-applied button {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.strike-activity-one-summary {
+  color: #bfbbae;
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.strike-activity-toolbar {
+  gap: 4px;
+}
+@media (max-width: 650px) {
+  .strike-activity-toolbar {
+    grid-template-columns: minmax(0, 1fr) 70px 44px 52px 44px;
+  }
+}
+
+.strike-activity-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.strike-activity-table th {
+  text-align: left;
+  font-size: 12px;
+  color: #bab6ad;
+  font-weight: 500;
+  padding: 8px;
+}
+.strike-activity-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #383734;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.strike-activity-table th:first-child {
+  width: 19%;
+}
+.strike-activity-table th:last-child {
+  width: 30%;
+}
+.strike-activity-table tr {
+  cursor: pointer;
+  min-height: 44px;
+}
+.strike-activity-table tbody tr:hover {
+  background: #242423;
+}
+.strike-activity-table .strike-activity-row {
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-height: 44px;
+}
+.strike-activity-table .strike-activity-row small {
+  color: #aba79e;
+  font-weight: 400;
+  font-size: 12px;
+}
+.strike-activity-table .strike-activity-count {
+  margin: 0;
+}
+.strike-activity-table .strike-activity-one-summary {
+  white-space: normal;
+}
+.strike-priority-chopping {
+  color: #edb0a8;
+  background: #4a2724;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin-left: 5px;
+  font-size: 12px;
+}
+.strike-priority-high {
+  color: #d4bd84;
+  margin-left: 5px;
+  font-size: 12px;
+}
+.strike-activity-mobile-label {
+  display: none;
+}
+@media (max-width: 899px) {
+  .strike-activity-table,
+  .strike-activity-table tbody {
+    display: block;
+  }
+  .strike-activity-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .strike-activity-table tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0 6px;
+    border-bottom: 1px solid #383734;
+    padding: 5px 0;
+  }
+  .strike-activity-table td {
+    border: 0;
+    padding: 0;
+  }
+  .strike-activity-account {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .strike-activity-table .strike-activity-row {
+    min-height: 44px;
+  }
+  .strike-activity-table .strike-activity-row small {
+    display: none;
+  }
+  .strike-activity-selection {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    align-self: center;
+  }
+  .strike-activity-count {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+  }
+  .strike-activity-table .strike-activity-th,
+  .strike-activity-table .strike-activity-clan,
+  .strike-activity-table .strike-activity-weight {
+    grid-column: 2 / 4;
+    font-size: 12px;
+    color: #b8b5ad;
+  }
+  .strike-activity-table .strike-activity-th {
+    grid-row: 2;
+  }
+  .strike-activity-table .strike-activity-clan {
+    grid-row: 2;
+    margin-left: 40px;
+    margin-right: 45px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .strike-activity-table .strike-activity-weight {
+    grid-row: 2;
+    justify-self: end;
+  }
+  .strike-activity-table .strike-activity-one-summary {
+    grid-column: 2 / 4;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 20px;
+  }
+  .strike-activity-mobile-label {
+    display: inline;
+  }
+}
+.strike-activity-table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 899px) {
+  .strike-activity-table .strike-activity-one-summary {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+  }
+  .strike-activity-summary-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .strike-activity-one-summary .strike-priority-chopping,
+  .strike-activity-one-summary .strike-priority-high {
+    order: -1;
+    flex: 0 0 auto;
+    margin: 0;
+  }
 }

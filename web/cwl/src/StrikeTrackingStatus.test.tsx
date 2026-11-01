@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "./api";
@@ -185,4 +185,27 @@ it("bounds focus bursts, hidden polling and overlapping tracking reads", async (
     });
     vi.useRealTimers();
   }
+});
+
+it("retains the initial in-flight read across StrictMode effect replay", async () => {
+  let finish: ((value: unknown) => void) | undefined;
+  transport.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <StrikeTrackingStatus canRetry={false} />
+      </StrictMode>,
+    ),
+  );
+  expect(transport).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finish?.({ clans: statusRows });
+  });
+  expect(host.textContent).toContain("1 on track");
+  expect(host.textContent).not.toContain("Checking…");
 });

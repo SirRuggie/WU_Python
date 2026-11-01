@@ -53,7 +53,7 @@ export type ActivityFilters = {
   page: number;
 };
 export const activityFilterKeys = [
-  "view",
+  "activity_view",
   "q",
   "clans",
   "marked",
@@ -148,7 +148,7 @@ export function parseActivityFilters(
   markedDefault = false,
 ): ActivityFilters {
   const p = new URLSearchParams(search);
-  const requested = p.get("view");
+  const requested = p.get("activity_view") || p.get("view");
   const view: ActivityView = activityViews.includes(requested as ActivityView)
     ? (requested as ActivityView)
     : markedDefault || p.get("marked") === "1"
@@ -232,7 +232,7 @@ export function parseActivityFilters(
 }
 export function activityFilterQuery(f: ActivityFilters) {
   const p = new URLSearchParams();
-  p.set("view", f.view);
+  p.set("activity_view", f.view);
   if (f.query) p.set("q", f.query);
   if (f.clans.length) p.set("clans", [...f.clans].sort().join(","));
   p.set("marked", f.marked ? "1" : "0");
