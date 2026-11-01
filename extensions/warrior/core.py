@@ -1,5 +1,6 @@
 """Fresh authorization, guild settings and incremental member mutations."""
 
+import asyncio
 from datetime import datetime, timezone
 import logging
 import hikari
@@ -7,6 +8,7 @@ from extensions.commands.recruit import perms
 from extensions.commands.tickets import store, testing_service
 from utils.component_state import get_state
 from .schema import SCHEMA_VERSION
+from .timing import read, span
 
 log = logging.getLogger(__name__)
 STANDARD = {
@@ -56,7 +58,11 @@ def aware(value):
 
 async def settings(mongo, guild_id):
     saved = (
-        await mongo.warrior_settings.find_one({"_id": f"warrior_settings:{guild_id}"})
+        await read(
+            "mongo.warrior_settings",
+            mongo.warrior_settings.find_one({"_id": f"warrior_settings:{guild_id}"}),
+            guild_id=int(guild_id),
+        )
         or {}
     )
     return {
@@ -85,22 +91,65 @@ def top(member, roles):
     return max((r.position for r in roles if r.id in member.role_ids), default=0)
 
 
-async def context(bot, mongo, guild_id, actor_id, user_id):
+async def context(bot, mongo, guild_id, actor_id, user_id, *, fresh=True):
     if testing_service.is_test_scope(mongo):
         raise SetupError(
             "Warrior Setup changes live members; it is unavailable in isolated ticket testing."
         )
-    guild = await bot.rest.fetch_guild(guild_id)
-    roles = await bot.rest.fetch_roles(guild_id)
+    cache = None if fresh else getattr(bot, "cache", None)
+    guild = cache.get_guild(guild_id) if cache is not None else None
+    roles = (
+        list(cache.get_roles_view_for_guild(guild_id).values())
+        if cache is not None
+        else []
+    )
+    ids = [actor_id, user_id, int(bot.get_me().id)]
+    members = [
+        cache.get_member(guild_id, uid) if cache is not None else None for uid in ids
+    ]
+    # A partial role view cannot describe the members even for display.
+    required = {guild_id} | {
+        int(rid) for member in members if member is not None for rid in member.role_ids
+    }
+    if not required.issubset({int(role.id) for role in roles}):
+        roles = []
+
+    async def available(value, operation, fetch, *args):
+        if value is not None:
+            return value
+        return await read(operation, fetch(*args), guild_id=guild_id)
+
+    async def config_read():
+        return await read(
+            "mongo.ticket_setup",
+            mongo.ticket_setup.find_one({"_id": "config"}),
+            guild_id=guild_id,
+        )
+
     try:
-        actor = await bot.rest.fetch_member(guild_id, actor_id)
-        member = await bot.rest.fetch_member(guild_id, user_id)
-        me = await bot.rest.fetch_member(guild_id, bot.get_me().id)
+        with span(
+            "context",
+            guild_id=guild_id,
+            actor_id=actor_id,
+            target_id=user_id,
+            fresh=fresh,
+        ):
+            guild, roles, actor, member, me, config = await asyncio.gather(
+                available(guild, "rest.guild", bot.rest.fetch_guild, guild_id),
+                available(roles or None, "rest.roles", bot.rest.fetch_roles, guild_id),
+                *(
+                    available(
+                        value, "rest.member", bot.rest.fetch_member, guild_id, uid
+                    )
+                    for uid, value in zip(ids, members)
+                ),
+                config_read(),
+            )
     except hikari.NotFoundError as error:
         raise SetupError(
             "The recruit, recruiter, or bot is no longer in this server."
         ) from error
-    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    config = config or {}
     allowed = {perms.RECRUITMENT_TEAM_ROLE_ID} | {
         int(config[k])
         for k in (
@@ -131,7 +180,7 @@ async def context(bot, mongo, guild_id, actor_id, user_id):
 
 
 async def session(ctx, bot, mongo, sid):
-    data = await get_state(mongo, sid)
+    data = await read("mongo.component_state", get_state(mongo, sid))
     if not data or data.get("type") != "warrior_setup":
         raise SetupError("This setup session expired. Run /warrior again.")
     if int(data["guild_id"]) != int(ctx.guild_id or 0) or int(
@@ -141,8 +190,22 @@ async def session(ctx, bot, mongo, sid):
             "This private setup belongs to another recruiter or server. Run /warrior yourself."
         )
     return data, await context(
-        bot, mongo, int(data["guild_id"]), int(ctx.user.id), int(data["user_id"])
+        bot,
+        mongo,
+        int(data["guild_id"]),
+        int(ctx.user.id),
+        int(data["user_id"]),
+        fresh=False,
     )
+
+
+async def refresh_target(bot, c):
+    member = await read(
+        "rest.member",
+        bot.rest.fetch_member(c["guild"].id, c["member"].id),
+        guild_id=int(c["guild"].id),
+    )
+    return dict(c, member=member)
 
 
 def manageable_target(c):
@@ -174,20 +237,20 @@ def role_allowed(c, role):
 
 
 async def change_roles(bot, mongo, c, *, add=(), remove=()):
-    manageable_target(c)
     result = {"added": [], "removed": [], "unchanged": [], "failed": []}
-    roles = {int(r.id): r for r in c["roles"]}
     for operation, ids in (
         ("added", set(map(int, add))),
         ("removed", set(map(int, remove))),
     ):
         for rid in sorted(ids):
-            role = roles.get(rid)
+            c = await context(bot, mongo, c["guild"].id, c["actor"].id, c["member"].id)
+            manageable_target(c)
+            role = next((r for r in c["roles"] if int(r.id) == rid), None)
             name = role.name if role else f"Missing role {rid}"
             if not role_allowed(c, role):
                 result["failed"].append(f"{name} (missing or not permitted)")
                 continue
-            current = await bot.rest.fetch_member(c["guild"].id, c["member"].id)
+            current = c["member"]
             if (rid in current.role_ids) == (operation == "added"):
                 result["unchanged"].append(name)
                 continue
@@ -197,11 +260,17 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
                     if operation == "added"
                     else bot.rest.remove_role_from_member
                 )
-                await fn(
-                    c["guild"].id,
-                    c["member"].id,
-                    rid,
-                    reason=f'Warrior Setup by {c["actor"].id}',
+                await read(
+                    "rest.role_write",
+                    fn(
+                        c["guild"].id,
+                        c["member"].id,
+                        rid,
+                        reason=f'Warrior Setup by {c["actor"].id}',
+                    ),
+                    guild_id=int(c["guild"].id),
+                    target_id=int(c["member"].id),
+                    role_id=rid,
                 )
                 result[operation].append(name)
             except hikari.HTTPError as error:
@@ -306,7 +375,11 @@ async def open_ticket(mongo, guild_id, user_id, *, ticket_id=None):
 
 async def clans(mongo, c):
     ids = {int(r.id) for r in c["roles"]}
-    rows = await mongo.clans.find().to_list(length=None)
+    rows = await read(
+        "mongo.clans",
+        mongo.clans.find().to_list(length=None),
+        guild_id=int(c["guild"].id),
+    )
     return sorted(
         [r for r in rows if int(r.get("role_id") or 0) in ids],
         key=lambda r: str(r.get("name", "")),

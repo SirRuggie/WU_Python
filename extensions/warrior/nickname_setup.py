@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+from functools import wraps
+from weakref import WeakValueDictionary
 from uuid import uuid4
 import hikari
 import lightbulb
@@ -12,7 +14,8 @@ from hikari.impl import (
 )
 from extensions.components import register_action
 from extensions.warrior import core
-from utils.component_state import update_state
+from .timing import click, read
+from utils.component_state import update_state, get_state
 from utils.member_profiles import MemberProfiles
 from utils.member_timezones import (
     COUNTRY_CHOICES,
@@ -27,6 +30,99 @@ from utils.mongo import MongoClient
 from utils.constants import WARRIORS_UNITED_GUILD_ID as GUILD_ID
 
 log = logging.getLogger(__name__)
+
+
+_locks = WeakValueDictionary()
+_tasks = set()
+
+
+def panel_lock(sid):
+    lock = _locks.get(str(sid))
+    if lock is None:
+        lock = asyncio.Lock()
+        _locks[str(sid)] = lock
+    return lock
+
+
+def serialized(fn):
+    @wraps(fn)
+    async def guarded(ctx, action_id, *args, **kwargs):
+        async with panel_lock(action_id.split(":", 1)[0]):
+            return await fn(ctx, action_id, *args, **kwargs)
+
+    return guarded
+
+
+async def stop():
+    tasks = tuple(_tasks)
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def abandon(mongo, data):
+    state = data.get("nickname_setup") or {}
+    if state.get("nonce"):
+        await update_state(
+            mongo,
+            {"_id": data["_id"], "nickname_setup.nonce": state["nonce"]},
+            {"$unset": {"nickname_setup": ""}},
+        )
+
+
+async def load_names(ctx, data, mongo, coc_client, state, user_id):
+    from extensions.commands.warrior import show
+
+    try:
+        choices = await read(
+            "linked_accounts", name_choices(coc_client, user_id), target_id=int(user_id)
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        log.warning(
+            "warrior background lookup unavailable target_id=%s error=%s",
+            user_id,
+            type(error).__name__,
+        )
+        choices = {"accounts": [], "suggested": None, "unavailable": True}
+    try:
+        async with panel_lock(data["_id"]):
+            current = await get_state(mongo, data["_id"])
+            saved = (current or {}).get("nickname_setup") or {}
+            if saved.get("nonce") != state["nonce"] or saved.get("step") != "name":
+                return
+            # A typed modal retains its nonce; never invalidate or overwrite it.
+            updated = dict(
+                saved,
+                accounts=choices["accounts"],
+                unavailable=choices["unavailable"],
+                loading=False,
+            )
+            suggested = choices.get("suggested")
+            if suggested and not saved.get("manual_name"):
+                updated.update(
+                    name=suggested["name"],
+                    name_source_tag=suggested["tag"],
+                    step="country",
+                )
+            result = await update_state(
+                mongo,
+                {
+                    "_id": data["_id"],
+                    "nickname_setup.nonce": state["nonce"],
+                    "nickname_setup.step": "name",
+                },
+                {"$set": {"nickname_setup": updated}},
+            )
+            if result.matched_count:
+                await show(ctx, render(data, updated))
+    except Exception as error:
+        log.warning(
+            "warrior background update unavailable target_id=%s error=%s",
+            user_id,
+            type(error).__name__,
+        )
 
 
 def authorize(c):
@@ -90,7 +186,11 @@ def render(data, state, *, page=0):
         else:
             items += [
                 Text(
-                    content="No linked player name is available. Type the in-game name."
+                    content=(
+                        "Checking linked accounts…"
+                        if state.get("loading")
+                        else "No linked player name is available. Type the in-game name."
+                    )
                 ),
                 control(data, state, "type", "Type a name"),
             ]
@@ -160,19 +260,27 @@ async def begin(ctx, data, c, mongo, coc_client):
     from extensions.commands.warrior import show
 
     authorize(c)
-    current = await MemberProfiles(mongo).get(c["member"].id)
-    choices = await name_choices(coc_client, c["member"].id)
-    suggested = choices["suggested"]
+    current = await read(
+        "mongo.member_profile",
+        MemberProfiles(mongo).get(c["member"].id),
+        target_id=int(c["member"].id),
+    )
     state = {
-        "step": "country" if suggested else "name",
-        "accounts": choices["accounts"],
-        "unavailable": choices["unavailable"],
+        "step": "name",
+        "accounts": [],
+        "unavailable": False,
+        "loading": True,
         "profile_revision": int((current or {}).get("revision", 0)),
-        "name": suggested["name"] if suggested else "",
-        "name_source_tag": suggested["tag"] if suggested else None,
+        "name": "",
+        "name_source_tag": None,
     }
     state = await persist(mongo, data, state)
     await show(ctx, render(data, state))
+    task = asyncio.create_task(
+        load_names(ctx, data, mongo, coc_client, state, c["member"].id)
+    )
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
 
 
 async def save(ctx, data, c, mongo, state, bot):
@@ -206,11 +314,16 @@ async def save(ctx, data, c, mongo, state, bot):
             )
             authorize(fresh)
             try:
-                await bot.rest.edit_member(
-                    c["guild"].id,
-                    c["member"].id,
-                    nickname=value,
-                    reason=f"Warrior Setup by {ctx.user.id}",
+                await read(
+                    "rest.nickname_write",
+                    bot.rest.edit_member(
+                        c["guild"].id,
+                        c["member"].id,
+                        nickname=value,
+                        reason=f"Warrior Setup by {ctx.user.id}",
+                    ),
+                    guild_id=int(c["guild"].id),
+                    target_id=int(c["member"].id),
                 )
             except (
                 hikari.ForbiddenError,
@@ -326,6 +439,8 @@ async def save(ctx, data, c, mongo, state, bot):
 
 @register_action("warrior_nick", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
+@serialized
+@click
 async def action(
     ctx,
     action_id,
@@ -358,6 +473,19 @@ async def action(
                 ephemeral=True,
             )
             return
+        if not country and state.get("step") == "name":
+            changed = await update_state(
+                mongo,
+                {
+                    "_id": sid,
+                    "nickname_setup.nonce": nonce,
+                    "nickname_setup.step": "name",
+                },
+                {"$set": {"nickname_setup.manual_name": True}},
+            )
+            if not changed.matched_count:
+                await ctx.respond("Use the current nickname controls.", ephemeral=True)
+                return
         await ctx.respond_with_modal(
             title="Country code" if country else "In-game name",
             custom_id=f"warrior_nick_form:{sid}:{nonce}:"
@@ -435,6 +563,8 @@ async def failure(ctx, sid, error):
     "warrior_nick_form", is_modal=True, no_return=True, preload_state=False
 )
 @lightbulb.di.with_di
+@serialized
+@click
 async def form(
     ctx,
     action_id,
