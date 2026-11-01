@@ -33,3 +33,9 @@ plain-text details. Screenshots at360/1440 are visually inspected. Sample SVG ba
 layouts are test-only illustrations, not actual FWA base recommendations. No
 production link was opened; fixture checks do not prove live game import,
 Discord OAuth, real-phone behavior or a complete assistive-technology audit.
+
+## Prompt81 review delta
+
+Signed-out `/bases` now survives the existing member login target allowlist. Town Hall chips are a single horizontal scrolling line with the selected chip brought into view; the isolated fixture now contains ten levels. Details-only config entries do not create selectable levels or a default. The frontend rejects an invalid copy link even if an upstream response bypasses validation; skipping baseLink now fails the new behavioral regression.
+
+Current-main integration:1339 frontend tests,16 focused frontend tests,4 guarded backend tests,TypeScript/build pass. The link-validation mutant was killed, source restored, and production/preview builds repeated after restoration. All7 isolated browser states pass at320/360/390/1440, including ten-chip one-row/active-visible assertions; no live copy link opened. Final narrow/wide screenshots visually reviewed. Shared FWA constant extraction does not change bot behavior; this release needs backend/frontend only.
