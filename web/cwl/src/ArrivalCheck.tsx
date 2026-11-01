@@ -5,6 +5,7 @@ import { declarationSnapshot } from "./declarationData";
 import { declarationGroups } from "./declarationGroups";
 import DeclarationClan from "./DeclarationClan";
 import DeclarationPingPanel from "./DeclarationPingPanel";
+import useDeclarationExtras from "./useDeclarationExtras";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import { useCwlPool } from "./CwlPoolTabs";
 import { hiddenPublicationStatus } from "./publicationStatus";
@@ -30,12 +31,21 @@ export default function ArrivalCheck({
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
   const [activeClan, setActiveClan] = useState("");
+  const [onlyExtras, setOnlyExtras] = useState(false);
   const root = useRef<HTMLElement>(null);
   const directTag = useRef(new URLSearchParams(location.search).get("account"));
   const published =
     !!data?.publication.published &&
     data.arrival.source === "published" &&
     data.arrival.publication_available;
+  const extras = useDeclarationExtras(
+    seasonId,
+    data?.arrival.source || "published",
+    data?.arrival.source === "published"
+      ? data.arrival.version
+      : (data?.roster.revision ?? null),
+    !!data && published,
+  );
   const context = useMemo(
     () =>
       data && published
@@ -50,11 +60,25 @@ export default function ArrivalCheck({
   const groups = useMemo(
     () =>
       data && context
-        ? declarationGroups(data, context.roster, records, now)
+        ? declarationGroups(
+            data,
+            context.roster,
+            records,
+            now,
+            extras.data?.clans,
+          )
         : [],
-    [data, context, records, now],
+    [data, context, records, now, extras.data],
   );
-  const visible = groups.filter((g) => g.pool === pool);
+  const poolGroups = groups.filter((g) => g.pool === pool);
+  const visible = poolGroups.filter(
+    (g) =>
+      pool !== "lazy" ||
+      !onlyExtras ||
+      !!extras.data?.clans.find(
+        (c) => c.tag === g.tag && c.status === "current" && (c.count || 0) > 0,
+      ),
+  );
   const needle = search.trim().toLowerCase();
   function openClan(key: string) {
     setActiveClan(key);
@@ -144,6 +168,14 @@ export default function ArrivalCheck({
             </strong>{" "}
             · {hosts.reduce((n, g) => n + g.late.length, 0)} players not in
             their clan
+            {" · "}
+            {extras.error
+              ? "Couldn't check clan members"
+              : extras.loading || !extras.data
+                ? "Checking clan members…"
+                : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${extras.data.clans.some((c) => c.status !== "current") ? "confirmed " : ""}not on roster`}
+            {!!extras.data?.clans.some((c) => c.status !== "current") &&
+              ` · ${extras.data.clans.filter((c) => c.status !== "current").length} clans couldn't check`}
             <button
               type="button"
               className="declaration-info"
@@ -160,10 +192,30 @@ export default function ArrivalCheck({
                 ? `Last checked ${comparisonAge(checkedAt, now)}`
                 : "Checking…"}
             </span>
-            <Button icon={RefreshCw} onClick={refresh}>
-              {checking ? "Checking…" : "Refresh"}
+            <Button
+              icon={RefreshCw}
+              disabled={extras.loading}
+              onClick={() => {
+                refresh();
+                extras.refresh();
+              }}
+            >
+              {checking || extras.loading ? "Checking…" : "Refresh"}
             </Button>
           </div>
+          <p className="declaration-extras-status">
+            Not-on-roster checks cover Lazy hosting clans only.
+          </p>
+          {pool === "lazy" && (
+            <label className="declaration-extras-filter">
+              <input
+                type="checkbox"
+                checked={onlyExtras}
+                onChange={(e) => setOnlyExtras(e.target.checked)}
+              />
+              Clans with not-on-roster players
+            </label>
+          )}
           {helpOpen && (
             <p className="declaration-help">
               Ready = enough players in their clan for its war size, checked in
@@ -204,7 +256,7 @@ export default function ArrivalCheck({
             key={`${seasonId}:${pool}`}
             seasonId={seasonId}
             pool={pool}
-            missing={visible.reduce(
+            missing={poolGroups.reduce(
               (count, g) =>
                 count +
                 (g.tag
@@ -234,8 +286,22 @@ export default function ArrivalCheck({
           />
           {!visible.length && (
             <p>
-              No {pool === "main" ? "Main" : "Lazy"} CWL accounts in this
-              published roster.
+              {pool === "lazy" && onlyExtras ? (
+                <>
+                  No checked clans have not-on-roster players.{" "}
+                  {(extras.error ||
+                    extras.data?.clans.some((c) => c.status !== "current")) &&
+                    "Some checks are unavailable. "}
+                  <Button onClick={() => setOnlyExtras(false)}>
+                    Clear filter
+                  </Button>
+                </>
+              ) : (
+                <>
+                  No {pool === "main" ? "Main" : "Lazy"} CWL accounts in this
+                  published roster.
+                </>
+              )}
             </p>
           )}
           {needle &&
@@ -253,6 +319,9 @@ export default function ArrivalCheck({
               records={records}
               now={now}
               search={needle}
+              extra={extras.data?.clans.find((c) => c.tag === group.tag)}
+              extraLoading={extras.loading}
+              extraError={extras.error}
               request={{
                 seasonId,
                 viewOnly: "declaration",

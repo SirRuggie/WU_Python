@@ -8,6 +8,7 @@ export function declarationGroups(
   snapshot: RosterSnapshot,
   records: LocationRecords,
   now: number,
+  extraHosts: { tag: string; name: string; capacity: number | null }[] = [],
 ) {
   const map = new Map<
     string,
@@ -19,6 +20,8 @@ export function declarationGroups(
       accounts: RosterSnapshot["accounts"];
     }
   >();
+  for (const clan of extraHosts)
+    map.set(clan.tag, { ...clan, pool: "lazy", accounts: [] });
   for (const a of snapshot.accounts) {
     const tag = a.assigned_clan_tag || "";
     const source = data.arrival.accounts.find((x) => x.tag === a.tag)!;

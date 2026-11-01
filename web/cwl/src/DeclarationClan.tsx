@@ -5,6 +5,8 @@ import {
   type declarationGroups,
 } from "./declarationGroups";
 import DeclarationPlayerCard from "./DeclarationPlayerCard";
+import DeclarationExtras from "./DeclarationExtras";
+import type { DeclarationExtraClan } from "./declarationExtras";
 import type { LocationRecords } from "./comparisonLocation";
 import type { StaffDetailsRequest } from "./staffDetailsRequest";
 export default function DeclarationClan({
@@ -15,6 +17,9 @@ export default function DeclarationClan({
   now,
   request,
   search,
+  extra,
+  extraLoading = false,
+  extraError = "",
 }: {
   group: ReturnType<typeof declarationGroups>[number];
   open: boolean;
@@ -23,6 +28,9 @@ export default function DeclarationClan({
   now: number;
   request: Omit<StaffDetailsRequest, "tag">;
   search: string;
+  extra?: DeclarationExtraClan;
+  extraLoading?: boolean;
+  extraError?: string;
 }) {
   const [copied, setCopied] = useState("");
   const [fallback, setFallback] = useState<string | null>(null);
@@ -71,6 +79,14 @@ export default function DeclarationClan({
           )}
         </button>
       </h2>
+      {group.tag && group.pool === "lazy" && (
+        <DeclarationExtras
+          row={extra}
+          loading={extraLoading}
+          error={extraError}
+          now={now}
+        />
+      )}
       {group.tag && group.capacity === null && (
         <a
           className="declaration-settings"

@@ -3,7 +3,16 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ value: null as any }));
+const extraState = vi.hoisted(() => ({
+  value: { data: undefined as any, loading: true, error: "", refresh: vi.fn() },
+}));
 vi.mock("./useDeclarationData", () => ({ default: () => state.value }));
+vi.mock("./useDeclarationExtras", () => ({ default: () => extraState.value }));
+vi.mock("./DeclarationPingPanel", () => ({
+  default: ({ missing }: { missing: number }) => (
+    <div data-ping-count={missing}>Ping {missing} missing</div>
+  ),
+}));
 import ArrivalCheck from "./ArrivalCheck";
 import { staffDetailsEvent } from "./staffDetailsRequest";
 let root: ReturnType<typeof createRoot>, host: HTMLDivElement;
@@ -43,6 +52,12 @@ function makeData() {
   };
 }
 beforeEach(() => {
+  extraState.value = {
+    data: undefined,
+    loading: true,
+    error: "",
+    refresh: vi.fn(),
+  };
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear();
   vi.spyOn(window, "matchMedia").mockImplementation(
@@ -67,6 +82,71 @@ beforeEach(() => {
     error: "",
     checking: false,
   };
+});
+
+it("filters extra-member clans without changing the pool-wide ping count", async () => {
+  const accounts = state.value.data.arrival.accounts;
+  for (const account of accounts) {
+    account.pool = "lazy";
+    account.hosting_pool = "lazy";
+  }
+  state.value.records[accounts[20].tag] = {
+    ...state.value.records[accounts[20].tag],
+    current_clan_tag: "#ELSE",
+    current_clan_name: "Elsewhere",
+  };
+  const make = (tag: string, name: string, count: number) => ({
+    tag,
+    name,
+    capacity: 15,
+    status: "current",
+    checked_at: new Date(now).toISOString(),
+    count,
+    extras: Array.from({ length: count }, (_, i) => ({
+      tag: `#V${i}Y`,
+      name: `Extra ${i}`,
+      town_hall: 16,
+      context: "Not signed up",
+      assigned_clan_tag: null,
+    })),
+  });
+  extraState.value = {
+    data: {
+      source: "published",
+      basis: 1,
+      clans: [make("#A", "Amber", 1), make("#B", "Blaze", 0)],
+    },
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+  };
+  await render();
+  const lazy = [...host.querySelectorAll("button")].find((b) =>
+    b.textContent?.startsWith("Lazy ·"),
+  )!;
+  await act(async () => lazy.click());
+  expect(toggles()).toHaveLength(2);
+  const count = host
+    .querySelector("[data-ping-count]")
+    ?.getAttribute("data-ping-count");
+  expect(count).toBe("2");
+  const filter = host.querySelector<HTMLInputElement>(
+    ".declaration-extras-filter input",
+  )!;
+  await act(async () => filter.click());
+  expect(toggles()).toHaveLength(1);
+  expect(toggles()[0].textContent).toContain("Amber");
+  expect(
+    host.querySelector("[data-ping-count]")?.getAttribute("data-ping-count"),
+  ).toBe(count);
+  expect(host.textContent).toContain("1 not on roster");
+});
+
+it("renders ordinary roster rows before a slow extra-members read completes", async () => {
+  await render();
+  expect(toggles()).toHaveLength(2);
+  expect(host.textContent).toContain("Checking clan members…");
+  expect(host.textContent).not.toContain("0 not on roster");
 });
 afterEach(async () => {
   await act(async () => root.unmount());
