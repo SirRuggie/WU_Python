@@ -223,3 +223,22 @@ it("a late settings reload cannot replace a newer response", async () => {
     (host.querySelector("[role=combobox]") as HTMLInputElement).value,
   ).toBe("#newer");
 });
+
+it("shows exact changed pool accounts before allowing a ping", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    lineup_changes: [
+      {
+        tag: "#PYY",
+        name: "Changed player",
+        published_clan: "#PQQ",
+        draft_clan: null,
+      },
+    ],
+  });
+  await mount();
+  expect(host.textContent).toContain("Changed player (#PYY)");
+  expect(host.textContent).toContain("#PQQ → unassigned");
+  expect(button("Ping 26 missing").disabled).toBe(true);
+  expect(host.textContent).toContain("the reviewed list finishes");
+});

@@ -121,6 +121,7 @@ class DeclarationPingStore:
         revision,
         *,
         test_channel=None,
+        actor_name="Discord staff member",
         now=None,
     ):
         at = time.time() if now is None else now
@@ -141,6 +142,7 @@ class DeclarationPingStore:
             guild_id=self.guild_id,
             pool=pool,
             actor_id=actor_id,
+            actor_name=str(actor_name)[:100],
             season_id=int(season_id),
             groups=copy.deepcopy(groups),
             version=version,
@@ -226,6 +228,7 @@ class DeclarationPingStore:
         active = dict(
             token=token,
             actor_id=identity(actor_id),
+            actor_name=review.get("actor_name", "Discord staff member"),
             season_id=int(season_id),
             publication_version=review["version"],
             channel=review["channel"],
