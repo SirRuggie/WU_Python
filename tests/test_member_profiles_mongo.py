@@ -970,3 +970,49 @@ def test_expired_lease_after_slow_preparation_never_edits():
             await client.close()
 
     asyncio.run(run())
+
+
+def test_ready_work_partial_index_avoids_archived_manifest_scan():
+    assert URI == "mongodb://127.0.0.1:27154"
+    from utils.member_profile_runs import ProfileRuns
+
+    async def run():
+        client = AsyncMongoClient(URI)
+        db = client["wu_ready_index_fixture_" + uuid4().hex]
+        store = ProfileRuns(S(bot_config=db.bot_config))
+        try:
+            await db.bot_config.insert_many(
+                [
+                    dict(_id=str(i), kind="archive", payload="x" * 100)
+                    for i in range(20000)
+                ]
+            )
+            await store.ensure_work_index()
+            assert await store.ready_work() is None
+            query = {
+                "$or": [
+                    {"kind": "manage_web_request", "status": "pending"},
+                    {"kind": "member_profile_standardize", "state": "queued"},
+                ]
+            }
+            plan = await db.command(
+                "explain",
+                {
+                    "find": "bot_config",
+                    "filter": query,
+                    "hint": "management_ready_work",
+                },
+                verbosity="executionStats",
+            )
+            assert plan["executionStats"]["totalDocsExamined"] == 0
+            await db.bot_config.insert_one(
+                dict(
+                    _id="pending", kind="manage_web_request", status="pending"
+                )
+            )
+            assert (await store.ready_work())["_id"] == "pending"
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())

@@ -82,6 +82,9 @@ def selected_manifest(preview, selected):
     return result
 
 
+_LAST_PRUNE = {}
+
+
 class ProfileRuns:
     def __init__(self, mongo):
         self.mongo = mongo
@@ -249,6 +252,30 @@ class ProfileRuns:
             return old
         return row
 
+    async def ensure_work_index(self):
+        await self.collection.create_index(
+            [("kind", 1), ("status", 1), ("state", 1)],
+            name="management_ready_work",
+            partialFilterExpression={
+                "$or": [
+                    {"kind": "manage_web_request", "status": "pending"},
+                    {"kind": KIND, "state": "queued"},
+                ]
+            },
+        )
+
+    async def ready_work(self):
+        return await self.collection.find_one(
+            {
+                "$or": [
+                    {"kind": "manage_web_request", "status": "pending"},
+                    {"kind": KIND, "state": "queued"},
+                ]
+            },
+            {"_id": 1, "kind": 1, "next_at": 1},
+            hint="management_ready_work",
+        )
+
     async def queued(self):
         return await self.collection.find_one(
             {"kind": KIND, "state": "queued"}, {"_id": 1, "next_at": 1}
@@ -256,7 +283,7 @@ class ProfileRuns:
 
     async def advance(self, *, now=None):
         at = time.time() if now is None else now
-        await self.prune()
+        await self.prune_throttled(at)
         parent = await self.collection.find_one(
             {"kind": KIND, "state": "queued"}, sort=[("created_at", 1)]
         )
@@ -285,7 +312,10 @@ class ProfileRuns:
                 done = next_index >= len(parent["items"])
                 changes = dict(
                     cursor=next_index,
-                    next_at=child.get("finished_at", at) + PACE_SECONDS,
+                    next_at=max(
+                        child.get("finished_at", at) + PACE_SECONDS,
+                        child.get("retry_not_before", 0),
+                    ),
                 )
                 if done:
                     changes.update(state="done", finished_at=at)
@@ -373,6 +403,18 @@ class ProfileRuns:
                 },
                 {"$set": {"state": "stopped", "finished_at": at}},
             )
+            await self.prune()
+
+    async def prune_throttled(self, at):
+        # One process-wide cadence per collection; terminal transitions still prune.
+        key = id(self.mongo)
+        previous = _LAST_PRUNE.get(key)
+        if previous is not None and at - previous < 60:
+            return
+        _LAST_PRUNE[key] = at
+        if len(_LAST_PRUNE) > 32:
+            _LAST_PRUNE.pop(next(iter(_LAST_PRUNE)))
+        await self.prune()
 
     async def prune(self):
         # Keep 20 terminal runs at most, for at most 30 days. Never touch active work.

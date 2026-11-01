@@ -25,11 +25,13 @@ export default function NicknameRun({
   members,
   onStop,
   disabled,
+  showAttribution = false,
 }: {
   run: Run;
   members: Member[];
   onStop: () => void;
   disabled: boolean;
+  showAttribution?: boolean;
 }) {
   const [filter, setFilter] = useState<keyof typeof labels>("changed"),
     [page, setPage] = useState(0);
@@ -38,21 +40,11 @@ export default function NicknameRun({
   const profile = (id?: string) => members.find((m) => m.discord_id === id);
   return (
     <section aria-label="Standardize run">
-      <h2>
-        Standardize progress ·{" "}
-        {run.state === "done"
-          ? "Finished"
-          : run.state === "stopped"
-            ? "Stopped"
-            : run.state === "stopping"
-              ? "Stopping"
-              : "Working"}
-      </h2>
-      <p role="status">
+      <h2 aria-live="polite">
         {["done", "stopped"].includes(run.state)
           ? `${run.state === "done" ? "Done" : "Stopped"}. ${run.rows.filter((r) => r.status === "done").length} changed.${run.rows.some((r) => r.status === "failed") ? ` ${run.rows.filter((r) => r.status === "failed").length} failed.` : ""}${run.rows.some((r) => r.status === "uncertain") ? ` ${run.rows.filter((r) => r.status === "uncertain").length} check manually.` : ""}`
           : `Renaming ${run.rows.filter((r) => ["done", "failed", "uncertain", "stopped", "skipped"].includes(r.status || "")).length} of ${run.rows.length}`}
-      </p>
+      </h2>
       <progress
         aria-label="Rename progress"
         max={Math.max(1, run.rows.length)}
@@ -65,7 +57,7 @@ export default function NicknameRun({
         }
       />
       <p>Renames one at a time. You can stop anytime.</p>
-      <div>
+      {showAttribution && <div>
         <span>Started by</span>
         <DiscordIdentity
           userId={run.started_by}
@@ -86,7 +78,7 @@ export default function NicknameRun({
             />
           </>
         )}
-      </div>
+      </div>}
       {["queued", "stopping"].includes(run.state) && (
         <button
           disabled={disabled || run.state === "stopping"}

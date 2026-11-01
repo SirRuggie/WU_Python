@@ -147,7 +147,7 @@ it("uncertain import shows one message and no preview, and explicit retry uses a
   await click("Review nicknames");
   expect(host.querySelectorAll("[role=alert]")).toHaveLength(1);
   expect(host.textContent).toContain(
-    "Import stopped early. No nicknames changed. Press Import again to continue.",
+    "Import stopped early. No nicknames changed. Press Review nicknames again.",
   );
   expect(
     transport.mock.calls.some((c) => String(c[0]).endsWith("/preview")),
@@ -255,7 +255,7 @@ it("Stop uses the existing one-shot command and terminal polling never retries a
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await click("Stop run");
-  expect(host.textContent).toContain("Standardize progress · Stopped");
+  expect(host.textContent).toContain("Stopped. 0 changed.");
   expect(
     transport.mock.calls.filter((c) => String(c[0]).endsWith("/stop")),
   ).toHaveLength(1);
@@ -298,10 +298,10 @@ it("running status polls each second and stops as soon as finished", async () =>
       ? { runs: [{ run_id: "run", state: "queued" }] }
       : {
           run_id: "run",
-          state: ++reads === 1 ? "queued" : "done",
+          state: ++reads <= 2 ? "queued" : "done",
           rows: rows
             .slice(0, 2)
-            .map((r) => ({ ...r, status: reads === 1 ? "waiting" : "done" })),
+            .map((r) => ({ ...r, status: reads <= 2 ? "waiting" : "done" })),
         },
   );
   await mount();
@@ -321,4 +321,25 @@ it("running status polls each second and stops as soon as finished", async () =>
     await vi.advanceTimersByTimeAsync(10000);
   });
   expect(transport.mock.calls).toHaveLength(count);
+});
+
+it('keeps confirmed run and Stop when a subsequent read fails, then polling recovers on Changed', async () => {
+  vi.useFakeTimers();
+  const original=transport.getMockImplementation()!;
+  let reads=0;
+  transport.mockImplementation(async (...args: unknown[])=>{
+    if(args[0]==='/manage/member-timezones/runs/run') {
+      if(++reads===1) throw new Error('Temporary read failure');
+      return {run_id:'run',state:'done',rows:[{...rows[0],status:'done'},{...rows[1],status:'uncertain'}]};
+    }
+    return original(...args);
+  });
+  await mount(); await click('Review nicknames'); await click('Rename');
+  expect(host.textContent).toContain('Renaming');
+  expect(host.textContent).toContain('Stop run');
+  expect(host.textContent).not.toContain('Search nicknames');
+  await act(async()=>vi.advanceTimersByTimeAsync(1000));
+  expect(host.textContent).toContain('Done. 1 changed.');
+  expect(host.textContent).toContain('Member 0');
+  expect(host.textContent).not.toContain('Member 1 |');
 });

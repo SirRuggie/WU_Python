@@ -267,7 +267,23 @@ export default function StrikeActivityRoster({
       className="strike-activity-roster"
       aria-label="Family activity overview"
     >
-      <FilterChips className="strike-activity-tabs" label="Account views" value={filters.view} disabled={bulkBusy} options={activityViews.map(view=>({value:view,label:({not_attacking:"Not attacking",inactive:"Inactive",replacements:"Replacements",all:"All"})[view],count:counts[view]}))} onChange={view=>change(activityViewPreset(filters,view))}/>
+      <FilterChips
+        className="strike-activity-tabs"
+        label="Account views"
+        value={filters.view}
+        disabled={bulkBusy}
+        options={activityViews.map((view) => ({
+          value: view,
+          label: {
+            not_attacking: "Not attacking",
+            inactive: "Inactive",
+            replacements: "Replacements",
+            all: "All",
+          }[view],
+          count: counts[view],
+        }))}
+        onChange={(view) => change(activityViewPreset(filters, view))}
+      />
       <div className="strike-activity-toolbar">
         <input
           aria-label="Find account or member"

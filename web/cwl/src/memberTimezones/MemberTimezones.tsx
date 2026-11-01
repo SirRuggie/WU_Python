@@ -23,6 +23,7 @@ export default function MemberTimezones({
     [dirty, setDirty] = useState(false),
     [request, setRequest] = useState<RequestState | null>(null),
     [reviewBusy, setReviewBusy] = useState(false),
+    [reviewOpen, setReviewOpen] = useState(false),
     [loaded, setLoaded] = useState("");
   const alive = useRef(true),
     generation = useRef(0),
@@ -193,6 +194,7 @@ export default function MemberTimezones({
               onDenied={denied}
               members={data.members}
               onBusy={setReviewBusy}
+              onOpenChange={setReviewOpen}
               onImported={() => void load()}
               onRefresh={() => void load()}
               refreshing={loading}
@@ -223,7 +225,7 @@ export default function MemberTimezones({
                 onDirty(true);
               }}
             />
-          ) : (
+          ) : !reviewOpen ? (
             <>
               <div className="mt-toolbar mt-search-toolbar">
                 <label>
@@ -275,7 +277,7 @@ export default function MemberTimezones({
                     {loading ? " · Refreshing…" : ""}
                   </small>
                 </p>
-                <nav className="mt-pagination" aria-label="Member pages">
+                {lastPage > 0 && <nav className="mt-pagination" aria-label="Member pages">
                   <button
                     aria-label="Previous members"
                     disabled={currentPage === 0}
@@ -295,7 +297,7 @@ export default function MemberTimezones({
                   >
                     →
                   </button>
-                </nav>
+                </nav>}
               </div>
 
               <ul className="mt-list mt-member-list">
@@ -349,7 +351,7 @@ export default function MemberTimezones({
                   ))}
               </ul>
             </>
-          )}
+          ) : null}
         </>
       )}
     </main>

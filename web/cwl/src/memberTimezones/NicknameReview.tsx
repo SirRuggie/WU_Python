@@ -20,6 +20,7 @@ export function MemberPages({
   onChange: (page: number) => void;
 }) {
   const last = Math.max(0, Math.ceil(total / 25) - 1);
+  if (!last) return null;
   return (
     <nav className="mt-pagination" aria-label="Review pages">
       <button

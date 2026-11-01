@@ -253,6 +253,7 @@ def test_fast_scheduler_owns_one_background_driver_and_shutdown_cancels_it(
         monkeypatch.setattr(bridge, "bot_instance", object())
         monkeypatch.setattr(bridge, "mongo_client", object())
         monkeypatch.setattr(bridge, "_management_driver", None)
+        monkeypatch.setattr(bridge, "_management_stopping", False)
         monkeypatch.setattr(bridge, "startup_reconciler", None)
         monkeypatch.setattr(bridge, "scheduler", S(running=False))
         await bridge._poll_web_management_fast()
@@ -263,12 +264,16 @@ def test_fast_scheduler_owns_one_background_driver_and_shutdown_cancels_it(
         task = bridge._management_driver
         await bridge.on_bot_stopping(None)
         assert task.cancelled() and bridge._management_driver is None
+        await bridge._poll_web_management_fast()
+        assert bridge._management_driver is None and call.await_count == 1
 
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("edge", [False, True])
 def test_cached_request_context_success_edits_once_after_preparation(
     monkeypatch,
+    edge,
 ):
     async def run():
         bot, _ = transport()
@@ -292,11 +297,16 @@ def test_cached_request_context_success_edits_once_after_preparation(
                 old_nickname="Old",
             ),
         )
+        clock = [0]
+        monkeypatch.setattr(actions, "time", S(monotonic=lambda: clock[0]))
         context = await actions.request_context(bot, None, row)
+        if edge:
+            clock[0] = 55
         written = []
 
         async def commit(*args, change, prepare, **kwargs):
             await prepare()
+            clock[0] += 20 if edge else 0
             await change()
             written.append(True)
 
@@ -306,6 +316,7 @@ def test_cached_request_context_success_edits_once_after_preparation(
         result = await actions.apply(bot, None, row, request_context=context)
         assert written == [True]
         assert result["message"] == "Profile and nickname saved."
+        assert bot.rest.fetch_roles.await_count == (2 if edge else 1)
         bot.rest.edit_member.assert_awaited_once()
         assert (
             sum(

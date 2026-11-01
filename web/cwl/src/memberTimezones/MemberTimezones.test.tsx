@@ -208,7 +208,6 @@ it("uses a fresh identity only on an explicit retry of a confirmed failed save o
   await click("Save profile");
   expect(posts[0].body.request_id).not.toBe(posts[1].body.request_id);
   await click("Cancel");
-
 });
 it("retains the request identity after an unconfirmed transport failure", async () => {
   const ids: string[] = [];
@@ -252,7 +251,7 @@ it("makes complete row metadata accessible and exposes hierarchy reasons in the 
   await click("Edit Ada");
   expect(host.querySelector(".mt-editor")!.textContent).toContain(guard);
 });
-it("retains the selected run and progress when editing a member and returning", async () => {
+it("hides the member directory during a run and returns to it through Back", async () => {
   transport.mockImplementation(async (path: string) => {
     if (path.endsWith("/runs"))
       return { runs: [{ run_id: "run", state: "queued" }] };
@@ -277,28 +276,33 @@ it("retains the selected run and progress when editing a member and returning", 
   });
   await renderPage();
   await click("Past runs");
-  const details=host.querySelector('.mt-nickname-review')!;
+  const details = host.querySelector(".mt-nickname-review")!;
   await act(async () => {
     const select = details.querySelector("select")!;
     select.value = "run";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(details.textContent).toContain("Standardize progress");
-  await click("Edit Ada");
-  await click("Cancel");
+  expect(details.textContent).toContain("Renaming");
+  expect(host.querySelector(".mt-member-list")).toBeNull();
+  expect(host.textContent).not.toContain("Search members");
   const actions = host.querySelector(".mt-top-actions")!;
   expect(actions.textContent).toContain("Started by");
   expect(actions.textContent).toContain("Stopped by");
   expect(actions.textContent).not.toContain(uid);
-  expect(transport.mock.calls.some(([path])=>String(path).includes("staff-signup-members"))).toBe(false);
+  expect(
+    transport.mock.calls.some(([path]) =>
+      String(path).includes("staff-signup-members"),
+    ),
+  ).toBe(false);
   expect(
     [...actions.querySelectorAll(".user-display-name")].map(
       (n) => n.textContent,
     ),
   ).toContain("Ada");
-  expect(host.querySelector(".mt-top-actions")?.textContent).toContain(
-    "Standardize progress",
-  );
+  await click("Back to members");
+  expect(host.querySelector(".mt-member-list")).not.toBeNull();
+  await click("Edit Ada");
+  await click("Cancel");
 });
 it("narrows the dashboard zone menu by country and supports Show all without nickname aliases", async () => {
   const au = [
@@ -349,4 +353,32 @@ it("narrows the dashboard zone menu by country and supports Show all without nic
   expect(host.textContent).toContain("Ada | GMT+9:30 🇦🇺");
   await click("Show all zones");
   expect(zone.options).toHaveLength(5);
+});
+
+it("shows uncertain saves in the editor and gives an explicit retry a fresh receipt identity", async () => {
+  transport.mockImplementation(
+    async (path: string, _method?: string, body?: { request_id: string }) => {
+      if (path.endsWith("/choices")) return { accounts: [], complete: true };
+      if (path.endsWith("/save"))
+        return {
+          request_id: body!.request_id,
+          status: "uncertain",
+          status_url: "/receipt",
+          message: "Check Discord before repeating this save.",
+        };
+      return directory;
+    },
+  );
+  await renderPage();
+  await click("Edit Ada");
+  await click("Save profile");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Check Discord",
+  );
+  await click("Save profile");
+  const saves = transport.mock.calls.filter((c) =>
+    String(c[0]).endsWith("/save"),
+  );
+  expect(saves).toHaveLength(2);
+  expect(saves[0][2].request_id).not.toBe(saves[1][2].request_id);
 });

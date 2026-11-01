@@ -230,6 +230,7 @@
   flex-wrap: wrap;
 }
 .mt-review-help {
+  margin: 4px 0;
   font-size: 12px;
   line-height: 1.5;
   max-width: 70ch;

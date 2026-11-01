@@ -209,11 +209,11 @@ fs.mkdirSync(output, { recursive: true });
         .getByRole("button", { name: "Rename 2", exact: true })
         .click();
       await page
-        .getByRole("heading", { name: /Standardize progress/ })
+        .getByRole("heading", { name: /Renaming/ })
         .waitFor();
       await page.getByRole("button", { name: "Stop run", exact: true }).click();
       await page
-        .getByRole("heading", { name: /Standardize progress · Stopped/ })
+        .getByRole("heading", { name: /Stopped\./ })
         .waitFor();
       assert(!(await scope.textContent()).includes("700731132936978456"));
       await page.getByRole("button", { name: /^Check manually/ }).click();

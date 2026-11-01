@@ -43,3 +43,17 @@ Evidence is retained under `.local/p83-evidence`, `.local/p86-evidence`, `.local
 | after | 25 | 76.636 s | 0.224 s |
 
 The 25-member fixture refreshes roles and the bot member twice across its minute-long cache boundary, with exactly one fresh target read per member. Its edit gaps remain above three seconds. Baseline source is the pre-speed commit aeef3fe; only the after cases were rerun after the final safety fix.
+
+## Prompt 87 review delta
+
+The editor displays confirmed uncertain saves and an explicit repeat obtains a fresh request ID; transport-unknown outcomes retain their identity. Review and run hide the member directory, search and pager. Confirm establishes the live run immediately; a failed later status read keeps Stop available and polling recovers. The run has one live progress heading, opens on Changed, and shows attribution only in Past runs. The help line hides during review/run; single-page pagers are absent. The interrupted-import message now names Review nicknames. The three requested Prettier files are formatted.
+
+Idle work detection is one indexed projected query per second, with the small additive `management_ready_work` partial index over pending management requests and queued profile runs. A dedicated 20,000-document archived fixture verifies zero documents examined on idle. No existing documents are migrated. Rollback to the prior runtime can retain this compatible index; it is unused there and may be removed only after rollback is healthy, never by restoring production data.
+
+Retention pruning is throttled to once per minute during work and also runs at completion/Stop. Non-profile actions keep their five-per-ten-second budget across fast passes and fallback ticks. The CWL bridge shares the management lane lock because both can touch campaign/management state. Only the fast job's APScheduler execution messages are filtered; other jobs retain their logs. Shutdown closes the start gate before awaiting cancellation, and reconciliation cannot reopen it. Claim timing reads are inside exception handling.
+
+Roles/bot refresh in preparation with enough headroom for the bounded edit and lease verification, using one 60-second TTL constant. A known Discord rate-limit retry time is persisted on the uncertain child and delays the next member. No uncertain edit is retried. Hikari's shared route bucket still governs calls when an internal rate-limit wait is cancelled without exposing its retry time.
+
+Delta checks so far: 139 integrated focused backend plus seven new queue/edge checks; 13 real Mongo checks including the archived index fixture; 1,353 frontend tests, TypeScript/build, required war-reminder gate, and eight backend mutant kills (five new, three retained speed safety checks). Final full backend and refreshed browser evidence are pending at this pushed checkpoint. Prior failed fixture/build attempts are retained; they are not claimed as passing.
+
+Rework fake-Discord/local-Mongo timings: 2 members 3.474 seconds, 25 members 76.735 seconds. The 25-member case has 25 target reads and three roles/bot refreshes with the safety margin; no live timing or edits.

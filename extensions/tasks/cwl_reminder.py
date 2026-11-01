@@ -2012,7 +2012,7 @@ async def schedule_cwl_reminder(
     return True
 
 
-async def _poll_web_roster_requests() -> None:
+async def _poll_web_roster_bridge() -> None:
     """Deliver reviewed web requests through the native campaign sender."""
     if mongo_client is None or bot_instance is None:
         return
@@ -2065,6 +2065,14 @@ async def _poll_web_roster_requests() -> None:
         # Leave pending or sending rows in place for inspection. In particular,
         # never auto-reset a possibly posted sending row after an outage.
         print(f"[CWL Web Bridge] Poll failed: {type(exc).__name__}")
+
+
+async def _poll_web_roster_requests() -> None:
+    from utils.manage_web_worker import queue_lock
+
+    # Both paths can edit campaign/management state; preserve serial execution.
+    async with queue_lock():
+        await _poll_web_roster_bridge()
     # Independent bot-owned management queue: a CWL reconciliation failure must
     # not prevent staff from managing tickets, templates, or FWA settings.
     try:
@@ -2076,6 +2084,7 @@ async def _poll_web_roster_requests() -> None:
 
 
 _management_driver = None
+_management_stopping = False
 
 
 async def _drive_web_management():
@@ -2091,13 +2100,28 @@ async def _drive_web_management():
 
 async def _poll_web_management_fast():
     global _management_driver
-    if bot_instance is None or mongo_client is None:
+    if _management_stopping or bot_instance is None or mongo_client is None:
         return
     if _management_driver is None or _management_driver.done():
         _management_driver = asyncio.create_task(_drive_web_management())
 
 
+def _silence_fast_job_logs():
+    import logging
+
+    class FastJobFilter(logging.Filter):
+        def filter(self, record):
+            return "_poll_web_management_fast" not in record.getMessage()
+
+    logger = logging.getLogger("apscheduler.executors.default")
+    if not any(getattr(f, "_wu_fast_job", False) for f in logger.filters):
+        quiet = FastJobFilter()
+        quiet._wu_fast_job = True
+        logger.addFilter(quiet)
+
+
 async def _reconcile_cwl_startup() -> None:
+    _silence_fast_job_logs()
     """Idempotently restore durable CWL jobs after dependencies are ready."""
     if not getattr(scheduler, "running", True):
         scheduler.start()
@@ -2252,7 +2276,8 @@ async def on_bot_started(
     event: hikari.StartedEvent, mongo: MongoClient = lightbulb.di.INJECTED
 ) -> None:
     """Start non-blocking, self-healing restoration of the saved schedule."""
-    global bot_instance, mongo_client, startup_reconciler
+    global bot_instance, mongo_client, startup_reconciler, _management_stopping
+    _management_stopping = False
 
     bot_instance = event.app
     mongo_client = mongo
@@ -2268,7 +2293,8 @@ async def on_bot_started(
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
-    global startup_reconciler, _management_driver
+    global startup_reconciler, _management_driver, _management_stopping
+    _management_stopping = True
     if _management_driver is not None:
         _management_driver.cancel()
         import contextlib

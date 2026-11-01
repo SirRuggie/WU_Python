@@ -35,15 +35,18 @@ async def directory(bot):
 
 
 _RUN_ENVIRONMENTS = OrderedDict()
+ENVIRONMENT_TTL_SECONDS = 60
+EDIT_TIMEOUT_SECONDS = 20
+ENVIRONMENT_PREPARE_AGE = ENVIRONMENT_TTL_SECONDS - EDIT_TIMEOUT_SECONDS - 5
 
 
-async def environment(bot, run_id):
+async def environment(bot, run_id, *, max_age=ENVIRONMENT_TTL_SECONDS):
     key = (id(bot), str(run_id))
     cached = _RUN_ENVIRONMENTS.get(key)
     if (
         cached
         and cached["bot"] is bot
-        and time.monotonic() - cached["at"] < 60
+        and time.monotonic() - cached["at"] < max_age
     ):
         return cached
     roles, me = await asyncio.gather(
@@ -106,7 +109,11 @@ async def target_context(
                 bot.rest.fetch_guild(GUILD_ID),
             )
         else:
-            env = await environment(bot, environment_data["env"]["run_id"])
+            env = await environment(
+                bot,
+                environment_data["env"]["run_id"],
+                max_age=ENVIRONMENT_PREPARE_AGE,
+            )
             roles, me, guild = (
                 env["roles"],
                 env["me"],
@@ -176,7 +183,7 @@ async def apply(bot, mongo, row, *, request_context=None):
                 progress,
             )
             outcome = ProfileOutcomeUncertain(
-                "Import stopped early. No nicknames changed. Press Import again to continue."
+                "Import stopped early. No nicknames changed. Press Review nicknames again."
             )
             outcome.counts = dict(progress)
             raise outcome from error
@@ -292,12 +299,15 @@ async def apply(bot, mongo, row, *, request_context=None):
                 env = _RUN_ENVIRONMENTS.get(
                     (id(bot), str(request_context["env"]["run_id"]))
                 )
-                if not env or time.monotonic() - env["at"] >= 60:
+                if (
+                    not env
+                    or time.monotonic() - env["at"] >= ENVIRONMENT_TTL_SECONDS
+                ):
                     raise ValueError(
                         "Permission checks expired. Review this member again."
                     )
             # No retries: a timeout may follow an accepted Discord edit.
-            async with asyncio.timeout(20):
+            async with asyncio.timeout(EDIT_TIMEOUT_SECONDS):
                 await read(
                     "dashboard.edit",
                     edit_nickname(

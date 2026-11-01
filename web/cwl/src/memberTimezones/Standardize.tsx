@@ -5,12 +5,13 @@ import NicknameReview from "./NicknameReview";
 import NicknameRun from "./NicknameRun";
 import type { Change, Run, Member, RequestState } from "./types";
 const interrupted =
-  "Import stopped early. No nicknames changed. Press Import again to continue.";
+  "Import stopped early. No nicknames changed. Press Review nicknames again.";
 export default function Standardize({
   disabled,
   onDenied,
   members = [],
   onBusy = () => {},
+  onOpenChange = () => {},
   onImported = () => {},
   onRefresh,
   refreshing = false,
@@ -19,6 +20,7 @@ export default function Standardize({
   onDenied: () => void;
   members?: Member[];
   onBusy?: (busy: boolean) => void;
+  onOpenChange?: (open: boolean) => void;
   onImported?: () => void;
   onRefresh?: () => void;
   refreshing?: boolean;
@@ -53,6 +55,9 @@ export default function Standardize({
       callbacks.current.onBusy(false);
     };
   }, []);
+  useEffect(() => {
+    onOpenChange(!!preview || !!run || !!phase);
+  }, [!!preview, !!run, !!phase, onOpenChange]);
   function fail(cause: unknown) {
     if (!alive.current) return;
     if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
@@ -123,6 +128,7 @@ export default function Standardize({
         inflight = false;
       }
     };
+    void poll();
     const timer = setInterval(() => void poll(), 1000);
     return () => {
       active = false;
@@ -222,13 +228,6 @@ export default function Standardize({
       );
       if (alive.current && version === generation.current)
         setRun({ run_id: result.run_id, state: "queued", rows: pendingRows });
-      const next = await api<Run>(
-        `/manage/member-timezones/runs/${encodeURIComponent(result.run_id)}`,
-      );
-      if (alive.current && version === generation.current) {
-        setRun(next);
-        setPreview(null);
-      }
     } catch (e) {
       if (version === generation.current) {
         setRun(null);
@@ -308,10 +307,12 @@ export default function Standardize({
           Past runs
         </button>
       </div>
-      {!run&&<p className="mt-review-help">
-        Saves time zones from nicknames, then shows the changes. Nobody is
-        renamed until you confirm.
-      </p>}
+      {!run && !preview && !busy && (
+        <p className="mt-review-help">
+          Saves time zones from nicknames, then shows the changes. Nobody is
+          renamed until you confirm.
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
       {busy && phase && <p role="status">{phase}</p>}
       {(busy || preview || run) && (
@@ -353,7 +354,9 @@ export default function Standardize({
       )}{" "}
       {run && (
         <NicknameRun
+          key={run.run_id || "submitting"}
           run={run}
+          showAttribution={past}
           members={members}
           disabled={busy || disabled}
           onStop={() => void stop()}

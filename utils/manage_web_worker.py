@@ -501,20 +501,17 @@ async def _heartbeat(mongo):
 _QUEUE_LOCKS = weakref.WeakKeyDictionary()
 
 
-async def poll(bot, mongo, *, fast=False):
-    loop = asyncio.get_running_loop()
-    lock = _QUEUE_LOCKS.setdefault(loop, asyncio.Lock())
+def queue_lock():
+    return _QUEUE_LOCKS.setdefault(asyncio.get_running_loop(), asyncio.Lock())
+
+
+async def poll(bot, mongo, *, fast=False, known_work=False):
+    lock = queue_lock()
     if lock.locked():
         return 0
     async with lock:
-        if fast:
-            from utils.member_profile_runs import ProfileRuns
-
-            pending = await mongo.bot_config.find_one(
-                {"kind": "manage_web_request", "status": "pending"}, {"_id": 1}
-            )
-            if not pending and not await ProfileRuns(mongo).queued():
-                return 0
+        if fast and not known_work and not await ready_work(mongo):
+            return 0
         task = asyncio.create_task(_heartbeat(mongo))
         try:
             if fast:
@@ -528,27 +525,33 @@ async def poll(bot, mongo, *, fast=False):
                 await task
 
 
-async def fast_poll(bot, mongo):
-    # Stay responsive while a paced run exists; release the shared lane between
-    # checks so the maintenance fallback can still run. The final sleep ends at
-    # next_at rather than rounding every member up to a scheduler tick.
-    while True:
-        handled = await poll(bot, mongo, fast=True)
-        from utils.member_profile_runs import ProfileRuns
+_WORK_INDEXES = weakref.WeakKeyDictionary()
+_OTHER_WINDOWS = weakref.WeakKeyDictionary()
 
-        run = await ProfileRuns(mongo).queued()
-        pending = await mongo.bot_config.find_one(
-            {"kind": "manage_web_request", "status": "pending"}, {"_id": 1}
-        )
-        if not run and not pending:
-            return
-        remaining = (run or {}).get("next_at", 0) - time.time()
-        delay = (
+
+async def ready_work(mongo):
+    from utils.member_profile_runs import ProfileRuns
+
+    loop = asyncio.get_running_loop()
+    if _WORK_INDEXES.get(loop) is not mongo:
+        await ProfileRuns(mongo).ensure_work_index()
+        _WORK_INDEXES[loop] = mongo
+    return await ProfileRuns(mongo).ready_work()
+
+
+async def fast_poll(bot, mongo):
+    # Idle: one indexed, projected query. Active work releases the lane between
+    # checks so the bridge/fallback can proceed, without rounding pacing to ticks.
+    work = await ready_work(mongo)
+    while work:
+        handled = await poll(bot, mongo, fast=True, known_work=True)
+        remaining = work.get("next_at", 0) - time.time()
+        await asyncio.sleep(
             min(1, max(0.05, remaining))
             if remaining > 0
             else (0.05 if handled else 1)
         )
-        await asyncio.sleep(delay)
+        work = await ready_work(mongo)
 
 
 async def _poll(bot, mongo):
@@ -604,23 +607,33 @@ async def _process_requests(bot, mongo):
     )
     handled = 0
     for _ in range(5):
+        loop = asyncio.get_running_loop()
+        window, used = _OTHER_WINDOWS.get(loop, (time.monotonic(), 0))
+        if time.monotonic() - window >= 10:
+            window, used = time.monotonic(), 0
+        query = {"kind": "manage_web_request", "status": "pending"}
+        if used >= 5:
+            query["section"] = "member_profiles"
         row = await mongo.bot_config.find_one_and_update(
-            {"kind": "manage_web_request", "status": "pending"},
+            query,
             {"$set": {"status": "running", "started_at": time.time()}},
             return_document=ReturnDocument.AFTER,
         )
         if not row:
             break
+        if row.get("section") != "member_profiles":
+            used += 1
+        _OTHER_WINDOWS[loop] = (window, used)
         handled += 1
         claimed = time.perf_counter()
-        logging.getLogger(__name__).info(
-            "Management timing stage=claimed request=%s section=%s action=%s queued_ms=%.2f",
-            row["_id"],
-            row.get("section"),
-            row.get("action"),
-            1000 * (time.time() - row["created_at"]),
-        )
         try:
+            logging.getLogger(__name__).info(
+                "Management timing stage=claimed request=%s section=%s action=%s queued_ms=%.2f",
+                row["_id"],
+                row.get("section"),
+                row.get("action"),
+                1000 * (time.time() - row["created_at"]),
+            )
             if (
                 row.get("guild_id") != GUILD_ID
                 or (row["section"], row["action"]) not in ACTIONS
@@ -655,11 +668,15 @@ async def _process_requests(bot, mongo):
                 update["result"] = {"counts": exc.counts}
         except ValueError as exc:
             update = {"status": "failed", "message": str(exc)[:400]}
-        except Exception:
+        except Exception as error:
             update = {
                 "status": "uncertain",
                 "message": "The bot could not confirm this action. Check Discord before repeating it.",
             }
+            if row.get("section") == "member_profiles":
+                retry_after = getattr(error, "retry_after", None)
+                if isinstance(retry_after, (int, float)) and retry_after > 0:
+                    update["retry_not_before"] = time.time() + retry_after
         await mongo.bot_config.update_one(
             {"_id": row["_id"], "status": "running"},
             {"$set": dict(update, finished_at=time.time())},
