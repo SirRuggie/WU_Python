@@ -1,3 +1,4 @@
+import { useDashboardPermission } from "./DashboardPermissions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import useDeclarationData from "./useDeclarationData";
@@ -23,6 +24,7 @@ export default function ArrivalCheck({
   onDirty?: (dirty: boolean) => void;
   onWorking?: (working: boolean) => void;
 }) {
+  const canMarkRosterFiller = useDashboardPermission("cwl_roster");
   const pingDirty = useRef(false);
   const pingWorking = useRef(false);
   const { data, error, refresh, records, now, checkedAt, checking } =
@@ -72,7 +74,7 @@ export default function ArrivalCheck({
     [data, context, records, now, extras.data],
   );
   const markControl =
-    data && !pingWorking.current
+    data && canMarkRosterFiller && !pingWorking.current
       ? {
           seasonId,
           revision: extras.data?.revision ?? data.roster.revision,

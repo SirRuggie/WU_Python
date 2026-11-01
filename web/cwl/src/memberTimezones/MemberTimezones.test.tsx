@@ -5,7 +5,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("../api", async (original) => ({
   ...(await original<typeof import("../api")>()),
-  api: transport,
+  api: (...args: unknown[]) =>
+    args[0] === "/manage/member-timezones/runs?active=1"
+      ? Promise.resolve({ runs: [] })
+      : transport(...args),
 }));
 import { ApiError } from "../api";
 import MemberTimezones from "./MemberTimezones";

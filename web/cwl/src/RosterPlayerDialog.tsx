@@ -241,7 +241,7 @@ export default function RosterPlayerDialog({
           <PlayerCardMeta account={account} />
           <DiscordIdentity userId={account.user_id} />
         </header>
-        {seasonId && roster && !archived && (
+        {seasonId && roster && rosterPermission && !archived && (
           <RosterFillerCheckbox
             seasonId={seasonId}
             tag={account.tag}

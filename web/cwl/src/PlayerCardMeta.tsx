@@ -32,7 +32,7 @@ export default function PlayerCardMeta({
           · {pool}
         </span>
       )}
-      {account.roster_filler && <small>Filler</small>}
+      {account.roster_filler && <small> · Filler</small>}
       {account.kept && (
         <LockKeyhole
           size={13}

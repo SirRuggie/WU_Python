@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 
 /** An explicit staff mark, separate from placement and weight edits. */
 export default function RosterFillerCheckbox({
@@ -22,10 +22,11 @@ export default function RosterFillerCheckbox({
   onChanged: () => void | Promise<void>;
 }) {
   const pending = useRef(false);
+  const [accessLost, setAccessLost] = useState(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   async function change(next: boolean) {
-    if (disabled || pending.current) return;
+    if (disabled || accessLost || pending.current) return;
     pending.current = true;
     setBusy(true);
     setError("");
@@ -41,6 +42,15 @@ export default function RosterFillerCheckbox({
       );
       await onChanged();
     } catch (cause) {
+      if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
+        setAccessLost(true);
+        // Refresh/clear protected parent state without replaying this mutation.
+        try {
+          await onChanged();
+        } catch {
+          /* The original permission failure remains visible. */
+        }
+      }
       setError(
         cause instanceof Error
           ? cause.message
@@ -60,7 +70,7 @@ export default function RosterFillerCheckbox({
           type="checkbox"
           aria-label={`Filler: ${name}`}
           checked={value}
-          disabled={disabled || busy}
+          disabled={disabled || accessLost || busy}
           onChange={(e) => void change(e.target.checked)}
         />
         Filler{busy ? " · Saving…" : ""}

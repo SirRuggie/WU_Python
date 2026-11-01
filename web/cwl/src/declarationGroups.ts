@@ -36,6 +36,10 @@ export function declarationGroups(
       });
     map.get(key)!.accounts.push(a);
   }
+  for (const extra of extras) {
+    if (extra.status === 'current' && extra.fillers?.length && !map.has(extra.tag))
+      map.set(extra.tag, {tag: extra.tag, name: extra.name, pool: 'lazy', capacity: extra.capacity, accounts: []});
+  }
   return [...map.values()]
     .map((g) => {
       const extra = extras.find(
