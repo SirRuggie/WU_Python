@@ -30,7 +30,7 @@ nicknames in both sorting and labels; malformed/unavailable values fall back.
 Existing role setup/walkthrough functionality retains its regression coverage.
 The unused legacy nickname formatter/form was removed or explicitly retired.
 
-Checkpoint evidence (final full rerun pending): prior guarded backend5,502passed/28skips/221subtests;90focused current backend tests; full frontend
+Final evidence: guarded backend5,508passed/29skips/221subtests;90focused backend tests; full frontend
 1,226tests/228files; TypeScript/build; three real-Mongo cases (fixtures stopped);
 seven mutation kills (tie silently chosen, failed edit saves, import overwrites
 staff, nickname overrides profile, stale departure overrides rejoin, retention
@@ -39,7 +39,8 @@ approximate Discord panels at360×800/1440×1000 and profile-first Compare fixtu
 at360×800/1440×1000 passed with no overflow or non-login writes. Screenshots were
 inspected. These previews reuse the real builders and existing DiscordPreview
 renderer but are approximate; mocked edits do not prove live Discord delivery.
-The full integrated layout lane is recorded separately before READY.
+The original seven layout stages and the newly integrated profile/Warrior stage
+all passed (eight stages total); the new stage also passed independently.
 
 Remaining limitations are explicit: standard GMT labels can differ during DST;
 the19choice menu does not represent every civil offset; an unsupported location
@@ -60,5 +61,6 @@ partial/empty/error reads never mark absences. It preserves the first departure,
 uses observation ordering and does not masquerade as a new staff profile edit.
 Receipt CAS belongs to the profile storage owner, and an older operation cannot
 mark or replace a newly opened wizard. Retention-index failure refuses the edit
-before Discord. These final fixes are covered by the focused and real-Mongo lanes;
-READY waits for the fresh full backend gate.
+before Discord. These final fixes are covered by the focused, full-backend and real-Mongo lanes.
+Read-only production preflight found settings.member_profiles absent/count0; no
+production collection, index or profile was created.
