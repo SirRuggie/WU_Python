@@ -242,3 +242,26 @@ it("shows exact changed pool accounts before allowing a ping", async () => {
   expect(button("Ping 26 missing").disabled).toBe(true);
   expect(host.textContent).toContain("the reviewed list finishes");
 });
+
+it("shows the saved sender name instead of the audit ID", async () => {
+  mock.api.mockResolvedValue({
+    ...state,
+    history: [
+      {
+        token: "receipt",
+        actor_id: "123456789012345678",
+        actor_name: "Fixture staff",
+        state: "done",
+        created_at: 1,
+        count: 26,
+        chunks: 1,
+        posted: [],
+        attempting: null,
+        channel: state.channel,
+      },
+    ],
+  });
+  await mount();
+  expect(host.textContent).toContain("Fixture staff");
+  expect(host.textContent).not.toContain("123456789012345678");
+});
