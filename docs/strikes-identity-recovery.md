@@ -28,3 +28,14 @@ Claude's review dependencies, evidence, backups and rollback assets.
 No database migration or bot restart. Release after Claude ACCEPT uses a clean
 tagged backend/frontend build, fresh backup/testrestore and protected-state,
 readiness, journal, public asset and rollback gates. Claude rechecks real names.
+
+Prompt75: an unavailable provider now makes the refresh explicitly partial.
+Merge prior validated requested identities instead of replacing the cache with
+one provider's short list, remove known conflicts, and refuse to replace a cached
+owner with a different owner from a partial response. A muted warning remains
+and the page keeps its slow retry even when some names are available. Provider
+names and returned/retained counts are logged; each completed refresh logs IDs,
+named count and elapsed time for post-release observation. Warm/cold partial
+responses and recovery are tested. Delta gates:29backend and1286frontend tests,
+tsc/build. Real upstream timing remains unproven until ordinary live traffic
+produces the new log; no external provider diagnostic probe was sent.

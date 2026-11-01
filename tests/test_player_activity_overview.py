@@ -367,3 +367,33 @@ def test_background_identity_lookup_can_complete_after_the_old_eight_second_limi
         rows, warning = await identity.account_identities(request,["#PYY"])
         assert rows["#PYY"]["discord_name"] == "Cold success" and not warning
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("warm", [False, True])
+def test_partial_provider_preserves_cache_warns_and_recovers(monkeypatch, caplog, warm):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from cwl_web import strike_activity_identity as identity, manage_roles
+    from utils import recruit_links
+    async def run():
+        clock=[0]
+        monkeypatch.setattr(identity.time,"monotonic",lambda:clock[0])
+        old={"#PYY":{"discord_id":"123456789012345678","discord_name":"Prior"}, "#PQQ":{"discord_id":"234567890123456789","discord_name":"Still healthy"}}
+        request=SimpleNamespace(app={"activity_identity_cache":{"identities":old}} if warm else {})
+        recruit_links.resolve_players.side_effect=[recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678"},unavailable=("ClashKing",)),recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678","#PQQ":"234567890123456789"})]
+        monkeypatch.setattr(manage_roles,"searchable_members",AsyncMock(return_value=[{"nick":"Refreshed","user":{"id":"123456789012345678"}},{"nick":"Recovered","user":{"id":"234567890123456789"}}]))
+        await identity.account_identities(request,["#PYY","#PQQ"])
+        await request.app["activity_identity_cache"]["task"]
+        rows,warning=await identity.account_identities(request,["#PYY","#PQQ"])
+        assert warning and request.app["activity_identity_cache"]["partial"]
+        assert rows["#PYY"]["discord_name"]=="Refreshed"
+        if warm:assert rows["#PQQ"]["discord_name"]=="Recovered"
+        else:assert "#PQQ" not in rows
+        assert "ClashKing" in caplog.text and "returned=1" in caplog.text
+        clock[0]=121
+        await identity.account_identities(request,["#PYY","#PQQ"])
+        await request.app["activity_identity_cache"]["task"]
+        rows,warning=await identity.account_identities(request,["#PYY","#PQQ"])
+        assert len(rows)==2 and not warning and not request.app["activity_identity_cache"]["partial"]
+    asyncio.run(run())
