@@ -1,4 +1,5 @@
 from utils.declaration_pings import missing_groups, messages, text_units
+import pytest
 
 
 def row(tag="#PYY", owner="123456789012345678", clan="#PQQ", **extra):
@@ -66,3 +67,39 @@ def test_chunk_boundaries_and_external_text_cannot_create_mentions():
             for uid in payload["allowed_mentions"]["users"]
         )
     assert sum(len(p["allowed_mentions"]["users"]) for p in chunks) == 144
+
+
+def test_component_and_utf16_button_limits_with_many_clans():
+    alphabet = "0289PYLQGRJCUV"
+    rows = [
+        row(
+            "#P" + alphabet[i // 14] + alphabet[i % 14],
+            clan="#Q" + alphabet[i // 14] + alphabet[i % 14],
+            owner=str(123456789012345678 + i),
+        )
+        for i in range(65)
+    ]
+    for r in rows:
+        r["assigned_clan_name"] = "😀" * 40
+
+    def count(node):
+        return 1 + sum(count(n) for n in node.get("components", []))
+
+    for payload in messages(missing_groups(rows, "lazy")):
+        assert sum(count(n) for n in payload["components"]) <= 40
+        for component in payload["components"][0]["components"]:
+            if component["type"] == 1:
+                assert len(component["components"]) <= 5
+                assert all(
+                    text_units(b["label"]) <= 80 for b in component["components"]
+                )
+        assert text_units(content(payload)) <= 4000
+
+
+def test_hosting_pool_is_authoritative_and_conflicts_fail_closed():
+    main = dict(row(), hosting_pool="main")
+    assert missing_groups([main], "lazy") == []
+    assert len(missing_groups([main], "main")) == 1
+    with pytest.raises(ValueError):
+        missing_groups([row(), dict(row(), assigned_clan_tag="#RYY")], "lazy")
+    assert missing_groups([dict(row(), arrival_status="arrived")], "lazy") == []

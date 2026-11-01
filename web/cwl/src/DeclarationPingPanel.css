@@ -1,0 +1,43 @@
+.declaration-ping-panel {
+  border: 1px solid var(--border, #414654);
+  border-radius: 10px;
+  padding: 12px;
+  margin-block: 12px;
+  min-width: 0;
+}
+.declaration-ping-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.declaration-ping-controls .channel-combobox {
+  flex: 1 1 230px;
+  min-width: 0;
+}
+.declaration-ping-panel button {
+  min-height: 44px;
+  white-space: normal;
+}
+.declaration-ping-panel p,
+.declaration-ping-review li {
+  overflow-wrap: anywhere;
+}
+.declaration-ping-review {
+  max-height: 55dvh;
+  overflow: auto;
+  min-width: 0;
+}
+.declaration-ping-review ul {
+  padding-left: 20px;
+}
+@media (max-width: 600px) {
+  .declaration-ping-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .declaration-ping-controls button {
+    width: 100%;
+  }
+}

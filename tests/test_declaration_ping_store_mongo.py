@@ -99,7 +99,15 @@ def test_test_mode_consumes_review_without_receipt_or_cooldown():
         try:
             await store.configure("lazy", CHANNEL, "fixture", ACTOR, 0, now=1000)
             preview = await store.preview(
-                "lazy", ACTOR, 1, GROUPS, 3, "hash", 1, now=1000
+                "lazy",
+                ACTOR,
+                1,
+                GROUPS,
+                3,
+                "hash",
+                1,
+                test_channel={"id": CHANNEL, "name": "test"},
+                now=1000,
             )
             with pytest.raises(PingConflict):
                 await store.consume_test(
@@ -112,6 +120,7 @@ def test_test_mode_consumes_review_without_receipt_or_cooldown():
                 await store.consume_test(
                     "lazy", ACTOR, 1, preview["token"], "hash", now=1002
                 )
+            await store.release_test("lazy", preview["token"])
             lane = await store.read("lazy")
             assert (
                 lane["history"] == []

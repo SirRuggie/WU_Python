@@ -10,6 +10,7 @@ import copy
 import time
 from uuid import uuid4
 from pymongo.errors import DuplicateKeyError
+from pymongo.write_concern import WriteConcern
 
 LANE_KIND = "declaration_ping_lane"
 PREVIEW_KIND = "declaration_ping_preview"
@@ -34,7 +35,12 @@ def identity(value):
 
 class DeclarationPingStore:
     def __init__(self, mongo, guild_id):
-        self.collection = mongo.bot_config
+        collection = mongo.bot_config
+        self.collection = (
+            collection.with_options(write_concern=WriteConcern(w="majority", j=True))
+            if hasattr(collection, "with_options")
+            else collection
+        )
         self.guild_id = int(identity(guild_id))
 
     def key(self, pool):
@@ -51,6 +57,7 @@ class DeclarationPingStore:
             revision=0,
             channel=None,
             active=None,
+            active_test=None,
             history=[],
             last_attempt_at=0,
         )
@@ -64,7 +71,15 @@ class DeclarationPingStore:
         try:
             await self.collection.insert_one(self.empty(pool))
         except DuplicateKeyError:
-            pass
+            row = await self.collection.find_one({"_id": self.key(pool)})
+            if (
+                not row
+                or row.get("kind") != LANE_KIND
+                or row.get("guild_id") != self.guild_id
+            ):
+                raise PingConflict(
+                    "The declaration storage identity is already owned by another record"
+                )
 
     async def configure(
         self, pool, channel_id, name, actor_id, expected_revision, *, now=None
@@ -74,7 +89,12 @@ class DeclarationPingStore:
         channel_id, actor_id = identity(channel_id), identity(actor_id)
         await self._ensure(pool)
         result = await self.collection.update_one(
-            {"_id": self.key(pool), "revision": expected_revision, "active": None},
+            {
+                "_id": self.key(pool),
+                "revision": expected_revision,
+                "active": None,
+                "active_test": None,
+            },
             {
                 "$set": {
                     "channel": {"id": channel_id, "name": str(name)[:100]},
@@ -100,13 +120,19 @@ class DeclarationPingStore:
         fingerprint,
         revision,
         *,
+        test_channel=None,
         now=None,
     ):
         at = time.time() if now is None else now
         actor_id = identity(actor_id)
         lane = await self.read(pool)
-        if lane["revision"] != revision or not lane["channel"]:
+        if lane["revision"] != revision or (
+            not lane["channel"] and test_channel is None
+        ):
             raise PingConflict("The posting channel changed. Review again.")
+        if test_channel is not None:
+            identity(test_channel.get("id"))
+            await self._ensure(pool)
         token = uuid4().hex
         row = dict(
             _id="declaration-preview:" + token,
@@ -119,7 +145,8 @@ class DeclarationPingStore:
             groups=copy.deepcopy(groups),
             version=version,
             fingerprint=fingerprint,
-            channel=lane["channel"],
+            channel=test_channel if test_channel is not None else lane["channel"],
+            mode="test" if test_channel is not None else "live",
             revision=revision,
             created_at=at,
             expires_at=at + 300,
@@ -183,6 +210,8 @@ class DeclarationPingStore:
                 raise PingConflict("This review belongs to another sender")
             return False, prior
         review = await self.review(pool, actor_id, season_id, token, now=at)
+        if review.get("mode", "live") != "live":
+            raise PingConflict("A test review cannot authorize real pings")
         if review["fingerprint"] != fingerprint:
             raise PingConflict(
                 "Arrivals or assignments changed. Review the fresh list before sending."
@@ -198,6 +227,7 @@ class DeclarationPingStore:
             token=token,
             actor_id=identity(actor_id),
             season_id=int(season_id),
+            publication_version=review["version"],
             channel=review["channel"],
             created_at=at,
             state="sending",
@@ -215,6 +245,7 @@ class DeclarationPingStore:
             {
                 "_id": self.key(pool),
                 "active": None,
+                "active_test": None,
                 "revision": review["revision"],
                 "$or": [
                     {"last_attempt_at": 0},
@@ -245,17 +276,39 @@ class DeclarationPingStore:
         return True, active
 
     async def consume_test(
-        self, pool, actor_id, season_id, token, fingerprint, *, now=None
+        self, pool, actor_id, season_id, token, fingerprint, *, runtime="test", now=None
     ):
         row = await self.review(pool, actor_id, season_id, token, now=now)
+        if row.get("mode") != "test":
+            raise PingConflict("Review a no-ping test separately")
         if row["fingerprint"] != fingerprint:
             raise PingConflict("Arrivals changed. Review the test again.")
+        reserved = await self.collection.update_one(
+            {
+                "_id": self.key(pool),
+                "active": None,
+                "active_test": None,
+                "revision": row["revision"],
+            },
+            {"$set": {"active_test": {"token": token, "runtime": runtime}}},
+        )
+        if not reserved.matched_count:
+            raise PingConflict("Another ping or test is running for this pool")
         result = await self.collection.update_one(
             {"_id": row["_id"], "used": False}, {"$set": {"used": True}}
         )
         if not result.matched_count:
+            await self.release_test(pool, token)
             raise PingConflict("This test review was already used")
-        return row  # No send receipt, cooldown or lane mutation for a test.
+        return (
+            row  # Only an in-flight lock; no receipt, history or cooldown for a test.
+        )
+
+    async def release_test(self, pool, token):
+        await self.collection.update_one(
+            {"_id": self.key(pool), "active_test.token": token},
+            {"$set": {"active_test": None}},
+        )
 
     async def begin_chunk(self, pool, token, index):
         result = await self.collection.update_one(
@@ -294,6 +347,12 @@ class DeclarationPingStore:
                 "Delivery accepted, but its receipt could not be confirmed. Do not retry."
             )
 
+    async def rejected(self, pool, token, index):
+        await self.collection.update_one(
+            {"_id": self.key(pool), "active.token": token, "active.attempting": index},
+            {"$set": {"active.attempting": None}},
+        )
+
     async def finish(self, pool, token, state, error=None, *, now=None):
         at = time.time() if now is None else now
         lane = await self.read(pool)
@@ -325,6 +384,9 @@ class DeclarationPingStore:
 
     async def recover_other_process(self, pool, runtime, *, now=None):
         lane = await self.read(pool)
+        test = lane.get("active_test")
+        if test and test["runtime"] != runtime:
+            await self.release_test(pool, test["token"])
         active = lane["active"]
         if active and active["runtime"] != runtime:
             await self.finish(

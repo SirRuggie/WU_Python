@@ -92,6 +92,13 @@ def text_units(text):
     return len(text.encode("utf-16-le")) // 2
 
 
+def button_label(name):
+    text = "Open " + " ".join(str(name).split())
+    while text_units(text) > 80:
+        text = text[:-1]
+    return text
+
+
 def messages(groups, *, test=False):
     """Split on whole mention/name tokens, repeat clan headings when necessary.
 
@@ -111,7 +118,7 @@ def messages(groups, *, test=False):
             {
                 "type": 2,
                 "style": 5,
-                "label": ("Open " + str(g["name"]))[:80],
+                "label": button_label(g["name"]),
                 "url": "https://link.clashofclans.com/en?action=OpenClanProfile&tag="
                 + quote(tag, safe=""),
             }
