@@ -15,7 +15,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[2]
 STATE = Path.home() / '.local/state/wu-backup'
 CONFIG = Path.home() / '.config/wu-backup'
-JOBS = {'cwl': ('cwl-backup', 20 * 60), 'mongo': ('cwl-mongo-backup', 45 * 60),
+JOBS = {'cwl': ('cwl-backup', 20 * 60), 'mongo': ('cwl-mongo-backup', 90 * 60),
         'verification': ('cwl-backup-check', 30 * 3600)}
 
 
