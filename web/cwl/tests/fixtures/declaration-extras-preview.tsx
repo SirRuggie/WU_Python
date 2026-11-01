@@ -10,9 +10,18 @@ const accounts = data.accounts.map((a) => ({
   current_clan_checked_at: now,
 }));
 let reads = 0;
-Object.assign(window, { extraReads: () => reads });
+let locationsReady = !["pending", "unavailable"].includes(
+  query.get("locations") || "",
+);
+const methods: string[] = [];
+Object.assign(window, {
+  extraReads: () => reads,
+  declarationMethods: () => methods,
+});
 window.fetch = async (input, options) => {
   const url = new URL(String(input), location.origin);
+  methods.push(options?.method || "GET");
+  if (url.searchParams.get("refresh") === "1") locationsReady = true;
   if (
     url.origin !== location.origin ||
     !url.pathname.startsWith("/api/cwl/") ||
@@ -26,8 +35,11 @@ window.fetch = async (input, options) => {
       version: 1,
       publication_available: true,
       publication_outdated: false,
-      updating: false,
-      accounts,
+      updating: !locationsReady && query.get("locations") === "pending",
+      accounts: accounts.map((a) => ({
+        ...a,
+        current_clan_checked_at: locationsReady ? now : undefined,
+      })),
     };
   else if (url.pathname.endsWith("/roster"))
     result = { revision: 1, undo: null, clans: data.clans, accounts };

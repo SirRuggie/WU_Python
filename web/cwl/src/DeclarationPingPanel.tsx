@@ -12,12 +12,14 @@ export default function DeclarationPingPanel({
   seasonId,
   pool,
   missing,
+  locationStatus,
   onDirty = () => {},
   onWorking = () => {},
 }: {
   seasonId: string;
   pool: "main" | "lazy";
   missing: number;
+  locationStatus?: "checking" | "unavailable";
   onDirty?: (dirty: boolean) => void;
   onWorking?: (working: boolean) => void;
 }) {
@@ -181,6 +183,7 @@ export default function DeclarationPingPanel({
     });
   }
   async function prepare(mode: "live" | "test") {
+    if (mode === "live" && locationStatus) return;
     await mutate(async () => {
       const next = await api<PingReview>(`${base}/preview`, "POST", {
         revision: state!.revision,
@@ -281,15 +284,20 @@ export default function DeclarationPingPanel({
                 !!reason ||
                 waiting > 0 ||
                 !!state.lineup_changes?.length ||
-                missing === 0
+                missing === 0 ||
+                !!locationStatus
               }
               onClick={() => void prepare("live")}
             >
-              {busy
-                ? "Checking…"
-                : state.history.length
-                  ? "Send again"
-                  : `Ping ${missing} missing`}
+              {locationStatus
+                ? locationStatus === "checking"
+                  ? "Checking locations…"
+                  : "Locations unavailable"
+                : busy
+                  ? "Checking…"
+                  : state.history.length
+                    ? "Send again"
+                    : `Ping ${missing} missing`}
             </button>
           </div>
           {reason && <p>{reason}</p>}

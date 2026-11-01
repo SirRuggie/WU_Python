@@ -9,8 +9,20 @@ const extraState = vi.hoisted(() => ({
 vi.mock("./useDeclarationData", () => ({ default: () => state.value }));
 vi.mock("./useDeclarationExtras", () => ({ default: () => extraState.value }));
 vi.mock("./DeclarationPingPanel", () => ({
-  default: ({ missing }: { missing: number }) => (
-    <div data-ping-count={missing}>Ping {missing} missing</div>
+  default: ({
+    missing,
+    locationStatus,
+  }: {
+    missing: number;
+    locationStatus?: string;
+  }) => (
+    <div data-ping-count={missing}>
+      {locationStatus
+        ? locationStatus === "checking"
+          ? "Checking locations…"
+          : "Locations unavailable"
+        : `Ping ${missing} missing`}
+    </div>
   ),
 }));
 import ArrivalCheck from "./ArrivalCheck";
@@ -308,4 +320,84 @@ it("keeps readiness help collapsed until explicitly opened", async () => {
       .click(),
   );
   expect(host.textContent).toContain("Ready = enough");
+});
+
+it("does not turn pending locations into zero ping or in-clan counts, then shows loaded results", async () => {
+  const accounts = state.value.data.arrival.accounts;
+  state.value = {
+    ...state.value,
+    records: {},
+    data: {
+      ...state.value.data,
+      arrival: { ...state.value.data.arrival, updating: true },
+    },
+  };
+  await act(async () => root.render(<ArrivalCheck seasonId="1" />));
+  expect(host.textContent).toContain("Checking locations…");
+  expect(host.textContent).not.toContain("Ping 0 missing");
+  expect(host.textContent).not.toMatch(/0\/(15|30) in clan/);
+  expect(host.textContent).not.toContain("needs 30");
+  state.value = {
+    ...state.value,
+    records: Object.fromEntries(accounts.map((a: any) => [a.tag, a])),
+    data: {
+      ...state.value.data,
+      arrival: { ...state.value.data.arrival, updating: false },
+    },
+  };
+  await act(async () => root.render(<ArrivalCheck seasonId="1" />));
+  expect(host.textContent).toContain("Ping 1 missing");
+  expect(host.textContent).toContain("15/15 in clan");
+  expect(host.textContent).not.toContain("Checking locations…");
+});
+
+it("keeps confirmed counts during refresh and calls incomplete settled locations unavailable", async () => {
+  state.value = { ...state.value, checking: true };
+  await act(async () => root.render(<ArrivalCheck seasonId="1" />));
+  expect(host.textContent).toContain("Ping 1 missing");
+  state.value = {
+    ...state.value,
+    checking: false,
+    records: {},
+    data: {
+      ...state.value.data,
+      arrival: { ...state.value.data.arrival, updating: false },
+    },
+  };
+  await act(async () => root.render(<ArrivalCheck seasonId="1" />));
+  expect(host.textContent).toContain("Locations unavailable");
+  expect(host.textContent).not.toContain("Ping 0 missing");
+  expect(host.textContent).not.toMatch(/0\/(15|30) in clan/);
+});
+
+it("uses only the selected pool for Ping availability while another pool is still checking", async () => {
+  const accounts = state.value.data.arrival.accounts;
+  for (const a of accounts)
+    if (a.assigned_clan_tag === "#B") {
+      a.pool = "lazy";
+      a.hosting_pool = "lazy";
+    }
+  state.value = {
+    ...state.value,
+    records: Object.fromEntries(
+      accounts
+        .filter((a: any) => a.assigned_clan_tag === "#A")
+        .map((a: any) => [a.tag, a]),
+    ),
+    data: {
+      ...state.value.data,
+      arrival: { ...state.value.data.arrival, updating: true },
+    },
+  };
+  await act(async () => root.render(<ArrivalCheck seasonId="1" />));
+  expect(host.querySelector("[data-ping-count]")?.textContent).toBe(
+    "Ping 1 missing",
+  );
+  const lazy = [...host.querySelectorAll("button")].find((b) =>
+    b.textContent?.startsWith("Lazy ·"),
+  )!;
+  await act(async () => lazy.click());
+  expect(host.querySelector("[data-ping-count]")?.textContent).toBe(
+    "Checking locations…",
+  );
 });

@@ -20,6 +20,7 @@ export default function DeclarationClan({
   extra,
   extraLoading = false,
   extraError = "",
+  locationStatus,
 }: {
   group: ReturnType<typeof declarationGroups>[number];
   open: boolean;
@@ -31,6 +32,7 @@ export default function DeclarationClan({
   extra?: DeclarationExtraClan;
   extraLoading?: boolean;
   extraError?: string;
+  locationStatus?: "checking" | "unavailable";
 }) {
   const [copied, setCopied] = useState("");
   const [fallback, setFallback] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export default function DeclarationClan({
   }
   return (
     <section
-      className={`declaration-clan ${!group.tag ? "is-unassigned" : ready ? "is-ready" : "is-not-ready"}`}
+      className={`declaration-clan ${!group.tag ? "is-unassigned" : locationStatus ? "is-checking" : ready ? "is-ready" : "is-not-ready"}`}
     >
       <h2>
         <button
@@ -65,9 +67,13 @@ export default function DeclarationClan({
           <span>
             {!group.tag
               ? `${group.accounts.length} awaiting placement`
-              : `${ready ? "Ready" : "Not ready"} · ${arrivedCount}/${group.capacity ?? "—"} in clan`}
+              : locationStatus
+                ? locationStatus === "checking"
+                  ? "Checking locations…"
+                  : "Locations unavailable"
+                : `${ready ? "Ready" : "Not ready"} · ${arrivedCount}/${group.capacity ?? "—"} in clan`}
           </span>
-          {group.tag && (
+          {group.tag && !locationStatus && (
             <small>
               {group.capacity === null
                 ? "War size not set"
@@ -109,7 +115,10 @@ export default function DeclarationClan({
         <div id={panelId} className="declaration-clan-content">
           {group.tag && !ready && (
             <div className="declaration-copy">
-              <Button onClick={() => void copy()} disabled={!mentions.count}>
+              <Button
+                onClick={() => void copy()}
+                disabled={!mentions.count || !!locationStatus}
+              >
                 Copy mentions
               </Button>
               {!!mentions.unlinked.length && (

@@ -223,7 +223,8 @@
   }
 }
 
-.arrival-check .is-unassigned .declaration-clan-toggle {
+.arrival-check .is-unassigned .declaration-clan-toggle,
+.arrival-check .is-checking .declaration-clan-toggle {
   background: var(--roster-surface);
   color: var(--roster-text-muted);
 }
