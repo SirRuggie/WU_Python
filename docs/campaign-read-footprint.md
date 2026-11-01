@@ -62,3 +62,55 @@ protected-state/readiness/rollback checks, no queued Standardize or other active
 management write, a 210-second drain and one bot restart. Backend/frontend
 revisions stay unchanged; verify their public assets and runtime rather than
 switching them. Retain Claude's read-only smoke and post-release poll observation.
+
+## Release: campaign-read-footprint-1
+
+PR142 was accepted in Claude entry 315 and released under Ruggie's approval
+quoted in entries 303/314. The tag points to
+`6c36e1cbfe2d0049c580669247919da6f734a0b4`. Bot-only activation completed
+2026-11-01 at 20:45:14UTC, after a 210-second stop/drain and one bot restart.
+The bot PID was 1610906, invocation 8c742f72124b4de795b1b30bd08fcbe8.
+The backend PID 1518593 and immutable frontend b63c0c95 remained unchanged.
+Public `index-iSn7-bh_.js` SHA256 was
+`82bb15ff18de0e84e20ad14dd1c132ad754234c84fdf955c9de8e23deaae4660`.
+
+Fresh SQLite/Mongo backups and an owned local test restore passed. Protected
+state was unchanged: 3715 active strikes,306 accounts,583 strike profiles,
+279 eligible replacements and479 member profiles, with matching profile/settings
+and SQLite digests. Startup/imports/readiness, rollback rehearsal, complete
+capture comparison and public hashes passed. No rollback, database restore,
+backend restart, frontend switch or agent-triggered Discord write occurred.
+
+The uninterrupted 600.68-second observation 20:45:17–20:55:18UTC measured 59
+successful 10-second-job completions, zero skipped runs and zero failures.
+Median duration was 0.726717 seconds, p95 3.552597 and maximum 3.601286;
+the preceding 20-minute sample had 97 successes, 22 skips, median 9.182699,
+p95 11.946647 and maximum 12.872205 seconds. One boundary start was unpaired.
+There were no warning-or-higher journal entries or tracebacks in the new
+invocation at the post-window check.
+
+A single deployed projected read returned two documents, 602 decoded BSON reply
+bytes and 645 TCP bytes received in 0.045181 seconds. The previous broad read
+sample returned 354 documents, 793011 BSON reply bytes and 794197 TCP bytes received
+in 8.32189 seconds. The nominal 10-second read-component model changes from
+about 47.96 GB/week to 0.036 GB/week. Socket deltas include TLS/monitor overhead.
+These are query-component estimates, not Atlas billed totals.
+
+Same-node aggregate server counters during the observation still increased by
+6592679 bytes in and 59934300 bytes out, with 8772 requests. Connections changed
+58→57 and 109 new connections were recorded, about 0.181/second. Aggregate
+counters include other clients and replication; they cannot prove compliance
+with Atlas Free's rolling transfer quota. Remaining prompt 97 work is still
+necessary. No real campaign edit occurred in this window, so live rescheduling
+after such an edit remains unverified; no edit was triggered for testing.
+
+Claude's read-only production smoke passed in entry 316 at 21:06:44 UTC on
+November 1. Claude checked the bot job and dashboard journals and received
+HTTP 200 from the site. This smoke did not exercise a live campaign edit.
+Claude also retained the aggregate-traffic and connection-churn findings for
+remaining prompt 97; it did not certify the rolling Free-tier transfer budget.
+
+Private evidence: `.local/campaign-read-release/live.json`,
+`ten-minute-observation.json`, `query-after.json`, `journal-health.json` and
+`activation.log`. Retained rollback is the prior bot b63c0c95; rollback would
+also require the 210-second drain. No rollback was executed.
