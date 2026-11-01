@@ -27,11 +27,12 @@ def test_complete_snapshot_repairs_offline_departure_without_sliding_ttl(monkeyp
             S(rest=S(fetch_members=members), get_me=lambda: S(id=1)), object()
         )
         assert result == {"profiles": 2, "present": 1, "absent": 1}
-        assert store.membership.await_args_list[0].kwargs["left_at"] is None
-        assert store.membership.await_args_list[1].kwargs["left_at"] == left
-        assert all(
-            "observed_at" in call.kwargs for call in store.membership.await_args_list
+        store.membership.assert_not_awaited()
+        # Repeated complete scans do not touch revisions for present or absent profiles.
+        await service.reconcile(
+            S(rest=S(fetch_members=members), get_me=lambda: S(id=1)), object()
         )
+        store.membership.assert_not_awaited()
 
     asyncio.run(run())
 
@@ -100,5 +101,32 @@ def test_empty_directory_for_existing_profiles_is_not_trusted(monkeypatch):
                 S(rest=S(fetch_members=empty), get_me=lambda: S(id=9)), object()
             )
         store.membership.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_only_real_membership_transitions_are_written(monkeypatch):
+    async def run():
+        left = datetime.now(timezone.utc) - timedelta(days=2)
+        store = S(
+            membership_rows=AsyncMock(
+                return_value=[
+                    {"_id": "1", "left_at": left},
+                    {"_id": "2", "left_at": None},
+                ]
+            ),
+            membership=AsyncMock(),
+        )
+        monkeypatch.setattr(service, "MemberProfiles", lambda mongo: store)
+
+        async def members(guild):
+            yield S(id=1)
+
+        result = await service.reconcile(
+            S(rest=S(fetch_members=members), get_me=lambda: S(id=1)), object()
+        )
+        assert result == {"profiles": 2, "present": 1, "absent": 1}
+        assert store.membership.await_args_list[0].kwargs["left_at"] is None
+        assert store.membership.await_args_list[1].kwargs["left_at"] is not None
 
     asyncio.run(run())

@@ -235,3 +235,80 @@ def test_retention_index_failure_refuses_edit_before_discord():
         assert coll.row is None
 
     asyncio.run(run())
+
+
+def test_lease_lost_during_confirmed_edit_never_commits_a_profile(monkeypatch):
+    async def run():
+        from utils import member_profile_leases
+
+        coll = Collection()
+        store = MemberProfiles(S(member_profiles=coll))
+        change = AsyncMock()
+        monkeypatch.setattr(
+            member_profile_leases,
+            "verify",
+            AsyncMock(
+                side_effect=[None, member_profile_leases.ProfileBusy("Lease replaced")]
+            ),
+        )
+        with pytest.raises(member_profile_leases.ProfileBusy):
+            await store.commit_after(
+                USER,
+                FIELDS,
+                change=change,
+                expected_revision=0,
+                updated_by=ACTOR,
+                source="warrior",
+            )
+        change.assert_awaited_once()
+        assert coll.row is None
+
+    asyncio.run(run())
+
+
+def test_preview_cannot_be_consumed_for_another_target_actor_or_guild():
+    async def run():
+        row = {
+            "_id": "wizard",
+            "type": "warrior_setup",
+            "guild_id": 10,
+            "user_id": int(USER),
+            "recruiter_id": int(ACTOR),
+            "nickname_setup": {"nonce": "n", "step": "preview"},
+        }
+
+        async def update(query, change, **kwargs):
+            def value(path):
+                current = row
+                for key in path.split("."):
+                    current = current.get(key) if isinstance(current, dict) else None
+                return current
+
+            matched = all(value(key) == expected for key, expected in query.items())
+            if matched:
+                row["nickname_setup"]["step"] = change["$set"]["nickname_setup.step"]
+            return S(matched_count=int(matched), upserted_id=None)
+
+        store = MemberProfiles(
+            S(
+                member_profiles=Collection(),
+                component_state=S(
+                    update_one=update, find_one=AsyncMock(return_value=row)
+                ),
+            )
+        )
+        for wrong in (
+            dict(guild_id=11, discord_id=USER, actor_id=ACTOR),
+            dict(guild_id=10, discord_id=ACTOR, actor_id=ACTOR),
+            dict(guild_id=10, discord_id=USER, actor_id=USER),
+        ):
+            assert not await store.consume_preview("wizard", "n", **wrong)
+            assert row["nickname_setup"]["step"] == "preview"
+        assert await store.consume_preview(
+            "wizard", "n", guild_id=10, discord_id=USER, actor_id=ACTOR
+        )
+        assert not await store.consume_preview(
+            "wizard", "n", guild_id=10, discord_id=USER, actor_id=ACTOR
+        )
+
+    asyncio.run(run())

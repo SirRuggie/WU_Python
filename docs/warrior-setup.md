@@ -116,7 +116,7 @@ preserve the source for review. It never moves legacy `/recruit` records.
 Storage tests verify separation, version/date normalization, conflict preservation
 and recovery after a partial migration.
 
-## Member profile nickname wizard (prompt62 PR1)
+## Member profile nickname wizard (prompt 62 PR 1)
 
 Nickname setup now checks linked official Town Halls, autofills a unique highest
 account, and asks on ties/partial reads. Country and standard-GMT menus lead to a

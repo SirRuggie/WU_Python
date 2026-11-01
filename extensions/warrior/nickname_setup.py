@@ -146,9 +146,10 @@ def render(data, state, *, page=0):
 
 async def persist(mongo, data, state, *, old_nonce=None):
     state = dict(state, nonce=uuid4().hex)
-    query = {"_id": data["_id"]}
+    query = {"_id": data["_id"], "nickname_setup.step": {"$ne": "applying"}}
     if old_nonce is not None:
         query["nickname_setup.nonce"] = old_nonce
+        query["nickname_setup.step"] = {"$in": ["name", "country", "zone", "preview"]}
     result = await update_state(mongo, query, {"$set": {"nickname_setup": state}})
     if not result.matched_count:
         raise core.SetupError("This nickname step changed. Use the current controls.")
@@ -204,12 +205,28 @@ async def save(ctx, data, c, mongo, state, bot):
                 bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
             )
             authorize(fresh)
-            await bot.rest.edit_member(
-                c["guild"].id,
-                c["member"].id,
-                nickname=value,
-                reason=f"Warrior Setup by {ctx.user.id}",
-            )
+            try:
+                await bot.rest.edit_member(
+                    c["guild"].id,
+                    c["member"].id,
+                    nickname=value,
+                    reason=f"Warrior Setup by {ctx.user.id}",
+                )
+            except (
+                hikari.ForbiddenError,
+                hikari.BadRequestError,
+                hikari.NotFoundError,
+            ) as error:
+                reason = str(error.message or "Discord refused the nickname change.")
+                if isinstance(error, hikari.ForbiddenError):
+                    reason = (
+                        "Missing permission, or that member is above the bot. " + reason
+                    )
+                if isinstance(error, hikari.NotFoundError):
+                    reason = "That member is no longer available. " + reason
+                raise core.SetupError(
+                    reason + " Nothing changed in Discord; no profile was saved."
+                ) from error
             discord_confirmed = True
 
     try:
@@ -222,20 +239,28 @@ async def save(ctx, data, c, mongo, state, bot):
             source="warrior",
         )
     except BaseException as error:
-        # A consumed preview never automatically retries an uncertain external edit.
-        current = await store.finish_preview(
-            data["_id"], state["nonce"], "needs_attention"
-        )
-        if not current and isinstance(error, Exception):
+        # Receipt storage can fail too; never replace the confirmed Discord outcome.
+        current = None
+        try:
+            current = await store.finish_preview(
+                data["_id"], state["nonce"], "needs_attention"
+            )
+        except Exception as receipt_error:
+            log.warning(
+                "Nickname receipt unavailable (%s)", type(receipt_error).__name__
+            )
+        if discord_confirmed and isinstance(error, Exception):
+            await ctx.respond(
+                "Nickname changed in Discord; profile not saved. Storage did not confirm the save; check the profile before another edit.",
+                ephemeral=True,
+            )
+            return
+        if current is False and isinstance(error, Exception):
             log.warning(
                 "Nickname result belongs to an abandoned preview (%s)",
                 type(error).__name__,
             )
             return
-        if discord_confirmed and isinstance(error, Exception):
-            raise core.SetupError(
-                "Discord nickname updated; the profile save was not confirmed. Check the member profile before making another edit."
-            ) from error
         raise
     try:
         if not await store.finish_preview(data["_id"], state["nonce"], "saved"):
@@ -256,7 +281,15 @@ async def save(ctx, data, c, mongo, state, bot):
         log.warning(
             "Nickname saved but setup summary failed (%s)", type(error).__name__
         )
-        if not await store.preview_current(data["_id"], state["nonce"]):
+        try:
+            current = await store.preview_current(data["_id"], state["nonce"])
+        except Exception:
+            await ctx.respond(
+                "Nickname and member profile saved. The setup summary could not reload; return to refresh it.",
+                ephemeral=True,
+            )
+            return
+        if not current:
             return
         await show(
             ctx,
@@ -287,6 +320,23 @@ async def action(
         or (verb == "pick_country" and selected == "OTHER")
     ):
         country = verb == "pick_country"
+        from utils.component_state import get_state
+
+        data = await get_state(mongo, sid)
+        state = (data or {}).get("nickname_setup") or {}
+        if (
+            not data
+            or data.get("type") != "warrior_setup"
+            or int(data.get("guild_id", 0)) != int(ctx.guild_id or 0)
+            or int(data.get("recruiter_id", 0)) != int(ctx.user.id)
+            or state.get("nonce") != nonce
+            or state.get("step") not in ("name", "country", "preview")
+        ):
+            await ctx.respond(
+                "This private nickname form expired. Use the current controls.",
+                ephemeral=True,
+            )
+            return
         await ctx.respond_with_modal(
             title="Country code" if country else "In-game name",
             custom_id=f"warrior_nick_form:{sid}:{nonce}:"
@@ -296,6 +346,10 @@ async def action(
                     "value",
                     "Two-letter country code" if country else "In-game name",
                     max_length=2 if country else 32,
+                    value=(
+                        state.get("country", "") if country else state.get("name", "")
+                    )[: 2 if country else 32]
+                    or hikari.UNDEFINED,
                     required=True,
                 )
             ],

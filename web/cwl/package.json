@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
-    "test:layout": "npm run build && node tests/run-layout.cjs && node tests/run-clan-weights-layout.cjs && node tests/run-strikes-layout.cjs && node tests/run-replacements-layout.cjs && node tests/run-family-clans-layout.cjs && node tests/run-announcement-polish-layout.cjs && node tests/run-member-profile-layout.cjs && node tests/run-member-timezones-layout.cjs"
+    "test:layout": "npm run build && node tests/run-layout.cjs && node tests/run-clan-weights-layout.cjs && node tests/run-strikes-layout.cjs && node tests/run-replacements-layout.cjs && node tests/run-family-clans-layout.cjs && node tests/run-announcement-polish-layout.cjs && node tests/run-compare-timezones-layout.cjs && node tests/run-member-profile-layout.cjs && node tests/run-member-timezones-layout.cjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
