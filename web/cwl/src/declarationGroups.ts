@@ -51,6 +51,13 @@ export function declarationGroups(
         key: g.tag || `unassigned:${g.pool}`,
         accounts,
         late,
+        checkingCount: g.tag
+          ? accounts.filter(
+              (a) =>
+                comparisonLocation(records[a.tag], g.tag, now, g.name).state ===
+                "checking",
+            ).length
+          : 0,
         readiness: summarizeArrivalReadiness(
           accounts.map((a) => ({
             ...a,

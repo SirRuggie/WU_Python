@@ -110,7 +110,9 @@ it("fresh review is separate from explicit send and cancel sends nothing", async
     "Ping 26 players in #pings?",
   );
   expect(document.body.textContent).toContain("Unlinked player");
-  expect(document.body.textContent).toContain("Finishes even if the lineup changes.");
+  expect(document.body.textContent).toContain(
+    "Finishes even if the lineup changes.",
+  );
   expect(mock.api.mock.calls.some((c) => c[0].endsWith("/send"))).toBe(false);
   await act(async () => button("Cancel").click());
   expect(document.querySelector("dialog")).toBeNull();
@@ -298,4 +300,41 @@ it("shows channel actions only after editing and blocks Ping until saved or disc
   await act(async () => button("Discard").click());
   expect(button("Save channel")).toBeUndefined();
   expect(button("Ping 26 missing").disabled).toBe(false);
+});
+
+it("blocks live preview and replaces the zero label while locations are pending or unavailable", async () => {
+  await act(async () =>
+    root.render(
+      <DeclarationPingPanel
+        seasonId="1"
+        pool="lazy"
+        missing={26}
+        locationStatus="checking"
+      />,
+    ),
+  );
+  await flush();
+  expect(button("Checking locations…").disabled).toBe(true);
+  expect(host.textContent).not.toContain("Ping 0 missing");
+  await act(async () => button("Checking locations…").click());
+  expect(mock.api.mock.calls.some((c) => c[1] === "POST")).toBe(false);
+  await act(async () =>
+    root.render(
+      <DeclarationPingPanel
+        seasonId="1"
+        pool="lazy"
+        missing={0}
+        locationStatus="unavailable"
+      />,
+    ),
+  );
+  expect(button("Locations unavailable").disabled).toBe(true);
+  await act(async () =>
+    root.render(<DeclarationPingPanel seasonId="1" pool="lazy" missing={26} />),
+  );
+  expect(button("Ping 26 missing").disabled).toBe(false);
+  await act(async () =>
+    root.render(<DeclarationPingPanel seasonId="1" pool="lazy" missing={0} />),
+  );
+  expect(button("Ping 0 missing").disabled).toBe(true);
 });

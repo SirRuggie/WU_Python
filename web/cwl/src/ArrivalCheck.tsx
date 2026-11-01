@@ -128,6 +128,17 @@ export default function ArrivalCheck({
     order: ordered.map((a) => a.tag),
   });
   const hosts = groups.filter((g) => g.tag);
+  const locationStatus = (group: (typeof groups)[number]) =>
+    group.checkingCount > 0
+      ? checking || data?.arrival.updating
+        ? ("checking" as const)
+        : ("unavailable" as const)
+      : undefined;
+  const locationsMessage =
+    checking || data?.arrival.updating
+      ? "Checking locations…"
+      : "Locations unavailable";
+  const unknownHosts = hosts.some((g) => !!locationStatus(g));
   const extraOnlyHosts =
     extras.data?.clans.filter((c) => !groups.some((g) => g.tag === c.tag)) ||
     [];
@@ -170,11 +181,22 @@ export default function ArrivalCheck({
         <>
           <p className="declaration-summary" role="status">
             <strong>
-              {hosts.filter((g) => g.readiness.ready).length} / {hosts.length}{" "}
-              clans ready to declare
+              {unknownHosts ? (
+                locationsMessage
+              ) : (
+                <>
+                  {hosts.filter((g) => g.readiness.ready).length} /{" "}
+                  {hosts.length} clans ready to declare
+                </>
+              )}
             </strong>{" "}
-            · {hosts.reduce((n, g) => n + g.late.length, 0)} players not in
-            their clan
+            {!unknownHosts && (
+              <>
+                {" "}
+                · {hosts.reduce((n, g) => n + g.late.length, 0)} players not in
+                their clan
+              </>
+            )}
             {" · "}
             {extras.error
               ? "Couldn't check clan members"
@@ -197,7 +219,9 @@ export default function ArrivalCheck({
             <span>
               {checkedAt
                 ? `Last checked ${comparisonAge(checkedAt, now)}`
-                : "Checking…"}
+                : unknownHosts
+                  ? locationsMessage
+                  : "No location checks yet"}
             </span>
             <Button
               icon={RefreshCw}
@@ -254,8 +278,17 @@ export default function ArrivalCheck({
                 }}
               >
                 {p === "main" ? "Main" : "Lazy"} ·{" "}
-                {hosts.filter((g) => g.pool === p && g.readiness.ready).length}/
-                {hosts.filter((g) => g.pool === p).length} ready
+                {hosts.some((g) => g.pool === p && !!locationStatus(g)) ? (
+                  locationsMessage
+                ) : (
+                  <>
+                    {
+                      hosts.filter((g) => g.pool === p && g.readiness.ready)
+                        .length
+                    }
+                    /{hosts.filter((g) => g.pool === p).length} ready
+                  </>
+                )}
               </Button>
             ))}
           </div>
@@ -275,6 +308,13 @@ export default function ArrivalCheck({
                   : 0),
               0,
             )}
+            locationStatus={
+              poolGroups.some((g) => !!locationStatus(g))
+                ? checking || data?.arrival.updating
+                  ? "checking"
+                  : "unavailable"
+                : undefined
+            }
             onWorking={(working) => {
               pingWorking.current = working;
               onWorking(working);
@@ -343,6 +383,7 @@ export default function ArrivalCheck({
               group={group}
               records={records}
               now={now}
+              locationStatus={locationStatus(group)}
               search={needle}
               extra={extras.data?.clans.find((c) => c.tag === group.tag)}
               extraLoading={extras.loading}
