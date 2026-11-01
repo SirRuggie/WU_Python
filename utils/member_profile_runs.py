@@ -90,6 +90,7 @@ class ProfileRuns:
             user_id=actor,
             guild_id=int(guild_id),
             nonce=nonce,
+            state="draft",
             rows=rows,
             created_at=at,
             expires_at=at + timedelta(minutes=10),
@@ -119,6 +120,45 @@ class ProfileRuns:
             expiry = expiry.replace(tzinfo=timezone.utc)
         if expiry <= datetime.now(timezone.utc):
             raise ValueError("Preview expired. Review the complete changes again.")
+        items = selected_manifest(row["rows"], selected)
+        selection_hash = fingerprint(items)
+        key = "member-profile-run:" + fingerprint([actor, str(uuid.UUID(nonce))])
+        consumed = await self.mongo.component_state.update_one(
+            {"_id": row["_id"], "nonce": nonce, "state": "draft"},
+            {
+                "$set": {
+                    "state": "consumed",
+                    "selection_hash": selection_hash,
+                    "run_id": key,
+                }
+            },
+        )
+        if not consumed.matched_count:
+            current = await self.mongo.component_state.find_one(
+                {
+                    "_id": row["_id"],
+                    "nonce": nonce,
+                    "state": "consumed",
+                    "selection_hash": selection_hash,
+                }
+            )
+            existing = (
+                await self.collection.find_one(
+                    {
+                        "_id": key,
+                        "kind": KIND,
+                        "user_id": actor,
+                        "guild_id": int(guild_id),
+                    }
+                )
+                if current
+                else None
+            )
+            if existing:
+                return existing
+            raise ValueError(
+                "This confirmation was already used. Review current progress or create a new preview; it will not be replayed."
+            )
         return await self.create(
             actor_id=actor,
             guild_id=guild_id,
@@ -176,6 +216,7 @@ class ProfileRuns:
 
     async def advance(self, *, now=None):
         at = time.time() if now is None else now
+        await self.prune()
         parent = await self.collection.find_one(
             {"kind": KIND, "state": "queued"}, sort=[("created_at", 1)]
         )
@@ -220,7 +261,7 @@ class ProfileRuns:
             pass
 
     async def prune(self):
-        # Keep 20 terminal runs at most, for at most30days. Never touch active work.
+        # Keep 20 terminal runs at most, for at most 30 days. Never touch active work.
         rows = (
             await self.collection.find({"kind": KIND, "state": "done"})
             .sort("finished_at", -1)
@@ -239,4 +280,29 @@ class ProfileRuns:
             )
             await self.collection.delete_one(
                 {"_id": row["_id"], "kind": KIND, "state": "done"}
+            )
+
+        standalone = (
+            await self.collection.find(
+                {
+                    "kind": "manage_web_request",
+                    "section": "member_profiles",
+                    "parent_id": {"$exists": False},
+                    "status": {"$in": list(TERMINAL)},
+                }
+            )
+            .sort("finished_at", -1)
+            .to_list(length=10001)
+        )
+        for index, row in enumerate(standalone):
+            if index < 20 and row.get("finished_at", 0) >= cutoff:
+                continue
+            await self.collection.delete_one(
+                {
+                    "_id": row["_id"],
+                    "kind": "manage_web_request",
+                    "section": "member_profiles",
+                    "parent_id": {"$exists": False},
+                    "status": {"$in": list(TERMINAL)},
+                }
             )

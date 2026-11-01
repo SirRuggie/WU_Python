@@ -23,7 +23,7 @@ export default function MemberTimezones({
   const alive = useRef(true),
     generation = useRef(0),
     importId = useRef(crypto.randomUUID()),
-    rowButton = useRef<HTMLButtonElement | null>(null);
+    rowButton = useRef<string | null>(null);
   const denied = () => {
     generation.current++;
     setData(null);
@@ -65,6 +65,15 @@ export default function MemberTimezones({
       generation.current++;
     };
   }, []);
+  useEffect(() => {
+    if (!editing && rowButton.current) {
+      document
+        .querySelector<HTMLButtonElement>(
+          `[data-member-id="${rowButton.current}"]`,
+        )
+        ?.focus();
+    }
+  }, [editing, data]);
   const busy =
     sending || (!!request && ["pending", "running"].includes(request.status));
   useEffect(() => {
@@ -88,7 +97,6 @@ export default function MemberTimezones({
             setDirty(false);
             onDirty(false);
             void load();
-            rowButton.current?.focus();
           } else setError(result.message);
         }
       } catch (e) {
@@ -110,7 +118,6 @@ export default function MemberTimezones({
     setEditing(null);
     setDirty(false);
     onDirty(false);
-    rowButton.current?.focus();
   };
   async function importCurrent() {
     if (
@@ -266,8 +273,9 @@ export default function MemberTimezones({
                     </div>
                     <button
                       disabled={busy || m.bot}
-                      onClick={(e) => {
-                        rowButton.current = e.currentTarget;
+                      data-member-id={m.discord_id}
+                      onClick={() => {
+                        rowButton.current = m.discord_id;
                         setEditing(m);
                         setDirty(false);
                       }}

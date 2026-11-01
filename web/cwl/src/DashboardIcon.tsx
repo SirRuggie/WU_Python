@@ -18,6 +18,7 @@ import {
   Crown,
   Download,
   Flag,
+  Globe,
   Handshake,
   House,
   Image,
@@ -54,6 +55,7 @@ import {
 import "./dashboardIcons.css";
 
 const icons = {
+  timeZones: Globe,
   search: Search,
   calendar: CalendarDays,
   raid: Tent,

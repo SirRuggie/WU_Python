@@ -6,6 +6,7 @@ from types import SimpleNamespace as NS
 from datetime import datetime, timezone, timedelta
 import hikari
 from pymongo import ReturnDocument
+from utils.member_profiles import ProfileOutcomeUncertain
 
 WORKER_ID = 'manage-web-worker:644963518025826315'
 GUILD_ID = 644963518025826315
@@ -244,6 +245,8 @@ async def _poll(bot, mongo):
             ctx=await context(bot,mongo,row)
             result=await asyncio.wait_for(dispatch(bot,mongo,row,ctx),120)
             update={'status':'done','message':result.get('message','Completed.'),'result':result}
+        except ProfileOutcomeUncertain as exc:
+            update={'status':'uncertain','message':str(exc)[:400]}
         except ValueError as exc:
             update={'status':'failed','message':str(exc)[:400]}
         except Exception:

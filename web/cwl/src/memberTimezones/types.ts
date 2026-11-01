@@ -20,7 +20,12 @@ export type Member = {
 };
 export type Directory = {
   members: Member[];
-  countries: { code: string; label: string; flag: string }[];
+  countries: {
+    code: string;
+    label: string;
+    flag: string;
+    zone_id?: string | null;
+  }[];
   zones: { id: string; label: string }[];
   permission: string;
 };

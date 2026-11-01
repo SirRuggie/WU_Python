@@ -9,6 +9,7 @@ from utils.member_timezones import (
     highest_account,
     flag,
     nickname,
+    SINGLE_ZONE,
 )
 from utils.member_timezone_import import parsed_zone
 from .server_management import (
@@ -147,7 +148,12 @@ async def overview(request):
         dict(
             members=rows,
             countries=[
-                dict(code=code, label=label, flag=flag(code))
+                dict(
+                    code=code,
+                    label=label,
+                    flag=flag(code),
+                    zone_id=SINGLE_ZONE.get(code),
+                )
                 for code, label in COUNTRY_CHOICES
             ],
             zones=[
@@ -184,6 +190,16 @@ async def choices(request):
                 try:
                     async with semaphore:
                         row = await asyncio.wait_for(provider.player(tag), 8)
+                    if (
+                        not isinstance(row, dict)
+                        or row.get("tag") != tag
+                        or not isinstance(row.get("name"), str)
+                        or not row["name"].strip()
+                        or type(row.get("town_hall")) is not int
+                        or row["town_hall"] < 1
+                    ):
+                        complete = False
+                        return
                     accounts.append(
                         dict(tag=tag, name=row["name"], townHallLevel=row["town_hall"])
                     )

@@ -143,3 +143,143 @@ def test_partial_member_directory_refuses_import(monkeypatch):
             await actions.directory(bot)
 
     asyncio.run(run())
+
+
+def test_already_matching_nickname_is_not_sent_again(monkeypatch):
+    async def run():
+        store = S(commit_after=AsyncMock(), write=AsyncMock())
+        monkeypatch.setattr(actions, "MemberProfiles", lambda db: store)
+        monkeypatch.setattr(
+            actions,
+            "target_context",
+            AsyncMock(return_value=dict(member=S(nickname="Name | GMT-5 🇺🇸"))),
+        )
+        bot = S(rest=S(edit_member=AsyncMock()))
+        row = dict(
+            guild_id=actions.GUILD_ID,
+            action="save",
+            user_id=ACTOR,
+            revision=0,
+            values=dict(
+                discord_id=UID,
+                fields=FIELDS,
+                rename=True,
+                name="Name",
+                old_nickname="Name | GMT-5 🇺🇸",
+            ),
+        )
+        await actions.apply(bot, None, row)
+        bot.rest.edit_member.assert_not_awaited()
+        store.commit_after.assert_not_awaited()
+        store.write.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_roles_are_rechecked_inside_edit_and_split_outcome_is_explicit(monkeypatch):
+    async def run():
+        from utils.member_profiles import ProfileOutcomeUncertain
+
+        initial = dict(
+            member=S(nickname="Old"),
+            bot_permissions=hikari.Permissions.MANAGE_NICKNAMES,
+        )
+        stale = dict(member=S(nickname="Old"), bot_permissions=0)
+        lookup = AsyncMock(side_effect=[initial, stale])
+        monkeypatch.setattr(actions, "target_context", lookup)
+
+        async def commit(*args, change, **kwargs):
+            await change()
+            raise RuntimeError("Mongo down after Discord")
+
+        monkeypatch.setattr(
+            actions, "MemberProfiles", lambda db: S(commit_after=commit)
+        )
+        bot = S(rest=S(edit_member=AsyncMock()))
+        row = dict(
+            guild_id=actions.GUILD_ID,
+            action="save",
+            user_id=ACTOR,
+            revision=0,
+            values=dict(
+                discord_id=UID,
+                fields=FIELDS,
+                rename=True,
+                name="Name",
+                old_nickname="Old",
+            ),
+        )
+        with pytest.raises(ValueError, match="Manage Nicknames"):
+            await actions.apply(bot, None, row)
+        bot.rest.edit_member.assert_not_awaited()
+        lookup.side_effect = [initial, initial]
+        with pytest.raises(
+            ProfileOutcomeUncertain,
+            match="Nickname changed in Discord; profile save was not confirmed",
+        ):
+            await actions.apply(bot, None, row)
+        bot.rest.edit_member.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_partial_import_reports_no_renames_and_safe_rerun(monkeypatch):
+    async def run():
+        from utils.member_profiles import ProfileOutcomeUncertain
+
+        monkeypatch.setattr(actions, "MemberProfiles", lambda db: S())
+        monkeypatch.setattr(
+            actions,
+            "directory",
+            AsyncMock(
+                return_value=[S(id=int(UID), nickname="Name | GMT", is_bot=False)]
+            ),
+        )
+        monkeypatch.setattr(
+            actions,
+            "import_nicknames",
+            AsyncMock(
+                side_effect=RuntimeError("Mongo unavailable after partial progress")
+            ),
+        )
+        bot = S(rest=S(edit_member=AsyncMock()))
+        row = dict(guild_id=actions.GUILD_ID, action="import", user_id=ACTOR, values={})
+        with pytest.raises(
+            ProfileOutcomeUncertain, match="No Discord nicknames were changed"
+        ):
+            await actions.apply(bot, None, row)
+        bot.rest.edit_member.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        dict(tag="#WRONG", name="Wrong cached account", town_hall=19),
+        dict(tag="#PQQ", name="Missing TH", town_hall=None),
+    ],
+)
+def test_public_account_lookup_never_suggests_malformed_or_wrong_tag(
+    monkeypatch, invalid
+):
+    async def run():
+        import json
+
+        monkeypatch.setattr(routes, "require_manage", AsyncMock(return_value={}))
+        monkeypatch.setattr(
+            routes, "discord", AsyncMock(return_value={"user": {"id": UID}})
+        )
+        provider = S(
+            linked_tags=AsyncMock(return_value=["#PYY", "#PQQ"]),
+            player=AsyncMock(
+                side_effect=[dict(tag="#PYY", name="Known", town_hall=18), invalid]
+            ),
+        )
+        request = S(app={"providers": provider}, match_info={"member_id": UID})
+        response = await routes.choices(request)
+        body = json.loads(response.text)
+        assert body["complete"] is False and body["suggested"] is None
+        assert body["accounts"] == [dict(tag="#PYY", name="Known", townHallLevel=18)]
+
+    asyncio.run(run())

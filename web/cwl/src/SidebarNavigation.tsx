@@ -260,7 +260,7 @@ const sections: Section[] = [
       {
         view: "member-timezones",
         label: "Member time zones",
-        icon: "memberRoles",
+        icon: "timeZones",
         permissions: ["member_roles"],
       },
       {

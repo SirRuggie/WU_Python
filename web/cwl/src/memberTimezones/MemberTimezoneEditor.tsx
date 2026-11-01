@@ -141,6 +141,7 @@ export default function MemberTimezoneEditor({
           <label>
             Which one do you want to name it?
             <select
+              aria-label="Which one do you want to name it?"
               value={tag || ""}
               disabled={busy}
               onChange={(e) => {
@@ -163,6 +164,7 @@ export default function MemberTimezoneEditor({
       <label>
         Time zone
         <select
+          aria-label="Time zone"
           value={zone}
           disabled={busy}
           onChange={(e) => {
@@ -186,6 +188,7 @@ export default function MemberTimezoneEditor({
       <label>
         Country
         <select
+          aria-label="Country"
           value={
             data.countries.some((c) => c.code === country) ? country : "other"
           }
@@ -193,6 +196,10 @@ export default function MemberTimezoneEditor({
           onChange={(e) => {
             change();
             setCountry(e.target.value === "other" ? "" : e.target.value);
+            setZone(
+              data.countries.find((country) => country.code === e.target.value)
+                ?.zone_id || "",
+            );
           }}
         >
           <option value="other">Other / choose country</option>

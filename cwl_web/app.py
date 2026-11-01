@@ -241,6 +241,7 @@ MANAGEMENT_PAGE_PATHS = {
     "strikes": "/strikes",
     "replacements": "/replacements",
     "members-settings": "/server/members",
+    "member-timezones": "/server/member-timezones",
     "member-activity": "/server/member-activity",
     "moderation": "/server/moderation",
     "applications-settings": "/server/applications",

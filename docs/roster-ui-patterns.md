@@ -299,3 +299,10 @@ Saved member profiles supply Compare time zones before nickname parsing. Scoped
 background metadata enrichment merges only owner zones/nicknames, preserving
 working placements and drafts. Invalid/unavailable profiles fall back to cached
 nicknames; no sort or navigation action writes a Discord nickname.
+
+Member time zones follows the dashboard interaction standard: native labeled
+controls, 44 px targets, phone cards, retained conflict drafts, row focus on
+return, explicit loading/unavailable/revoked states, and no preview fetch while
+Standardize is closed. The infrequent import and full change preview are labeled
+disclosures; their errors remain visible. Isolated 360/1440 checks cover edit,
+conflict, untick, confirmation and uncertain results with simulated transport.

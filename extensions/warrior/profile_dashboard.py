@@ -3,7 +3,12 @@
 import asyncio
 import hikari
 from extensions.warrior import core
-from utils.member_profiles import MemberProfiles, ProfileConflict, member_id
+from utils.member_profiles import (
+    MemberProfiles,
+    ProfileConflict,
+    ProfileOutcomeUncertain,
+    member_id,
+)
 from utils.member_timezones import nickname, profile_fields
 from utils.member_timezone_import import import_nicknames
 from utils.constants import WARRIORS_UNITED_GUILD_ID as GUILD_ID
@@ -25,7 +30,7 @@ async def directory(bot):
     return rows
 
 
-async def target_context(bot, actor_id, target_id):
+async def target_context(bot, actor_id, target_id, *, require_manageable=True):
     async with asyncio.timeout(20):
         actor, target, me, roles, guild = await asyncio.gather(
             bot.rest.fetch_member(GUILD_ID, int(actor_id)),
@@ -45,7 +50,8 @@ async def target_context(bot, actor_id, target_id):
         actor_permissions=core.permissions(actor, roles, guild.owner_id),
         bot_permissions=core.permissions(me, roles, guild.owner_id),
     )
-    core.manageable_target(context)
+    if require_manageable:
+        core.manageable_target(context)
     return context
 
 
@@ -55,24 +61,40 @@ async def apply(bot, mongo, row):
     store = MemberProfiles(mongo)
     values = row["values"]
     if row["action"] == "import":
-        members = await directory(bot)
-        counts = await import_nicknames(
-            store,
-            [
-                dict(discord_id=str(m.id), nickname=m.nickname, bot=m.is_bot)
-                for m in members
-            ],
-            actor_id=row["user_id"],
-        )
+        try:
+            async with asyncio.timeout(100):
+                members = await directory(bot)
+                counts = await import_nicknames(
+                    store,
+                    [
+                        dict(discord_id=str(m.id), nickname=m.nickname, bot=m.is_bot)
+                        for m in members
+                    ],
+                    actor_id=row["user_id"],
+                )
+        except ValueError:
+            raise
+        except Exception as error:
+            raise ProfileOutcomeUncertain(
+                "Import did not finish confirming all profile writes. No Discord nicknames were changed. Refresh and rerun safely after the service recovers."
+            ) from error
         return dict(
             message="Nickname import finished. No nicknames were changed.",
             counts=counts,
         )
+    if row["action"] == "save" and not isinstance(values.get("fields"), dict):
+        raise ValueError("Choose valid profile fields.")
     uid = member_id(values.get("discord_id"))
     revision = row["revision"]
     if type(revision) is not int or revision < 0:
         raise ValueError("Invalid profile revision. Refresh before saving.")
-    context = await target_context(bot, row["user_id"], uid)
+    context = await target_context(
+        bot,
+        row["user_id"],
+        uid,
+        require_manageable=row["action"] == "standardize_one"
+        or values.get("rename") is True,
+    )
     if row["action"] == "standardize_one":
         parent = await mongo.bot_config.find_one(
             {
@@ -114,6 +136,9 @@ async def apply(bot, mongo, row):
         )
     else:
         raise ValueError("Unknown member profile action.")
+    already_matched = rename and context["member"].nickname == new_nickname
+    if already_matched:
+        rename = False
     if rename:
         if not context["bot_permissions"] & hikari.Permissions.MANAGE_NICKNAMES:
             raise ValueError("The bot needs Manage Nicknames.")
@@ -125,7 +150,18 @@ async def apply(bot, mongo, row):
                 "Nickname changed since preview. Refresh and review it again."
             )
 
+        discord_confirmed = False
+
         async def change():
+            nonlocal discord_confirmed
+            # Recheck roles and the exact old nickname inside the serialized edit.
+            fresh = await target_context(bot, row["user_id"], uid)
+            if not fresh["bot_permissions"] & hikari.Permissions.MANAGE_NICKNAMES:
+                raise ValueError("The bot needs Manage Nicknames.")
+            if fresh["member"].nickname != values["old_nickname"]:
+                raise ValueError(
+                    "Nickname changed since preview. Refresh and review it again."
+                )
             # No retries: a timeout may follow an accepted Discord edit.
             async with asyncio.timeout(20):
                 await bot.rest.edit_member(
@@ -134,6 +170,7 @@ async def apply(bot, mongo, row):
                     nickname=new_nickname,
                     reason="Reviewed dashboard member timezone update",
                 )
+                discord_confirmed = True
 
         try:
             await store.commit_after(
@@ -144,22 +181,45 @@ async def apply(bot, mongo, row):
                 updated_by=row["user_id"],
                 source="staff",
             )
-        except (hikari.ForbiddenError, hikari.NotFoundError) as error:
+        except (
+            hikari.ForbiddenError,
+            hikari.NotFoundError,
+            hikari.BadRequestError,
+        ) as error:
             raise ValueError(
-                "Discord refused this nickname change. No profile was saved."
+                "Discord refused the nickname: "
+                + str(error.message or "Check permissions and role hierarchy.")
+                + " No profile was saved."
             ) from error
+        except Exception as error:
+            if discord_confirmed:
+                raise ProfileOutcomeUncertain(
+                    "Nickname changed in Discord; profile save was not confirmed. Check the profile before another edit."
+                ) from error
+            raise
     else:
-        await store.write(
-            uid,
-            fields,
-            expected_revision=revision,
-            updated_by=row["user_id"],
-            source="staff",
-        )
+        try:
+            await store.write(
+                uid,
+                fields,
+                expected_revision=revision,
+                updated_by=row["user_id"],
+                source="staff",
+            )
+        except ValueError:
+            raise
+        except Exception as error:
+            raise ProfileOutcomeUncertain(
+                "Profile save was not confirmed. The nickname was not changed; refresh the profile before another edit."
+            ) from error
     return dict(
         message=(
             "Profile and nickname saved."
             if rename
-            else "Profile saved. Nickname unchanged."
+            else (
+                "Profile saved. Nickname already matched."
+                if already_matched
+                else "Profile saved. Nickname unchanged."
+            )
         )
     )

@@ -88,3 +88,9 @@ def test_pace_does_not_release_next_member_early():
         coll.insert_one.assert_not_awaited()
 
     asyncio.run(run())
+
+
+@pytest.fixture(autouse=True)
+def isolated_pruning(monkeypatch):
+    # These cases exercise scheduling; retention is covered against real Mongo.
+    monkeypatch.setattr(ProfileRuns, "prune", AsyncMock())

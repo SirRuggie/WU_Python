@@ -7,6 +7,10 @@ SOURCES = frozenset({"warrior", "nickname_import", "staff"})
 LEFT_TTL_SECONDS = 90 * 24 * 60 * 60
 
 
+class ProfileOutcomeUncertain(RuntimeError):
+    """Safe, explicit split outcome for durable management receipts."""
+
+
 class ProfileConflict(ValueError):
     pass
 

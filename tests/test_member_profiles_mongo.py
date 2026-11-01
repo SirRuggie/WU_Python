@@ -205,3 +205,134 @@ def test_receipt_nonce_cas_preserves_newer_drafts(monkeypatch):
             await client.close()
 
     asyncio.run(run())
+
+
+def test_real_standardize_selection_restart_pacing_and_bounded_receipts():
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def run():
+        from utils.member_profile_runs import ProfileRuns, KIND
+        import time
+
+        client = AsyncMongoClient(URI)
+        db = client["wu_runs_fixture_" + uuid4().hex]
+        mongo = S(bot_config=db.bot_config, component_state=db.component_state)
+        runs = ProfileRuns(mongo)
+        item = dict(
+            discord_id=USER,
+            old_nickname="Old",
+            new_nickname="Name | GMT-5 🇺🇸",
+            revision=1,
+        )
+        other = dict(item, discord_id=ACTOR)
+        try:
+            token = await runs.preview(actor_id=ACTOR, guild_id=1, rows=[item, other])
+            parent = await runs.confirm(
+                actor_id=ACTOR, guild_id=1, nonce=token, selected=[USER]
+            )
+            assert parent["items"] == [item]
+            assert (
+                await runs.confirm(
+                    actor_id=ACTOR, guild_id=1, nonce=token, selected=[USER]
+                )
+            )["_id"] == parent["_id"]
+            with pytest.raises(ValueError):
+                await runs.confirm(
+                    actor_id=ACTOR, guild_id=1, nonce=token, selected=[ACTOR]
+                )
+            await runs.advance()
+            child = await db.bot_config.find_one({"parent_id": parent["_id"]})
+            assert child["values"] == item
+            assert (
+                await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 1
+            )
+            # An accepted-but-unconfirmed rename is never made pending again after restart.
+            await db.bot_config.update_one(
+                {"_id": child["_id"]}, {"$set": {"status": "uncertain"}}
+            )
+            restarted = ProfileRuns(mongo)
+            await restarted.advance(now=time.time() + 4)
+            assert (await db.bot_config.find_one({"_id": child["_id"]}))[
+                "status"
+            ] == "uncertain"
+            await restarted.advance(now=time.time() + 8)
+            assert (await db.bot_config.find_one({"_id": parent["_id"]}))[
+                "state"
+            ] == "done"
+            assert (
+                await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 1
+            )
+            # Retention removes matching terminal children, never active children.
+            for index in range(25):
+                key = "old:" + str(index)
+                await db.bot_config.insert_one(
+                    dict(
+                        _id=key,
+                        kind=KIND,
+                        state="done",
+                        finished_at=time.time() - index,
+                        created_at=time.time() - index,
+                    )
+                )
+                await db.bot_config.insert_one(
+                    dict(
+                        _id=key + ":0",
+                        kind="manage_web_request",
+                        parent_id=key,
+                        status="done",
+                    )
+                )
+            await restarted.prune()
+            assert (
+                await db.bot_config.count_documents({"kind": KIND, "state": "done"})
+                == 20
+            )
+            assert not await db.bot_config.find_one({"parent_id": "old:24"})
+            replacement = await runs.preview(actor_id=ACTOR, guild_id=1, rows=[other])
+            with pytest.raises(ValueError):
+                await runs.confirm(
+                    actor_id=ACTOR, guild_id=1, nonce=token, selected=[USER]
+                )
+            assert replacement != token
+            # Pruning a completed/uncertain run must not make its old confirmation reusable.
+            last = await runs.confirm(
+                actor_id=ACTOR, guild_id=1, nonce=replacement, selected=[ACTOR]
+            )
+            await db.bot_config.delete_one({"_id": last["_id"]})
+            with pytest.raises(ValueError, match="already used"):
+                await runs.confirm(
+                    actor_id=ACTOR, guild_id=1, nonce=replacement, selected=[ACTOR]
+                )
+            # Standalone save/import receipts are bounded without touching other sections.
+            for index in range(25):
+                await db.bot_config.insert_one(
+                    dict(
+                        _id="save:" + str(index),
+                        kind="manage_web_request",
+                        section="member_profiles",
+                        status="done",
+                        finished_at=time.time() - index,
+                    )
+                )
+            await db.bot_config.insert_one(
+                dict(
+                    _id="other",
+                    kind="manage_web_request",
+                    section="clans",
+                    status="done",
+                    finished_at=0,
+                )
+            )
+            await runs.prune()
+            assert (
+                await db.bot_config.count_documents(
+                    {"section": "member_profiles", "parent_id": {"$exists": False}}
+                )
+                == 20
+            )
+            assert await db.bot_config.find_one({"_id": "other"})
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())

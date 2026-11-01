@@ -133,3 +133,16 @@ class ManageWorkerTests(unittest.IsolatedAsyncioTestCase):
         db = SimpleNamespace(bot_config=SimpleNamespace(update_one=AsyncMock()))
         result = await worker.dispatch(None, db, row, None)
         self.assertEqual(result['message'], 'BAND status refreshed.')
+
+
+class MemberProfileOutcomeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_confirmed_split_outcome_remains_uncertain_with_its_exact_message(self):
+        from utils.member_profiles import ProfileOutcomeUncertain
+        helper=ManageWorkerTests()
+        db=helper.db(helper.row())
+        message='Nickname changed in Discord; profile save was not confirmed.'
+        with patch.object(worker,'context',AsyncMock()),patch.object(worker,'dispatch',AsyncMock(side_effect=ProfileOutcomeUncertain(message))):
+            await worker.poll(None,db)
+        update=db.bot_config.update_one.call_args.args[1]['$set']
+        self.assertEqual(update['status'],'uncertain')
+        self.assertEqual(update['message'],message)
