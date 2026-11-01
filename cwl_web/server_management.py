@@ -193,7 +193,7 @@ async def catalog(request):
             ('cwl_rosters', 'CWL return reminders', 'Manage saved clans and return reminders.', 'War', '/manage/return-reminders'),
         ):
             sections.append(dict(id=key, label=label, description=description, group=group, endpoint=endpoint,
-                                 allowed=await allowed(actor, key, db)))
+                                 allowed=await allowed(actor, key, db), **({'destination': 'members-settings'} if key == 'roles' else {})))
     from .manage_content import catalog_sections
     sections.extend(await catalog_sections(request))
     from .app import _session, _editor

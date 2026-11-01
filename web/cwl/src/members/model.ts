@@ -81,3 +81,29 @@ export function localMemberTime(member: Member, now = new Date()) {
     timeZone: "UTC",
   }).format(shifted);
 }
+
+export type MemberSort = "name" | "time_zone";
+export function sortMembers(
+  rows: readonly DirectoryMember[],
+  order: MemberSort,
+) {
+  const collator = new Intl.Collator(undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+  const offset = (row: DirectoryMember) =>
+    row.profile?.utc_offset_minutes ?? row.parsed?.offsetMinutes ?? null;
+  return [...rows].sort((a, b) => {
+    if (order === "time_zone") {
+      const left = offset(a),
+        right = offset(b);
+      if (left == null && right != null) return 1;
+      if (right == null && left != null) return -1;
+      if (left != null && right != null && left !== right) return left - right;
+    }
+    return (
+      collator.compare(a.nickname || a.name, b.nickname || b.name) ||
+      a.discord_id.localeCompare(b.discord_id)
+    );
+  });
+}

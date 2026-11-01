@@ -77,6 +77,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     "moderation",
     "clans",
     "members",
+    "tickets",
     "bot",
     "admin",
   ]);
@@ -110,12 +111,12 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     sections
       .find((section) => section.id === "members")
       ?.items.map((item) => item.label),
-  ).toEqual([
-    "Members & roles",
-    "Member time zones",
-    "Tickets",
-    "Ticket settings",
-  ]);
+  ).toEqual(["Members"]);
+  expect(
+    sections
+      .find((section) => section.id === "tickets")
+      ?.items.map((item) => item.label),
+  ).toEqual(["Tickets", "Ticket settings"]);
   expect(
     sections
       .find((section) => section.id === "bot")
@@ -131,7 +132,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
       (item) => `${item.view}:${item.step || item.signupPanel || ""}`,
     ),
   );
-  expect(destinations).toHaveLength(34);
+  expect(destinations).toHaveLength(33);
   expect(new Set(destinations).size).toBe(destinations.length);
   const html = markup("home", [], true);
   expect(html.indexOf("Staff overview")).toBeLessThan(
@@ -151,7 +152,7 @@ it("preserves each permission list and hides empty groups or unauthorized direct
     ["strikes", ["strikes"]],
     ["strikes_add", ["strikes"]],
     ["strikes_remove", ["strikes"]],
-    ["member_roles", ["moderation", "members-settings", "member-timezones"]],
+    ["member_roles", ["moderation", "members-settings"]],
     ["recruitment", ["applications-settings"]],
     ["tickets", ["tickets", "applications-settings"]],
     ["fwa", ["fwa-settings"]],
@@ -191,7 +192,7 @@ it("uses the approved labels for menu and page naming", () => {
   expect(navigationLabel("tickets")).toBe("Tickets");
   expect(navigationLabel("applications-settings")).toBe("Ticket settings");
   expect(navigationLabel("publication", "announce")).toBe("Announcements");
-  expect(navigationSection("applications-settings")).toBe("Members");
+  expect(navigationSection("applications-settings")).toBe("Tickets");
   expect(navigationSection("weight-trial")).toBe("Clans");
   expect(navigationSection("moderation")).toBe("Staff tools");
 });

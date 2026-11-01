@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
-import type { Run } from "../memberTimezones/types";
+import type { Change, Run } from "../memberTimezones/types";
 import { membersText as t } from "./strings";
 export type RoleReview = {
   token: string;
@@ -9,6 +9,13 @@ export type RoleReview = {
   role: { id: string; name: string; protected: boolean };
   operation: "add" | "remove";
 };
+type RoleFields = {
+  role_id?: string;
+  operation?: "add" | "remove";
+  expected_role_ids?: string[];
+  changed?: boolean;
+};
+type RoleRun = Omit<Run, "rows"> & { rows: (Change & RoleFields)[] };
 type RoleStatus = {
   run_id: string;
   state: string;
@@ -19,9 +26,12 @@ type RoleStatus = {
     status: string;
     message: string;
     changed?: boolean;
+    role_id?: string;
+    operation?: "add" | "remove";
+    expected_role_ids?: string[];
   }[];
 };
-function asRun(value: RoleStatus): Run {
+function asRun(value: RoleStatus): RoleRun {
   if (
     !value ||
     typeof value.run_id !== "string" ||
@@ -51,15 +61,38 @@ function asRun(value: RoleStatus): Run {
 export default function useRoleRun(
   onDenied: () => void,
   onChanged: () => void,
+  enabled = true,
 ) {
-  const [run, setRun] = useState<Run | null>(null),
+  const [run, setRun] = useState<RoleRun | null>(null),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [uncertain, setUncertainState] = useState(false);
   const version = useRef(0),
     pending = useRef(false),
     alive = useRef(true),
     callbacks = useRef({ onDenied, onChanged });
   callbacks.current = { onDenied, onChanged };
+  const uncertainRef = useRef(false);
+  function setUncertain(value: boolean) {
+    uncertainRef.current = value;
+    setUncertainState(value);
+  }
+  const controllers = useRef(new Set<AbortController>());
+  async function request<T>(
+    path: string,
+    method = "GET",
+    body?: unknown,
+  ): Promise<T> {
+    const controller = new AbortController();
+    controllers.current.add(controller);
+    const timer = window.setTimeout(() => controller.abort(), 45000);
+    try {
+      return await api<T>(path, method, body, { signal: controller.signal });
+    } finally {
+      window.clearTimeout(timer);
+      controllers.current.delete(controller);
+    }
+  }
   function fail(cause: unknown) {
     if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
       setRun(null);
@@ -69,26 +102,42 @@ export default function useRoleRun(
   }
   async function read(id: string) {
     const next = asRun(
-      await api<RoleStatus>(
+      await request<RoleStatus>(
         `/manage/members/role-runs/${encodeURIComponent(id)}`,
       ),
     );
     return next;
   }
   async function refresh() {
+    if (!enabled) return;
     const generation = ++version.current;
     try {
-      const active = await api<{ runs: { run_id: string }[] }>(
+      const active = await request<{ runs: { run_id: string }[] }>(
         "/manage/members/role-runs?active=1",
       );
       if (!alive.current || generation !== version.current) return;
+      if (
+        !active ||
+        !Array.isArray(active.runs) ||
+        active.runs.length > 100 ||
+        active.runs.some(
+          (row) => typeof row.run_id !== "string" || row.run_id.length > 200,
+        )
+      )
+        throw new Error(t.roleUnavailable);
       const id = active.runs[0]?.run_id || run?.run_id;
       if (id) {
         const next = await read(id);
         if (alive.current && generation === version.current) {
           setRun(next);
           setError("");
+          setUncertain(false);
+          if (uncertain) callbacks.current.onChanged();
         }
+      } else {
+        setError("");
+        setUncertain(false);
+        if (uncertain) callbacks.current.onChanged();
       }
     } catch (cause) {
       if (alive.current && generation === version.current) fail(cause);
@@ -96,14 +145,21 @@ export default function useRoleRun(
   }
   useEffect(() => {
     alive.current = true;
-    void refresh();
+    if (enabled) void refresh();
+    else {
+      setRun(null);
+      setError("");
+      setUncertain(false);
+    }
     return () => {
       alive.current = false;
       version.current++;
+      for (const controller of controllers.current) controller.abort();
+      controllers.current.clear();
     };
-  }, []);
+  }, [enabled]);
   useEffect(() => {
-    if (!run || !["queued", "stopping"].includes(run.state)) return;
+    if (!enabled || !run || !["queued", "stopping"].includes(run.state)) return;
     let stopped = false,
       inflight = false;
     const check = async () => {
@@ -136,15 +192,15 @@ export default function useRoleRun(
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [run?.run_id, run?.state]);
+  }, [enabled, run?.run_id, run?.state]);
   async function confirm(review: RoleReview) {
-    if (pending.current) return false;
+    if (!enabled || pending.current || uncertainRef.current) return false;
     pending.current = true;
     setBusy(true);
     setError("");
     const generation = ++version.current;
     try {
-      const result = await api<{ run_id: string; state: string }>(
+      const result = await request<{ run_id: string; state: string }>(
         "/manage/members/role-confirm",
         "POST",
         {
@@ -156,13 +212,25 @@ export default function useRoleRun(
       if (!result || typeof result.run_id !== "string")
         throw new Error(t.roleUncertain);
       const next = await read(result.run_id);
-      if (alive.current && generation === version.current) setRun(next);
+      if (alive.current && generation === version.current) {
+        setRun(next);
+        setUncertain(false);
+      }
       return alive.current && generation === version.current;
     } catch (cause) {
-      if (alive.current) {
+      if (alive.current && generation === version.current) {
         if (cause instanceof ApiError && [401, 403].includes(cause.status))
           fail(cause);
-        else setError(t.roleUncertain);
+        else if (
+          cause instanceof ApiError &&
+          [400, 404, 409, 422].includes(cause.status)
+        )
+          fail(cause);
+        else {
+          setRun(null);
+          setError(t.roleUncertain);
+          setUncertain(true);
+        }
       }
       return false;
     } finally {
@@ -171,12 +239,12 @@ export default function useRoleRun(
     }
   }
   async function stop() {
-    if (!run || pending.current) return;
+    if (!enabled || !run || pending.current) return;
     pending.current = true;
     setBusy(true);
     const generation = ++version.current;
     try {
-      await api(
+      await request(
         `/manage/members/role-runs/${encodeURIComponent(run.run_id)}/stop`,
         "POST",
         {},
@@ -184,7 +252,7 @@ export default function useRoleRun(
       const next = await read(run.run_id);
       if (alive.current && generation === version.current) setRun(next);
     } catch (cause) {
-      if (alive.current) fail(cause);
+      if (alive.current && generation === version.current) fail(cause);
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
@@ -194,7 +262,8 @@ export default function useRoleRun(
     run,
     error,
     busy,
-    active: !!run && ["queued", "stopping"].includes(run.state),
+    active: uncertain || (!!run && ["queued", "stopping"].includes(run.state)),
+    uncertain,
     confirm,
     stop,
     refresh,

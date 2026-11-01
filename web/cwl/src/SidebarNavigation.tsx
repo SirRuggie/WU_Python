@@ -255,16 +255,17 @@ const sections: Section[] = [
     items: [
       {
         view: "members-settings",
-        label: "Members & roles",
+        label: "Members",
         icon: "memberRoles",
         permissions: ["member_roles"],
       },
-      {
-        view: "member-timezones",
-        label: "Member time zones",
-        icon: "timeZones",
-        permissions: ["member_roles"],
-      },
+    ],
+  },
+  {
+    id: "tickets",
+    label: "Tickets",
+    icon: "ticketGroup",
+    items: [
       {
         view: "tickets",
         label: "Tickets",

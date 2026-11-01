@@ -5,6 +5,7 @@ import {
   statusCounts,
   localMemberTime,
   matchesMember,
+  sortMembers,
   type DirectoryMember,
 } from "./model";
 const make = (i: number): DirectoryMember => ({
@@ -82,4 +83,20 @@ it("keeps zero-offset zones valid and formats the time at their stored offset", 
   expect(localMemberTime(row, new Date("2026-11-01T08:12:00Z"))).toContain(
     "8:12",
   );
+});
+
+it("time zone sort puts unknown last, keeps name ties stable and does not mutate the input", () => {
+  const west = { ...make(2), parsed: { label: "GMT-8", offsetMinutes: -480 } },
+    east = { ...make(1), parsed: { label: "GMT+1", offsetMinutes: 60 } },
+    unknown = make(0);
+  const input = [unknown, east, west];
+  expect(sortMembers(input, "time_zone").map((row) => row.discord_id)).toEqual([
+    west.discord_id,
+    east.discord_id,
+    unknown.discord_id,
+  ]);
+  expect(input).toEqual([unknown, east, west]);
+  expect(
+    sortMembers([make(10), make(2)], "name").map((row) => row.name),
+  ).toEqual(["Person 2", "Person 10"]);
 });

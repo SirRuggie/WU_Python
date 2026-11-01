@@ -10,6 +10,7 @@ export type Profile = {
   revision: number;
 };
 export type Member = {
+  role_ids?: string[];
   discord_profile?: DiscordProfile;
   discord_id: string;
   name: string;

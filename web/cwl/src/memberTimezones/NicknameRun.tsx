@@ -28,6 +28,7 @@ export default function NicknameRun({
   disabled,
   showAttribution = false,
   mode = "nicknames",
+  visibleIds,
 }: {
   run: Run;
   members: Member[];
@@ -35,10 +36,15 @@ export default function NicknameRun({
   disabled: boolean;
   showAttribution?: boolean;
   mode?: "nicknames" | "roles";
+  visibleIds?: ReadonlySet<string>;
 }) {
   const [filter, setFilter] = useState<keyof typeof labels>("changed"),
     [page, setPage] = useState(0);
-  const rows = run.rows.filter((r) => resultKey(r) === filter),
+  const rows = run.rows.filter(
+      (r) =>
+        resultKey(r) === filter &&
+        (!visibleIds || visibleIds.has(r.discord_id)),
+    ),
     current = Math.min(page, Math.max(0, Math.ceil(rows.length / 25) - 1));
   const profile = (id?: string) => members.find((m) => m.discord_id === id);
   return (

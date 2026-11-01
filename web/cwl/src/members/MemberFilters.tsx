@@ -8,11 +8,15 @@ export default function MemberFilters({
   value,
   counts,
   roles,
+  sort,
+  onSort,
   onChange,
 }: {
   value: Filters;
   counts: Record<MemberStatus, number>;
   roles: RoleChoice[];
+  sort: "name" | "time_zone";
+  onSort: (value: "name" | "time_zone") => void;
   onChange: (next: Filters) => void;
 }) {
   const update = (patch: Partial<Filters>) => onChange({ ...value, ...patch });
@@ -50,15 +54,30 @@ export default function MemberFilters({
         onChange={(status) => update({ status })}
       />
       <div className="members-filter-tools">
-        <RoleSelect
-          label={t.roleFilter}
-          roles={[{ id: "none", name: t.noRole }, ...roles]}
-          value=""
-          onChange={(role) => {
-            if (role && !value.roles.includes(role))
-              update({ roles: [...value.roles, role] });
-          }}
-        />
+        <details className="members-more-filters">
+          <summary>{t.moreFilters}</summary>
+          <RoleSelect
+            label={t.roleFilter}
+            roles={[{ id: "none", name: t.noRole }, ...roles]}
+            value=""
+            onChange={(role) => {
+              if (role && !value.roles.includes(role))
+                update({ roles: [...value.roles, role] });
+            }}
+          />
+          <label>
+            {t.sortLabel}
+            <select
+              value={sort}
+              onChange={(event) =>
+                onSort(event.target.value as "name" | "time_zone")
+              }
+            >
+              <option value="name">{t.sortName}</option>
+              <option value="time_zone">{t.sortZone}</option>
+            </select>
+          </label>
+        </details>
         <label className="members-checkbox">
           <input
             type="checkbox"

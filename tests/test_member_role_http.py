@@ -68,3 +68,25 @@ def test_confirmation_without_explicit_protected_field_is_not_queued(monkeypatch
             await routes.confirm(request)
 
     asyncio.run(run())
+
+
+def test_undo_guard_is_bounded_to_one_person_and_valid_roles():
+    good=dict(member_ids=[USER],role_id=ROLE,operation='remove',guard_role_ids=[ROLE])
+    assert routes.body_selection(good)==([USER],ROLE,'remove')
+    for guard in ([ROLE,ROLE],['bad'],{},[ROLE]*251):
+        with pytest.raises(ValueError):routes.body_selection(dict(good,guard_role_ids=guard))
+    with pytest.raises(ValueError):routes.body_selection(dict(good,member_ids=[USER,'234567890123456789']))
+
+
+def test_members_login_redirect_keeps_valid_person_and_canonicalizes_old_page():
+    from types import SimpleNamespace
+    from cwl_web.app import login_destination, saved_login_destination
+    person = '111111111111111111'
+    expected = '/server/members?account=' + person
+    for view in ('members-settings', 'member-timezones'):
+        for key in ('account', 'member'):
+            assert login_destination({'view': view, key: person}) == expected
+            assert login_destination({'view': view, key: 'https://evil.invalid'}) == '/server/members'
+    for path in ('/server/members', '/server/member-timezones'):
+        assert saved_login_destination(SimpleNamespace(cookies={'wu_login_page': path+'?member='+person})) == expected
+    assert saved_login_destination(SimpleNamespace(cookies={'wu_login_page': '//evil.invalid/server/members'})) == ''

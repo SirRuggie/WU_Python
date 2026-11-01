@@ -269,6 +269,10 @@ def login_destination(query):
         from .strike_activity_links import activity_query
         params = activity_query(query)
         return MANAGEMENT_PAGE_PATHS[view] + ('?' + urlencode(params) if params else '')
+    if view in ('members-settings', 'member-timezones'):
+        member = str(query.get('account') or query.get('member') or '')
+        params = {'account': member} if re.fullmatch(r'[1-9][0-9]{14,21}', member) else {}
+        return MANAGEMENT_PAGE_PATHS['members-settings'] + ('?' + urlencode(params) if params else '')
     if view in MANAGEMENT_PAGE_PATHS:
         return MANAGEMENT_PAGE_PATHS[view]
     if view in CWL_PAGE_PATHS:
@@ -309,6 +313,10 @@ def saved_login_destination(request):
         if path == '/clan-weights':
             params = {key: values[0] for key, values in parse_qs(query).items()}
             params['view'] = 'weight-trial'
+            return login_destination(params)
+        if path in ('/server/members', '/server/member-timezones'):
+            params = {key: values[0] for key, values in parse_qs(query).items()}
+            params['view'] = 'members-settings'
             return login_destination(params)
         if path in MANAGEMENT_PAGE_PATHS.values():
             return path

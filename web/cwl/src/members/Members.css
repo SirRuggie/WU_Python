@@ -18,7 +18,7 @@
   flex-wrap: wrap;
   align-items: end;
 }
-.members-filter-tools > div {
+.members-filter-tools > details {
   min-width: 0;
   flex: 1 1 260px;
   max-width: 520px;
@@ -109,4 +109,150 @@
 .members-person > p {
   grid-column: 2;
   margin: 0;
+}
+.members-workspace {
+  height: calc(100dvh - 180px);
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 12px;
+}
+.members-workspace > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.members-workspace h1 {
+  margin: 0;
+}
+.members-directory-scroll {
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 120px;
+  min-width: 0;
+  padding: 4px;
+}
+.members-selection-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.members-selection-tools button {
+  min-height: 44px;
+}
+.members-bulk-bar {
+  position: static;
+  flex: 0 0 auto;
+}
+.members-person-section {
+  padding-block: 12px;
+  border-bottom: 1px solid #45464d;
+}
+.members-person-section h2 {
+  font-size: 1.1rem;
+}
+.members-person-role-list {
+  max-height: 280px;
+  overflow: auto;
+}
+.members-person-section input[type="search"] {
+  min-height: 44px;
+  width: 100%;
+}
+.members-zone-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+.members-zone-help {
+  display: inline-block;
+}
+.members-zone-help summary {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.members-workspace.has-panel {
+  margin-right: min(460px, 45vw);
+}
+@media (max-width: 767px) {
+  .members-workspace.has-panel {
+    margin-right: 0;
+  }
+  .members-workspace {
+    height: calc(100dvh - 180px);
+  }
+}
+@media (max-height: 500px) {
+  .members-workspace {
+    height: auto;
+    min-height: 0;
+  }
+  .members-directory-scroll {
+    overflow: visible;
+  }
+}
+
+.members-workspace > header > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.members-workspace > header button {
+  font-size: 0.875rem;
+  padding: 0.5rem 0.75rem;
+}
+.members-workspace > header > div > button {
+  min-height: 44px;
+}
+.members-more-filters summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.members-more-filters[open] {
+  padding: 8px;
+  border: 1px solid var(--roster-border);
+  border-radius: 8px;
+}
+.members-more-filters label {
+  margin-block: 8px;
+}
+.members-person-open {
+  justify-items: start;
+}
+.members-person-open .roster-discord-identity {
+  justify-self: start;
+  width: 100%;
+}
+.members-person-open .roster-discord-person strong {
+  font-size: 15px;
+}
+.members-workspace .mt-review-entry.is-compact {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+}
+.members-workspace .mt-review-entry.is-compact summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  .members-workspace > header > div {
+    width: 100%;
+  }
+  .members-filters {
+    gap: 8px;
+  }
 }

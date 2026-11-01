@@ -26,6 +26,8 @@ export default function DetailsFrame({
   previous,
   next,
   children,
+  backLabel = "‹ Build roster",
+  browseLabel = "Browse accounts",
 }: {
   tag: string;
   name: string;
@@ -35,6 +37,8 @@ export default function DetailsFrame({
   previous?: () => void;
   next?: () => void;
   children: ReactNode;
+  backLabel?: string;
+  browseLabel?: string;
 }) {
   // A nonmodal desktop panel opened from a modal must remain in that modal's
   // top-layer subtree; otherwise the browser makes it inert.
@@ -152,13 +156,10 @@ export default function DetailsFrame({
           disabled={busy}
           onClick={() => request(onClose)}
         >
-          ‹ Build roster
+          {backLabel}
         </button>
         {(previous !== undefined || next !== undefined) && (
-          <nav
-            aria-label="Browse accounts"
-            className="details-player-navigation"
-          >
+          <nav aria-label={browseLabel} className="details-player-navigation">
             <Button
               disabled={busy || !previous}
               onClick={() => previous && request(previous)}

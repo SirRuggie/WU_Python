@@ -94,6 +94,12 @@ it("an uncertain confirm is not retried; safe progress refresh recovers its run"
     expect(await latest.confirm(review)).toBe(false);
   });
   expect(host.textContent).toContain("could not be confirmed");
+  await act(async () => {
+    expect(await latest.confirm(review)).toBe(false);
+  });
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
+  ).toHaveLength(1);
   await act(async () => latest.refresh());
   expect(latest.run?.run_id).toBe("run");
   expect(

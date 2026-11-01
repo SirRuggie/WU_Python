@@ -284,6 +284,24 @@ async def import_current(request):
 async def standardize_preview(request):
     actor = await require_manage(request, "member_profiles", write=True)
     rows = await inventory(request)
+    body = await request.json() if getattr(request, "can_read_body", False) else {}
+    if not isinstance(body, dict) or set(body) - {"member_ids"}:
+        raise web.HTTPBadRequest(text="Choose a reviewed member selection.")
+    if "member_ids" in body:
+        from utils.member_profiles import member_id
+        try:
+            selected = body["member_ids"]
+            if not isinstance(selected, list) or not 1 <= len(selected) <= 10000:
+                raise ValueError("Choose people once each.")
+            normalized = [member_id(uid) for uid in selected]
+            if normalized != selected or len(set(selected)) != len(selected):
+                raise ValueError("Choose people once each.")
+            known = {row["discord_id"]: row for row in rows}
+            if any(uid not in known or known[uid].get("bot") for uid in selected):
+                raise ValueError("Selection changed. Refresh the people before trying again.")
+        except (ValueError, TypeError) as error:
+            raise web.HTTPBadRequest(text=str(error)) from error
+        rows = [known[uid] for uid in selected]
     from utils.member_timezone_review import preview_rows
 
     preview = preview_rows(rows)

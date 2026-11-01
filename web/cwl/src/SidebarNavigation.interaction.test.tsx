@@ -65,7 +65,7 @@ it("shows direct overview and moderation links without a staff fold-out", async 
 
 it("keeps every owner staff group flat", async () => {
   await render("home");
-  for (const id of ["cwl", "clans", "members", "bot", "admin"]) {
+  for (const id of ["cwl", "clans", "members", "tickets", "bot", "admin"]) {
     const group = children(id);
     expect(
       group.querySelector(".navigation-children, .strikes-subnav"),

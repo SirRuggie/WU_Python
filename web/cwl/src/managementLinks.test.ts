@@ -6,17 +6,22 @@ import { loginPath } from "./memberLinks";
 
 it("gives every dashboard view a unique clean page URL", () => {
   const paths = dashboardViews
-    .filter((view) => view !== "member-activity")
+    .filter((view) => !["member-activity", "member-timezones"].includes(view))
     .map((view) => dashboardPath({ view, season: "" }));
   expect(
     paths.every((path) => path.startsWith("/") && !path.includes("?")),
   ).toBe(true);
-  expect(new Set(paths).size).toBe(dashboardViews.length - 1);
+  expect(new Set(paths).size).toBe(dashboardViews.length - 2);
 });
 
 it("preserves all management destinations on refresh, old links and sign-in", () => {
   for (const [view, path] of Object.entries(managementPaths)) {
-    const canonical = view === "member-activity" ? "moderation" : view;
+    const canonical =
+      view === "member-activity"
+        ? "moderation"
+        : view === "member-timezones"
+          ? "members-settings"
+          : view;
     for (const pathname of [path, path + "/"]) {
       expect(dashboardTarget("?view=bonuses", pathname).view).toBe(canonical);
       expect(
@@ -24,7 +29,9 @@ it("preserves all management destinations on refresh, old links and sign-in", ()
       ).toBe(`/api/cwl/auth/discord?view=${canonical}&retry=1`);
     }
     const legacy = dashboardTarget(`?view=${view}&season=123`, "/");
-    expect(dashboardPath(legacy)).toBe(path);
+    expect(dashboardPath(legacy)).toBe(
+      view === "member-timezones" ? "/server/members" : path,
+    );
     expect(loginPath(`?view=${view}`, false, "/")).toBe(
       `/api/cwl/auth/discord?view=${canonical}`,
     );
@@ -75,4 +82,20 @@ it("retains strike filters and player through sign-in from canonical and legacy 
     expect(result.searchParams.get("tag")).toBe("#PQQ");
     expect(result.searchParams.has("next")).toBe(false);
   }
+});
+
+it("canonicalizes old Members links and preserves the person through sign-in", () => {
+  const id = "111111111111111111";
+  expect(
+    dashboardTarget(`?member=${id}`, "/server/member-timezones").view,
+  ).toBe("members-settings");
+  expect(managementTarget("?view=member-timezones", "/")).toBe(
+    "members-settings",
+  );
+  expect(loginPath(`?member=${id}`, false, "/server/member-timezones")).toBe(
+    `/api/cwl/auth/discord?view=members-settings&account=${id}`,
+  );
+  expect(
+    loginPath("?member=https://evil.invalid", false, "/server/members"),
+  ).toBe("/api/cwl/auth/discord?view=members-settings");
 });

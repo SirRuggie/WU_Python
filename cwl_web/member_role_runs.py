@@ -14,11 +14,8 @@ from .member_timezones import directory
 
 
 def body_selection(body):
-    if not isinstance(body, dict) or set(body) != {
-        "member_ids",
-        "role_id",
-        "operation",
-    }:
+    required = {"member_ids", "role_id", "operation"}
+    if not isinstance(body, dict) or not required <= set(body) <= required | {"guard_role_ids"}:
         raise ValueError("Choose one role and a reviewed member selection.")
     ids = body["member_ids"]
     if not isinstance(ids, list) or not 1 <= len(ids) <= 10000:
@@ -29,13 +26,20 @@ def body_selection(body):
     if body["operation"] not in ("add", "remove"):
         raise ValueError("Choose Add role or Remove role.")
     role = member_id(body["role_id"])
+    if "guard_role_ids" in body:
+        guard = body["guard_role_ids"]
+        if len(ids) != 1 or not isinstance(guard, list) or len(guard) > 250:
+            raise ValueError("Review the single person's current roles before Undo.")
+        if [member_id(value) for value in guard] != guard or len(set(guard)) != len(guard):
+            raise ValueError("Review the single person's current roles before Undo.")
     return normalized, role, body["operation"]
 
 
 async def preview(request):
     actor = await require_manage(request, "roles", write=True)
     try:
-        ids, role_id, operation = body_selection(await request.json())
+        body = await request.json()
+        ids, role_id, operation = body_selection(body)
     except (ValueError, TypeError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     role_map, guild, bot, person = await hierarchy(request, actor)
@@ -69,6 +73,8 @@ async def preview(request):
     rows = []
     for uid in ids:
         data = known[uid]
+        if "guard_role_ids" in body and sorted(map(str,data.get("roles", []))) != sorted(body["guard_role_ids"]):
+            raise web.HTTPConflict(text="This person’s roles changed. Refresh before Undo; no role was changed.")
         if data["user"].get("bot") or not perms.actor_can_manage_member(
             person, member(data), guild
         ):

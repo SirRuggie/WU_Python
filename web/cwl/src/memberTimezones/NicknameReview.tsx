@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { membersText } from "../members/strings";
 import DiscordIdentity from "../DiscordIdentity";
 import FilterChips from "../FilterChips";
 import type { Change, Member, ReviewCategory } from "./types";
@@ -50,6 +51,7 @@ export default function NicknameReview({
   onSelect,
   onConfirm,
   disabled,
+  visibleIds,
 }: {
   rows: Change[];
   members: Member[];
@@ -57,6 +59,7 @@ export default function NicknameReview({
   onSelect: (ids: Set<string>) => void;
   onConfirm: () => void;
   disabled: boolean;
+  visibleIds?: ReadonlySet<string>;
 }) {
   const [filter, setFilter] = useState<ReviewCategory | "selected">(
       "will_change",
@@ -65,6 +68,7 @@ export default function NicknameReview({
     [page, setPage] = useState(0);
   const visible = rows.filter(
     (r) =>
+      (!visibleIds || visibleIds.has(r.discord_id)) &&
       (filter === "selected"
         ? selected.has(r.discord_id)
         : r.category === filter) &&
@@ -82,7 +86,7 @@ export default function NicknameReview({
   );
   return (
     <section aria-label="Nickname review">
-      <h2>Review nicknames</h2>
+      <h2>{membersText.fixNames}</h2>
       <FilterChips
         label="Nickname filters"
         value={filter}
@@ -101,18 +105,20 @@ export default function NicknameReview({
           setPage(0);
         }}
       />
-      <label>
-        Search nicknames
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setPage(0);
-          }}
-          placeholder="Name or nickname"
-        />
-      </label>
+      {!visibleIds && (
+        <label>
+          Search nicknames
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Name or nickname"
+          />
+        </label>
+      )}
       <div className="mt-standardize-actions">
         <strong>{selected.size} selected</strong>
         {hidden > 0 && (

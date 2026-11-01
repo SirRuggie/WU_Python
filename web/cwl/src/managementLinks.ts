@@ -30,6 +30,12 @@ export function managementTarget(
       new URLSearchParams(search).get("view") === "member-activity")
   )
     return "moderation";
+  if (
+    path === "/server/member-timezones" ||
+    (pathname === "/" &&
+      new URLSearchParams(search).get("view") === "member-timezones")
+  )
+    return "members-settings";
   if (path === "/server/moderation") return "moderation";
   if (path === "/clans/strikes") return "strikes";
   if (path === "/clans/replacements") return "replacements";

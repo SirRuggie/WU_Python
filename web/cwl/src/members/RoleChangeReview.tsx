@@ -12,6 +12,10 @@ export default function RoleChangeReview({
   onCancel,
   onConfirm,
   onDenied,
+  fixedRole,
+  guardRoleIds,
+  onError = () => {},
+  returnFocus,
 }: {
   ids: readonly string[];
   operation: "add" | "remove";
@@ -19,8 +23,12 @@ export default function RoleChangeReview({
   onCancel: () => void;
   onConfirm: (review: RoleReview) => Promise<boolean>;
   onDenied: () => void;
+  fixedRole?: string;
+  guardRoleIds?: readonly string[];
+  onError?: (message: string) => void;
+  returnFocus?: () => HTMLElement | null;
 }) {
-  const [role, setRole] = useState(""),
+  const [role, setRole] = useState(fixedRole || ""),
     [review, setReview] = useState<RoleReview | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -33,6 +41,10 @@ export default function RoleChangeReview({
       alive.current = false;
     };
   }, []);
+  const single = !!fixedRole && ids.length === 1;
+  useEffect(() => {
+    if (single) void prepare();
+  }, []);
   // The caller freezes IDs when opening this surface; filters cannot change them.
   async function prepare() {
     if (!role || pending.current) return;
@@ -43,11 +55,21 @@ export default function RoleChangeReview({
       const next = await api<RoleReview>(
         "/manage/members/role-preview",
         "POST",
-        { member_ids: ids, role_id: role, operation },
+        {
+          member_ids: ids,
+          role_id: role,
+          operation,
+          ...(guardRoleIds ? { guard_role_ids: guardRoleIds } : {}),
+        },
       );
       if (!alive.current) return;
       if (
         !next ||
+        typeof next.token !== "string" ||
+        !next.token ||
+        !next.role ||
+        typeof next.role.name !== "string" ||
+        typeof next.role.protected !== "boolean" ||
         !Array.isArray(next.selected) ||
         next.count !== ids.length ||
         next.selected.length !== ids.length ||
@@ -57,13 +79,20 @@ export default function RoleChangeReview({
         next.operation !== operation
       )
         throw new Error(t.roleReviewChanged);
-      setReview(next);
+      if (single && !next.role.protected) {
+        await onConfirm(next);
+        if (alive.current) onCancel();
+      } else setReview(next);
     } catch (cause) {
       if (!alive.current) return;
       if (cause instanceof ApiError && [401, 403].includes(cause.status))
         onDenied();
       setError(cause instanceof Error ? cause.message : t.roleUnavailable);
       setAttempt((value) => value + 1);
+      if (single) {
+        onError(cause instanceof Error ? cause.message : t.roleUnavailable);
+        onCancel();
+      }
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
@@ -73,16 +102,26 @@ export default function RoleChangeReview({
     if (!review || pending.current) return;
     pending.current = true;
     setBusy(true);
-    const accepted = await onConfirm(review);
-    pending.current = false;
+    let accepted = false;
+    try {
+      accepted = await onConfirm(review);
+    } catch {
+      if (alive.current) {
+        setError(t.roleUncertain);
+        onError(t.roleUncertain);
+      }
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(false);
+    }
     if (!alive.current) return;
-    if (accepted) onCancel();
+    if (accepted || single) onCancel();
     else {
-      setBusy(false);
       setReview(null);
       setAttempt((value) => value + 1);
     }
   }
+  if (single && !review) return null;
   const text = review
     ? operation === "add"
       ? t.addConfirm(review.role.name, review.count)
@@ -90,6 +129,7 @@ export default function RoleChangeReview({
     : t.chooseRole(ids.length);
   return (
     <ConfirmDialog
+      returnFocus={returnFocus}
       key={`${review ? "confirm" : "choose"}-${attempt}`}
       heading={operation === "add" ? t.addRole : t.removeRole}
       text={text}

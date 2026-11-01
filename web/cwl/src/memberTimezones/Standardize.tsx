@@ -4,6 +4,7 @@ import { discordIdentityName } from "../DiscordIdentity";
 import NicknameReview from "./NicknameReview";
 import NicknameRun from "./NicknameRun";
 import type { Change, Run, Member, RequestState } from "./types";
+import { membersText } from "../members/strings";
 const interrupted =
   "Import stopped early. No nicknames changed. Press Review nicknames again.";
 export default function Standardize({
@@ -15,6 +16,10 @@ export default function Standardize({
   onImported = () => {},
   onRefresh,
   refreshing = false,
+  externalTrigger = 0,
+  selectedIds,
+  visibleIds,
+  hideEntry = false,
 }: {
   disabled: boolean;
   onDenied: () => void;
@@ -24,6 +29,10 @@ export default function Standardize({
   onImported?: () => void;
   onRefresh?: () => void;
   refreshing?: boolean;
+  externalTrigger?: number;
+  selectedIds?: readonly string[];
+  visibleIds?: ReadonlySet<string>;
+  hideEntry?: boolean;
 }) {
   const [preview, setPreview] = useState<{
       token: string;
@@ -173,8 +182,12 @@ export default function Standardize({
       clearInterval(timer);
     };
   }, [run?.run_id, run?.state]);
+  useEffect(() => {
+    if (externalTrigger > 0) void review();
+  }, [externalTrigger]);
   async function review() {
     if (!start()) return;
+    const targetIds = selectedIds?.length ? [...selectedIds] : undefined;
     const version = ++generation.current;
     const abort = new AbortController();
     controller.current = abort;
@@ -226,7 +239,7 @@ export default function Standardize({
       const next = await api<{ token: string; rows: Change[] }>(
         "/manage/member-timezones/preview",
         "POST",
-        {},
+        targetIds ? { member_ids: targetIds } : {},
         { signal: abort.signal },
       );
       if (!alive.current || version !== generation.current) return;
@@ -323,34 +336,41 @@ export default function Standardize({
   }
   return (
     <section className="mt-nickname-review">
-      <div className="mt-review-entry">
-        <button
-          disabled={
-            disabled ||
-            busy ||
-            (!!run && ["queued", "stopping"].includes(run.state))
-          }
-          onClick={() => void review()}
-        >
-          Review nicknames
-        </button>
+      <div className={`mt-review-entry${hideEntry ? " is-compact" : ""}`}>
+        {!hideEntry && (
+          <button
+            disabled={
+              disabled ||
+              busy ||
+              (!!run && ["queued", "stopping"].includes(run.state))
+            }
+            onClick={() => void review()}
+          >
+            {membersText.fixNames}
+          </button>
+        )}
         {onRefresh && (
           <button disabled={busy || disabled || refreshing} onClick={onRefresh}>
             Refresh members
           </button>
         )}
-        {!run && !preview && !busy && (
-          <p className="mt-review-help">
-            Saves time zones from nicknames, then shows the changes. Nobody is
-            renamed until you confirm.
-          </p>
-        )}
+        {!run &&
+          !preview &&
+          !busy &&
+          (hideEntry ? (
+            <details>
+              <summary>{membersText.nicknameHelp}</summary>
+              <p>{membersText.nicknameExplanation}</p>
+            </details>
+          ) : (
+            <p className="mt-review-help">{membersText.nicknameExplanation}</p>
+          ))}
         <button
           className="link-button"
           disabled={busy}
           onClick={() => setPast(!past)}
         >
-          Past runs
+          {membersText.pastNames}
         </button>
       </div>
       {error && <p role="alert">{error}</p>}
@@ -362,7 +382,7 @@ export default function Standardize({
       )}
       {past && (
         <label>
-          Past runs
+          {membersText.pastNames}
           <select
             disabled={busy || disabled}
             value={run?.run_id || ""}
@@ -386,6 +406,7 @@ export default function Standardize({
       )}
       {preview && (
         <NicknameReview
+          visibleIds={visibleIds}
           rows={preview.rows}
           members={members}
           selected={selected}
@@ -396,6 +417,7 @@ export default function Standardize({
       )}{" "}
       {run && (
         <NicknameRun
+          visibleIds={visibleIds}
           key={run.run_id || "submitting"}
           run={run}
           showAttribution={viewingPast}

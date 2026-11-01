@@ -103,6 +103,10 @@ export function loginPath(
     ["review", "announce"].includes(incoming.get("step") || "")
   )
     params.set("step", incoming.get("step")!);
+  if (managementView === "members-settings") {
+    const member = incoming.get("account") || incoming.get("member") || "";
+    if (/^[1-9][0-9]{14,21}$/.test(member)) params.set("account", member);
+  }
   if (managementView === "strikes" || managementView === "replacements") {
     const normalized = new URLSearchParams(
       activityFilterQuery(
