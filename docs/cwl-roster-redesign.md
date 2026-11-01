@@ -856,3 +856,11 @@ Regression checks cover rapid receipt updates, actual hook state, permission
 controls, revision-aware writes, mark revision, optional fallback callbacks,
 archived arrival response, filler readiness and publication labels/weight bands.
 No real DM link click or production rollback has been tested.
+
+Prompt 94 validation: 84 focused backend tests; 1,392 frontend tests in 249 files;
+TypeScript/build; 16 owned real Mongo fixtures; 11 targeted mutations killed;
+war-reminder check 213 backend / 1 skip plus 35 frontend/build; Prettier on all
+50 changed UI files. Twelve layouts cover 26/65/125 accounts at four widths.
+Screenshots inspected: 26-account overview at 360/1440, 65-account Details at 360
+and 125-account marked state at 1440. Full guarded backend passed 5,707 tests /
+58 skipped / 224 subtests. No production action was used for these checks.
