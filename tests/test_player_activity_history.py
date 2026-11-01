@@ -313,3 +313,18 @@ def test_successful_clan_cache_refreshes_next_day_after_tracker_gap():
         signals=activity_signals(await store.get(PLAYER),[],now=NOW+timedelta(days=1))
         assert signals['observed_wars']==2 and signals['no_attack_wars']==0
     asyncio.run(run())
+
+
+def test_malformed_lineup_is_retried_daily_instead_of_four_times_a_day():
+    async def run():
+        db,_=setup();db.player_activity=ActivityCollection();db.fwa_war_plans=Collection()
+        db.clans.rows['clan']['type']='War'
+        store=PlayerActivityStore(db)
+        await store.record({'tag':PLAYER,'attackWins':1},CLAN,now=NOW)
+        fetch=AsyncMock(return_value={'wars':[], 'skipped':[{'end_time':NOW.isoformat(),'reason':'malformed lineup'}]})
+        for hours in (0,6,12,18):
+            await backfill_recent_wars(db,fetch=fetch,now=NOW+timedelta(hours=hours))
+        assert fetch.await_count==1
+        await backfill_recent_wars(db,fetch=fetch,now=NOW+timedelta(days=1))
+        assert fetch.await_count==2
+    asyncio.run(run())

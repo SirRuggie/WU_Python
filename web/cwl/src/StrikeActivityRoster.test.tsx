@@ -291,3 +291,22 @@ it("disables oversized Select all and explains how to enable it", async () => {
   expect(selectAll.disabled).toBe(true);
   expect(host.textContent).toContain("Filter to 50 or fewer to select all.");
 });
+
+it("makes a cold Discord-name search find the row without reloading or replacing strike state", async () => {
+  vi.useFakeTimers();
+  try {
+    history.replaceState({}, "", "/strikes?q=Resolved%20member");
+    vi.mocked(fetch).mockReset()
+      .mockResolvedValueOnce(new Response(JSON.stringify({accounts:[row],clans:[],identity_updating:true,identity_warning:"Names loading"})))
+      .mockResolvedValueOnce(new Response(JSON.stringify({accounts:[{...row,discord_name:"Resolved member",active_strikes:99}],clans:[],identity_updating:false})));
+    const choose=vi.fn();
+    await act(async()=>root.render(<StrikeActivityRoster onChoose={choose}/>));
+    expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(0);
+    await act(async()=>vi.advanceTimersByTimeAsync(2000));
+    expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(1);
+    await act(async()=>host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click());
+    expect(choose.mock.calls[0][0].discord_name).toBe("Resolved member");
+    expect(choose.mock.calls[0][0].active_strikes).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  } finally { vi.useRealTimers(); }
+});

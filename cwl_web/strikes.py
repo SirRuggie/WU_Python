@@ -353,7 +353,8 @@ async def activity_accounts(request):
             failed_clans = sorted(set(await PlayerActivityStore(db).history_report()) & {row["tag"] for row in context["clans"]})
         except PyMongoError:
             failed_clans = []
-        history_warning = ("Some war reads unavailable for clans: " + ", ".join(failed_clans)) if failed_clans else None
+        clan_names = {row["tag"]: str(row.get("name") or row["tag"])[:100] for row in context["clans"]}
+        history_warning = ("Some war reads unavailable for clans: " + ", ".join(clan_names[tag] for tag in failed_clans)) if failed_clans else None
     rows = family_activity_rows(activity, **context)
     if activity_warning:
         for row in rows:
@@ -367,8 +368,9 @@ async def activity_accounts(request):
             )
     elif rows and all(row.get("activity_tracking_behind") for row in rows):
         activity_warning = "Activity tracking is behind. Quiet indicators are paused."
-    from .strike_activity_identity import account_identities
+    from .strike_activity_identity import account_identities, identity_updating
     identities, link_warning = await account_identities(request, [row["player_tag"] for row in rows])
+    names_pending = identity_updating(request)
     for row in rows:
         if row["player_tag"] in identities:
             row.update(identities[row["player_tag"]])
@@ -417,6 +419,7 @@ async def activity_accounts(request):
                 "total": len(rows),
                 "weight_warning": weight_warning,
                 "identity_warning": identity_warning,
+                "identity_updating": names_pending,
                 "activity_warning": activity_warning,
                 "history_warning": history_warning,
                 "clans": [

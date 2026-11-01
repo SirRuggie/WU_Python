@@ -19,9 +19,12 @@ export default function useSignupActivity(seasonId: string) {
   }, []);
   useEffect(() => {
     let active = true,
-      fetching = false;
-    async function load() {
+      fetching = false,
+      lastAttempt = -Infinity;
+    async function load(force = false) {
       if (fetching || submitting.current || document.hidden) return;
+      if (!force && Date.now() - lastAttempt < 30000) return;
+      lastAttempt = Date.now();
       fetching = true;
       try {
         const response = await api<{ items: SignupChange[] }>(
@@ -39,13 +42,14 @@ export default function useSignupActivity(seasonId: string) {
         fetching = false;
       }
     }
-    void load();
-    const timer = window.setInterval(() => void load(), 30000);
-    document.addEventListener("visibilitychange", load);
+    void load(true);
+    const timer = window.setInterval(() => void load(true), 30000);
+    const onVisibility = () => void load();
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       active = false;
       clearInterval(timer);
-      document.removeEventListener("visibilitychange", load);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [seasonId, attempt]);
   async function review(selected: SignupChange[]) {

@@ -206,8 +206,9 @@ they never count as misses. A daily refresh heals these markers. Known wars stil
 contribute totals, and monitored records win duplicate war keys. Exempt and
 revoked observations remain neutral after ledger retention.
 
-Failures retry after five and ten minutes, then every six hours, without charging
-canceled jobs. Healthy caches are reused during another clan's outage. A new
+Actual read exceptions retry after five and ten minutes, then every six hours,
+without charging canceled jobs. Successful reads containing malformed war data
+retry daily, so one malformed war does not repeatedly churn the whole clan cache. Healthy caches are reused during another clan's outage. A new
 account may refresh its own older clan cache. One small clan receipt records the
 next read time; unchanged player observations do not write, including when the
 Mongo client returns naive UTC datetimes. Live tracker timestamps, strikes,

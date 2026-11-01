@@ -4,6 +4,7 @@ export type OwnerTimeZone = { label: string; offsetMinutes: number | null };
 const offsets: Record<string, number> = {
   UTC: 0,
   GMT: 0,
+  UK: 0,
   BST: 60,
   WET: 0,
   CET: 60,
@@ -17,13 +18,17 @@ const offsets: Record<string, number> = {
   AWST: 480,
   JST: 540,
   AEST: 600,
+  AET: 600,
   AEDT: 660,
   NZST: 720,
+  NZT: 720,
   EST: -300,
   EDT: -240,
   CST: -360,
   CDT: -300,
   MST: -420,
+  MT: -420,
+  MTN: -420,
   MDT: -360,
   PST: -480,
   PDT: -420,
@@ -37,15 +42,18 @@ const offsets: Record<string, number> = {
 };
 export function ownerTimeZone(nickname?: string | null): OwnerTimeZone | null {
   if (!nickname || !nickname.includes(" | ")) return null;
-  const label = nickname
+  const rawLabel = nickname
     .slice(nickname.lastIndexOf(" | ") + 3)
+    .normalize("NFKC")
     .replace(
-      /[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u200D]/gu,
+      /[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u200D\u{E0020}-\u{E007F}]/gu,
       "",
     )
     .trim()
-    .replace(/\s+/g, " ")
-    .toUpperCase();
+    .replace(/\s+/g, " ");
+  const label = rawLabel.toUpperCase();
+  if (["MT", "MTN"].includes(label) && rawLabel !== label)
+    return { label, offsetMinutes: null };
   if (!label) return null;
   if (Object.hasOwn(offsets, label))
     return { label, offsetMinutes: offsets[label] };
