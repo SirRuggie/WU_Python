@@ -767,7 +767,8 @@ observed clan count toward readiness once, even without a roster assignment;
 assigned fillers outside their destination remain missing and pingable. Unmarked
 TH 9 and below are not intruders and do not count as fillers. Unknown TH retains
 the prior not-on-roster flag. Low TH and filler rows use collapsed neutral lists;
-explicit checkbox writes refresh the view without a page reload.
+explicit checkbox writes patch the view in place without a new live check. Open
+lists, publication basis, check time and readiness remain stable through mark/Undo.
 
 Rename screen: reconnect to an active run on page load, preserving Stop; Past runs
 has a loading label and summaries omit full member manifests. Existing production
@@ -776,7 +777,7 @@ logs (read only) showed 256 profile saves with median 89 ms, authorization media
 (max 20.35 s), filtering to the 256 Standardize actions. No NetworkTimeout line appeared in the sampled bot invocation. Those
 logs do not instrument every query/scheduler boundary, so the residual gap cannot
 be attributed to Atlas or Discord with confidence. No production timing probe or
-rename was run. Do not claim the history projection proves the measured3 s root
+rename was run. Do not claim the history projection proves the measured 3 s root
 cause. No risky worker optimization is included; live pace remains an explicit
 review limitation. No activation while any Standardize run remains queued.
 
@@ -806,8 +807,9 @@ The Filler label appears in both responsive account card layouts.
 This is development/review evidence. Release requires Claude ACCEPT plus fresh
 backup/restore, protected counts, readiness, rollback and public hashes. Check for
 queued Standardize work immediately before activation and wait if any exists.
-Backend/frontend only: no bot restart is expected because worker logic, scheduler,
-Discord transport and worker storage contracts are unchanged. Rollback can retain
+One bot restart is required to load the new worker timing instrumentation, with
+a 210-second drain. Backend and frontend also change. Worker pacing, transport
+and storage contracts remain unchanged. Rollback can retain
 the two additive SQLite tables and their data; never restore a database blindly.
 
 Prompt 90 adds the shared compact DiscordIdentity and its staff-operated DM link
@@ -815,3 +817,29 @@ on linked extra/low-TH rows. One optional ownership batch and one cached member
 directory read serve the entire check. Missing, conflicting or unavailable links
 never become an ID label or a guessed DM target. Optional lookup failures retain
 all member comparison rows. The bot sends nothing; no new polling is added.
+
+
+Prompt 91 rework uses one filler-aware capacity helper for Compare, Settings,
+chips, assignment, readiness and finalize. Filler overflow is neutral with an
+explicit count; true regular overflow stays red. Backend clan rules expose
+assigned filler counts. Seat-neutral swaps remain possible in filler overflow.
+Planners include immovable fillers in weight totals while excluding them from
+move candidates. Failed mark receipts cannot produce a saved-success message.
+Archived Declaration controls are hidden and writes still reject with 423.
+Observed location evidence drives both Ping counts and extra filler readiness.
+
+New timing logs cover ready lookup, scheduler wake, claim query, parent lookup,
+prune, child lookup/materialization, cursor CAS and history queries. HTTP history
+logs separate authorization, Mongo open/query/close, encoding and total time.
+These are diagnostics for the next owner-operated run, not a measured pacing fix.
+
+Rework validation: 82 focused backend tests, 1,385 frontend tests in 249 files,
+TypeScript/build, 16 real Mongo fixtures, all 15 targeted rework mutations, and
+the required war-reminder check (213 backend / 1 skip, 35 frontend/build) pass.
+Full guarded backend passed 5,705 tests / 58 skipped / 224 subtests. The final
+fixture checks cover 12 states at four widths and three account counts.
+Narrow/wide overview, Details and marked-state screenshots were inspected.
+The failed-save case exercises RosterWorkspace itself; five successive marks and
+Undo retain an open Declaration list with no recheck. Regression cases include
+season revision, archived writes, eight-second optional identity lookup, planner
+weight, swaps, actual over-capacity chip state and newer location evidence.

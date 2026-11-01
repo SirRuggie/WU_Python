@@ -38,12 +38,29 @@ fs.mkdirSync(out, { recursive: true });
           count,
         );
         assert.equal(
-          await page.locator(".roster-clan-chips .roster-clan-chip.is-over").count(),
+          await page
+            .locator(".roster-clan-chips .roster-clan-chip.is-over")
+            .count(),
           0,
         );
-        assert.equal(await page.locator('.capacity-review .is-over,.settings-capacity-review .is-over').count(),0);
-        assert((await page.locator('.capacity-review').innerText()).includes('+1 filler'));
-        assert((await page.locator('.settings-capacity-review').innerText()).includes('+1 filler'));
+        assert.equal(
+          await page
+            .locator(
+              ".capacity-review .is-over,.settings-capacity-review .is-over",
+            )
+            .count(),
+          0,
+        );
+        assert(
+          (await page.locator(".capacity-review").innerText()).includes(
+            "+1 filler",
+          ),
+        );
+        assert(
+          (
+            await page.locator(".settings-capacity-review").innerText()
+          ).includes("+1 filler"),
+        );
         assert(
           (await page.locator(".roster-clan-chips").innerText()).includes(
             "+1 filler",
@@ -74,10 +91,19 @@ fs.mkdirSync(out, { recursive: true });
           .getByRole("button", { name: "‹ Build roster", exact: true })
           .click();
         assert.equal(
-          await page.locator(".roster-clan-chips .roster-clan-chip.is-over").count(),
+          await page
+            .locator(".roster-clan-chips .roster-clan-chip.is-over")
+            .count(),
           1,
         );
-        assert.equal(await page.locator('.capacity-review .is-over,.settings-capacity-review .is-over').count(),2);
+        assert.equal(
+          await page
+            .locator(
+              ".capacity-review .is-over,.settings-capacity-review .is-over",
+            )
+            .count(),
+          2,
+        );
         await page.locator(".declaration-low-th summary").click();
         const low = page.getByRole("checkbox", {
           name: "Filler: Low TH sample",

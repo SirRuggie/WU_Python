@@ -249,7 +249,7 @@ function Preview() {
         onChange={setFilters}
         disabled={false}
       />
-      <section className="capacity-review compare">
+      <section className="capacity-review compare-workspace">
         <h2>Compare capacity</h2>
         <CompareClanHeader
           clan={shownRoster.clans[0]}
