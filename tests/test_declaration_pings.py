@@ -55,7 +55,13 @@ def test_chunk_boundaries_and_external_text_cannot_create_mentions():
     assert len(chunks) >= 2
     for payload in chunks:
         text = content(payload)
-        assert text_units(text) <= 4000
+        labels = [
+            b["label"]
+            for c in payload["components"][0]["components"]
+            if c["type"] == 1
+            for b in c["components"]
+        ]
+        assert text_units(text) + sum(map(text_units, labels)) <= 3800
         assert "@everyone" not in text and "<@&" not in text
         assert len(payload["allowed_mentions"]["users"]) <= 100
         assert (
@@ -93,7 +99,13 @@ def test_component_and_utf16_button_limits_with_many_clans():
                 assert all(
                     text_units(b["label"]) <= 80 for b in component["components"]
                 )
-        assert text_units(content(payload)) <= 4000
+        labels = [
+            b["label"]
+            for c in payload["components"][0]["components"]
+            if c["type"] == 1
+            for b in c["components"]
+        ]
+        assert text_units(content(payload)) + sum(map(text_units, labels)) <= 3800
 
 
 def test_hosting_pool_is_authoritative_and_conflicts_fail_closed():
@@ -103,3 +115,35 @@ def test_hosting_pool_is_authoritative_and_conflicts_fail_closed():
     with pytest.raises(ValueError):
         missing_groups([row(), dict(row(), assigned_clan_tag="#RYY")], "lazy")
     assert missing_groups([dict(row(), arrival_status="arrived")], "lazy") == []
+
+
+def test_review_identity_ignores_display_names_but_keeps_pool_lineup():
+    from utils.declaration_pings import review_fingerprint
+
+    first = missing_groups([row()], "lazy")
+    other = missing_groups(
+        [dict(row(), player_name="Renamed", assigned_clan_name="New label")], "lazy"
+    )
+    assert review_fingerprint(
+        first, version=1, channel_id="channel", revision=1
+    ) == review_fingerprint(other, version=1, channel_id="channel", revision=1)
+    other[0]["accounts"][0]["user_id"] = "223456789012345678"
+    assert review_fingerprint(
+        first, version=1, channel_id="channel", revision=1
+    ) != review_fingerprint(other, version=1, channel_id="channel", revision=1)
+
+
+def test_pool_signature_ignores_weights_but_keeps_arrived_lineup_members():
+    from cwl_web.declaration_lineup import signature
+
+    rows = [
+        row(),
+        dict(row("#PYP"), arrival_status="arrived"),
+        dict(row("#PPR"), hosting_pool="main", assigned_clan_tag="#RYY"),
+    ]
+    before = signature(rows, "lazy", {"#PQQ": "lazy", "#RYY": "main"})
+    rows[0]["manual_weight"] = 200
+    rows[2]["user_id"] = "223456789012345678"
+    assert signature(rows, "lazy", {"#PQQ": "lazy", "#RYY": "main"}) == before
+    rows[1]["user_id"] = "223456789012345678"
+    assert signature(rows, "lazy", {"#PQQ": "lazy", "#RYY": "main"}) != before

@@ -1127,14 +1127,6 @@ async def arrival_snapshot(request, *, source=None, force=None):
         'added_since_publication': len(current_tags - published_tags) if latest else 0}
 
 
-def require_current_publication(request, version):
-    """Recheck the publication after an awaited explicit-send preflight."""
-    sid = _sid(request)
-    with _store(request).tx() as db:
-        latest = _latest_publication(db, sid)
-        if not latest or latest['version'] != version or _publication_changed(db, sid, latest):
-            _fail(409, 'The published lineup changed. Review again before sending.')
-
 async def update_lineup_rules(request):
     session = _require(request, "editor")
     body = await _json(request)

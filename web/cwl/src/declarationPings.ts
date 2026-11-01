@@ -4,6 +4,7 @@ export type PingReceipt = {
   test?: boolean;
   token: string;
   actor_id: string;
+  actor_name?: string;
   state: string;
   created_at: number;
   count: number;
@@ -14,6 +15,12 @@ export type PingReceipt = {
   channel: { id: string; name: string };
 };
 export type PingState = {
+  lineup_changes?: {
+    tag: string;
+    name: string;
+    published_clan: string | null;
+    draft_clan: string | null;
+  }[];
   revision: number;
   channel: { id: string; name: string } | null;
   can_send: boolean;

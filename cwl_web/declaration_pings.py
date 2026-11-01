@@ -6,6 +6,7 @@ from utils.cwl_roster_image_store import RosterImageStore
 from utils.declaration_pings import missing_groups, messages, review_fingerprint
 from utils.declaration_ping_store import DeclarationPingStore, PingConflict
 from . import declaration_destinations as destinations
+from . import declaration_lineup
 from .declaration_delivery import launch, public_receipt, visible_active
 from .manage_content import serialize_components
 from .roster_image_posts import staff
@@ -25,6 +26,12 @@ def context(request, *, send=False):
     with request.app["store"].tx() as db:
         _season(db, sid)
     return actor["user_id"], sid, pool
+
+
+def sender_name(request):
+    actor = staff(request)
+    name = str(actor.get("display_name") or actor.get("username") or "").strip()
+    return name[:100] if name and not name.isdigit() else "Discord staff member"
 
 
 def can_send(request):
@@ -50,8 +57,7 @@ async def fresh_groups(request, pool):
     snapshot = await arrival_snapshot(request, source="published", force=True)
     if not snapshot["publication_available"] or snapshot["source"] != "published":
         raise PingConflict("Publish the roster before reviewing pings")
-    if snapshot["publication_outdated"]:
-        raise PingConflict("Publish the changed lineup before reviewing pings")
+    checked = declaration_lineup.require_reviewed(request, pool, snapshot["accounts"])
     groups = missing_groups(snapshot["accounts"], pool)
     unknown = sum(
         1
@@ -59,7 +65,7 @@ async def fresh_groups(request, pool):
         if (row.get("hosting_pool") or row.get("pool")) == pool
         and row.get("arrival_status") == "unknown"
     )
-    return groups, snapshot["version"], unknown
+    return groups, checked["signature"], unknown, checked["signature"]
 
 
 def fingerprint(groups, version, channel, revision):
@@ -84,6 +90,7 @@ async def state(request):
             warning = exc.text
     return web.json_response(
         dict(
+            lineup_changes=declaration_lineup.current(request, pool)["changes"],
             revision=lane["revision"],
             channel=lane["channel"],
             can_send=permitted,
@@ -130,7 +137,7 @@ async def preview(request):
         or type(body["revision"]) is not int
     ):
         raise web.HTTPBadRequest(text="Choose a ping or no-ping test review")
-    groups, version, unknown = await fresh_groups(request, pool)
+    groups, version, unknown, _ = await fresh_groups(request, pool)
     if not groups:
         raise PingConflict(
             "No confirmed missing players in this pool. Unavailable locations are excluded."
@@ -155,6 +162,7 @@ async def preview(request):
             fingerprint(groups, version, channel, lane["revision"]),
             body["revision"],
             test_channel=channel if body["mode"] == "test" else None,
+            actor_name=sender_name(request),
         )
     plan = messages(groups, test=body["mode"] == "test")
     return web.json_response(
@@ -176,7 +184,7 @@ async def preview(request):
 
 
 async def send(request):
-    from .app import _json, require_current_publication
+    from .app import _json
 
     actor, sid, pool = context(request, send=True)
     body = await _json(request)
@@ -221,12 +229,18 @@ async def send(request):
         )
         if channel != review["channel"]:
             raise PingConflict("The destination changed. Review again.")
-        groups, version, _ = await fresh_groups(request, pool)
+        groups, version, _, reviewed_lineup = await fresh_groups(request, pool)
         fresh = fingerprint(groups, version, channel, review["revision"])
         await destinations.destination(request, channel["id"])
         if not await destinations.authorized(request, actor):
             raise web.HTTPForbidden(text="Send permission was removed")
-        require_current_publication(request, version)
+        # No await between this pool-only recheck and building the reviewed plan.
+        # Missing groups alone cannot detect changes to an arrived account.
+        latest_pool = declaration_lineup.current(request, pool)
+        if latest_pool["changes"] or latest_pool["signature"] != reviewed_lineup:
+            raise PingConflict(
+                "This pool lineup changed. Review its changed accounts first."
+            )
         plan = messages(groups, test=test)
         if test:
             await storage.consume_test(
@@ -240,6 +254,7 @@ async def send(request):
             active = dict(
                 token=token,
                 actor_id=actor,
+                actor_name=sender_name(request),
                 season_id=sid,
                 publication_version=version,
                 channel=channel,

@@ -291,3 +291,81 @@ class DeclarationPingHTTP(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(row["attempting"])
         self.assertEqual(self.transport.send.await_count, 2)
+
+    async def test_other_pool_signup_and_weight_change_do_not_block_lazy(self):
+        review = await self.review()
+        await self.signup("main", "#P2Y")
+        with self.app["store"].tx() as db:
+            db.execute(
+                "UPDATE roster_entries SET manual_weight=123 WHERE season_id=?",
+                (self.sid,),
+            )
+        response = await self.send(review)
+        self.assertEqual(response.status, 202, await response.text())
+        await self.settled()
+        self.assertEqual(self.transport.send.await_count, 1)
+
+    async def test_real_pool_changes_visible_before_ping(self):
+        with self.app["store"].tx() as db:
+            db.execute(
+                "UPDATE roster_entries SET assigned_clan_tag=NULL WHERE season_id=? AND tag='#Q2Y'",
+                (self.sid,),
+            )
+        response = await self.call("GET", self.path, self.owner)
+        changes = (await response.json())["lineup_changes"]
+        self.assertEqual([r["tag"] for r in changes], ["#Q2Y"])
+        response = await self.call(
+            "POST",
+            self.path + "/preview",
+            self.owner,
+            json={"revision": 1, "mode": "live"},
+        )
+        self.assertEqual(response.status, 409)
+        self.assertIn("#Q2Y", await response.text())
+        self.transport.send.assert_not_awaited()
+
+    async def test_reviewed_list_finishes_after_concurrent_lineup_edit(self):
+        from utils.declaration_pings import messages
+
+        review = await self.review()
+
+        async def delivered(*args, **kwargs):
+            with self.app["store"].tx() as db:
+                db.execute(
+                    "UPDATE roster_entries SET assigned_clan_tag=NULL WHERE season_id=?",
+                    (self.sid,),
+                )
+            return "345678901234567890"
+
+        self.transport.send.side_effect = delivered
+        with patch(
+            "cwl_web.declaration_pings.messages",
+            return_value=messages(review["groups"]) * 2,
+        ):
+            self.assertEqual((await self.send(review)).status, 202)
+            await self.settled()
+        self.assertEqual(self.transport.send.await_count, 2)
+        self.assertEqual(
+            (await self.storage.read("lazy"))["history"][0]["state"], "done"
+        )
+
+    async def test_receipt_readback_failure_cannot_record_done(self):
+        review = await self.review()
+
+        async def failed_post(*args, **kwargs):
+            raise web.HTTPConflict(text="Destination changed during delivery")
+
+        self.transport.send.side_effect = failed_post
+        original = DeclarationPingStore.receipt
+
+        async def readback(storage, *args, **kwargs):
+            if self.transport.send.await_count:
+                raise RuntimeError("fixture readback unavailable")
+            return await original(storage, *args, **kwargs)
+
+        with patch.object(DeclarationPingStore, "receipt", readback):
+            self.assertEqual((await self.send(review)).status, 202)
+            await self.settled()
+        row = (await self.storage.read("lazy"))["history"][0]
+        self.assertEqual(row["state"], "uncertain")
+        self.assertIn("Destination changed during delivery", row["error"])

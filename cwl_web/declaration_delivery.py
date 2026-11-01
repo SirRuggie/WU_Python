@@ -31,6 +31,7 @@ def public_receipt(row):
     keys = (
         "token",
         "actor_id",
+        "actor_name",
         "season_id",
         "channel",
         "created_at",
@@ -81,7 +82,7 @@ def visible_active(request, row):
 
 async def deliver(request, active, plan, *, test=False):
     token, pool = active["token"], active["pool"]
-    state, error = "done", None
+    state, error = "uncertain", None
     transport = request.app.get("declaration_transport") or DeclarationPingTransport()
     async with mongo(request) as client:
         storage = DeclarationPingStore(client, GUILD_ID)
@@ -94,9 +95,9 @@ async def deliver(request, active, plan, *, test=False):
                 await declaration_destinations.destination(
                     request, active["channel"]["id"]
                 )
-                from .app import require_current_publication
-
-                require_current_publication(request, active["publication_version"])
+                # Finish the immutable reviewed list; unrelated or concurrent lineup
+                # edits cannot abandon a half-delivered notification. Permissions
+                # and destination ownership are still checked before every POST.
                 if test:
                     active["attempting"] = index
                 else:
@@ -120,6 +121,7 @@ async def deliver(request, active, plan, *, test=False):
                     await storage.posted(pool, token, index, message)
                 if index + 1 < len(plan):
                     await asyncio.sleep(1.1)
+            state = "done"
         except asyncio.CancelledError:
             state, error = (
                 "uncertain",
@@ -127,13 +129,18 @@ async def deliver(request, active, plan, *, test=False):
             )
         except Exception as exc:
             # Store failures after acceptance leave the durable attempting marker.
-            current = active if test else await storage.receipt(pool, token)
-            state = (
-                "uncertain"
-                if current and current.get("attempting") is not None
-                else "partial" if current and current.get("posted") else "failed"
-            )
-            error = str(exc)[:500]
+            state = "uncertain"
+            error = str(getattr(exc, "text", None) or exc)[:500]
+            try:
+                current = active if test else await storage.receipt(pool, token)
+            except Exception:
+                log.exception("Declaration receipt readback failed token=%s", token)
+            else:
+                state = (
+                    "uncertain"
+                    if not current or current.get("attempting") is not None
+                    else "partial" if current.get("posted") else "failed"
+                )
             log.warning(
                 "Declaration ping stopped pool=%s token=%s state=%s", pool, token, state
             )

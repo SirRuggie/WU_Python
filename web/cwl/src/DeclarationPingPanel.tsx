@@ -217,6 +217,26 @@ export default function DeclarationPingPanel({
       aria-label={`${pool === "main" ? "Main" : "Lazy"} declaration pings`}
     >
       <strong>Declaration pings</strong>
+      {!!state?.lineup_changes?.length && (
+        <div role="status">
+          <p>
+            Publish these changed {pool === "main" ? "Main" : "Lazy"}{" "}
+            assignments before pinging:
+          </p>
+          <ul>
+            {state.lineup_changes.map((row) => (
+              <li key={row.tag}>
+                {row.name} ({row.tag}): {row.published_clan || "unassigned"} →{" "}
+                {row.draft_clan || "unassigned"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p>
+        Once confirmed, the reviewed list finishes even if the lineup changes.
+        Send permission is checked before every message.
+      </p>
       {!state && !error && <p role="status">Loading ping settings…</p>}
       {error && (
         <p role="alert">
@@ -261,6 +281,7 @@ export default function DeclarationPingPanel({
                 state.test_running ||
                 !!reason ||
                 waiting > 0 ||
+                !!state.lineup_changes?.length ||
                 missing === 0
               }
               onClick={() => void prepare("live")}
@@ -339,7 +360,7 @@ export default function DeclarationPingPanel({
             : last.state === "done"
               ? "Last pinged"
               : "Delivery " + last.state}{" "}
-          by {last.actor_id} at{" "}
+          by {last.actor_name || "Discord staff member"} at{" "}
           {new Date(last.created_at * 1000).toLocaleString()} · {last.count}{" "}
           players · {last.posted.length}/{last.chunks} chunks confirmed
           {last.attempting !== null

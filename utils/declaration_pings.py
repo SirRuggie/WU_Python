@@ -78,8 +78,12 @@ def missing_groups(accounts, pool):
 
 def review_fingerprint(groups, *, version, channel_id, revision):
     value = {
-        "groups": groups,
-        "version": version,
+        "groups": sorted(
+            (g["tag"], r["tag"], r.get("user_id"))
+            for g in groups
+            for r in g["accounts"]
+        ),
+        "lineup": version,
         "channel_id": channel_id,
         "revision": revision,
     }
@@ -102,7 +106,7 @@ def button_label(name):
 def messages(groups, *, test=False):
     """Split on whole mention/name tokens, repeat clan headings when necessary.
 
-    Each payload has at most100 allowed users,4000 text units and38 total nested
+    Each payload has at most100 allowed users,3800 aggregate text/button units and38 total nested
     components. A full clan can exceed a message; its mention tokens never split.
     """
     total = sum(len(g["accounts"]) for g in groups)
@@ -154,8 +158,17 @@ def messages(groups, *, test=False):
         for token, uid in tokens:
             candidate = current + (" " if current != header else "") + token
             full = "\n".join([TITLE, *lines, candidate, footer])
-            if text_units(full) > 4000 or (
-                uid is not None and uid not in recipients and len(recipients) >= 100
+            labels = dict(clans)
+            labels[group["tag"]] = group
+            units = text_units(full) + sum(
+                text_units(button_label(g["name"])) for g in labels.values()
+            )
+            if (
+                units > 3800
+                or len(labels) > 30
+                or (
+                    uid is not None and uid not in recipients and len(recipients) >= 100
+                )
             ):
                 if current != header:
                     lines.append(current)

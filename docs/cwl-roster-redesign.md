@@ -672,19 +672,22 @@ conflicting local actions.
 
 `Ping N missing` performs a fresh check of the current published lineup and opens
 a review by assigned clan. Confirming performs another fresh check; changed
-recipients, assignments, publication or channel require a new review. Unknown
+recipients, pool assignments or channel require a new review. The lineup guard
+compares only this pool’s account tag, owner and assigned clan; weight changes and
+other-pool edits do not invalidate it. Exact changed accounts appear before Ping. Unknown
 locations and Awaiting placement are excluded. Linked members are mentioned once
 per clan; unlinked accounts appear by name. External names cannot introduce
 Discord mentions. Components V2 payloads split only between whole tokens, within
-4,000 UTF-16 text units, 100 allowed users, 40 nested components and five buttons
-per row. Excess clan buttons are omitted. `allowed_mentions` explicitly contains
+3,800 aggregate UTF-16 units including button labels, 100 allowed users, 40 nested
+components and five buttons per row. Chunks contain at most 30 clan buttons. `allowed_mentions` explicitly contains
 only reviewed user IDs, never roles or everyone.
 
 The send is manual: there is no scheduled send, restart resume or automatic POST
 retry. The pool has one active durable claim, per-chunk in-flight and accepted
 message IDs, a five-minute cooldown after accepted/uncertain delivery, a deliberate
 Send again review and the latest 20 receipts. Permissions and channel ownership are
-rechecked before each chunk; a publication change stops later chunks. A refused
+rechecked before each chunk. Once confirmed, the immutable reviewed list finishes
+even if the lineup changes concurrently. A refused
 later chunk leaves an exact partial receipt. A timeout or missing receipt is
 uncertain: inspect the channel before any new review. Closing an interrupted
 receipt sends nothing and never replays a chunk.
