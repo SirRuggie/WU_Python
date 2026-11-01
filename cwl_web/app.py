@@ -1978,6 +1978,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     routes.extend(roster_image_post_routes())
     from .declaration_pings import routes as declaration_ping_routes
     routes.extend(declaration_ping_routes())
+    from .declaration_extras import routes as declaration_extra_routes
+    routes.extend(declaration_extra_routes())
     routes.extend(participation_routes())
     routes.extend(participation_sync_routes())
     routes.extend(bonus_routes())
