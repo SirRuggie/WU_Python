@@ -123,3 +123,16 @@ def test_retry_start_is_not_recovery():
     current=m.retain_running_incidents([],previous,units)
     m.deliver(current,previous,300,sent.append)
     assert len(sent)==1 and 'recovered' in sent[0]
+
+
+def test_hourly_mongo_backup_does_not_false_alarm_between_scheduled_runs():
+    now, records, units = healthy()
+    stamp = datetime.fromtimestamp(now - 75 * 60, timezone.utc).isoformat()
+    records['mongo'] = {'local_success': stamp, 'remote_success': stamp}
+    assert m.issues(now, records, units, True) == []
+
+
+def test_hourly_mongo_backup_overdue_after_ninety_minute_grace():
+    now, records, units = healthy()
+    records['mongo']['remote_success'] = datetime.fromtimestamp(now - 90 * 60 - 1, timezone.utc).isoformat()
+    assert m.issues(now, records, units, True) == ['mongo: remote backup/check is missing or overdue.']
