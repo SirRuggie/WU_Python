@@ -30,7 +30,7 @@ it("shows unlinked and unresolved accounts without implying a Discord link", () 
   expect(strikeLinkLabel(null)).toBe("Not linked");
   expect(strikeLinkLabel("123", null, "unlinked")).toBe("Not linked");
   expect(strikeLinkLabel("123", "Ruggie")).toBe("Ruggie");
-  expect(strikeLinkLabel("123")).toBe("Discord 123");
+  expect(strikeLinkLabel("123")).toBe("Discord member unavailable");
   expect(strikeLinkLabel(null, null, "unknown")).toBe("Link unknown");
   expect(strikeLinkLabel(null, null, "conflict")).toBe("Link needs review");
 });

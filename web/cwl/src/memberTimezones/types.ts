@@ -1,3 +1,4 @@
+import type {DiscordProfile} from "../DiscordIdentity";
 export type Profile = {
   zone_id: string;
   gmt_label: string;
@@ -9,6 +10,7 @@ export type Profile = {
   revision: number;
 };
 export type Member = {
+  discord_profile?: DiscordProfile;
   discord_id: string;
   name: string;
   nickname: string | null;

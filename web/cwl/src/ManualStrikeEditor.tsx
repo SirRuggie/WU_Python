@@ -1,3 +1,4 @@
+import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
@@ -9,7 +10,12 @@ type Account = {
   current_clan_name?: string | null;
   current_clan_tag?: string | null;
 };
-type Member = { id: string; name: string; accounts: Account[] };
+type Member = {
+  id: string;
+  name: string;
+  accounts: Account[];
+  discord_profile?: DiscordProfile;
+};
 type Props = {
   initialAccount?: {
     player_tag: string;
@@ -200,8 +206,11 @@ export default function ManualStrikeEditor({
               <div>
                 <dt>Discord member</dt>
                 <dd>
-                  {member.name}
-                  <small>{member.id}</small>
+                  <DiscordIdentity
+                    userId={member.id}
+                    displayName={member.name}
+                    resolvedMember={member.discord_profile || null}
+                  />
                 </dd>
               </div>
             )}

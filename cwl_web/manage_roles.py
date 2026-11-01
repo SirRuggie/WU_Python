@@ -212,8 +212,14 @@ async def role_members(request):
     if after:
         sid(after)
     data = await discord(request, 'GET', f'/guilds/{GUILD_ID}/members', params={'limit':'1000', **({'after':after} if after else {})})
-    return web.json_response({'members': [{'id': str(m['user']['id']), 'name': m.get('nick') or m['user'].get('global_name') or m['user']['username']} for m in data if role_id in m.get('roles', [])],
-                             'next': str(data[-1]['user']['id']) if len(data) == 1000 else None})
+    members = []
+    for row in data:
+        if role_id not in row.get('roles', []):
+            continue
+        profile = member_option(row)
+        members.append({'id': str(row['user']['id']), 'name': row.get('nick') or row['user'].get('global_name') or row['user']['username'],
+                        'discord_profile': {key: profile.get(key) for key in ('id', 'display_name', 'username', 'avatar_url')}})
+    return web.json_response({'members': members, 'next': str(data[-1]['user']['id']) if len(data) == 1000 else None})
 
 
 routes = [web.get(API+'/roles', page), web.get(API+'/members', members), web.get(API+'/roles/{role_id}/members', role_members), web.post(API+'/roles/{action}', change)]

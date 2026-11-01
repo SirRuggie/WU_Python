@@ -135,7 +135,9 @@ async def account_rows(request, member_id):
 
 def display_member(row):
     user = row.get('user') or {}
-    return {'id': str(user['id']), 'name': row.get('nick') or user.get('global_name') or user.get('username') or str(user['id']), 'accounts': []}
+    from .manage_roles import member_option
+    profile = member_option(row)
+    return {'id': str(user['id']), 'name': row.get('nick') or user.get('global_name') or user.get('username') or str(user['id']), 'accounts': [], 'discord_profile': {key: profile.get(key) for key in ('id','display_name','username','avatar_url')}}
 
 
 @endpoint(scope='strikes_add')
@@ -187,6 +189,19 @@ async def leave_state(request):
 @endpoint
 async def members(request):
     from .manage_roles import searchable_members, search_text
+    if 'ids' in request.query:
+        from .manage_roles import member_option
+        values = request.query['ids'].split(',')
+        if not 1 <= len(values) <= 100:
+            raise ValueError('Choose up to 100 member identities.')
+        wanted = {uid(value) for value in values}
+        rows = await searchable_members(request)
+        options = []
+        for row in rows:
+            if str(row.get('user', {}).get('id')) in wanted and not row.get('user', {}).get('bot'):
+                profile = member_option(row)
+                options.append({key: profile.get(key) for key in ('id', 'display_name', 'username', 'avatar_url')})
+        return web.json_response({'options': options})
     query = request.query.get('query', '').strip()
     if len(query) > 80:
         raise ValueError('Use a shorter name or ID.')

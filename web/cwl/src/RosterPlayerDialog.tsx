@@ -17,7 +17,7 @@ import { Button } from "./rosterUi/primitives";
 import { ArrowRightLeft, Trash2, UserMinus } from "lucide-react";
 import type { RosterAccount, RosterClan, RosterSnapshot } from "./roster";
 import type { Pool } from "./api";
-import RosterDiscordIdentity from "./RosterDiscordIdentity";
+import DiscordIdentity from "./DiscordIdentity";
 import RosterAssignPanel from "./RosterAssignPanel";
 import PlayerCardMeta from "./PlayerCardMeta";
 import TownHallIcon from "./TownHallIcon";
@@ -236,7 +236,7 @@ export default function RosterPlayerDialog({
             {account.player_name}
           </h2>
           <PlayerCardMeta account={account} />
-          <RosterDiscordIdentity userId={account.user_id} />
+          <DiscordIdentity userId={account.user_id} />
         </header>
         {reason && (
           <p className="details-view-only">

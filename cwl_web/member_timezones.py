@@ -76,6 +76,8 @@ async def inventory(request):
     rows = []
     for data in raw:
         uid = str(data["user"]["id"])
+        from .manage_roles import member_option
+        identity = member_option(data)
         profile = profiles.get(uid)
         parsed = profile_zone(data.get("nick"))
         status = (
@@ -113,6 +115,7 @@ async def inventory(request):
         rows.append(
             dict(
                 discord_id=uid,
+                discord_profile={key: identity.get(key) for key in ("id", "display_name", "username", "avatar_url")},
                 name=data["user"].get("global_name")
                 or data["user"].get("username")
                 or uid,

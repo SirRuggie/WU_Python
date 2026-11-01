@@ -1,3 +1,4 @@
+import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
 import { useState, type ReactNode } from "react";
 import {
   CheckCircle2,
@@ -7,7 +8,6 @@ import {
   XCircle,
 } from "lucide-react";
 import type { Entry } from "./StrikesWorkspace";
-import { strikeLinkLabel } from "./strikeHistoryView";
 
 function statusText(item: Entry) {
   if (item.kind === "mismatch") return "Mismatch war (no strike)";
@@ -25,6 +25,8 @@ function statusText(item: Entry) {
 export default function StrikeHistoryRow({
   item,
   showIdentity,
+  discordProfile = null,
+  identityLoading = false,
   canRemove,
   removing,
   onRemove,
@@ -32,6 +34,8 @@ export default function StrikeHistoryRow({
 }: {
   item: Entry;
   showIdentity: boolean;
+  discordProfile?: DiscordProfile | null;
+  identityLoading?: boolean;
   canRemove: boolean;
   removing: boolean;
   onRemove: () => void;
@@ -126,11 +130,14 @@ export default function StrikeHistoryRow({
           )}
           {showIdentity && (
             <p>
-              {strikeLinkLabel(
-                item.discord_id,
-                item.discord_name,
-                item.link_status,
-              )}{" "}
+              <DiscordIdentity
+                userId={item.discord_id}
+                linkStatus={item.link_status}
+                displayName={item.discord_name}
+                resolvedMember={discordProfile}
+                resolving={identityLoading}
+                variant="compact"
+              />{" "}
               · {item.current_clan_name || "Current clan unavailable"}
             </p>
           )}

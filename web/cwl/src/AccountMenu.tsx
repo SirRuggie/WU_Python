@@ -8,6 +8,7 @@ import {
   Separator,
 } from "react-aria-components";
 import type { Session } from "./api";
+import { discordIdentityName } from "./DiscordIdentity";
 import { AccountIdentity } from "./AccountIdentity";
 import "./AccountMenu.css";
 
@@ -26,7 +27,8 @@ export default function AccountMenu({
   disabled = false,
   replayPrank,
 }: Props) {
-  const name = user.display_name || user.username;
+  const name =
+    discordIdentityName(user.id, user) || "Discord member unavailable";
 
   return (
     <div className={`account-menu account-menu-${variant}`}>
@@ -54,8 +56,7 @@ export default function AccountMenu({
         >
           <div className="account-menu-summary">
             <span>Signed in as</span>
-            <strong>{name}</strong>
-            <small>@{user.username}</small>
+            <AccountIdentity user={user} />
           </div>
           <Separator className="account-menu-separator" />
           <Menu

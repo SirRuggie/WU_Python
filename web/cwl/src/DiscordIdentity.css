@@ -1,0 +1,53 @@
+.roster-discord-avatar {
+  display: grid;
+  place-items: center;
+  background: #ffffff0d;
+  color: #b6bdc7;
+}
+.roster-discord-person {
+  min-width: 0;
+  flex: 1;
+}
+.roster-discord-person strong {
+  display: block;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.roster-discord-person small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  color: #b7bac3;
+}
+.discord-identity-compact {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.discord-identity-compact > img,
+.discord-identity-compact > .roster-discord-avatar {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+}
+.discord-identity-full {
+  flex-wrap: wrap;
+}
+.roster-discord-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+.roster-discord-identity > .user-avatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.roster-discord-identity .user-display-name {
+  white-space: normal;
+}

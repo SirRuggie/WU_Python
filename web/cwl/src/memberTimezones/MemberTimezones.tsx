@@ -1,3 +1,4 @@
+import DiscordIdentity, { discordIdentityName } from "../DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import type { Directory, Member, RequestState } from "./types";
@@ -225,7 +226,11 @@ export default function MemberTimezones({
                 Import nickname time zones
               </button>
             </details>
-            <Standardize disabled={busy} onDenied={denied} />
+            <Standardize
+              disabled={busy}
+              onDenied={denied}
+              members={data.members}
+            />
             <button disabled={loading || busy} onClick={() => void load()}>
               Refresh members
             </button>
@@ -339,7 +344,7 @@ export default function MemberTimezones({
                         className="mt-member-row"
                         disabled={busy || m.bot}
                         data-member-id={m.discord_id}
-                        aria-label={`Edit ${m.name}`}
+                        aria-label={`Edit ${discordIdentityName(m.discord_id, m.discord_profile, m.name) || "Discord member unavailable"}`}
                         aria-describedby={`mt-nick-${m.discord_id} mt-status-${m.discord_id}`}
                         title={[m.name, m.nickname, m.skip_reason]
                           .filter(Boolean)
@@ -351,10 +356,15 @@ export default function MemberTimezones({
                           setDirty(false);
                         }}
                       >
-                        <strong>
-                          {m.name}
-                          {m.bot ? " · Bot" : ""}
-                        </strong>
+                        <DiscordIdentity
+                          userId={m.discord_id}
+                          displayName={m.name}
+                          resolvedMember={m.discord_profile || null}
+                          variant="compact"
+                          contact={false}
+                          username={false}
+                        />
+                        {m.bot && <small>Bot</small>}
                         <span
                           id={`mt-nick-${m.discord_id}`}
                           className="mt-member-nickname"

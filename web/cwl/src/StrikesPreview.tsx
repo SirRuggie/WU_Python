@@ -367,6 +367,8 @@ const preview = {
 const fixtureJobs = new Map<string, { reads: number; result: unknown }>();
 let trackingQueued = false;
 let reviewResolved = false;
+let identityReads = 0;
+Object.assign(window, { identityReads: () => identityReads });
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
   const url = new URL(
@@ -378,6 +380,33 @@ window.fetch = async (input, init) => {
     location.origin,
   );
   const path = url.pathname;
+  if (
+    path === "/api/cwl/staff-signup-members" ||
+    (path === "/api/cwl/strikes/members" && url.searchParams.has("ids"))
+  ) {
+    identityReads++;
+    if (new URLSearchParams(location.search).get("identity") === "unavailable")
+      return Response.json({ options: [], next: null, truncated: false });
+    const ids = (
+      url.searchParams.get("ids") ||
+      url.searchParams.get("id") ||
+      "123456789012345678"
+    ).split(",");
+    return Response.json({
+      options: ids.map((id) => ({
+        id,
+        value: id,
+        label: "Fixture Chief",
+        display_name: "Fixture Chief",
+        username: "fixture-chief",
+        avatar_url: "https://cdn.discordapp.com/avatars/fixture/avatar.png",
+        role_ids: [],
+        role_names: [],
+      })),
+      next: null,
+      truncated: false,
+    });
+  }
   if (!path.startsWith("/api/cwl/strikes/")) return realFetch(input, init);
   const method = init?.method || "GET";
   let data: unknown = { ok: true };

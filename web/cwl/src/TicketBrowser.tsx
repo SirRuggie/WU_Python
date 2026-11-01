@@ -1,64 +1,65 @@
-import TicketConversation from './TicketConversation'
-import { useEffect, useRef, useState } from 'react'
-import { api } from './api'
-import './TicketBrowser.css'
+import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
+import TicketConversation from "./TicketConversation";
+import { useEffect, useRef, useState } from "react";
+import { api } from "./api";
+import "./TicketBrowser.css";
 export type Ticket = {
-  id: string
-  number: number
-  name: string
-  user_id: string
-  kind: string
-  status: string
-  created_at: string | null
-  flags: { kind: string; label: string; reason: string }[]
-}
+  id: string;
+  number: number;
+  name: string;
+  user_id: string;
+  kind: string;
+  status: string;
+  created_at: string | null;
+  flags: { kind: string; label: string; reason: string }[];
+};
 const statusName = (value: string) =>
-  ({ open: 'Open', approved: 'Approved', denied: 'Denied', closed: 'Closed' })[
+  ({ open: "Open", approved: "Approved", denied: "Denied", closed: "Closed" })[
     value
-  ] || value
+  ] || value;
 const when = (value: string | null) =>
-  value ? new Date(value).toLocaleString() : 'Date unavailable'
+  value ? new Date(value).toLocaleString() : "Date unavailable";
 export default function TicketBrowser() {
-  const [status, setStatus] = useState('open'),
-    [kind, setKind] = useState('all'),
-    [flag, setFlag] = useState('all'),
-    [search, setSearch] = useState(''),
-    [query, setQuery] = useState(''),
-    [from, setFrom] = useState(''),
-    [to, setTo] = useState(''),
+  const [status, setStatus] = useState("open"),
+    [kind, setKind] = useState("all"),
+    [flag, setFlag] = useState("all"),
+    [search, setSearch] = useState(""),
+    [query, setQuery] = useState(""),
+    [from, setFrom] = useState(""),
+    [to, setTo] = useState(""),
     [page, setPage] = useState(1),
     [tickets, setTickets] = useState<Ticket[]>([]),
     [more, setMore] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
+    [error, setError] = useState(""),
     [reload, setReload] = useState(0),
-    [selected, setSelected] = useState<Ticket | null>(null)
-  const returnTicket = useRef<string | null>(null)
-  const returnReady = useRef(false)
-  const heading = useRef<HTMLHeadingElement>(null)
-  const ticketButtons = useRef(new Map<string, HTMLButtonElement>())
+    [selected, setSelected] = useState<Ticket | null>(null);
+  const returnTicket = useRef<string | null>(null);
+  const returnReady = useRef(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const ticketButtons = useRef(new Map<string, HTMLButtonElement>());
   useEffect(() => {
     if (selected || busy || !returnReady.current || !returnTicket.current)
-      return
-    ;(
+      return;
+    (
       ticketButtons.current.get(returnTicket.current) || heading.current
-    )?.focus()
-    returnTicket.current = null
-    returnReady.current = false
-  }, [selected, busy, tickets, error])
+    )?.focus();
+    returnTicket.current = null;
+    returnReady.current = false;
+  }, [selected, busy, tickets, error]);
   useEffect(() => {
     const timer = setTimeout(() => {
-      setQuery(search)
-      setPage(1)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [search])
+      setQuery(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
   useEffect(() => {
-    if (selected) return
-    let alive = true
-    setBusy(true)
-    setError('')
-    setTickets([])
+    if (selected) return;
+    let alive = true;
+    setBusy(true);
+    setError("");
+    setTickets([]);
     const params = new URLSearchParams({
       status,
       kind,
@@ -67,52 +68,52 @@ export default function TicketBrowser() {
       from,
       to,
       page: String(page),
-    })
+    });
     api<{ tickets: Ticket[]; has_more: boolean }>(`/manage/tickets?${params}`)
       .then((result) => {
         if (alive) {
-          setTickets(result.tickets)
-          setMore(result.has_more)
+          setTickets(result.tickets);
+          setMore(result.has_more);
         }
       })
       .catch((e) => {
         if (alive) {
-          setError(e.message)
-          setMore(false)
+          setError(e.message);
+          setMore(false);
         }
       })
       .finally(() => {
         if (alive) {
-          returnReady.current = true
-          setBusy(false)
+          returnReady.current = true;
+          setBusy(false);
         }
-      })
+      });
     return () => {
-      alive = false
-    }
-  }, [selected, status, kind, flag, query, from, to, page, reload])
-  const extraFilters = Number(flag !== 'all') + Number(!!from) + Number(!!to)
+      alive = false;
+    };
+  }, [selected, status, kind, flag, query, from, to, page, reload]);
+  const extraFilters = Number(flag !== "all") + Number(!!from) + Number(!!to);
   const clearFilters = () => {
-    setSearch('')
-    setQuery('')
-    setStatus('all')
-    setKind('all')
-    setFlag('all')
-    setFrom('')
-    setTo('')
-    setPage(1)
-  }
+    setSearch("");
+    setQuery("");
+    setStatus("all");
+    setKind("all");
+    setFlag("all");
+    setFrom("");
+    setTo("");
+    setPage(1);
+  };
   if (selected)
     return (
       <TicketConversation
         ticket={selected}
         onBack={() => {
-          returnReady.current = false
-          setBusy(true)
-          setSelected(null)
+          returnReady.current = false;
+          setBusy(true);
+          setSelected(null);
         }}
       />
-    )
+    );
   return (
     <section className="ticket-browser">
       <div className="page-head">
@@ -146,8 +147,8 @@ export default function TicketBrowser() {
           <select
             value={status}
             onChange={(e) => {
-              setStatus(e.target.value)
-              setPage(1)
+              setStatus(e.target.value);
+              setPage(1);
             }}
           >
             <option value="closed">Closed tickets</option>
@@ -162,8 +163,8 @@ export default function TicketBrowser() {
           <select
             value={kind}
             onChange={(e) => {
-              setKind(e.target.value)
-              setPage(1)
+              setKind(e.target.value);
+              setPage(1);
             }}
           >
             <option value="all">Main and FWA</option>
@@ -174,7 +175,7 @@ export default function TicketBrowser() {
       </div>
       <details className="ticket-date-filter">
         <summary>
-          More filters{extraFilters ? ` · ${extraFilters} active` : ''}
+          More filters{extraFilters ? ` · ${extraFilters} active` : ""}
         </summary>
         <div>
           <label>
@@ -182,8 +183,8 @@ export default function TicketBrowser() {
             <select
               value={flag}
               onChange={(e) => {
-                setFlag(e.target.value)
-                setPage(1)
+                setFlag(e.target.value);
+                setPage(1);
               }}
             >
               <option value="all">All flags</option>
@@ -200,8 +201,8 @@ export default function TicketBrowser() {
               type="date"
               value={from}
               onChange={(e) => {
-                setFrom(e.target.value)
-                setPage(1)
+                setFrom(e.target.value);
+                setPage(1);
               }}
             />
           </label>
@@ -211,8 +212,8 @@ export default function TicketBrowser() {
               type="date"
               value={to}
               onChange={(e) => {
-                setTo(e.target.value)
-                setPage(1)
+                setTo(e.target.value);
+                setPage(1);
               }}
             />
           </label>
@@ -222,14 +223,14 @@ export default function TicketBrowser() {
       <div className="ticket-list-summary">
         <span>
           {busy
-            ? 'Loading…'
+            ? "Loading…"
             : error
-              ? 'Tickets unavailable'
+              ? "Tickets unavailable"
               : `${tickets.length} tickets on this page`}
         </span>
         {(search ||
-          status !== 'open' ||
-          kind !== 'all' ||
+          status !== "open" ||
+          kind !== "all" ||
           extraFilters > 0) && (
           <button onClick={clearFilters}>Clear filters</button>
         )}
@@ -255,11 +256,16 @@ export default function TicketBrowser() {
           {tickets.map((t) => (
             <article className="ticket-row" key={t.id}>
               <div>
-                <strong>
-                  #{t.number} · {t.name}
-                </strong>
+                <strong>#{t.number}</strong>
+                <DiscordIdentity
+                  userId={t.user_id}
+                  displayName={t.name}
+                  resolvedMember={null}
+                  variant="compact"
+                  contact={false}
+                />
                 <small>
-                  {t.kind.toUpperCase()} · {statusName(t.status)} · Opened{' '}
+                  {t.kind.toUpperCase()} · {statusName(t.status)} · Opened{" "}
                   {when(t.created_at)}
                 </small>
                 {t.flags.length > 0 && (
@@ -272,13 +278,13 @@ export default function TicketBrowser() {
               </div>
               <button
                 ref={(node) => {
-                  if (node) ticketButtons.current.set(t.id, node)
-                  else ticketButtons.current.delete(t.id)
+                  if (node) ticketButtons.current.set(t.id, node);
+                  else ticketButtons.current.delete(t.id);
                 }}
-                aria-label={`Read ticket ${t.number} · ${t.name}`}
+                aria-label={`Read ticket ${t.number} · ${discordIdentityName(t.user_id, null, t.name) || "Discord member unavailable"}`}
                 onClick={() => {
-                  returnTicket.current = t.id
-                  setSelected(t)
+                  returnTicket.current = t.id;
+                  setSelected(t);
                 }}
               >
                 Read →
@@ -299,5 +305,5 @@ export default function TicketBrowser() {
         </nav>
       )}
     </section>
-  )
+  );
 }

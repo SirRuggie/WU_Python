@@ -100,7 +100,7 @@ it("shows escaped names and hover IDs in history, with quiet initials on an empt
     host.querySelector("img")!.dispatchEvent(new Event("error")),
   );
   expect(host.querySelector("img")).toBeNull();
-  expect(host.querySelector(".member-activity-avatar")?.textContent).toBe("<");
+  expect(host.querySelector(".roster-discord-avatar")?.textContent).toBe("<");
   expect(host.querySelector('[role="alert"]')).toBeNull();
 });
 it("adapts both preview formats without showing raw member IDs", async () => {

@@ -1,13 +1,16 @@
+import DiscordIdentity from "../DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
-import type { Change, Run } from "./types";
+import type { Change, Run, Member } from "./types";
 
 export default function Standardize({
   disabled,
   onDenied,
+  members = [],
 }: {
   disabled: boolean;
   onDenied: () => void;
+  members?: Member[];
 }) {
   const [open, setOpen] = useState(false),
     [preview, setPreview] = useState<{ token: string; rows: Change[] } | null>(
@@ -262,7 +265,17 @@ export default function Standardize({
                           setSelected(next);
                         }}
                       />
-                      <strong>{r.name}</strong>
+                      <DiscordIdentity
+                        userId={r.discord_id}
+                        displayName={r.name}
+                        resolvedMember={
+                          members.find(
+                            (member) => member.discord_id === r.discord_id,
+                          )?.discord_profile || null
+                        }
+                        variant="compact"
+                        contact={false}
+                      />
                     </label>
                     <p>
                       {r.old_nickname || "(no nickname)"} →{" "}
@@ -319,10 +332,17 @@ export default function Standardize({
             <ul className="mt-list">
               {run.rows.map((r) => (
                 <li key={r.discord_id}>
-                  <strong>
-                    {r.name || r.old_nickname || r.discord_id}
-                    {r.new_nickname ? ` → ${r.new_nickname}` : ""}
-                  </strong>
+                  <DiscordIdentity
+                    userId={r.discord_id}
+                    displayName={r.name || r.old_nickname}
+                    resolvedMember={
+                      members.find(
+                        (member) => member.discord_id === r.discord_id,
+                      )?.discord_profile || null
+                    }
+                    variant="compact"
+                  />
+                  {r.new_nickname && <p>→ {r.new_nickname}</p>}
                   <p>
                     {r.status}: {r.message}
                   </p>

@@ -15,7 +15,7 @@ import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
 import RosterBalance from "./RosterBalance";
 import ActionPanel from "./ActionPanel";
 import type { MemberOption } from "./MemberPicker";
-import RosterDiscordIdentity from "./RosterDiscordIdentity";
+import DiscordIdentity from "./DiscordIdentity";
 import RosterHeader from "./RosterHeader";
 import RosterAccountCard from "./RosterAccountCard";
 import RosterFilters from "./RosterFilters";
@@ -1543,7 +1543,7 @@ export default function RosterWorkspace({
                           rosterMemberKey(pageAccounts[index - 1]) !==
                             rosterMemberKey(account)) && (
                           <header className="roster-member-heading">
-                            <RosterDiscordIdentity
+                            <DiscordIdentity
                               userId={account.user_id}
                               resolvedMember={
                                 groupMembers[account.user_id] || null

@@ -1,3 +1,5 @@
+import DiscordIdentity from "./DiscordIdentity";
+import useDiscordIdentities from "./useDiscordIdentities";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import ChannelCombobox from "./ChannelCombobox";
@@ -211,6 +213,7 @@ export default function DeclarationPingPanel({
   const last = [receipt, state?.active, state?.history[0]]
     .filter((r): r is PingReceipt => !!r)
     .sort((a, b) => b.created_at - a.created_at)[0];
+  const senderProfiles = useDiscordIdentities(last ? [last.actor_id] : []);
   return (
     <section
       className="declaration-ping-panel"
@@ -360,8 +363,15 @@ export default function DeclarationPingPanel({
             : last.state === "done"
               ? "Last pinged"
               : "Delivery " + last.state}{" "}
-          by {last.actor_name || "Discord staff member"} at{" "}
-          {new Date(last.created_at * 1000).toLocaleString()} · {last.count}{" "}
+          by{" "}
+          <DiscordIdentity
+            userId={last.actor_id}
+            displayName={last.actor_name}
+            resolvedMember={senderProfiles.members[last.actor_id] || null}
+            resolving={senderProfiles.loading}
+            variant="compact"
+          />{" "}
+          at {new Date(last.created_at * 1000).toLocaleString()} · {last.count}{" "}
           players · {last.posted.length}/{last.chunks} chunks confirmed
           {last.attempting !== null
             ? ` · chunk ${last.attempting + 1} unconfirmed`

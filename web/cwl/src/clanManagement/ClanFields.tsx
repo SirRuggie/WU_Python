@@ -1,3 +1,4 @@
+import DiscordIdentity from "../DiscordIdentity";
 import RolePicker, { type RoleChoice } from "../RolePicker";
 import ChannelCombobox from "../ChannelCombobox";
 import type { AnnouncementChannel } from "../announcements";
@@ -118,21 +119,19 @@ export default function ClanFields({
             </select>
           </label>
           {members.find((member) => member.id === draft.leader_id) && (
-            <p className="clan-leader-identity" title={draft.leader_id}>
-              {members.find((member) => member.id === draft.leader_id)
-                ?.avatar_url && (
-                <img
-                  src={
-                    members.find((member) => member.id === draft.leader_id)!
-                      .avatar_url
-                  }
-                  alt=""
-                  width={32}
-                  height={32}
-                />
-              )}
-              {members.find((member) => member.id === draft.leader_id)?.name}
-            </p>
+            <DiscordIdentity
+              userId={draft.leader_id}
+              resolvedMember={{
+                id: draft.leader_id,
+                display_name: members.find(
+                  (member) => member.id === draft.leader_id,
+                )?.name,
+                avatar_url: members.find(
+                  (member) => member.id === draft.leader_id,
+                )?.avatar_url,
+              }}
+              variant="compact"
+            />
           )}
           {[
             ["leader_role_id", "Leader role"],

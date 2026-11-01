@@ -1,231 +1,237 @@
-import { useEffect, useRef, useState } from 'react'
-import { api, ApiError } from './api'
-import MemberPicker, { type MemberOption } from './MemberPicker'
-import AccessPermissions from './AccessPermissions'
-import './AccessSettings.css'
-import AccessAvatar from './AccessAvatar'
+import { useEffect, useRef, useState } from "react";
+import { api, ApiError } from "./api";
+import MemberPicker, { type MemberOption } from "./MemberPicker";
+import AccessPermissions from "./AccessPermissions";
+import "./AccessSettings.css";
+import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
+import DashboardIcon from "./DashboardIcon";
 
 type Grant = {
-  kind: 'user' | 'role'
-  id: string
-  label: string
-  permissions: string[]
-  display_name?: string
-  username?: string
-  avatar_url?: string | null
-  identity_status?: 'current' | 'missing' | 'unavailable'
-}
-type Permission = { id: string; label: string; description: string }
+  kind: "user" | "role";
+  id: string;
+  label: string;
+  permissions: string[];
+  display_name?: string;
+  username?: string;
+  avatar_url?: string | null;
+  identity_status?: "current" | "missing" | "unavailable";
+};
+type Permission = { id: string; label: string; description: string };
 type AccessData = {
-  revision: number
-  grants: Grant[]
-  owners: string[]
-  owner_identities?: Omit<Grant, 'permissions'>[]
-  groups: { label: string; permissions: Permission[] }[]
+  revision: number;
+  grants: Grant[];
+  owners: string[];
+  owner_identities?: Omit<Grant, "permissions">[];
+  groups: { label: string; permissions: Permission[] }[];
   history: {
-    at: string
-    actor_id: string
-    kind: string
-    subject_id: string
-    before: Grant | null
-    after: Grant | null
-  }[]
-}
+    at: string;
+    actor_id: string;
+    kind: string;
+    subject_id: string;
+    before: Grant | null;
+    after: Grant | null;
+  }[];
+};
 export default function AccessSettings({
   onDirty,
 }: {
-  onDirty?: (dirty: boolean) => void
+  onDirty?: (dirty: boolean) => void;
 }) {
-  const [data, setData] = useState<AccessData | null>(null)
-  const [search, setSearch] = useState('')
-  const [kind, setKind] = useState<'user' | 'role'>('user')
-  const [id, setId] = useState('')
-  const [selected, setSelected] = useState<string[]>([])
-  const [members, setMembers] = useState<MemberOption[]>([])
-  const [choosing, setChoosing] = useState(false)
-  const [roles, setRoles] = useState<{ id: string; name: string }[]>([])
-  const [roleSearch, setRoleSearch] = useState('')
-  const [rolesLoading, setRolesLoading] = useState(false)
-  const [roleError, setRoleError] = useState('')
-  const [roleReload, setRoleReload] = useState(0)
-  const [busy, setBusy] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [remove, setRemove] = useState<Grant | null>(null)
-  const [editing, setEditing] = useState(false)
-  const saving = useRef(false)
-  const [conflict, setConflict] = useState(false)
-  const sequence = useRef(0)
-  const heading = useRef<HTMLHeadingElement>(null)
-  const current = data?.grants.find((g) => g.kind === kind && g.id === id)
+  const [data, setData] = useState<AccessData | null>(null);
+  const [search, setSearch] = useState("");
+  const [kind, setKind] = useState<"user" | "role">("user");
+  const [id, setId] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [members, setMembers] = useState<MemberOption[]>([]);
+  const [choosing, setChoosing] = useState(false);
+  const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
+  const [roleSearch, setRoleSearch] = useState("");
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [roleError, setRoleError] = useState("");
+  const [roleReload, setRoleReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [remove, setRemove] = useState<Grant | null>(null);
+  const [editing, setEditing] = useState(false);
+  const saving = useRef(false);
+  const [conflict, setConflict] = useState(false);
+  const sequence = useRef(0);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const current = data?.grants.find((g) => g.kind === kind && g.id === id);
   const dirty =
     JSON.stringify([...selected].sort()) !==
-    JSON.stringify([...(current?.permissions || [])].sort())
+    JSON.stringify([...(current?.permissions || [])].sort());
 
   useEffect(() => {
-    onDirty?.(dirty || busy)
-    return () => onDirty?.(false)
-  }, [dirty, busy, onDirty])
+    onDirty?.(dirty || busy);
+    return () => onDirty?.(false);
+  }, [dirty, busy, onDirty]);
 
   async function load() {
-    const turn = ++sequence.current
-    setLoading(true)
-    setError('')
+    const turn = ++sequence.current;
+    setLoading(true);
+    setError("");
     try {
-      const result = await api<AccessData>('/access')
+      const result = await api<AccessData>("/access");
       if (turn === sequence.current) {
-        setData(result)
-        setConflict(false)
+        setData(result);
+        setConflict(false);
       }
     } catch (e) {
-      if (turn !== sequence.current) return
-      if (e instanceof ApiError && [401, 403].includes(e.status)) setData(null)
-      setError(e instanceof Error ? e.message : 'Could not load access.')
+      if (turn !== sequence.current) return;
+      if (e instanceof ApiError && [401, 403].includes(e.status)) setData(null);
+      setError(e instanceof Error ? e.message : "Could not load access.");
     } finally {
-      if (turn === sequence.current) setLoading(false)
+      if (turn === sequence.current) setLoading(false);
     }
   }
   useEffect(() => {
-    void load()
+    void load();
     return () => {
-      sequence.current++
-    }
-  }, [])
+      sequence.current++;
+    };
+  }, []);
   useEffect(() => {
-    if (!editing || !choosing || kind !== 'role') return
-    let active = true
-    setRoleError('')
-    setRolesLoading(true)
-    api<{ roles: { id: string; name: string }[] }>('/access/roles')
+    if (!editing || !choosing || kind !== "role") return;
+    let active = true;
+    setRoleError("");
+    setRolesLoading(true);
+    api<{ roles: { id: string; name: string }[] }>("/access/roles")
       .then((result) => {
-        if (active) setRoles(result.roles)
+        if (active) setRoles(result.roles);
       })
       .catch((e) => {
-        if (active) setRoleError(e.message)
+        if (active) setRoleError(e.message);
       })
       .finally(() => {
-        if (active) setRolesLoading(false)
-      })
+        if (active) setRolesLoading(false);
+      });
     return () => {
-      active = false
-    }
-  }, [editing, choosing, kind, roleReload])
+      active = false;
+    };
+  }, [editing, choosing, kind, roleReload]);
   useEffect(() => {
     const protect = (event: BeforeUnloadEvent) => {
       if (dirty || busy) {
-        event.preventDefault()
-        event.returnValue = ''
+        event.preventDefault();
+        event.returnValue = "";
       }
-    }
-    window.addEventListener('beforeunload', protect)
-    return () => window.removeEventListener('beforeunload', protect)
-  }, [dirty, busy])
+    };
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
+  }, [dirty, busy]);
   function leave() {
     return (
       !saving.current &&
-      (!dirty || window.confirm('Discard unsaved access changes?'))
-    )
+      (!dirty || window.confirm("Discard unsaved access changes?"))
+    );
   }
   function edit(grant?: Grant) {
-    if (!leave()) return
-    setKind(grant?.kind || 'user')
-    setId(grant?.id || '')
-    setSelected(grant?.permissions || [])
-    setChoosing(!grant)
-    setEditing(true)
-    setRemove(null)
-    setError('')
-    setNotice('')
-    setConflict(false)
-    requestAnimationFrame(() => heading.current?.focus())
+    if (!leave()) return;
+    setKind(grant?.kind || "user");
+    setId(grant?.id || "");
+    setSelected(grant?.permissions || []);
+    setChoosing(!grant);
+    setEditing(true);
+    setRemove(null);
+    setError("");
+    setNotice("");
+    setConflict(false);
+    requestAnimationFrame(() => heading.current?.focus());
   }
   async function save(target: Grant | null = null) {
-    if (!data || saving.current || conflict) return
-    saving.current = true
-    setBusy(true)
-    setError('')
-    setNotice('')
+    if (!data || saving.current || conflict) return;
+    saving.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
     try {
-      const result = await api<AccessData>('/access', 'POST', {
+      const result = await api<AccessData>("/access", "POST", {
         revision: data.revision,
         kind: target?.kind || kind,
         id: target?.id || id,
         permissions: target ? null : selected,
-      })
-      setData(result)
-      setEditing(false)
-      setId('')
-      setSelected([])
-      setRemove(null)
+      });
+      setData(result);
+      setEditing(false);
+      setId("");
+      setSelected([]);
+      setRemove(null);
       requestAnimationFrame(() =>
-        document.getElementById('access-list-title')?.focus(),
-      )
+        document.getElementById("access-list-title")?.focus(),
+      );
       setNotice(
         target
-          ? 'Access entry removed. Other user or role grants still apply.'
-          : 'Access saved. Only the selected actions are granted.',
-      )
+          ? "Access entry removed. Other user or role grants still apply."
+          : "Access saved. Only the selected actions are granted.",
+      );
     } catch (e) {
       if (e instanceof ApiError && [401, 403].includes(e.status)) {
-        setData(null)
-        setEditing(false)
+        setData(null);
+        setEditing(false);
       }
-      setConflict(e instanceof ApiError && e.status === 409)
+      setConflict(e instanceof ApiError && e.status === 409);
       setError(
         e instanceof ApiError && e.status === 409
-          ? 'Access changed while you were editing. Your selections are kept. Review the latest access before saving again.'
+          ? "Access changed while you were editing. Your selections are kept. Review the latest access before saving again."
           : e instanceof Error
             ? e.message
-            : 'Save could not be confirmed. Reload access before trying again.',
-      )
+            : "Save could not be confirmed. Reload access before trying again.",
+      );
     } finally {
-      saving.current = false
-      setBusy(false)
+      saving.current = false;
+      setBusy(false);
     }
   }
   function closeEditor() {
-    if (!leave()) return
-    setEditing(false)
-    setChoosing(false)
-    setSelected([])
-    setId('')
-    setRemove(null)
+    if (!leave()) return;
+    setEditing(false);
+    setChoosing(false);
+    setSelected([]);
+    setId("");
+    setRemove(null);
     requestAnimationFrame(() =>
-      document.getElementById('access-list-title')?.focus(),
-    )
+      document.getElementById("access-list-title")?.focus(),
+    );
   }
   function choose(next: string) {
-    if (!leave()) return
-    setId(next)
+    if (!leave()) return;
+    setId(next);
     setSelected(
       data?.grants.find((grant) => grant.kind === kind && grant.id === next)
         ?.permissions || [],
-    )
+    );
   }
   const picked = members.find(
     (member) => member.id === id || member.value === id,
-  )
-  const title =
+  );
+  const rawTitle =
     current?.display_name ||
     picked?.display_name ||
-    (kind === 'role' ? roles.find((role) => role.id === id)?.name : '') ||
-    (current?.label !== id ? current?.label : '') ||
-    'Identity unavailable'
-  const username = current?.username || picked?.username
+    (kind === "role" ? roles.find((role) => role.id === id)?.name : "") ||
+    (current?.label !== id ? current?.label : "") ||
+    "Identity unavailable";
+  const title =
+    kind === "user"
+      ? discordIdentityName(id, current || picked, rawTitle) ||
+        "Identity unavailable"
+      : rawTitle;
+  const username = current?.username || picked?.username;
   const matches =
     data?.grants.filter((grant) =>
       [grant.display_name, grant.username, grant.label, grant.id]
-        .join(' ')
+        .join(" ")
         .toLowerCase()
         .includes(search.toLowerCase()),
-    ) || []
+    ) || [];
   const labels = Object.fromEntries(
     data?.groups.flatMap((g) => g.permissions.map((p) => [p.id, p.label])) ||
       [],
-  )
+  );
   return (
-    <div className={`access-workspace ${editing ? 'access-editing' : ''}`}>
+    <div className={`access-workspace ${editing ? "access-editing" : ""}`}>
       <div className="page-head">
         <div>
           <p className="eyebrow">Owner controls</p>
@@ -237,16 +243,16 @@ export default function AccessSettings({
         <span>
           {data
             ? `${data.grants.length} access entries · ${data.owners.length} protected owners`
-            : 'Staff permissions'}
+            : "Staff permissions"}
         </span>
         <button
           disabled={busy || loading}
           onClick={() => {
             if (leave()) {
-              setEditing(false)
-              setSelected([])
-              setId('')
-              void load()
+              setEditing(false);
+              setSelected([]);
+              setId("");
+              void load();
             }
           }}
         >
@@ -289,8 +295,8 @@ export default function AccessSettings({
             {!matches.length && (
               <p>
                 {data.grants.length
-                  ? 'No matching entries.'
-                  : 'No added staff yet. Choose Add access to get started.'}
+                  ? "No matching entries."
+                  : "No added staff yet. Choose Add access to get started."}
               </p>
             )}
             {matches.map((grant) => (
@@ -301,30 +307,42 @@ export default function AccessSettings({
                 aria-pressed={editing && kind === grant.kind && id === grant.id}
                 onClick={() => edit(grant)}
               >
-                <AccessAvatar
-                  name={grant.display_name || grant.label}
-                  kind={grant.kind}
-                  url={grant.avatar_url}
-                />
-                <span className="access-person-info">
-                  <strong>
-                    {grant.display_name ||
-                      (grant.label !== grant.id
-                        ? grant.label
-                        : 'Unresolved ' +
-                          (grant.kind === 'role' ? 'role' : 'member'))}
-                  </strong>
-                  <small>
-                    {grant.kind === 'role' ? 'Role' : 'Member'}
-                    {grant.username ? ` · @${grant.username}` : ''}
-                  </small>
-                  <small>
-                    {grant.permissions.length}{' '}
-                    {grant.permissions.length === 1 ? 'action' : 'actions'} ·{' '}
-                    {grant.kind === 'role' ? 'Role ID' : 'Discord ID'}:{' '}
-                    {grant.id}
-                  </small>
-                </span>
+                {grant.kind === "user" ? (
+                  <span className="access-person-info">
+                    <DiscordIdentity
+                      userId={grant.id}
+                      displayName={
+                        grant.display_name ||
+                        (grant.label !== grant.id ? grant.label : undefined)
+                      }
+                      resolvedMember={{
+                        id: grant.id,
+                        display_name: grant.display_name,
+                        username: grant.username,
+                        avatar_url: grant.avatar_url,
+                      }}
+                      variant="compact"
+                      contact={false}
+                    />
+                    <small>
+                      {grant.permissions.length}{" "}
+                      {grant.permissions.length === 1 ? "action" : "actions"}
+                    </small>
+                  </span>
+                ) : (
+                  <>
+                    <DashboardIcon name="shield" />
+                    <span className="access-person-info">
+                      <strong>
+                        {grant.display_name ||
+                          (grant.label !== grant.id
+                            ? grant.label
+                            : "Role unavailable")}
+                      </strong>
+                      <small>Role · {grant.permissions.length} actions</small>
+                    </span>
+                  </>
+                )}
               </button>
             ))}
             <details className="access-owners">
@@ -333,34 +351,30 @@ export default function AccessSettings({
               {data.owners.map((owner) => {
                 const identity = data.owner_identities?.find(
                   (item) => item.id === owner,
-                )
+                );
                 return (
                   <div className="access-owner" key={owner}>
-                    <AccessAvatar
-                      name={identity?.display_name || 'Owner'}
-                      kind="user"
-                      url={identity?.avatar_url}
-                    />
                     <div>
-                      <strong>
-                        {identity?.display_name || 'Protected owner'}
-                      </strong>
-                      {identity?.username && (
-                        <small>@{identity.username}</small>
-                      )}
-                      <small>
-                        Discord ID: <code>{owner}</code>
-                      </small>
-                      {identity?.identity_status !== 'current' && (
+                      <DiscordIdentity
+                        userId={owner}
+                        displayName={
+                          identity?.display_name || "Protected owner"
+                        }
+                        resolvedMember={identity || null}
+                        variant="compact"
+                        contact={false}
+                        diagnostics
+                      />
+                      {identity?.identity_status !== "current" && (
                         <small>
-                          {identity?.identity_status === 'missing'
-                            ? 'Not found in this server.'
-                            : 'Discord identity unavailable. Refresh to retry.'}
+                          {identity?.identity_status === "missing"
+                            ? "Not found in this server."
+                            : "Discord identity unavailable. Refresh to retry."}
                         </small>
                       )}
                     </div>
                   </div>
-                )
+                );
               })}
             </details>
           </section>
@@ -387,7 +401,7 @@ export default function AccessSettings({
                   ← Back to people &amp; roles
                 </button>
                 <h2 ref={heading} tabIndex={-1}>
-                  {choosing ? 'Choose a person or role' : title}
+                  {choosing ? "Choose a person or role" : title}
                 </h2>
                 {choosing ? (
                   <>
@@ -397,12 +411,12 @@ export default function AccessSettings({
                         <label>
                           <input
                             type="radio"
-                            checked={kind === 'user'}
+                            checked={kind === "user"}
                             onChange={() => {
                               if (leave()) {
-                                setKind('user')
-                                setId('')
-                                setSelected([])
+                                setKind("user");
+                                setId("");
+                                setSelected([]);
                               }
                             }}
                           />
@@ -411,12 +425,12 @@ export default function AccessSettings({
                         <label>
                           <input
                             type="radio"
-                            checked={kind === 'role'}
+                            checked={kind === "role"}
                             onChange={() => {
                               if (leave()) {
-                                setKind('role')
-                                setId('')
-                                setSelected([])
+                                setKind("role");
+                                setId("");
+                                setSelected([]);
                               }
                             }}
                           />
@@ -424,7 +438,7 @@ export default function AccessSettings({
                         </label>
                       </div>
                     </fieldset>
-                    {kind === 'user' ? (
+                    {kind === "user" ? (
                       <MemberPicker
                         compactSelection
                         label="Staff member"
@@ -438,7 +452,7 @@ export default function AccessSettings({
                             ).values(),
                           ])
                         }
-                        onChange={(value) => choose(String(value || ''))}
+                        onChange={(value) => choose(String(value || ""))}
                       />
                     ) : (
                       <div className="access-role-picker">
@@ -503,7 +517,7 @@ export default function AccessSettings({
                         Selected: <strong>{title}</strong> · {id}
                       </p>
                     )}
-                    {kind === 'user' && data.owners.includes(id) && (
+                    {kind === "user" && data.owners.includes(id) && (
                       <p role="status">
                         This is a protected owner. Their access cannot be
                         edited.
@@ -514,12 +528,12 @@ export default function AccessSettings({
                       disabled={
                         !id ||
                         busy ||
-                        (kind === 'role' && (rolesLoading || !!roleError)) ||
-                        (kind === 'user' && data.owners.includes(id))
+                        (kind === "role" && (rolesLoading || !!roleError)) ||
+                        (kind === "user" && data.owners.includes(id))
                       }
                       onClick={() => {
-                        setChoosing(false)
-                        requestAnimationFrame(() => heading.current?.focus())
+                        setChoosing(false);
+                        requestAnimationFrame(() => heading.current?.focus());
                       }}
                     >
                       Choose permissions →
@@ -528,27 +542,38 @@ export default function AccessSettings({
                 ) : (
                   <>
                     <div className="access-identity-header">
-                      <AccessAvatar
-                        name={title}
-                        kind={kind}
-                        url={current?.avatar_url || picked?.avatar_url}
-                      />
-                      <p className="access-identity">
-                        {kind === 'role' ? 'Discord role' : 'Specific member'}
-                        {username ? ` · @${username}` : ''}
-                        <br />
-                        {kind === 'role' ? 'Role ID' : 'Discord ID'}:{' '}
-                        <code>{id}</code>
-                      </p>
+                      {kind === "user" ? (
+                        <DiscordIdentity
+                          userId={id}
+                          displayName={title}
+                          resolvedMember={{
+                            id,
+                            display_name:
+                              current?.display_name || picked?.display_name,
+                            username,
+                            avatar_url:
+                              current?.avatar_url || picked?.avatar_url,
+                          }}
+                          contact={false}
+                          diagnostics
+                        />
+                      ) : (
+                        <>
+                          <DashboardIcon name="shield" />
+                          <p className="access-identity">
+                            Discord role · <code>{id}</code>
+                          </p>
+                        </>
+                      )}
                     </div>
-                    {current && current.identity_status !== 'current' && (
+                    {current && current.identity_status !== "current" && (
                       <p className="inline-reason">
-                        {current.identity_status === 'missing'
-                          ? 'Not found in this server. Saved access remains until removed.'
-                          : 'Live identity unavailable. Refresh access to retry.'}
+                        {current.identity_status === "missing"
+                          ? "Not found in this server. Saved access remains until removed."
+                          : "Live identity unavailable. Refresh access to retry."}
                       </p>
                     )}
-                    {kind === 'user' && (
+                    {kind === "user" && (
                       <a
                         href={`https://discord.com/users/${id}`}
                         target="_blank"
@@ -568,24 +593,24 @@ export default function AccessSettings({
                           {selected.filter(
                             (p) => !current?.permissions.includes(p),
                           ).length
-                            ? 'Enable: ' +
+                            ? "Enable: " +
                               selected
                                 .filter(
                                   (p) => !current?.permissions.includes(p),
                                 )
                                 .map((p) => labels[p] || p)
-                                .join(', ')
-                            : 'No new actions.'}
+                                .join(", ")
+                            : "No new actions."}
                         </p>
                         {current?.permissions.some(
                           (p) => !selected.includes(p),
                         ) && (
                           <p>
-                            Remove:{' '}
+                            Remove:{" "}
                             {current.permissions
                               .filter((p) => !selected.includes(p))
                               .map((p) => labels[p] || p)
-                              .join(', ')}
+                              .join(", ")}
                           </p>
                         )}
                       </div>
@@ -636,16 +661,16 @@ export default function AccessSettings({
                     {!remove && (
                       <div className="access-savebar">
                         <span role="status">
-                          {dirty ? 'Unsaved changes' : 'No unsaved changes'} ·{' '}
-                          {selected.length}{' '}
-                          {selected.length === 1 ? 'action' : 'actions'}
+                          {dirty ? "Unsaved changes" : "No unsaved changes"} ·{" "}
+                          {selected.length}{" "}
+                          {selected.length === 1 ? "action" : "actions"}
                         </span>
                         <div>
                           <button
                             disabled={busy || !dirty}
                             onClick={() => {
-                              setSelected(current?.permissions || [])
-                              setRemove(null)
+                              setSelected(current?.permissions || []);
+                              setRemove(null);
                             }}
                           >
                             Reset
@@ -658,11 +683,11 @@ export default function AccessSettings({
                               conflict ||
                               !dirty ||
                               !selected.length ||
-                              (kind === 'user' && data.owners.includes(id))
+                              (kind === "user" && data.owners.includes(id))
                             }
                             onClick={() => void save()}
                           >
-                            {busy ? 'Saving…' : 'Save access'}
+                            {busy ? "Saving…" : "Save access"}
                           </button>
                         </div>
                         {!selected.length && (
@@ -687,20 +712,27 @@ export default function AccessSettings({
             [...data.history].reverse().map((row, i) => (
               <p key={i}>
                 <strong>
-                  {row.after ? 'Saved' : 'Removed'}{' '}
-                  {row.after?.label || row.before?.label || row.subject_id}
+                  {row.after ? "Saved" : "Removed"}{" "}
+                  {row.after?.label || row.before?.label || "Access entry"}
                 </strong>
                 <br />
                 <small>
-                  {new Date(row.at).toLocaleString()} · Owner{' '}
-                  {data.owner_identities?.find(
-                    (owner) => owner.id === row.actor_id,
-                  )?.display_name || row.actor_id}
+                  {new Date(row.at).toLocaleString()} · Owner{" "}
+                  <DiscordIdentity
+                    userId={row.actor_id}
+                    resolvedMember={
+                      data.owner_identities?.find(
+                        (owner) => owner.id === row.actor_id,
+                      ) || null
+                    }
+                    variant="compact"
+                    contact={false}
+                  />
                 </small>
                 <br />
                 {row.after?.permissions
                   .map((p) => labels[p] || p)
-                  .join(' · ') || 'Entry removed'}
+                  .join(" · ") || "Entry removed"}
               </p>
             ))
           ) : (
@@ -709,5 +741,5 @@ export default function AccessSettings({
         </details>
       )}
     </div>
-  )
+  );
 }

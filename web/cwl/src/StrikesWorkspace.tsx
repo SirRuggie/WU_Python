@@ -1,3 +1,5 @@
+import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
+import useDiscordIdentities from "./useDiscordIdentities";
 import StrikeReviewResolution from "./StrikeReviewResolution";
 import ReplacementDeparture from "./ReplacementDeparture";
 import { parseActivityFilters } from "./strikeActivityFilters";
@@ -28,7 +30,6 @@ import {
   detailQuery,
   importEmptyText,
   isCwlRecord,
-  strikeLinkLabel,
   warMatchup,
   warSummary,
 } from "./strikeHistoryView";
@@ -220,7 +221,6 @@ const dateText = (value?: string | null) =>
       ? new Date(`${value}T00:00:00`).toLocaleDateString()
       : new Date(value).toLocaleDateString()
     : "—";
-const memberLabel = (member: Member) => `${member.name} · ${member.id}`;
 const importStorageKey = (userId: string) => `wu:strikes:import:${userId}`;
 function savedImport(userId: string): ImportDraft {
   try {
@@ -392,6 +392,20 @@ export default function StrikesWorkspace({
   );
   const [jobRetryPaused, setJobRetryPaused] = useState(false);
   const [jobRetry, setJobRetry] = useState(0);
+  const discordProfiles = useDiscordIdentities(
+    [
+      selectedAccount?.discord_id,
+      ...overview.entries.map((row) => row.discord_id),
+      ...(settings?.leaves || []).map((row) => row.discord_id),
+      ...members.map((row) => row.id),
+      ...(preview?.entries || []).map((row) => row.discord_id),
+    ],
+    access.view && !accessLost,
+    "/strikes/members",
+  );
+  useEffect(() => {
+    if (discordProfiles.denied) setAccessLost(true);
+  }, [discordProfiles.denied]);
 
   useEffect(() => {
     const clear = () => {
@@ -1210,11 +1224,17 @@ export default function StrikesWorkspace({
                     {selectedAccount.player_name}
                   </h2>
                   {selectedAccount.player_tag} ·{" "}
-                  {strikeLinkLabel(
-                    selectedAccount.discord_id,
-                    null,
-                    selectedAccount.link_status,
-                  )}{" "}
+                  <DiscordIdentity
+                    userId={selectedAccount.discord_id}
+                    linkStatus={selectedAccount.link_status}
+                    displayName={selectedAccount.discord_name}
+                    resolvedMember={
+                      discordProfiles.members[
+                        selectedAccount.discord_id || ""
+                      ] || null
+                    }
+                    resolving={discordProfiles.loading}
+                  />{" "}
                   ·{" "}
                   {selectedAccount.current_clan_name
                     ? `${selectedAccount.clan_is_current === false ? "Last known" : "Current"}: ${selectedAccount.current_clan_name}`
@@ -1284,6 +1304,10 @@ export default function StrikesWorkspace({
                       key={item.id}
                       item={item}
                       showIdentity={!selectedAccount}
+                      discordProfile={
+                        discordProfiles.members[item.discord_id || ""] || null
+                      }
+                      identityLoading={discordProfiles.loading}
                       canRemove={
                         access.remove &&
                         item.kind === "strike" &&
@@ -1474,11 +1498,20 @@ export default function StrikesWorkspace({
                     <option value="">Choose member</option>
                     {members.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {memberLabel(item)}
+                        {discordIdentityName(item.id, null, item.name) ||
+                          "Discord member unavailable"}
                       </option>
                     ))}
                   </select>
                 </label>
+              )}
+              {selected && (
+                <DiscordIdentity
+                  userId={selected.id}
+                  displayName={selected.name}
+                  resolvedMember={discordProfiles.members[selected.id] || null}
+                  resolving={discordProfiles.loading}
+                />
               )}
               {selected && (
                 <div className="strikes-account-checks">
@@ -1558,7 +1591,20 @@ export default function StrikesWorkspace({
           {settings?.leaves.map((item) => (
             <div className="card strikes-leave" key={item.discord_id}>
               <div>
-                <strong>{item.display_name}</strong>
+                <DiscordIdentity
+                  userId={item.discord_id}
+                  linkStatus={
+                    "link_status" in item
+                      ? (item.link_status as string)
+                      : undefined
+                  }
+                  displayName={item.display_name}
+                  resolvedMember={
+                    discordProfiles.members[item.discord_id] || null
+                  }
+                  resolving={discordProfiles.loading}
+                  variant="compact"
+                />
                 <small>{item.player_tags.join(" · ")}</small>
                 <span>Resume on: {dateText(item.resume_date)} UTC</span>
               </div>
@@ -1727,11 +1773,21 @@ export default function StrikesWorkspace({
                           <small>
                             {item.player_tag} · {item.clan_name} ·{" "}
                             {dateText(item.war_end)} ·{" "}
-                            {strikeLinkLabel(
-                              item.discord_id,
-                              null,
-                              item.link_status,
-                            )}
+                            <DiscordIdentity
+                              userId={item.discord_id}
+                              linkStatus={
+                                "link_status" in item
+                                  ? (item.link_status as string)
+                                  : undefined
+                              }
+                              resolvedMember={
+                                discordProfiles.members[
+                                  item.discord_id || ""
+                                ] || null
+                              }
+                              resolving={discordProfiles.loading}
+                              variant="compact"
+                            />
                           </small>
                           <span>
                             {isCwlRecord(item)

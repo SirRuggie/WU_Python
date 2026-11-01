@@ -51,7 +51,7 @@ export function strikeLinkLabel(
   if (linkStatus === "unknown" || linkStatus === "pending")
     return "Link unknown";
   if (linkStatus === "unlinked" || !discordId) return "Not linked";
-  return discordName || `Discord ${discordId}`;
+  return discordName || "Discord member unavailable";
 }
 
 export function importEmptyText(

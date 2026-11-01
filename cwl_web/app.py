@@ -846,6 +846,13 @@ async def staff_signup_members(request):
     if len(query) > 80:
         _fail(400, "Use a shorter member name")
     selected = request.query.get("id", "")
+    batch = request.query.get("ids")
+    selected_ids = None
+    if batch is not None:
+        values = batch.split(',')
+        if selected or not 1 <= len(values) <= 100 or any(not re.fullmatch(r'[1-9][0-9]{14,21}', value) for value in values):
+            _fail(400, 'Choose up to 100 valid member identities')
+        selected_ids = set(values)
     signup_ids = None
     if "season_id" in request.query:
         try:
@@ -861,12 +868,13 @@ async def staff_signup_members(request):
     matches = [row for row in rows if not row.get("user", {}).get("bot") and
                (signup_ids is None or str(row["user"]["id"]) in signup_ids) and
                (not selected or str(row["user"]["id"]) == selected) and
+               (selected_ids is None or str(row["user"]["id"]) in selected_ids) and
                (not query or query in search_text(" ".join(str(value or "") for value in
                 (row.get("nick"), row["user"].get("global_name"), row["user"].get("username"), row["user"]["id"]))))]
-    options = [member_option(row) for row in (matches if signup_ids is not None else matches[:50])]
+    options = [member_option(row) for row in (matches if signup_ids is not None or selected_ids is not None else matches[:50])]
     for option in options:
         option["role_ids"] = []; option["role_names"] = []
-    return web.json_response({"options": options, "next": None, "truncated": signup_ids is None and len(matches) > 50})
+    return web.json_response({"options": options, "next": None, "truncated": signup_ids is None and selected_ids is None and len(matches) > 50})
 
 
 def signup_member_id(value):
