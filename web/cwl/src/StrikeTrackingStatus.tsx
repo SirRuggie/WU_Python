@@ -67,7 +67,10 @@ export default function StrikeTrackingStatus({
         return;
       void load();
     };
-    const timer = window.setInterval(refreshVisible, 30_000);
+    const timer = window.setInterval(() => {
+      // Scheduled ticks may arrive a millisecond early; throttle events, not the interval.
+      if (document.visibilityState !== "hidden") void load();
+    }, 30_000);
     document.addEventListener("visibilitychange", refreshVisible);
     window.addEventListener("focus", refreshVisible);
     return () => {

@@ -203,7 +203,11 @@ export default function StrikeActivityRoster({
   }, [loading, focusTag, headingRef, memory, rows.length]);
   function change(patch: Partial<ActivityFilters>, push = true) {
     if (bulkBusy) return;
-    if (Object.keys(patch).some((key) => key !== "page" && key !== "sort"))
+    if (
+      Object.keys(patch).some(
+        (key) => key !== "page" && key !== "sort" && key !== "direction",
+      )
+    )
       setSelected([]);
     const next = normalizeActivityView({
       ...filters,
@@ -218,7 +222,13 @@ export default function StrikeActivityRoster({
       new URLSearchParams(activityFilterQuery(next)).forEach((value, key) =>
         url.searchParams.set(key, value),
       );
-      history.replaceState(history.state, "", url.pathname + url.search);
+      const historyState =
+        history.state && typeof history.state === "object"
+          ? { ...history.state }
+          : {};
+      // Applying a route consumes the panel entry; its cleanup must not pop away the filters.
+      delete historyState.wuActionPanel;
+      history.replaceState(historyState, "", url.pathname + url.search);
     }
   }
   function choose(row: ActivityAccount) {
@@ -320,7 +330,15 @@ export default function StrikeActivityRoster({
               Copy list
             </button>
             {canManage && !selecting && (
-              <button disabled={bulkBusy} onClick={() => setSelecting(true)}>
+              <button
+                disabled={bulkBusy}
+                onClick={(event) => {
+                  event.currentTarget
+                    .closest("details")
+                    ?.removeAttribute("open");
+                  setSelecting(true);
+                }}
+              >
                 Select accounts
               </button>
             )}
@@ -351,13 +369,16 @@ export default function StrikeActivityRoster({
           </button>
         ))}
       </div>
-      <p className="strike-activity-summary" role="status">
+      <p
+        className="strike-activity-summary"
+        role="status"
+        title={loadedAt ? `Updated ${loadedAt}` : undefined}
+      >
         {(error
           ? "Activity unavailable"
           : loading && !data.accounts.length
             ? "Loading accounts…"
-            : copied) ||
-          `${visible.length} matching accounts${loadedAt ? ` · Updated ${loadedAt}` : ""}`}
+            : copied) || `Showing ${visible.length} of ${data.accounts.length}`}
       </p>
       {error && (
         <p className="notice error" role="alert">
@@ -447,6 +468,18 @@ export default function StrikeActivityRoster({
       )}
       <StrikeActivityRows
         rows={rows}
+        filters={filters}
+        onSort={(sort) =>
+          change({
+            sort,
+            direction:
+              filters.sort === sort
+                ? filters.direction === "asc"
+                  ? "desc"
+                  : "asc"
+                : "desc",
+          })
+        }
         selecting={canManage && selecting}
         selected={selected}
         busy={bulkBusy}

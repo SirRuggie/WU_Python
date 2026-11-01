@@ -4,6 +4,14 @@ const date = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString()
     : "Unavailable";
+const sourceName = (value?: string | null) =>
+  /clashking/i.test(value || "")
+    ? "ClashKing seed"
+    : value === "clash_api" || value === "official"
+      ? "Clash API"
+      : value
+        ? "Unknown source"
+        : "";
 export default function StrikeActivityDetail({
   account,
 }: {
@@ -17,11 +25,19 @@ export default function StrikeActivityDetail({
   return (
     <details className="strike-activity-detail">
       <summary>Activity details</summary>
+      <p>
+        {[
+          account.over_limit ? "Over limit" : null,
+          account.new_this_week ? "New this week" : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
       <dl>
         <dt>Last seen</dt>
         <dd>
           {available && account.last_seen_at
-            ? `${date(account.last_seen_at)}${account.last_seen_source ? ` (${account.last_seen_source})` : ""}`
+            ? `${date(account.last_seen_at)}${account.last_seen_source ? ` (${sourceName(account.last_seen_source)})` : ""}`
             : available && account.tracking_started_at
               ? `Not seen since tracking began (${date(account.tracking_started_at)})`
               : "Unavailable"}

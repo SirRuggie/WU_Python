@@ -59,7 +59,7 @@ it("compact summaries never turn missing observations into zero activity", () =>
     no_attack_wars: 0,
     quiet_days: 0,
   } as ActivityAccount;
-  expect(compactActivitySummary(unknown)).toBe("Activity unavailable");
+  expect(compactActivitySummary(unknown)).toBe("");
   expect(
     compactActivitySummary({
       ...unknown,

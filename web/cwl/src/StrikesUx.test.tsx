@@ -183,7 +183,7 @@ it("loads the family once, filters locally and clears protected data on authoriz
     />,
   );
   await settle();
-  expect(host.textContent).toContain("1 matching accounts");
+  expect(host.textContent).toContain("Showing 1 of 1");
   expect(host.textContent).toContain("Aspen");
   await input('input[type="search"]', "No match");
   await settle();

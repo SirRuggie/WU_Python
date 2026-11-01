@@ -209,3 +209,27 @@ it("retains the initial in-flight read across StrictMode effect replay", async (
   expect(host.textContent).toContain("1 on track");
   expect(host.textContent).not.toContain("Checking…");
 });
+
+it("does not suppress a scheduled tick that arrives just before thirty seconds", async () => {
+  vi.useFakeTimers();
+  let tick: (() => void) | undefined;
+  const original = window.setInterval;
+  const spy = vi.spyOn(window, "setInterval").mockImplementation(((
+    callback: () => void,
+    delay?: number,
+  ) => {
+    if (delay === 30_000) tick = callback;
+    return original(callback, delay);
+  }) as typeof window.setInterval);
+  try {
+    await render(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29_999);
+      tick?.();
+    });
+    expect(transport).toHaveBeenCalledTimes(2);
+  } finally {
+    spy.mockRestore();
+    vi.useRealTimers();
+  }
+});

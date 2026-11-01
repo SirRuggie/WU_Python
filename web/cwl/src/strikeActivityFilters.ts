@@ -15,6 +15,7 @@ export const activitySorts = [
   "weight",
   "th",
   "missed",
+  "raids",
   "priority",
   "name",
   "clan",
@@ -28,6 +29,7 @@ export const activitySortLabels: Record<ActivitySort, string> = {
   weight: "Weight",
   th: "Town hall",
   missed: "Missed attacks",
+  raids: "Skipped raids",
   priority: "Priority",
   name: "Name",
   clan: "Clan",
@@ -104,6 +106,20 @@ export function quietDays(row: ActivityAccount) {
     !Number.isFinite(Date.parse(row.last_seen_at))
     ? null
     : count(row.quiet_days);
+}
+export function knownRaidMisses(row: ActivityAccount) {
+  const total = count(row.observed_raid_weekends),
+    attacked = count(row.attacked_raid_weekends),
+    missed = count(row.skipped_raid_weekends);
+  return !row.activity_unavailable &&
+    total !== null &&
+    total > 0 &&
+    total <= 2 &&
+    attacked !== null &&
+    attacked <= total &&
+    missed === total - attacked
+    ? missed
+    : null;
 }
 export function hasNoActivity(row: ActivityAccount) {
   return (
@@ -303,6 +319,7 @@ export function activitySortValue(
     case "quiet":
       return quietDays(row);
     case "last_attack": {
+      if (row.activity_unavailable) return null;
       const at =
         row.last_attacked_war_end && Date.parse(row.last_attacked_war_end);
       return typeof at === "number" && Number.isFinite(at) ? at : null;
@@ -315,6 +332,8 @@ export function activitySortValue(
       return positive(row.town_hall);
     case "missed":
       return knownWars(row) !== null ? count(row.missed_attacks) : null;
+    case "raids":
+      return knownRaidMisses(row);
     case "priority":
       return row.priority ? priorityRank[row.priority] : 0;
     case "name":
@@ -332,9 +351,7 @@ export function visibleActivityAccounts(
     .filter((row) => {
       const wars = warsWithoutAttacking(row),
         quiet = quietDays(row),
-        raids = row.activity_unavailable
-          ? null
-          : count(row.skipped_raid_weekends),
+        raids = knownRaidMisses(row),
         strikes = count(row.active_strikes),
         weight = positive(row.weight);
       return (

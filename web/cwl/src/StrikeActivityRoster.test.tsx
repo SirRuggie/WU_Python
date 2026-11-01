@@ -21,6 +21,7 @@ const row: ActivityAccount = {
   observed_attacks: 0,
   no_attack_wars: 0,
   observed_wars: 3,
+  attacked_wars: 3,
   skipped_raid_weekends: 0,
 };
 let host: HTMLDivElement, root: Root;
@@ -53,6 +54,7 @@ beforeEach(() => {
                 status: "risk",
                 quiet_days: 14,
                 no_attack_wars: 3,
+                attacked_wars: 0,
                 missed_attacks: 6,
                 observed_attacks: 6,
               },
@@ -74,11 +76,11 @@ it("loads the family once, keeps weight tool closed, and row selection only navi
   await act(async () =>
     root.render(<StrikeActivityRoster onChoose={choose} />),
   );
-  expect(host.textContent).toContain("2 matching accounts");
+  expect(host.textContent).toContain("Showing 2 of 2");
   expect(host.textContent).not.toContain("at risk");
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(2);
   expect(host.textContent).toContain("Quiet 0d");
-  expect(host.textContent).toContain("No attacks in last 3 wars");
+  expect(host.textContent).toContain("0 of 3 wars");
   expect(vi.mocked(fetch).mock.calls).toHaveLength(1);
   await act(async () =>
     host.querySelector<HTMLButtonElement>(".strike-activity-row")!.click(),
@@ -368,7 +370,7 @@ it("makes a cold Discord-name search find the row without reloading or replacing
 it("defaults to known three-war misses and exposes the threshold chip", async () => {
   history.replaceState({}, "", "/strikes");
   await act(async () =>
-    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} canManage />),
   );
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(1);
   expect(host.querySelector(".strike-activity-row")!.textContent).toContain(
@@ -376,4 +378,84 @@ it("defaults to known three-war misses and exposes the threshold chip", async ()
   );
   expect(host.textContent).toContain("No attacks in last 3+ known wars");
   expect(host.textContent).not.toContain("at risk");
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Select accounts")!
+      .click(),
+  );
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Select all (1)")!
+      .click(),
+  );
+  expect(host.textContent).toContain("1 selected");
+  expect(
+    host.querySelector(
+      '[aria-label="Remove No attacks in last 3+ known wars"]',
+    ),
+  ).not.toBeNull();
+});
+
+it("copies every matching account across pages and reports clipboard refusal", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            accounts: Array.from({ length: 65 }, (_, index) => ({
+              ...row,
+              player_tag: `#P${index}`,
+              player_name: `Account ${index}`,
+            })),
+            clans: [],
+          }),
+        ),
+    ),
+  );
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  expect(host.querySelectorAll("[data-strike-player]")).toHaveLength(25);
+  const copy = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Copy list",
+  )!;
+  await act(async () => copy.click());
+  expect(writeText.mock.calls[0][0].split("\n")).toHaveLength(65);
+  expect(host.textContent).toContain("Copied 65 accounts");
+  writeText.mockRejectedValueOnce(new Error("Denied"));
+  await act(async () => copy.click());
+  expect(host.textContent).toContain("Copy failed");
+});
+
+it("table headers change the same sort and direction shown in the toolbar", async () => {
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  const header = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Sort by Strikes"]',
+  )!;
+  await act(async () => header.click());
+  expect(
+    host.querySelector<HTMLSelectElement>('select[aria-label="Sort accounts"]')!
+      .value,
+  ).toBe("strikes");
+  expect(host.querySelector("th[aria-sort=descending]")!.textContent).toContain(
+    "Strikes",
+  );
+  expect(host.querySelector("[data-strike-player]")!.textContent).toContain(
+    "Risk fixture",
+  );
+  await act(async () => header.click());
+  expect(host.querySelector("th[aria-sort=ascending]")!.textContent).toContain(
+    "Strikes",
+  );
+  expect(host.querySelector("[data-strike-player]")!.textContent).toContain(
+    "Fixture healthy",
+  );
 });

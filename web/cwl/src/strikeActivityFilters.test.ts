@@ -27,6 +27,8 @@ const row = (patch: Partial<ActivityAccount> = {}): ActivityAccount => ({
   missed_attacks: 20,
   observed_attacks: 28,
   skipped_raid_weekends: 2,
+  observed_raid_weekends: 2,
+  attacked_raid_weekends: 0,
   tracking_started_at: "2026-09-01T00:00:00Z",
   town_hall: 18,
   weight: 160000,
@@ -101,6 +103,8 @@ it.each(activitySorts)(
         weight: 150000,
         town_hall: 16,
         missed_attacks: 2,
+        skipped_raid_weekends: 0,
+        attacked_raid_weekends: 2,
         priority: "normal",
         current_clan_name: "A",
         last_attacked_war_end: "2026-10-01T00:00:00Z",
@@ -128,6 +132,7 @@ it.each(activitySorts)(
         weight: null,
         town_hall: null,
         last_attacked_war_end: null,
+        observed_raid_weekends: undefined,
       });
       expect(
         visibleActivityAccounts([unknown, a], {
@@ -257,8 +262,27 @@ it("sort labels describe exactly the selected numeric or text value", () => {
     "Weight",
     "Town hall",
     "Missed attacks",
+    "Skipped raids",
     "Priority",
     "Name",
     "Clan",
   ]);
+});
+
+it("unobserved or contradictory raid samples never satisfy a missed-weekend filter", () => {
+  const filters = {
+    ...parseActivityFilters("?activity_view=all"),
+    raidMin: 1 as const,
+  };
+  expect(
+    visibleActivityAccounts(
+      [
+        row({ observed_raid_weekends: undefined }),
+        row({ observed_raid_weekends: 0 }),
+        row({ attacked_raid_weekends: 2 }),
+      ],
+      filters,
+    ),
+  ).toEqual([]);
+  expect(visibleActivityAccounts([row()], filters)).toHaveLength(1);
 });

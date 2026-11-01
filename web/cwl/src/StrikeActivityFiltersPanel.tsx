@@ -59,7 +59,11 @@ export default function StrikeActivityFiltersPanel({
       >
         {values.map((value) => (
           <option key={value} value={value}>
-            {value ? `${value}+` : "Any"}
+            {key === "noAttackMin" && value === 14
+              ? "All 14"
+              : value
+                ? `${value}+`
+                : "Any"}
           </option>
         ))}
       </select>
@@ -231,7 +235,7 @@ export default function StrikeActivityFiltersPanel({
             checked={draft.noActivity}
             onChange={(event) => patch({ noActivity: event.target.checked })}
           />
-          No activity since tracking began
+          No activity yet
         </label>
       </div>
     </ActionPanel>

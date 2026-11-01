@@ -1,60 +1,84 @@
-# Strikes usability implementation checkpoint
+# Strikes usability review — prompt65
 
-Prompt 65 is an account-list presentation/filter change. Strike actions,
-replacement eligibility, retention and trackers remain separate. The new model
-ignores the API's legacy risk/watch/active classification; those response fields
-remain for compatibility. UI replacement and the staff clan-picker sweep are
-still in progress, so this increment is not ready for review or deployment.
+The account list ignores the API's legacy risk/watch/active classification; those
+fields remain for compatibility. Ruggie removed those badges on October31,2026.
+Strike actions, priority editing, eligibility, retention and tracking rules are
+unchanged. Tracking reads now have visibility/in-flight/event guards, as requested
+in review228; no delivery or tracker mutation was added.
 
-The filter model records every predicate in URL state and removable applied
-chips, including a tab's known-war/inactivity/replacement criteria. Unknown war
-samples never count as misses, and numeric unknowns sort last in either direction.
-Copy uses all matching accounts, normalizes name line breaks and neutralizes
-Discord mention syntax. Replacement and optional low-strike eligibility rules
-remain unchanged.
+## Presentation and behavior
 
-A small read-only projection adds attacked/known wars, the last attacking war's
-end, and attacked/known samples from the latest two ended raid weekends. Exact
-attack timestamps are not stored: the sort label explicitly says Last attack
-(war end), with a matching explanation planned in the detail. Unknown samples
-are excluded from both numerator and denominator; no tracker or storage writes
-are added. Existing activity status and replacement logic are unchanged.
+Not attacking defaults to three or more consecutive known wars without attacking,
+sorted by that chain then strikes. Inactive uses fourteen quiet days; Replacements
+retains its existing marked/eligible rule; All has no hidden view predicate. Every
+threshold has a removable applied chip. The shared panel has searchable clans,
+all requested criteria, a live count and Clear filters. activity_view is separate
+from the dashboard's view route, so sign-in and Back retain the complete filter
+state. Select all uses the visible matching population, with its existing fifty
+account bound and full confirmation; sort changes retain selection.
 
-Current targeted checks: eighteen filter/sort/URL/copy cases and twenty-two
-activity signal cases pass. Full feature validation and required mutations will
-follow the completed UI. No live writes or deployment have occurred.
+Phone rows show name/priority and plain strikes, TH/clan/weight, then one muted
+summary: Quiet days, attacked/known wars, attacked/known raid weekends. Chains and
+missed attack slots stay in detail. Unknown samples remain blank or unavailable,
+not false zero. No activity yet is a compact label for a known tracking start;
+ClashKing seeds keep a ~ marker and explanatory tooltip/detail. Over limit, New
+this week, departure and notes remain in detail when they would wrap the row.
+Only Chopping Block is red; High is amber and Normal has no label.
 
-The tracking panel now skips hidden-tab interval reads, coalesces in-flight
-reads and throttles focus/visibility bursts to one read per thirty seconds.
-Explicit checks and retry completion may refresh immediately. Its pre-change
-thirty-second timer explains two tracking reads per minute; this alone is not
-proof of a render loop. Five component regressions pass, including a hung read,
-ninety seconds hidden and repeated focus events. Real browser cadence measurement
-and the full UI review remain pending.
+Wide screens use Player, TH, Clan, Weight, Strikes, Quiet, Wars, Raids and Priority
+columns with sortable headers and a sticky header. Skipped raids is also exposed
+as the matching sort for the Raids header. Search/sort/filter controls occupy54px
+and stick below the mobile topbar. Copy list uses every matching account across
+pages and reports clipboard rejection; names are plain text with mention syntax
+neutralized. Recruit lookup moved unchanged into its own component and stays
+closed until requested. External names and notes render as React text.
 
-The account list now uses the new visible tab/filter model, searchable clan
-filter panel, sort direction, removable threshold chips, Copy list and compact
-single-summary rows. Recruit weight lookup moved unchanged into its own component.
-Thirty-four targeted UI/model/polling checks pass. StrictMode effect replay keeps
-the initial coalesced tracking read. The semantic desktop table and full activity disclosure are implemented;
-shared staff clan-picker sweep and full browser validation remain;
-this is still an implementation checkpoint, not READY.
+## Clan control sweep
 
-The latest full frontend run passed 1,261 cases across 231 files, with TypeScript
-and build. Four required mutants were killed: unknown wars counted as misses,
-unknown sort values becoming zero, hidden rows entering Select all, and a sort
-label disagreeing with the selected value. A sixteen-scenario Chrome run passed
-320/360/390/1440 widths with 26/65/125/560 accounts: no horizontal overflow,
-54 px sticky toolbar, 90 px phone rows and 52.5 px desktop rows. Visual inspection
-caught an exposed table caption and hidden mobile priority; those styles were
-corrected, so final screenshots and measurements will be refreshed. The prior
-reference rows were about 181 px phone/87 px desktop. This is not final evidence
-for the subsequent style corrections.
+Participation and Bonus Hosting clan choices now reuse searchable RosterMenu,
+retaining disabled states, selection and discard behavior. Roster/Compare,
+assignment and weight trial already have searchable clan controls. ClanHistory's
+Show, DashboardHome and Events controls select categories/scopes rather than a
+clan and remain unchanged. ClanDestinationOptions has no runtime consumer.
 
-URL state uses activity_view to preserve the dashboard's separate view route
-parameter. Sign-in and Back restoration regression coverage includes every new
-threshold. Removed the obsolete status/chip view implementation and seven tests
-for that retired behavior; the new model has nineteen cases plus component/detail
-regressions. All existing strike actions, permissions and replacement eligibility
-remain. Hosting-clan controls in Participation and Bonus now use the shared
-searchable RosterMenu while retaining disabled and discard behavior.
+## Verification and limitations
+
+Full guarded backend:5533 passed,29 skipped,221 subtests. The stale inherited Mongo
+assertion found in review232 was corrected to the new storage-outcome wording;
+all three real-Mongo cases now pass on this branch, and its owned fixture stopped.
+The same assertion correction is present in PR119's rework branch; its complete
+four-case rework lane is not yet claimed green. No live Discord delivery was
+performed or proven by these fixtures.
+
+Six behavioral mutants were killed: unknown wars count as misses; unknown sort
+becomes zero; hidden rows enter bulk selection; sort label disagrees; unknown
+renders as zero; a tab's bulk predicate loses its applied chip. Baselines pass.
+Unit coverage includes all sorts/filters, both directions, headers, tabs, complete
+URL/login restoration, unknown/contradictory samples, Copy across65 accounts,
+searchable/disabled clans, permission loss and full selected names.
+
+Latest sixteen-scenario visual run covers320/360/390/1440 with26/65/125/560
+accounts. No overflow, cell-overlap or page errors;54px toolbar. Final rows measure
+90px phone and44.5px desktop, versus Claude's production reference181/87px. With
+controls stuck, the fixture shows seven full phone rows plus a partial and twenty
+desktop rows; initial viewport counts are four/thirteen because page headings and
+tabs are still visible. These populations differ from the original production
+sample. Narrow/wide screenshots and each tab were inspected. A first nine-column
+CSS iteration incorrectly forced mobile44px rows; visual inspection caught the
+overlap, and stricter per-cell geometry checks verify the corrected90px rows.
+
+Real Chrome measured reads at about30/60 seconds, none during35 seconds hidden,
+and one on return despite forty focus events. The full layout chain exposed a
+one-millisecond early interval skip; scheduled visible ticks now read regardless
+of the event throttle. Seven component cases include that jitter and StrictMode
+replay. Initial identity refresh is unchanged. Auth/seasons keep their separate
+existing sixty-second visible polls. This is an isolated browser observation,
+not a signed-in production trace or a complete assistive-technology audit.
+
+Final frozen-source validation passed:1,268 frontend cases across232 files,
+TypeScript/build and every stage of the ten-stage integrated layout command.
+The final cadence sample was29.93/59.93/100.01 seconds. Full logs and screenshots
+are retained in.local/p65-final-evidence; no required gate remains pending. Earlier harness failures (searchbox
+role, counted checkbox label, panel-entry URL restoration and teardown races) were
+corrected; failed runs are not counted as passes. No production65 write or
+activation occurred.

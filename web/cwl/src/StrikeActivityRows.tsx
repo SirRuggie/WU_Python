@@ -3,32 +3,65 @@ import { compactWeight } from "./replacementView";
 import {
   hasNoActivity,
   quietDays,
-  warsWithoutAttacking,
+  knownWars,
+  count,
+  knownRaidMisses,
+  type ActivitySort,
+  type ActivityFilters,
 } from "./strikeActivityFilters";
-
+const warRatio = (row: ActivityAccount) => {
+  const total = knownWars(row),
+    attacked = count(row.attacked_wars);
+  return total !== null && attacked !== null && attacked <= total
+    ? `${attacked} of ${total}`
+    : null;
+};
+const raidRatio = (row: ActivityAccount) =>
+  knownRaidMisses(row) !== null
+    ? `${row.attacked_raid_weekends} of ${row.observed_raid_weekends}`
+    : null;
+const seeded = (row: ActivityAccount) =>
+  /clashking/i.test(row.last_seen_source || "");
+const priority = (row: ActivityAccount) =>
+  row.priority === "replace_first" ? (
+    <strong className="strike-priority-chopping">Chopping Block</strong>
+  ) : row.priority === "high" ? (
+    <span className="strike-priority-high">High</span>
+  ) : null;
 export function compactActivitySummary(row: ActivityAccount) {
   const quiet = quietDays(row),
-    wars = warsWithoutAttacking(row);
-  return (
-    [
-      quiet !== null
-        ? `Quiet ${quiet}d`
-        : hasNoActivity(row)
-          ? "Not seen since tracking began"
-          : null,
-      wars !== null && wars > 0 ? `No attacks in last ${wars} wars` : null,
-      row.over_limit ? "Over limit" : null,
-      row.new_this_week ? "New this week" : null,
-    ]
-      .filter(Boolean)
-      .join(" · ") || "Activity unavailable"
-  );
+    wars = warRatio(row),
+    raids = raidRatio(row);
+  return [
+    quiet !== null
+      ? `Quiet ${seeded(row) ? "~" : ""}${quiet}d`
+      : hasNoActivity(row)
+        ? "No activity yet"
+        : null,
+    wars ? `${wars} wars` : null,
+    raids ? `${raids} raids` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
+const columns: { label: string; sort: ActivitySort }[] = [
+  { label: "Player", sort: "name" },
+  { label: "TH", sort: "th" },
+  { label: "Clan", sort: "clan" },
+  { label: "Weight", sort: "weight" },
+  { label: "Strikes", sort: "strikes" },
+  { label: "Quiet", sort: "quiet" },
+  { label: "Wars", sort: "wars" },
+  { label: "Raids", sort: "raids" },
+  { label: "Priority", sort: "priority" },
+];
 export default function StrikeActivityRows({
   rows,
   selecting,
   selected,
   busy,
+  filters,
+  onSort,
   onSelected,
   onChoose,
 }: {
@@ -36,6 +69,8 @@ export default function StrikeActivityRows({
   selecting: boolean;
   selected: string[];
   busy: boolean;
+  filters: ActivityFilters;
+  onSort: (sort: ActivitySort) => void;
   onSelected: (tags: string[]) => void;
   onChoose: (row: ActivityAccount) => void;
 }) {
@@ -45,12 +80,32 @@ export default function StrikeActivityRows({
       <thead>
         <tr>
           {selecting && <th scope="col">Select</th>}
-          <th scope="col">Account</th>
-          <th scope="col">TH</th>
-          <th scope="col">Clan</th>
-          <th scope="col">Weight</th>
-          <th scope="col">Strikes</th>
-          <th scope="col">Activity</th>
+          {columns.map((column) => (
+            <th
+              key={column.sort}
+              scope="col"
+              aria-sort={
+                filters.sort === column.sort
+                  ? filters.direction === "asc"
+                    ? "ascending"
+                    : "descending"
+                  : "none"
+              }
+            >
+              <button
+                disabled={busy}
+                onClick={() => onSort(column.sort)}
+                aria-label={`Sort by ${column.label}`}
+              >
+                {column.label}
+                {filters.sort === column.sort
+                  ? filters.direction === "asc"
+                    ? " ↑"
+                    : " ↓"
+                  : ""}
+              </button>
+            </th>
+          ))}
         </tr>
       </thead>
       <tbody>
@@ -95,17 +150,21 @@ export default function StrikeActivityRows({
                 className="strike-activity-row"
                 disabled={busy}
                 data-strike-player={row.player_tag}
+                title={`${row.player_name} ${row.player_tag}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onChoose(row);
                 }}
               >
                 <strong>{row.player_name}</strong>
-                <small>{row.player_tag}</small>
+                <span className="strike-mobile-priority">{priority(row)}</span>
               </button>
             </td>
             <td className="strike-activity-th">TH{row.town_hall || "—"}</td>
-            <td className="strike-activity-clan">
+            <td
+              className="strike-activity-clan"
+              title={row.current_clan_name || row.last_clan_name || "No clan"}
+            >
               {row.current_clan_name || row.last_clan_name || "No clan"}
               {row.left_clan ? " · Left" : ""}
             </td>
@@ -118,17 +177,31 @@ export default function StrikeActivityRows({
                 {row.active_strikes === 1 ? "strike" : "strikes"}
               </span>
             </td>
-            <td className="strike-activity-one-summary">
-              <span className="strike-activity-summary-text">
-                {compactActivitySummary(row)}
-              </span>
-              {row.priority === "replace_first" ? (
-                <strong className="strike-priority-chopping">
-                  Chopping Block
-                </strong>
-              ) : row.priority === "high" ? (
-                <span className="strike-priority-high">High</span>
-              ) : null}
+            <td
+              className="strike-activity-quiet"
+              title={
+                seeded(row)
+                  ? "Last seen seeded from ClashKing"
+                  : "Last observed activity"
+              }
+            >
+              {quietDays(row) !== null
+                ? `${seeded(row) ? "~" : ""}${quietDays(row)}d`
+                : hasNoActivity(row)
+                  ? "No activity yet"
+                  : "—"}
+            </td>
+            <td className="strike-activity-wars">{warRatio(row) || "—"}</td>
+            <td className="strike-activity-raids">{raidRatio(row) || "—"}</td>
+            <td className="strike-activity-priority">{priority(row)}</td>
+            <td
+              aria-label="Activity summary"
+              className="strike-activity-one-summary"
+              title={
+                seeded(row) ? "~ Last seen seeded from ClashKing" : undefined
+              }
+            >
+              {compactActivitySummary(row)}
             </td>
           </tr>
         ))}

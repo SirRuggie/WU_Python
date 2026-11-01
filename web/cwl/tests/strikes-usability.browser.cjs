@@ -17,7 +17,7 @@ fs.mkdirSync(output, { recursive: true });
     for (const width of [320, 360, 390, 1440])
       for (const count of [26, 65, 125, 560]) {
         const context = await browser.newContext({
-          viewport: { width, height: 900 },
+          viewport: { width, height: width === 1440 ? 1000 : 800 },
           permissions: ["clipboard-read", "clipboard-write"],
         });
         const page = await context.newPage();
@@ -43,6 +43,10 @@ fs.mkdirSync(output, { recursive: true });
             })
             .count(),
         );
+        if (count === 560 && [360, 1440].includes(width))
+          await page.screenshot({
+            path: path.join(output, `${width}-not-attacking.png`),
+          });
         await page
           .getByRole("button", { name: new RegExp(`^All ${count}$`) })
           .click();
@@ -62,24 +66,39 @@ fs.mkdirSync(output, { recursive: true });
             const r = row.getBoundingClientRect();
             return r.top >= 0 && r.bottom <= innerHeight;
           }).length,
+          childrenFit: [
+            ...document.querySelectorAll(".strike-activity-entry"),
+          ].every((row) =>
+            [...row.querySelectorAll("td")]
+              .filter((cell) => getComputedStyle(cell).display !== "none")
+              .every(
+                (cell) =>
+                  cell.getBoundingClientRect().bottom <=
+                  row.getBoundingClientRect().bottom + 1,
+              ),
+          ),
           headings: [
             ...document.querySelectorAll(".strike-activity-table th"),
-          ].map((node) => node.textContent),
+          ].map((node) => node.textContent.trim().replace(/ [↑↓]$/, "")),
         }));
         assert(metrics.scrollWidth <= width, JSON.stringify(metrics));
+        assert(metrics.childrenFit, "Cell content overflows row geometry");
         assert(metrics.toolbar <= 60, JSON.stringify(metrics));
-        assert(metrics.row >= 44);
+        assert(metrics.row >= (width < 900 ? 80 : 44));
         assert(
           metrics.row <= (width < 900 ? 100 : 75),
           JSON.stringify(metrics),
         );
         assert.deepEqual(metrics.headings, [
-          "Account",
+          "Player",
           "TH",
           "Clan",
           "Weight",
           "Strikes",
-          "Activity",
+          "Quiet",
+          "Wars",
+          "Raids",
+          "Priority",
         ]);
         await page
           .getByRole("button", { name: "Filters", exact: true })
@@ -104,6 +123,62 @@ fs.mkdirSync(output, { recursive: true });
         await page.screenshot({
           path: path.join(output, `${width}-${count}.png`),
         });
+        await page.evaluate(() =>
+          window.scrollTo(
+            0,
+            document
+              .querySelector(".strike-activity-table tbody")
+              .getBoundingClientRect().top +
+              scrollY -
+              (innerWidth >= 900 ? 99 : 54),
+          ),
+        );
+        await page.waitForTimeout(80);
+        const scrolled = await page.evaluate(() => ({
+          toolbarTop: document
+            .querySelector(".strike-activity-toolbar")
+            .getBoundingClientRect().top,
+          headerTop: document
+            .querySelector(".strike-activity-table th")
+            .getBoundingClientRect().top,
+          rows: [...document.querySelectorAll(".strike-activity-entry")].filter(
+            (row) => {
+              const r = row.getBoundingClientRect();
+              return (
+                r.top >= (innerWidth >= 900 ? 98 : 54) &&
+                r.bottom <= innerHeight
+              );
+            },
+          ).length,
+        }));
+        assert(
+          scrolled.toolbarTop >= -1 && scrolled.toolbarTop <= 1,
+          JSON.stringify(scrolled),
+        );
+        if (width >= 900)
+          assert(
+            scrolled.headerTop >= 53 && scrolled.headerTop <= 56,
+            JSON.stringify(scrolled),
+          );
+        if (count === 560)
+          await page.screenshot({
+            path: path.join(output, `${width}-560-scrolled.png`),
+          });
+        Object.assign(metrics, { scrolledRowsInViewport: scrolled.rows });
+        await page.evaluate(() => window.scrollTo(0, 0));
+        if (count === 560 && [360, 1440].includes(width)) {
+          for (const [label, name] of [
+            ["Inactive", "inactive"],
+            ["Replacements", "replacements"],
+          ]) {
+            await page
+              .getByRole("button", { name: new RegExp(`^${label} `) })
+              .click();
+            await page.screenshot({
+              path: path.join(output, `${width}-${name}.png`),
+            });
+          }
+        }
         assert.deepEqual(errors, []);
         evidence.push({ ...metrics, count });
         await page.unrouteAll({ behavior: "wait" });
