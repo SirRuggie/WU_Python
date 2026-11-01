@@ -47,6 +47,7 @@ export default function MemberRow({
         className="members-person-open"
         onClick={onOpen}
         aria-label={`${t.openPerson}: ${name}`}
+        aria-describedby={`member-meta-${member.discord_id} member-zone-${member.discord_id}`}
       >
         <DiscordIdentity
           userId={member.discord_id}
@@ -55,9 +56,15 @@ export default function MemberRow({
           variant="compact"
           contact={false}
         />
-        <span className="members-person-zone">
+        <span
+          className="members-person-zone"
+          id={`member-zone-${member.discord_id}`}
+        >
           {member.profile?.flag || t.noFlag} · {zone || t.noZone}
           {local && ` · ${t.localTime(local)}`}
+        </span>
+        <span className="sr-only" id={`member-meta-${member.discord_id}`}>
+          {[member.nickname, member.skip_reason].filter(Boolean).join(" · ")}
         </span>
       </button>
       {pending && <p role="status">{t.pending}</p>}

@@ -35,14 +35,43 @@ function asRun(value: RoleStatus): RoleRun {
   if (
     !value ||
     typeof value.run_id !== "string" ||
+    !value.run_id ||
+    value.run_id.length > 200 ||
     !["queued", "stopping", "done", "stopped"].includes(value.state) ||
     !Array.isArray(value.rows) ||
     value.rows.length > 10000 ||
-    new Set(value.rows.map((row) => row.discord_id)).size !==
+    new Set(value.rows.map((row) => row?.discord_id)).size !==
       value.rows.length ||
     value.rows.some(
       (row) =>
-        !/^\d{15,22}$/.test(row.discord_id) || typeof row.message !== "string",
+        !row ||
+        typeof row.discord_id !== "string" ||
+        !/^[1-9][0-9]{14,21}$/.test(row.discord_id) ||
+        typeof row.message !== "string" ||
+        ![
+          "waiting",
+          "pending",
+          "running",
+          "done",
+          "failed",
+          "uncertain",
+          "stopped",
+          "skipped",
+        ].includes(row.status) ||
+        (row.changed !== undefined && typeof row.changed !== "boolean") ||
+        (row.role_id !== undefined &&
+          (typeof row.role_id !== "string" ||
+            !/^[1-9][0-9]{14,21}$/.test(row.role_id))) ||
+        (row.operation !== undefined &&
+          !["add", "remove"].includes(row.operation)) ||
+        (row.expected_role_ids !== undefined &&
+          (!Array.isArray(row.expected_role_ids) ||
+            row.expected_role_ids.length > 250 ||
+            new Set(row.expected_role_ids).size !==
+              row.expected_role_ids.length ||
+            row.expected_role_ids.some(
+              (id) => typeof id !== "string" || !/^[1-9][0-9]{14,21}$/.test(id),
+            ))),
     )
   )
     throw new Error(t.roleUnavailable);
@@ -140,7 +169,10 @@ export default function useRoleRun(
         if (uncertain) callbacks.current.onChanged();
       }
     } catch (cause) {
-      if (alive.current && generation === version.current) fail(cause);
+      if (alive.current && generation === version.current) {
+        fail(cause);
+        setUncertain(true);
+      }
     }
   }
   useEffect(() => {
@@ -215,6 +247,8 @@ export default function useRoleRun(
       if (alive.current && generation === version.current) {
         setRun(next);
         setUncertain(false);
+        if (["done", "stopped"].includes(next.state))
+          callbacks.current.onChanged();
       }
       return alive.current && generation === version.current;
     } catch (cause) {

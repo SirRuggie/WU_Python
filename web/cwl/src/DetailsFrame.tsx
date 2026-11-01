@@ -28,6 +28,8 @@ export default function DetailsFrame({
   children,
   backLabel = "‹ Build roster",
   browseLabel = "Browse accounts",
+  discardSubject = "weight",
+  discardConfirmLabel = "Discard",
 }: {
   tag: string;
   name: string;
@@ -39,6 +41,8 @@ export default function DetailsFrame({
   children: ReactNode;
   backLabel?: string;
   browseLabel?: string;
+  discardSubject?: string;
+  discardConfirmLabel?: string;
 }) {
   // A nonmodal desktop panel opened from a modal must remain in that modal's
   // top-layer subtree; otherwise the browser makes it inert.
@@ -178,9 +182,9 @@ export default function DetailsFrame({
       {children}
       {pending && (
         <ConfirmDialog
-          heading="Discard unsaved weight?"
-          text={`Discard the unsaved weight for ${name}?`}
-          confirmLabel="Discard"
+          heading={`Discard unsaved ${discardSubject}?`}
+          text={`Discard the unsaved ${discardSubject} for ${name}?`}
+          confirmLabel={discardConfirmLabel}
           onCancel={() => setPending(null)}
           onConfirm={() => {
             const action = pending;

@@ -5,13 +5,21 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("../api", async (original) => ({
   ...(await original<typeof import("../api")>()),
-  api: (...args: unknown[]) =>
-    args[0] === "/manage/member-timezones/runs?active=1"
-      ? Promise.resolve({ runs: [] })
-      : transport(...args),
+  api: async (...args: unknown[]) => {
+    if (String(args[0]).endsWith("runs?active=1")) return { runs: [] };
+    const result = await transport(...args);
+    if (args[0] !== "/manage/members" || !result?.members) return result;
+    return {
+      ...result,
+      roles: [],
+      manageable_roles: [],
+      members: result.members.map((row: object) => ({ ...row, role_ids: [] })),
+    };
+  },
 }));
 import { ApiError } from "../api";
-import MemberTimezones from "./MemberTimezones";
+import MembersPage from "../members/MembersPage";
+import { DashboardPermissions } from "../DashboardPermissions";
 import type { Directory } from "./types";
 const uid = "123456789012345678";
 const directory: Directory = {
@@ -60,10 +68,25 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 async function renderPage() {
-  await act(async () => root.render(<MemberTimezones onDirty={() => {}} />));
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
+        <MembersPage onDirty={() => {}} />
+      </DashboardPermissions.Provider>,
+    ),
+  );
 }
 async function click(text: string) {
-  const button = [...host.querySelectorAll("button")].find(
+  if (text === "Edit Ada") {
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>(".members-person-open")!.click(),
+    );
+    return click("Edit time zone and flag");
+  }
+  if (text === "Next members") text = "Next review members";
+  if (text === "Past runs") text = "Past nickname changes";
+  if (text === "Review nicknames") text = "Fix nicknames";
+  const button = [...document.body.querySelectorAll("button")].find(
     (x) => x.textContent === text || x.getAttribute("aria-label") === text,
   );
   expect(button).toBeTruthy();
@@ -76,14 +99,15 @@ it("lists states, searches and edits without fetching a closed Standardize previ
       : directory,
   );
   await renderPage();
-  expect(host.textContent).toContain("Saved");
-  expect(host.textContent).toContain("GMT-5");
+  expect(document.body.textContent).toContain("GMT-5");
   expect(
     transport.mock.calls.every((c) => !String(c[0]).includes("preview")),
   ).toBe(true);
   await click("Edit Ada");
-  expect(host.querySelector("input")?.value).toBe("Ada");
-  expect(host.textContent).toContain("Also change the Discord nickname");
+  expect(document.querySelector<HTMLInputElement>(".mt-editor input")?.value).toBe("Ada");
+  expect(document.body.textContent).toContain(
+    "Also change the Discord nickname",
+  );
   expect(transport.mock.calls.some((c) => c[1] === "POST")).toBe(false);
 });
 it("clears protected member data when refresh loses permission", async () => {
@@ -91,10 +115,10 @@ it("clears protected member data when refresh loses permission", async () => {
     .mockResolvedValueOnce(directory)
     .mockRejectedValueOnce(new ApiError("Denied", 403));
   await renderPage();
-  expect(host.textContent).toContain("Ada");
+  expect(document.body.textContent).toContain("Ada");
   await click("Refresh members");
-  expect(host.textContent).not.toContain("Ada");
-  expect(host.textContent).toContain("Your access changed");
+  expect(document.body.textContent).not.toContain("Ada");
+  expect(document.body.textContent).toContain("Your access changed");
 });
 it("preserves the editor after a conflict and never silently queues a nickname change", async () => {
   transport.mockImplementation(async (path: string, method?: string) => {
@@ -106,8 +130,8 @@ it("preserves the editor after a conflict and never silently queues a nickname c
   await renderPage();
   await click("Edit Ada");
   await click("Save profile");
-  expect(host.textContent).toContain("Profile changed");
-  expect(host.querySelector("input")?.value).toBe("Ada");
+  expect(document.body.textContent).toContain("Profile changed");
+  expect(document.querySelector<HTMLInputElement>(".mt-editor input")?.value).toBe("Ada");
   const posted = transport.mock.calls.find((c) => c[1] === "POST")!;
   expect(posted[2].rename).toBe(false);
   expect(posted[2].revision).toBe(3);
@@ -123,10 +147,10 @@ it("pages 560 compact members and keeps occasional actions above the directory",
   };
   transport.mockResolvedValue(many);
   await renderPage();
-  expect(host.querySelectorAll(".mt-member-row")).toHaveLength(25);
-  expect(host.textContent).toContain("560 of 560");
-  const actions = host.querySelector(".mt-top-actions")!,
-    list = host.querySelector(".mt-member-list")!;
+  expect(host.querySelectorAll(".members-person-open")).toHaveLength(25);
+  expect(document.body.textContent).toContain("Showing 1-25 of 560");
+  const actions = host.querySelector(".members-workspace > header")!,
+    list = host.querySelector(".members-list")!;
   expect(
     actions.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
@@ -134,7 +158,7 @@ it("pages 560 compact members and keeps occasional actions above the directory",
   expect(
     host.querySelector(".mt-pagination span")?.getAttribute("aria-label"),
   ).toBe("Page 2 of 23");
-  expect(host.querySelector(".mt-member-row")!.textContent).toContain(
+  expect(host.querySelector(".members-person-open")!.textContent).toContain(
     "Member 025",
   );
 });
@@ -166,7 +190,7 @@ it("reloads a conflicting revision while keeping the draft for explicit reapply"
   await renderPage();
   await click("Edit Ada");
   await act(async () => {
-    const field = host.querySelector<HTMLInputElement>(".mt-editor input")!;
+    const field = document.querySelector<HTMLInputElement>(".mt-editor input")!;
     Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       "value",
@@ -176,10 +200,10 @@ it("reloads a conflicting revision while keeping the draft for explicit reapply"
   await click("Save profile");
   latest = true;
   await click("Reload latest and keep draft");
-  expect(host.querySelector<HTMLInputElement>(".mt-editor input")!.value).toBe(
-    "Draft kept",
-  );
-  expect(host.textContent).toContain("Your draft was kept");
+  expect(
+    document.querySelector<HTMLInputElement>(".mt-editor input")!.value,
+  ).toBe("Draft kept");
+  expect(document.body.textContent).toContain("Your draft was kept");
   await click("Save profile");
   const first = posts[0] as { request_id: string; revision: number },
     second = posts[1] as { request_id: string; revision: number };
@@ -243,7 +267,7 @@ it("makes complete row metadata accessible and exposes hierarchy reasons in the 
         },
   );
   await renderPage();
-  const row = host.querySelector<HTMLButtonElement>(".mt-member-row")!;
+  const row = host.querySelector<HTMLButtonElement>(".members-person-open")!;
   const descriptions = row
     .getAttribute("aria-describedby")!
     .split(" ")
@@ -252,7 +276,7 @@ it("makes complete row metadata accessible and exposes hierarchy reasons in the 
   expect(descriptions).toContain("Ada | EST");
   expect(descriptions).toContain(guard);
   await click("Edit Ada");
-  expect(host.querySelector(".mt-editor")!.textContent).toContain(guard);
+  expect(document.querySelector(".mt-editor")!.textContent).toContain(guard);
 });
 it("hides the member directory during a run and returns to it through Back", async () => {
   transport.mockImplementation(async (path: string) => {
@@ -286,9 +310,9 @@ it("hides the member directory during a run and returns to it through Back", asy
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(details.textContent).toContain("Renaming");
-  expect(host.querySelector(".mt-member-list")).toBeNull();
-  expect(host.textContent).not.toContain("Search members");
-  const actions = host.querySelector(".mt-top-actions")!;
+  expect(host.querySelector(".members-list")).toBeNull();
+  expect(document.body.textContent).not.toContain("Search members");
+  const actions = host.querySelector('section[aria-label="Standardize run"]')!;
   expect(actions.textContent).toContain("Started by");
   expect(actions.textContent).toContain("Stopped by");
   expect(actions.textContent).not.toContain(uid);
@@ -303,7 +327,7 @@ it("hides the member directory during a run and returns to it through Back", asy
     ),
   ).toContain("Ada");
   await click("Back to members");
-  expect(host.querySelector(".mt-member-list")).not.toBeNull();
+  expect(host.querySelector(".members-list")).not.toBeNull();
   await click("Edit Ada");
   await click("Cancel");
 });
@@ -329,10 +353,10 @@ it("narrows the dashboard zone menu by country and supports Show all without nic
   );
   await renderPage();
   await click("Edit Ada");
-  const country = host.querySelector<HTMLSelectElement>(
+  const country = document.querySelector<HTMLSelectElement>(
     'select[aria-label="Country"]',
   )!;
-  const zone = host.querySelector<HTMLSelectElement>(
+  const zone = document.querySelector<HTMLSelectElement>(
     'select[aria-label="Time zone"]',
   )!;
   await act(async () => {
@@ -346,14 +370,14 @@ it("narrows the dashboard zone menu by country and supports Show all without nic
     zone.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await act(async () =>
-    [...host.querySelectorAll("label")]
+    [...document.body.querySelectorAll("label")]
       .find((label) =>
         label.textContent?.includes("Also change the Discord nickname"),
       )!
       .querySelector<HTMLInputElement>("input")!
       .click(),
   );
-  expect(host.textContent).toContain("Ada | GMT+9:30 🇦🇺");
+  expect(document.body.textContent).toContain("Ada | GMT+9:30 🇦🇺");
   await click("Show all zones");
   expect(zone.options).toHaveLength(5);
 });
@@ -375,7 +399,7 @@ it("shows uncertain saves in the editor and gives an explicit retry a fresh rece
   await renderPage();
   await click("Edit Ada");
   await click("Save profile");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
     "Check Discord",
   );
   await click("Save profile");
@@ -408,10 +432,10 @@ it("replaces the member list and search with review and restores them on Back", 
   });
   await renderPage();
   await click("Review nicknames");
-  expect(host.querySelector(".mt-member-list")).toBeNull();
-  expect(host.textContent).not.toContain("Search members");
-  expect(host.textContent).toContain("Search nicknames");
+  expect(host.querySelector(".members-list")).toBeNull();
+  expect(document.body.textContent).not.toContain("Search members");
+  expect(document.body.textContent).toContain("Find a person");
   await click("Back to members");
-  expect(host.querySelector(".mt-member-list")).not.toBeNull();
-  expect(host.textContent).toContain("Search members");
+  expect(host.querySelector(".members-list")).not.toBeNull();
+  expect(document.body.textContent).toContain("Find a person");
 });

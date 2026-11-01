@@ -71,22 +71,94 @@ def test_confirmation_without_explicit_protected_field_is_not_queued(monkeypatch
 
 
 def test_undo_guard_is_bounded_to_one_person_and_valid_roles():
-    good=dict(member_ids=[USER],role_id=ROLE,operation='remove',guard_role_ids=[ROLE])
-    assert routes.body_selection(good)==([USER],ROLE,'remove')
-    for guard in ([ROLE,ROLE],['bad'],{},[ROLE]*251):
-        with pytest.raises(ValueError):routes.body_selection(dict(good,guard_role_ids=guard))
-    with pytest.raises(ValueError):routes.body_selection(dict(good,member_ids=[USER,'234567890123456789']))
+    good = dict(
+        member_ids=[USER], role_id=ROLE, operation="remove", guard_role_ids=[ROLE]
+    )
+    assert routes.body_selection(good) == ([USER], ROLE, "remove")
+    for guard in ([ROLE, ROLE], ["bad"], {}, [ROLE] * 251):
+        with pytest.raises(ValueError):
+            routes.body_selection(dict(good, guard_role_ids=guard))
+    with pytest.raises(ValueError):
+        routes.body_selection(dict(good, member_ids=[USER, "234567890123456789"]))
 
 
 def test_members_login_redirect_keeps_valid_person_and_canonicalizes_old_page():
     from types import SimpleNamespace
     from cwl_web.app import login_destination, saved_login_destination
-    person = '111111111111111111'
-    expected = '/server/members?account=' + person
-    for view in ('members-settings', 'member-timezones'):
-        for key in ('account', 'member'):
-            assert login_destination({'view': view, key: person}) == expected
-            assert login_destination({'view': view, key: 'https://evil.invalid'}) == '/server/members'
-    for path in ('/server/members', '/server/member-timezones'):
-        assert saved_login_destination(SimpleNamespace(cookies={'wu_login_page': path+'?member='+person})) == expected
-    assert saved_login_destination(SimpleNamespace(cookies={'wu_login_page': '//evil.invalid/server/members'})) == ''
+
+    person = "111111111111111111"
+    expected = "/server/members?account=" + person
+    for view in ("members-settings", "member-timezones"):
+        for key in ("account", "member"):
+            assert login_destination({"view": view, key: person}) == expected
+            assert (
+                login_destination({"view": view, key: "https://evil.invalid"})
+                == "/server/members"
+            )
+    for path in ("/server/members", "/server/member-timezones"):
+        assert (
+            saved_login_destination(
+                SimpleNamespace(cookies={"wu_login_page": path + "?member=" + person})
+            )
+            == expected
+        )
+    assert (
+        saved_login_destination(
+            SimpleNamespace(cookies={"wu_login_page": "//evil.invalid/server/members"})
+        )
+        == ""
+    )
+
+
+@pytest.mark.parametrize(
+    "permissions, allowed",
+    [
+        ([], False),
+        (["member_profiles"], False),
+        (["member_roles"], True),
+        (["member_roles", "member_profiles"], True),
+    ],
+)
+def test_real_dashboard_policy_requires_existing_member_roles_for_confirmation(
+    monkeypatch, permissions, allowed
+):
+    from contextlib import asynccontextmanager
+    from cwl_web import server_management
+
+    async def run():
+        actor = {
+            "user_id": USER,
+            "dashboard": True,
+            "role_ids": set(),
+            "dashboard_scopes": permissions,
+        }
+        monkeypatch.setattr(
+            server_management, "identity", AsyncMock(return_value=actor)
+        )
+
+        async def find(query, *args, **kwargs):
+            return (
+                {"permissions": permissions}
+                if query.get("_id") == "dashboard-access:" + USER
+                else None
+            )
+
+        db = S(bot_config=S(find_one=AsyncMock(side_effect=find)))
+
+        @asynccontextmanager
+        async def mongo(request):
+            yield db
+
+        monkeypatch.setattr(server_management, "mongo", mongo)
+        request = S(
+            json=AsyncMock(return_value={"token": "review", "selected": [USER]})
+        )
+        # Missing protected_confirmed is malformed only after authorization.
+        with pytest.raises(web.HTTPBadRequest if allowed else web.HTTPForbidden):
+            await routes.confirm(request)
+        if allowed:
+            request.json.assert_awaited_once()
+        else:
+            request.json.assert_not_awaited()
+
+    asyncio.run(run())

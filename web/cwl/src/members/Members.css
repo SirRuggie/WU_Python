@@ -53,7 +53,7 @@
 }
 .members-bulk-bar {
   position: sticky;
-  bottom: 0;
+  top: 64px;
   z-index: 4;
   display: flex;
   flex-wrap: wrap;
@@ -146,9 +146,9 @@
   min-height: 44px;
 }
 .members-bulk-bar {
-  position: static;
   flex: 0 0 auto;
 }
+
 .members-person-section {
   padding-block: 12px;
   border-bottom: 1px solid #45464d;
@@ -193,6 +193,8 @@
   }
   .members-directory-scroll {
     overflow: visible;
+    height: auto;
+    min-height: 0;
   }
 }
 

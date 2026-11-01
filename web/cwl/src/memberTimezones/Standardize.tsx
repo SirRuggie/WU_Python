@@ -5,8 +5,7 @@ import NicknameReview from "./NicknameReview";
 import NicknameRun from "./NicknameRun";
 import type { Change, Run, Member, RequestState } from "./types";
 import { membersText } from "../members/strings";
-const interrupted =
-  "Import stopped early. No nicknames changed. Press Review nicknames again.";
+const interrupted = membersText.importInterrupted;
 export default function Standardize({
   disabled,
   onDenied,

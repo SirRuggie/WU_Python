@@ -106,3 +106,51 @@ it("an uncertain confirm is not retried; safe progress refresh recovers its run"
     vi.mocked(api).mock.calls.filter((call) => call[1] === "POST"),
   ).toHaveLength(1);
 });
+
+it.each([
+  { expected_role_ids: {} },
+  { expected_role_ids: ["bad"] },
+  { expected_role_ids: [review.role.id, review.role.id] },
+  { operation: "send" },
+  { role_id: "bad" },
+  { role_id: 123456789012345670 },
+  { discord_id: 123456789012345670 },
+  { changed: "yes" },
+  { status: "unrecognized" },
+])(
+  "malformed active receipt blocks a new write until progress can be read: %j",
+  async (bad) => {
+    let healthy = false;
+    vi.mocked(api).mockImplementation(async (path) =>
+      path.includes("active=1")
+        ? { runs: [{ run_id: "run" }] }
+        : healthy
+          ? status
+          : { ...status, rows: [{ ...status.rows[0], ...bad }] },
+    );
+    await act(async () => root.render(<Harness />));
+    expect(latest.run).toBeNull();
+    expect(latest.active).toBe(true);
+    await act(async () => expect(await latest.confirm(review)).toBe(false));
+    expect(vi.mocked(api).mock.calls.some((call) => call[1] === "POST")).toBe(
+      false,
+    );
+    healthy = true;
+    await act(async () => latest.refresh());
+    expect(latest.run?.run_id).toBe("run");
+    expect(latest.uncertain).toBe(false);
+  },
+);
+
+it("an initial progress outage blocks writes without automatically posting and recovers on Refresh", async () => {
+  vi.mocked(api).mockRejectedValue(new Error("Progress unavailable"));
+  await act(async () => root.render(<Harness />));
+  expect(latest.active).toBe(true);
+  await act(async () => expect(await latest.confirm(review)).toBe(false));
+  vi.mocked(api).mockResolvedValue({ runs: [] });
+  await act(async () => latest.refresh());
+  expect(latest.active).toBe(false);
+  expect(vi.mocked(api).mock.calls.some((call) => call[1] === "POST")).toBe(
+    false,
+  );
+});

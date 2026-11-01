@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { requestDetailsNavigation } from "../detailsNavigation";
 import { useDashboardPermission } from "../DashboardPermissions";
 import Standardize from "../memberTimezones/Standardize";
 import NicknameRun from "../memberTimezones/NicknameRun";
@@ -50,7 +51,9 @@ export default function MembersPage({
     [selected, setSelected] = useState<Set<string>>(new Set()),
     [page, setPage] = useState(0),
     [personId, setPersonId] = useState<string | null>(
-      initialMember || new URLSearchParams(location.search).get("account"),
+      initialMember ||
+        new URLSearchParams(location.search).get("account") ||
+        new URLSearchParams(location.search).get("member"),
     ),
     [panelDirty, setPanelDirty] = useState(false),
     [nameBusy, setNameBusy] = useState(false),
@@ -140,10 +143,13 @@ export default function MembersPage({
     });
   };
   const openPerson = (id: string, trigger: HTMLElement) => {
-    opener.current = trigger;
-    savedScroll.current = scroll.current?.scrollTop || 0;
-    setPersonId(id);
-    setActionError("");
+    if (personId === id) return;
+    requestDetailsNavigation(() => {
+      opener.current = trigger;
+      savedScroll.current = scroll.current?.scrollTop || 0;
+      setPersonId(id);
+      setActionError("");
+    });
   };
   function roleAction(operation: "add" | "remove", trigger?: HTMLElement) {
     if (busy || unknown || !data) return;
@@ -207,9 +213,10 @@ export default function MembersPage({
           });
         }
       : undefined;
-  if (!allowed || denied) return <p role="alert">{t.roleUnavailable}</p>;
+  if (!allowed || denied) return <p role="alert">{t.accessChanged}</p>;
   return (
-    <main
+    <section
+      aria-label={t.title}
       className={`roster-ui members-workspace${person ? " has-panel" : ""}`}
     >
       <header>
@@ -287,6 +294,21 @@ export default function MembersPage({
             </span>
           </div>
           {unknown && <p role="alert">{t.selectedLeft}</p>}
+          <MemberBulkBar
+            count={selected.size}
+            hidden={summary.hidden}
+            canRoles
+            canProfiles
+            busy={busy || unknown || panelDirty}
+            onShow={() => {
+              setFilters({ ...emptyFilters, selectedOnly: true });
+              setPage(0);
+            }}
+            onAdd={() => roleAction("add")}
+            onRemove={() => roleAction("remove")}
+            onFix={() => fix([...selected])}
+            onClear={() => setSelected(new Set())}
+          />
           <div className="members-directory-scroll" ref={scroll}>
             <Standardize
               disabled={roles.active || roles.busy || !!action || panelDirty}
@@ -305,7 +327,9 @@ export default function MembersPage({
                 <h2>{t.roleRun}</h2>
                 {roles.run && (
                   <details open={roles.active}>
-                    <summary>{t.roleRun}</summary>
+                    <summary>
+                      {t.roleRun} · {t.roleState(roles.run.state)}
+                    </summary>
                     <NicknameRun
                       run={roles.run}
                       members={data.members}
@@ -371,26 +395,10 @@ export default function MembersPage({
               </div>
             )}
           </div>
-          <MemberBulkBar
-            count={selected.size}
-            hidden={summary.hidden}
-            canRoles
-            canProfiles
-            busy={busy || unknown || panelDirty}
-            onShow={() => {
-              setFilters({ ...emptyFilters, selectedOnly: true });
-              setPage(0);
-            }}
-            onAdd={() => roleAction("add")}
-            onRemove={() => roleAction("remove")}
-            onFix={() => fix([...selected])}
-            onClear={() => setSelected(new Set())}
-          />
         </>
       )}
       {person && data && (
         <MemberPersonPanel
-          key={person.discord_id}
           member={person}
           data={data}
           busy={busy}
@@ -420,6 +428,6 @@ export default function MembersPage({
           returnFocus={() => opener.current}
         />
       )}
-    </main>
+    </section>
   );
 }

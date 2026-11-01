@@ -9,6 +9,10 @@ export type MembersDirectory = Omit<Directory, "members"> & {
   roles: RoleChoice[];
   manageable_roles: RoleChoice[];
 };
+const discordId = (value: unknown) =>
+  typeof value === "string" && /^[1-9][0-9]{14,21}$/.test(value);
+const zoneChoice = (value: { id: string; label: string }) =>
+  !!value && typeof value.id === "string" && typeof value.label === "string";
 export default function useMembersDirectory(
   onDenied: () => void,
   enabled = true,
@@ -50,12 +54,16 @@ export default function useMembersDirectory(
         next.members.some(
           (row) =>
             !row ||
-            !/^[1-9][0-9]{14,21}$/.test(row.discord_id) ||
+            !discordId(row.discord_id) ||
             typeof row.name !== "string" ||
             (row.nickname !== null && typeof row.nickname !== "string") ||
             typeof row.bot !== "boolean" ||
+            typeof row.status !== "string" ||
+            (row.username !== undefined && typeof row.username !== "string") ||
+            (row.skip_reason !== null && typeof row.skip_reason !== "string") ||
             !Array.isArray(row.role_ids) ||
-            row.role_ids.some((id) => typeof id !== "string") ||
+            row.role_ids.some((id) => !discordId(id)) ||
+            new Set(row.role_ids).size !== row.role_ids.length ||
             (row.parsed !== null &&
               (!row.parsed ||
                 typeof row.parsed.label !== "string" ||
@@ -63,7 +71,18 @@ export default function useMembersDirectory(
                   !Number.isFinite(row.parsed.offsetMinutes)))) ||
             (row.profile !== null &&
               (!row.profile ||
-                !Number.isFinite(row.profile.utc_offset_minutes))),
+                !Number.isFinite(row.profile.utc_offset_minutes) ||
+                typeof row.profile.zone_id !== "string" ||
+                typeof row.profile.gmt_label !== "string" ||
+                typeof row.profile.source !== "string" ||
+                !Number.isSafeInteger(row.profile.revision) ||
+                row.profile.revision < 0 ||
+                (row.profile.country !== null &&
+                  typeof row.profile.country !== "string") ||
+                (row.profile.flag !== null &&
+                  typeof row.profile.flag !== "string") ||
+                (row.profile.name_source_tag !== null &&
+                  typeof row.profile.name_source_tag !== "string"))),
         ) ||
         new Set(next.members.map((row) => row.discord_id)).size !==
           next.members.length ||
@@ -71,14 +90,29 @@ export default function useMembersDirectory(
         !Array.isArray(next.manageable_roles) ||
         [...next.roles, ...next.manageable_roles].some(
           (role) =>
-            !role ||
-            typeof role.id !== "string" ||
-            typeof role.name !== "string",
+            !role || !discordId(role.id) || typeof role.name !== "string",
+        ) ||
+        new Set(next.roles.map((role) => role.id)).size !== next.roles.length ||
+        new Set(next.manageable_roles.map((role) => role.id)).size !==
+          next.manageable_roles.length ||
+        next.manageable_roles.some(
+          (role) => !next.roles.some((known) => known.id === role.id),
         ) ||
         !Array.isArray(next.countries) ||
-        !Array.isArray(next.zones)
+        next.countries.some(
+          (country) =>
+            !country ||
+            typeof country.code !== "string" ||
+            typeof country.label !== "string" ||
+            typeof country.flag !== "string" ||
+            (country.zones !== undefined &&
+              (!Array.isArray(country.zones) ||
+                country.zones.some((zone) => !zoneChoice(zone)))),
+        ) ||
+        !Array.isArray(next.zones) ||
+        next.zones.some((zone) => !zoneChoice(zone))
       )
-        throw new Error(t.roleUnavailable);
+        throw new Error(t.membersUnavailable);
       setData(next);
     } catch (cause) {
       if (!alive.current || version !== generation.current) return;
@@ -86,7 +120,7 @@ export default function useMembersDirectory(
         setData(null);
         denied.current();
       }
-      setError(cause instanceof Error ? cause.message : t.roleUnavailable);
+      setError(cause instanceof Error ? cause.message : t.membersUnavailable);
     } finally {
       window.clearTimeout(timer);
       if (alive.current && version === generation.current) setLoading(false);

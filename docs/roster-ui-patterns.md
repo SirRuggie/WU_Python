@@ -395,3 +395,26 @@ role changes leave a durable audit receipt in the same child's storage owner.
 No real roles or nicknames have been changed in development. Final page wiring,
 API failure-mode tests, recovery fixtures, mutants, full gates and layouts remain
 before READY; these notes are not a completion claim.
+
+### Members workflow refinements
+
+Use a bounded scrolling directory with a usable minimum height, rather than
+shrinking it to a single row under a tall phone toolbar. Place the selected-action
+region before the directory; its sticky position must not cover a focused row.
+On short screens it becomes ordinary document flow. Position each row so its
+visually hidden labels cannot extend the document with blank overflow.
+
+Keep one DetailsFrame instance when switching people. Run the shared navigation
+and discard guard before changing the person; update the frame's existing URL
+entry rather than stacking a new history entry for each person. Use task-specific
+discard wording, preserve the directory filters/selection/scroll, and restore
+focus to the opening row on Back. The previous parallel time-zone directory is
+removed; its editor, conflict/retry-identity and accessible-metadata regressions
+now run through the unified page.
+
+Treat unavailable or malformed role progress as a write fence until an explicit
+safe refresh succeeds. Validate optional Undo metadata before exposing an action.
+If a role run completes before its first status read, refresh the directory
+immediately. Undo reviews one exact person with the expected post-change role
+set, so a later concurrent edit cannot be overwritten. Keep the current run state
+visible in a disclosure summary even when its detailed results are collapsed.

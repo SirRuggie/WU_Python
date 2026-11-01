@@ -1,6 +1,15 @@
 /** All text owned by the unified Members page. Shared editors keep their own text. */
 export const membersText = {
   roleRun: "Role changes",
+  roleState: (state: string) =>
+    (
+      ({
+        queued: "Working",
+        stopping: "Stopping",
+        done: "Done",
+        stopped: "Stopped",
+      }) as Record<string, string>
+    )[state] || "Unavailable",
   roleProgress: "Role change progress",
   rolePacing: "Changes one person at a time. You can stop at any time.",
   updatingRoles: (done: number, total: number) =>
@@ -19,6 +28,10 @@ export const membersText = {
     "The role change could not be confirmed. Refresh progress before trying again.",
   roleReviewChanged: "The role or people changed. Review the selection again.",
   loading: "Loading members…",
+  membersUnavailable: "Members are unavailable. Refresh before trying again.",
+  accessChanged: "Your access changed. Reload after access is restored.",
+  importInterrupted:
+    "Import stopped early. No nicknames changed. Press Fix nicknames again.",
   refresh: "Refresh members",
   refreshProgress: "Refresh progress",
   timeZoneFlag: "Time zone and flag",
@@ -30,12 +43,16 @@ export const membersText = {
   noNickname: "No nickname",
   noAccounts: "No linked accounts",
   loadingAccounts: "Loading linked accounts…",
+  accountsUnavailable:
+    "Linked accounts are unavailable. Close and open this section to try again.",
   roleSearch: "Find a role",
   selectedLeft:
     "Some selected people are no longer available. Clear selection and choose again.",
   zoneExplanation:
     "GMT shows the saved difference from UTC. Daylight saving time can change local time.",
   closeEditor: "Close editor",
+  discardSubject: "changes",
+  discardChanges: "Discard changes",
   title: "Members",
   noZone: "No time zone",
   noFlag: "Needs flag",

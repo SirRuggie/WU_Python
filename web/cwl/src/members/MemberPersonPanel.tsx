@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import DetailsFrame from "../DetailsFrame";
 import { requestDetailsNavigation } from "../detailsNavigation";
@@ -25,6 +25,17 @@ function Accounts({ id, onDenied }: { id: string; onDenied: () => void }) {
       { signal: controller.signal },
     )
       .then((result) => {
+        if (
+          !Array.isArray(result.accounts) ||
+          result.accounts.some(
+            (row) =>
+              !row ||
+              typeof row.tag !== "string" ||
+              typeof row.name !== "string" ||
+              !Number.isFinite(row.townHallLevel),
+          )
+        )
+          throw new Error(t.accountsUnavailable);
         if (alive) setRows(result.accounts);
       })
       .catch((cause) => {
@@ -157,6 +168,13 @@ export default function MemberPersonPanel({
     [profileOpen, setProfileOpen] = useState(false),
     [accountsOpen, setAccountsOpen] = useState(false),
     [request, setRequest] = useState<RequestState | null>(null);
+  useLayoutEffect(() => {
+    setDirty(false);
+    setProfileOpen(false);
+    setAccountsOpen(false);
+    setRequest(null);
+    onDirty(false);
+  }, [member.discord_id]);
   const pending = !!request && ["pending", "running"].includes(request.status);
   const name =
     discordIdentityName(
@@ -220,6 +238,7 @@ export default function MemberPersonPanel({
       content: (
         <>
           <PersonRoles
+            key={member.discord_id}
             member={member}
             data={data}
             busy={busy || pending || dirty}
@@ -329,6 +348,8 @@ export default function MemberPersonPanel({
       onClose={onClose}
       backLabel={t.back}
       browseLabel={t.browsePeople}
+      discardSubject={t.discardSubject}
+      discardConfirmLabel={t.discardChanges}
     >
       <DiscordIdentity
         userId={member.discord_id}
