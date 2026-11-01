@@ -1,3 +1,4 @@
+import DiscordIdentity from "./DiscordIdentity";
 import type { DeclarationExtraClan } from "./declarationExtras";
 import RosterFillerCheckbox from "./RosterFillerCheckbox";
 export type DeclarationMarkControl = {
@@ -14,13 +15,21 @@ export default function DeclarationMemberMarks({
   control?: DeclarationMarkControl;
 }) {
   return (
-    <ul>
+    <ul className="declaration-member-list">
       {rows.map((member) => (
         <li key={member.tag}>
           <strong>{member.name}</strong> ·{" "}
           {member.town_hall ? `TH ${member.town_hall}` : "TH unavailable"} ·{" "}
           <code>{member.tag}</code>
-          <span>{member.context}</span>
+          <span className="declaration-member-context">{member.context}</span>
+          {member.discord_id && member.discord_profile && (
+            <DiscordIdentity
+              userId={member.discord_id}
+              resolvedMember={member.discord_profile}
+              variant="compact"
+              username={false}
+            />
+          )}
           {control && (
             <RosterFillerCheckbox
               {...control}

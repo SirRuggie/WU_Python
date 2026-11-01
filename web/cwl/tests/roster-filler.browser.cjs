@@ -83,6 +83,21 @@ fs.mkdirSync(out, { recursive: true });
         await page.waitForFunction(() => window.fillerFixture().revision === 3);
         assert.equal(await page.locator(".declaration-low-th").count(), 0);
         await page.locator(".declaration-extras summary").click();
+        const dm = page
+          .locator(".declaration-extras")
+          .getByRole("link", { name: /DM/ });
+        await dm.waitFor();
+        assert((await dm.getAttribute("href")).includes("123456789012345678"));
+        assert((await dm.boundingBox()).height >= 44);
+        assert(
+          !(await page.locator(".declaration-extras").innerText()).includes(
+            "123456789012345678",
+          ),
+        );
+        await page.screenshot({
+          path: path.join(out, `${count}-${width}-dm.png`),
+          fullPage: true,
+        });
         const extra = page.getByRole("checkbox", {
           name: "Filler: Unexpected sample",
           exact: true,

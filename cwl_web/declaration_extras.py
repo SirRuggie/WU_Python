@@ -129,6 +129,8 @@ async def check(request):
         }
 
     rows = await asyncio.gather(*(one(clan, index) for index, clan in enumerate(lazy)))
+    from .declaration_identities import decorate
+    await decorate(request, rows)
     if (
         snapshot(request, source)[2] != basis
         or snapshot(request, "draft")[2] != current_revision

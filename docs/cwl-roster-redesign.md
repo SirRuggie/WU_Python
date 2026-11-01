@@ -783,3 +783,9 @@ review limitation. No activation while any Standardize run remains queued.
 Implementation and adversarial checks are in progress; this section is not READY
 or release evidence yet. Required fixture migration, permissions/CAS/undo/capacity,
 full backend/frontend, mutants and 320/360/390/1440 layouts remain completion gates.
+
+Prompt 90 adds the shared compact DiscordIdentity and its staff-operated DM link
+on linked extra/low-TH rows. One optional ownership batch and one cached member
+directory read serve the entire check. Missing, conflicting or unavailable links
+never become an ID label or a guessed DM target. Optional lookup failures retain
+all member comparison rows. The bot sends nothing; no new polling is added.

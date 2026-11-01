@@ -123,6 +123,14 @@ function Preview() {
     {
       tag: "#EXTRA",
       name: "Unexpected sample",
+      discord_id: "123456789012345678",
+      discord_profile: {
+        id: "123456789012345678",
+        display_name:
+          "Family member with a deliberately very long display name",
+        username: "family_fixture",
+        avatar_url: null,
+      },
       town_hall: 16,
       context: "Not signed up",
       assigned_clan_tag: null,

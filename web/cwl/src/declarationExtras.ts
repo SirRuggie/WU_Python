@@ -9,6 +9,8 @@ export type DeclarationExtraClan = {
   count: number | null;
   extras:
     | {
+        discord_id?: string;
+        discord_profile?: import("./DiscordIdentity").DiscordProfile;
         roster_filler?: boolean;
         roster_filler_revision?: number;
         assigned_here?: boolean;
