@@ -13,21 +13,31 @@ from extensions.tasks import cwl_reminder
 from utils import cwl_campaign, cwl_media
 
 
-@pytest.mark.parametrize("cycle,offset,expected", [
-    ("2026-02", 2, "2026-02-26T17:00:00-05:00"),
-    ("2028-02", 2, "2028-02-27T17:00:00-05:00"),
-    ("2026-04", 2, "2026-04-28T17:00:00-04:00"),
-    ("2026-03", 2, "2026-03-29T17:00:00-04:00"),
-    ("2026-02", 0, "2026-02-28T17:00:00-05:00"),
-    ("2026-02", 27, "2026-02-01T17:00:00-05:00"),
-])
+@pytest.mark.parametrize(
+    "cycle,offset,expected",
+    [
+        ("2026-02", 2, "2026-02-26T17:00:00-05:00"),
+        ("2028-02", 2, "2028-02-27T17:00:00-05:00"),
+        ("2026-04", 2, "2026-04-28T17:00:00-04:00"),
+        ("2026-03", 2, "2026-03-29T17:00:00-04:00"),
+        ("2026-02", 0, "2026-02-28T17:00:00-05:00"),
+        ("2026-02", 27, "2026-02-01T17:00:00-05:00"),
+    ],
+)
 def test_month_end_delivery_uses_calendar_month_and_local_time(cycle, offset, expected):
     campaign = cwl_campaign.default_campaign()
     campaign["messages"]["signup"]["schedule"] = {
-        "mode": "monthly", "month_end_offset_days": offset, "hour": 17, "minute": 0,
+        "mode": "monthly",
+        "month_end_offset_days": offset,
+        "hour": 17,
+        "minute": 0,
     }
     cwl_campaign.validate_campaign(campaign)
-    entry = next(item for item in cwl_campaign.resolve_schedule(campaign, cycle) if item["message_id"] == "signup")
+    entry = next(
+        item
+        for item in cwl_campaign.resolve_schedule(campaign, cycle)
+        if item["message_id"] == "signup"
+    )
     assert entry["run_at"] == expected
 
 
@@ -37,19 +47,40 @@ def test_monthly_choice_survives_apply_reload_and_switch_back(monkeypatch):
         monkeypatch.setattr(cwl_reminder, "mongo_client", None)
         draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-10")
         choice = modal_context()
-        await dashboard.choose_monthly(choice, f"{draft['token']}|signup|end", mongo=mongo)
+        await dashboard.choose_monthly(
+            choice, f"{draft['token']}|signup|end", mongo=mongo
+        )
         custom_id = choice.respond_with_modal.await_args.kwargs["custom_id"]
-        await dashboard.submit_schedule(modal_context(values={"offset_days": "2", "time": "5:00 PM"}), custom_id.partition(":")[2], mongo=mongo)
+        await dashboard.submit_schedule(
+            modal_context(values={"offset_days": "2", "time": "5:00 PM"}),
+            custom_id.partition(":")[2],
+            mongo=mongo,
+        )
         await cwl_campaign.apply_draft(mongo, draft["token"], 11)
         loaded = await cwl_campaign.load_campaign(mongo, 22, "2026-10")
         rule = loaded["campaign"]["messages"]["signup"]["schedule"]
-        assert rule == {"mode": "monthly", "month_end_offset_days": 2, "hour": 17, "minute": 0}
+        assert rule == {
+            "mode": "monthly",
+            "month_end_offset_days": 2,
+            "hour": 17,
+            "minute": 0,
+        }
         assert "2 days before month end" in dashboard._time_description(rule)
         draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-10")
-        await dashboard.submit_schedule(modal_context(values={"day": "20", "time": "17:00"}), f"{draft['token']}|signup|monthly_day", mongo=mongo)
+        await dashboard.submit_schedule(
+            modal_context(values={"day": "20", "time": "17:00"}),
+            f"{draft['token']}|signup|monthly_day",
+            mongo=mongo,
+        )
         await cwl_campaign.apply_draft(mongo, draft["token"], 11)
         loaded = await cwl_campaign.load_campaign(mongo, 22, "2026-10")
-        assert loaded["campaign"]["messages"]["signup"]["schedule"] == {"mode": "monthly", "day": 20, "hour": 17, "minute": 0}
+        assert loaded["campaign"]["messages"]["signup"]["schedule"] == {
+            "mode": "monthly",
+            "day": 20,
+            "hour": 17,
+            "minute": 0,
+        }
+
     asyncio.run(scenario())
 
 
@@ -90,7 +121,8 @@ class MemoryCollection:
                     return False
             elif isinstance(expected, dict) and "$ne" in expected:
                 if actual is not missing and (
-                    expected["$ne"] in actual if isinstance(actual, list)
+                    expected["$ne"] in actual
+                    if isinstance(actual, list)
                     else actual == expected["$ne"]
                 ):
                     return False
@@ -125,7 +157,8 @@ class MemoryCollection:
 
     def find(self, query=None):
         documents = [
-            deepcopy(document) for document in self.documents.values()
+            deepcopy(document)
+            for document in self.documents.values()
             if self._matches(document, query or {})
         ]
         return SimpleNamespace(to_list=AsyncMock(return_value=documents))
@@ -140,12 +173,15 @@ class MemoryCollection:
         inserted = False
         if document is None:
             if not upsert:
-                return SimpleNamespace(matched_count=0, modified_count=0, upserted_id=None)
+                return SimpleNamespace(
+                    matched_count=0, modified_count=0, upserted_id=None
+                )
             document_id = query.get("_id")
             if document_id in self.documents:
                 raise DuplicateKeyError("duplicate _id")
             document = {
-                key: deepcopy(value) for key, value in query.items()
+                key: deepcopy(value)
+                for key, value in query.items()
                 if not isinstance(value, dict)
             }
             self.documents[document_id] = document
@@ -232,18 +268,29 @@ class StrictCampaignRest:
         return SimpleNamespace(id=channel_id, guild_id=self.guild_id)
 
     async def create_message(
-        self, channel, content=hikari.UNDEFINED, *, components=hikari.UNDEFINED,
-        role_mentions=hikari.UNDEFINED, user_mentions=hikari.UNDEFINED,
-        mentions_everyone=hikari.UNDEFINED, nonce=hikari.UNDEFINED,
+        self,
+        channel,
+        content=hikari.UNDEFINED,
+        *,
+        components=hikari.UNDEFINED,
+        role_mentions=hikari.UNDEFINED,
+        user_mentions=hikari.UNDEFINED,
+        mentions_everyone=hikari.UNDEFINED,
+        nonce=hikari.UNDEFINED,
     ):
         if channel in self.failing_channels:
             raise RuntimeError("Discord temporarily unavailable")
         message = SimpleNamespace(id=9000 + len(self.sent))
-        self.sent.append({
-            "channel": channel, "components": components,
-            "role_mentions": role_mentions, "user_mentions": user_mentions,
-            "mentions_everyone": mentions_everyone, "nonce": nonce,
-        })
+        self.sent.append(
+            {
+                "channel": channel,
+                "components": components,
+                "role_mentions": role_mentions,
+                "user_mentions": user_mentions,
+                "mentions_everyone": mentions_everyone,
+                "nonce": nonce,
+            }
+        )
         return message
 
 
@@ -260,8 +307,11 @@ def install_runtime(monkeypatch, mongo, *, rest=None):
     monkeypatch.setattr(cwl_reminder, "mongo_client", mongo)
     monkeypatch.setattr(cwl_reminder, "scheduler", scheduler)
     monkeypatch.setattr(
-        cwl_reminder, "bot_instance",
-        SimpleNamespace(rest=rest, cache=SimpleNamespace(get_guild_channel=lambda _channel: None)),
+        cwl_reminder,
+        "bot_instance",
+        SimpleNamespace(
+            rest=rest, cache=SimpleNamespace(get_guild_channel=lambda _channel: None)
+        ),
     )
     return scheduler, rest
 
@@ -306,10 +356,16 @@ def test_ui_edit_apply_reload_and_render_share_one_schema(monkeypatch):
         schedule_picker = modal_context(selections=("monthly",))
         await dashboard.edit_schedule(schedule_picker, f"{token}|signup", mongo=mongo)
         schedule_picker.respond_with_modal.assert_not_awaited()
-        assert "Days before month end" in str(schedule_picker.interaction.edit_initial_response.await_args)
+        assert "Days before month end" in str(
+            schedule_picker.interaction.edit_initial_response.await_args
+        )
         schedule_picker = modal_context()
-        await dashboard.choose_monthly(schedule_picker, f"{token}|signup|day", mongo=mongo)
-        schedule_custom_id = schedule_picker.respond_with_modal.await_args.kwargs["custom_id"]
+        await dashboard.choose_monthly(
+            schedule_picker, f"{token}|signup|day", mongo=mongo
+        )
+        schedule_custom_id = schedule_picker.respond_with_modal.await_args.kwargs[
+            "custom_id"
+        ]
         await dashboard.submit_schedule(
             modal_context(values={"day": "21", "time": "18:30"}),
             schedule_custom_id.partition(":")[2],
@@ -317,9 +373,13 @@ def test_ui_edit_apply_reload_and_render_share_one_schema(monkeypatch):
         )
         settings_button = modal_context()
         await dashboard.edit_settings(settings_button, token, mongo=mongo)
-        settings_custom_id = settings_button.respond_with_modal.await_args.kwargs["custom_id"]
+        settings_custom_id = settings_button.respond_with_modal.await_args.kwargs[
+            "custom_id"
+        ]
         await dashboard.submit_settings(
-            modal_context(values={"deadline": "end-3 19:15", "timezone": "America/New_York"}),
+            modal_context(
+                values={"deadline": "end-3 19:15", "timezone": "America/New_York"}
+            ),
             settings_custom_id.partition(":")[2],
             mongo=mongo,
         )
@@ -327,7 +387,12 @@ def test_ui_edit_apply_reload_and_render_share_one_schema(monkeypatch):
         await dashboard.edit_text(text_button, f"{token}|signup|main", mongo=mongo)
         text_custom_id = text_button.respond_with_modal.await_args.kwargs["custom_id"]
         await dashboard.submit_text(
-            modal_context(values={"title": "October signups", "body": "Join before {signup_deadline}."}),
+            modal_context(
+                values={
+                    "title": "October signups",
+                    "body": "Join before {signup_deadline}.",
+                }
+            ),
             text_custom_id.partition(":")[2],
             mongo=mongo,
         )
@@ -335,18 +400,26 @@ def test_ui_edit_apply_reload_and_render_share_one_schema(monkeypatch):
         applied = await cwl_campaign.apply_draft(mongo, token, 11)
         loaded = await cwl_campaign.load_campaign(mongo, 22, "2026-10")
         signup = next(
-            item for item in loaded["schedule"]
+            item
+            for item in loaded["schedule"]
             if item["message_id"] == "signup" and item["variant"] == "main"
         )
         assert signup["run_at"] == "2026-10-21T18:30:00-04:00"
         assert loaded["deadline"] == "2026-10-28T19:15:00-04:00"
-        assert loaded["campaign"]["messages"]["signup"]["variants"]["main"]["title"] == "October signups"
-        built = (await cwl_campaign.render_message(loaded, "signup", "main", preview=False))[0].build()[0]
+        assert (
+            loaded["campaign"]["messages"]["signup"]["variants"]["main"]["title"]
+            == "October signups"
+        )
+        built = (
+            await cwl_campaign.render_message(loaded, "signup", "main", preview=False)
+        )[0].build()[0]
         encoded = str(built)
         assert "October signups" in encoded
         assert "<@&1080521665584308286>" in encoded
         assert "{signup_deadline}" not in encoded
-        assert applied["revision"] == 4  # Two timing saves, automatic content save, explicit legacy apply.
+        assert (
+            applied["revision"] == 4
+        )  # Two timing saves, automatic content save, explicit legacy apply.
         assert await cwl_campaign.load_draft(mongo, token) is None
 
     run(scenario())
@@ -360,14 +433,19 @@ def test_cycle_actions_keep_revision_applyable(monkeypatch):
         await cwl_campaign.set_paused(mongo, 22, True, cycle="2026-10", user_id=11)
         draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-10")
         campaign = draft["campaign"]
-        campaign["messages"]["signup"]["variants"]["main"]["title"] = "Saved after pause"
+        campaign["messages"]["signup"]["variants"]["main"][
+            "title"
+        ] = "Saved after pause"
         await cwl_campaign.patch_draft(mongo, draft["token"], {"campaign": campaign})
 
         await cwl_campaign.apply_draft(mongo, draft["token"], 11)
         loaded = await cwl_campaign.load_campaign(mongo, 22, "2026-10")
         assert loaded["revision"] == 2
         assert loaded["campaign"]["paused"] is True
-        assert loaded["campaign"]["messages"]["signup"]["variants"]["main"]["title"] == "Saved after pause"
+        assert (
+            loaded["campaign"]["messages"]["signup"]["variants"]["main"]["title"]
+            == "Saved after pause"
+        )
 
     run(scenario())
 
@@ -383,12 +461,21 @@ def test_pause_invalidates_an_older_open_draft(monkeypatch):
         except RuntimeError as exc:
             assert "changed while this draft was open" in str(exc)
         else:
-            raise AssertionError("stale draft unexpectedly replaced the live pause state")
+            raise AssertionError(
+                "stale draft unexpectedly replaced the live pause state"
+            )
 
     run(scenario())
 
 
 def test_defaults_roll_into_new_month_without_becoming_cycle_revision(monkeypatch):
+    # Saving October defaults must occur before the November cycle starts.
+    monkeypatch.setattr(
+        cwl_campaign.pendulum,
+        "now",
+        lambda tz=None: pendulum.datetime(2026, 10, 15, tz=tz or "UTC"),
+    )
+
     async def scenario():
         mongo = MemoryMongo()
         monkeypatch.setattr(cwl_reminder, "mongo_client", None)
@@ -396,7 +483,9 @@ def test_defaults_roll_into_new_month_without_becoming_cycle_revision(monkeypatc
             mongo, 22, 11, cycle="2026-10", scope="defaults"
         )
         defaults_campaign = defaults["campaign"]
-        defaults_campaign["messages"]["signup"]["variants"]["main"]["title"] = "Future default"
+        defaults_campaign["messages"]["signup"]["variants"]["main"][
+            "title"
+        ] = "Future default"
         await cwl_campaign.patch_draft(
             mongo, defaults["token"], {"campaign": defaults_campaign}
         )
@@ -405,20 +494,33 @@ def test_defaults_roll_into_new_month_without_becoming_cycle_revision(monkeypatc
         november = await cwl_campaign.load_campaign(mongo, 22, "2026-11")
         assert november["defaults_revision"] == 1
         assert november["revision"] == 0
-        assert november["campaign"]["messages"]["signup"]["variants"]["main"]["title"] == "Future default"
+        assert (
+            november["campaign"]["messages"]["signup"]["variants"]["main"]["title"]
+            == "Future default"
+        )
 
         cycle = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-11")
         cycle_campaign = cycle["campaign"]
-        cycle_campaign["messages"]["signup"]["variants"]["main"]["title"] = "November only"
-        await cwl_campaign.patch_draft(mongo, cycle["token"], {"campaign": cycle_campaign})
+        cycle_campaign["messages"]["signup"]["variants"]["main"][
+            "title"
+        ] = "November only"
+        await cwl_campaign.patch_draft(
+            mongo, cycle["token"], {"campaign": cycle_campaign}
+        )
         await cwl_campaign.apply_draft(mongo, cycle["token"], 11)
 
         november = await cwl_campaign.load_campaign(mongo, 22, "2026-11")
         december = await cwl_campaign.load_campaign(mongo, 22, "2026-12")
         assert november["revision"] == 1
-        assert november["campaign"]["messages"]["signup"]["variants"]["main"]["title"] == "November only"
+        assert (
+            november["campaign"]["messages"]["signup"]["variants"]["main"]["title"]
+            == "November only"
+        )
         assert december["revision"] == 0
-        assert december["campaign"]["messages"]["signup"]["variants"]["main"]["title"] == "Future default"
+        assert (
+            december["campaign"]["messages"]["signup"]["variants"]["main"]["title"]
+            == "Future default"
+        )
 
     run(scenario())
 
@@ -431,12 +533,16 @@ def test_saving_defaults_pins_current_cycle_and_changes_future_only(monkeypatch)
         current_cycle = now.format("YYYY-MM")
         following = now.add(months=1).format("YYYY-MM")
         before = await cwl_campaign.load_campaign(mongo, 22, current_cycle)
-        old_title = before["campaign"]["messages"]["signup"]["variants"]["main"]["title"]
+        old_title = before["campaign"]["messages"]["signup"]["variants"]["main"][
+            "title"
+        ]
 
         draft = await cwl_campaign.new_draft(
             mongo, 22, 11, cycle=current_cycle, scope="defaults"
         )
-        draft["campaign"]["messages"]["signup"]["variants"]["main"]["title"] = "Future title"
+        draft["campaign"]["messages"]["signup"]["variants"]["main"][
+            "title"
+        ] = "Future title"
         await cwl_campaign.patch_draft(
             mongo, draft["token"], {"campaign": draft["campaign"]}
         )
@@ -444,8 +550,14 @@ def test_saving_defaults_pins_current_cycle_and_changes_future_only(monkeypatch)
 
         current = await cwl_campaign.load_campaign(mongo, 22, current_cycle)
         future = await cwl_campaign.load_campaign(mongo, 22, following)
-        assert current["campaign"]["messages"]["signup"]["variants"]["main"]["title"] == old_title
-        assert future["campaign"]["messages"]["signup"]["variants"]["main"]["title"] == "Future title"
+        assert (
+            current["campaign"]["messages"]["signup"]["variants"]["main"]["title"]
+            == old_title
+        )
+        assert (
+            future["campaign"]["messages"]["signup"]["variants"]["main"]["title"]
+            == "Future title"
+        )
 
     run(scenario())
 
@@ -456,17 +568,30 @@ def test_sent_audience_is_immutable_while_unsent_audience_can_change(monkeypatch
         monkeypatch.setattr(cwl_reminder, "mongo_client", None)
         first = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-10")
         await cwl_campaign.apply_draft(mongo, first["token"], 11)
-        await cwl_campaign.record_delivery(mongo, 22, "2026-10", {
-            "occurrence_id": "2026-10|signup|main", "status": "sent",
-        })
+        await cwl_campaign.record_delivery(
+            mongo,
+            22,
+            "2026-10",
+            {
+                "occurrence_id": "2026-10|signup|main",
+                "status": "sent",
+            },
+        )
 
         draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-10")
         campaign = draft["campaign"]
         campaign["messages"]["signup"]["schedule"] = {
-            "mode": "monthly", "day": 25, "hour": 12, "minute": 0,
+            "mode": "monthly",
+            "day": 25,
+            "hour": 12,
+            "minute": 0,
         }
-        campaign["messages"]["signup"]["variants"]["main"]["title"] = "Must not replace sent"
-        campaign["messages"]["signup"]["variants"]["lazy"]["title"] = "Lazy remains editable"
+        campaign["messages"]["signup"]["variants"]["main"][
+            "title"
+        ] = "Must not replace sent"
+        campaign["messages"]["signup"]["variants"]["lazy"][
+            "title"
+        ] = "Lazy remains editable"
         await cwl_campaign.patch_draft(mongo, draft["token"], {"campaign": campaign})
         result = await cwl_campaign.apply_draft(mongo, draft["token"], 11)
 
@@ -487,9 +612,12 @@ def test_campaign_send_matches_pinned_rest_contract_and_is_idempotent(monkeypatc
         scheduler, rest = install_runtime(monkeypatch, mongo)
         generation = cwl_reminder._campaign_generation(loaded)
 
-        assert await cwl_reminder.send_campaign_message(
-            22, "2026-10", "signup", ["main"], generation
-        ) is True
+        assert (
+            await cwl_reminder.send_campaign_message(
+                22, "2026-10", "signup", ["main"], generation
+            )
+            is True
+        )
         assert len(rest.sent) == 1
         assert rest.sent[0]["user_mentions"] is False
         assert rest.sent[0]["mentions_everyone"] is False
@@ -497,9 +625,12 @@ def test_campaign_send_matches_pinned_rest_contract_and_is_idempotent(monkeypatc
         assert isinstance(rest.sent[0]["nonce"], str)
 
         # A second task/restart sees the durable sent ledger and never posts again.
-        assert await cwl_reminder.send_campaign_message(
-            22, "2026-10", "signup", ["main"], generation
-        ) is False
+        assert (
+            await cwl_reminder.send_campaign_message(
+                22, "2026-10", "signup", ["main"], generation
+            )
+            is False
+        )
         assert len(rest.sent) == 1
         assert not scheduler.jobs
 
@@ -514,7 +645,12 @@ def test_restart_restores_campaign_job_instead_of_deleting_as_legacy(monkeypatch
         run_at = pendulum.now("America/New_York").add(days=7)
         job_id = cwl_reminder._campaign_job_id(22, "2026-10", "signup", "main")
         await cwl_reminder._persist_campaign_job(
-            job_id, run_at, 22, "2026-10", "signup", ["main"],
+            job_id,
+            run_at,
+            22,
+            "2026-10",
+            "signup",
+            ["main"],
             cwl_reminder._campaign_generation(loaded),
         )
 
@@ -531,7 +667,8 @@ def test_monthly_reconcile_creates_next_cycle_and_rollover_job(monkeypatch):
     # The assertion targets September -> October; freeze that date rather than
     # letting the next-cycle expectation change with the test runner's month.
     monkeypatch.setattr(
-        cwl_reminder.pendulum, "now",
+        cwl_reminder.pendulum,
+        "now",
         lambda tz=None: pendulum.datetime(2026, 9, 25, tz=tz or "UTC"),
     )
 
@@ -582,14 +719,23 @@ def test_retry_for_past_occurrence_survives_schedule_reconciliation(monkeypatch)
         scheduler, _rest = install_runtime(monkeypatch, mongo)
         job_id = cwl_reminder._campaign_job_id(22, "2026-09", "signup", "main")
         await cwl_reminder._persist_campaign_job(
-            job_id, pendulum.now("America/New_York").add(minutes=5),
-            22, "2026-09", "signup", ["main"],
-            cwl_reminder._campaign_generation(loaded), failure_count=1,
+            job_id,
+            pendulum.now("America/New_York").add(minutes=5),
+            22,
+            "2026-09",
+            "signup",
+            ["main"],
+            cwl_reminder._campaign_generation(loaded),
+            failure_count=1,
             job_kind="retry",
         )
         cwl_reminder._add_campaign_job(
-            job_id, pendulum.now("America/New_York").add(minutes=5),
-            22, "2026-09", "signup", ["main"],
+            job_id,
+            pendulum.now("America/New_York").add(minutes=5),
+            22,
+            "2026-09",
+            "signup",
+            ["main"],
             cwl_reminder._campaign_generation(loaded),
         )
 
@@ -603,10 +749,15 @@ def test_retry_for_past_occurrence_survives_schedule_reconciliation(monkeypatch)
 def test_manual_legacy_announcement_does_not_activate_dashboard_scheduler(monkeypatch):
     async def scenario():
         guild_id = cwl_campaign.LEGACY_WU_GUILD_ID
-        mongo = MemoryMongo(legacy={
-            "enabled": True, "day": 29, "hour": 17, "minute": 0,
-            "followups": [],
-        })
+        mongo = MemoryMongo(
+            legacy={
+                "enabled": True,
+                "day": 29,
+                "hour": 17,
+                "minute": 0,
+                "followups": [],
+            }
+        )
         scheduler, rest = install_runtime(
             monkeypatch, mongo, rest=StrictCampaignRest(guild_id=guild_id)
         )
@@ -614,10 +765,16 @@ def test_manual_legacy_announcement_does_not_activate_dashboard_scheduler(monkey
         cycle = pendulum.now("America/New_York").format("YYYY-MM")
         loaded = await cwl_campaign.load_campaign(mongo, guild_id, cycle)
 
-        assert await cwl_reminder.send_campaign_message(
-            guild_id, cycle, "signup", ["main"],
-            cwl_reminder._campaign_generation(loaded),
-        ) is True
+        assert (
+            await cwl_reminder.send_campaign_message(
+                guild_id,
+                cycle,
+                "signup",
+                ["main"],
+                cwl_reminder._campaign_generation(loaded),
+            )
+            is True
+        )
         await cwl_reminder._sync_all_campaigns()
 
         legacy = await mongo.cwl_reminder.find_one({"_id": "schedule"})
@@ -629,8 +786,7 @@ def test_manual_legacy_announcement_does_not_activate_dashboard_scheduler(monkey
         )
         assert cycle_row.get("activated") is not True
         assert not any(
-            job_id.startswith(f"cwl_campaign:{guild_id}:")
-            for job_id in scheduler.jobs
+            job_id.startswith(f"cwl_campaign:{guild_id}:") for job_id in scheduler.jobs
         )
 
     run(scenario())
@@ -642,11 +798,16 @@ def test_first_cycle_apply_migrates_legacy_defaults_and_sent_markers(monkeypatch
         now = pendulum.now("America/New_York")
         cycle = now.format("YYYY-MM")
         following = now.add(months=1).format("YYYY-MM")
-        mongo = MemoryMongo(legacy={
-            "enabled": True, "day": 29, "hour": 18, "minute": 45,
-            "followups": [{"number": 1, "enabled": True, "delay_minutes": 90}],
-            "last_sent_0": now.isoformat(),
-        })
+        mongo = MemoryMongo(
+            legacy={
+                "enabled": True,
+                "day": 29,
+                "hour": 18,
+                "minute": 45,
+                "followups": [{"number": 1, "enabled": True, "delay_minutes": 90}],
+                "last_sent_0": now.isoformat(),
+            }
+        )
         scheduler, _rest = install_runtime(
             monkeypatch, mongo, rest=StrictCampaignRest(guild_id=guild_id)
         )
@@ -661,13 +822,19 @@ def test_first_cycle_apply_migrates_legacy_defaults_and_sent_markers(monkeypatch
         )
         assert defaults["activated"] is True
         assert defaults["campaign"]["messages"]["signup"]["schedule"] == {
-            "mode": "monthly", "day": 29, "hour": 18, "minute": 45,
+            "mode": "monthly",
+            "day": 29,
+            "hour": 18,
+            "minute": 45,
             "missing_day": "skip",
         }
 
         future = await cwl_campaign.load_campaign(mongo, guild_id, following)
         assert future["campaign"]["messages"]["signup"]["schedule"]["day"] == 29
-        assert future["campaign"]["messages"]["reminder:1"]["schedule"]["offset_minutes"] == 90
+        assert (
+            future["campaign"]["messages"]["reminder:1"]["schedule"]["offset_minutes"]
+            == 90
+        )
 
         current = await cwl_campaign.load_campaign(mongo, guild_id, cycle)
         expected = {
@@ -675,10 +842,12 @@ def test_first_cycle_apply_migrates_legacy_defaults_and_sent_markers(monkeypatch
             cwl_campaign.occurrence_id(cycle, "signup", "lazy"),
         }
         assert expected <= set(current["sent_occurrences"])
-        assert not expected.intersection({
-            row.get("occurrence_id")
-            for row in mongo.cwl_pending_reminders.documents.values()
-        })
+        assert not expected.intersection(
+            {
+                row.get("occurrence_id")
+                for row in mongo.cwl_pending_reminders.documents.values()
+            }
+        )
         assert not any(
             job_id in scheduler.jobs
             for job_id in (
@@ -696,22 +865,27 @@ def test_pause_is_durable_activation_discovered_after_restart(monkeypatch):
         now = pendulum.now("America/New_York")
         cycle = now.format("YYYY-MM")
         following = now.add(months=1).format("YYYY-MM")
-        mongo = MemoryMongo(legacy={
-            "enabled": True, "day": 20, "hour": 17, "minute": 0,
-            "followups": [],
-        })
+        mongo = MemoryMongo(
+            legacy={
+                "enabled": True,
+                "day": 20,
+                "hour": 17,
+                "minute": 0,
+                "followups": [],
+            }
+        )
         scheduler, _rest = install_runtime(
             monkeypatch, mongo, rest=StrictCampaignRest(guild_id=guild_id)
         )
 
-        await cwl_campaign.set_paused(
-            mongo, guild_id, True, cycle=cycle, user_id=11
-        )
+        await cwl_campaign.set_paused(mongo, guild_id, True, cycle=cycle, user_id=11)
         row = await mongo.bot_config.find_one(
             {"_id": cwl_campaign.cycle_id(guild_id, cycle)}
         )
         assert row["activated"] is True
-        assert (await mongo.cwl_reminder.find_one({"_id": "schedule"}))["enabled"] is False
+        assert (await mongo.cwl_reminder.find_one({"_id": "schedule"}))[
+            "enabled"
+        ] is False
 
         scheduler.jobs.clear()  # process restart
         await cwl_reminder._sync_all_campaigns()
@@ -731,7 +905,12 @@ def test_confirmed_send_receipt_recovers_without_second_discord_post(monkeypatch
         job_id = cwl_reminder._campaign_job_id(22, "2026-10", "signup", "main")
         run_at = pendulum.now("America/New_York").add(seconds=2)
         await cwl_reminder._persist_campaign_job(
-            job_id, run_at, 22, "2026-10", "signup", ["main"],
+            job_id,
+            run_at,
+            22,
+            "2026-10",
+            "signup",
+            ["main"],
             cwl_reminder._campaign_generation(loaded),
         )
         real_record = cwl_campaign.record_delivery
@@ -745,12 +924,20 @@ def test_confirmed_send_receipt_recovers_without_second_discord_post(monkeypatch
             return await real_record(*args, **kwargs)
 
         monkeypatch.setattr(cwl_campaign, "record_delivery", fail_once)
-        assert await cwl_reminder.send_campaign_message(
-            22, "2026-10", "signup", ["main"],
-            cwl_reminder._campaign_generation(loaded),
-        ) is True
+        assert (
+            await cwl_reminder.send_campaign_message(
+                22,
+                "2026-10",
+                "signup",
+                ["main"],
+                cwl_reminder._campaign_generation(loaded),
+            )
+            is True
+        )
         assert len(rest.sent) == 1
-        assert mongo.cwl_pending_reminders.documents[job_id]["status"] == "ledger_pending"
+        assert (
+            mongo.cwl_pending_reminders.documents[job_id]["status"] == "ledger_pending"
+        )
 
         scheduler.jobs.clear()
         await cwl_reminder.restore_pending_reminders()
@@ -770,15 +957,23 @@ def test_partial_failure_retries_only_failed_audience(monkeypatch):
     async def scenario():
         mongo = MemoryMongo()
         loaded = await applied_campaign(mongo, monkeypatch)
-        lazy_channel = loaded["campaign"]["messages"]["signup"]["variants"]["lazy"]["destination_channel_id"]
+        lazy_channel = loaded["campaign"]["messages"]["signup"]["variants"]["lazy"][
+            "destination_channel_id"
+        ]
         scheduler, rest = install_runtime(
             monkeypatch, mongo, rest=StrictCampaignRest(failing_channels={lazy_channel})
         )
 
-        assert await cwl_reminder.send_campaign_message(
-            22, "2026-10", "signup", ["main", "lazy"],
-            cwl_reminder._campaign_generation(loaded),
-        ) is False
+        assert (
+            await cwl_reminder.send_campaign_message(
+                22,
+                "2026-10",
+                "signup",
+                ["main", "lazy"],
+                cwl_reminder._campaign_generation(loaded),
+            )
+            is False
+        )
         assert len(rest.sent) == 1
         main_id = cwl_reminder._campaign_job_id(22, "2026-10", "signup", "main")
         lazy_id = cwl_reminder._campaign_job_id(22, "2026-10", "signup", "lazy")
@@ -794,37 +989,70 @@ def test_pinned_hikari_dispatches_raw_upload_and_typed_modal_together():
         bot = hikari.GatewayBot("MTIz.NA.x")
         typed = []
         cwl_media._pending.clear()
-        bot.event_manager.subscribe(hikari.ShardPayloadEvent, cwl_media.capture_upload_payload)
+        bot.event_manager.subscribe(
+            hikari.ShardPayloadEvent, cwl_media.capture_upload_payload
+        )
 
         async def capture_typed(event):
             typed.append(event.interaction)
 
         bot.event_manager.subscribe(hikari.ModalInteractionCreateEvent, capture_typed)
         payload = {
-            "id": "55", "application_id": "123", "type": 5,
-            "guild_id": "22", "app_permissions": "32", "locale": "en-US",
+            "id": "55",
+            "application_id": "123",
+            "type": 5,
+            "guild_id": "22",
+            "app_permissions": "32",
+            "locale": "en-US",
             "channel": {"id": "44", "type": 0, "name": "admin", "permissions": "32"},
             "member": {
-                "user": {"id": "11", "username": "admin", "discriminator": "0", "avatar": None,
-                         "global_name": "Admin", "public_flags": 0},
-                "roles": [], "joined_at": "2026-01-01T00:00:00+00:00",
-                "deaf": False, "mute": False, "flags": 0, "permissions": "32",
+                "user": {
+                    "id": "11",
+                    "username": "admin",
+                    "discriminator": "0",
+                    "avatar": None,
+                    "global_name": "Admin",
+                    "public_flags": 0,
+                },
+                "roles": [],
+                "joined_at": "2026-01-01T00:00:00+00:00",
+                "deaf": False,
+                "mute": False,
+                "flags": 0,
+                "permissions": "32",
             },
-            "token": "not-retained", "version": 1,
+            "token": "not-retained",
+            "version": 1,
             "data": {
                 "custom_id": "cwl_image_submit:draft|signup|main",
-                "components": [{"type": 18, "component": {
-                    "type": 19, "custom_id": "cwl_image", "values": ["66"],
-                }}],
-                "resolved": {"attachments": {"66": {
-                    "id": "66", "size": 100, "filename": "image.png",
-                    "url": "https://cdn.discordapp.com/ephemeral-attachments/22/66/image.png",
-                }}},
+                "components": [
+                    {
+                        "type": 18,
+                        "component": {
+                            "type": 19,
+                            "custom_id": "cwl_image",
+                            "values": ["66"],
+                        },
+                    }
+                ],
+                "resolved": {
+                    "attachments": {
+                        "66": {
+                            "id": "66",
+                            "size": 100,
+                            "filename": "image.png",
+                            "url": "https://cdn.discordapp.com/ephemeral-attachments/22/66/image.png",
+                        }
+                    }
+                },
             },
             "authorizing_integration_owners": {"0": "22"},
-            "context": 0, "attachment_size_limit": 10 * 1024 * 1024,
+            "context": 0,
+            "attachment_size_limit": 10 * 1024 * 1024,
         }
-        bot.event_manager.consume_raw_event("INTERACTION_CREATE", SimpleNamespace(), payload)
+        bot.event_manager.consume_raw_event(
+            "INTERACTION_CREATE", SimpleNamespace(), payload
+        )
         await asyncio.sleep(0)
         await asyncio.sleep(0)
 
@@ -840,23 +1068,44 @@ def test_pinned_hikari_dispatches_raw_upload_and_typed_modal_together():
 def test_roster_channels_carry_forward_without_copying_messages():
     async def scenario():
         mongo = MemoryMongo()
-        draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle='2026-10')
-        candidate = deepcopy(draft['campaign'])
-        candidate['messages']['roster']['variants']['main']['destination_channel_id'] = 123456789012345678
-        candidate['messages']['roster']['variants']['lazy']['destination_channel_id'] = 223456789012345678
-        candidate['messages']['roster']['variants']['main']['body'] = 'October only'
-        await cwl_campaign.apply_draft(mongo, draft['_id'], 11, candidate_campaign=candidate)
-        november = await cwl_campaign.load_campaign(mongo, 22, '2026-11')
-        variants = november['campaign']['messages']['roster']['variants']
-        assert variants['main']['destination_channel_id'] == 123456789012345678
-        assert variants['lazy']['destination_channel_id'] == 223456789012345678
-        assert variants['main']['body'] != 'October only'
-        draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle='2026-11')
-        candidate = deepcopy(draft['campaign'])
-        candidate['messages']['roster']['variants']['main']['destination_channel_id'] = 323456789012345678
-        await cwl_campaign.apply_draft(mongo, draft['_id'], 11, candidate_campaign=candidate)
-        december = await cwl_campaign.load_campaign(mongo, 22, '2026-12')
-        assert december['campaign']['messages']['roster']['variants']['main']['destination_channel_id'] == 323456789012345678
-        october = await cwl_campaign.load_campaign(mongo, 22, '2026-10')
-        assert october['campaign']['messages']['roster']['variants']['main']['destination_channel_id'] == 123456789012345678
+        draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-10")
+        candidate = deepcopy(draft["campaign"])
+        candidate["messages"]["roster"]["variants"]["main"][
+            "destination_channel_id"
+        ] = 123456789012345678
+        candidate["messages"]["roster"]["variants"]["lazy"][
+            "destination_channel_id"
+        ] = 223456789012345678
+        candidate["messages"]["roster"]["variants"]["main"]["body"] = "October only"
+        await cwl_campaign.apply_draft(
+            mongo, draft["_id"], 11, candidate_campaign=candidate
+        )
+        november = await cwl_campaign.load_campaign(mongo, 22, "2026-11")
+        variants = november["campaign"]["messages"]["roster"]["variants"]
+        assert variants["main"]["destination_channel_id"] == 123456789012345678
+        assert variants["lazy"]["destination_channel_id"] == 223456789012345678
+        assert variants["main"]["body"] != "October only"
+        draft = await cwl_campaign.new_draft(mongo, 22, 11, cycle="2026-11")
+        candidate = deepcopy(draft["campaign"])
+        candidate["messages"]["roster"]["variants"]["main"][
+            "destination_channel_id"
+        ] = 323456789012345678
+        await cwl_campaign.apply_draft(
+            mongo, draft["_id"], 11, candidate_campaign=candidate
+        )
+        december = await cwl_campaign.load_campaign(mongo, 22, "2026-12")
+        assert (
+            december["campaign"]["messages"]["roster"]["variants"]["main"][
+                "destination_channel_id"
+            ]
+            == 323456789012345678
+        )
+        october = await cwl_campaign.load_campaign(mongo, 22, "2026-10")
+        assert (
+            october["campaign"]["messages"]["roster"]["variants"]["main"][
+                "destination_channel_id"
+            ]
+            == 123456789012345678
+        )
+
     asyncio.run(scenario())

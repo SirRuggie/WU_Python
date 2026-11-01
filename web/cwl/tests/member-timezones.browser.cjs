@@ -128,7 +128,7 @@ fs.mkdirSync(output, { recursive: true });
       await page
         .getByRole("heading", { name: "Review all 560 members" })
         .waitFor();
-      const checks = scope.locator("input[type=checkbox]");
+      const checks = scope.locator(".mt-list input[type=checkbox]");
       assert(
         !(await checks.nth(2).isChecked()),
         "Unknown suffix is never default selected",
@@ -147,9 +147,22 @@ fs.mkdirSync(output, { recursive: true });
         .filter({ hasText: "Cedar" })
         .scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${output}/${width}-needs-review.png` });
+      const action = page.getByRole("button", {
+        name: `Rename ${confirmed} members`,
+        exact: true,
+      });
+      const actionBox = await action.boundingBox();
+      assert(
+        actionBox &&
+          actionBox.y >= 0 &&
+          actionBox.y + actionBox.height <= height,
+        JSON.stringify(actionBox),
+      );
+      assert(actionBox.height >= 44, "Rename target at least44px");
+
       await page
         .getByRole("button", {
-          name: `Confirm ${confirmed} nickname changes`,
+          name: `Rename ${confirmed} members`,
           exact: true,
         })
         .click();

@@ -127,3 +127,21 @@ def test_profile_import_uses_standard_time_without_changing_compare_literals(
         assert store.write.await_args.args[1]["utc_offset_minutes"] == offset
 
     asyncio.run(run())
+
+
+def test_non_menu_offset_import_persists_literal_minutes():
+    async def run():
+        store = SimpleNamespace(
+            get=AsyncMock(return_value=None), write=AsyncMock(return_value={"source": "nickname_import"})
+        )
+        result = await import_nicknames(
+            store,
+            [dict(discord_id="123456789012345678", nickname="Ana| GMT+5:45🇳🇵")],
+            actor_id="234567890123456789",
+        )
+        assert result["imported"] == 1
+        fields = store.write.await_args.args[1]
+        assert fields["zone_id"] == "gmt+5:45" and fields["utc_offset_minutes"] == 345
+        assert fields["country"] == "NP"
+
+    asyncio.run(run())

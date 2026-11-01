@@ -81,3 +81,15 @@ row focus return, Needs review, stopped named results and full owner guard text.
 Screenshots were visually inspected. Evidence: .local/p67-final-evidence.
 Browser writes were limited to the disposable fixture's login/save/preview/confirm/
 stop routes. This is sample transport, not proof of live Discord delivery.
+
+Prompt72 delta: page-authorized staff can list/read/stop any guild run. Starter
+and first stopper IDs are visible; terminal Stop does not alter completion or
+stopper stamps. Uncertain standalone receipts (and parents with uncertain
+children) retain their full30 days despite newer completed history. The sticky
+preview bar keeps Rename/count, Unselect all and Needs review filtering visible;
+Standardize stays mounted while a member editor is open, preserving progress.
+Eight actual Mongo tests passed, including cross-staff Stop and20-newer-receipt
+retention. Full frontend and layout results are recorded with final counts in the handoff; no production run was made.
+The November-sensitive defaults test pins its intended October calendar. Other
+hardcoded months are explicit scenario/occurrence keys; the current/future
+rollover case already uses the current calendar. No production import or rename.

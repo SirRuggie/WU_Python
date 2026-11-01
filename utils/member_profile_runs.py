@@ -295,14 +295,20 @@ class ProfileRuns:
         query = {
             "_id": run_id,
             "kind": KIND,
-            "user_id": actor,
             "guild_id": int(guild_id),
         }
         parent = await self.collection.find_one(query)
         if not parent:
             raise ValueError("This run is no longer available.")
         await self.collection.update_one(
-            dict(query, state="queued"), {"$set": {"stop_requested": True}}
+            dict(query, state="queued", stop_requested={"$ne": True}),
+            {
+                "$set": {
+                    "stop_requested": True,
+                    "stopped_by": actor,
+                    "stop_requested_at": time.time(),
+                }
+            },
         )
         parent = await self.collection.find_one(query)
         if parent.get("state") == "queued" and parent.get("stop_requested"):
@@ -350,7 +356,14 @@ class ProfileRuns:
         now = time.time()
         cutoff = now - 30 * 86400
         for row in rows:
-            if row in rows[:20] and row.get("finished_at", 0) >= cutoff:
+            uncertain = await self.collection.find_one(
+                {
+                    "parent_id": row["_id"],
+                    "kind": "manage_web_request",
+                    "status": "uncertain",
+                }
+            )
+            if (row in rows[:20] or uncertain) and row.get("finished_at", 0) >= cutoff:
                 continue
             await self.collection.delete_many(
                 {
@@ -388,7 +401,9 @@ class ProfileRuns:
             .to_list(length=10001)
         )
         for index, row in enumerate(standalone):
-            if index < 20 and row.get("finished_at", 0) >= cutoff:
+            if (index < 20 or row.get("status") == "uncertain") and row.get(
+                "finished_at", 0
+            ) >= cutoff:
                 continue
             await self.collection.delete_one(
                 {

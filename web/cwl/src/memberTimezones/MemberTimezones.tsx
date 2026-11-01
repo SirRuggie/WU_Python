@@ -212,6 +212,24 @@ export default function MemberTimezones({
         )
       ) : (
         <>
+          <div className="mt-top-actions" hidden={!!editing}>
+            <details>
+              <summary aria-label="Import existing nicknames">
+                Import nicknames
+              </summary>
+              <p>
+                Fill profiles from recognized time zone labels. No nickname
+                changes; existing saved and imported choices are preserved.
+              </p>
+              <button disabled={busy} onClick={() => void importCurrent()}>
+                Import nickname time zones
+              </button>
+            </details>
+            <Standardize disabled={busy} onDenied={denied} />
+            <button disabled={loading || busy} onClick={() => void load()}>
+              Refresh members
+            </button>
+          </div>
           {editing ? (
             <MemberTimezoneEditor
               key={editing.discord_id}
@@ -239,24 +257,6 @@ export default function MemberTimezones({
             />
           ) : (
             <>
-              <div className="mt-top-actions">
-                <details>
-                  <summary aria-label="Import existing nicknames">
-                    Import nicknames
-                  </summary>
-                  <p>
-                    Fill profiles from recognized time zone labels. No nickname
-                    changes; existing saved and imported choices are preserved.
-                  </p>
-                  <button disabled={busy} onClick={() => void importCurrent()}>
-                    Import nickname time zones
-                  </button>
-                </details>
-                <Standardize disabled={busy} onDenied={denied} />
-                <button disabled={loading || busy} onClick={() => void load()}>
-                  Refresh members
-                </button>
-              </div>
               <div className="mt-toolbar mt-search-toolbar">
                 <label>
                   Search members

@@ -313,14 +313,22 @@ async def standardize_runs(request):
 
     async with mongo(request) as db:
         runs = (
-            await db.bot_config.find(
-                {"kind": KIND, "user_id": actor["user_id"], "guild_id": GUILD_ID}
-            )
+            await db.bot_config.find({"kind": KIND, "guild_id": GUILD_ID})
             .sort("created_at", -1)
             .to_list(length=21)
         )
     return web.json_response(
-        dict(runs=[dict(run_id=row["_id"], state=row["state"]) for row in runs])
+        dict(
+            runs=[
+                dict(
+                    run_id=row["_id"],
+                    state=row["state"],
+                    started_by=row.get("user_id"),
+                    stopped_by=row.get("stopped_by"),
+                )
+                for row in runs
+            ]
+        )
     )
 
 
@@ -340,6 +348,8 @@ async def standardize_stop(request):
     return web.json_response(
         dict(
             run_id=run["_id"],
+            started_by=run.get("user_id"),
+            stopped_by=run.get("stopped_by"),
             state=(
                 "stopping"
                 if run["state"] == "queued" and run.get("stop_requested")
@@ -358,7 +368,6 @@ async def standardize_status(request):
             {
                 "_id": request.match_info["run_id"],
                 "kind": KIND,
-                "user_id": actor["user_id"],
                 "guild_id": GUILD_ID,
             }
         )
@@ -391,6 +400,8 @@ async def standardize_status(request):
     return web.json_response(
         dict(
             run_id=run["_id"],
+            started_by=run.get("user_id"),
+            stopped_by=run.get("stopped_by"),
             state=(
                 "stopping"
                 if run["state"] == "queued" and run.get("stop_requested")

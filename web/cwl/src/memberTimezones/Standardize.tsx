@@ -17,7 +17,10 @@ export default function Standardize({
     [run, setRun] = useState<Run | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [history, setHistory] = useState<{ run_id: string; state: string }[]>([]);
+    [history, setHistory] = useState<
+      { run_id: string; state: string; started_by?: string }[]
+    >([]);
+  const [reviewOnly, setReviewOnly] = useState(false);
   const alive = useRef(true),
     generation = useRef(0);
   useEffect(() => {
@@ -40,7 +43,7 @@ export default function Standardize({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    api<{ runs: { run_id: string; state: string }[] }>(
+    api<{ runs: { run_id: string; state: string; started_by?: string }[] }>(
       "/manage/member-timezones/runs",
     )
       .then((result) => {
@@ -210,6 +213,7 @@ export default function Standardize({
               {history.map((r) => (
                 <option key={r.run_id} value={r.run_id}>
                   {r.state} · {r.run_id.slice(-10)}
+                  {r.started_by ? ` · Started by ${r.started_by}` : ""}
                 </option>
               ))}
             </select>
@@ -218,43 +222,62 @@ export default function Standardize({
         {preview && (
           <>
             <h2>Review all {preview.rows.length} members</h2>
+            <div className="mt-standardize-actions">
+              <strong>{selected.size} members selected</strong>
+              <button
+                disabled={busy || disabled || !selected.size}
+                onClick={() => void confirm()}
+              >
+                Rename {selected.size} members
+              </button>
+              <button
+                disabled={busy || disabled || !selected.size}
+                onClick={() => setSelected(new Set())}
+              >
+                Unselect all
+              </button>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={reviewOnly}
+                  onChange={(e) => setReviewOnly(e.target.checked)}
+                />
+                Needs review only
+              </label>
+            </div>
             <ul className="mt-list">
-              {preview.rows.map((r) => (
-                <li key={r.discord_id}>
-                  <label className="mt-check">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(r.discord_id)}
-                      disabled={!!r.skip_reason || busy || disabled}
-                      onChange={(e) => {
-                        const next = new Set(selected);
-                        if (e.target.checked) next.add(r.discord_id);
-                        else next.delete(r.discord_id);
-                        setSelected(next);
-                      }}
-                    />
-                    <strong>{r.name}</strong>
-                  </label>
-                  <p>
-                    {r.old_nickname || "(no nickname)"} →{" "}
-                    {r.new_nickname || "(no change)"}
-                  </p>
-                  {r.needs_review && (
+              {preview.rows
+                .filter((r) => !reviewOnly || r.needs_review)
+                .map((r) => (
+                  <li key={r.discord_id}>
+                    <label className="mt-check">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(r.discord_id)}
+                        disabled={!!r.skip_reason || busy || disabled}
+                        onChange={(e) => {
+                          const next = new Set(selected);
+                          if (e.target.checked) next.add(r.discord_id);
+                          else next.delete(r.discord_id);
+                          setSelected(next);
+                        }}
+                      />
+                      <strong>{r.name}</strong>
+                    </label>
                     <p>
-                      Needs review: no recognized zone suffix; the complete name
-                      was kept.
+                      {r.old_nickname || "(no nickname)"} →{" "}
+                      {r.new_nickname || "(no change)"}
                     </p>
-                  )}
-                  {r.skip_reason && <p>Skipped: {r.skip_reason}</p>}
-                </li>
-              ))}
+                    {r.needs_review && (
+                      <p>
+                        Needs review: no recognized zone suffix; the complete
+                        name was kept.
+                      </p>
+                    )}
+                    {r.skip_reason && <p>Skipped: {r.skip_reason}</p>}
+                  </li>
+                ))}
             </ul>
-            <button
-              disabled={busy || disabled || !selected.size}
-              onClick={() => void confirm()}
-            >
-              Confirm {selected.size} nickname changes
-            </button>
           </>
         )}
         {run && (
@@ -269,6 +292,10 @@ export default function Standardize({
                     ? "Stopping after current member"
                     : "Working"}
             </h2>
+            <p>
+              Started by {run.started_by || "Unknown"}
+              {run.stopped_by ? ` · Stopped by ${run.stopped_by}` : ""}
+            </p>
             {["queued", "stopping"].includes(run.state) && (
               <button
                 disabled={busy || disabled || run.state === "stopping"}

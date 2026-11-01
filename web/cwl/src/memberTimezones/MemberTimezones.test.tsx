@@ -153,10 +153,10 @@ it("unticked preview members are excluded from confirmation and uncertain result
   });
   await click("Preview all nickname changes");
   const checks = host.querySelectorAll<HTMLInputElement>(
-    "input[type=checkbox]",
+    ".mt-list input[type=checkbox]",
   );
   await act(async () => checks[1].click());
-  await click("Confirm 1 nickname changes");
+  await click("Rename 1 members");
   const call = transport.mock.calls.find((c) =>
     String(c[0]).endsWith("/confirm"),
   )!;
@@ -413,4 +413,97 @@ it("makes complete row metadata accessible and exposes hierarchy reasons in the 
   expect(descriptions).toContain(guard);
   await click("Edit Ada");
   expect(host.querySelector(".mt-editor")!.textContent).toContain(guard);
+});
+it("retains the selected run and progress when editing a member and returning", async () => {
+  transport.mockImplementation(async (path: string) => {
+    if (path.endsWith("/runs"))
+      return { runs: [{ run_id: "run", state: "queued" }] };
+    if (path.endsWith("/runs/run"))
+      return {
+        run_id: "run",
+        state: "queued",
+        started_by: "Staff fixture",
+        rows: [
+          {
+            discord_id: uid,
+            name: "Ada",
+            status: "waiting",
+            message: "Waiting",
+          },
+        ],
+      };
+    if (path.endsWith("/choices"))
+      return { accounts: [], suggested: null, complete: true };
+    return directory;
+  });
+  await renderPage();
+  const details = [...host.querySelectorAll("details")].find(
+    (d) => d.querySelector("summary")?.textContent === "Standardize nicknames",
+  )!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  await act(async () => {
+    const select = details.querySelector("select")!;
+    select.value = "run";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(details.textContent).toContain("Standardize progress");
+  await click("Edit Ada");
+  await click("Cancel");
+  expect(host.querySelector(".mt-top-actions")?.textContent).toContain(
+    "Started by Staff fixture",
+  );
+  expect(host.querySelector(".mt-top-actions")?.textContent).toContain(
+    "Standardize progress",
+  );
+});
+it("unselects the whole preview and filters Needs review without changing selection", async () => {
+  transport.mockImplementation(async (path: string) =>
+    path.endsWith("/runs")
+      ? { runs: [] }
+      : {
+          token: "fixture",
+          rows: [
+            {
+              discord_id: uid,
+              name: "Known",
+              old_nickname: "Old",
+              new_nickname: "New",
+              revision: 1,
+            },
+            {
+              discord_id: "234567890123456789",
+              name: "Unknown",
+              old_nickname: "Old",
+              new_nickname: "New",
+              revision: 1,
+              needs_review: true,
+            },
+          ],
+        },
+  );
+  await act(async () =>
+    root.render(<Standardize disabled={false} onDenied={() => {}} />),
+  );
+  const details = host.querySelector("details")!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  await click("Preview all nickname changes");
+  await act(async () =>
+    host
+      .querySelector<HTMLInputElement>(".mt-standardize-actions input")!
+      .click(),
+  );
+  expect(host.querySelectorAll(".mt-list li")).toHaveLength(1);
+  expect(host.querySelector(".mt-list")?.textContent).toContain("Unknown");
+  await click("Unselect all");
+  expect(
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent === "Rename 0 members",
+    )?.disabled,
+  ).toBe(true);
 });

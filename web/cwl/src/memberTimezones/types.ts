@@ -40,7 +40,13 @@ export type Change = {
   status?: string;
   message?: string;
 };
-export type Run = { run_id: string; state: string; rows: Change[] };
+export type Run = {
+  run_id: string;
+  state: string;
+  rows: Change[];
+  started_by?: string;
+  stopped_by?: string;
+};
 export type RequestState = {
   request_id: string;
   status: string;

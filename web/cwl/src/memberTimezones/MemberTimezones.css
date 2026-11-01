@@ -209,4 +209,25 @@
   padding: 0;
   box-sizing: border-box;
 }
-.member-timezones .mt-member-row { grid-template-columns:minmax(0,1fr); justify-content:stretch; justify-items:stretch; }
+.member-timezones .mt-member-row {
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  justify-items: stretch;
+}
+
+.mt-standardize-actions {
+  position: sticky;
+  top: 64px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: #222326;
+  border: 1px solid #59503d;
+  border-radius: 8px;
+}
+.mt-top-actions[hidden] {
+  display: none;
+}

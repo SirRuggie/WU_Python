@@ -503,8 +503,9 @@ def test_real_standardize_stop_retains_inflight_and_never_resumes(monkeypatch):
             assert (
                 await db.bot_config.count_documents({"parent_id": parent["_id"]}) == 1
             )
-            with pytest.raises(ValueError):
+            assert (
                 await runs.stop(parent["_id"], actor_id=USER, guild_id=actions.GUILD_ID)
+            )["state"] == "stopped"
         finally:
             await client.drop_database(db.name)
             await client.close()
@@ -590,3 +591,69 @@ def test_stopped_run_never_starts_the_next_member(monkeypatch):
             await client.close()
 
     asyncio.run(check())
+
+
+def test_cross_staff_stop_and_uncertain_receipt_survives_newer_history():
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def run():
+        from utils.member_profile_runs import ProfileRuns, KIND
+        import time
+
+        client = AsyncMongoClient(URI)
+        db = client["wu_stop_retention_fixture_" + uuid4().hex]
+        store = ProfileRuns(
+            S(bot_config=db.bot_config, component_state=db.component_state)
+        )
+        now = time.time()
+        try:
+            await db.bot_config.insert_one(
+                dict(
+                    _id="run",
+                    kind=KIND,
+                    guild_id=1,
+                    user_id=ACTOR,
+                    state="queued",
+                    items=[],
+                    created_at=now,
+                )
+            )
+            stopped = await store.stop("run", actor_id=USER, guild_id=1)
+            assert stopped["state"] == "stopped" and stopped["stopped_by"] == USER
+            stamp = stopped["finished_at"]
+            await store.stop("run", actor_id=ACTOR, guild_id=1)
+            unchanged = await db.bot_config.find_one({"_id": "run"})
+            assert unchanged["finished_at"] == stamp and unchanged["stopped_by"] == USER
+            with pytest.raises(ValueError):
+                await store.stop("run", actor_id=USER, guild_id=2)
+            for i in range(25):
+                await db.bot_config.insert_one(
+                    dict(
+                        _id=f"save:{i}",
+                        kind="manage_web_request",
+                        section="member_profiles",
+                        status="done",
+                        finished_at=now - i,
+                    )
+                )
+            await db.bot_config.insert_one(
+                dict(
+                    _id="uncertain",
+                    kind="manage_web_request",
+                    section="member_profiles",
+                    status="uncertain",
+                    finished_at=now - 3600,
+                )
+            )
+            await store.prune()
+            assert await db.bot_config.find_one({"_id": "uncertain"})
+            await db.bot_config.update_one(
+                {"_id": "uncertain"}, {"$set": {"finished_at": now - 31 * 86400}}
+            )
+            await store.prune()
+            assert not await db.bot_config.find_one({"_id": "uncertain"})
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())

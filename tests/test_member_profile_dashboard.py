@@ -368,6 +368,15 @@ def test_standardize_preview_preserves_pipe_names_and_marks_unknown_suffix_for_r
                 skip_reason=None,
             ),
         ]
+        rows.append(
+            dict(
+                discord_id="345678901234567890",
+                name="Already",
+                nickname="Already | GMT-5 🇺🇸",
+                profile=dict(FIELDS, revision=1),
+                skip_reason=None,
+            )
+        )
         monkeypatch.setattr(routes, "inventory", AsyncMock(return_value=rows))
         monkeypatch.setattr(
             routes, "require_manage", AsyncMock(return_value={"user_id": ACTOR})
@@ -386,5 +395,67 @@ def test_standardize_preview_preserves_pipe_names_and_marks_unknown_suffix_for_r
         assert not values[0]["needs_review"]
         assert values[1]["new_nickname"] == "Bob | Co-Leader | GMT-5 🇺🇸"
         assert values[1]["needs_review"]
+        assert values[2]["skip_reason"] == "Already standardized"
+
+    asyncio.run(run())
+
+
+def test_staff_can_list_and_read_another_staff_members_run(monkeypatch):
+    from contextlib import asynccontextmanager
+    import json
+
+    async def run():
+        from cwl_web import member_timezones as routes
+
+        creator = "345678901234567890"
+        parent = dict(
+            _id="run",
+            kind="member_profile_standardize",
+            guild_id=actions.GUILD_ID,
+            user_id=creator,
+            state="done",
+            items=[],
+            stopped_by=ACTOR,
+        )
+        queries = []
+
+        class Cursor:
+            def sort(self, *args):
+                return self
+
+            async def to_list(self, **kwargs):
+                return [parent] if self.parent else []
+
+        def find(query):
+            queries.append(query)
+            cursor = Cursor()
+            cursor.parent = "parent_id" not in query
+            return cursor
+
+        async def find_one(query):
+            queries.append(query)
+            return parent
+
+        db = S(bot_config=S(find=find, find_one=find_one))
+
+        @asynccontextmanager
+        async def database(request):
+            yield db
+
+        monkeypatch.setattr(routes, "mongo", database)
+        monkeypatch.setattr(
+            routes, "require_manage", AsyncMock(return_value={"user_id": ACTOR})
+        )
+        request = S(match_info={"run_id": "run"})
+        listed = json.loads((await routes.standardize_runs(request)).text)
+        detail = json.loads((await routes.standardize_status(request)).text)
+        assert listed["runs"][0]["started_by"] == creator
+        assert detail["started_by"] == creator and detail["stopped_by"] == ACTOR
+        assert all("user_id" not in query for query in queries)
+        assert all(
+            query.get("guild_id") == actions.GUILD_ID
+            for query in queries
+            if "parent_id" not in query
+        )
 
     asyncio.run(run())
