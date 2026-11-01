@@ -4,6 +4,7 @@ export const managementPaths: Record<string, string> = {
   "clan-management": "/clans",
   strikes: "/strikes",
   replacements: "/replacements",
+  "member-timezones": "/server/member-timezones",
   "members-settings": "/server/members",
   "member-activity": "/server/moderation",
   moderation: "/server/moderation",

@@ -7,6 +7,10 @@ SOURCES = frozenset({"warrior", "nickname_import", "staff"})
 LEFT_TTL_SECONDS = 90 * 24 * 60 * 60
 
 
+class ProfileOutcomeUncertain(RuntimeError):
+    """Safe, explicit split outcome for durable management receipts."""
+
+
 class ProfileConflict(ValueError):
     pass
 
@@ -176,7 +180,7 @@ class MemberProfiles:
             and current.get("source") in ("warrior", "staff")
         ):
             return current
-        checked = profile_fields(fields)
+        checked = profile_fields(fields, source=source)
         at = now or datetime.now(timezone.utc)
         row = dict(
             checked,

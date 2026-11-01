@@ -101,6 +101,63 @@ himself or an agreed test member, verify the Discord nickname and saved profile,
 and report the result. Codex does not perform that live rename. PR 2 release
 remains blocked until this manual transport check passes.
 
+## Staff dashboard and import (PR 2)
+
+The Member time zones page uses the existing `member_roles` dashboard permission.
+Every new route checks it, and the bot checks current dashboard grants again
+before applying queued work. All server members are listed, including bots as
+read-only entries, with Saved, From nickname, Unknown and Missing states.
+Saved profiles sort ahead of the nickname fallback; unknown offsets never become
+zero. Search, status filtering and west-to-east sorting stay local to this page.
+
+Staff may choose a linked official account or type a name, use the same country
+and GMT choices, and save a profile with or without a reviewed nickname change.
+An imported offset outside the standard menu picks remains available as one extra
+option. Profile-only edits do not rename Discord members. Fresh target/actor/bot
+roles and the exact old nickname are checked inside a serialized external edit;
+revision and lease checks surround it. Already matching nicknames cause no
+Discord edit. Definite refusals, unknown acknowledgements and confirmed Discord
+success followed by unconfirmed storage have distinct outcomes.
+
+The import reads a complete bounded guild directory, classifies recognized zones,
+unknown suffixes and missing zones, then fills absent profiles without renaming
+anyone. Existing staff, Warrior and imported decisions are preserved. Reruns are
+safe after partial progress. The shared language-neutral parser data and vectors
+keep Python import and TypeScript Compare labels aligned. Valid numeric offsets
+within plus/minus fourteen hours are canonicalized, including offsets outside
+the menu. An absent or ambiguous country flag stays null; staff must supply a
+country before Standardize can include that profile. Import timeout/failure may
+leave some confirmed profile writes; the result says it did not finish, never
+claims a completed count, and explicitly says nicknames were unchanged.
+
+Standardize begins with a complete old-to-new preview, including every skipped
+member and the reason. No preview read occurs while its disclosure is closed.
+The server stores one ten-minute preview per staff member in TTL component state.
+Confirmation consumes it by nonce and selection hash; unticked members never
+become work items. A consumed confirmation cannot recreate an expired/pruned run.
+
+The durable manifest and child receipts live in existing `bot_config`. There is
+one global active lane, at most ten thousand selected members and a two-megabyte
+manifest limit; an oversized preview is rejected instead of truncated. Only one
+deterministic member child is released at a time, with a fresh fifteen-minute
+request lifetime and a minimum three-second spacing gate. The existing worker's
+polling adds latency; this is not a promised throughput. Pending work resumes
+after restart. Running, completed and uncertain calls are never reset or replayed;
+uncertain results require manual Discord/profile reconciliation.
+
+Old nickname receipts retain at most twenty terminal runs for at most thirty
+days, together with their terminal children. Standalone profile save/import
+receipts have the same twenty/thirty-day bound. Active work is never pruned and
+unrelated management sections are untouched. The scheduler performs retention
+cleanup even when no run is active. Durable profile documents still overwrite in
+place; no unbounded profile edit history is introduced.
+
+PR 2 release must wait for Ruggie's successful real `/warrior` test after PR 1.
+Agent production smoke stops at Standardize preview: only staff confirm a run.
+The isolated UI fixture simulates its HTTP transport and never contacts Discord
+or Mongo; real-Mongo tests separately exercise receipt, selection and restart
+semantics. Neither proves live Discord delivery.
+
 Picker labels were checked against the IANA tzdb source files (australasia,
 northamerica, europe and asia at https://github.com/eggert/tz). Familiar display
 aliases do not change standard offsets or imply automatic daylight adjustment.

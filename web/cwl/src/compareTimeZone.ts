@@ -1,45 +1,8 @@
 import type { RosterAccount } from "./roster";
 
 export type OwnerTimeZone = { label: string; offsetMinutes: number | null };
-const offsets: Record<string, number> = {
-  UTC: 0,
-  GMT: 0,
-  UK: 0,
-  BST: 60,
-  WET: 0,
-  CET: 60,
-  CEST: 120,
-  EET: 120,
-  EEST: 180,
-  MSK: 180,
-  IST: 330,
-  PKT: 300,
-  SGT: 480,
-  AWST: 480,
-  JST: 540,
-  AEST: 600,
-  AET: 600,
-  AEDT: 660,
-  NZST: 720,
-  NZT: 720,
-  EST: -300,
-  EDT: -240,
-  CST: -360,
-  CDT: -300,
-  MST: -420,
-  MT: -420,
-  MTN: -420,
-  MDT: -360,
-  PST: -480,
-  PDT: -420,
-  AST: -240,
-  HST: -600,
-  AKST: -540,
-  EASTERN: -300,
-  CENTRAL: -360,
-  PACIFIC: -480,
-  MOUNTAIN: -420,
-};
+import zoneData from "../../../utils/member_timezone_data.json";
+const offsets: Record<string, number> = zoneData.offsets;
 export function ownerTimeZone(
   nickname?: string | null,
   saved?: OwnerTimeZone | null,
@@ -53,18 +16,22 @@ export function ownerTimeZone(
     )
       return checked;
   }
-  if (!nickname || !nickname.includes(" | ")) return null;
+  if (!nickname || !nickname.includes("|")) return null;
   const rawLabel = nickname
-    .slice(nickname.lastIndexOf(" | ") + 3)
-    .normalize("NFKC")
-    .replace(
-      /[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u200D\u{E0020}-\u{E007F}]/gu,
-      "",
-    )
+    .slice(nickname.lastIndexOf("|") + 1)
+    .normalize("NFKC");
+  const cleanLabel = Array.from(rawLabel)
+    .filter((character) => {
+      const point = character.codePointAt(0)!;
+      return !zoneData.ignoredRanges.some(
+        ([low, high]) => point >= low && point <= high,
+      );
+    })
+    .join("")
     .trim()
-    .replace(/\s+/g, " ");
-  const label = rawLabel.toUpperCase();
-  if (["MT", "MTN"].includes(label) && rawLabel !== label)
+    .replace(/\s+/gu, " ");
+  const label = cleanLabel.toUpperCase();
+  if (zoneData.caseSensitive.includes(label) && cleanLabel !== label)
     return { label, offsetMinutes: null };
   if (!label) return null;
   if (Object.hasOwn(offsets, label))

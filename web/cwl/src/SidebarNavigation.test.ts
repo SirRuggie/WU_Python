@@ -109,7 +109,12 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
     sections
       .find((section) => section.id === "members")
       ?.items.map((item) => item.label),
-  ).toEqual(["Members & roles", "Tickets", "Ticket settings"]);
+  ).toEqual([
+    "Members & roles",
+    "Member time zones",
+    "Tickets",
+    "Ticket settings",
+  ]);
   expect(
     sections
       .find((section) => section.id === "bot")
@@ -125,7 +130,7 @@ it("orders all owner destinations in top-level direct links and flat groups", ()
       (item) => `${item.view}:${item.step || item.signupPanel || ""}`,
     ),
   );
-  expect(destinations).toHaveLength(32);
+  expect(destinations).toHaveLength(33);
   expect(new Set(destinations).size).toBe(destinations.length);
   const html = markup("home", [], true);
   expect(html.indexOf("Staff overview")).toBeLessThan(
@@ -145,7 +150,7 @@ it("preserves each permission list and hides empty groups or unauthorized direct
     ["strikes", ["strikes"]],
     ["strikes_add", ["strikes"]],
     ["strikes_remove", ["strikes"]],
-    ["member_roles", ["moderation", "members-settings"]],
+    ["member_roles", ["moderation", "members-settings", "member-timezones"]],
     ["recruitment", ["applications-settings"]],
     ["tickets", ["tickets", "applications-settings"]],
     ["fwa", ["fwa-settings"]],
