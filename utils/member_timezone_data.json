@@ -971,5 +971,53 @@
     "NZ": [
       "gmt+12"
     ]
+  },
+  "countryLabels": {
+    "AU": {
+      "gmt+10": "East (AEST/AEDT)",
+      "gmt+9:30": "Central (ACST/ACDT)",
+      "gmt+8": "West (AWST)"
+    },
+    "ID": {
+      "gmt+7": "West (WIB)",
+      "gmt+8": "Central (WITA)",
+      "gmt+9": "East (WIT)"
+    },
+    "BR": {
+      "gmt-3": "Brasília (BRT)",
+      "gmt-4": "Amazon (AMT)",
+      "gmt-5": "Acre (ACT)",
+      "gmt-2": "Fernando de Noronha (FNT)"
+    },
+    "CA": {
+      "gmt-8": "Pacific (PST/PDT)",
+      "gmt-7": "Mountain (MST/MDT)",
+      "gmt-6": "Central (CST/CDT)",
+      "gmt-5": "Eastern (EST/EDT)",
+      "gmt-4": "Atlantic (AST/ADT)"
+    },
+    "MX": {
+      "gmt-6": "Central (CST)",
+      "gmt-7": "Pacific (MST)",
+      "gmt-8": "Northwest (PST/PDT)",
+      "gmt-5": "Quintana Roo (EST)"
+    },
+    "ES": {
+      "gmt+1": "Mainland (CET/CEST)",
+      "gmt": "Canary Islands (WET/WEST)"
+    },
+    "RU": {
+      "gmt+2": "Kaliningrad (EET)",
+      "gmt+3": "Moscow (MSK)",
+      "gmt+4": "Samara (SAMT)",
+      "gmt+5": "Yekaterinburg (YEKT)",
+      "gmt+6": "Omsk (OMST)",
+      "gmt+7": "Krasnoyarsk (KRAT)",
+      "gmt+8": "Irkutsk (IRKT)",
+      "gmt+9": "Yakutsk (YAKT)",
+      "gmt+10": "Vladivostok (VLAT)",
+      "gmt+11": "Magadan / Sakhalin (MAGT/SAKT)",
+      "gmt+12": "Kamchatka (PETT)"
+    }
   }
 }

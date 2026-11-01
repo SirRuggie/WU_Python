@@ -41,7 +41,10 @@ def zones_for_country(country, *, show_all=False):
         [SINGLE_ZONE[country]] if country in SINGLE_ZONE else None
     )
     by_id = {row[0]: row for row in ZONE_CHOICES}
-    return ZONE_CHOICES if show_all or not keys else tuple(by_id[key] for key in keys)
+    if show_all or not keys:
+        return ZONE_CHOICES
+    labels = _PICKER.get("countryLabels", {}).get(country, {})
+    return tuple((key, by_id[key][1], labels.get(key, by_id[key][2])) for key in keys)
 
 
 def flag(country):

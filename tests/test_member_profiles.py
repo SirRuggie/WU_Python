@@ -362,6 +362,7 @@ def test_country_picker_mapping_and_nickname_alias_separation():
         if code in SINGLE_ZONE:
             assert [r[0] for r in choices] == [SINGLE_ZONE[code]]
     assert [r[0] for r in zones_for_country("AU")] == ["gmt+10", "gmt+9:30", "gmt+8"]
+    assert zones_for_country("AU")[-1][2] == "West (AWST)"
     assert len(zones_for_country("US")) == 6
     assert len(zones_for_country("US", show_all=True)) == len(ZONE_CHOICES)
     assert "EST/EDT" in next(r[2] for r in zones_for_country("US") if r[0] == "gmt-5")

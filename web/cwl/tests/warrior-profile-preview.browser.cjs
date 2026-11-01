@@ -51,7 +51,7 @@ fs.mkdirSync(output, { recursive: true });
         if (
           ["Australia zones", "United States zones", "All zones"].includes(name)
         ) {
-          await region.locator(".discord-mock-select summary").click();
+          await region.locator(".discord-mock-select").evaluate(node => {node.open = true;});
           const labels = await region
             .locator(".discord-preview-option")
             .allTextContents();
