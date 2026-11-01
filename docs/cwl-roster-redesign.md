@@ -893,8 +893,8 @@ No automatic startup backfill re-adds old signups after expiry; only signup chan
 or explicit Save do that. Progress and failure stay in one short line per pool.
 
 This feature requires a bot restart when released after review. No real role is
-configured or changed by the agent. Full regression, fake-Discord transport,
-recovery, expiry, mutation and layout gates remain before READY.
+configured or changed by the agent. Validation uses isolated fixtures and fake
+Discord transport; live delivery remains untested.
 
 Expiry supersedes queued signup intents recorded before the due cutoff, while
 retaining signup changes made afterward. Saving an unchanged role preserves an
@@ -926,3 +926,22 @@ has not been reproduced. The existing read helper already retries network errors
 and HTTP 500/502/503/504. A 409 means the roster basis changed during a read and
 requires fresh roster context; retrying that same stale basis is inappropriate.
 No extra retry or unproven cache/provider diagnosis was added.
+
+Prompt 92 final validation: full guarded backend 5,753 passed / 60 skipped /
+224 subtests; full frontend 1,400 tests in 250 files; TypeScript and production
+build; 35 focused backend and 11 focused frontend cases; 18 owned real Mongo
+fixtures; 11 release-guard cases; five requested behavioural mutants; required
+war-reminder check 213 backend / 1 skip plus 35 frontend and build. Twenty read-only
+layout states cover blank, pending, failure, scan and role-choice outage at
+320/360/390/1440. Four more disconnected confirmation cases check count text,
+Cancel/escape focus return, focus containment and exactly one in-memory save.
+Blank 360, failure 1440 and confirmation 360/1440 screenshots were inspected.
+The keyboard check found and fixed focus loss after the fresh count read.
+External text is React-rendered; authorization/revocation, stale replies,
+double submissions, membership/configuration CAS, cancellation, pagination,
+lease recovery and uncertain delivery have explicit regression coverage.
+No live role, message, nickname, mark or provider timing probe was used.
+No assistive-technology certification or live all-holder expiry is claimed.
+The release must preserve both blank settings and all existing SQLite rows;
+new settings/jobs/clock/audit tables are additive. A bot restart is required,
+with a 210-second drain and no queued Standardize run before activation.
