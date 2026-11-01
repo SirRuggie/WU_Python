@@ -26,6 +26,10 @@ async def lifecycle(app):
     try:
         yield
     finally:
+        role_backup = app.get("pool_role_backup_task")
+        if role_backup is not None:
+            with suppress(Exception):
+                await role_backup
         worker.cancel()
         with suppress(asyncio.CancelledError):
             await worker

@@ -864,3 +864,217 @@ war-reminder check 213 backend / 1 skip plus 35 frontend/build; Prettier on all
 Screenshots inspected: 26-account overview at 360/1440, 65-account Details at 360
 and 125-account marked state at 1440. Full guarded backend passed 5,707 tests /
 58 skipped / 224 subtests. No production action was used for these checks.
+
+## CWL pool roles (prompt92, development)
+
+Seasons provides optional Main and Lazy role settings, initially blank. A blank
+setting creates no role job and makes no Discord call on signup, cancellation,
+staff edits, expiry or bot startup. An explicit Save confirms the distinct member
+count and checks both the setting revision and membership fingerprint. It queues
+current signups; changing or clearing a role never removes the previous role.
+
+The shared SQLite owner uses signup triggers in the same durable transaction, so
+dashboard, Discord and staff paths cannot diverge. Discord failures cannot affect
+the committed signup. Membership means signed-up accounts in the selected member-facing draft season;
+cancelling one account preserves the role while another remains. If both pools
+use the same physical role, it remains while either pool has an active signup.
+
+The bot uses the authenticated loopback bridge and the shared serialized
+management lane. Jobs, generations, lease tokens, pacing and receipts are durable.
+A restarted/uncertain operation reads actual member roles before another write.
+The web process never performs a role write. Both server and bot reject everyone,
+managed, administrator and above-bot roles; Seasons rights, CSRF, revisions and
+setting audit apply.
+
+On the 16th at midnight UTC, the saved-list expiry calculation schedules a durable
+paged scan of every role holder, including people without signups. Removal runs
+once per due cycle and catches up after downtime. Signups and settings remain.
+No automatic startup backfill re-adds old signups after expiry; only a signup/re-signup or a changed role Save does that. A cancellation never adds a role; an unchanged Save is a no-op. Progress and failure stay in one short line per pool.
+
+This feature requires a bot restart when released after review. No real role is
+configured or changed by the agent. Validation uses isolated fixtures and fake
+Discord transport; live delivery remains untested.
+
+Expiry supersedes queued signup intents recorded before the due cutoff, while
+retaining signup changes made afterward. Saving an unchanged role preserves an
+overdue cleanup. Expired leases cannot acknowledge work. Completed work and
+operation receipts retain 90 days; setting audit and unfinished work remain.
+The off/unavailable bridge path does not hold the shared management lock.
+Progress excludes internal scans and superseded work; scanning is labeled
+separately. Clearing remains available when Discord role choices are unavailable.
+
+Prompt 92 recovery and review checks include a real owned Mongo checkpoint with
+fake Discord transport: an accepted role change followed by a lost receipt, and
+an accepted checkpoint followed by a lost acknowledgement, both recover without
+another role write. Eighteen Mongo cases pass. Five requested behavioural
+mutants fail genuine assertions: coupling signup to role failure, a Discord read
+while off, removing with an account remaining, repeating expiry removal, and
+accepting administrator roles. No result proves live Discord delivery.
+
+Release tooling now has a pure, fail-closed protected-state comparator. It accepts
+only an exact roster-sync departure proven by contemporaneous raw profiles and an
+observation timestamp inside the activation window. All other protected metrics,
+replacement membership/priority/listed state and profile fields stay strict. The prepared PR140 coordinator captures matching raw profile evidence and invokes the comparator at every protected Mongo gate. Equal empty or incomplete snapshots fail closed; it never ignores departure flags generally or restores over legitimate activity. Nineteen synthetic cases cover the comparator and file-capture gate. The coordinator has not been activated; fresh tagged artifacts, backups, restore/rehearsal evidence and Claude ACCEPT remain required.
+
+Claude smoke 296's first Declaration extras failure had no captured status and
+has not been reproduced. The existing read helper already retries network errors
+and HTTP 500/502/503/504. A 409 means the roster basis changed during a read and
+requires fresh roster context; retrying that same stale basis is inappropriate.
+No extra retry or unproven cache/provider diagnosis was added.
+
+Prompt 92 final validation: full guarded backend 5,753 passed / 60 skipped /
+224 subtests; full frontend 1,400 tests in 250 files; TypeScript and production
+build; 35 focused backend and 11 focused frontend cases; 18 owned real Mongo
+fixtures; 11 release-guard cases; five requested behavioural mutants; required
+war-reminder check 213 backend / 1 skip plus 35 frontend and build. Twenty read-only
+layout states cover blank, pending, failure, scan and role-choice outage at
+320/360/390/1440. Four more disconnected confirmation cases check count text,
+Cancel/escape focus return, focus containment and exactly one in-memory save.
+Blank 360, failure 1440 and confirmation 360/1440 screenshots were inspected.
+The keyboard check found and fixed focus loss after the fresh count read.
+External text is React-rendered; authorization/revocation, stale replies,
+double submissions, membership/configuration CAS, cancellation, pagination,
+lease recovery and uncertain delivery have explicit regression coverage.
+No live role, message, nickname, mark or provider timing probe was used.
+No assistive-technology certification or live all-holder expiry is claimed.
+The release must preserve both blank settings and all existing SQLite rows;
+new settings/jobs/clock/audit tables are additive. A bot restart is required,
+with a 210-second drain and no queued Standardize run before activation.
+
+
+### Prompt95 rework in progress
+
+Role progress now uses FULL-synchronous local SQLite commits and an independent
+compressed Mongo recovery document, coalesced to at most one attempted backup per
+minute off the HTTP event loop. Its authorizer permits only role job, clock and
+audit changes, plus the next-expiry cursor; signup intents and role settings
+retain the ordinary majority-protected dashboard transaction. Failure of the
+role-only backup does not poison the dashboard head or block a later signup.
+
+Normal restart merges the actual local copy preserved by that startup's Mongo
+restore, accepting only matching current role configuration, season and intent
+generation. A remote-only recovery with unfinished work pauses automatic roles
+rather than blindly replaying an ambiguous operation. Staff see a persistent
+warning and can turn both settings off, check Discord, then configure again.
+Completed/failed progress never regresses to pending. No notification is retried.
+Role backup failure can lose recent remote progress if the local disk is lost;
+the recovery pause is deliberate, not a claim of lossless cross-host delivery.
+
+Never drop the new role tables while their signup triggers remain. A rollback
+keeps additive tables and all old rows; disable both role settings before an
+older worker is restored. Configuration changes never remove the old role.
+
+Automatic choices reject roles that confer dashboard access, including for an
+owner. Server Save repeats that policy and bot execution requires a fresh
+authenticated policy result before the actual write. Blank/status loads fetch no
+Discord role choices; picker focus loads them lazily and 403/404/unavailable
+choices preserve the section. The existing RoleSelect exposes separate search
+and selection controls, so no new parallel combobox was introduced.
+
+A 91-job protocol fixture records 182 local role transactions, zero role-initiated
+full dashboard publishes, five independent backups during 270 virtual seconds
+and a final backup at 300 seconds. Owned real Mongo protocol time was 0.909s,
+with a final 4,901-byte compressed recovery image. This excludes Discord and
+production network latency. Recovery/protocol Mongo tests passed; final rework checks are recorded below.
+
+M12's removed Save supersede UPDATE is redundant with claim-time invalidation
+for changed settings; unchanged Save no longer enters either replacement path.
+Preserving both pending expiry and cancel work is tested directly. No artificial
+mutation-kill claim is made for an equivalent implementation.
+
+
+Prompt95 final checks: full guarded backend 5,779 passed / 64 skipped / 227
+subtests; full frontend 1,402 in 250 files; TypeScript and production build;
+46 focused service/HTTP transport cases plus three subtests, seven progress
+coalescing/failure/concurrency cases and nineteen protected-capture guard cases;
+22 owned Mongo fixtures; nine new behavioural mutants killed (including M4, M8,
+M11 and M15); required war-reminder check 213 backend / one skip and 35 frontend
+plus build. Twenty disconnected layout states at 320/360/390/1440 include proof
+that choices are absent until picker focus; four confirmation/cancel/focus cases
+perform exactly one in-memory save. Blank 360 and outage 1440 were visually
+reviewed. An initial full frontend command used the wrong working directory and
+failed relative-file fixtures; the corrected complete run passes. The initial
+backend full run passed before two final progress regressions; the final full run
+includes them. No live Discord, configured production role or activation occurred.
+
+A serialization/SQLite failure before the durable backup-attempt stamp now also
+sets the staff warning and is throttled in memory. Concurrent backups are
+coalesced; progress committed during an in-flight copy remains dirty for the next
+copy. An owned empty-schema migration/reopen rehearsal preserves all old table
+counts and rows and accepts only the exact additive default role rows. This is
+not a production-copy rehearsal; fresh backup/restore, current runtime boundaries
+and no queued Standardize remain activation requirements after Claude ACCEPT.
+
+
+### Prompt98 recovery and intent corrections (development; not live)
+
+A cancellation with another signed-up account never replaces a pending add intent.
+Switching the member-facing draft season queues that season's existing members
+once, within the existing durable settings transaction. Re-saving an unchanged
+role remains a no-op. Blank roles still cause no Discord lookup; configured roles
+load their saved names on the initial read. Progress polls remain local. A busy
+shared management lane sends only authenticated liveness, without claiming work.
+
+Recovery pause is a durable SQLite flag, included in the independent role image;
+restarting does not clear it. Staff must turn both roles off before configuring
+again. Restore retains an unconsumed `.before-mongo` proof across an interrupted
+startup and saves the interrupted working copy separately. A hash receipt is
+fsynced only after the role merge commits. Ambiguous/older/incomplete progress
+pauses role work; core signups/settings keep their existing protection. Legacy
+unconsumed proofs are treated conservatively. These private recovery files stay
+for investigation and are not served by the dashboard.
+
+An obsolete higher-revision role image can be replaced automatically only by the
+actual current dashboard-head owner, after a projected head check and an exact
+metadata compare-and-swap. This never updates or poisons the core head. Release
+capture comparison now rejects thin equal snapshots with empty active/replacement
+state, even when a streak row and profile proof are present.
+
+Latest prompt99 checks passed: full guarded backend 5826 / 71 skipped / 227 subtests;
+120 focused backend cases / 1 skip / 3 subtests, plus the additional timestamp
+parameter cases included in the full run; 12 owned-Mongo role cases and an
+authenticated local Mongo recovery drill; full frontend 1405 tests in 250 files; TypeScript and production/preview builds;
+the eight prompt98 survivor mutants and eleven new prompt99 gap mutants;
+required war-reminder 213 backend / 1 skipped plus 35 frontend tests and build.
+The full prompt99 backend run covers the final operational guards and all new
+regression cases. No extra production role/nickname/message tests were run.
+
+The disconnected preview passed 24 read-only states at 320/360/390/1440 and
+four confirmation/cancel/focus/in-memory-save cases. Narrow outage/ineligible
+and wide pending screenshots were visually reviewed. The earlier preview
+server had exited; a persistent foreground server was restored before the
+successful browser run. Evidence is in `.local/p98-*`. No real Discord role
+grant, removal, nickname change or notification has been tested. A real campaign
+edit after PR142 remains an unverified live observation, not a role-test claim.
+
+The reviewable pre-switch gate entry is
+`python tools/release_protected_state.py <private-evidence-directory> <before-name> <after-name>`.
+It calls `compare_capture_files` then `compare_protected`, and exits nonzero
+without a success receipt for empty, thin, incomplete or unproven captures.
+A release coordinator must require that success before any switch; the gate
+itself cannot switch services or restore data. Tests cover this public entry,
+not only a private `.local` coordinator.
+
+
+### Prompt99 small corrections
+
+Save returns fresh name/safety metadata, so an eligible replacement cannot retain
+the previous role's warning. Saved eligibility describes bot/role safety, not the
+viewer's rank; role choices and Save still enforce the viewer's permissions.
+A blank configuration clears recovery pause in SQL and memory before later
+configuration. A rejected independent-copy CAS stays dirty, reports unpublished,
+and retains the backup warning rather than claiming success.
+
+The public release gate requires different capture files, validates every proof
+interval even without a departure, and validates replacement row structure before
+comparing unchanged values. It rejects the reported same-capture, junk-map and
+invalid-time cases, as well as independently empty active/replacement state.
+The actual completed PR142 capture pair also passed the strengthened gate.
+
+Season backfill stays pool-scoped. On returning to a previously active season it
+keeps the original intent time; work from before the last expiry is not requeued.
+Actual new signups retain their separate current-time behavior. Recovery removes
+owned pending copies only after the recovered SQL state and consumed receipt are
+committed, retaining the base investigation proof. Tests cover pause persistence,
+both-off reset, owned leases, older/uncovered proof, pool scope, season round-trip,
+CAS race and head revision. All eleven new behavioral mutants were killed.

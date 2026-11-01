@@ -285,68 +285,134 @@ def signup_timestamps(db, season_id):
         "SELECT tag,MAX(id) AS id FROM roster_audit WHERE season_id=? "
         "AND action IN ('member_signup','staff_signup') "
         "AND (before_json IS NULL OR before_json='null') GROUP BY tag"
-        ") latest ON a.id=latest.id", (season_id,)
+        ") latest ON a.id=latest.id",
+        (season_id,),
     ).fetchall()
-    return {row['tag']: row['created_at'].replace(' ', 'T') + 'Z' for row in rows}
+    return {row["tag"]: row["created_at"].replace(" ", "T") + "Z" for row in rows}
 
 
 class Store:
     def __init__(self, path: str, durability=None):
         self.durability = None
+        self.role_dirty = False
+        self.role_backup_error = None
+        self.role_next_backup = 0
+        self.role_recovery_error = None
+        import time
+
+        self.role_started_at = time.time()
+        self.role_last_contact = None
         self.path = str(Path(path).expanduser())
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.tx() as db:
             db.executescript(SCHEMA)
             from utils.roster_player_marks import SCHEMA as MARK_SCHEMA
+
             db.executescript(MARK_SCHEMA)
             from utils.cwl_roster_image_store import migrate as migrate_image_status
+
             migrate_image_status(db)
-            if "signup_clan_type" not in {row[1] for row in db.execute("PRAGMA table_info(signups)")}:
+            if "signup_clan_type" not in {
+                row[1] for row in db.execute("PRAGMA table_info(signups)")
+            }:
                 db.execute("ALTER TABLE signups ADD COLUMN signup_clan_type TEXT")
-            if "withdrawn_at" not in {row[1] for row in db.execute("PRAGMA table_info(roster_publications)")}:
-                db.execute("ALTER TABLE roster_publications ADD COLUMN withdrawn_at TEXT")
+            if "withdrawn_at" not in {
+                row[1] for row in db.execute("PRAGMA table_info(roster_publications)")
+            }:
+                db.execute(
+                    "ALTER TABLE roster_publications ADD COLUMN withdrawn_at TEXT"
+                )
             from .player_weights import SCHEMA as WEIGHT_SCHEMA, migrate
+
             db.executescript(WEIGHT_SCHEMA)
-            if 'permissions' not in {row['name'] for row in db.execute('PRAGMA table_info(grants)')}:
-                db.execute("ALTER TABLE grants ADD COLUMN permissions TEXT NOT NULL DEFAULT '[\"cwl\"]'")
-            clan_columns = {row['name'] for row in db.execute('PRAGMA table_info(clans)')}
-            if 'pool' not in clan_columns:
-                db.execute("ALTER TABLE clans ADD COLUMN pool TEXT CHECK(pool IN ('main','lazy'))")
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(roster_entries)")}
+            if "permissions" not in {
+                row["name"] for row in db.execute("PRAGMA table_info(grants)")
+            }:
+                db.execute(
+                    "ALTER TABLE grants ADD COLUMN permissions TEXT NOT NULL DEFAULT '[\"cwl\"]'"
+                )
+            clan_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(clans)")
+            }
+            if "pool" not in clan_columns:
+                db.execute(
+                    "ALTER TABLE clans ADD COLUMN pool TEXT CHECK(pool IN ('main','lazy'))"
+                )
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(roster_entries)")
+            }
             if "source_modified_at" not in columns:
-                db.execute("ALTER TABLE roster_entries ADD COLUMN source_modified_at TEXT")
+                db.execute(
+                    "ALTER TABLE roster_entries ADD COLUMN source_modified_at TEXT"
+                )
             columns = {row[1] for row in db.execute("PRAGMA table_info(sessions)")}
             if "display_name" not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN display_name TEXT")
             if "avatar_url" not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN avatar_url TEXT")
             if "is_bot" not in columns:
-                db.execute("ALTER TABLE sessions ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0")
-            source_columns = {row[1] for row in db.execute("PRAGMA table_info(participation_source_results)")}
+                db.execute(
+                    "ALTER TABLE sessions ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0"
+                )
+            source_columns = {
+                row[1]
+                for row in db.execute("PRAGMA table_info(participation_source_results)")
+            }
             if "roster_token" not in source_columns:
-                db.execute("ALTER TABLE participation_source_results ADD COLUMN roster_token TEXT")
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(participation_records)")}
+                db.execute(
+                    "ALTER TABLE participation_source_results ADD COLUMN roster_token TEXT"
+                )
+            columns = {
+                row["name"]
+                for row in db.execute("PRAGMA table_info(participation_records)")
+            }
             if "attacks_override" not in columns:
-                db.execute("ALTER TABLE participation_records ADD COLUMN attacks_override INTEGER NOT NULL DEFAULT 0")
-                db.execute("UPDATE participation_records SET attacks_override=1 WHERE attacks IS NOT NULL")
+                db.execute(
+                    "ALTER TABLE participation_records ADD COLUMN attacks_override INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execute(
+                    "UPDATE participation_records SET attacks_override=1 WHERE attacks IS NOT NULL"
+                )
             if "stars_override" not in columns:
-                db.execute("ALTER TABLE participation_records ADD COLUMN stars_override INTEGER NOT NULL DEFAULT 0")
-                db.execute("UPDATE participation_records SET stars_override=1 WHERE stars IS NOT NULL")
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(participation_group_observations)")}
+                db.execute(
+                    "ALTER TABLE participation_records ADD COLUMN stars_override INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execute(
+                    "UPDATE participation_records SET stars_override=1 WHERE stars IS NOT NULL"
+                )
+            columns = {
+                row["name"]
+                for row in db.execute(
+                    "PRAGMA table_info(participation_group_observations)"
+                )
+            }
             if "members_json" not in columns:
-                db.execute("ALTER TABLE participation_group_observations ADD COLUMN members_json TEXT")
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(bonus_batches)")}
+                db.execute(
+                    "ALTER TABLE participation_group_observations ADD COLUMN members_json TEXT"
+                )
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(bonus_batches)")
+            }
             if "snapshot_json" not in columns:
-                db.execute("ALTER TABLE bonus_batches ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}' ")
+                db.execute(
+                    "ALTER TABLE bonus_batches ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}' "
+                )
 
             from utils.cwl_bonus_raffle_store import SCHEMA as RAFFLE_SCHEMA
+
             db.executescript(RAFFLE_SCHEMA)
             from utils.cwl_bonus_allowance import SCHEMA as ALLOWANCE_SCHEMA
+
             db.executescript(ALLOWANCE_SCHEMA)
             migrate(db)
             from utils.clan_weight_store import initialize as initialize_clan_weights
+
             initialize_clan_weights(db)
+            from utils.cwl_pool_roles import initialize as initialize_pool_roles
+
+            initialize_pool_roles(db)
         self.durability = durability
+        self._recover_role_progress()
 
     @contextmanager
     def tx(self):
@@ -373,6 +439,184 @@ class Store:
         finally:
             db.close()
 
+    @contextmanager
+    def role_tx(self, *, track=True):
+        """Locally durable role-only progress, independent of dashboard publishing.
+
+        Signup intents/settings still use tx(). This path must never mutate them.
+        """
+        if self.durability:
+            self.durability.check()
+        db = sqlite3.connect(self.path, timeout=15, isolation_level=None)
+        db.row_factory = sqlite3.Row
+        try:
+            db.execute("PRAGMA foreign_keys=ON")
+            db.execute("PRAGMA synchronous=FULL")
+            db.execute("BEGIN IMMEDIATE")
+            allowed_tables = {
+                "cwl_pool_role_jobs",
+                "cwl_pool_role_clock",
+                "cwl_pool_role_audit",
+            }
+
+            def role_authorizer(action, table, column, database, source):
+                if action in (
+                    sqlite3.SQLITE_INSERT,
+                    sqlite3.SQLITE_UPDATE,
+                    sqlite3.SQLITE_DELETE,
+                ):
+                    return (
+                        sqlite3.SQLITE_OK
+                        if table in allowed_tables
+                        or (
+                            table == "cwl_pool_role_settings"
+                            and action == sqlite3.SQLITE_UPDATE
+                            and column == "next_expiry"
+                        )
+                        else sqlite3.SQLITE_DENY
+                    )
+                return sqlite3.SQLITE_OK
+
+            db.set_authorizer(role_authorizer)
+            before = db.total_changes
+            yield db
+            if track and db.total_changes != before:
+                db.execute(
+                    "UPDATE cwl_pool_role_clock SET progress_version=progress_version+1 WHERE id=1"
+                )
+                self.role_dirty = True
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def _recover_role_progress(self):
+        if self.durability is None:
+            return
+        from utils import cwl_pool_roles as roles
+        import logging
+
+        try:
+            with self.role_tx(track=False) as db:
+                configured = db.execute(
+                    "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
+                ).fetchone()
+                if not configured:
+                    if hasattr(self.durability, "mark_local_recovery_complete"):
+                        self.durability.mark_local_recovery_complete()
+                    return
+                previous = getattr(self.durability, "previous_local_path", None)
+                paths = getattr(self.durability, "previous_local_paths", None) or (
+                    [previous] if previous else []
+                )
+                images = [roles.local_progress(path) for path in paths]
+                image = max(
+                    (value for value in images if value is not None),
+                    key=lambda value: value.get("version", -1),
+                    default=None,
+                )
+                local = image is not None
+                if hasattr(self.durability, "load_role_progress"):
+                    try:
+                        remote = self.durability.load_role_progress()
+                        if remote is not None and (
+                            image is None
+                            or remote.get("version", -1) > image.get("version", -1)
+                        ):
+                            image, local = remote, False
+                    except Exception:
+                        if image is None:
+                            raise
+                if image is not None:
+                    recovery = roles.recover_progress(db, image)
+                    if recovery.get("older") or recovery.get("uncovered"):
+                        local = False
+                unfinished = db.execute(
+                    "SELECT 1 FROM cwl_pool_role_jobs WHERE state IN ('pending','leased') LIMIT 1"
+                ).fetchone()
+                if (not local and unfinished) or getattr(
+                    self.durability, "local_recovery_interrupted", False
+                ):
+                    roles.pause_recovery(db)
+                if roles.recovery_paused(db):
+                    self.role_recovery_error = "Role work is paused after recovery. Check roles, turn both settings off, then save them again. Signups are unchanged."
+                clock = db.execute(
+                    "SELECT progress_version,last_backup_version FROM cwl_pool_role_clock WHERE id=1"
+                ).fetchone()
+                self.role_dirty = clock[0] > clock[1]
+            if hasattr(self.durability, "mark_local_recovery_complete"):
+                self.durability.mark_local_recovery_complete()
+        except Exception:
+            with self.role_tx(track=False) as db:
+                roles.pause_recovery(db)
+                clock = db.execute(
+                    "SELECT progress_version,last_backup_version FROM cwl_pool_role_clock WHERE id=1"
+                ).fetchone()
+                self.role_dirty = clock[0] > clock[1]
+            self.role_recovery_error = "Role progress could not be recovered. Check roles, turn both settings off, then save them again. Signups are unchanged."
+            logging.getLogger(__name__).warning(
+                "Role progress recovery unavailable; role work paused"
+            )
+
+    def flush_role_progress(self, *, now=None):
+        """Called off the event loop. At most one independent backup per minute."""
+        import time
+        import logging
+        from utils import cwl_pool_roles as roles
+
+        if self.durability is None or not self.role_dirty:
+            return {"attempted": False}
+        at = time.time() if now is None else now
+        with self.role_tx(track=False) as db:
+            clock = db.execute(
+                "SELECT * FROM cwl_pool_role_clock WHERE id=1"
+            ).fetchone()
+            if not db.execute(
+                "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
+            ).fetchone():
+                self.role_dirty = False
+                return {"attempted": False}
+            if clock["progress_version"] <= clock["last_backup_version"]:
+                self.role_dirty = False
+                return {"attempted": False}
+            if at - clock["last_backup_attempt"] < 60:
+                return {"attempted": False}
+            db.execute(
+                "UPDATE cwl_pool_role_clock SET last_backup_attempt=? WHERE id=1", (at,)
+            )
+            image = roles.progress_image(db)
+        try:
+            if self.durability.save_role_progress(image) is not True:
+                raise RuntimeError("Role backup compare-and-swap was not accepted")
+        except Exception:
+            # This writes a separate recovery document, never the dashboard head.
+            # A lost acknowledgement is safe to replace after the minute cooldown.
+            self.role_backup_error = (
+                "Role progress backup is unavailable. Signups are unchanged."
+            )
+            logging.getLogger(__name__).warning(
+                "Role progress backup unavailable; dashboard durability remains independent"
+            )
+            return {"attempted": True, "published": False, "version": image["version"]}
+        with self.role_tx(track=False) as db:
+            db.execute(
+                "UPDATE cwl_pool_role_clock SET last_backup_version=MAX(last_backup_version,?) WHERE id=1",
+                (image["version"],),
+            )
+            current = db.execute(
+                "SELECT progress_version FROM cwl_pool_role_clock WHERE id=1"
+            ).fetchone()[0]
+            self.role_dirty = current > image["version"]
+        self.role_backup_error = None
+        return {
+            "attempted": True,
+            "published": True,
+            "version": image["version"],
+            "bytes": len(image["payload"]),
+        }
+
     def rows(self, sql, args=()):
         if self.durability:
             self.durability.check()
@@ -384,39 +628,70 @@ class Store:
         rows = self.rows(sql, args)
         return rows[0] if rows else None
 
-
     def signup_activity(self, season_id):
         """One durable audit event per change; reviewed events remain in audit history."""
         with self.tx() as db:
-            return [dict(row) for row in db.execute(
-                "SELECT a.* FROM roster_audit a LEFT JOIN signup_activity_reviews r ON r.audit_id=a.id "
-                "WHERE a.season_id=? AND a.action IN ('member_withdrawal','member_pool_change') "
-                "AND NULLIF(TRIM(json_extract(a.before_json, '$.assigned_clan_tag')), '') IS NOT NULL "
-                "AND r.audit_id IS NULL ORDER BY a.id DESC LIMIT 100", (season_id,))]
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT a.* FROM roster_audit a LEFT JOIN signup_activity_reviews r ON r.audit_id=a.id "
+                    "WHERE a.season_id=? AND a.action IN ('member_withdrawal','member_pool_change') "
+                    "AND NULLIF(TRIM(json_extract(a.before_json, '$.assigned_clan_tag')), '') IS NOT NULL "
+                    "AND r.audit_id IS NULL ORDER BY a.id DESC LIMIT 100",
+                    (season_id,),
+                )
+            ]
 
     def review_signup_activity(self, season_id, audit_id, actor):
         with self.tx() as db:
-            row = db.execute("SELECT id FROM roster_audit WHERE season_id=? AND id=? AND action IN ('member_withdrawal','member_pool_change')", (season_id, audit_id)).fetchone()
+            row = db.execute(
+                "SELECT id FROM roster_audit WHERE season_id=? AND id=? AND action IN ('member_withdrawal','member_pool_change')",
+                (season_id, audit_id),
+            ).fetchone()
             if row is None:
                 return False
-            db.execute('INSERT OR IGNORE INTO signup_activity_reviews(audit_id,reviewed_by) VALUES (?,?)', (audit_id, actor))
+            db.execute(
+                "INSERT OR IGNORE INTO signup_activity_reviews(audit_id,reviewed_by) VALUES (?,?)",
+                (audit_id, actor),
+            )
             return True
-
 
     def member_season(self):
         return self.one("SELECT season_id,revision FROM member_season WHERE id=1")
 
     def set_member_season(self, season_id, revision, actor):
         with self.tx() as db:
-            current = dict(db.execute('SELECT season_id,revision FROM member_season WHERE id=1').fetchone())
-            if current['revision'] != revision:
-                raise RuntimeError('The member season changed. Refresh and try again.')
+            current = dict(
+                db.execute(
+                    "SELECT season_id,revision FROM member_season WHERE id=1"
+                ).fetchone()
+            )
+            if current["revision"] != revision:
+                raise RuntimeError("The member season changed. Refresh and try again.")
             if season_id is not None:
-                season = db.execute('SELECT status FROM seasons WHERE id=?', (season_id,)).fetchone()
-                if not season or season['status'] != 'draft':
-                    raise ValueError('Choose a non-archived season.')
-            db.execute('UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1', (season_id,))
+                season = db.execute(
+                    "SELECT status FROM seasons WHERE id=?", (season_id,)
+                ).fetchone()
+                if not season or season["status"] != "draft":
+                    raise ValueError("Choose a non-archived season.")
+            db.execute(
+                "UPDATE member_season SET season_id=?,revision=revision+1 WHERE id=1",
+                (season_id,),
+            )
             import json
-            db.execute("INSERT INTO roster_audit(season_id,actor_id,action,before_json,after_json) VALUES (?,?,?,?,?)",
-                       (season_id or current['season_id'] or 0, actor, 'member_season_change', json.dumps(current), json.dumps({'season_id':season_id})))
-            return dict(db.execute('SELECT season_id,revision FROM member_season WHERE id=1').fetchone())
+
+            db.execute(
+                "INSERT INTO roster_audit(season_id,actor_id,action,before_json,after_json) VALUES (?,?,?,?,?)",
+                (
+                    season_id or current["season_id"] or 0,
+                    actor,
+                    "member_season_change",
+                    json.dumps(current),
+                    json.dumps({"season_id": season_id}),
+                ),
+            )
+            return dict(
+                db.execute(
+                    "SELECT season_id,revision FROM member_season WHERE id=1"
+                ).fetchone()
+            )
