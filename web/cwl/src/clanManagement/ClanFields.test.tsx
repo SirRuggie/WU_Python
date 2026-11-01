@@ -52,9 +52,9 @@ it("shows leader name and avatar, with IDs only on hover, and shares ordered rol
     expect(host.textContent).toContain("Captain Jane");
     expect(host.textContent).not.toContain(leaderId);
     expect(
-      host.querySelector(".clan-leader-identity")!.getAttribute("title"),
-    ).toBe(leaderId);
-    expect(host.querySelector(".clan-leader-identity img")).not.toBeNull();
+      host.querySelector(".roster-discord-identity")!.getAttribute("aria-label"),
+    ).toBe("Linked Discord member");
+    expect(host.querySelector(".roster-discord-identity img")).not.toBeNull();
     const choices = host.querySelector(
       '[aria-label="Available leader roles"]',
     )!;

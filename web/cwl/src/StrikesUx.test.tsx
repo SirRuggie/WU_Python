@@ -417,7 +417,7 @@ it("paginates 28 detail records independently of the account page, retains filte
   expect(host.querySelectorAll(".strike-compact-row")).toHaveLength(25);
   expect(host.textContent!.split("Unique Aspen")).toHaveLength(2);
   expect(host.textContent!.split("#P2Y")).toHaveLength(2);
-  expect(host.textContent).toContain("12345");
+  expect(host.textContent).not.toContain("12345");
   expect(host.textContent).not.toContain("Confirm removal");
   expect(
     [...host.querySelectorAll("select option")].map(
@@ -786,7 +786,7 @@ it("refreshes canonical historical counts after removal and preserves direct-lin
   );
   await settle();
   expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
-    "Not linked",
+    "No Discord account linked",
   );
   expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
     "2 active",

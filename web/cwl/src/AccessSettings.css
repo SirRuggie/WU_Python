@@ -52,8 +52,8 @@
   color: #bbc1cd;
   font-size: 13px;
 }
-.access-person[aria-pressed='true'],
-.access-role-results button[aria-pressed='true'] {
+.access-person[aria-pressed="true"],
+.access-role-results button[aria-pressed="true"] {
   border-color: #f1cb56;
   background: #302916;
 }
@@ -136,7 +136,7 @@
 .access-group-switch {
   background: #ffffff05;
 }
-.access-switch-row input[role='switch'] {
+.access-switch-row input[role="switch"] {
   appearance: none;
   flex: 0 0 48px;
   width: 48px;
@@ -149,8 +149,8 @@
   position: relative;
   cursor: pointer;
 }
-.access-switch-row input[role='switch']::after {
-  content: '';
+.access-switch-row input[role="switch"]::after {
+  content: "";
   position: absolute;
   top: 3px;
   left: 3px;
@@ -159,18 +159,18 @@
   border-radius: 50%;
   background: white;
 }
-.access-switch-row input[role='switch']:checked {
+.access-switch-row input[role="switch"]:checked {
   background: #317452;
   border-color: #80cca5;
 }
-.access-switch-row input[role='switch']:checked::after {
+.access-switch-row input[role="switch"]:checked::after {
   left: 23px;
 }
-.access-switch-row input[role='switch']:focus-visible {
+.access-switch-row input[role="switch"]:focus-visible {
   outline: 3px solid #f1cb56;
   outline-offset: 4px;
 }
-.access-switch-row input[role='switch']:disabled {
+.access-switch-row input[role="switch"]:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -250,30 +250,10 @@
 .access-person-info {
   min-width: 0;
 }
-.access-avatar {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-.access-avatar-fallback {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #383c48;
-  color: #fff;
-  font-size: 20px;
-}
 .access-identity-header {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.access-identity-header .access-avatar {
-  width: 56px;
-  height: 56px;
-  flex-basis: 56px;
 }
 .access-identity-header p {
   min-width: 0;
@@ -337,10 +317,10 @@
   padding: 12px 0;
 }
 .access-permission-section > summary::before {
-  content: '▸';
+  content: "▸";
 }
 .access-permission-section[open] > summary::before {
-  content: '▾';
+  content: "▾";
 }
 .access-permission-section > summary strong {
   flex: 1;

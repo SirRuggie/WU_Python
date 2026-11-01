@@ -168,7 +168,7 @@ async def sample(request, handler):
         return web.json_response(
             dict(
                 runs=(
-                    [dict(run_id="fixture-run", state=state["run_state"])]
+                    [dict(run_id="fixture-run", state=state["run_state"],started_by="700731132936978456")]
                     if state["run"]
                     else []
                 )
@@ -214,7 +214,7 @@ async def sample(request, handler):
     if request.path == BASE + "/runs/fixture-run":
         return web.json_response(
             dict(
-                run_id="fixture-run", state=state["run_state"], rows=state["run"] or []
+                run_id="fixture-run", state=state["run_state"], started_by="700731132936978456", stopped_by="700731132936978456", rows=state["run"] or []
             )
         )
     return web.json_response(

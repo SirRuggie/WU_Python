@@ -1,3 +1,4 @@
+import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import ConfirmDialog from "./ConfirmDialog";
 import { relativeTime } from "./commandTime";
@@ -6,6 +7,7 @@ import "./ChangeHistory.css";
 type Entry = {
   id: string;
   actor_name: string;
+  actor_id?: string;
   at: string;
   action: string;
   status: string;
@@ -172,7 +174,10 @@ export default function ChangeHistory({
               >
                 {entries.map((row) => (
                   <option value={row.id} key={row.id}>
-                    {new Date(row.at).toLocaleString()} · {row.actor_name} ·{" "}
+                    {new Date(row.at).toLocaleString()} ·{" "}
+                    {discordIdentityName(row.actor_id, null, row.actor_name) ||
+                      "Discord member unavailable"}{" "}
+                    ·{" "}
                     {row.action === "restore"
                       ? "Restored"
                       : row.action === "discord_edit"
@@ -192,7 +197,14 @@ export default function ChangeHistory({
             {entry && (
               <>
                 <p className="small">
-                  by {entry.actor_name} · {relativeTime(entry.at)}
+                  by{" "}
+                  <DiscordIdentity
+                    userId={entry.actor_id}
+                    displayName={entry.actor_name}
+                    resolvedMember={null}
+                    variant="compact"
+                  />{" "}
+                  · {relativeTime(entry.at)}
                 </p>
                 {entry.status !== "saved" ? (
                   <p role="status">
@@ -233,13 +245,13 @@ export default function ChangeHistory({
                       >
                         Restore before this change
                       </button>
-                      {entry.action !== 'delete' && (
-                      <button
-                        disabled={disabled || busy || !!pending}
-                        onClick={() => setConfirmSide("after")}
-                      >
-                        Restore this version
-                      </button>
+                      {entry.action !== "delete" && (
+                        <button
+                          disabled={disabled || busy || !!pending}
+                          onClick={() => setConfirmSide("after")}
+                        >
+                          Restore this version
+                        </button>
                       )}
                     </div>
                   </>

@@ -1,12 +1,244 @@
-import {useEffect,useRef,useState} from 'react'
-import {api} from './api'
-export type MentionNames=Record<string,string>
-export function insertMention(text:string,start:number,end:number,token:string){return text.slice(0,start)+(start>0&&/[\p{L}\p{N}>]/u.test(text[start-1])?' ':'')+token+(end<text.length&&/[\p{L}\p{N}<]/u.test(text[end])?' ':'')+text.slice(end)}
-export function namedMentions(text:string,names:MentionNames){return text.replace(/<@!?([0-9]+)>|<@&([0-9]+)>/g,(token,user,role)=>names[(role?'role:':'user:')+(role||user)]?'**@'+names[(role?'role:':'user:')+(role||user)].replace(/[\\`*_{}\[\]()<>#|]/g,'')+'**':token)}
-export default function MentionText({label,value,onChange,maxLength=4000,placeholder,onMention}:{label:string;value:string;onChange:(text:string)=>void;maxLength?:number;placeholder?:string;onMention:(key:string,name:string)=>void}){
- const input=useRef<HTMLTextAreaElement>(null),selection=useRef({start:value.length,end:value.length})
- const [picker,setPicker]=useState<'user'|'role'|null>(null),[rows,setRows]=useState<{id:string;name:string}[]>([]),[search,setSearch]=useState(''),[error,setError]=useState(''),[loading,setLoading]=useState(false)
- useEffect(()=>{setRows([]);setError('');if(!picker||search.trim().length<2){setLoading(false);return}let alive=true;setLoading(true);const timer=window.setTimeout(()=>{api<{matches:{id:string;name:string}[]}>('/manage/text-command-mentions?kind='+picker+'&q='+encodeURIComponent(search.trim())).then(data=>{if(alive)setRows(data.matches)}).catch(e=>{if(alive)setError(e.message)}).finally(()=>{if(alive)setLoading(false)})},300);return()=>{alive=false;window.clearTimeout(timer)}},[picker,search])
- function add(id:string,name:string){const token=picker==='role'?'<@&'+id+'>':'<@'+id+'>';const start=Math.min(selection.current.start,value.length),end=Math.min(selection.current.end,value.length);const next=insertMention(value,start,end,token);if(next.length>maxLength){setError('This mention would exceed the text limit.');return}onMention(picker+':'+id,name);onChange(next);selection.current={start:next.length-(value.length-end),end:next.length-(value.length-end)};setPicker(null);requestAnimationFrame(()=>{input.current?.focus();input.current?.setSelectionRange(next.length-(value.length-end),next.length-(value.length-end))})}
- return <div className="mention-text"><label>{label}<textarea ref={input} rows={5} value={value} maxLength={maxLength} placeholder={placeholder} onSelect={event=>{selection.current={start:event.currentTarget.selectionStart,end:event.currentTarget.selectionEnd}}} onChange={event=>{selection.current={start:event.currentTarget.selectionStart,end:event.currentTarget.selectionEnd};onChange(event.target.value)}}/></label><div className="mention-tools"><button type="button" aria-expanded={picker==='user'} onClick={()=>{setSearch('');setPicker(picker==='user'?null:'user')}}>@ Member</button><button type="button" aria-expanded={picker==='role'} onClick={()=>{setSearch('');setPicker(picker==='role'?null:'role')}}>@ Role</button></div><details className="markdown-help"><summary>Formatting help</summary><p className="small">Type these symbols around your text. Names such as “Footer” only label editor blocks.</p><dl>{[["# Heading","Large heading"],["## Heading","Medium heading"],["### Heading","Small heading"],["-# Small text","Subtext / footer"],["**bold**","Bold"],["*italic*","Italic"],["__underline__","Underline"],["~~crossed out~~","Strikethrough"],["||hidden text||","Spoiler"],["> quoted text","Quote"],["- item","Bullet list"],["1. item","Numbered list"],["`code`","Inline code"],["```\ncode\n```","Code block"],["[label](https://example.com)","Link"]].map(([syntax,description])=><div key={syntax}><dt>{description}</dt><dd><code>{syntax}</code></dd></div>)}</dl><small>Discord may render spacing and spoilers differently from this preview.</small></details>{picker&&<section className="mention-picker" aria-label="Insert mention"><label>{picker==='role'?'Search roles':'Search members'}<input type="search" maxLength={80} placeholder="Type at least 2 letters" value={search} onChange={event=>setSearch(event.target.value)}/></label>{loading&&<p role="status">Searching…</p>}{error&&<p role="alert">{error}</p>}<div>{rows.map(row=><button type="button" key={row.id} onClick={()=>add(row.id,row.name)}>{row.name}</button>)}</div>{!loading&&!error&&search.trim().length>=2&&!rows.length&&<p>No matches.</p>}{rows.length===25&&<small>Type more to narrow the results.</small>}</section>}</div>
+import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
+import { useEffect, useRef, useState } from "react";
+import { api } from "./api";
+export type MentionNames = Record<string, string>;
+export function insertMention(
+  text: string,
+  start: number,
+  end: number,
+  token: string,
+) {
+  return (
+    text.slice(0, start) +
+    (start > 0 && /[\p{L}\p{N}>]/u.test(text[start - 1]) ? " " : "") +
+    token +
+    (end < text.length && /[\p{L}\p{N}<]/u.test(text[end]) ? " " : "") +
+    text.slice(end)
+  );
+}
+export function namedMentions(text: string, names: MentionNames) {
+  return text.replace(/<@!?([0-9]+)>|<@&([0-9]+)>/g, (token, user, role) =>
+    names[(role ? "role:" : "user:") + (role || user)]
+      ? "**@" +
+        names[(role ? "role:" : "user:") + (role || user)].replace(
+          /[\\`*_{}\[\]()<>#|]/g,
+          "",
+        ) +
+        "**"
+      : token,
+  );
+}
+export default function MentionText({
+  label,
+  value,
+  onChange,
+  maxLength = 4000,
+  placeholder,
+  onMention,
+}: {
+  label: string;
+  value: string;
+  onChange: (text: string) => void;
+  maxLength?: number;
+  placeholder?: string;
+  onMention: (key: string, name: string) => void;
+}) {
+  const input = useRef<HTMLTextAreaElement>(null),
+    selection = useRef({ start: value.length, end: value.length });
+  const [picker, setPicker] = useState<"user" | "role" | null>(null),
+    [rows, setRows] = useState<
+      { id: string; name: string; discord_profile?: DiscordProfile }[]
+    >([]),
+    [search, setSearch] = useState(""),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setRows([]);
+    setError("");
+    if (!picker || search.trim().length < 2) {
+      setLoading(false);
+      return;
+    }
+    let alive = true;
+    setLoading(true);
+    const timer = window.setTimeout(() => {
+      api<{
+        matches: {
+          id: string;
+          name: string;
+          discord_profile?: DiscordProfile;
+        }[];
+      }>(
+        "/manage/text-command-mentions?kind=" +
+          picker +
+          "&q=" +
+          encodeURIComponent(search.trim()),
+      )
+        .then((data) => {
+          if (alive) setRows(data.matches);
+        })
+        .catch((e) => {
+          if (alive) setError(e.message);
+        })
+        .finally(() => {
+          if (alive) setLoading(false);
+        });
+    }, 300);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [picker, search]);
+  function add(id: string, name: string) {
+    const token = picker === "role" ? "<@&" + id + ">" : "<@" + id + ">";
+    const start = Math.min(selection.current.start, value.length),
+      end = Math.min(selection.current.end, value.length);
+    const next = insertMention(value, start, end, token);
+    if (next.length > maxLength) {
+      setError("This mention would exceed the text limit.");
+      return;
+    }
+    onMention(picker + ":" + id, name);
+    onChange(next);
+    selection.current = {
+      start: next.length - (value.length - end),
+      end: next.length - (value.length - end),
+    };
+    setPicker(null);
+    requestAnimationFrame(() => {
+      input.current?.focus();
+      input.current?.setSelectionRange(
+        next.length - (value.length - end),
+        next.length - (value.length - end),
+      );
+    });
+  }
+  return (
+    <div className="mention-text">
+      <label>
+        {label}
+        <textarea
+          ref={input}
+          rows={5}
+          value={value}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          onSelect={(event) => {
+            selection.current = {
+              start: event.currentTarget.selectionStart,
+              end: event.currentTarget.selectionEnd,
+            };
+          }}
+          onChange={(event) => {
+            selection.current = {
+              start: event.currentTarget.selectionStart,
+              end: event.currentTarget.selectionEnd,
+            };
+            onChange(event.target.value);
+          }}
+        />
+      </label>
+      <div className="mention-tools">
+        <button
+          type="button"
+          aria-expanded={picker === "user"}
+          onClick={() => {
+            setSearch("");
+            setPicker(picker === "user" ? null : "user");
+          }}
+        >
+          @ Member
+        </button>
+        <button
+          type="button"
+          aria-expanded={picker === "role"}
+          onClick={() => {
+            setSearch("");
+            setPicker(picker === "role" ? null : "role");
+          }}
+        >
+          @ Role
+        </button>
+      </div>
+      <details className="markdown-help">
+        <summary>Formatting help</summary>
+        <p className="small">
+          Type these symbols around your text. Names such as “Footer” only label
+          editor blocks.
+        </p>
+        <dl>
+          {[
+            ["# Heading", "Large heading"],
+            ["## Heading", "Medium heading"],
+            ["### Heading", "Small heading"],
+            ["-# Small text", "Subtext / footer"],
+            ["**bold**", "Bold"],
+            ["*italic*", "Italic"],
+            ["__underline__", "Underline"],
+            ["~~crossed out~~", "Strikethrough"],
+            ["||hidden text||", "Spoiler"],
+            ["> quoted text", "Quote"],
+            ["- item", "Bullet list"],
+            ["1. item", "Numbered list"],
+            ["`code`", "Inline code"],
+            ["```\ncode\n```", "Code block"],
+            ["[label](https://example.com)", "Link"],
+          ].map(([syntax, description]) => (
+            <div key={syntax}>
+              <dt>{description}</dt>
+              <dd>
+                <code>{syntax}</code>
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <small>
+          Discord may render spacing and spoilers differently from this preview.
+        </small>
+      </details>
+      {picker && (
+        <section className="mention-picker" aria-label="Insert mention">
+          <label>
+            {picker === "role" ? "Search roles" : "Search members"}
+            <input
+              type="search"
+              maxLength={80}
+              placeholder="Type at least 2 letters"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          {loading && <p role="status">Searching…</p>}
+          {error && <p role="alert">{error}</p>}
+          <div>
+            {rows.map((row) => (
+              <button
+                type="button"
+                key={row.id}
+                onClick={() => add(row.id, row.name)}
+              >
+                {picker === "user" ? (
+                  <DiscordIdentity
+                    userId={row.id}
+                    displayName={row.name}
+                    resolvedMember={row.discord_profile || null}
+                    variant="compact"
+                    contact={false}
+                  />
+                ) : (
+                  row.name
+                )}
+              </button>
+            ))}
+          </div>
+          {!loading && !error && search.trim().length >= 2 && !rows.length && (
+            <p>No matches.</p>
+          )}
+          {rows.length === 25 && (
+            <small>Type more to narrow the results.</small>
+          )}
+        </section>
+      )}
+    </div>
+  );
 }

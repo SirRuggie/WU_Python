@@ -265,7 +265,7 @@ def test_total_text_limit_and_legacy_migration():
     with pytest.raises(ValueError):core.validate({**values(),'allow_pings':'true'})
 
 
-def test_mention_lookup_is_scoped_bounded_and_contains_only_names_ids():
+def test_mention_lookup_is_scoped_bounded_and_contains_only_public_identity_fields():
  async def run():
   from cwl_web import manage_roles
   rows=[{'nick':'Sir Ruggie '+str(i),'user':{'id':str(i),'username':'person'+str(i)},'roles':['secret'],'joined_at':'private'} for i in range(30)]
@@ -274,7 +274,9 @@ def test_mention_lookup_is_scoped_bounded_and_contains_only_names_ids():
   with patch.object(api,'require_manage',AsyncMock(return_value={'roles':[{'id':'7','name':'CWL Staff','permissions':'8'}]})) as auth,patch.object(manage_roles,'searchable_members',AsyncMock(return_value=rows)):
    result=json.loads((await api.mention_lookup(req)).text)
    assert len(result['matches'])==25
-   assert all(set(row)=={'id','name'} for row in result['matches'])
+   assert all(set(row)=={'id','name','discord_profile'} for row in result['matches'])
+   assert all(set(row['discord_profile'])=={'id','display_name','username','avatar_url'} and row['discord_profile']['id']==row['id'] for row in result['matches'])
+   assert 'secret' not in str(result) and 'joined_at' not in str(result)
    auth.assert_awaited_with(req,'text_commands')
    req.query={'kind':'role','q':'staff'}
    assert json.loads((await api.mention_lookup(req)).text)['matches']==[{'id':'7','name':'CWL Staff'}]

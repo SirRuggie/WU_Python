@@ -25,15 +25,8 @@ it("requests all records for an exact war and does not restrict an account to it
   expect(account.get("offset")).toBe("25");
 });
 
-import { importEmptyText, strikeLinkLabel } from "./strikeHistoryView";
-it("shows unlinked and unresolved accounts without implying a Discord link", () => {
-  expect(strikeLinkLabel(null)).toBe("Not linked");
-  expect(strikeLinkLabel("123", null, "unlinked")).toBe("Not linked");
-  expect(strikeLinkLabel("123", "Ruggie")).toBe("Ruggie");
-  expect(strikeLinkLabel("123")).toBe("Discord 123");
-  expect(strikeLinkLabel(null, null, "unknown")).toBe("Link unknown");
-  expect(strikeLinkLabel(null, null, "conflict")).toBe("Link needs review");
-});
+import { importEmptyText } from "./strikeHistoryView";
+
 it("distinguishes deferred records from wars with no missed attacks", () => {
   expect(importEmptyText([], 3)).toBe("No records ready to import.");
   expect(importEmptyText([], 0)).toBe("No missed attacks found in saved wars.");
@@ -69,5 +62,7 @@ it("uses complete singular nouns and a no-attack label", () => {
 });
 
 it("summarizes a mismatch without disguising it as a normal war", () => {
-  expect(warSummary({strikes: 0, one_missed: 0, mismatch: true})).toBe("⊖ Mismatch war (no strike)");
+  expect(warSummary({ strikes: 0, one_missed: 0, mismatch: true })).toBe(
+    "⊖ Mismatch war (no strike)",
+  );
 });

@@ -1,3 +1,4 @@
+import DiscordIdentity from "../DiscordIdentity";
 import { nicknameName } from "./nicknameName";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
@@ -184,7 +185,8 @@ export default function MemberTimezoneEditor({
   }
   return (
     <section className="mt-editor" aria-label={`Edit ${member.name}`}>
-      <h2>Edit {member.name}</h2>
+      <h2>Edit time zone</h2>
+      <DiscordIdentity userId={member.discord_id} displayName={member.name} resolvedMember={member.discord_profile || null} />
       {warning && <p role="status">{warning}</p>}
       {error && (
         <div role="alert">

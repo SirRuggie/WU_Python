@@ -1,3 +1,4 @@
+import DiscordIdentity from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Plus, Search, UserRoundSearch } from "lucide-react";
 import { api, type Account, type Pool } from "./api";
@@ -167,7 +168,10 @@ export default function StaffTagSignup({
               {result.linked_user_id ? (
                 <p>
                   <StatusPill tone="success">Linked Discord account</StatusPill>{" "}
-                  <strong>{result.linked_user_id}</strong>
+                  <DiscordIdentity
+                    userId={result.linked_user_id}
+                    variant="compact"
+                  />
                 </p>
               ) : (
                 <>

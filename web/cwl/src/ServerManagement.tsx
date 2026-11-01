@@ -1,22 +1,23 @@
-import ServerSettingsIndex from './ServerSettingsIndex'
-import BandStatusSummary, { bandStatusWarning } from './BandStatusSummary'
-import ApplicationSettingsIndex from './ApplicationSettingsIndex'
+import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
+import ServerSettingsIndex from "./ServerSettingsIndex";
+import BandStatusSummary, { bandStatusWarning } from "./BandStatusSummary";
+import ApplicationSettingsIndex from "./ApplicationSettingsIndex";
 import ReturnReminderOverview, {
   ReturnStatusSummary,
-} from './ReturnReminderOverview'
-import ChangeHistory, { supportsHistory } from './ChangeHistory'
-import MessagePublish from './MessagePublish'
+} from "./ReturnReminderOverview";
+import ChangeHistory, { supportsHistory } from "./ChangeHistory";
+import MessagePublish from "./MessagePublish";
 import {
   areaSections,
   managementAreas,
   type ManagementArea,
-} from './managementAreas'
-import MemberPicker, { type MemberOption } from './MemberPicker'
-import { previewUrl } from './previewFormatting'
-import DiscordPreview, { type PreviewPart } from './DiscordMessagePreview'
-import useCompactPreview from './useCompactPreview'
-import { useEffect, useRef, useState } from 'react'
-import { api, apiUpload, ApiError } from './api'
+} from "./managementAreas";
+import MemberPicker, { type MemberOption } from "./MemberPicker";
+import { previewUrl } from "./previewFormatting";
+import DiscordPreview, { type PreviewPart } from "./DiscordMessagePreview";
+import useCompactPreview from "./useCompactPreview";
+import { useEffect, useRef, useState } from "react";
+import { api, apiUpload, ApiError } from "./api";
 import {
   recordPickerCopy,
   actionConfirmation,
@@ -32,16 +33,18 @@ import {
   type ManagementField,
   type ManagementSection,
   type ManagementValue,
-} from './serverManagement'
-import './ServerManagement.css'
-const apiPath = (path: string) => path.replace(/^\/api\/cwl(?=\/)/, '')
+} from "./serverManagement";
+import "./ServerManagement.css";
+const apiPath = (path: string) => path.replace(/^\/api\/cwl(?=\/)/, "");
 const message = (error: unknown) =>
-  error instanceof Error ? error.message : 'Could not load settings. Try again.'
+  error instanceof Error
+    ? error.message
+    : "Could not load settings. Try again.";
 type Props = {
-  area?: ManagementArea
-  onNavigate?: (destination: string) => void
-  onDirty?: (dirty: boolean) => void
-}
+  area?: ManagementArea;
+  onNavigate?: (destination: string) => void;
+  onDirty?: (dirty: boolean) => void;
+};
 function Field({
   field,
   value,
@@ -51,34 +54,34 @@ function Field({
   onMemberOptions,
   memberRoles,
 }: {
-  field: ManagementField
-  value: ManagementValue
-  onChange: (value: ManagementValue) => void
-  disabled: boolean
-  revision: string | number
-  onMemberOptions?: (options: MemberOption[]) => void
-  memberRoles?: { value: string; label: string }[]
+  field: ManagementField;
+  value: ManagementValue;
+  onChange: (value: ManagementValue) => void;
+  disabled: boolean;
+  revision: string | number;
+  onMemberOptions?: (options: MemberOption[]) => void;
+  memberRoles?: { value: string; label: string }[];
 }) {
-  const [search, setSearch] = useState(''),
+  const [search, setSearch] = useState(""),
     [uploading, setUploading] = useState(false),
-    [uploadError, setUploadError] = useState('')
-  const id = `manage-${field.key.replace(/[^a-z0-9]/gi, '-')}`
-  const [remoteOptions, setRemoteOptions] = useState(field.options || [])
+    [uploadError, setUploadError] = useState("");
+  const id = `manage-${field.key.replace(/[^a-z0-9]/gi, "-")}`;
+  const [remoteOptions, setRemoteOptions] = useState(field.options || []);
   useEffect(() => {
-    setRemoteOptions(field.options || [])
-  }, [field.options])
+    setRemoteOptions(field.options || []);
+  }, [field.options]);
 
-  const options = remoteOptions
+  const options = remoteOptions;
   const matching = options.filter((option) =>
     `${option.label} ${option.value}`
       .toLowerCase()
       .includes(search.toLowerCase()),
-  )
+  );
   const picker =
     !!field.source ||
-    ['role', 'channel', 'member', 'multiselect'].includes(field.type)
-  const multiple = field.type === 'multiselect' || Array.isArray(value)
-  if (field.type === 'member' || field.source === 'members')
+    ["role", "channel", "member", "multiselect"].includes(field.type);
+  const multiple = field.type === "multiselect" || Array.isArray(value);
+  if (field.type === "member" || field.source === "members")
     return (
       <MemberPicker
         compactSelection
@@ -90,12 +93,12 @@ function Field({
         onOptions={onMemberOptions}
         roles={memberRoles}
       />
-    )
+    );
   return (
     <div
-      className={`manage-field ${field.type === 'textarea' ? 'manage-field-wide' : ''}`}
+      className={`manage-field ${field.type === "textarea" ? "manage-field-wide" : ""}`}
     >
-      {field.type === 'boolean' ? (
+      {field.type === "boolean" ? (
         <label className="manage-switch" htmlFor={id}>
           <input
             id={id}
@@ -110,7 +113,7 @@ function Field({
         <>
           <label htmlFor={id}>
             {field.label}
-            {field.required ? ' *' : ''}
+            {field.required ? " *" : ""}
           </label>
           {picker && (
             <input
@@ -121,11 +124,11 @@ function Field({
               disabled={disabled || field.readonly}
             />
           )}
-          {field.type === 'textarea' ? (
+          {field.type === "textarea" ? (
             <textarea
               id={id}
-              rows={String(field.value ?? '').length < 160 ? 3 : 5}
-              value={String(value ?? '')}
+              rows={String(field.value ?? "").length < 160 ? 3 : 5}
+              value={String(value ?? "")}
               disabled={disabled || field.readonly}
               maxLength={field.max_length}
               aria-describedby={field.description ? `${id}-help` : undefined}
@@ -167,7 +170,7 @@ function Field({
                 <small>No matches found.</small>
               )}
             </div>
-          ) : picker || field.type === 'select' ? (
+          ) : picker || field.type === "select" ? (
             <select
               id={id}
               multiple={multiple}
@@ -180,7 +183,7 @@ function Field({
                   ? Array.isArray(value)
                     ? value
                     : []
-                  : String(value ?? '')
+                  : String(value ?? "")
               }
               onChange={(event) =>
                 onChange(
@@ -220,8 +223,8 @@ function Field({
           ) : (
             <input
               id={id}
-              type={field.type === 'number' ? 'number' : 'text'}
-              value={String(value ?? '')}
+              type={field.type === "number" ? "number" : "text"}
+              value={String(value ?? "")}
               disabled={disabled || field.readonly}
               min={field.min}
               max={field.max}
@@ -229,7 +232,7 @@ function Field({
               placeholder={field.placeholder}
               onChange={(event) =>
                 onChange(
-                  field.type === 'number' && event.target.value !== ''
+                  field.type === "number" && event.target.value !== ""
                     ? Number(event.target.value)
                     : event.target.value,
                 )
@@ -238,7 +241,7 @@ function Field({
           )}
         </>
       )}
-      {field.upload_endpoint && previewUrl(String(value || '')) && (
+      {field.upload_endpoint && previewUrl(String(value || "")) && (
         <div className="manage-image-current">
           <small>Current {field.label.toLowerCase()}</small>
           <img
@@ -252,35 +255,35 @@ function Field({
       {field.upload_endpoint && (
         <label className="manage-upload">
           {uploading
-            ? 'Uploading image…'
+            ? "Uploading image…"
             : field.upload_label || `Upload ${field.label.toLowerCase()}`}
           <input
             type="file"
             accept="image/png,image/jpeg,image/webp,image/gif"
             disabled={disabled || uploading}
             onChange={async (event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (!file) return
-              setUploadError('')
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              setUploadError("");
               if (file.size > (field.upload_max_bytes || 10 * 1024 * 1024)) {
                 setUploadError(
-                  'This image is too large. Choose a smaller image.',
-                )
-                return
+                  "This image is too large. Choose a smaller image.",
+                );
+                return;
               }
-              setUploading(true)
+              setUploading(true);
               try {
                 const result = await apiUpload<{ url: string }>(
                   apiPath(field.upload_endpoint!) +
                     `?revision=${encodeURIComponent(revision)}`,
                   file,
-                )
-                onChange(result.url)
+                );
+                onChange(result.url);
               } catch (error) {
-                setUploadError(message(error))
+                setUploadError(message(error));
               } finally {
-                setUploading(false)
+                setUploading(false);
               }
             }}
           />
@@ -291,77 +294,83 @@ function Field({
         <small id={`${id}-help`}>{field.description}</small>
       )}
     </div>
-  )
+  );
 }
 async function hydrateFields(fields: ManagementField[]) {
   if (
     !fields.some(
       (field) =>
-        (field.source === 'roles' ||
-          field.source === 'channels' ||
-          ['channel', 'role', 'multiselect'].includes(field.type)) &&
+        (field.source === "roles" ||
+          field.source === "channels" ||
+          ["channel", "role", "multiselect"].includes(field.type)) &&
         !field.options &&
-        field.source !== 'members',
+        field.source !== "members",
     )
   )
-    return fields
+    return fields;
   const choices = await api<{
-    channels: { value: string; label: string }[]
-    roles: { value: string; label: string }[]
-  }>('/manage/choices')
+    channels: { value: string; label: string }[];
+    roles: { value: string; label: string }[];
+  }>("/manage/choices");
   return fields.map((field) =>
     field.options
       ? field
       : {
           ...field,
           options:
-            field.source === 'members'
+            field.source === "members"
               ? []
-              : field.type === 'channel' || field.source === 'channels'
+              : field.type === "channel" || field.source === "channels"
                 ? choices.channels
-                : field.source === 'roles' ||
-                    ['role', 'multiselect'].includes(field.type)
+                : field.source === "roles" ||
+                    ["role", "multiselect"].includes(field.type)
                   ? choices.roles
                   : undefined,
         },
-  )
+  );
 }
 function RoleMembers({ roles }: { roles: { value: string; label: string }[] }) {
-  const [role, setRole] = useState(''),
-    [members, setMembers] = useState<{ id: string; name: string }[]>([]),
+  const [role, setRole] = useState(""),
+    [members, setMembers] = useState<
+      { id: string; name: string; discord_profile?: DiscordProfile }[]
+    >([]),
     [loading, setLoading] = useState(false),
-    [error, setError] = useState(''),
-    [show, setShow] = useState(false)
+    [error, setError] = useState(""),
+    [show, setShow] = useState(false);
   useEffect(() => {
-    if (!role || !show) return
-    let alive = true
-    setMembers([])
-    setLoading(true)
-    setError('')
+    if (!role || !show) return;
+    let alive = true;
+    setMembers([]);
+    setLoading(true);
+    setError("");
     void (async () => {
       try {
-        let after: string | null = null
+        let after: string | null = null;
         do {
           const result: {
-            members: { id: string; name: string }[]
-            next: string | null
+            members: {
+              id: string;
+              name: string;
+              discord_profile?: DiscordProfile;
+            }[];
+            next: string | null;
           } = await api(
-            `/manage/roles/${encodeURIComponent(role)}/members${after ? '?after=' + encodeURIComponent(after) : ''}`,
-          )
-          if (!alive) return
-          setMembers((current) => [...current, ...result.members])
-          after = result.next
-        } while (after && alive)
+            `/manage/roles/${encodeURIComponent(role)}/members${after ? "?after=" + encodeURIComponent(after) : ""}`,
+          );
+          if (!alive) return;
+          setMembers((current) => [...current, ...result.members]);
+          after = result.next;
+        } while (after && alive);
       } catch (error) {
-        if (alive) setError(message(error))
+        if (alive) setError(message(error));
       } finally {
-        if (alive) setLoading(false)
+        if (alive) setLoading(false);
       }
-    })()
+    })();
     return () => {
-      alive = false
-    }
-  }, [role, show])
+      alive = false;
+    };
+  }, [role, show]);
   return (
     <details
       className="manage-role-members"
@@ -391,56 +400,63 @@ function RoleMembers({ roles }: { roles: { value: string; label: string }[] }) {
       )}
       <ul>
         {members.map((member) => (
-          <li key={member.id}>{member.name}</li>
+          <li key={member.id}>
+            <DiscordIdentity
+              userId={member.id}
+              displayName={member.name}
+              resolvedMember={member.discord_profile || null}
+              variant="compact"
+            />
+          </li>
         ))}
       </ul>
     </details>
-  )
+  );
 }
 export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
   const [sections, setSections] = useState<ManagementSection[]>([]),
-    [query, setQuery] = useState(''),
-    [group, setGroup] = useState(''),
+    [query, setQuery] = useState(""),
+    [group, setGroup] = useState(""),
     [documents, setDocuments] = useState<ManagementSection[]>([]),
     [selected, setSelected] = useState<ManagementSection | null>(null),
     [document, setDocument] = useState<ManagementDocument | null>(null),
     [draft, setDraft] = useState<Record<string, ManagementValue>>({}),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [notice, setNotice] = useState(''),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [preview, setPreview] = useState<PreviewPart[] | null>(null),
     [conflict, setConflict] = useState(false),
     [fieldPage, setFieldPage] = useState(0),
-    [statusUrl, setStatusUrl] = useState(''),
+    [statusUrl, setStatusUrl] = useState(""),
     [catalogPage, setCatalogPage] = useState(0),
-    [actionResult, setActionResult] = useState<ManagementResult | null>(null)
-  const [recordSearch, setRecordSearch] = useState('')
-  const pickerCopy = recordPickerCopy(documents)
-  const [previewStatus, setPreviewStatus] = useState(''),
-    [mobilePane, setMobilePane] = useState<'edit' | 'preview'>('edit')
-  const compactPreview = useCompactPreview(900)
+    [actionResult, setActionResult] = useState<ManagementResult | null>(null);
+  const [recordSearch, setRecordSearch] = useState("");
+  const pickerCopy = recordPickerCopy(documents);
+  const [previewStatus, setPreviewStatus] = useState(""),
+    [mobilePane, setMobilePane] = useState<"edit" | "preview">("edit");
+  const compactPreview = useCompactPreview(900);
   const operationsWorkspace =
-    !area || area === 'fwa-settings' || area === 'connections-settings'
+    !area || area === "fwa-settings" || area === "connections-settings";
 
-  const [catalogAttempt, setCatalogAttempt] = useState(0)
-  const [returnDirty, setReturnDirty] = useState(false)
-  const [publishDirty, setPublishDirty] = useState(false)
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [returnDirty, setReturnDirty] = useState(false);
+  const [publishDirty, setPublishDirty] = useState(false);
   const writing = useRef(false),
     indexTrigger = useRef<HTMLButtonElement | null>(null),
-    editorHeading = useRef<HTMLHeadingElement | null>(null)
+    editorHeading = useRef<HTMLHeadingElement | null>(null);
   const sequence = useRef(0),
     requestIds = useRef(new ManagementRequestIds()),
     pendingKeys = useRef(new Map<string, string>()),
-    explicitPreviewKey = useRef<string | null>(null)
-  const changes = document ? changedValues(document.fields, draft) : {}
-  const dirty = Object.keys(changes).length > 0
-  const draftPreviewKey = JSON.stringify(changes)
+    explicitPreviewKey = useRef<string | null>(null);
+  const changes = document ? changedValues(document.fields, draft) : {};
+  const dirty = Object.keys(changes).length > 0;
+  const draftPreviewKey = JSON.stringify(changes);
   const previewKey =
     selected && document
       ? `${selected.id}:${document.revision}:${draftPreviewKey}`
-      : ''
+      : "";
   const previewVisible =
-    (!operationsWorkspace && !compactPreview) || mobilePane === 'preview'
+    (!operationsWorkspace && !compactPreview) || mobilePane === "preview";
   useEffect(() => {
     onDirty?.(
       dirty ||
@@ -448,9 +464,9 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         publishDirty ||
         (busy && writing.current) ||
         !!statusUrl,
-    )
-    return () => onDirty?.(false)
-  }, [dirty, returnDirty, publishDirty, busy, statusUrl, onDirty])
+    );
+    return () => onDirty?.(false);
+  }, [dirty, returnDirty, publishDirty, busy, statusUrl, onDirty]);
   useEffect(() => {
     if (
       !dirty &&
@@ -459,68 +475,68 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       !writing.current &&
       !statusUrl
     )
-      return
+      return;
     const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty, returnDirty, publishDirty, busy, statusUrl])
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, returnDirty, publishDirty, busy, statusUrl]);
   useEffect(() => {
-    if (area === 'cwl-returns') return
-    let alive = true
-    setBusy(true)
-    setError('')
-    api<{ sections: ManagementSection[] }>('/manage')
+    if (area === "cwl-returns") return;
+    let alive = true;
+    setBusy(true);
+    setError("");
+    api<{ sections: ManagementSection[] }>("/manage")
       .then((result) => {
-        if (alive) setSections(result.sections)
+        if (alive) setSections(result.sections);
       })
       .catch((error) => {
-        if (alive) setError(message(error))
+        if (alive) setError(message(error));
       })
       .finally(() => {
-        if (alive) setBusy(false)
-      })
+        if (alive) setBusy(false);
+      });
     return () => {
-      alive = false
-    }
-  }, [catalogAttempt, area])
+      alive = false;
+    };
+  }, [catalogAttempt, area]);
   const endpoint = (section: ManagementSection) =>
-    apiPath(section.endpoint || `/manage/${encodeURIComponent(section.id)}`)
+    apiPath(section.endpoint || `/manage/${encodeURIComponent(section.id)}`);
   useEffect(() => {
     if (!selected || !document?.preview_supported || !previewVisible || busy)
-      return
-    let alive = true
+      return;
+    let alive = true;
     if (!dirty) {
-      setPreview(document.preview || [])
-      setPreviewStatus('')
-      return
+      setPreview(document.preview || []);
+      setPreviewStatus("");
+      return;
     }
-    if (explicitPreviewKey.current === previewKey) return
-    setPreviewStatus('Updating preview…')
+    if (explicitPreviewKey.current === previewKey) return;
+    setPreviewStatus("Updating preview…");
     const timer = window.setTimeout(() => {
-      api<ManagementDocument>(endpoint(selected) + '/preview', 'POST', {
+      api<ManagementDocument>(endpoint(selected) + "/preview", "POST", {
         revision: document.revision,
         values: JSON.parse(draftPreviewKey),
       })
         .then((result) => {
           if (alive) {
-            setPreview(result.preview || [])
-            setPreviewStatus('Draft preview · not saved')
+            setPreview(result.preview || []);
+            setPreviewStatus("Draft preview · not saved");
           }
         })
         .catch((error) => {
           if (alive)
             setPreviewStatus(
-              'Showing the last valid preview. ' + message(error),
-            )
-        })
-    }, 700)
+              "Showing the last valid preview. " + message(error),
+            );
+        });
+    }, 700);
     return () => {
-      alive = false
-      window.clearTimeout(timer)
-    }
+      alive = false;
+      window.clearTimeout(timer);
+    };
   }, [
     selected?.id,
     document?.revision,
@@ -530,173 +546,174 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     previewVisible,
     busy,
     previewKey,
-  ])
+  ]);
   const mayLeave = () =>
     !writing.current &&
     !statusUrl &&
     (!(dirty || publishDirty) ||
       window.confirm(
-        'You have changes that are not saved. Leave without saving?',
-      ))
+        "You have changes that are not saved. Leave without saving?",
+      ));
   const open = async (section: ManagementSection, keepDocuments = false) => {
-    if (!mayLeave()) return
+    if (!mayLeave()) return;
     if (section.destination) {
-      onNavigate?.(section.destination)
-      return
+      onNavigate?.(section.destination);
+      return;
     }
-    const turn = ++sequence.current
-    setFieldPage(0)
-    setMobilePane('edit')
-    setPreviewStatus('')
-    explicitPreviewKey.current = null
-    setSelected(section)
-    window.requestAnimationFrame(() => editorHeading.current?.focus())
-    setActionResult(null)
+    const turn = ++sequence.current;
+    setFieldPage(0);
+    setMobilePane("edit");
+    setPreviewStatus("");
+    explicitPreviewKey.current = null;
+    setSelected(section);
+    window.requestAnimationFrame(() => editorHeading.current?.focus());
+    setActionResult(null);
     if (!keepDocuments) {
-      setDocuments([])
-      setRecordSearch('')
+      setDocuments([]);
+      setRecordSearch("");
     }
-    setDocument(null)
-    setDraft({})
-    setPreview(null)
-    setError('')
-    setNotice('')
-    setConflict(false)
-    setBusy(true)
+    setDocument(null);
+    setDraft({});
+    setPreview(null);
+    setError("");
+    setNotice("");
+    setConflict(false);
+    setBusy(true);
     try {
-      const result = await api<ManagementDocument>(endpoint(section))
+      const result = await api<ManagementDocument>(endpoint(section));
       if (turn === sequence.current) {
         if (result.documents) {
           setDocuments(
             result.documents.map((record) => ({ ...section, ...record })),
-          )
-          setDocument(null)
+          );
+          setDocument(null);
         } else {
-          const fields = await hydrateFields(result.fields || [])
-          if (turn !== sequence.current) return
-          setDocument({ ...result, fields })
-          setDraft(fieldValues(fields))
-          setPreview(result.preview || null)
+          const fields = await hydrateFields(result.fields || []);
+          if (turn !== sequence.current) return;
+          setDocument({ ...result, fields });
+          setDraft(fieldValues(fields));
+          setPreview(result.preview || null);
         }
       }
     } catch (error) {
-      if (turn === sequence.current) setError(message(error))
+      if (turn === sequence.current) setError(message(error));
     } finally {
-      if (turn === sequence.current) setBusy(false)
+      if (turn === sequence.current) setBusy(false);
     }
-  }
+  };
   const home = () => {
-    if (!mayLeave()) return
-    ++sequence.current
-    setSelected(null)
-    setActionResult(null)
-    setDocuments([])
-    setDocument(null)
-    setDraft({})
-    setError('')
-    setNotice('')
-    setBusy(false)
-    window.requestAnimationFrame(() => indexTrigger.current?.focus())
-  }
+    if (!mayLeave()) return;
+    ++sequence.current;
+    setSelected(null);
+    setActionResult(null);
+    setDocuments([]);
+    setDocument(null);
+    setDraft({});
+    setError("");
+    setNotice("");
+    setBusy(false);
+    window.requestAnimationFrame(() => indexTrigger.current?.focus());
+  };
   const checkAction = async (url: string, wait = false) => {
     for (let attempt = 0; attempt < (wait ? 30 : 1); attempt++) {
       const result = await api<{
-        status: string
-        message?: string
-        result?: ManagementResult
-      }>(apiPath(url))
-      setNotice(result.message || `Request ${result.status}.`)
-      if (['done', 'failed', 'uncertain'].includes(result.status)) {
-        if (result.status === 'done') {
-          setActionResult(result.result || null)
-          const key = pendingKeys.current.get(url)
-          if (key) requestIds.current.complete(key)
-          pendingKeys.current.delete(url)
+        status: string;
+        message?: string;
+        result?: ManagementResult;
+      }>(apiPath(url));
+      setNotice(result.message || `Request ${result.status}.`);
+      if (["done", "failed", "uncertain"].includes(result.status)) {
+        if (result.status === "done") {
+          setActionResult(result.result || null);
+          const key = pendingKeys.current.get(url);
+          if (key) requestIds.current.complete(key);
+          pendingKeys.current.delete(url);
         }
-        setStatusUrl('')
-        if (result.status !== 'done')
+        setStatusUrl("");
+        if (result.status !== "done")
           setError(
             result.message ||
-              'The request could not be confirmed. Check Discord before trying again.',
-          )
-        return result.status
+              "The request could not be confirmed. Check Discord before trying again.",
+          );
+        return result.status;
       }
-      setStatusUrl(url)
-      if (wait) await new Promise((resolve) => window.setTimeout(resolve, 2000))
+      setStatusUrl(url);
+      if (wait)
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
     }
     setNotice(
-      'Still waiting for the bot. Use Check request status to see the result. Do not send the same request again.',
-    )
-  }
+      "Still waiting for the bot. Use Check request status to see the result. Do not send the same request again.",
+    );
+  };
   const save = async (review = false) => {
-    if (writing.current || !selected || !document) return
+    if (writing.current || !selected || !document) return;
     const invalid = document.fields
       .map((field) => fieldError(field, draft[field.key]))
-      .find(Boolean)
+      .find(Boolean);
     if (invalid) {
-      setError(invalid)
-      return
+      setError(invalid);
+      return;
     }
-    if (review) explicitPreviewKey.current = previewKey
-    writing.current = true
-    setBusy(true)
-    setError('')
-    setNotice('')
+    if (review) explicitPreviewKey.current = previewKey;
+    writing.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
     const requestKey = requestIds.current.key(
       endpoint(selected),
       document.revision,
       changes,
-    )
+    );
     try {
       let result = await api<
         ManagementDocument & {
-          status?: string
-          status_url?: string
-          message?: string
+          status?: string;
+          status_url?: string;
+          message?: string;
         }
       >(
-        endpoint(selected) + (review ? '/preview' : ''),
-        review ? 'POST' : 'PATCH',
+        endpoint(selected) + (review ? "/preview" : ""),
+        review ? "POST" : "PATCH",
         {
           revision: document.revision,
           values: changes,
           ...(review ? {} : { request_id: requestIds.current.get(requestKey) }),
         },
-      )
+      );
       if (result.status_url) {
-        pendingKeys.current.set(result.status_url, requestKey)
-        setNotice(result.message || 'Waiting for the bot…')
-        const status = await checkAction(result.status_url, true)
-        if (status !== 'done') return
-        result = await api<ManagementDocument>(endpoint(selected))
+        pendingKeys.current.set(result.status_url, requestKey);
+        setNotice(result.message || "Waiting for the bot…");
+        const status = await checkAction(result.status_url, true);
+        if (status !== "done") return;
+        result = await api<ManagementDocument>(endpoint(selected));
       }
       if (review) {
-        setPreview(result.preview || [])
-        setNotice('Preview only. Nothing has been sent.')
+        setPreview(result.preview || []);
+        setNotice("Preview only. Nothing has been sent.");
       } else {
-        requestIds.current.complete(requestKey)
+        requestIds.current.complete(requestKey);
         setDocument({
           ...result,
           fields: await hydrateFields(result.fields || []),
-        })
-        setDraft(fieldValues(result.fields || []))
-        setConflict(false)
-        setPreview(result.preview || null)
-        setNotice('Saved.')
+        });
+        setDraft(fieldValues(result.fields || []));
+        setConflict(false);
+        setPreview(result.preview || null);
+        setNotice("Saved.");
       }
     } catch (error) {
-      setConflict(error instanceof ApiError && error.status === 409)
+      setConflict(error instanceof ApiError && error.status === 409);
       setError(
         error instanceof ApiError && error.status === 409
-          ? 'Someone changed these settings. Your edits are still here. Keep a copy of your edits before refreshing.'
+          ? "Someone changed these settings. Your edits are still here. Keep a copy of your edits before refreshing."
           : message(error),
-      )
+      );
     } finally {
-      writing.current = false
-      setBusy(false)
+      writing.current = false;
+      setBusy(false);
     }
-  }
-  const areaInfo = area ? managementAreas[area] : null
+  };
+  const areaInfo = area ? managementAreas[area] : null;
   const visible = filterSections(
       area ? areaSections(sections, area) : sections,
       query,
@@ -710,34 +727,34 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     pageItems = catalogItems.slice(
       Math.min(catalogPage, catalogPages - 1) * 8,
       (Math.min(catalogPage, catalogPages - 1) + 1) * 8,
-    )
+    );
   return (
     <section
-      className={`server-management ${area === 'applications-settings' ? 'applications-workspace' : ''} ${operationsWorkspace ? 'server-operations-workspace' : ''}`}
+      className={`server-management ${area === "applications-settings" ? "applications-workspace" : ""} ${operationsWorkspace ? "server-operations-workspace" : ""}`}
     >
       <header className="manage-heading">
         <div>
           <p className="eyebrow">
-            {area === 'cwl-returns'
-              ? 'CWL'
-              : area === 'connections-settings'
-                ? 'SETTINGS'
-                : 'SERVER TOOLS'}
+            {area === "cwl-returns"
+              ? "CWL"
+              : area === "connections-settings"
+                ? "SETTINGS"
+                : "SERVER TOOLS"}
           </p>
           <h2 ref={editorHeading} tabIndex={-1}>
-            {selected?.label || areaInfo?.title || 'Manage your server'}
+            {selected?.label || areaInfo?.title || "Manage your server"}
           </h2>
           <p>
             {document?.description ||
               selected?.description ||
               areaInfo?.description ||
-              'Settings also update Discord /manage.'}
+              "Settings also update Discord /manage."}
           </p>
         </div>
         {selected && (
           <div className="manage-categories">
             <button disabled={busy || !!statusUrl} onClick={home}>
-              ← {areaInfo?.title || 'All settings'}
+              ← {areaInfo?.title || "All settings"}
             </button>
             <button
               disabled={busy || !!statusUrl}
@@ -760,10 +777,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             }
           >
             {conflict
-              ? 'Discard edits and load latest'
+              ? "Discard edits and load latest"
               : document
-                ? 'Reload saved settings'
-                : 'Retry loading'}
+                ? "Reload saved settings"
+                : "Retry loading"}
           </button>
         </div>
       )}
@@ -795,17 +812,17 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                 {actionResult.accounts.map((account, index) => (
                   <li key={`${account.tag || account.player_tag || index}`}>
                     <strong>
-                      {account.name || account.player_name || 'Account'}
+                      {account.name || account.player_name || "Account"}
                     </strong>
                     <span>{account.tag || account.player_tag}</span>
                     <small>
                       {account.current_clan_name ||
                         account.clan_name ||
-                        (typeof account.current_clan === 'string'
+                        (typeof account.current_clan === "string"
                           ? account.current_clan
                           : account.current_clan?.name) ||
                         account.clan?.name ||
-                        'No current clan'}
+                        "No current clan"}
                     </small>
                   </li>
                 ))}
@@ -818,35 +835,35 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         <button
           disabled={busy}
           onClick={async () => {
-            if (writing.current || !selected) return
-            const turn = sequence.current
-            const current = selected
-            writing.current = true
-            setBusy(true)
+            if (writing.current || !selected) return;
+            const turn = sequence.current;
+            const current = selected;
+            writing.current = true;
+            setBusy(true);
             try {
-              const status = await checkAction(statusUrl)
-              if (status === 'done' && turn === sequence.current) {
-                const result = await api<ManagementDocument>(endpoint(current))
-                const fields = await hydrateFields(result.fields || [])
-                if (turn !== sequence.current) return
-                setDocument({ ...result, fields })
-                setDraft(fieldValues(fields))
-                setError('')
-                setConflict(false)
-                setPreview(result.preview || null)
+              const status = await checkAction(statusUrl);
+              if (status === "done" && turn === sequence.current) {
+                const result = await api<ManagementDocument>(endpoint(current));
+                const fields = await hydrateFields(result.fields || []);
+                if (turn !== sequence.current) return;
+                setDocument({ ...result, fields });
+                setDraft(fieldValues(fields));
+                setError("");
+                setConflict(false);
+                setPreview(result.preview || null);
               }
             } catch (error) {
-              if (turn === sequence.current) setError(message(error))
+              if (turn === sequence.current) setError(message(error));
             } finally {
-              writing.current = false
-              if (turn === sequence.current) setBusy(false)
+              writing.current = false;
+              if (turn === sequence.current) setBusy(false);
             }
           }}
         >
           Check request status
         </button>
       )}
-      {area === 'cwl-returns' && (
+      {area === "cwl-returns" && (
         <div hidden={!!selected}>
           <ReturnReminderOverview
             active={!selected}
@@ -855,20 +872,20 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           />
         </div>
       )}
-      {area === 'applications-settings' && (
+      {area === "applications-settings" && (
         <div hidden={!!selected || busy || !!error}>
           <ApplicationSettingsIndex
             sections={sections}
             query={query}
             onQuery={setQuery}
             onOpen={(section, trigger) => {
-              indexTrigger.current = trigger
-              void open(section)
+              indexTrigger.current = trigger;
+              void open(section);
             }}
           />
         </div>
       )}
-      {!selected && area === 'applications-settings' && busy && (
+      {!selected && area === "applications-settings" && busy && (
         <p role="status">Loading application settings…</p>
       )}
       {operationsWorkspace && (
@@ -878,8 +895,8 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             query={query}
             onQuery={setQuery}
             onOpen={(section, trigger) => {
-              indexTrigger.current = trigger
-              void open(section)
+              indexTrigger.current = trigger;
+              void open(section);
             }}
           />
         </div>
@@ -889,8 +906,8 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       )}
       {!selected &&
         !operationsWorkspace &&
-        area !== 'cwl-returns' &&
-        area !== 'applications-settings' && (
+        area !== "cwl-returns" &&
+        area !== "applications-settings" && (
           <>
             <label className="manage-search">
               Find a setting
@@ -899,12 +916,12 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                 placeholder={
                   areaInfo
                     ? `Search ${areaInfo.title.toLowerCase()}`
-                    : 'Search settings'
+                    : "Search settings"
                 }
                 value={query}
                 onChange={(event) => {
-                  setQuery(event.target.value)
-                  setCatalogPage(0)
+                  setQuery(event.target.value);
+                  setCatalogPage(0);
                 }}
               />
             </label>
@@ -918,10 +935,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                   <button
                     key={name}
                     aria-pressed={activeGroup === name}
-                    className={activeGroup === name ? 'active' : ''}
+                    className={activeGroup === name ? "active" : ""}
                     onClick={() => {
-                      setGroup(name)
-                      setCatalogPage(0)
+                      setGroup(name);
+                      setCatalogPage(0);
                     }}
                   >
                     {name}
@@ -964,7 +981,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                   ← Previous
                 </button>
                 <span>
-                  Page {Math.min(catalogPage, catalogPages - 1) + 1} of{' '}
+                  Page {Math.min(catalogPage, catalogPages - 1) + 1} of{" "}
                   {catalogPages}
                 </span>
                 <button
@@ -1017,13 +1034,13 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                   value={
                     documents.some((item) => item.id === selected.id)
                       ? selected.id
-                      : ''
+                      : ""
                   }
                   onChange={(event) => {
                     const record = documents.find(
                       (item) => item.id === event.target.value,
-                    )
-                    if (record) void open(record, true)
+                    );
+                    if (record) void open(record, true);
                   }}
                 >
                   <option value="">
@@ -1059,7 +1076,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       )}
       {selected && document && (
         <>
-          {document.id === 'roles' && (
+          {document.id === "roles" && (
             <p className="small">
               These controls change Discord roles. Dashboard access is managed
               separately by the protected owners. Choose a member first; role
@@ -1071,7 +1088,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           )}
           {document.warning && (
             <p className="manage-notice">
-              {document.id === 'band_monitor'
+              {document.id === "band_monitor"
                 ? bandStatusWarning(document.warning)
                 : document.warning}
             </p>
@@ -1083,14 +1100,14 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               aria-label="Message editor view"
             >
               <button
-                aria-pressed={mobilePane === 'edit'}
-                onClick={() => setMobilePane('edit')}
+                aria-pressed={mobilePane === "edit"}
+                onClick={() => setMobilePane("edit")}
               >
                 Edit message
               </button>
               <button
-                aria-pressed={mobilePane === 'preview'}
-                onClick={() => setMobilePane('preview')}
+                aria-pressed={mobilePane === "preview"}
+                onClick={() => setMobilePane("preview")}
               >
                 Preview message
               </button>
@@ -1100,13 +1117,13 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
             className={
               document.preview_supported
                 ? `manage-editor-layout mobile-${mobilePane}`
-                : ''
+                : ""
             }
           >
             <form
               onSubmit={(event) => {
-                event.preventDefault()
-                void save()
+                event.preventDefault();
+                void save();
               }}
             >
               {document.readonly && operationsWorkspace ? (
@@ -1143,10 +1160,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                       : document.fields
                     ).map((field) => (
                       <Field
-                        key={field.key + ':' + (document.member_refresh || '')}
+                        key={field.key + ":" + (document.member_refresh || "")}
                         memberRoles={
                           document.fields.find(
-                            (item) => item.key === 'role_ids',
+                            (item) => item.key === "role_ids",
                           )?.options
                         }
                         onMemberOptions={(options) =>
@@ -1182,21 +1199,21 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                         disabled={
                           busy ||
                           !!document.readonly ||
-                          (document.id === 'roles' &&
-                            field.key === 'role_ids' &&
+                          (document.id === "roles" &&
+                            field.key === "role_ids" &&
                             !draft.member_id)
                         }
                         onChange={(value) => {
                           setDraft((current) => ({
                             ...current,
-                            ...(document.id === 'roles' &&
-                            field.key === 'member_id' &&
+                            ...(document.id === "roles" &&
+                            field.key === "member_id" &&
                             current.member_id !== value
                               ? { role_ids: [] }
                               : {}),
                             [field.key]: value,
-                          }))
-                          setNotice('')
+                          }));
+                          setNotice("");
                         }}
                       />
                     ))}
@@ -1207,10 +1224,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                 <div className="manage-save">
                   <span aria-live="polite">
                     {busy
-                      ? 'Working…'
+                      ? "Working…"
                       : dirty
-                        ? 'Changes not saved'
-                        : 'All changes saved'}
+                        ? "Changes not saved"
+                        : "All changes saved"}
                   </span>
                   <div>
                     {document.preview_supported &&
@@ -1220,8 +1237,8 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                           type="button"
                           disabled={busy}
                           onClick={() => {
-                            setMobilePane('preview')
-                            void save(true)
+                            setMobilePane("preview");
+                            void save(true);
                           }}
                         >
                           Preview
@@ -1257,22 +1274,22 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           {document.publish_endpoint && (
             <MessagePublish
               onDirty={setPublishDirty}
-              key={document.id + ':' + document.revision}
+              key={document.id + ":" + document.revision}
               endpoint={document.publish_endpoint}
               dirty={dirty}
               busy={busy}
               onBusy={(value) => {
-                writing.current = value
-                setBusy(value)
+                writing.current = value;
+                setBusy(value);
               }}
             />
           )}
-          <div className={document.id === 'roles' ? 'manage-role-actions' : ''}>
+          <div className={document.id === "roles" ? "manage-role-actions" : ""}>
             {[false, true].map((advanced) => {
               const actions = (document.actions || []).filter(
                 (action) => !!action.advanced === advanced,
-              )
-              if (!actions.length) return null
+              );
+              if (!actions.length) return null;
               const content = (
                 <div>
                   {actions.map((action) => (
@@ -1283,19 +1300,19 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                           busy ||
                           !!statusUrl ||
                           (dirty && !document.action_only) ||
-                          (document.id === 'roles' &&
+                          (document.id === "roles" &&
                             (!draft.member_id ||
                               !Array.isArray(draft.role_ids) ||
                               !draft.role_ids.length))
                         }
                         onClick={async () => {
-                          if (writing.current) return
+                          if (writing.current) return;
                           const invalid = document.fields
                             .map((field) => fieldError(field, draft[field.key]))
-                            .find(Boolean)
+                            .find(Boolean);
                           if (invalid) {
-                            setError(invalid)
-                            return
+                            setError(invalid);
+                            return;
                           }
                           if (
                             actionNeedsConfirmation(document.id, action.id) &&
@@ -1308,108 +1325,108 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                               ),
                             )
                           )
-                            return
-                          writing.current = true
-                          setBusy(true)
-                          setError('')
-                          setActionResult(null)
+                            return;
+                          writing.current = true;
+                          setBusy(true);
+                          setError("");
+                          setActionResult(null);
                           const actionEndpoint = apiPath(
                             action.endpoint ||
                               `${endpoint(selected)}/actions/${encodeURIComponent(action.id)}`,
-                          )
+                          );
                           const requestKey = requestIds.current.key(
                             actionEndpoint,
                             document.revision,
                             draft,
-                          )
+                          );
                           try {
                             const outcome = await api<{
-                              message?: string
-                              url?: string
-                              details?: string
-                              accounts?: ManagementResult['accounts']
-                              draft_values?: Record<string, ManagementValue>
-                              status?: string
-                              status_url?: string
-                              removed?: boolean
-                              return_endpoint?: string
-                              return_label?: string
-                            }>(actionEndpoint, 'POST', {
+                              message?: string;
+                              url?: string;
+                              details?: string;
+                              accounts?: ManagementResult["accounts"];
+                              draft_values?: Record<string, ManagementValue>;
+                              status?: string;
+                              status_url?: string;
+                              removed?: boolean;
+                              return_endpoint?: string;
+                              return_label?: string;
+                            }>(actionEndpoint, "POST", {
                               revision: document.revision,
                               values: draft,
                               request_id: requestIds.current.get(requestKey),
-                            })
-                            setNotice(outcome.message || 'Change saved.')
+                            });
+                            setNotice(outcome.message || "Change saved.");
                             if (outcome.status_url) {
                               pendingKeys.current.set(
                                 outcome.status_url,
                                 requestKey,
-                              )
+                              );
                               const status = await checkAction(
                                 outcome.status_url,
                                 true,
-                              )
-                              if (status !== 'done') return
+                              );
+                              if (status !== "done") return;
                             } else {
-                              requestIds.current.complete(requestKey)
+                              requestIds.current.complete(requestKey);
                               setActionResult(
                                 outcome.url ||
                                   outcome.details ||
                                   outcome.accounts
                                   ? outcome
                                   : null,
-                              )
+                              );
                             }
                             if (outcome.draft_values) {
                               setDraft((current) => ({
                                 ...current,
                                 ...outcome.draft_values,
-                              }))
-                              setPreview(null)
-                              return
+                              }));
+                              setPreview(null);
+                              return;
                             }
                             if (outcome.removed && outcome.return_endpoint) {
                               const next = {
                                 ...selected,
                                 endpoint: outcome.return_endpoint,
                                 label: outcome.return_label || selected.label,
-                              }
+                              };
                               const root = await api<ManagementDocument>(
                                 apiPath(outcome.return_endpoint),
-                              )
-                              setSelected(next)
-                              setDocument(null)
-                              setDraft({})
+                              );
+                              setSelected(next);
+                              setDocument(null);
+                              setDraft({});
                               setDocuments(
                                 (root.documents || []).map((record) => ({
                                   ...next,
                                   ...record,
                                 })),
-                              )
-                              return
+                              );
+                              return;
                             }
-                            setDraft(fieldValues(document.fields))
+                            setDraft(fieldValues(document.fields));
                             const result = await api<ManagementDocument>(
                               endpoint(selected),
-                            )
+                            );
                             setDocument({
                               ...result,
                               member_refresh: Date.now(),
                               fields: await hydrateFields(result.fields || []),
-                            })
+                            });
                             setDraft(
-                              result.id === 'roles'
+                              result.id === "roles"
                                 ? {
                                     ...fieldValues(result.fields || []),
                                     member_id: draft.member_id,
                                   }
                                 : fieldValues(result.fields || []),
-                            )
+                            );
                           } catch (error) {
-                            setError(message(error))
+                            setError(message(error));
                           } finally {
-                            writing.current = false
-                            setBusy(false)
+                            writing.current = false;
+                            setBusy(false);
                           }
                         }}
                       >
@@ -1418,22 +1435,26 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
                     </div>
                   ))}
                 </div>
-              )
+              );
               return advanced ? (
                 <details className="manage-more-options" key="more">
-                  <summary>{document.id === 'band_monitor' ? 'Diagnostics' : 'More options'}</summary>
+                  <summary>
+                    {document.id === "band_monitor"
+                      ? "Diagnostics"
+                      : "More options"}
+                  </summary>
                   {content}
                 </details>
               ) : (
                 <div key="primary">{content}</div>
-              )
+              );
             })}
-          </div>{' '}
+          </div>{" "}
           {supportsHistory(endpoint(selected)) && !document.action_only && (
             <ChangeHistory
               onBusy={(value) => {
-                writing.current = value
-                setBusy(value)
+                writing.current = value;
+                setBusy(value);
               }}
               key={endpoint(selected)}
               target={endpoint(selected)}
@@ -1443,28 +1464,30 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               )}
               disabled={busy || dirty || !!statusUrl}
               onRestored={async () => {
-                const result = await api<ManagementDocument>(endpoint(selected))
+                const result = await api<ManagementDocument>(
+                  endpoint(selected),
+                );
                 setDocument({
                   ...result,
                   fields: await hydrateFields(result.fields || []),
-                })
-                setDraft(fieldValues(result.fields || []))
-                setPreview(result.preview || null)
-                setConflict(false)
+                });
+                setDraft(fieldValues(result.fields || []));
+                setPreview(result.preview || null);
+                setConflict(false);
               }}
             />
-          )}{' '}
+          )}{" "}
           {document.action_only &&
-            document.fields.some((field) => field.key === 'role_ids') && (
+            document.fields.some((field) => field.key === "role_ids") && (
               <RoleMembers
                 roles={
-                  document.fields.find((field) => field.key === 'role_ids')
+                  document.fields.find((field) => field.key === "role_ids")
                     ?.options || []
                 }
               />
-            )}{' '}
+            )}{" "}
         </>
       )}
     </section>
-  )
+  );
 }

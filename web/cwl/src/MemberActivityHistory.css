@@ -47,7 +47,7 @@
 .member-activity-filters label {
   display: grid;
   gap: 6px;
-  font-size: .9rem;
+  font-size: 0.9rem;
   font-weight: 650;
 }
 
@@ -103,7 +103,7 @@
 .member-activity-loaded,
 .member-activity-status {
   color: #bdc7d4;
-  font-size: .88rem;
+  font-size: 0.88rem;
 }
 
 .member-activity-loaded {
@@ -178,7 +178,7 @@
   min-width: 0;
   margin: 0;
   color: #d7e0ea;
-  font-size: .85rem;
+  font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
 
@@ -189,8 +189,7 @@
   min-width: 0;
 }
 
-.member-activity-identity img,
-.member-activity-avatar {
+.member-activity-identity img {
   width: 42px;
   height: 42px;
   flex: none;
@@ -199,29 +198,7 @@
   background: #303a49;
 }
 
-.member-activity-avatar {
-  display: grid;
-  place-items: center;
-  color: #e5ebf4;
-  font-weight: 700;
-}
-
-.member-activity-identity div {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
 .member-activity-identity strong,
-.member-activity-identity small {
-  overflow-wrap: anywhere;
-}
-
-.member-activity-identity small {
-  color: #bdc7d4;
-  font-size: .84rem;
-}
-
 .member-activity-kind {
   display: inline-flex;
   align-items: center;
@@ -254,12 +231,12 @@
 
 .member-activity-date {
   color: #d0d7e1;
-  font-size: .9rem;
+  font-size: 0.9rem;
 }
 
 .member-activity-delivery {
   color: #f0cc7b;
-  font-size: .8rem;
+  font-size: 0.8rem;
 }
 
 .member-activity-delivery.uncertain {
@@ -283,7 +260,7 @@
 .member-activity-details p {
   margin: 6px 0;
   color: #d0d7e1;
-  font-size: .84rem;
+  font-size: 0.84rem;
   overflow-wrap: anywhere;
 }
 
@@ -369,15 +346,14 @@
   }
 
   .member-activity-filters label {
-    font-size: .84rem;
+    font-size: 0.84rem;
   }
 
   .member-activity-row {
     padding: 12px 10px;
   }
 
-  .member-activity-identity img,
-  .member-activity-avatar {
+  .member-activity-identity img {
     width: 38px;
     height: 38px;
   }

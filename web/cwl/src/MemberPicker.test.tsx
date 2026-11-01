@@ -96,7 +96,7 @@ it('compact selection identifies the member and opens search only on request',()
  hook.values=['',[ada],[ada],null,false,'',false,0,false]
  const {tree,onChange}=draw(ada.value,vi.fn(),true)
  const html=renderToStaticMarkup(tree)
- expect(html).toContain('Discord ID:');expect(html).toContain(ada.value)
+ expect(html).not.toContain('Discord ID:');expect(html).not.toContain(ada.value)
  const change=elements(tree).find(node=>node.type==='button'&&node.props.children==='Change member')!
  expect(change).toBeDefined()
  ;(change.props.onClick as ()=>void)()

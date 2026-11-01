@@ -42,18 +42,6 @@ export function detailQuery(
   return params;
 }
 
-export function strikeLinkLabel(
-  discordId?: string | null,
-  discordName?: string | null,
-  linkStatus?: string | null,
-): string {
-  if (linkStatus === "conflict") return "Link needs review";
-  if (linkStatus === "unknown" || linkStatus === "pending")
-    return "Link unknown";
-  if (linkStatus === "unlinked" || !discordId) return "Not linked";
-  return discordName || `Discord ${discordId}`;
-}
-
 export function importEmptyText(
   entries: unknown[],
   deferredCount: number,

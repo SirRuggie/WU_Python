@@ -189,7 +189,7 @@ async def mention_lookup(request):
     kind=request.query.get('kind')
     if kind not in ('user','role') or not 2<=len(query)<=80:
         raise web.HTTPBadRequest(text='Type 2–80 characters to find a member or role.')
-    from .manage_roles import searchable_members, search_text
+    from .manage_roles import searchable_members, search_text, member_option
     needle=search_text(query)
     if kind=='role':
         matches=[{'id':str(row['id']),'name':row['name']} for row in actor['roles'] if str(row['id'])!=str(GUILD_ID) and needle in search_text(row['name'])]
@@ -199,7 +199,8 @@ async def mention_lookup(request):
         for member in directory:
             user=member['user'];name=member.get('nick') or user.get('global_name') or user['username']
             if any(needle in search_text(value or '') for value in (member.get('nick'),user.get('global_name'),user.get('username'))):
-                matches.append({'id':str(user['id']),'name':name})
+                profile = member_option(member)
+                matches.append({'id':str(user['id']),'name':name,'discord_profile':{key:profile.get(key) for key in ('id','display_name','username','avatar_url')}})
     return web.json_response({'matches':matches[:25]})
 
 async def available_roles(request,actor):

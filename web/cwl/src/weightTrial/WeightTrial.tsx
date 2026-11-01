@@ -1,3 +1,4 @@
+import DiscordIdentity from "../DiscordIdentity";
 import { fetchReadWithRetry } from "../readRetry";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
@@ -505,11 +506,13 @@ export default function WeightTrial({
                         {new Date(roster.last_saved.at).toLocaleString()}
                       </time>
                       {" by "}
-                      <span
-                        title={`Discord ID: ${roster.last_saved.discord_id}`}
-                      >
-                        {roster.last_saved.name}
-                      </span>
+                      <DiscordIdentity
+                        userId={roster.last_saved.discord_id}
+                        displayName={roster.last_saved.name}
+                        resolvedMember={null}
+                        variant="compact"
+                        contact={false}
+                      />
                       {roster.last_saved.imported
                         ? " · Spreadsheet import"
                         : ""}

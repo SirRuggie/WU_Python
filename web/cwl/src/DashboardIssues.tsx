@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from './api'
 import type { MemberOption } from './MemberPicker'
-import RosterDiscordIdentity from './RosterDiscordIdentity'
+import DiscordIdentity from './DiscordIdentity'
 import './DashboardIssues.css'
 
 export type Issue = { id: string; at: number; member: string | null; kind: string; status: number; action: string; method: string }
@@ -65,7 +65,7 @@ export default function DashboardIssues() {
         </div>
         <div className="issue-member">
           <span className="issues-hint">Affected user</span>
-          {item.member ? <RosterDiscordIdentity userId={item.member} resolvedMember={members[item.member] || null} />
+          {item.member ? <DiscordIdentity userId={item.member} resolvedMember={members[item.member] || null} />
             : <p className="issues-unsigned">Not signed in <small>No Discord identity was recorded.</small></p>}
           {item.member && !/^\d{15,22}$/.test(item.member) && <small>Recorded ID: {item.member}</small>}
         </div>
