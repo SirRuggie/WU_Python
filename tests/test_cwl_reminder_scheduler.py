@@ -399,14 +399,17 @@ def test_startup_restores_current_pending_before_next_base_schedule(monkeypatch)
 
     assert set(scheduler.jobs) == {
         cwl.cwl_base_job_id, "cwl_followup_1", cwl.CAMPAIGN_ROLLOVER_JOB_ID,
-        cwl.WEB_ROSTER_BRIDGE_JOB_ID,
+        cwl.WEB_ROSTER_BRIDGE_JOB_ID, cwl.WEB_MANAGEMENT_FAST_JOB_ID,
     }
     assert [call[1]["id"] for call in scheduler.add_calls] == [
         cwl.WEB_ROSTER_BRIDGE_JOB_ID,
+        cwl.WEB_MANAGEMENT_FAST_JOB_ID,
         "cwl_followup_1",
         cwl.cwl_base_job_id,
         cwl.CAMPAIGN_ROLLOVER_JOB_ID,
     ]
+    fast=next(kwargs for _fn,kwargs in scheduler.add_calls if kwargs['id']==cwl.WEB_MANAGEMENT_FAST_JOB_ID)
+    assert fast['trigger'].interval.total_seconds()==1 and fast['max_instances']==1 and fast['coalesce']
     restored_run = scheduler.jobs["cwl_followup_1"].next_run_time
     assert restored_run == run_time
     assert mongo.cwl_pending_reminders.documents["cwl_followup_1"]["run_time"] == run_time.isoformat()
@@ -505,7 +508,7 @@ def test_startup_reconciles_after_temporary_mongo_failure(monkeypatch):
     assert reconciler.health.attempts == 2
     assert set(scheduler.jobs) == {
         cwl.cwl_base_job_id, cwl.CAMPAIGN_ROLLOVER_JOB_ID,
-        cwl.WEB_ROSTER_BRIDGE_JOB_ID,
+        cwl.WEB_ROSTER_BRIDGE_JOB_ID, cwl.WEB_MANAGEMENT_FAST_JOB_ID,
     }
     assert [key for key in scheduler.jobs if key == cwl.WEB_ROSTER_BRIDGE_JOB_ID] == [
         cwl.WEB_ROSTER_BRIDGE_JOB_ID,

@@ -1,6 +1,8 @@
 """One bounded profile per Discord member; the sole profile collection writer."""
 
 from datetime import datetime, timezone
+from time import perf_counter
+import logging
 from pymongo.errors import DuplicateKeyError
 
 SOURCES = frozenset({"warrior", "nickname_import", "staff"})
@@ -53,9 +55,9 @@ class MemberProfiles:
         return {row["discord_id"]: row for row in rows}
 
     async def membership_rows(self):
-        rows = await self.collection.find({}, {"_id": 1, "left_at": 1}).to_list(
-            length=10001
-        )
+        rows = await self.collection.find(
+            {}, {"_id": 1, "left_at": 1}
+        ).to_list(length=10001)
         if len(rows) > 10000:
             raise ValueError(
                 "Member profile reconciliation limit exceeded; no absence marks applied."
@@ -101,7 +103,9 @@ class MemberProfiles:
         from utils.component_state import get_state
 
         row = await get_state(self.mongo, session_id)
-        return bool(row and (row.get("nickname_setup") or {}).get("nonce") == nonce)
+        return bool(
+            row and (row.get("nickname_setup") or {}).get("nonce") == nonce
+        )
 
     async def write(self, discord_id, fields, **options):
         await self.ensure_indexes()
@@ -112,7 +116,15 @@ class MemberProfiles:
             return await self._write(discord_id, fields, **options)
 
     async def commit_after(
-        self, discord_id, fields, *, change, expected_revision, updated_by, source
+        self,
+        discord_id,
+        fields,
+        *,
+        change,
+        expected_revision,
+        updated_by,
+        source,
+        prepare=None,
     ):
         """Serialize the external edit with CAS; failed edits never save a profile.
 
@@ -133,10 +145,16 @@ class MemberProfiles:
         async with editing(self.mongo, member_id(discord_id)) as claim:
             current = await self.get(discord_id)
             if int((current or {}).get("revision", 0)) != expected_revision:
-                raise ProfileConflict("Member profile changed. Refresh before saving.")
+                raise ProfileConflict(
+                    "Member profile changed. Refresh before saving."
+                )
             from utils.member_timezones import profile_fields
 
             profile_fields(fields)
+            if prepare is not None:
+                await prepare()
+            # Reads/authorization may take time; verify the owned lease again
+            # immediately before the external effect, not before those reads.
             await verify(self.mongo, claim)
             await change()
             await verify(self.mongo, claim)
@@ -164,6 +182,7 @@ class MemberProfiles:
         """CAS replace, never append history; imported values cannot displace staff."""
         from utils.member_timezones import profile_fields
 
+        started = perf_counter()
         key = member_id(discord_id)
         actor = member_id(updated_by)
         if (
@@ -174,11 +193,14 @@ class MemberProfiles:
             raise ValueError("Invalid profile source or revision.")
         current = await self.get(key)
         if int((current or {}).get("revision", 0)) != expected_revision:
-            raise ProfileConflict("Member profile changed. Refresh before saving.")
+            raise ProfileConflict(
+                "Member profile changed. Refresh before saving."
+            )
         if (
             source == "nickname_import"
             and current
-            and current.get("source") in ("warrior", "staff", "nickname_import")
+            and current.get("source")
+            in ("warrior", "staff", "nickname_import")
         ):
             return current
         checked = profile_fields(fields, source=source)
@@ -213,6 +235,11 @@ class MemberProfiles:
             raise ProfileConflict(
                 "Member profile changed. Refresh before saving."
             ) from error
+        logging.getLogger(__name__).info(
+            "Member profile timing stage=profile_save member=%s elapsed_ms=%.2f",
+            key,
+            1000 * (perf_counter() - started),
+        )
         return row
 
     async def membership(self, discord_id, *, left_at, observed_at=None):

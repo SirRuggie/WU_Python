@@ -261,3 +261,64 @@ it("Stop uses the existing one-shot command and terminal polling never retries a
   ).toHaveLength(1);
   expect(host.textContent).toContain("Skipped");
 });
+
+it("Rename switches immediately to progress and a double tap sends one confirmation", async () => {
+  let resolve!: (value: unknown) => void;
+  const normal = transport.getMockImplementation()!;
+  transport.mockImplementation((path: string, ...args: any[]) =>
+    path.endsWith("/confirm")
+      ? new Promise((r) => {
+          resolve = r;
+        })
+      : normal(path, ...args),
+  );
+  await mount();
+  await click("Review nicknames");
+  const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent === "Rename 51",
+  )!;
+  await act(async () => {
+    button.click();
+    button.click();
+  });
+  expect(
+    transport.mock.calls.filter((c) => String(c[0]).endsWith("/confirm")),
+  ).toHaveLength(1);
+  expect(host.querySelector('[aria-label="Nickname review"]')).toBeNull();
+  expect(host.textContent).toContain("Renaming 0 of 51");
+  expect(host.querySelector("progress")?.max).toBe(51);
+  await act(async () => resolve({ run_id: "run" }));
+  expect(host.textContent).toContain("Done. 0 changed.");
+});
+it("running status polls each second and stops as soon as finished", async () => {
+  vi.useFakeTimers();
+  let reads = 0;
+  transport.mockImplementation(async (path: string) =>
+    path.endsWith("/runs")
+      ? { runs: [{ run_id: "run", state: "queued" }] }
+      : {
+          run_id: "run",
+          state: ++reads === 1 ? "queued" : "done",
+          rows: rows
+            .slice(0, 2)
+            .map((r) => ({ ...r, status: reads === 1 ? "waiting" : "done" })),
+        },
+  );
+  await mount();
+  await click("Past runs");
+  const select = host.querySelector("select")!;
+  await act(async () => {
+    select.value = "run";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(host.textContent).toContain("Renaming 0 of 2");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(host.textContent).toContain("Done. 2 changed.");
+  const count = transport.mock.calls.length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10000);
+  });
+  expect(transport.mock.calls).toHaveLength(count);
+});

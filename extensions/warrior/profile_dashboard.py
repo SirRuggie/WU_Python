@@ -1,6 +1,9 @@
 """Discord transport for approved member_roles dashboard requests."""
 
 import asyncio
+import time
+from collections import OrderedDict
+from .timing import read, span
 import hikari
 from extensions.warrior import core
 from extensions.warrior.nickname_audit import edit_nickname
@@ -31,17 +34,96 @@ async def directory(bot):
     return rows
 
 
-async def target_context(bot, actor_id, target_id, *, require_manageable=True):
-    async with asyncio.timeout(20):
-        actor, target, me, roles, guild = await asyncio.gather(
-            bot.rest.fetch_member(GUILD_ID, int(actor_id)),
-            bot.rest.fetch_member(GUILD_ID, int(target_id)),
+_RUN_ENVIRONMENTS = OrderedDict()
+
+
+async def environment(bot, run_id):
+    key = (id(bot), str(run_id))
+    cached = _RUN_ENVIRONMENTS.get(key)
+    if (
+        cached
+        and cached["bot"] is bot
+        and time.monotonic() - cached["at"] < 60
+    ):
+        return cached
+    roles, me = await asyncio.gather(
+        read("dashboard.roles", bot.rest.fetch_roles(GUILD_ID)),
+        read(
+            "dashboard.bot",
             bot.rest.fetch_member(GUILD_ID, int(bot.get_me().id)),
-            bot.rest.fetch_roles(GUILD_ID),
-            bot.rest.fetch_guild(GUILD_ID),
+        ),
+    )
+    value = dict(
+        bot=bot, roles=roles, me=me, at=time.monotonic(), run_id=run_id
+    )
+    _RUN_ENVIRONMENTS[key] = value
+    _RUN_ENVIRONMENTS.move_to_end(key)
+    while len(_RUN_ENVIRONMENTS) > 32:
+        _RUN_ENVIRONMENTS.popitem(last=False)
+    return value
+
+
+async def authorize_actor(actor, roles, guild, mongo, section):
+    from utils.dashboard_access import dashboard_allowed
+
+    permissions = core.permissions(actor, roles, guild.owner_id)
+    identity = dict(
+        user_id=str(actor.id),
+        role_ids=set(map(int, actor.role_ids)),
+        permissions=int(permissions),
+        guild_owner=actor.id == guild.owner_id,
+        dashboard=True,
+    )
+    if not await dashboard_allowed(identity, section, mongo):
+        raise ValueError(
+            "Your Discord access changed. This action was not run."
         )
+
+
+async def request_context(bot, mongo, row):
+    env = await environment(bot, row.get("parent_id") or row["_id"])
+    actor, guild = await asyncio.gather(
+        read(
+            "dashboard.actor",
+            bot.rest.fetch_member(GUILD_ID, int(row["user_id"])),
+        ),
+        read("dashboard.guild", bot.rest.fetch_guild(GUILD_ID)),
+    )
+    await authorize_actor(actor, env["roles"], guild, mongo, row["section"])
+    return dict(env=env, guild=guild)
+
+
+async def target_context(
+    bot, actor_id, target_id, *, require_manageable=True, environment_data=None
+):
+    async with asyncio.timeout(20):
+        if environment_data is None:
+            actor, target, me, roles, guild = await asyncio.gather(
+                bot.rest.fetch_member(GUILD_ID, int(actor_id)),
+                bot.rest.fetch_member(GUILD_ID, int(target_id)),
+                bot.rest.fetch_member(GUILD_ID, int(bot.get_me().id)),
+                bot.rest.fetch_roles(GUILD_ID),
+                bot.rest.fetch_guild(GUILD_ID),
+            )
+        else:
+            env = await environment(bot, environment_data["env"]["run_id"])
+            roles, me, guild = (
+                env["roles"],
+                env["me"],
+                environment_data["guild"],
+            )
+            actor, target = await asyncio.gather(
+                read(
+                    "dashboard.fresh_actor",
+                    bot.rest.fetch_member(GUILD_ID, int(actor_id)),
+                ),
+                read(
+                    "dashboard.fresh_target",
+                    bot.rest.fetch_member(GUILD_ID, int(target_id)),
+                ),
+            )
     if target.is_bot:
-        raise ValueError("Bots are listed for completeness and cannot be standardized.")
+        raise ValueError("Bots cannot be standardized.")
     context = dict(
         actor=actor,
         member=target,
@@ -56,14 +138,15 @@ async def target_context(bot, actor_id, target_id, *, require_manageable=True):
     return context
 
 
-async def apply(bot, mongo, row):
+async def apply(bot, mongo, row, *, request_context=None):
     if row.get("guild_id") != GUILD_ID:
-        raise ValueError("Member profiles belong to the Warriors United server.")
+        raise ValueError(
+            "Member profiles belong to the Warriors United server."
+        )
     store = MemberProfiles(mongo)
     values = row["values"]
     if row["action"] == "import":
         import logging
-        import time
 
         started = time.monotonic()
         progress = {}
@@ -73,7 +156,11 @@ async def apply(bot, mongo, row):
                 counts = await import_nicknames(
                     store,
                     [
-                        dict(discord_id=str(m.id), nickname=m.nickname, bot=m.is_bot)
+                        dict(
+                            discord_id=str(m.id),
+                            nickname=m.nickname,
+                            bot=m.is_bot,
+                        )
                         for m in members
                     ],
                     actor_id=row["user_id"],
@@ -108,13 +195,6 @@ async def apply(bot, mongo, row):
     revision = row["revision"]
     if type(revision) is not int or revision < 0:
         raise ValueError("Invalid profile revision. Refresh before saving.")
-    context = await target_context(
-        bot,
-        row["user_id"],
-        uid,
-        require_manageable=row["action"] == "standardize_one"
-        or values.get("rename") is True,
-    )
     if row["action"] == "standardize_one":
         parent = await mongo.bot_config.find_one(
             {
@@ -129,13 +209,17 @@ async def apply(bot, mongo, row):
 
             raise ProfileRunStopped("Stopped before this member started.")
         if not parent or parent.get("state") != "queued":
-            raise ValueError("This reviewed Standardize run is no longer active.")
+            raise ValueError(
+                "This reviewed Standardize run is no longer active."
+            )
         index = parent["cursor"]
         if (
             row["_id"] != parent["_id"] + ":" + str(index)
             or parent["items"][index] != values
         ):
-            raise ValueError("This member does not match the reviewed selection.")
+            raise ValueError(
+                "This member does not match the reviewed selection."
+            )
         current = await store.get(uid)
         if not current or current["revision"] != revision:
             raise ProfileConflict(
@@ -146,7 +230,9 @@ async def apply(bot, mongo, row):
         # The exact reviewed string is authoritative; prevent malformed internal rows.
         suffix = " | " + fields["gmt_label"] + " " + fields["flag"]
         if not new_nickname.endswith(suffix) or len(new_nickname) > 32:
-            raise ValueError("Reviewed nickname no longer matches this profile.")
+            raise ValueError(
+                "Reviewed nickname no longer matches this profile."
+            )
         rename = True
     elif row["action"] == "save":
         fields = profile_fields(values.get("fields") or {})
@@ -160,47 +246,75 @@ async def apply(bot, mongo, row):
         )
     else:
         raise ValueError("Unknown member profile action.")
-    already_matched = rename and context["member"].nickname == new_nickname
-    if already_matched:
-        rename = False
+    already_matched = False
     if rename:
-        if not context["bot_permissions"] & hikari.Permissions.MANAGE_NICKNAMES:
-            raise ValueError("The bot needs Manage Nicknames.")
-        if (
-            "old_nickname" not in values
-            or context["member"].nickname != values["old_nickname"]
-        ):
+        if "old_nickname" not in values:
             raise ValueError(
                 "Nickname changed since preview. Refresh and review it again."
             )
-
         discord_confirmed = False
 
-        async def change():
-            nonlocal discord_confirmed
-            # Recheck roles and the exact old nickname inside the serialized edit.
-            fresh = await target_context(bot, row["user_id"], uid)
-            if not fresh["bot_permissions"] & hikari.Permissions.MANAGE_NICKNAMES:
+        async def prepare():
+            nonlocal already_matched
+            # One fresh target and actor read inside the serialized edit.
+            with span(
+                "dashboard.discord_reads", request_id=row.get("_id", "direct")
+            ):
+                fresh = await target_context(
+                    bot, row["user_id"], uid, environment_data=request_context
+                )
+            if request_context is not None:
+                await authorize_actor(
+                    fresh["actor"],
+                    fresh["roles"],
+                    fresh["guild"],
+                    mongo,
+                    row["section"],
+                )
+            if fresh["member"].nickname == new_nickname:
+                already_matched = True
+                return
+            if (
+                not fresh["bot_permissions"]
+                & hikari.Permissions.MANAGE_NICKNAMES
+            ):
                 raise ValueError("The bot needs Manage Nicknames.")
             if fresh["member"].nickname != values["old_nickname"]:
                 raise ValueError(
                     "Nickname changed since preview. Refresh and review it again."
                 )
+
+        async def change():
+            nonlocal discord_confirmed
+            if already_matched:
+                return
+            if request_context is not None:
+                env = _RUN_ENVIRONMENTS.get(
+                    (id(bot), str(request_context["env"]["run_id"]))
+                )
+                if not env or time.monotonic() - env["at"] >= 60:
+                    raise ValueError(
+                        "Permission checks expired. Review this member again."
+                    )
             # No retries: a timeout may follow an accepted Discord edit.
             async with asyncio.timeout(20):
-                await edit_nickname(
-                    bot.rest,
-                    GUILD_ID,
-                    int(uid),
-                    nickname=new_nickname,
-                    reason="Reviewed dashboard member timezone update",
-                    actor_id=row["user_id"],
-                    old_nickname=fresh["member"].nickname,
-                    source=(
-                        "standardize"
-                        if row["action"] == "standardize_one"
-                        else "dashboard"
+                await read(
+                    "dashboard.edit",
+                    edit_nickname(
+                        bot.rest,
+                        GUILD_ID,
+                        int(uid),
+                        nickname=new_nickname,
+                        reason="Reviewed dashboard member timezone update",
+                        actor_id=row["user_id"],
+                        old_nickname=values["old_nickname"],
+                        source=(
+                            "standardize"
+                            if row["action"] == "standardize_one"
+                            else "dashboard"
+                        ),
                     ),
+                    request_id=row.get("_id", "direct"),
                 )
                 discord_confirmed = True
 
@@ -209,6 +323,7 @@ async def apply(bot, mongo, row):
                 uid,
                 fields,
                 change=change,
+                prepare=prepare,
                 expected_revision=revision,
                 updated_by=row["user_id"],
                 source="staff",
@@ -218,12 +333,16 @@ async def apply(bot, mongo, row):
             hikari.NotFoundError,
             hikari.BadRequestError,
         ) as error:
-            reason = str(error.message or "Check permissions and role hierarchy.")
+            reason = str(
+                error.message or "Check permissions and role hierarchy."
+            )
             if isinstance(error, hikari.BadRequestError) and isinstance(
                 error.errors, dict
             ):
                 nick = error.errors.get("nick", {})
-                details = nick.get("_errors", []) if isinstance(nick, dict) else []
+                details = (
+                    nick.get("_errors", []) if isinstance(nick, dict) else []
+                )
                 messages = [
                     str(item["message"])
                     for item in details
@@ -243,6 +362,13 @@ async def apply(bot, mongo, row):
                 ) from error
             raise
     else:
+        await target_context(
+            bot,
+            row["user_id"],
+            uid,
+            require_manageable=False,
+            environment_data=request_context,
+        )
         try:
             await store.write(
                 uid,
@@ -260,7 +386,7 @@ async def apply(bot, mongo, row):
     return dict(
         message=(
             "Profile and nickname saved."
-            if rename
+            if rename and not already_matched
             else (
                 "Profile saved. Nickname already matched."
                 if already_matched

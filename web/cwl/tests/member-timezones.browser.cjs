@@ -201,7 +201,13 @@ fs.mkdirSync(output, { recursive: true });
           .map((e) => e.textContent),
       );
       assert.equal(tiny.length, 0, JSON.stringify(tiny));
-      await rename.click();
+      await review.getByRole("button", { name: "Clear", exact: true }).click();
+      await review.getByRole("button", { name: /^Will change/ }).click();
+      await review.locator("input[type=checkbox]").nth(0).check();
+      await review.locator("input[type=checkbox]").nth(1).check();
+      await review
+        .getByRole("button", { name: "Rename 2", exact: true })
+        .click();
       await page
         .getByRole("heading", { name: /Standardize progress/ })
         .waitFor();

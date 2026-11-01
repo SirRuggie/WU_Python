@@ -375,7 +375,6 @@ async def standardize_status(request):
                 ),
             )
         )
-    rows.extend(run.get("skipped", []))
     return web.json_response(
         dict(
             run_id=run["_id"],

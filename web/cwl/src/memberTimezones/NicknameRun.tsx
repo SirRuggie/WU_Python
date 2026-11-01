@@ -48,6 +48,22 @@ export default function NicknameRun({
               ? "Stopping"
               : "Working"}
       </h2>
+      <p role="status">
+        {["done", "stopped"].includes(run.state)
+          ? `${run.state === "done" ? "Done" : "Stopped"}. ${run.rows.filter((r) => r.status === "done").length} changed.${run.rows.some((r) => r.status === "failed") ? ` ${run.rows.filter((r) => r.status === "failed").length} failed.` : ""}${run.rows.some((r) => r.status === "uncertain") ? ` ${run.rows.filter((r) => r.status === "uncertain").length} check manually.` : ""}`
+          : `Renaming ${run.rows.filter((r) => ["done", "failed", "uncertain", "stopped", "skipped"].includes(r.status || "")).length} of ${run.rows.length}`}
+      </p>
+      <progress
+        aria-label="Rename progress"
+        max={Math.max(1, run.rows.length)}
+        value={
+          run.rows.filter((r) =>
+            ["done", "failed", "uncertain", "stopped", "skipped"].includes(
+              r.status || "",
+            ),
+          ).length
+        }
+      />
       <p>Renames one at a time. You can stop anytime.</p>
       <div>
         <span>Started by</span>

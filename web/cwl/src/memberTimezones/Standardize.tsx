@@ -123,7 +123,7 @@ export default function Standardize({
         inflight = false;
       }
     };
-    const timer = setInterval(() => void poll(), 3000);
+    const timer = setInterval(() => void poll(), 1000);
     return () => {
       active = false;
       clearInterval(timer);
@@ -208,12 +208,20 @@ export default function Standardize({
   async function confirm() {
     if (!preview || !selected.size || !start()) return;
     const version = ++generation.current;
+    const reviewed = preview;
+    const pendingRows = preview.rows
+      .filter((r) => selected.has(r.discord_id))
+      .map((r) => ({ ...r, status: "waiting" }));
+    setPreview(null);
+    setRun({ run_id: "", state: "submitting", rows: pendingRows });
     try {
       const result = await api<{ run_id: string }>(
         "/manage/member-timezones/confirm",
         "POST",
         { token: preview.token, selected: [...selected] },
       );
+      if (alive.current && version === generation.current)
+        setRun({ run_id: result.run_id, state: "queued", rows: pendingRows });
       const next = await api<Run>(
         `/manage/member-timezones/runs/${encodeURIComponent(result.run_id)}`,
       );
@@ -222,7 +230,11 @@ export default function Standardize({
         setPreview(null);
       }
     } catch (e) {
-      if (version === generation.current) fail(e);
+      if (version === generation.current) {
+        setRun(null);
+        setPreview(reviewed);
+        fail(e);
+      }
     } finally {
       finish();
     }
@@ -296,10 +308,10 @@ export default function Standardize({
           Past runs
         </button>
       </div>
-      <p className="mt-review-help">
+      {!run&&<p className="mt-review-help">
         Saves time zones from nicknames, then shows the changes. Nobody is
         renamed until you confirm.
-      </p>
+      </p>}
       {error && <p role="alert">{error}</p>}
       {busy && phase && <p role="status">{phase}</p>}
       {(busy || preview || run) && (

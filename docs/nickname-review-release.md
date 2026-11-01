@@ -1,4 +1,4 @@
-# Nickname import and review: prompts 83–84
+# Nickname import and review: prompts 83–86
 
 ## Production diagnosis
 
@@ -14,8 +14,28 @@ The only entry point is Review nicknames: Import then a fresh token/revision pre
 
 Preview classification is a pure domain helper: Will change, Needs flag, No time zone, Already done, Can't rename and optional Check name. Bots are excluded. Filters reuse the extracted Strikes chip implementation; search and 25-row pages retain selection. The sticky count and submitted IDs use the same selection, and hidden selections can be shown. Check name starts unticked. Run manifests, token/revision checks, one-at-a-time worker, Stop and uncertain nickname outcomes are preserved. Past runs load only on request. The directory, member editor and Warrior workflow are unchanged.
 
-## Verification checkpoint
+## Rename speed and declaration copy
 
-Focused backend: 65 passed, including a scaled 1,447-member Atlas-latency budget and partial failure/rerun without duplicate writes. Focused frontend: 32 passed; initial full frontend 1,346 passed across 242 files. TypeScript/build passed after an obsolete test import was removed. Four-width isolated browser flow (320/360/390/1440) passed, including the unchanged editor, import-before-preview, bots excluded from counts, pagination, hidden selection, sticky action visibility, Stop, lost permission, no overflow and 44px targets. Narrow/wide screenshots were visually reviewed.
+Read-only production receipts measured the owner's two-member run at 68.958 seconds, rather than the earlier code-only estimate of 40–50 seconds. The first child waited 9.379 seconds, the second was created 22.069 seconds after the first finished, and the parent finished 14.680 seconds after the last child. This identifies scheduler/cursor delays in addition to Discord and storage work. No production retry or nickname write was performed by Codex.
 
-Remaining before READY: final integrated frontend, full guarded backend, real Mongo lease/CAS/import verification and required mutation checks. Isolated UI fixture writes are fake transport, never live Discord nickname edits. No production Import, Standardize or Rename was pressed. No deployment is claimed by this review checkpoint.
+A lightweight one-second pending check drives the existing atomic request claim and single lane; the ten-second maintenance tick remains the fallback. One owned background task avoids overlapping scheduler jobs, and shutdown cancels and drains it. Durable child completion advances the cursor immediately, schedules the next child three seconds after completion, and finishes the parent without an extra tick. Restart uncertainty is retained and never replayed automatically. Other queue actions retain their transport and authorization paths.
+
+Roles and the bot member are cached for at most 60 seconds in a bounded per-run cache. Each actual edit reads the target and actor freshly, checks current access, hierarchy and exact old nickname, verifies the owned profile lease after preparation, then makes one bounded Discord edit. Slow preparation that expires the lease cannot edit. Discord rate-limit waits are awaited; uncertain requests are not automatically retried. Timing logs cover claim delay, authorization, Discord reads/edit and profile save.
+
+The run replaces review immediately on confirmation, disables duplicate submissions, polls at one second only while active, and opens on Changed. Its progress and result rows contain only the selected members, including older manifests that recorded unselected skips. Stop and partial/uncertain outcomes remain visible.
+
+The separate prompt 85 frontend commit removes the Declaration ping paragraph, adds one confirmation line about finishing despite lineup changes, and shows Save channel/Discard only for an edited channel. The protected ChannelCombobox and its existing hint remain unchanged; no new hint prop was added.
+
+## Validation and limits
+
+The production evidence cannot reconstruct the original import's underlying exception because the old handler did not log it. Fixture timings below use fake Discord transport and a dedicated temporary local MongoDB, not live delivery. No production Import, Standardize, Rename or Send was pressed. No deployment is claimed by this implementation review.
+
+Final validation totals and fixture measurements are recorded with the READY handoff after the integrated gates finish. Earlier failed checks were corrected before READY; their logs remain in the worktree.
+
+| Fixture | Members | Elapsed | First edit |
+|---|---:|---:|---:|
+| before | 2 | 50.739 s | 10.335 s |
+| after | 2 | 3.431 s | 0.221 s |
+| after | 25 | 76.636 s | 0.224 s |
+
+The 25-member fixture refreshes roles and the bot member twice across its minute-long cache boundary, with exactly one fresh target read per member. Its edit gaps remain above three seconds. Baseline source is the pre-speed commit aeef3fe; only the after cases were rerun after the final safety fix.

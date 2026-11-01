@@ -196,6 +196,7 @@ async def sample(request, handler):
                 ),
             )
             for index, row in enumerate(state["preview"])
+            if row['discord_id'] in selected
         ]
         state["run_state"] = "queued"
         return web.json_response(dict(run_id="fixture-run", state="queued"))

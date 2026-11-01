@@ -50,7 +50,7 @@ def test_restart_never_recreates_or_resets_a_child(status):
         coll.insert_one.assert_not_awaited()
         if status in ("done", "failed", "uncertain"):
             assert coll.update_one.await_args.args[1]["$set"] == dict(
-                cursor=1, next_at=503
+                cursor=1, next_at=503, state="done", finished_at=500
             )
         else:
             coll.update_one.assert_not_awaited()

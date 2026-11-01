@@ -273,3 +273,7 @@
 .mt-top-actions {
   display: block;
 }
+
+.mt-nickname-review progress {display:block;width:100%;height:6px;accent-color:#d4a017;}
+
+.mt-review-entry .link-button {border:0;background:none;text-decoration:underline;font-size:12px;}
