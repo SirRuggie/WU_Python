@@ -1,3 +1,4 @@
+import { rosterCapacity } from "./rosterCapacity";
 import { outsideComparisonRange } from "./comparePresentation";
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan } from "./roster";
@@ -55,12 +56,12 @@ export function settingsWeight(value: string): {
   return { value: weight, error: "" };
 }
 
-export function capacityState(count: number, capacity: number | null) {
-  return capacity && count > capacity
-    ? "over"
-    : capacity && count === capacity
-      ? "full"
-      : "room";
+export function capacityState(
+  count: number,
+  capacity: number | null,
+  fillers = 0,
+) {
+  return rosterCapacity(count, fillers, capacity).state;
 }
 
 export function rangeImpact(

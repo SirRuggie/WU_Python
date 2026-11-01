@@ -48,6 +48,7 @@ export type RosterClan = {
   min_weight: number | null;
   max_weight: number | null;
   assigned_count: number;
+  assigned_filler_count?: number;
 };
 export type RosterUndo = { id: number; label: string; revision: number };
 export type RosterSnapshot = {

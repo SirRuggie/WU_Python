@@ -1,7 +1,11 @@
 import type { RosterUndo } from "./roster";
 export type FillerSaveResult = {
+  tag?: string;
   roster_filler?: boolean;
-  mark_revision?: number; revision: number; undo?: RosterUndo | null };
+  mark_revision?: number;
+  revision: number;
+  undo?: RosterUndo | null;
+};
 import { useRef, useState } from "react";
 import { api, ApiError } from "./api";
 
@@ -44,7 +48,7 @@ export default function RosterFillerCheckbox({
           mark_revision: markRevision,
         },
       );
-      await onChanged(saved);
+      await onChanged({ ...saved, tag: saved.tag || tag });
     } catch (cause) {
       if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
         setAccessLost(true);

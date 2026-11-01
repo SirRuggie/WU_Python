@@ -159,3 +159,23 @@ it("newer individual location evidence wins over an older filler clan observatio
   expect(group.late.map((a) => a.tag)).toEqual(["#A"]);
   expect(group.readiness.arrivedCount).toBe(1);
 });
+
+it("Ping missing count uses the same observation as late and excludes newer off-roster departures", () => {
+  const { roster, data, extra } = fixture();
+  const records = {
+    "#A": {
+      current_clan_tag: "#OLD",
+      current_clan_name: "Old",
+      current_clan_checked_at: new Date(now - 1000).toISOString(),
+    },
+    "#B": {
+      current_clan_tag: "#NEW",
+      current_clan_name: "New",
+      current_clan_checked_at: new Date(now + 1000).toISOString(),
+    },
+  };
+  const group = declarationGroups(data, roster, records, now, [extra])[0];
+  expect(group.late).toHaveLength(0);
+  expect(group.missingCount).toBe(0);
+  expect(group.readiness.arrivedCount).toBe(1);
+});

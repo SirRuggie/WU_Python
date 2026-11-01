@@ -1332,7 +1332,16 @@ export default function RosterWorkspace({
           {editingTag && roster.accounts.some((a) => a.tag === editingTag) && (
             <RosterPlayerDialog
               seasonId={seasonId}
-              onFillerChanged={() => afterWrite("Filler mark saved.")}
+              onFillerChanged={async (saved) => {
+                if (saved) await afterWrite("Filler mark saved.");
+                else
+                  await fail(
+                    new ApiError(
+                      "Your roster access changed. Reload after access is restored.",
+                      403,
+                    ),
+                  );
+              }}
               onClanWeights={onClanWeights}
               rosterUi
               onDirty={setPlayerDirty}

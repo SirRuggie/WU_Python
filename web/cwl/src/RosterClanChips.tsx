@@ -1,3 +1,4 @@
+import { rosterCapacity } from "./rosterCapacity";
 import { useState } from "react";
 import { totalRosterWeight } from "./rosterTotalWeight";
 import type { Pool } from "./api";
@@ -144,13 +145,12 @@ export default function RosterClanChips({
               )}
               {visible.map((summary) => {
                 const active = selected.has(summary.clan.tag);
-                const full =
-                  summary.capacity !== null &&
-                  summary.assignedCount >= summary.capacity;
-                const over =
-                  summary.capacity !== null &&
-                  summary.assignedCount - summary.fillerCount >
-                    summary.capacity;
+                const capacity = rosterCapacity(
+                  summary.assignedCount,
+                  summary.fillerCount,
+                  summary.capacity,
+                );
+                const { full, over } = capacity;
                 const countLabel =
                   summary.capacity === null
                     ? `${summary.assignedCount} assigned`
@@ -186,14 +186,11 @@ export default function RosterClanChips({
                           {summary.capacity === null
                             ? ""
                             : ` / ${summary.capacity}`}
+                          {capacity.fillerLabel && (
+                            <small> · {capacity.fillerLabel}</small>
+                          )}
                         </span>
                       </span>
-                      {summary.fillerCount > 0 && (
-                        <small>
-                          +{summary.fillerCount} filler
-                          {summary.fillerCount === 1 ? "" : "s"}
-                        </small>
-                      )}
                       <span className="roster-clan-chip-meta">
                         <span>{totalLabel}</span>
                         {summary.missingWeightCount > 0 && (

@@ -14,7 +14,7 @@ import DeclarationExtras from "./DeclarationExtras";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import { useCwlPool } from "./CwlPoolTabs";
 import { hiddenPublicationStatus } from "./publicationStatus";
-import { comparisonAge, comparisonLocation } from "./comparisonLocation";
+import { comparisonAge } from "./comparisonLocation";
 import { Button, Input } from "./rosterUi/primitives";
 import "./ArrivalCheck.css";
 
@@ -33,6 +33,9 @@ export default function ArrivalCheck({
   const { data, error, refresh, records, now, checkedAt, checking } =
     useDeclarationData(seasonId);
   const undoPending = useRef(false);
+  const [localMarks, setLocalMarks] = useState<
+    Record<string, FillerSaveResult>
+  >({});
   const [markUndo, setMarkUndo] = useState<FillerSaveResult | null>(null);
   const [undoBusy, setUndoBusy] = useState(false);
   const [undoError, setUndoError] = useState("");
@@ -60,12 +63,28 @@ export default function ArrivalCheck({
     () =>
       data && published
         ? {
-            roster: declarationSnapshot(data),
+            roster: {
+              ...declarationSnapshot(data),
+              revision: Math.max(
+                data.roster.revision,
+                ...Object.values(localMarks).map((m) => m.revision),
+              ),
+              accounts: declarationSnapshot(data).accounts.map((a) => {
+                const mark = localMarks[a.tag];
+                return mark && mark.revision > data.roster.revision
+                  ? {
+                      ...a,
+                      roster_filler: mark.roster_filler,
+                      roster_filler_revision: mark.mark_revision,
+                    }
+                  : a;
+              }),
+            },
             version: data.arrival.version!,
             signupTags: data.roster.accounts.map((a) => a.tag),
           }
         : undefined,
-    [data, published],
+    [data, published, localMarks],
   );
   const groups = useMemo(
     () =>
@@ -80,18 +99,31 @@ export default function ArrivalCheck({
         : [],
     [data, context, records, now, extras.data],
   );
+  function applySavedMark(saved?: FillerSaveResult) {
+    if (!saved?.tag || typeof saved.roster_filler !== "boolean") {
+      setMarkUndo(null);
+      refresh();
+      return;
+    }
+    setMarkUndo(saved.undo ? saved : null);
+    setUndoError("");
+    setLocalMarks((current) => ({ ...current, [saved.tag!]: saved }));
+    extras.applyMark?.(saved);
+  }
   const markControl =
-    data && canMarkRosterFiller && !pingWorking.current
+    data &&
+    canMarkRosterFiller &&
+    !data.arrival.season_archived &&
+    !pingWorking.current
       ? {
           seasonId,
-          revision: extras.data?.revision ?? data.roster.revision,
+          revision: Math.max(
+            data.roster.revision,
+            extras.data?.revision || 0,
+            ...Object.values(localMarks).map((m) => m.revision),
+          ),
           disabled: checking || extras.loading || undoBusy,
-          onChanged: (saved?: FillerSaveResult) => {
-            setMarkUndo(saved?.undo ? saved : null);
-            setUndoError("");
-            refresh();
-            extras.refresh();
-          },
+          onChanged: applySavedMark,
         }
       : undefined;
   async function undoMark() {
@@ -100,14 +132,13 @@ export default function ArrivalCheck({
     setUndoBusy(true);
     setUndoError("");
     try {
-      await api(
+      const restored = await api<FillerSaveResult>(
         `/seasons/${encodeURIComponent(seasonId)}/roster/undo`,
         "POST",
         { revision: markUndo.revision, undo_id: markUndo.undo.id },
       );
       setMarkUndo(null);
-      refresh();
-      extras.refresh();
+      applySavedMark(restored);
     } catch (cause) {
       setMarkUndo(null);
       setUndoError(
@@ -144,6 +175,7 @@ export default function ArrivalCheck({
       });
   }
   useEffect(() => {
+    setLocalMarks({});
     setMarkUndo(null);
     setUndoError("");
     setExpanded([]);
@@ -179,6 +211,8 @@ export default function ArrivalCheck({
     enabled: !!context,
     seasonId,
     viewOnly: "declaration",
+    archived: !!data?.arrival.season_archived,
+    onFillerChanged: applySavedMark,
     publishedSnapshot: context,
     order: ordered.map((a) => a.tag),
   });
@@ -351,18 +385,7 @@ export default function ArrivalCheck({
             key={`${seasonId}:${pool}`}
             seasonId={seasonId}
             pool={pool}
-            missing={poolGroups.reduce(
-              (count, g) =>
-                count +
-                (g.tag
-                  ? g.accounts.filter(
-                      (a) =>
-                        comparisonLocation(records[a.tag], g.tag, now, g.name)
-                          .state === "missing",
-                    ).length
-                  : 0),
-              0,
-            )}
+            missing={poolGroups.reduce((n, g) => n + g.missingCount, 0)}
             locationStatus={
               poolGroups.some((g) => !!locationStatus(g))
                 ? checking || data?.arrival.updating
@@ -449,9 +472,10 @@ export default function ArrivalCheck({
                 seasonId,
                 viewOnly: "declaration",
                 publishedSnapshot: context,
+                archived: !!data.arrival.season_archived,
+                onFillerChanged: applySavedMark,
                 onChanged: () => {
                   refresh();
-                  extras.refresh();
                 },
               }}
               open={expanded.includes(group.key)}

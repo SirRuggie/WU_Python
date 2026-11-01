@@ -1,3 +1,4 @@
+import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import type { RosterSnapshot } from "./roster";
 export type StaffDetailsRequest = {
   seasonId: string;
@@ -11,6 +12,7 @@ export type StaffDetailsRequest = {
     signupTags: string[];
   };
   trigger?: HTMLElement;
+  onFillerChanged?: (saved: FillerSaveResult) => void;
   onChanged?: () => void | Promise<unknown>;
   onDirty?: (dirty: boolean) => void;
   onBusy?: (busy: boolean) => void;

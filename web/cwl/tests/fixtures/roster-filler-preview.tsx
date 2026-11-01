@@ -1,3 +1,6 @@
+import "../../src/CompareClans.css";
+import CompareClanHeader from "../../src/CompareClanHeader";
+import ClanSettings from "../../src/ClanSettings";
 import RosterUndoToast from "../../src/RosterUndoToast";
 import { DashboardPermissions } from "../../src/DashboardPermissions";
 /** Disconnected sample data. The only write changes this page's in-memory marks. */
@@ -189,6 +192,15 @@ function Preview() {
     roster.clans,
     filters,
   ).matches;
+  const shownRoster = {
+    ...roster,
+    clans: roster.clans.map((c) => ({
+      ...c,
+      assigned_filler_count: roster.accounts.filter(
+        (a) => a.assigned_clan_tag === c.tag && a.roster_filler,
+      ).length,
+    })),
+  };
   const undoControl = undo ? (
     <RosterUndoToast
       state={{ status: "available", label: "Change filler mark" }}
@@ -225,7 +237,7 @@ function Preview() {
       <p>Isolated sample · no live API</p>
       <h1>Build roster</h1>
       <RosterClanChips
-        roster={roster}
+        roster={shownRoster}
         pool="lazy"
         selectedTags={[]}
         onSelect={() => {}}
@@ -237,6 +249,28 @@ function Preview() {
         onChange={setFilters}
         disabled={false}
       />
+      <section className="capacity-review compare">
+        <h2>Compare capacity</h2>
+        <CompareClanHeader
+          clan={shownRoster.clans[0]}
+          accounts={shownRoster.accounts}
+          locations={Object.fromEntries(roster.accounts.map((a) => [a.tag, a]))}
+        />
+      </section>
+      <section className="settings-capacity-review">
+        <h2>Clan settings capacity</h2>
+        <ClanSettings
+          clans={shownRoster.clans}
+          accounts={shownRoster.accounts}
+          pool="lazy"
+          busy={false}
+          archived={false}
+          onPoolChange={() => {}}
+          onDirty={() => {}}
+          onLeave={() => true}
+          onSave={async () => false}
+        />
+      </section>
       <h2>Checked clan</h2>
       <DeclarationExtras
         row={extra}

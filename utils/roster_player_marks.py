@@ -85,3 +85,13 @@ def overlay(db, accounts):
 def incoming_regular(db, tags):
     saved = marks(db)
     return [tag for tag in tags if not saved.get(tag, {}).get("roster_filler")]
+
+
+def assigned_counts(db, season_id, clan_tag):
+    row = db.execute(
+        "SELECT COUNT(*) AS total, COALESCE(SUM(m.roster_filler),0) AS fillers "
+        "FROM roster_entries e LEFT JOIN roster_player_marks m ON m.tag=e.tag "
+        "WHERE e.season_id=? AND e.assigned_clan_tag=?",
+        (season_id, clan_tag),
+    ).fetchone()
+    return row["total"], row["fillers"]

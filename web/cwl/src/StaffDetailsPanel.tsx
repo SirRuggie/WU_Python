@@ -182,7 +182,9 @@ export default function StaffDetailsPanel({
         );
         setUndo(null);
         receipt.current = null;
-        await request.onChanged?.();
+        if (request.onFillerChanged && restored.tag)
+          request.onFillerChanged({ ...restored, revision: latest.revision });
+        else await request.onChanged?.();
       }
     } catch {
       if (id === generation.current) {
@@ -244,7 +246,9 @@ export default function StaffDetailsPanel({
                 ? { status: "available", label: saved.undo.label }
                 : null,
             );
-            request.onChanged?.();
+            if (request.onFillerChanged)
+              request.onFillerChanged({ ...saved, tag: request.tag });
+            else request.onChanged?.();
           }}
           account={account}
           archived={archived || request.archived}

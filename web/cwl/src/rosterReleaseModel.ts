@@ -1,3 +1,4 @@
+import { clanCapacity } from "./rosterCapacity";
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan } from "./roster";
 import { rosterMemberKey } from "./rosterGrouping";
@@ -164,19 +165,10 @@ function overCapacityClans(
   accounts: RosterAccount[],
   clans: RosterClan[],
 ): Set<string> {
-  const assigned = new Map<string, number>();
-  for (const account of accounts) {
-    if (account.assigned_clan_tag && !account.roster_filler) {
-      assigned.set(
-        account.assigned_clan_tag,
-        (assigned.get(account.assigned_clan_tag) || 0) + 1,
-      );
-    }
-  }
   return new Set(
     clans
-      .filter((clan) => (assigned.get(clan.tag) || 0) > clan.effective_capacity)
-      .map((clan) => clan.tag),
+      .filter((c) => clanCapacity(accounts, c.tag, c.effective_capacity).over)
+      .map((c) => c.tag),
   );
 }
 

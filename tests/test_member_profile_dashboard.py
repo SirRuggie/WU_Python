@@ -457,7 +457,7 @@ def test_staff_can_list_and_read_another_staff_members_run(monkeypatch):
         monkeypatch.setattr(
             routes, "require_manage", AsyncMock(return_value={"user_id": ACTOR})
         )
-        request = S(match_info={"run_id": "run"})
+        request = S(match_info={"run_id": "run"}, query={})
         listed = json.loads((await routes.standardize_runs(request)).text)
         detail = json.loads((await routes.standardize_status(request)).text)
         assert listed["runs"][0]["started_by"] == creator

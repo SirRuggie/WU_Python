@@ -1,3 +1,4 @@
+import { rosterCapacity } from "./rosterCapacity";
 import { useMemo, useRef, useState } from "react";
 import { Input, ProgressBar } from "./rosterUi/primitives";
 import { ChevronRight, Search, Unlink } from "lucide-react";
@@ -21,6 +22,7 @@ type Destination = {
   currentCount: number;
   projectedCount: number;
   incomingCount: number;
+  projectedFillerCount: number;
   currentTotalWeight: number | null;
   currentKnownWeights: number;
 };
@@ -45,6 +47,12 @@ function destinationProjection(
     currentCount,
     projectedCount: currentCount + incomingCount,
     incomingCount,
+    projectedFillerCount:
+      (clan.assigned_filler_count ??
+        currentAccounts.filter((a) => a.roster_filler).length) +
+      selected.filter(
+        (a) => a.roster_filler && a.assigned_clan_tag !== clan.tag,
+      ).length,
     currentTotalWeight: weights.length
       ? weights.reduce((total, weight) => total + weight, 0)
       : null,
@@ -201,9 +209,15 @@ export default function RosterAssignPanel({
                   currentCount,
                   projectedCount,
                   incomingCount,
+                  projectedFillerCount,
                   currentTotalWeight,
                   currentKnownWeights,
                 }) => {
+                  const projectedCapacity = rosterCapacity(
+                    projectedCount,
+                    projectedFillerCount,
+                    clan.effective_capacity,
+                  );
                   const regularIncoming = selectedAccounts.filter(
                     (a) => !a.roster_filler && a.assigned_clan_tag !== clan.tag,
                   ).length;
@@ -244,6 +258,9 @@ export default function RosterAssignPanel({
                           <span className="roster-assign-clan-count">
                             {currentCount} → {projectedCount} /{" "}
                             {clan.effective_capacity}
+                            {projectedCapacity.fillerLabel && (
+                              <small> · {projectedCapacity.fillerLabel}</small>
+                            )}
                           </span>
                         </span>
                         <span className="roster-assign-clan-meta">
@@ -267,6 +284,7 @@ export default function RosterAssignPanel({
                           )}
                         </span>
                         <ProgressBar
+                          className={projectedCapacity.barClass}
                           value={projectedCount}
                           max={clan.effective_capacity}
                           label={`${clan.name} projected capacity`}

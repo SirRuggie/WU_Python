@@ -66,17 +66,11 @@ def selected_manifest(preview, selected):
                 old_nickname=old,
                 new_nickname=new,
                 revision=revision,
-                **(
-                    {"name": str(item["name"])[:100]}
-                    if item.get("name")
-                    else {}
-                ),
+                **({"name": str(item["name"])[:100]} if item.get("name") else {}),
             )
         )
     if chosen - known or not result:
-        raise ValueError(
-            "Choose at least one available member from this preview."
-        )
+        raise ValueError("Choose at least one available member from this preview.")
     if len(json.dumps(result).encode()) > MAX_BYTES:
         raise ValueError("Member preview is too large; nothing was queued.")
     return result
@@ -94,10 +88,7 @@ class ProfileRuns:
         from datetime import datetime, timezone, timedelta
 
         actor = member_id(actor_id)
-        if (
-            len(rows) > MAX_MEMBERS
-            or len(json.dumps(rows).encode()) > MAX_BYTES
-        ):
+        if len(rows) > MAX_MEMBERS or len(json.dumps(rows).encode()) > MAX_BYTES:
             raise ValueError(
                 "Full preview exceeds the supported size; nothing was queued."
             )
@@ -137,21 +128,15 @@ class ProfileRuns:
             }
         )
         if not row:
-            raise ValueError(
-                "Preview was replaced. Review the complete changes again."
-            )
+            raise ValueError("Preview was replaced. Review the complete changes again.")
         expiry = row["expires_at"]
         if expiry.tzinfo is None:
             expiry = expiry.replace(tzinfo=timezone.utc)
         if expiry <= datetime.now(timezone.utc):
-            raise ValueError(
-                "Preview expired. Review the complete changes again."
-            )
+            raise ValueError("Preview expired. Review the complete changes again.")
         items = selected_manifest(row["rows"], selected)
         selection_hash = fingerprint(items)
-        key = "member-profile-run:" + fingerprint(
-            [actor, str(uuid.UUID(nonce))]
-        )
+        key = "member-profile-run:" + fingerprint([actor, str(uuid.UUID(nonce))])
         consumed = await self.mongo.component_state.update_one(
             {"_id": row["_id"], "nonce": nonce, "state": "draft"},
             {
@@ -196,9 +181,7 @@ class ProfileRuns:
             selected=selected,
         )
 
-    async def create(
-        self, *, actor_id, guild_id, request_id, preview, selected
-    ):
+    async def create(self, *, actor_id, guild_id, request_id, preview, selected):
         actor = member_id(actor_id)
         request_id = str(uuid.UUID(request_id))
         items = selected_manifest(preview, selected)
@@ -220,9 +203,7 @@ class ProfileRuns:
                     "This run identifier already belongs to another selection."
                 )
             return existing
-        active = await self.collection.find_one(
-            {"kind": KIND, "state": "queued"}
-        )
+        active = await self.collection.find_one({"kind": KIND, "state": "queued"})
         if active:
             raise ValueError(
                 "Another Standardize run is still working. Review its progress first."
@@ -283,12 +264,23 @@ class ProfileRuns:
 
     async def advance(self, *, now=None):
         at = time.time() if now is None else now
+        prune_started = time.perf_counter()
         await self.prune_throttled(at)
+        prune_ms = 1000 * (time.perf_counter() - prune_started)
+        parent_started = time.perf_counter()
         parent = await self.collection.find_one(
             {"kind": KIND, "state": "queued"}, sort=[("created_at", 1)]
         )
         if not parent:
             return
+        logging.getLogger(__name__).info(
+            "Management timing stage=profile_parent run=%s elapsed_ms=%.2f prune_ms=%.2f next_in_ms=%.2f cursor=%s",
+            parent.get("_id", "-"),
+            1000 * (time.perf_counter() - parent_started),
+            prune_ms,
+            1000 * max(0, parent.get("next_at", 0) - at),
+            parent.get("cursor"),
+        )
         if parent.get("stop_requested"):
             await self._settle_stop(parent, at)
             return
@@ -304,7 +296,11 @@ class ProfileRuns:
             return
         item = parent["items"][index]
         child_id = parent["_id"] + ":" + str(index)
-        child = await self.collection.find_one({"_id": child_id})
+        child = await self.timed(
+            "profile_child_lookup",
+            self.collection.find_one({"_id": child_id}),
+            parent["_id"],
+        )
         if child:
             if child["status"] in TERMINAL:
                 # Pace from the confirmed completion, not from a later scheduler tick.
@@ -319,9 +315,13 @@ class ProfileRuns:
                 )
                 if done:
                     changes.update(state="done", finished_at=at)
-                await self.collection.update_one(
-                    {"_id": parent["_id"], "state": "queued", "cursor": index},
-                    {"$set": changes},
+                await self.timed(
+                    "profile_cursor",
+                    self.collection.update_one(
+                        {"_id": parent["_id"], "state": "queued", "cursor": index},
+                        {"$set": changes},
+                    ),
+                    parent["_id"],
                 )
                 if done:
                     await self.prune()
@@ -342,7 +342,9 @@ class ProfileRuns:
             expires_at=at + 900,
         )
         try:
-            await self.collection.insert_one(child)
+            await self.timed(
+                "profile_child_insert", self.collection.insert_one(child), parent["_id"]
+            )
         except DuplicateKeyError:
             pass
 
@@ -405,15 +407,38 @@ class ProfileRuns:
             )
             await self.prune()
 
+    async def timed(self, stage, operation, run="-"):
+        started = time.perf_counter()
+        try:
+            return await operation
+        finally:
+            logging.getLogger(__name__).info(
+                "Management timing stage=%s run=%s elapsed_ms=%.2f",
+                stage,
+                run,
+                1000 * (time.perf_counter() - started),
+            )
+
     async def summaries(self, guild_id, *, active_only=False):
-        query = {'kind': KIND, 'guild_id': guild_id}
+        query = {"kind": KIND, "guild_id": guild_id}
         if active_only:
-            query['state'] = 'queued'
+            query["state"] = "queued"
         # Manifests contain every member's reviewed data. The picker needs none
         # of those large arrays, nor child receipts.
-        projection = {'_id': 1, 'state': 1, 'user_id': 1, 'stopped_by': 1,
-                      'stop_requested': 1, 'created_at': 1}
-        return await self.collection.find(query, projection).sort('created_at', -1).to_list(length=21)
+        projection = {
+            "_id": 1,
+            "state": 1,
+            "user_id": 1,
+            "stopped_by": 1,
+            "stop_requested": 1,
+            "created_at": 1,
+        }
+        return await self.timed(
+            "profile_history_query",
+            self.collection.find(query, projection)
+            .sort("created_at", -1)
+            .to_list(length=21),
+        )
 
     async def prune_throttled(self, at):
         # One process-wide cadence per collection; terminal transitions still prune.
@@ -445,9 +470,7 @@ class ProfileRuns:
                     "status": "uncertain",
                 }
             )
-            if (row in rows[:20] or uncertain) and row.get(
-                "finished_at", 0
-            ) >= cutoff:
+            if (row in rows[:20] or uncertain) and row.get("finished_at", 0) >= cutoff:
                 continue
             await self.collection.delete_many(
                 {

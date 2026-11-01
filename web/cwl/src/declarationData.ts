@@ -12,6 +12,7 @@ export type DeclarationAccount = ArrivalResponse["accounts"][number] & {
 };
 export type DeclarationArrival = Omit<ArrivalResponse, "accounts"> & {
   accounts: DeclarationAccount[];
+  season_archived?: boolean;
   publication_available: boolean;
   publication_outdated: boolean;
   version: number | null;

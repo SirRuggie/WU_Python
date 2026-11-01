@@ -1028,6 +1028,7 @@ def _rule_rows(db, sid):
     result = []
     for raw in rows:
         row = dict(raw)
+        row["assigned_filler_count"] = roster_player_marks.assigned_counts(db, sid, row["tag"])[1]
         row["archived"] = bool(row["archived"])
         row["effective_capacity"] = row["capacity"] if row["capacity"] is not None else 50
         result.append(row)
@@ -1098,7 +1099,7 @@ async def arrival_snapshot(request, *, source=None, force=None):
     """The existing arrival read, shared by explicit reviewed declaration pings."""
     sid = _sid(request)
     with _store(request).tx() as db:
-        _season(db, sid)
+        season = _season(db, sid)
         latest = _latest_publication(db, sid)
         requested_source = source if source is not None else request.query.get('source', 'draft')
         if requested_source not in ('draft', 'published'):
@@ -1130,7 +1131,7 @@ async def arrival_snapshot(request, *, source=None, force=None):
         account['arrival_status'] = ('unassigned' if not account['assigned_clan_tag'] else
             'unknown' if not current else 'arrived' if account['current_clan_tag'] == account['assigned_clan_tag'] else 'missing')
         account['outside_family'] = current and family is not None and account['current_clan_tag'] not in family
-    return {'source':'published' if published else 'draft',
+    return {'season_archived': season['status'] == 'archived', 'source':'published' if published else 'draft',
         'version':latest['version'] if published else None, 'accounts':accounts, 'updating':updating,
         'publication_available': latest is not None, 'publication_outdated': publication_outdated,
         'published_at': latest['published_at'] if latest else None,
@@ -1218,7 +1219,7 @@ async def update_roster_filler(request):
                          [{'kind': 'roster_filler', 'tag': player_tag,
                            'before': bool(before['roster_filler']), 'after': bool(after['roster_filler']),
                            'mark_revision': after['revision']}])
-        return web.json_response({'revision': _revision(db, sid),
+        return web.json_response({'revision': _revision(db, sid), 'tag': player_tag,
                                   'roster_filler': bool(after['roster_filler']),
                                   'mark_revision': after['revision'],
                                   'undo': _current_undo(db, sid, session['user_id'])})
@@ -1415,12 +1416,9 @@ async def swap_roster(request):
             _fail(409, "Accounts must be in different hosting clans")
         for host in (left_host, right_host):
             capacity = _active_destination_capacity(db, sid, host)
-            occupancy = db.execute(
-                "SELECT COUNT(*) AS n FROM roster_entries WHERE season_id=? AND assigned_clan_tag=?",
-                (sid, host),
-            ).fetchone()["n"]
+            occupancy, fillers = roster_player_marks.assigned_counts(db, sid, host)
             incoming = left_tag if host == right_host else right_tag
-            if occupancy > capacity and roster_player_marks.incoming_regular(db, [incoming]):
+            if occupancy - fillers > capacity and roster_player_marks.incoming_regular(db, [incoming]):
                 _fail(409, "Hosting clan exceeds capacity")
         changes = []
         for player_tag, target in ((left_tag, right_host), (right_tag, left_host)):
@@ -1533,7 +1531,7 @@ def _auto_plan(db, sid, pool=None):
     counts = {clan["tag"]: clan["assigned_count"] for clan in clans}
     totals = {clan["tag"]: 0 for clan in clans}
     for account in accounts:
-        if not account.get("roster_filler") and account["assigned_clan_tag"] in totals and account["effective_weight"] is not None:
+        if account["assigned_clan_tag"] in totals and account["effective_weight"] is not None:
             totals[account["assigned_clan_tag"]] += account["effective_weight"]
     candidates = sorted((a for a in accounts if not a.get("roster_filler") and a["assigned_clan_tag"] is None and (pool is None or a["pool"] == pool)),
                         key=lambda a: (-(a["effective_weight"] or 0), a["tag"]))

@@ -55,7 +55,7 @@ export function declarationGroups(
       const extra = extras.find(
         (c) => c.tag === g.tag && c.status === "current",
       );
-      const observed = (a: (typeof g.accounts)[number]) =>
+      const observed = (a: { tag: string }) =>
         extra?.fillers?.some((f) => f.tag === a.tag) &&
         Date.parse(extra.checked_at || "") >=
           (Number.isFinite(
@@ -79,8 +79,12 @@ export function declarationGroups(
       );
       const late = accounts.filter((a) => !!g.tag && !arrived(a));
       const presentFillers =
-        extra?.fillers?.filter((f) => !accounts.some((a) => a.tag === f.tag)) ||
-        [];
+        extra?.fillers?.filter(
+          (f) =>
+            !accounts.some((a) => a.tag === f.tag) &&
+            comparisonLocation(observed(f), g.tag, now, g.name).state ===
+              "arrived",
+        ) || [];
       const readiness = summarizeArrivalReadiness(
         [
           ...accounts.map((a) => ({
@@ -94,9 +98,9 @@ export function declarationGroups(
             tag: f.tag,
             assigned_clan_tag: g.tag,
             assigned_clan_name: g.name,
-            current_clan_tag: g.tag,
-            current_clan_name: g.name,
-            current_clan_checked_at: extra?.checked_at || undefined,
+            current_clan_tag: observed(f)?.current_clan_tag ?? null,
+            current_clan_name: observed(f)?.current_clan_name ?? null,
+            current_clan_checked_at: observed(f)?.current_clan_checked_at,
           })),
         ],
         { now, capacity: g.capacity },
@@ -106,6 +110,12 @@ export function declarationGroups(
         key: g.tag || `unassigned:${g.pool}`,
         accounts,
         late,
+        missingCount: accounts.filter(
+          (a) =>
+            !!g.tag &&
+            comparisonLocation(observed(a), g.tag, now, g.name).state ===
+              "missing",
+        ).length,
         checkingCount: g.tag
           ? accounts.filter(
               (a) =>

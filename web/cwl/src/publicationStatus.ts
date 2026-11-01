@@ -1,3 +1,4 @@
+import { clanCapacity } from "./rosterCapacity";
 import type { PublicationDraft } from "./publication";
 
 export function publicationDate(value: string): string {
@@ -26,16 +27,10 @@ export function finalizeStatus(draft: PublicationDraft): string {
 }
 
 export function capacityWarnings(draft: PublicationDraft) {
-  const assigned = new Map<string, number>();
-  for (const account of draft.preview.accounts) {
-    if (account.assigned_clan_tag && !account.roster_filler)
-      assigned.set(
-        account.assigned_clan_tag,
-        (assigned.get(account.assigned_clan_tag) || 0) + 1,
-      );
-  }
-  const excess = draft.preview.clans.map((clan) =>
-    Math.max(0, (assigned.get(clan.tag) || 0) - clan.effective_capacity),
+  const excess = draft.preview.clans.map(
+    (c) =>
+      clanCapacity(draft.preview.accounts, c.tag, c.effective_capacity)
+        .regularOverflow,
   );
   return {
     clans: excess.filter((count) => count > 0).length,

@@ -103,12 +103,59 @@ class DeclarationIdentityHTTP(unittest.IsolatedAsyncioTestCase):
 
     async def test_editor_guard_before_optional_lookup_and_one_batch_per_check(self):
         await self.prepare()
-        owners = AsyncMock(return_value={'#V2Y': UID})
-        directory = AsyncMock(return_value=[{'user':{'id':UID,'username':'family','global_name':'Family member'}}])
-        with patch.object(identities,'linked_owners',owners), patch.object(identities,'searchable_members',directory):
-            denied = await self.call('GET', self.path+'?source=draft', self.member)
-            self.assertEqual(denied.status,403);owners.assert_not_awaited();directory.assert_not_awaited()
+        owners = AsyncMock(return_value={"#V2Y": UID})
+        directory = AsyncMock(
+            return_value=[
+                {
+                    "user": {
+                        "id": UID,
+                        "username": "family",
+                        "global_name": "Family member",
+                    }
+                }
+            ]
+        )
+        with patch.object(identities, "linked_owners", owners), patch.object(
+            identities, "searchable_members", directory
+        ):
+            denied = await self.call("GET", self.path + "?source=draft", self.member)
+            self.assertEqual(denied.status, 403)
+            owners.assert_not_awaited()
+            directory.assert_not_awaited()
             result = await self.read()
-        owners.assert_awaited_once();directory.assert_awaited_once()
-        members = [m for c in result['clans'] for m in c['extras'] or []]
-        self.assertEqual(next(m for m in members if m['tag']=='#V2Y')['discord_profile']['display_name'],'Family member')
+        owners.assert_awaited_once()
+        directory.assert_awaited_once()
+        members = [m for c in result["clans"] for m in c["extras"] or []]
+        self.assertEqual(
+            next(m for m in members if m["tag"] == "#V2Y")["discord_profile"][
+                "display_name"
+            ],
+            "Family member",
+        )
+
+
+def test_optional_identity_batch_has_an_eight_second_budget_and_retains_rows(
+    monkeypatch,
+):
+    import pytest
+
+    budgets = []
+
+    class Expired:
+        async def __aenter__(self):
+            raise TimeoutError()
+
+        async def __aexit__(self, *args):
+            return False
+
+    def timeout(value):
+        budgets.append(value)
+        return Expired()
+
+    lookup = AsyncMock()
+    monkeypatch.setattr(identities, "linked_owners", lookup)
+    monkeypatch.setattr(identities.asyncio, "timeout", timeout)
+    clans = rows()
+    asyncio.run(identities.decorate(S(), clans))
+    assert budgets == [8] and len(clans[0]["extras"]) == 25
+    lookup.assert_not_awaited()

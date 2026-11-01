@@ -1,6 +1,8 @@
 """HTTP authorization and bounded member directory adaptation for profile tools."""
 
 import asyncio
+import time
+import logging
 from aiohttp import web
 from utils.member_profiles import MemberProfiles
 from utils.member_timezones import (
@@ -77,6 +79,7 @@ async def inventory(request):
     for data in raw:
         uid = str(data["user"]["id"])
         from .manage_roles import member_option
+
         identity = member_option(data)
         profile = profiles.get(uid)
         parsed = profile_zone(data.get("nick"))
@@ -115,7 +118,10 @@ async def inventory(request):
         rows.append(
             dict(
                 discord_id=uid,
-                discord_profile={key: identity.get(key) for key in ("id", "display_name", "username", "avatar_url")},
+                discord_profile={
+                    key: identity.get(key)
+                    for key in ("id", "display_name", "username", "avatar_url")
+                },
                 name=data["user"].get("global_name")
                 or data["user"].get("username")
                 or uid,
@@ -157,7 +163,10 @@ async def overview(request):
                     label=label,
                     flag=flag(code),
                     zone_id=SINGLE_ZONE.get(code),
-                    zones=[dict(id=key, label=key.upper() + " · " + description) for key, _, description in zones_for_country(code)],
+                    zones=[
+                        dict(id=key, label=key.upper() + " · " + description)
+                        for key, _, description in zones_for_country(code)
+                    ],
                 )
                 for code, label in COUNTRY_CHOICES
             ],
@@ -246,6 +255,7 @@ async def standardize_preview(request):
     actor = await require_manage(request, "member_profiles", write=True)
     rows = await inventory(request)
     from utils.member_timezone_review import preview_rows
+
     preview = preview_rows(rows)
     from utils.member_profile_runs import ProfileRuns
 
@@ -287,12 +297,23 @@ async def standardize_confirm(request):
 
 
 async def standardize_runs(request):
+    started = time.perf_counter()
     actor = await require_manage(request, "member_profiles")
+    auth_ms = 1000 * (time.perf_counter() - started)
     from utils.member_profile_runs import ProfileRuns
 
+    context_started = time.perf_counter()
     async with mongo(request) as db:
-        runs = await ProfileRuns(db).summaries(GUILD_ID, active_only=getattr(request, 'query', {}).get('active') == '1')
-    return web.json_response(
+        mongo_ms = 1000 * (time.perf_counter() - context_started)
+        query_started = time.perf_counter()
+        runs = await ProfileRuns(db).summaries(
+            GUILD_ID, active_only=request.query.get("active") == "1"
+        )
+        query_ms = 1000 * (time.perf_counter() - query_started)
+        close_started = time.perf_counter()
+    close_ms = 1000 * (time.perf_counter() - close_started)
+    encode_started = time.perf_counter()
+    response = web.json_response(
         dict(
             runs=[
                 dict(
@@ -305,6 +326,19 @@ async def standardize_runs(request):
             ]
         )
     )
+    encode_ms = 1000 * (time.perf_counter() - encode_started)
+    logging.getLogger(__name__).info(
+        "Member profile history timing active=%s rows=%s auth_ms=%.2f mongo_context_ms=%.2f query_ms=%.2f mongo_close_ms=%.2f encode_ms=%.2f total_ms=%.2f",
+        request.query.get("active") == "1",
+        len(runs),
+        auth_ms,
+        mongo_ms,
+        query_ms,
+        close_ms,
+        encode_ms,
+        1000 * (time.perf_counter() - started),
+    )
+    return response
 
 
 async def standardize_stop(request):

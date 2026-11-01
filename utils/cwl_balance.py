@@ -9,7 +9,7 @@ def balance_accounts(accounts, clans, selected_tags, destination_tags, include_l
     totals = Counter()
     bands = Counter()
     for a in accounts:
-        if not a.get('roster_filler') and a['effective_weight'] is not None:
+        if a['effective_weight'] is not None:
             totals[a['assigned_clan_tag']] += a['effective_weight']
             bands[(a['assigned_clan_tag'], a['effective_weight'])] += 1
     placements, skipped = [], []

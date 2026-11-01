@@ -1,4 +1,4 @@
-import type {FillerSaveResult} from "./RosterFillerCheckbox";
+import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import RosterFillerCheckbox from "./RosterFillerCheckbox";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import DetailsFrame from "./DetailsFrame";
