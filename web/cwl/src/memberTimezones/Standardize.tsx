@@ -299,6 +299,12 @@ export default function Standardize({
             Refresh members
           </button>
         )}
+        {!run && !preview && !busy && (
+          <p className="mt-review-help">
+            Saves time zones from nicknames, then shows the changes. Nobody is
+            renamed until you confirm.
+          </p>
+        )}
         <button
           className="link-button"
           disabled={busy}
@@ -307,12 +313,6 @@ export default function Standardize({
           Past runs
         </button>
       </div>
-      {!run && !preview && !busy && (
-        <p className="mt-review-help">
-          Saves time zones from nicknames, then shows the changes. Nobody is
-          renamed until you confirm.
-        </p>
-      )}
       {error && <p role="alert">{error}</p>}
       {busy && phase && <p role="status">{phase}</p>}
       {(busy || preview || run) && (

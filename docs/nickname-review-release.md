@@ -30,19 +30,19 @@ The separate prompt 85 frontend commit removes the Declaration ping paragraph, a
 
 The production evidence cannot reconstruct the original import's underlying exception because the old handler did not log it. Fixture timings below use fake Discord transport and a dedicated temporary local MongoDB, not live delivery. No production Import, Standardize, Rename or Send was pressed. No deployment is claimed by this implementation review.
 
-Final integrated validation: 5,669 guarded backend tests passed, 54 skipped, 224 subtests passed; 1,351 frontend tests across 242 files; TypeScript and production build; 138 focused integrated backend checks; and 12 dedicated real Mongo lease/CAS, atomic claim, restart, Stop and import checks. The required war-reminder command passed 213 backend checks (one skip), 35 frontend checks, TypeScript and isolated build. All ten behavioral mutants were caught: saved-profile overwrite, bot inclusion, reused uncertain ID, extra hidden ID, preview before import, preselected Check name, unsaved Declaration channel Ping, missing atomic claim guard, missing old-nickname check and zero pacing.
+Final integrated validation after prompt 87: 5,677 guarded backend tests passed, 55 skipped, 224 subtests passed; 1,353 frontend tests across 242 files; TypeScript and production build; 139 focused integrated backend checks plus seven new rework checks; and 13 dedicated real Mongo lease/CAS, atomic claim, restart, Stop and import checks. The required war-reminder command passed 213 backend checks (one skip), 35 frontend checks, TypeScript and isolated build. All ten original behavioral mutants were caught: saved-profile overwrite, bot inclusion, reused uncertain ID, extra hidden ID, preview before import, preselected Check name, unsaved Declaration channel Ping, missing atomic claim guard, missing old-nickname check and zero pacing.
 
 The 1,447-member isolated browser flow passed at 320, 360, 390 and 1440 pixels, including the unchanged editor, Import/Preview order, all categories, hidden selection, pagination, immediate selected-only run, Stop, lost permission, no overflow, 44px controls and 12px minimum text. Final 360/1440 preview and result screenshots were visually reviewed. Declaration copy has 12 isolated layout states and its own frontend-only commit. These fixture requests use fake transport. Earlier failed checks were corrected before READY; their logs remain in the worktree.
 
-Evidence is retained under `.local/p83-evidence`, `.local/p86-evidence`, `.local/p86-layout-final` and the validation logs in the feature worktree. Review preview port 8938 serves an isolated fixture; entry `index-BMehtGM7.js` SHA256 `6377344747103e52767e005d891cce97a4bf7dc82386875294902bd1b322762b`. Declaration copy preview remains on port 40585. These are review assets, not a production deployment.
+Evidence is retained under `.local/p83-evidence`, `.local/p86-evidence`, `.local/p87-layout-css` and the validation logs in the feature worktree. Review preview port 8938 serves an isolated fixture; entry `index-C9i5khpQ.js` SHA256 `564986c2e9e3d4c5af2a02c73b3d0130d1fd2ed453ad46d60a58ea0f26df5cb9`. Declaration copy preview remains on port 40585. These are review assets, not a production deployment.
 
 | Fixture | Members | Elapsed | First edit |
 |---|---:|---:|---:|
 | before | 2 | 50.739 s | 10.335 s |
-| after | 2 | 3.431 s | 0.221 s |
-| after | 25 | 76.636 s | 0.224 s |
+| after | 2 | 3.474 s | 0.221 s |
+| after | 25 | 76.735 s | 0.224 s |
 
-The 25-member fixture refreshes roles and the bot member twice across its minute-long cache boundary, with exactly one fresh target read per member. Its edit gaps remain above three seconds. Baseline source is the pre-speed commit aeef3fe; only the after cases were rerun after the final safety fix.
+The final 25-member fixture refreshes roles and the bot member three times with the preparation safety margin, with exactly one fresh target read per member. Its edit gaps remain above three seconds. Baseline source is the pre-speed commit aeef3fe; only the after cases were rerun after the final safety fix.
 
 ## Prompt 87 review delta
 
@@ -54,6 +54,6 @@ Retention pruning is throttled to once per minute during work and also runs at c
 
 Roles/bot refresh in preparation with enough headroom for the bounded edit and lease verification, using one 60-second TTL constant. A known Discord rate-limit retry time is persisted on the uncertain child and delays the next member. No uncertain edit is retried. Hikari's shared route bucket still governs calls when an internal rate-limit wait is cancelled without exposing its retry time.
 
-Delta checks so far: 139 integrated focused backend plus seven new queue/edge checks; 13 real Mongo checks including the archived index fixture; 1,353 frontend tests, TypeScript/build, required war-reminder gate, and eight backend mutant kills (five new, three retained speed safety checks). Final full backend and refreshed browser evidence are pending at this pushed checkpoint. Prior failed fixture/build attempts are retained; they are not claimed as passing.
+Delta checks so far: 139 integrated focused backend plus seven new queue/edge checks; 13 real Mongo checks including the archived index fixture; 1,353 frontend tests, TypeScript/build, required war-reminder gate, and eight backend mutant kills (five new, three retained speed safety checks). Final full guarded backend passed 5,677 tests/55 skips/224 subtests; refreshed browser checks passed all four widths. Final 360/1440 overview, preview and result screenshots were visually reviewed. Five new backend and three new frontend mutants were killed, as were all three rerun speed safety mutants. Total unique behavioral mutation cases across the batch: 18. Requested Prettier checks pass. Prior failed fixture/build attempts are retained; they are not claimed as passing.
 
 Rework fake-Discord/local-Mongo timings: 2 members 3.474 seconds, 25 members 76.735 seconds. The 25-member case has 25 target reads and three roles/bot refreshes with the safety margin; no live timing or edits.

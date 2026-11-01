@@ -224,12 +224,23 @@
   min-width: 0;
 }
 .mt-review-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 4px 8px;
+}
+.mt-review-entry .link-button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+@media (min-width: 600px) {
+  .mt-review-entry { grid-template-columns: max-content max-content max-content; }
+  .mt-review-entry .link-button { grid-column: 3; grid-row: 1; }
 }
 .mt-review-help {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
   margin: 4px 0;
   font-size: 12px;
   line-height: 1.5;
