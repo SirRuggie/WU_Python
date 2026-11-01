@@ -8,7 +8,7 @@ from aiohttp import web
 
 sys.path.insert(0, str(Path(__file__).parent))
 import player_cards as fixture
-from utils.member_timezones import COUNTRY_CHOICES, ZONE_CHOICES, SINGLE_ZONE, flag
+from utils.member_timezones import COUNTRY_CHOICES, ZONE_CHOICES, SINGLE_ZONE, flag, zones_for_country
 from utils.member_timezone_import import nickname_name
 
 BASE = "/api/cwl/manage/member-timezones"
@@ -109,7 +109,7 @@ async def sample(request, handler):
             dict(
                 members=members,
                 countries=[
-                    dict(code=c, label=n, flag=flag(c), zone_id=SINGLE_ZONE.get(c))
+                    dict(code=c, label=n, flag=flag(c), zone_id=SINGLE_ZONE.get(c), zones=[dict(id=k, label=k.upper() + " · " + text) for k, _, text in zones_for_country(c)])
                     for c, n in COUNTRY_CHOICES
                 ],
                 zones=[

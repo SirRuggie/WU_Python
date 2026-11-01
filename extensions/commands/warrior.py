@@ -1,5 +1,6 @@
 """Warrior Setup, the supported replacement for the retired recruit dashboard."""
 
+from extensions.warrior.timing import click
 import coc
 import asyncio
 import logging
@@ -205,6 +206,7 @@ class WarriorSetup(
 
     @lightbulb.invoke
     @lightbulb.di.with_di
+    @click
     async def invoke(
         self,
         ctx: lightbulb.Context,
@@ -216,7 +218,12 @@ class WarriorSetup(
             if not ctx.guild_id:
                 raise core.SetupError("Run /warrior setup in the server.")
             c = await core.context(
-                bot, mongo, int(ctx.guild_id), int(ctx.user.id), int(self.user.id)
+                bot,
+                mongo,
+                int(ctx.guild_id),
+                int(ctx.user.id),
+                int(self.user.id),
+                fresh=False,
             )
             data = {
                 "_id": str(ctx.interaction.id),
@@ -425,6 +432,10 @@ def modal_value(ctx, name):
 
 @register_action("warrior", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
+@click
+@nickname_setup.serialized(
+    modal=lambda ctx, action_id: action_id.partition(":")[2] == "setting"
+)
 async def action(
     ctx,
     action_id,
@@ -437,7 +448,6 @@ async def action(
     # Modals acknowledge immediately; all authorization and bounds are checked
     # again on submission before touching a member or configuration.
     if verb == "nick":
-        await ctx.defer(edit=True)
         try:
             data, c = await core.session(ctx, bot, mongo, sid)
             await nickname_setup.begin(ctx, data, c, mongo, coc_client)
@@ -456,11 +466,9 @@ async def action(
             ],
         )
         return
-    await ctx.defer(edit=True)
     try:
         data, c = await core.session(ctx, bot, mongo, sid)
-        if data.get("nickname_setup"):
-            await update_state(mongo, sid, {"$unset": {"nickname_setup": ""}})
+        await nickname_setup.abandon(mongo, data)
         cfg = await core.settings(mongo, c["guild"].id)
         if verb == "home":
             output = await home(data, c, mongo)
@@ -489,9 +497,7 @@ async def action(
                 c,
                 **({"add": selected} if verb == "role_add" else {"remove": selected}),
             )
-            c = await core.context(
-                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-            )
+            c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb == "quick":
             result = await core.change_roles(
@@ -506,9 +512,7 @@ async def action(
                 )
                 for key in result:
                     result[key] += removed[key]
-            c = await core.context(
-                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-            )
+            c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb == "th":
             output = th_menu(data, c, cfg)
@@ -527,9 +531,7 @@ async def action(
                 )
                 for key in result:
                     result[key] += removed[key]
-            c = await core.context(
-                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-            )
+            c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb.startswith("clans:"):
             output = await clan_menu(data, c, mongo, int(verb.split(":")[1]))
@@ -546,9 +548,7 @@ async def action(
                 c,
                 add=[r["role_id"] for r in available if r["tag"] in selected],
             )
-            c = await core.context(
-                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-            )
+            c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb == "advanced":
             output = await advanced(data, c, mongo)
@@ -575,6 +575,10 @@ async def action(
             output = confirm(data, operation + ":" + token, descriptions[operation])
         elif verb.startswith("apply:"):
             _, operation, token = verb.split(":")
+            if operation == "restart":
+                c = await core.context(
+                    bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+                )
             consumed = await mongo.component_state.find_one_and_update(
                 {
                     "_id": sid,
@@ -624,9 +628,7 @@ async def action(
                         else {"remove": roles}
                     ),
                 )
-                c = await core.context(
-                    bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-                )
+                c = await core.refresh_target(bot, c)
                 output = await home(data, c, mongo, core.result_text(result))
         elif verb == "tour" or verb.startswith("tourpage:"):
             run = await mongo.warrior_walkthroughs.find_one(
@@ -693,6 +695,9 @@ async def action(
                 c["member"].id,
                 ticket_id=existing_run["ticket_id"],
             )
+            c = await core.context(
+                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+            )
             await mongo.warrior_walkthroughs.update_one(
                 {
                     "_id": walkthrough.run_id(c["guild"].id, c["member"].id),
@@ -743,6 +748,8 @@ async def action(
 
 @register_action("warrior_form", is_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
+@click
+@nickname_setup.serialized(form=True)
 async def form(
     ctx,
     action_id,
@@ -750,9 +757,6 @@ async def form(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs,
 ):
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
     sid, _, verb = action_id.partition(":")
     try:
         data, c = await core.session(ctx, bot, mongo, sid)
@@ -761,6 +765,9 @@ async def form(
                 "This old nickname form expired. Use the new nickname step in /warrior."
             )
         elif verb.startswith("setting:"):
+            c = await core.context(
+                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+            )
             if not c["actor_permissions"] & hikari.Permissions.ADMINISTRATOR:
                 raise core.SetupError("Administrator permission is required.")
             _, group, key = verb.split(":")
@@ -894,6 +901,7 @@ async def started(
 async def stopping(_: hikari.StoppingEvent):
     from extensions.warrior import profile_membership
 
+    await nickname_setup.stop()
     await profile_membership.stop()
     await walkthrough.stop()
 

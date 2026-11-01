@@ -148,6 +148,7 @@ async def validate_destination(bot, c, channel_id):
 
 async def prepare(bot, mongo, c, clan, cfg):
     ticket = await core.open_ticket(mongo, c["guild"].id, c["member"].id)
+    c = await core.context(bot, mongo, c["guild"].id, c["actor"].id, c["member"].id)
     if int(clan["role_id"]) not in c["member"].role_ids:
         raise core.SetupError(
             "Assign this clan’s role before starting its walkthrough."
@@ -211,7 +212,9 @@ async def begin(bot, mongo, run, actor_id, channel_id):
     if int(run["ticket_channel"]) != int(channel_id):
         raise core.SetupError("Use Begin Walkthrough in the recruit’s ticket.")
     c = await core.context(bot, mongo, run["guild_id"], actor_id, run["user_id"])
-    ticket = await core.open_ticket(mongo, run["guild_id"], run["user_id"], ticket_id=run["ticket_id"])
+    ticket = await core.open_ticket(
+        mongo, run["guild_id"], run["user_id"], ticket_id=run["ticket_id"]
+    )
     if ticket["_id"] != run["ticket_id"]:
         raise core.SetupError(
             "The walkthrough must remain attached to its original open or approved ticket."
@@ -236,9 +239,13 @@ async def deliver(bot, mongo, run, owner):
     channel_id, _, _ = steps[index]
     c = await core.context(bot, mongo, run["guild_id"], run["actor_id"], run["user_id"])
     if index <= 1:
-        ticket = await core.open_ticket(mongo, run["guild_id"], run["user_id"], ticket_id=run["ticket_id"])
+        ticket = await core.open_ticket(
+            mongo, run["guild_id"], run["user_id"], ticket_id=run["ticket_id"]
+        )
         if ticket["_id"] != run["ticket_id"]:
-            raise core.SetupError("The walkthrough’s original ticket is no longer available for onboarding.")
+            raise core.SetupError(
+                "The walkthrough’s original ticket is no longer available for onboarding."
+            )
     await validate_destination(bot, c, channel_id)
     # If a process stopped after sending but before saving, recognize its own
     # component marker. Never resend completed stages or scan before this run.

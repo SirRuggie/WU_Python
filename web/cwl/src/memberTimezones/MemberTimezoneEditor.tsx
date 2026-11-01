@@ -28,6 +28,18 @@ export default function MemberTimezoneEditor({
   );
   const [zone, setZone] = useState(member.profile?.zone_id || "");
   const [country, setCountry] = useState(member.profile?.country || "");
+  const [allZones, setAllZones] = useState(() => {
+    const choices = data.countries.find(
+      (c) => c.code === member.profile?.country,
+    )?.zones;
+    return (
+      !choices ||
+      (!!member.profile?.zone_id &&
+        !choices.some((z) => z.id === member.profile!.zone_id))
+    );
+  });
+  const countryZones = data.countries.find((c) => c.code === country)?.zones;
+  const visibleZones = allZones || !countryZones ? data.zones : countryZones;
   const [tag, setTag] = useState(member.profile?.name_source_tag || null);
   const [rename, setRename] = useState(false),
     [accounts, setAccounts] = useState<Account[]>([]),
@@ -238,13 +250,20 @@ export default function MemberTimezoneEditor({
               {extra.gmt_label} · Imported offset
             </option>
           )}
-          {data.zones.map((z) => (
+          {visibleZones.map((z) => (
             <option key={z.id} value={z.id}>
               {z.label}
             </option>
           ))}
         </select>
       </label>
+      <button
+        type="button"
+        disabled={allZones || busy}
+        onClick={() => setAllZones(true)}
+      >
+        Show all zones
+      </button>
       <label>
         Country
         <select
@@ -256,6 +275,7 @@ export default function MemberTimezoneEditor({
           onChange={(e) => {
             change();
             setCountry(e.target.value === "other" ? "" : e.target.value);
+            setAllZones(e.target.value === "other");
             setZone(
               data.countries.find((country) => country.code === e.target.value)
                 ?.zone_id || "",

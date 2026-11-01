@@ -25,6 +25,7 @@ export type Directory = {
     label: string;
     flag: string;
     zone_id?: string | null;
+    zones?: { id: string; label: string }[];
   }[];
   zones: { id: string; label: string }[];
   permission: string;

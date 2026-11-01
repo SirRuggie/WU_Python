@@ -10,6 +10,7 @@ from utils.member_timezones import (
     flag,
     nickname,
     SINGLE_ZONE,
+    zones_for_country,
 )
 from utils.member_timezone_import import profile_zone, nickname_name
 from .server_management import (
@@ -153,6 +154,7 @@ async def overview(request):
                     label=label,
                     flag=flag(code),
                     zone_id=SINGLE_ZONE.get(code),
+                    zones=[dict(id=key, label=key.upper() + " · " + description) for key, _, description in zones_for_country(code)],
                 )
                 for code, label in COUNTRY_CHOICES
             ],

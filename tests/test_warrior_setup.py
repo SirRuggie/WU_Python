@@ -102,7 +102,9 @@ def test_warrior_setup_replaces_legacy_dashboard():
 
 
 @pytest.mark.parametrize("rid", [62, 63, 64, 10, 999])
-def test_role_mutation_refuses_hierarchy_privilege_managed_and_missing_roles(rid):
+def test_role_mutation_refuses_hierarchy_privilege_managed_and_missing_roles(
+    rid, monkeypatch
+):
     c = context()
     bot = S(
         rest=S(
@@ -110,12 +112,13 @@ def test_role_mutation_refuses_hierarchy_privilege_managed_and_missing_roles(rid
             add_role_to_member=AsyncMock(),
         )
     )
+    monkeypatch.setattr(core, "context", AsyncMock(return_value=c))
     result = run(core.change_roles(bot, mongo(), c, add=[rid]))
     assert result["failed"]
     bot.rest.add_role_to_member.assert_not_awaited()
 
 
-def test_role_updates_are_incremental_and_truthfully_report_failure():
+def test_role_updates_are_incremental_and_truthfully_report_failure(monkeypatch):
     c = context()
     rest = S(
         fetch_member=AsyncMock(return_value=c["member"]),
@@ -124,6 +127,7 @@ def test_role_updates_are_incremental_and_truthfully_report_failure():
             side_effect=hikari.ForbiddenError(url="x", headers={}, raw_body="denied")
         ),
     )
+    monkeypatch.setattr(core, "context", AsyncMock(return_value=c))
     result = run(core.change_roles(S(rest=rest), mongo(), c, add=[60], remove=[61]))
     rest.add_role_to_member.assert_awaited_once()
     assert result["added"] == ["Role 60"] and result["failed"] and not result["removed"]
@@ -268,10 +272,13 @@ def test_nickname_wizard_acknowledges_then_rechecks_session_before_loading(monke
 
 def test_config_form_rechecks_authorization(monkeypatch):
     c = context()
+    monkeypatch.setattr(core, "context", AsyncMock(return_value=c))
     ctx = S(
+        user=S(id=20),
+        guild_id=10,
         interaction=S(
             create_initial_response=AsyncMock(), edit_initial_response=AsyncMock()
-        )
+        ),
     )
     monkeypatch.setattr(core, "session", AsyncMock(return_value=({"_id": "1"}, c)))
     m = mongo()

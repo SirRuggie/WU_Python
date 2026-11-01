@@ -507,3 +507,53 @@ it("unselects the whole preview and filters Needs review without changing select
     )?.disabled,
   ).toBe(true);
 });
+it("narrows the dashboard zone menu by country and supports Show all without nickname aliases", async () => {
+  const au = [
+    { id: "gmt+10", label: "GMT+10 · East (AEST/AEDT)" },
+    { id: "gmt+9:30", label: "GMT+9:30 · Central (ACST/ACDT)" },
+    { id: "gmt+8", label: "GMT+8 · West (AWST)" },
+  ];
+  const full = [...directory.zones, ...au];
+  const fixture = {
+    ...directory,
+    zones: full,
+    countries: [
+      { ...directory.countries[0], zones: directory.zones },
+      { code: "AU", flag: "🇦🇺", label: "Australia", zones: au },
+    ],
+  };
+  transport.mockImplementation(async (path: string) =>
+    path.endsWith("/choices")
+      ? { accounts: [], suggested: null, complete: true }
+      : fixture,
+  );
+  await renderPage();
+  await click("Edit Ada");
+  const country = host.querySelector<HTMLSelectElement>(
+    'select[aria-label="Country"]',
+  )!;
+  const zone = host.querySelector<HTMLSelectElement>(
+    'select[aria-label="Time zone"]',
+  )!;
+  await act(async () => {
+    country.value = "AU";
+    country.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(zone.options).toHaveLength(4);
+  expect(zone.textContent).toContain("West (AWST)");
+  await act(async () => {
+    zone.value = "gmt+9:30";
+    zone.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () =>
+    [...host.querySelectorAll("label")]
+      .find((label) =>
+        label.textContent?.includes("Also change the Discord nickname"),
+      )!
+      .querySelector<HTMLInputElement>("input")!
+      .click(),
+  );
+  expect(host.textContent).toContain("Ada | GMT+9:30 🇦🇺");
+  await click("Show all zones");
+  expect(zone.options).toHaveLength(5);
+});

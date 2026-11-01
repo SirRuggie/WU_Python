@@ -77,6 +77,26 @@ fs.mkdirSync(output, { recursive: true });
       await page
         .getByRole("button", { name: "Edit Ada Champion", exact: true })
         .click();
+      const country = page.getByLabel("Country", { exact: true });
+      const zone = page.getByLabel("Time zone", { exact: true });
+      for (const code of ["AU", "US"]) {
+        await country.selectOption(code);
+        const labels = await zone.locator("option").allTextContents();
+        assert.equal(labels.length, code === "AU" ? 4 : 7);
+        assert(
+          labels.some((text) =>
+            text.includes(code === "AU" ? "AWST" : "EST/EDT"),
+          ),
+        );
+        await zone.click();
+        await page.screenshot({ path: `${output}/${width}-${code}-zones.png` });
+        await page.keyboard.press("Escape");
+      }
+      await page
+        .getByRole("button", { name: "Show all zones", exact: true })
+        .click();
+      assert.equal(await zone.locator("option").count(), 26);
+      await zone.selectOption("gmt-5");
       await page
         .getByLabel("Which one do you want to name it?", { exact: true })
         .selectOption("#PQQ");

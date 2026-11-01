@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+from functools import wraps
+from weakref import WeakValueDictionary
 from uuid import uuid4
 import hikari
 import lightbulb
@@ -13,12 +15,14 @@ from hikari.impl import (
 from extensions.components import register_action
 from extensions.warrior import core
 from extensions.warrior.nickname_audit import edit_nickname
-from utils.component_state import update_state
+from .timing import click, read
+from utils.component_state import update_state, get_state
 from utils.member_profiles import MemberProfiles
 from utils.member_timezones import (
     COUNTRY_CHOICES,
     ZONE_CHOICES,
     SINGLE_ZONE,
+    zones_for_country,
     flag,
     zone,
     nickname,
@@ -28,6 +32,144 @@ from utils.mongo import MongoClient
 from utils.constants import WARRIORS_UNITED_GUILD_ID as GUILD_ID
 
 log = logging.getLogger(__name__)
+
+
+_locks = WeakValueDictionary()
+_tasks = set()
+
+
+def panel_lock(sid):
+    lock = _locks.get(str(sid))
+    if lock is None:
+        lock = asyncio.Lock()
+        _locks[str(sid)] = lock
+    return lock
+
+
+def nickname_modal(ctx, action_id):
+    verb = action_id.split(":", 2)[-1]
+    selected = (getattr(ctx.interaction, "values", None) or [""])[0]
+    return (
+        verb == "type"
+        or (verb == "pick_name" and selected == "type")
+        or (verb == "pick_country" and selected == "OTHER")
+    )
+
+
+def serialized(*, form=False, modal=None):
+    def decorate(fn):
+        @wraps(fn)
+        async def guarded(ctx, action_id, *args, **kwargs):
+            # A modal itself is the acknowledgement. Do not wait behind a slow edit.
+            if modal and modal(ctx, action_id):
+                return await fn(ctx, action_id, *args, **kwargs)
+            if form:
+                await ctx.interaction.create_initial_response(
+                    hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+                )
+            else:
+                await ctx.defer(edit=True)
+            async with panel_lock(action_id.split(":", 1)[0]):
+                return await fn(ctx, action_id, *args, **kwargs)
+
+        return guarded
+
+    return decorate
+
+
+async def stop():
+    tasks = tuple(_tasks)
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def abandon(mongo, data):
+    state = data.get("nickname_setup") or {}
+    if state.get("nonce"):
+        await update_state(
+            mongo,
+            {"_id": data["_id"], "nickname_setup.nonce": state["nonce"]},
+            {"$unset": {"nickname_setup": ""}},
+        )
+
+
+async def load_names(ctx, data, mongo, coc_client, state, user_id):
+    from extensions.commands.warrior import show
+
+    try:
+        choices = await read(
+            "linked_accounts", name_choices(coc_client, user_id), target_id=int(user_id)
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        log.warning(
+            "warrior background lookup unavailable target_id=%s error=%s",
+            user_id,
+            type(error).__name__,
+        )
+        choices = {"accounts": [], "suggested": None, "unavailable": True}
+    try:
+        async with panel_lock(data["_id"]):
+            current = await get_state(mongo, data["_id"])
+            saved = (current or {}).get("nickname_setup") or {}
+            if saved.get("nonce") != state["nonce"] or saved.get("step") != "name":
+                return
+            # A typed modal retains its nonce; never invalidate or overwrite it.
+            updated = dict(
+                saved,
+                accounts=choices["accounts"],
+                unavailable=choices["unavailable"],
+                loading=False,
+            )
+            suggested = choices.get("suggested")
+            if suggested and not saved.get("manual_name"):
+                updated.update(
+                    name=suggested["name"],
+                    name_source_tag=suggested["tag"],
+                    step="country",
+                )
+            result = await update_state(
+                mongo,
+                {
+                    "_id": data["_id"],
+                    "nickname_setup.nonce": state["nonce"],
+                    "nickname_setup.step": "name",
+                    "nickname_setup.manual_name": saved.get("manual_name"),
+                },
+                {"$set": {"nickname_setup": updated}},
+            )
+            if not result.matched_count:
+                # A modal may open without waiting for this lock. Heal metadata only;
+                # never auto-advance or overwrite the manually controlled name.
+                result = await update_state(
+                    mongo,
+                    {
+                        "_id": data["_id"],
+                        "nickname_setup.nonce": state["nonce"],
+                        "nickname_setup.step": "name",
+                        "nickname_setup.manual_name": True,
+                    },
+                    {
+                        "$set": {
+                            "nickname_setup.accounts": choices["accounts"],
+                            "nickname_setup.unavailable": choices["unavailable"],
+                            "nickname_setup.loading": False,
+                        }
+                    },
+                )
+                if result.matched_count:
+                    current = await get_state(mongo, data["_id"])
+                    updated = (current or {}).get("nickname_setup") or {}
+            if result.matched_count and updated.get("nonce") == state["nonce"]:
+                await show(ctx, render(data, updated))
+    except Exception as error:
+        log.warning(
+            "warrior background update unavailable target_id=%s error=%s",
+            user_id,
+            type(error).__name__,
+        )
 
 
 def authorize(c):
@@ -91,7 +233,11 @@ def render(data, state, *, page=0):
         else:
             items += [
                 Text(
-                    content="No linked player name is available. Type the in-game name."
+                    content=(
+                        "Checking linked accounts…"
+                        if state.get("loading")
+                        else "No linked player name is available. Type the in-game name."
+                    )
                 ),
                 control(data, state, "type", "Type a name"),
             ]
@@ -104,19 +250,32 @@ def render(data, state, *, page=0):
             )
     elif step == "country":
         row, select = menu(data, state, "pick_country", "Choose country / region")
-        for code, label in COUNTRY_CHOICES:
+        page = state.get("country_page", 0)
+        for code, label in COUNTRY_CHOICES[page * 24 : (page + 1) * 24]:
             select.add_option(f"{flag(code)} {label}", code)
         select.add_option("Other country code", "OTHER")
         items = [row]
+        if len(COUNTRY_CHOICES) > 24:
+            items.append(
+                control(
+                    data,
+                    state,
+                    "country_page",
+                    "More countries" if not page else "Previous countries",
+                )
+            )
     elif step == "zone":
         row, select = menu(data, state, "pick_zone", "Choose standard time zone")
-        for key, offset, label in ZONE_CHOICES:
+        for key, offset, label in zones_for_country(
+            state.get("country"), show_all=state.get("all_zones", False)
+        ):
             select.add_option(f"{key.upper()} · {label}"[:100], key)
         items = [
             Text(
                 content="Choose their standard time zone. GMT labels can be an hour off during daylight saving."
             ),
             row,
+            control(data, state, "all_zones", "Show all zones"),
         ]
     elif step == "preview":
         try:
@@ -161,19 +320,27 @@ async def begin(ctx, data, c, mongo, coc_client):
     from extensions.commands.warrior import show
 
     authorize(c)
-    current = await MemberProfiles(mongo).get(c["member"].id)
-    choices = await name_choices(coc_client, c["member"].id)
-    suggested = choices["suggested"]
+    current = await read(
+        "mongo.member_profile",
+        MemberProfiles(mongo).get(c["member"].id),
+        target_id=int(c["member"].id),
+    )
     state = {
-        "step": "country" if suggested else "name",
-        "accounts": choices["accounts"],
-        "unavailable": choices["unavailable"],
+        "step": "name",
+        "accounts": [],
+        "unavailable": False,
+        "loading": True,
         "profile_revision": int((current or {}).get("revision", 0)),
-        "name": suggested["name"] if suggested else "",
-        "name_source_tag": suggested["tag"] if suggested else None,
+        "name": "",
+        "name_source_tag": None,
     }
     state = await persist(mongo, data, state)
     await show(ctx, render(data, state))
+    task = asyncio.create_task(
+        load_names(ctx, data, mongo, coc_client, state, c["member"].id)
+    )
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
 
 
 async def save(ctx, data, c, mongo, state, bot):
@@ -331,6 +498,8 @@ async def save(ctx, data, c, mongo, state, bot):
 
 @register_action("warrior_nick", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
+@click
+@serialized(modal=nickname_modal)
 async def action(
     ctx,
     action_id,
@@ -363,6 +532,19 @@ async def action(
                 ephemeral=True,
             )
             return
+        if not country and state.get("step") == "name":
+            changed = await update_state(
+                mongo,
+                {
+                    "_id": sid,
+                    "nickname_setup.nonce": nonce,
+                    "nickname_setup.step": "name",
+                },
+                {"$set": {"nickname_setup.manual_name": True}},
+            )
+            if not changed.matched_count:
+                await ctx.respond("Use the current nickname controls.", ephemeral=True)
+                return
         await ctx.respond_with_modal(
             title="Country code" if country else "In-game name",
             custom_id=f"warrior_nick_form:{sid}:{nonce}:"
@@ -381,7 +563,6 @@ async def action(
             ],
         )
         return
-    await ctx.defer(edit=True)
     try:
         from extensions.commands.warrior import show
 
@@ -404,10 +585,16 @@ async def action(
             state.update(
                 name=account["name"], name_source_tag=account["tag"], step="country"
             )
+        elif verb == "country_page" and state["step"] == "country":
+            state["country_page"] = 1 - state.get("country_page", 0)
+        elif verb == "all_zones" and state["step"] == "zone":
+            state["all_zones"] = True
         elif verb == "pick_country" and state["step"] == "country":
             if selected not in dict(COUNTRY_CHOICES):
                 raise core.SetupError("Choose a listed country.")
-            state.update(country=selected, zone_id=SINGLE_ZONE.get(selected))
+            state.update(
+                country=selected, zone_id=SINGLE_ZONE.get(selected), all_zones=False
+            )
             state["step"] = "preview" if state["zone_id"] else "zone"
         elif verb == "pick_zone" and state["step"] == "zone":
             zone(selected)
@@ -440,6 +627,8 @@ async def failure(ctx, sid, error):
     "warrior_nick_form", is_modal=True, no_return=True, preload_state=False
 )
 @lightbulb.di.with_di
+@click
+@serialized(form=True)
 async def form(
     ctx,
     action_id,
@@ -447,9 +636,6 @@ async def form(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs,
 ):
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
     sid, nonce, kind = action_id.split(":", 2)
     try:
         from extensions.commands.warrior import modal_value, show
@@ -481,7 +667,9 @@ async def form(
         elif kind == "country":
             flag(value)
             country = value.upper()
-            state.update(country=country, zone_id=SINGLE_ZONE.get(country))
+            state.update(
+                country=country, zone_id=SINGLE_ZONE.get(country), all_zones=True
+            )
             state["step"] = "preview" if state["zone_id"] else "zone"
         else:
             raise core.SetupError("Unknown nickname form.")

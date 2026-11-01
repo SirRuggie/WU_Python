@@ -93,3 +93,12 @@ retention. Full frontend and layout results are recorded with final counts in th
 The November-sensitive defaults test pins its intended October calendar. Other
 hardcoded months are explicit scenario/occurrence keys; the current/future
 rollover case already uses the current calendar. No production import or rename.
+
+Prompt73 integration: country-specific zone labels and country-narrowed choices
+come from the shared backend picker metadata; Show all preserves access to every
+supported standard offset. AU/US menus are asserted and captured at360/1440;
+menu aliases never enter the nickname preview. The merge preserves67's audited
+nickname writer and70's fresh authorization, ACK/lock and background safeguards.
+Integrated101backend targets,1278frontend/233files,tsc/build and8actualMongo pass;
+full72backend5588/34skip/224subtests passed before the shared picker merge.
+Combined70/73full suite is separately recorded at PR122. Human425 remains open.

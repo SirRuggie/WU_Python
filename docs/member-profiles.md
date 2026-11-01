@@ -39,13 +39,17 @@ silently broken. Account menus page 24 choices plus Type a name. With no loaded
 accounts, a Type a name button opens the private modal (Discord cannot open a
 modal after acknowledging an asynchronous account lookup).
 
-Country menus have 24 common choices plus Other, accepting a two-letter code.
+Country menus page 24 choices plus Other, accepting a two-letter code. Russia
+and Mexico are on the second page.
 Choices are ranked by aggregate flags from 287 linked-owner nicknames in the
 read-only release observation (US 62, IN 45, CA 14, GB 9, AU 8, BD 7, DE/PH 5, etc.);
 ties use country code. See member-profile-country-ranking.json.
-Multi-zone countries ask for a zone. The nineteen standard labels are GMT-8,
--7,-6,-5,-4,-3,GMT,+1,+2,+3,+4,+5,+5:30,+6,+7,+8,+9,+10,+12, with regional
-explanations. The profile zone ID is the stable lowercase GMT label, not an IANA
+Multi-zone countries show their main standard zones, with Show all zones.
+Australia lists East, Central and West, including GMT+9:30. Single-zone choices
+autofill. The full menu contains25 standard offsets; friendly regional labels
+include familiar aliases such as EST/EDT and ACST/ACDT. Aliases are menu text
+only and never appear in the generated nickname. The shared data lives in
+utils/member_timezone_data.json. The profile zone ID is the stable lowercase GMT label, not an IANA
 civil-time identifier. A GMT label describes standard time and can be an hour off
 during daylight saving; grouping is unaffected. Regional/dependency exceptions
 ask for a supported standard label explicitly. Do not choose an inaccurate
@@ -108,7 +112,7 @@ zero. Search, status filtering and west-to-east sorting stay local to this page.
 
 Staff may choose a linked official account or type a name, use the same country
 and GMT choices, and save a profile with or without a reviewed nickname change.
-An imported offset outside the nineteen picks remains available as one extra
+An imported offset outside the standard menu picks remains available as one extra
 option. Profile-only edits do not rename Discord members. Fresh target/actor/bot
 roles and the exact old nickname are checked inside a serialized external edit;
 revision and lease checks surround it. Already matching nicknames cause no
@@ -153,3 +157,7 @@ Agent production smoke stops at Standardize preview: only staff confirm a run.
 The isolated UI fixture simulates its HTTP transport and never contacts Discord
 or Mongo; real-Mongo tests separately exercise receipt, selection and restart
 semantics. Neither proves live Discord delivery.
+
+Picker labels were checked against the IANA tzdb source files (australasia,
+northamerica, europe and asia at https://github.com/eggert/tz). Familiar display
+aliases do not change standard offsets or imply automatic daylight adjustment.
