@@ -31,7 +31,7 @@ export default function DeclarationExtras({
         Couldn't check
         {row?.checked_at
           ? ` · Last checked ${comparisonAge(row.checked_at, now)}`
-          : ""}
+          : " · Never checked"}
       </p>
     );
   if (!row.count)

@@ -708,3 +708,34 @@ real test after the accepted release.
 Validation evidence is recorded with the batch READY entry. Fixture notification
 tests and approximate rendered posts do not prove live Discord delivery.
 
+## Read-only not-on-roster flags
+
+Declaration check separately reads the current official member list for Lazy
+hosting clans and compares account tags with assignments in the shown source.
+Published checks use that publication's accounts and clan rules; draft checks use
+the current draft. A player assigned elsewhere is labeled with the other clan,
+an unassigned signup as `Signed up, unplaced`, and other accounts as `Not signed up`.
+Sharing an owner with a rostered account does not make an alt rostered.
+
+The amber clan disclosure lists name, TH, tag and context. The summary counts
+confirmed extras, marks incomplete checks, and a Lazy-only filter narrows the clan
+cards. Empty hosting clans are included. This flag never changes placements,
+blocks declaration, pings or kicks. The existing pool-wide ping count and fresh
+confirmation path continue to consider missing assigned accounts only, regardless
+of the extra-member filter.
+
+Rows load first; a separate read fills member flags afterward. This feature reads
+only on page load, roster-source/version changes and explicit Refresh, with no
+periodic or visibility polling. It reuses the public shared official roster cache
+(`WeightObservations`, ten-minute successful TTL); manual Refresh requests a fresh
+read. At most two queued clan reads run per request, paced by 150ms, within the
+shared observation concurrency bound and a 30-second request budget. Upstream
+timeouts, malformed lists or stale observations show `Couldn't check`, with the
+last successful check time (or `Never checked`), never a zero count. A roster change
+while the request runs rejects its results; the UI also ignores abandoned replies.
+
+Main is deliberately excluded because regular members are expected there. Enabling
+Main later requires an explicit policy change to the server's Lazy hosting filter,
+the UI scope label and Main-exclusion tests, followed by review; there is no hidden
+client switch. No new persistent collection or production write is introduced.
+

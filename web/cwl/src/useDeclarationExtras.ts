@@ -20,7 +20,7 @@ export default function useDeclarationExtras(
     let disposed = false;
     setData(undefined);
     setError("");
-    setLoading(enabled);
+    setLoading(enabled && basis !== null);
     if (!enabled || basis === null)
       return () => {
         disposed = true;

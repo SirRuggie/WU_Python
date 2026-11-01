@@ -133,6 +133,8 @@ export default function ArrivalCheck({
     order: ordered.map((a) => a.tag),
   });
   const hosts = groups.filter((g) => g.tag);
+  const failedExtras =
+    extras.data?.clans.filter((c) => c.status !== "current").length || 0;
   return (
     <section
       ref={root}
@@ -174,8 +176,8 @@ export default function ArrivalCheck({
               : extras.loading || !extras.data
                 ? "Checking clan members…"
                 : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${extras.data.clans.some((c) => c.status !== "current") ? "confirmed " : ""}not on roster`}
-            {!!extras.data?.clans.some((c) => c.status !== "current") &&
-              ` · ${extras.data.clans.filter((c) => c.status !== "current").length} clans couldn't check`}
+            {failedExtras > 0 &&
+              ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} couldn't be checked`}
             <button
               type="button"
               className="declaration-info"
