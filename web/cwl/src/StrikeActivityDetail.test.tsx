@@ -71,9 +71,35 @@ it("compact summaries never turn missing observations into zero activity", () =>
   ).not.toContain("last 0 wars");
 });
 it("uses the consecutive missed-war chain and preserves known ratios at zero", () => {
-  const row = { observed_wars: 14, attacked_wars: 7, no_attack_wars: 0 } as ActivityAccount;
+  const row = {
+    observed_wars: 14,
+    attacked_wars: 7,
+    no_attack_wars: 0,
+  } as ActivityAccount;
   expect(compactActivitySummary(row)).toBe("7 of 14 wars");
-  expect(compactActivitySummary({ ...row, no_attack_wars: 1 })).toBe("Missed last war");
-  expect(compactActivitySummary({ ...row, no_attack_wars: 14 })).toBe("Missed last 14 wars");
-  expect(compactActivitySummary({ ...row, activity_unavailable: true })).toBe("");
+  expect(compactActivitySummary({ ...row, no_attack_wars: 1 })).toBe(
+    "Missed last war",
+  );
+  expect(compactActivitySummary({ ...row, no_attack_wars: 14 })).toBe(
+    "Missed last 14 wars",
+  );
+  expect(compactActivitySummary({ ...row, activity_unavailable: true })).toBe(
+    "",
+  );
+});
+it("hides activity claims during a stall or a barrier war", () => {
+  expect(
+    compactActivitySummary({
+      tracking_started_at: "2026-10-31",
+      activity_tracking_behind: true,
+    } as ActivityAccount),
+  ).toBe("");
+  expect(
+    compactActivitySummary({
+      observed_wars: 4,
+      attacked_wars: 0,
+      no_attack_wars: 0,
+      war_chain_unavailable: true,
+    } as ActivityAccount),
+  ).toBe("");
 });

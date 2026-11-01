@@ -38,9 +38,8 @@ fs.mkdirSync(output, { recursive: true });
         );
         assert(
           await page
-            .getByRole("button", {
-              name: "Remove No attacks in last 3+ known wars",
-            })
+            .locator(".strike-tab-predicate")
+            .filter({ hasText: "No attacks in last 3+ known wars" })
             .count(),
         );
         if (count === 560 && [360, 1440].includes(width))
@@ -57,6 +56,9 @@ fs.mkdirSync(output, { recursive: true });
           toolbar: document
             .querySelector(".strike-activity-toolbar")
             .getBoundingClientRect().height,
+          firstRowTop: document
+            .querySelector(".strike-activity-entry")
+            .getBoundingClientRect().top,
           row: document
             .querySelector(".strike-activity-entry")
             .getBoundingClientRect().height,
@@ -84,6 +86,12 @@ fs.mkdirSync(output, { recursive: true });
         assert(metrics.scrollWidth <= width, JSON.stringify(metrics));
         assert(metrics.childrenFit, "Cell content overflows row geometry");
         assert(metrics.toolbar <= 60, JSON.stringify(metrics));
+        assert(
+          metrics.firstRowTop <= (width >= 1000 ? 200 : 360),
+          JSON.stringify(metrics),
+        );
+        if (width >= 1000)
+          assert(metrics.rowsInViewport >= 18, JSON.stringify(metrics));
         assert(metrics.row >= (width < 900 ? 80 : 44));
         assert(
           metrics.row <= (width < 900 ? 100 : 75),
@@ -130,7 +138,7 @@ fs.mkdirSync(output, { recursive: true });
               .querySelector(".strike-activity-table tbody")
               .getBoundingClientRect().top +
               scrollY -
-              (innerWidth >= 900 ? 99 : 54),
+              (innerWidth >= 900 ? 89 : 54),
           ),
         );
         await page.waitForTimeout(80);
@@ -145,7 +153,7 @@ fs.mkdirSync(output, { recursive: true });
             (row) => {
               const r = row.getBoundingClientRect();
               return (
-                r.top >= (innerWidth >= 900 ? 98 : 54) &&
+                r.top >= (innerWidth >= 900 ? 88 : 54) &&
                 r.bottom <= innerHeight
               );
             },
@@ -157,7 +165,7 @@ fs.mkdirSync(output, { recursive: true });
         );
         if (width >= 900)
           assert(
-            scrolled.headerTop >= 53 && scrolled.headerTop <= 56,
+            scrolled.headerTop >= 43 && scrolled.headerTop <= 46,
             JSON.stringify(scrolled),
           );
         if (count === 560)

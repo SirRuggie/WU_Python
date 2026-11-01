@@ -100,10 +100,10 @@ it("replacements alias starts with marked filter and preserves URL changes", asy
     root.render(<StrikeActivityRoster markedDefault onChoose={vi.fn()} />),
   );
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(1);
-  const remove = host.querySelector<HTMLButtonElement>(
-    '[aria-label="Remove Marked replacements"]',
-  )!;
-  await act(async () => remove.click());
+  const all = [
+    ...host.querySelectorAll<HTMLButtonElement>(".strike-activity-tabs button"),
+  ].find((b) => b.textContent?.startsWith("All"))!;
+  await act(async () => all.click());
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(2);
   expect(new URLSearchParams(location.search).get("marked")).toBe("0");
 });
@@ -389,11 +389,7 @@ it("defaults to known three-war misses and exposes the threshold chip", async ()
       .click(),
   );
   expect(host.textContent).toContain("1 selected");
-  expect(
-    host.querySelector(
-      '[aria-label="Remove No attacks in last 3+ known wars"]',
-    ),
-  ).not.toBeNull();
+  expect(host.querySelector(".strike-tab-predicate")).not.toBeNull();
 });
 
 it("copies every matching account across pages and reports clipboard refusal", async () => {
@@ -458,4 +454,105 @@ it("table headers change the same sort and direction shown in the toolbar", asyn
   expect(host.querySelector("[data-strike-player]")!.textContent).toContain(
     "Fixture healthy",
   );
+});
+it("keeps Not attacking when applying another filter", async () => {
+  history.replaceState({}, "", "/strikes");
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "Filters")!
+      .click(),
+  );
+  const label = [...document.querySelectorAll("dialog label")].find((l) =>
+    l.textContent?.startsWith("Quiet days"),
+  )!;
+  await act(async () => {
+    const select = label.querySelector("select")!;
+    select.value = "7";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>("dialog button")]
+      .find((b) => b.textContent === "Apply filters")!
+      .click(),
+  );
+  const active = host.querySelector(
+    '.strike-activity-tabs [aria-pressed="true"]',
+  )!;
+  expect(active.textContent).toContain("Not attacking");
+  expect(active.textContent).toContain("1");
+  expect(host.textContent).toContain("Showing 1 of 2");
+});
+it("clears extra filters without changing the selected All tab", async () => {
+  history.replaceState({}, "", "/strikes?activity_view=all&q=Missing");
+  await act(async () =>
+    root.render(<StrikeActivityRoster onChoose={vi.fn()} />),
+  );
+  expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(0);
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "Clear filters")!
+      .click(),
+  );
+  expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(2);
+  expect(
+    host.querySelector('.strike-activity-tabs [aria-pressed="true"]')!
+      .textContent,
+  ).toContain("All");
+});
+it("closes the Copy menu and clears a brief toast when filters change", async () => {
+  vi.useFakeTimers();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+  try {
+    await act(async () =>
+      root.render(
+        <StrikeActivityRoster state="?activity_view=all" onChoose={vi.fn()} />,
+      ),
+    );
+    const menu = host.querySelector<HTMLDetailsElement>(
+      ".strike-activity-actions",
+    )!;
+    menu.open = true;
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>("button")]
+        .find((b) => b.textContent === "Copy list")!
+        .click(),
+    );
+    expect(menu.open).toBe(false);
+    expect(host.querySelector(".strike-copy-toast")!.textContent).toContain(
+      "Copied 2",
+    );
+    await act(async () =>
+      root.render(
+        <StrikeActivityRoster
+          state="?activity_view=all&q=Risk"
+          onChoose={vi.fn()}
+        />,
+      ),
+    );
+    expect(host.querySelector(".strike-copy-toast")).toBeNull();
+    expect(host.textContent).toContain("Showing 1 of 2");
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>("button")]
+        .find((b) => b.textContent === "Copy list")!
+        .click(),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4001);
+    });
+    expect(host.querySelector(".strike-copy-toast")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });

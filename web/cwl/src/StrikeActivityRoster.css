@@ -278,9 +278,13 @@
 .strike-activity-tabs {
   display: flex;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .strike-activity-tabs button {
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 4px 8px;
   font-size: 12px;
 }
@@ -505,5 +509,82 @@
 @media (max-width: 899px) {
   .strike-activity-table tbody tr {
     height: auto;
+  }
+}
+
+.strike-copy-toast {
+  position: fixed;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  max-width: calc(100vw - 32px);
+  padding: 12px 18px;
+  border: 1px solid #a89564;
+  border-radius: 10px;
+  background: #24231f;
+  box-shadow: 0 4px 24px #0008;
+}
+.strike-tab-predicate {
+  font-size: 12px;
+  padding: 6px 8px;
+  color: #bfbbae;
+}
+.shell
+  .strike-activity-roster
+  :is(input, select, textarea, button, summary, a[href]) {
+  scroll-margin-block: 140px 140px;
+}
+
+@media (min-width: 1000px) {
+  .strike-activity-roster {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+  }
+  .strike-activity-roster
+    > :not(.strike-activity-tabs):not(.strike-activity-toolbar):not(
+      .strike-activity-applied
+    ):not(.strike-activity-summary) {
+    grid-column: 1 / -1;
+  }
+  .strike-activity-summary {
+    align-self: center;
+    text-align: right;
+  }
+  .strike-activity-toolbar {
+    top: 0;
+  }
+}
+.strike-activity-roster h2.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (min-width: 1000px) {
+  .strike-activity-roster {
+    row-gap: 0;
+  }
+  .strike-activity-toolbar {
+    padding-block: 0;
+  }
+}
+@media (min-width: 1000px) {
+  .strike-activity-toolbar :is(button, input, select, summary),
+  .strike-activity-tabs button {
+    box-sizing: border-box;
+    height: 44px;
+  }
+  .strike-activity-table th {
+    top: 44px;
+  }
+}
+@media (min-width: 1000px) {
+  .strike-activity-toolbar details {
+    border: 0;
   }
 }

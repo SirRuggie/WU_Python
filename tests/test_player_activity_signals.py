@@ -101,6 +101,7 @@ def test_revoked_wars_are_neutral_and_incomplete_history_cannot_chain():
     result = activity_signals({"recent_wars": [{"war_key": "unread", "occurred_at": NOW + timedelta(seconds=1), "unusable": True}]}, rows, now=NOW)
     assert (
         result["no_attack_wars"] == 0
+        and result["war_chain_unavailable"]
         and result["status"] != "risk"
     )
 

@@ -76,6 +76,10 @@ export default function RosterMenu({
   };
   const activate = (nextValue: string) => {
     if (disabled) return;
+    if (nextValue === value) {
+      setOpen(false);
+      return;
+    }
     if (!commitRosterMenuAction(nextValue, options, onValueChange)) return;
     setOpen(false);
   };

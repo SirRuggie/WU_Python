@@ -702,3 +702,36 @@ it("keeps a saved quarantine visible and identifies its hold without claiming no
     host.querySelector(".strike-review-resolution")?.textContent,
   ).toContain("Missing final");
 });
+it("retains historical strike details when the activity directory has no such account", async () => {
+  const historical = {
+    player_tag: "#P2Y",
+    player_name: "Historical fixture",
+    active_strikes: 0,
+    total_strikes: 3,
+  };
+  transport.mockImplementation(async (path: string) =>
+    path.startsWith("/strikes/accounts")
+      ? {
+          accounts: path.includes("activity=true") ? [] : [historical],
+          clans: [],
+        }
+      : { entries: [], total: 0, clans: [] },
+  );
+  await render(
+    <StrikesWorkspace
+      permissions={["strikes_remove"]}
+      isOwner={false}
+      userId="1"
+      targetTag="#P2Y"
+    />,
+  );
+  await settle();
+  expect(host.querySelector(".strikes-detail-context")?.textContent).toContain(
+    "Historical fixture",
+  );
+  expect(
+    transport.mock.calls.some(([path]) =>
+      String(path).includes("activity=true"),
+    ),
+  ).toBe(true);
+});

@@ -89,3 +89,48 @@ A zero chain retains the known attacked/observed ratio; unknown observations rem
 hidden. Full detail keeps the attacked/observed count. Wars sorting continues to
 use the unchanged prompt 60 chain. Targeted regression tests cover singular,
 plural, zero and unavailable values.
+
+## Prompt 69 rework
+
+Tracking reads have a 10-second deadline and abort signal. Their generation owns
+the pending slot, so a timed-out read cannot block future polls. A successful
+Retry invalidates/aborts older polls and forces a fresh read; old responses cannot
+replace Retry queued. Copy closes its menu and uses a four-second fixed viewport
+toast, cleared when filters change. A pending clipboard response also checks the
+filter identity before displaying feedback.
+
+Extra filters retain the selected tab. Its base predicate is shown as static
+text, not a removal button that silently changes the tab. Clear removes extra
+filters on that tab; an empty state identifies the selected tab. Tab counts
+respect the active extra filters and predict the corresponding tab switch; the
+active tab count matches Showing N. Old marked=0 links map to All. Clan option
+counts include left accounts consistently. Tracking stalls cannot claim No
+activity yet, and a latest unusable war produces an unavailable chain instead of
+a misleading zero ratio/sort value. Valid chain rules are unchanged.
+
+Direct links and post-action refreshes request activity. Historical accounts
+outside the family retain a ledger fallback after the activity lookup, with
+absent activity honestly unavailable. The shared Hosting clan menu closes without
+calling its change handler for the current choice. Actual Bonus and Participation
+component regressions cover this; Bonus retains its manual slot draft and does
+not ask to discard it.
+
+The header combines routine navigation on desktop; occasional Add strike / Find
+war / help are within Activity actions, at most two taps. Tabs use one horizontally
+scrolling line on phones. The repeated visual Family accounts heading is now
+screen-reader-only. Focus scroll margins allow for the real shell plus sticky
+controls. Final 560-account fixture: first row about280px on phones, about188px
+on desktop; 90px phone /44.5px desktop rows, five/eighteen complete initial rows,
+seven/twenty after scrolling. All16 width/population cases have no page overflow
+or cell overlap and retain 44px controls.
+
+Validation: 1279 frontend tests/233 files, tsc/build, 402 network-isolated relevant
+backend cases/5 skips, four behavioral mutants killed. All11 layout stages passed,
+including a real App-shell browser Back/forward/direct-link check at360/1440.
+The integrated command first refused occupied8981 without contacting it; the next
+run passed its first three stages, then an obsolete replacement test tried to
+remove the now-fixed tab predicate. That test now explicitly selects All, passes,
+and the remaining seven stages passed against unchanged application source.
+Logs and screenshots: .local/p69-final-evidence. No production activation, live
+Discord test or delivery proof is claimed. Eventual release remains backend plus
+frontend only; the bot can retain its independently deployed revision.

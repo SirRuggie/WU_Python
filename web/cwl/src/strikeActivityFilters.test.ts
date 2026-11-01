@@ -201,7 +201,9 @@ it("view shortcuts expose their predicates and clear incompatible tab state", ()
   f = activityViewPreset(f, "not_attacking");
   expect(f.quietMin).toBe(0);
   expect(f.noAttackMin).toBe(3);
-  expect(parseActivityFilters("?view=not_attacking&wars=0").view).toBe("all");
+  expect(parseActivityFilters("?view=not_attacking&wars=0").view).toBe(
+    "not_attacking",
+  );
 });
 it("replacement eligibility and include-low rules stay unchanged", () => {
   const rows = [
@@ -285,4 +287,15 @@ it("unobserved or contradictory raid samples never satisfy a missed-weekend filt
     ),
   ).toEqual([]);
   expect(visibleActivityAccounts([row()], filters)).toHaveLength(1);
+});
+it("keeps the selected tab while clearing additional filters and restores legacy marked=0", () => {
+  const f = parseActivityFilters(
+    "?activity_view=not_attacking&q=Someone&clans=%23PYY",
+  );
+  const clear = clearActivityFilters(f);
+  expect(clear.view).toBe("not_attacking");
+  expect(clear.noAttackMin).toBe(3);
+  expect(clear.query).toBe("");
+  expect(clear.clans).toEqual([]);
+  expect(parseActivityFilters("?marked=0").view).toBe("all");
 });

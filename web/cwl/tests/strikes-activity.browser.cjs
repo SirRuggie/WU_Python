@@ -128,12 +128,8 @@ fs.mkdirSync(output, { recursive: true });
         false,
       );
       await snap("replacements");
-      await page
-        .getByRole("button", {
-          name: "Remove Marked replacements",
-          exact: true,
-        })
-        .click();
+      // A tab's defining predicate is fixed; switching All removes it explicitly.
+      await page.getByRole("button", { name: /^All / }).click();
       await page.getByRole("searchbox").fill("CastleFox");
       await snap("all-chips");
       assert(
@@ -163,6 +159,7 @@ fs.mkdirSync(output, { recursive: true });
         ((width === 360 && height === 800) || width === 1440)
       ) {
         await page.goto(`${origin}/strikes-preview.html?count=125&review=1`);
+        await page.getByLabel("Activity actions").click();
         await page
           .getByRole("button", { name: "Find war", exact: true })
           .click();

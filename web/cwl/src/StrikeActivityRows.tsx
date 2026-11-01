@@ -14,6 +14,7 @@ const warRatio = (row: ActivityAccount) => {
   const chain = warsWithoutAttacking(row);
   if (chain !== null && chain >= 1)
     return chain === 1 ? "Missed last war" : `Missed last ${chain} wars`;
+  if (row.war_chain_unavailable) return null;
   const total = knownWars(row),
     attacked = count(row.attacked_wars);
   return total !== null && attacked !== null && attacked <= total

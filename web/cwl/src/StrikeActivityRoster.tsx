@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type RefObject,
+  type ReactNode,
 } from "react";
 import { api, ApiError } from "./api";
 import StrikeBulkMark from "./StrikeBulkMark";
@@ -22,6 +23,7 @@ import {
   activitySorts,
   activitySortLabels,
   parseActivityFilters,
+  clearActivityFilters,
   visibleActivityAccounts,
   activityViews,
   activityViewPreset,
@@ -58,7 +60,9 @@ export default function StrikeActivityRoster({
   onState,
   onChoose,
   onDenied,
+  overviewActions,
 }: {
+  overviewActions?: ReactNode;
   state?: string;
   canManage?: boolean;
   selectionReset?: number;
@@ -98,7 +102,17 @@ export default function StrikeActivityRoster({
     [loadedAt, setLoadedAt] = useState("");
   const [tools, setTools] = useState(false);
   const [filterTrigger, setFilterTrigger] = useState<HTMLElement | null>(null);
+  const copyIdentity = useRef(filterIdentity);
+  copyIdentity.current = filterIdentity;
   const [copied, setCopied] = useState("");
+  useEffect(() => {
+    setCopied("");
+  }, [filterIdentity]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(""), 4000);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const [selecting, setSelecting] = useState(false),
     [selected, setSelected] = useState<string[]>([]),
     [bulkBusy, setBulkBusy] = useState(false);
@@ -182,7 +196,7 @@ export default function StrikeActivityRoster({
     () => visibleActivityAccounts(data.accounts, filters),
     [data.accounts, filters],
   );
-  const counts = activityViewCounts(data.accounts, filters.includeLow),
+  const counts = activityViewCounts(data.accounts, filters.includeLow, filters),
     lastPage = Math.max(0, Math.ceil(visible.length / 25) - 1),
     page = Math.min(filters.page, lastPage);
   const rows = visible.slice(page * 25, (page + 1) * 25);
@@ -309,18 +323,23 @@ export default function StrikeActivityRoster({
         <details className="strike-activity-actions">
           <summary aria-label="Activity actions">⋯</summary>
           <div className="strike-activity-action-menu">
+            {overviewActions}
             <button disabled={loading || bulkBusy} onClick={() => void read()}>
               Refresh activity
             </button>
             <button
               disabled={!visible.length}
-              onClick={async () => {
+              onClick={async (event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                const current = filterIdentity;
                 try {
                   await navigator.clipboard.writeText(
                     copyActivityList(visible),
                   );
+                  if (copyIdentity.current !== current) return;
                   setCopied(`Copied ${visible.length} accounts`);
                 } catch {
+                  if (copyIdentity.current !== current) return;
                   setCopied(
                     "Copy failed. Your browser did not allow clipboard access.",
                   );
@@ -359,15 +378,34 @@ export default function StrikeActivityRoster({
         />
       )}
       <div className="strike-activity-applied">
-        {appliedActivityFilters(filters, data.clans).map((filter) => (
-          <button
-            key={filter.key}
-            aria-label={`Remove ${filter.label}`}
-            onClick={() => change(filter.clear)}
-          >
-            {filter.label} ×
-          </button>
-        ))}
+        {appliedActivityFilters(filters, data.clans).map((filter) => {
+          const next = normalizeActivityView({ ...filters, ...filter.clear });
+          if (
+            Object.keys(filter.clear).every(
+              (key) =>
+                next[key as keyof ActivityFilters] ===
+                filters[key as keyof ActivityFilters],
+            )
+          )
+            return (
+              <span
+                key={filter.key}
+                className="strike-tab-predicate"
+                title="This predicate defines the selected tab. Choose All to include other accounts."
+              >
+                {filter.label}
+              </span>
+            );
+          return (
+            <button
+              key={filter.key}
+              aria-label={`Remove ${filter.label}`}
+              onClick={() => change(filter.clear)}
+            >
+              {filter.label} ×
+            </button>
+          );
+        })}
       </div>
       <p
         className="strike-activity-summary"
@@ -378,8 +416,13 @@ export default function StrikeActivityRoster({
           ? "Activity unavailable"
           : loading && !data.accounts.length
             ? "Loading accounts…"
-            : copied) || `Showing ${visible.length} of ${data.accounts.length}`}
+            : "") || `Showing ${visible.length} of ${data.accounts.length}`}
       </p>
+      {copied && (
+        <div className="strike-copy-toast" role="status">
+          {copied}
+        </div>
+      )}
       {error && (
         <p className="notice error" role="alert">
           {error}
@@ -398,7 +441,7 @@ export default function StrikeActivityRoster({
       {data.identity_warning && (
         <p className="notice error">{data.identity_warning}</p>
       )}
-      <h2 ref={headingRef} tabIndex={-1}>
+      <h2 className="sr-only" ref={headingRef} tabIndex={-1}>
         Family accounts <small>({visible.length})</small>
       </h2>
       {loading && !data.accounts.length ? (
@@ -407,10 +450,10 @@ export default function StrikeActivityRoster({
         <div className="card empty">
           <p>
             {data.accounts.length
-              ? "No accounts match these filters."
+              ? `No accounts match these filters in the ${filters.view.replaceAll("_", " ")} tab.`
               : "No family accounts have been observed yet."}
           </p>
-          <button onClick={() => change(parseActivityFilters())}>
+          <button onClick={() => change(clearActivityFilters(filters))}>
             Clear filters
           </button>
         </div>

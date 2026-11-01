@@ -97,7 +97,12 @@ export function knownWars(row: ActivityAccount) {
 export function warsWithoutAttacking(row: ActivityAccount) {
   const total = knownWars(row),
     missed = count(row.no_attack_wars);
-  return total !== null && missed !== null && missed <= total ? missed : null;
+  return !row.war_chain_unavailable &&
+    total !== null &&
+    missed !== null &&
+    missed <= total
+    ? missed
+    : null;
 }
 export function quietDays(row: ActivityAccount) {
   return row.activity_unavailable ||
@@ -123,7 +128,10 @@ export function knownRaidMisses(row: ActivityAccount) {
 }
 export function hasNoActivity(row: ActivityAccount) {
   return (
-    !row.activity_unavailable && !row.last_seen_at && !!row.tracking_started_at
+    !row.activity_unavailable &&
+    !row.activity_tracking_behind &&
+    !row.last_seen_at &&
+    !!row.tracking_started_at
   );
 }
 const tags = (value: string | null) => [
@@ -150,14 +158,16 @@ const range = (value: string | null) =>
     ? Number(value)
     : null;
 export function normalizeActivityView(value: ActivityFilters): ActivityFilters {
-  let view = value.view;
-  if (
-    (view === "not_attacking" && value.noAttackMin < 3) ||
-    (view === "inactive" && value.quietMin < 14) ||
-    (view === "replacements" && !value.marked)
-  )
-    view = "all";
-  return { ...value, view };
+  return {
+    ...value,
+    noAttackMin:
+      value.view === "not_attacking" && value.noAttackMin < 3
+        ? 3
+        : value.noAttackMin,
+    quietMin:
+      value.view === "inactive" && value.quietMin < 14 ? 14 : value.quietMin,
+    marked: value.view === "replacements" || value.marked,
+  };
 }
 export function parseActivityFilters(
   search = "",
@@ -167,9 +177,11 @@ export function parseActivityFilters(
   const requested = p.get("activity_view") || p.get("view");
   const view: ActivityView = activityViews.includes(requested as ActivityView)
     ? (requested as ActivityView)
-    : markedDefault || p.get("marked") === "1"
-      ? "replacements"
-      : "not_attacking";
+    : p.get("marked") === "0"
+      ? "all"
+      : markedDefault || p.get("marked") === "1"
+        ? "replacements"
+        : "not_attacking";
   const sort = p.get("sort");
   const defaultSort: ActivitySort =
     view === "not_attacking"
@@ -294,7 +306,7 @@ export function activityViewPreset(
 }
 export function clearActivityFilters(f: ActivityFilters): ActivityFilters {
   return {
-    ...parseActivityFilters("?view=all"),
+    ...activityViewPreset(parseActivityFilters("?view=all"), f.view),
     sort: f.sort,
     direction: f.direction,
   };
@@ -413,10 +425,17 @@ export function visibleActivityAccounts(
 export function activityViewCounts(
   rows: ActivityAccount[],
   includeLow = false,
+  filters?: ActivityFilters,
 ) {
   return Object.fromEntries(
     activityViews.map((view) => {
-      const f = activityViewPreset(parseActivityFilters("?view=all"), view);
+      const f =
+        filters?.view === view
+          ? { ...filters }
+          : activityViewPreset(
+              filters || parseActivityFilters("?view=all"),
+              view,
+            );
       f.includeLow = includeLow;
       return [view, visibleActivityAccounts(rows, f).length];
     }),

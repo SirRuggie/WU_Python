@@ -5,6 +5,7 @@ import type { ActivityAccount } from "./strikeActivityView";
 import {
   visibleActivityAccounts,
   clearActivityFilters,
+  normalizeActivityView,
   type ActivityFilters,
 } from "./strikeActivityFilters";
 
@@ -27,7 +28,9 @@ export default function StrikeActivityFiltersPanel({
   const [draft, setDraft] = useState(filters);
   const [clanSearch, setClanSearch] = useState("");
   const patch = (next: Partial<ActivityFilters>) =>
-    setDraft((current) => ({ ...current, ...next, page: 0, view: "all" }));
+    setDraft((current) =>
+      normalizeActivityView({ ...current, ...next, page: 0 }),
+    );
   const matching = useMemo(
     () => visibleActivityAccounts(accounts, draft).length,
     [accounts, draft],
@@ -114,8 +117,11 @@ export default function StrikeActivityFiltersPanel({
             .map((clan) => ({
               value: clan.tag,
               label: clan.name,
-              count: accounts.filter((row) => row.current_clan_tag === clan.tag)
-                .length,
+              count: accounts.filter(
+                (row) =>
+                  (row.left_clan ? row.last_clan_tag : row.current_clan_tag) ===
+                  clan.tag,
+              ).length,
             }))}
         />
         {numberChoice(

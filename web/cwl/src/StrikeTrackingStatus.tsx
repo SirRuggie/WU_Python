@@ -32,16 +32,32 @@ export default function StrikeTrackingStatus({
   const [busyClan, setBusyClan] = useState("");
   const request = useRef(0);
   const mounted = useRef(true);
-  const pending = useRef(false);
+  const pending = useRef<AbortController | null>(null);
   const lastRead = useRef<number | null>(null);
 
-  const load = async () => {
-    if (pending.current) return;
-    pending.current = true;
+  const load = async (force = false) => {
+    if (pending.current && !force) return;
+    const previous = pending.current;
+    const controller = new AbortController();
+    pending.current = controller;
+    previous?.abort();
     lastRead.current = Date.now();
     const current = ++request.current;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const data = await api<TrackingResponse>("/strikes/tracking");
+      const data = await Promise.race([
+        api<TrackingResponse>("/strikes/tracking", "GET", undefined, {
+          signal: controller.signal,
+        }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(
+              new Error("Tracking check timed out. Retry to check again."),
+            );
+          }, 10_000);
+        }),
+      ]);
       if (mounted.current && current === request.current) {
         setClans(data.clans || []);
         setError("");
@@ -53,7 +69,8 @@ export default function StrikeTrackingStatus({
         setError(message(cause));
       }
     } finally {
-      pending.current = false;
+      clearTimeout(timer);
+      if (current === request.current) pending.current = null;
       if (mounted.current && current === request.current) setLoading(false);
     }
   };
@@ -92,7 +109,7 @@ export default function StrikeTrackingStatus({
           item.clan_tag === clanTag ? { ...item, retry_pending: true } : item,
         ),
       );
-      await load();
+      await load(true);
     } catch (cause) {
       if (mounted.current) {
         if (cause instanceof ApiError && [401, 403].includes(cause.status))
@@ -130,8 +147,8 @@ export default function StrikeTrackingStatus({
         {error && (
           <div className="notice error" role="alert">
             {error}
-            <button type="button" onClick={() => void load()}>
-              Check again
+            <button type="button" onClick={() => void load(true)}>
+              Retry
             </button>
           </div>
         )}

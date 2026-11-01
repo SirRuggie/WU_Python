@@ -137,5 +137,6 @@ def activity_signals(
         "observed_raid_weekends": len(known_raids),
         "attacked_raid_weekends": sum(row["attacked"] is True for row in known_raids),
         "no_attack_wars": consecutive,
+        "war_chain_unavailable": bool(wars and wars[0].get("unusable")),
         "skipped_raid_weekends": raid_skips,
     }

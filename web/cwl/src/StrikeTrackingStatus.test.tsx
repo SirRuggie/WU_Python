@@ -154,7 +154,7 @@ it("bounds focus bursts, hidden polling and overlapping tracking reads", async (
     await act(async () => {
       await vi.advanceTimersByTimeAsync(90_000);
     });
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(5);
     await act(async () => {
       finish?.({ clans: statusRows });
     });
@@ -165,7 +165,7 @@ it("bounds focus bursts, hidden polling and overlapping tracking reads", async (
     await act(async () => {
       await vi.advanceTimersByTimeAsync(90_000);
     });
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(5);
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       value: "visible",
@@ -173,11 +173,11 @@ it("bounds focus bursts, hidden polling and overlapping tracking reads", async (
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    expect(transport).toHaveBeenCalledTimes(3);
+    expect(transport).toHaveBeenCalledTimes(6);
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
     });
-    expect(transport).toHaveBeenCalledTimes(3);
+    expect(transport).toHaveBeenCalledTimes(6);
   } finally {
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -230,6 +230,62 @@ it("does not suppress a scheduled tick that arrives just before thirty seconds",
     expect(transport).toHaveBeenCalledTimes(2);
   } finally {
     spy.mockRestore();
+    vi.useRealTimers();
+  }
+});
+it("times out a hung check and permits an explicit Retry", async () => {
+  vi.useFakeTimers();
+  try {
+    transport.mockImplementationOnce(() => new Promise(() => {}));
+    await render(false);
+    expect(host.textContent).toContain("Checking");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_001);
+    });
+    expect(host.textContent).toContain("timed out");
+    const retry = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(host.textContent).not.toContain("timed out");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("forces a post-retry read and ignores the older poll", async () => {
+  vi.useFakeTimers();
+  try {
+    let old: ((value: unknown) => void) | undefined;
+    await render(true);
+    transport.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          old = resolve;
+        }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    transport
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        clans: statusRows.map((r) => ({
+          ...r,
+          retry_pending: r.clan_tag === "#B",
+        })),
+      });
+    const retry = [
+      ...host.querySelectorAll<HTMLButtonElement>(
+        ".strikes-tracking-clan button",
+      ),
+    ].find((b) => b.textContent === "Retry")!;
+    await act(async () => retry.click());
+    expect(host.textContent).toContain("Retry queued");
+    await act(async () => old?.({ clans: statusRows }));
+    expect(host.textContent).toContain("Retry queued");
+    expect(transport).toHaveBeenCalledTimes(4);
+  } finally {
     vi.useRealTimers();
   }
 });

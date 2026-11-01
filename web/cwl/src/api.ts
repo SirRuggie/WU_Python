@@ -93,12 +93,14 @@ export async function api<T>(
   path: string,
   method = "GET",
   body?: unknown,
+  options?: { signal?: AbortSignal },
 ): Promise<T> {
   assertTourRead(method);
   let response: Response;
   try {
     response = await fetchReadWithRetry(`/api/cwl${path}`, {
       method,
+      signal: options?.signal,
       credentials: "same-origin",
       headers: {
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
@@ -137,9 +139,9 @@ export async function api<T>(
         (data?.issue_reference ? ` Reference: ${data.issue_reference}` : ""),
       response.status,
       response.status === 429 &&
-        typeof data?.retry_after === "number" &&
-        Number.isFinite(data.retry_after) &&
-        data.retry_after >= 0
+      typeof data?.retry_after === "number" &&
+      Number.isFinite(data.retry_after) &&
+      data.retry_after >= 0
         ? data.retry_after
         : undefined,
       data,
@@ -175,7 +177,8 @@ let lastBrowserReport = 0;
 export async function reportBrowserIssue(
   kind: "browser_error" | "unhandled_promise" | "network_error",
 ) {
-  if (isTourReadOnly() || !csrfToken || Date.now() - lastBrowserReport < 60000) return;
+  if (isTourReadOnly() || !csrfToken || Date.now() - lastBrowserReport < 60000)
+    return;
   lastBrowserReport = Date.now();
   try {
     const response = await fetch("/api/cwl/issues/browser", {

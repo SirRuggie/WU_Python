@@ -32,6 +32,7 @@ export type ActivityAccount = {
   missed_attacks: number;
   observed_attacks: number;
   no_attack_wars: number;
+  war_chain_unavailable?: boolean;
   observed_wars?: number | null;
   attacked_wars?: number | null;
   last_attacked_war_end?: string | null;
