@@ -7,12 +7,14 @@ export default function RoleSelect({
   onChange,
   disabled = false,
   label = "Role",
+  onOpen,
 }: {
   roles: RoleChoice[];
   value: string;
   onChange: (id: string) => void;
   disabled?: boolean;
   label?: string;
+  onOpen?: () => void;
 }) {
   const [search, setSearch] = useState("");
   return (
@@ -21,6 +23,7 @@ export default function RoleSelect({
         Find a role
         <input
           type="search"
+          onFocus={onOpen}
           disabled={disabled}
           value={search}
           placeholder="Type part of a role name"
@@ -31,6 +34,7 @@ export default function RoleSelect({
         {label}
         <select
           value={value}
+          onFocus={onOpen}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
         >

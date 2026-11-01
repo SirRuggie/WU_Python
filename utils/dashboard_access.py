@@ -60,6 +60,12 @@ def effective(document, user_id, role_ids=()):
     return result
 
 
+async def dashboard_role_grants(mongo):
+    """Role IDs that confer any dashboard access, including owner-visible grants."""
+    document = await AccessRepository(mongo.bot_config).read()
+    return {grant["id"] for grant in (document or {}).get("grants", []) if grant["kind"] == "role" and grant.get("permissions")}
+
+
 class AccessConflict(Exception):
     pass
 

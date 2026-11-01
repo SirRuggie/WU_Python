@@ -5,7 +5,7 @@ from utils import cwl_pool_roles as service
 from utils.role_permissions import role_is_safe_for_pool
 from extensions.commands.recruit.perms import actor_can_manage_role
 from .server_management import identity
-from .manage_roles import hierarchy
+from .manage_roles import hierarchy, dashboard_grant_roles
 
 
 def require_settings(request):
@@ -22,10 +22,12 @@ def require_settings(request):
 async def choices(request):
     actor = await identity(request)
     roles, guild, bot, person = await hierarchy(request, actor)
+    forbidden = await dashboard_grant_roles(request, actor, include_owner=True)
     return [
         {"id": str(role.id), "name": role.name}
         for role in roles.values()
-        if role_is_safe_for_pool(guild, bot, role)
+        if str(role.id) not in forbidden
+        and role_is_safe_for_pool(guild, bot, role)
         and actor_can_manage_role(person, guild, role)
     ]
 
@@ -36,11 +38,22 @@ async def get(request):
     require_settings(request)
     with _store(request).tx() as db:
         result = service.snapshot(db)
-    if request.query.get("status") == "1":
+    store = _store(request)
+    warning = store.role_recovery_error or store.role_backup_error
+    import time
+
+    if (
+        not warning
+        and time.time() - (store.role_last_contact or store.role_started_at) > 120
+    ):
+        warning = "Role worker is unavailable. Signups are unchanged."
+    if warning and any(row["role_id"] for row in result["pools"]):
+        result["worker_warning"] = warning
+    if request.query.get("choices") != "1":
         return web.json_response(result)
     try:
         options = await choices(request)
-    except web.HTTPServiceUnavailable:
+    except (web.HTTPServiceUnavailable, web.HTTPForbidden, web.HTTPNotFound):
         return web.json_response(
             result
             | {
@@ -94,9 +107,38 @@ async def save(request):
         _fail(409, str(exc))
     except (ValueError, TypeError) as exc:
         _fail(400, str(exc))
+    if all(row["role_id"] is None for row in result["pools"]):
+        _store(request).role_recovery_error = None
     return web.json_response(
         result | ({"roles": options} if options is not None else {})
     )
+
+
+def schedule_progress_backup(request):
+    from .app import _store
+    import asyncio
+
+    store = _store(request)
+    previous = request.app.get("pool_role_backup_task")
+    if (
+        store.durability is not None
+        and store.role_dirty
+        and (previous is None or previous.done())
+    ):
+
+        async def flush():
+            try:
+                await asyncio.to_thread(store.flush_role_progress)
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Role progress backup task unavailable"
+                )
+
+        request.app["pool_role_backup_task"] = asyncio.create_task(
+            flush(), name="pool-role-progress-backup"
+        )
 
 
 async def bridge(request):
@@ -120,8 +162,20 @@ async def bridge(request):
     if action == "claim":
         if set(body) != {"guild_id", "action"}:
             _fail(400, "Invalid claim.")
-        with _store(request).tx() as db:
-            job = service.claim(db)
+        store = _store(request)
+        import time
+
+        store.role_last_contact = time.time()
+        with store.role_tx() as db:
+            if (
+                store.role_recovery_error
+                and not db.execute(
+                    "SELECT 1 FROM cwl_pool_role_settings WHERE role_id IS NOT NULL"
+                ).fetchone()
+            ):
+                store.role_recovery_error = None
+            job = None if store.role_recovery_error else service.claim(db)
+        schedule_progress_backup(request)
         return web.json_response({"job": job})
     if action not in {"validate", "finish"}:
         _fail(400, "Invalid role action.")
@@ -150,7 +204,7 @@ async def bridge(request):
     ):
         _fail(400, "Invalid role result.")
     try:
-        with _store(request).tx() as db:
+        with _store(request).role_tx() as db:
             result = (
                 service.validate(
                     db, body["id"], body["lease_token"], body["generation"]
@@ -162,6 +216,18 @@ async def bridge(request):
             )
     except (ValueError, TypeError) as exc:
         _fail(400, str(exc))
+    if action == "validate" and result.get("valid"):
+        from .server_management import mongo
+        from utils.dashboard_access import dashboard_role_grants
+
+        async with mongo(request) as shared:
+            forbidden = await dashboard_role_grants(shared)
+        with _store(request).role_tx() as db:
+            current = service.owned(
+                db, body["id"], body["lease_token"], body["generation"]
+            )
+        result["role_allowed"] = bool(current and current["role_id"] not in forbidden)
+    schedule_progress_backup(request)
     return web.json_response(result)
 
 

@@ -12,7 +12,7 @@ import aiohttp
 import hikari
 import lightbulb
 
-from utils.cwl_member_client import bridge_config
+from utils.cwl_member_client import bridge_config, MemberClientError
 from utils.cwl_pool_roles import GUILD_ID
 from utils.role_permissions import role_is_safe_for_pool
 from utils.manage_web_worker import queue_lock
@@ -86,6 +86,11 @@ async def process_job(bot, job, *, send=bridge):
             current = await send("validate", **receipt)
             if current.get("valid") is not True:
                 return
+            if current.get("skip") is True:
+                await finish(message="No role change is needed for this intent.")
+                return
+            if current.get("role_allowed") is not True:
+                raise ValueError("Dashboard access roles cannot be automated.")
             await safe_role(bot, job["role_id"])
             if job["kind"] == "scan":
                 page = [
@@ -104,6 +109,11 @@ async def process_job(bot, job, *, send=bridge):
             current = await send("validate", **receipt)
             if not current["valid"]:
                 return
+            if current.get("skip") is True:
+                await finish(message="A newer signup keeps the role.")
+                return
+            if current.get("role_allowed") is not True:
+                raise ValueError("Dashboard access roles cannot be automated.")
             desired = current["desired"]
             if type(desired) is not bool:
                 raise BridgeUnavailable("Role intent unavailable")
@@ -141,9 +151,11 @@ async def process_job(bot, job, *, send=bridge):
             message="Member or role unavailable, or bot permission missing.",
         )
     except BridgeUnavailable:
+        log.info("CWL role receipt unavailable; waiting for lease reconciliation")
         # A receipt may already be durable. Never replay it or a role write here.
         return
     except Exception:
+        log.exception("CWL pool role operation failed")
         await finish(retry=True, message="Discord unavailable. Will check again.")
 
 
@@ -171,14 +183,25 @@ async def poll_once(bot, *, send=bridge):
 
 
 async def run(bot):
+    failures, next_log = 0, 0.0
     while True:
         try:
             await poll_once(bot)
+            failures = 0
         except asyncio.CancelledError:
             raise
+        except MemberClientError:
+            # Intentionally unconfigured bridge is quiet and never calls Discord.
+            log.debug("CWL role bridge is unconfigured")
+        except BridgeUnavailable:
+            failures += 1
+            if failures >= 3 and time.monotonic() >= next_log:
+                log.info("CWL role bridge is unavailable; role updates are delayed")
+                next_log = time.monotonic() + 60
         except Exception:
-            # Blank/unconfigured bridge must add no warning or Discord call.
-            log.debug("CWL role bridge not ready")
+            if time.monotonic() >= next_log:
+                log.exception("Unexpected CWL role bridge failure")
+                next_log = time.monotonic() + 60
         await asyncio.sleep(1)
 
 

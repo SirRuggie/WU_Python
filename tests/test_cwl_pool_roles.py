@@ -22,6 +22,7 @@ def store(tmp_path):
     value = Store(str(tmp_path / "roles.sqlite"))
     with value.tx() as db:
         db.execute("INSERT INTO seasons(id,label) VALUES (1,'Current')")
+        db.execute("UPDATE member_season SET season_id=1 WHERE id=1")
     return value
 
 
@@ -49,19 +50,19 @@ def save(store, pool="main", role=ROLE, now=None):
 
 
 def claim(store, now=None):
-    with store.tx() as db:
+    with store.role_tx() as db:
         db.execute("UPDATE cwl_pool_role_clock SET next_at=0")
         return roles.claim(db, now=now)
 
 
 def send_for(store):
     async def send(action, **body):
-        with store.tx() as db:
+        with store.role_tx() as db:
             if action == "claim":
                 return {"job": roles.claim(db)}
             args = (db, body.pop("id"), body.pop("lease_token"), body.pop("generation"))
             return (
-                roles.validate(*args)
+                roles.validate(*args) | {"role_allowed": True}
                 if action == "validate"
                 else roles.finish(*args, **body)
             )
@@ -618,3 +619,177 @@ def test_every_holder_expiry_includes_unlinked_and_bot_members_once_and_resumes_
         assert bot.rest.remove_role_from_member.await_count == 3
 
     asyncio.run(run())
+
+
+def test_cancel_after_expiry_never_adds_while_another_account_remains(store):
+    save(store)
+    signup(store)
+    signup(store, "Q")
+
+    async def run():
+        bot, members, _, _ = bot_fixture()
+        await worker.process_job(bot, claim(store), send=send_for(store))
+        members[USER].role_ids.clear()  # The monthly cleanup already removed it.
+        with store.tx() as db:
+            db.execute("DELETE FROM signups WHERE tag='P'")
+        await worker.process_job(bot, claim(store), send=send_for(store))
+        assert members[USER].role_ids == []
+        assert bot.rest.add_role_to_member.await_count == 1
+        bot.rest.remove_role_from_member.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_same_role_save_keeps_an_expiry_and_cancel_receipt_in_flight(store):
+    save(store, now=datetime(2026, 12, 1, tzinfo=timezone.utc))
+    signup(store)
+    now = datetime(2026, 12, 16, tzinfo=timezone.utc)
+    scan = claim(store, now)
+    with store.role_tx() as db:
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[USER],
+            cursor=USER,
+        )
+    save(store)
+    with store.tx() as db:
+        assert (
+            db.execute(
+                "SELECT state FROM cwl_pool_role_jobs WHERE kind='scan'"
+            ).fetchone()[0]
+            == "pending"
+        )
+        assert (
+            db.execute(
+                "SELECT state FROM cwl_pool_role_jobs WHERE kind='remove'"
+            ).fetchone()[0]
+            == "pending"
+        )
+    with store.tx() as db:
+        db.execute("DELETE FROM signups WHERE tag='P'")
+    before = claim(store, now)
+    save(store)
+    with store.tx() as db:
+        assert (
+            roles.owned(db, before["id"], before["lease_token"], before["generation"])
+            is not None
+        )
+
+
+def test_fresh_signup_supersedes_a_delayed_expiry_remove_even_after_retry(store):
+    save(store, now=datetime(2026, 12, 1, tzinfo=timezone.utc))
+    now = datetime(2026, 12, 16, tzinfo=timezone.utc)
+    scan = claim(store, now)
+    with store.role_tx() as db:
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[USER],
+            cursor=USER,
+        )
+    scan = claim(store, now)
+    with store.role_tx() as db:
+        roles.finish(
+            db,
+            scan["id"],
+            scan["lease_token"],
+            scan["generation"],
+            page=[],
+            cursor=USER,
+        )
+    removal = claim(store, now)
+    with store.role_tx() as db:
+        roles.finish(
+            db,
+            removal["id"],
+            removal["lease_token"],
+            removal["generation"],
+            retry=True,
+            message="Retry later",
+        )
+    signup(store)
+    with store.tx() as db:
+        assert (
+            db.execute(
+                "SELECT state FROM cwl_pool_role_jobs WHERE id=?", (removal["id"],)
+            ).fetchone()[0]
+            == "superseded"
+        )
+        assert (
+            roles.owned(
+                db, removal["id"], removal["lease_token"], removal["generation"]
+            )
+            is None
+        )
+
+
+def test_only_member_facing_season_counts_and_metadata_edits_do_not_readd(store):
+    save(store)
+    signup(store)
+    with store.tx() as db:
+        db.execute("INSERT INTO seasons(id,label) VALUES (2,'Historical draft')")
+        db.execute(
+            "INSERT INTO signups(season_id,tag,user_id,pool,prefer_crystal_1_or_lower,player_name,town_hall) VALUES(2,'OLD',?,'main',0,'Old',16)",
+            (OTHER,),
+        )
+        assert roles.members(db, "main") == [USER]
+        assert db.execute("SELECT COUNT(*) FROM cwl_pool_role_jobs").fetchone()[0] == 1
+        prior = dict(db.execute("SELECT * FROM cwl_pool_role_jobs").fetchone())
+        db.execute("UPDATE signups SET player_name='New name' WHERE tag='P'")
+        assert dict(db.execute("SELECT * FROM cwl_pool_role_jobs").fetchone()) == prior
+        db.execute("UPDATE member_season SET season_id=2 WHERE id=1")
+        assert roles.members(db, "main") == [OTHER]
+        assert roles.owned(db, prior["id"], "invalid", prior["generation"]) is None
+
+
+@pytest.mark.parametrize("denied_at", [1, 2])
+def test_dashboard_grant_rechecked_before_any_bot_role_write(store, denied_at):
+    signup(store)
+    save(store)
+    job = claim(store)
+    bot, _, _, _ = bot_fixture()
+    original = send_for(store)
+    validations = 0
+
+    async def send(action, **body):
+        nonlocal validations
+        result = await original(action, **body)
+        if action == "validate":
+            validations += 1
+            result["role_allowed"] = validations < denied_at
+        return result
+
+    asyncio.run(worker.process_job(bot, job, send=send))
+    assert validations == denied_at
+    bot.rest.add_role_to_member.assert_not_awaited()
+    bot.rest.remove_role_from_member.assert_not_awaited()
+    assert (
+        store.one("SELECT state FROM cwl_pool_role_jobs WHERE id=?", (job["id"],))[
+            "state"
+        ]
+        == "failed"
+    )
+
+
+def test_positive_but_expired_lease_cannot_validate_or_finish(store):
+    import time
+
+    signup(store)
+    save(store)
+    job = claim(store)
+    with store.role_tx() as db:
+        db.execute(
+            "UPDATE cwl_pool_role_jobs SET lease_until=? WHERE id=?",
+            (time.time() - 1, job["id"]),
+        )
+        assert not roles.validate(db, job["id"], job["lease_token"], job["generation"])[
+            "valid"
+        ]
+        assert not roles.finish(db, job["id"], job["lease_token"], job["generation"])[
+            "accepted"
+        ]

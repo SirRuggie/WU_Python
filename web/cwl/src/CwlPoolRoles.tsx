@@ -18,7 +18,7 @@ type Setting = {
   failure: string | null;
   scanning?: boolean;
 };
-type State = { pools: Setting[]; roles?: RoleChoice[]; roles_error?: string };
+type State = { pools: Setting[]; roles?: RoleChoice[]; roles_error?: string; worker_warning?: string };
 function validState(value: State) {
   return (
     !!value &&
@@ -48,7 +48,8 @@ function validState(value: State) {
           (role) =>
             typeof role.id === "string" && typeof role.name === "string",
         ))) &&
-    (value.roles_error === undefined || typeof value.roles_error === "string")
+    (value.roles_error === undefined || typeof value.roles_error === "string") &&
+    (value.worker_warning === undefined || typeof value.worker_warning === "string")
   );
 }
 const title = (pool: Pool) => (pool === "main" ? "Main" : "Lazy");
@@ -73,6 +74,9 @@ export default function CwlPoolRoles({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const sequence = useRef(0);
+  const choosing = useRef(false);
+  const [choicesLoaded, setChoicesLoaded] = useState(false);
+  const [choicesLoading, setChoicesLoading] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
   const pending = useRef(false);
   const mounted = useRef(true);
@@ -100,13 +104,13 @@ export default function CwlPoolRoles({
       cause instanceof Error ? cause.message : "Could not load CWL roles.",
     );
   }
-  async function read(status = false) {
+  async function read(status = false, choices = false) {
     const generation = ++sequence.current;
     const result = await api<State>(
-      "/pool-roles" + (status ? "?status=1" : ""),
+      "/pool-roles" + (choices ? "?choices=1" : status ? "?status=1" : ""),
     );
     if (!mounted.current || generation !== sequence.current) return undefined;
-    if (!validState(result) || (!status && !Array.isArray(result.roles)))
+    if (!validState(result) || (choices && !Array.isArray(result.roles)))
       throw new Error("Could not load CWL roles.");
     setData((previous) => ({
       ...result,
@@ -115,6 +119,21 @@ export default function CwlPoolRoles({
         result.roles === undefined ? previous?.roles_error : result.roles_error,
     }));
     return result;
+  }
+  async function openChoices() {
+    if (choosing.current || choicesLoaded || !allowed) return;
+    choosing.current = true;
+    setChoicesLoading(true);
+    try {
+      const result = await read(false, true);
+      if (result && !result.roles_error) setChoicesLoaded(true);
+    } catch (cause) {
+      if (mounted.current)
+        setError("Role choices unavailable. Refresh or turn off a saved role.");
+    } finally {
+      choosing.current = false;
+      if (mounted.current) setChoicesLoading(false);
+    }
   }
   async function refresh() {
     setLoading(true);
@@ -154,6 +173,7 @@ export default function CwlPoolRoles({
         stopped ||
         running ||
         pending.current ||
+        choosing.current ||
         document.visibilityState === "hidden"
       )
         return;
@@ -251,10 +271,11 @@ export default function CwlPoolRoles({
       </div>
       <p>
         Optional. Blank means off. Roles are removed from everyone on the 16th
-        at 00:00 UTC.
+        at midnight UTC.
       </p>
       {loading && <p role="status">Loading roles…</p>}
       {error && <p role="alert">{error}</p>}
+      {data?.worker_warning && <p role="status">{data.worker_warning}</p>}
       {data?.roles_error && <p role="status">{data.roles_error}</p>}
       {notice && <p role="status">{notice}</p>}
       {data?.pools.map((row) => {
@@ -270,12 +291,18 @@ export default function CwlPoolRoles({
               roles={data.roles || []}
               value={selected}
               disabled={loading || saving}
+              onOpen={() => void openChoices()}
               onChange={(value) =>
                 setDrafts((old) => ({ ...old, [row.pool]: value }))
               }
             />
             <Button
-              disabled={loading || saving || (!selected && !row.role_id)}
+              disabled={
+                loading ||
+                saving ||
+                choicesLoading ||
+                selected === (row.role_id || "")
+              }
               onClick={(event) => void review(row.pool, event.currentTarget)}
             >
               Save {title(row.pool)} role

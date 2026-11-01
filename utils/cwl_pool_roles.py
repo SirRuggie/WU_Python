@@ -28,7 +28,7 @@ INSERT OR IGNORE INTO cwl_pool_role_settings(pool) VALUES ('main'),('lazy');
 CREATE TABLE IF NOT EXISTS cwl_pool_role_jobs (
  id TEXT PRIMARY KEY, job_key TEXT NOT NULL UNIQUE, pool TEXT NOT NULL,
  role_id TEXT NOT NULL, setting_revision INTEGER NOT NULL,
- kind TEXT NOT NULL, user_id TEXT, cursor TEXT NOT NULL DEFAULT '0',
+ kind TEXT NOT NULL, intent TEXT NOT NULL DEFAULT 'add', season_id INTEGER, cycle_cutoff REAL NOT NULL DEFAULT 0, user_id TEXT, cursor TEXT NOT NULL DEFAULT '0',
  generation INTEGER NOT NULL DEFAULT 1, requested_at REAL NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT 'pending',
  attempts INTEGER NOT NULL DEFAULT 0, next_at REAL NOT NULL DEFAULT 0,
  lease_token TEXT, lease_until REAL, message TEXT,
@@ -53,21 +53,29 @@ class Conflict(ValueError):
     pass
 
 
-def members(db, pool):
+def active_season(db):
+    row = db.execute(
+        "SELECT x.id FROM member_season m JOIN seasons x ON x.id=m.season_id WHERE m.id=1 AND x.status='draft'"
+    ).fetchone()
+    return row[0] if row else None
+
+
+def members(db, pool, season_id=None):
+    season_id = active_season(db) if season_id is None else season_id
     return [
-        r[0]
-        for r in db.execute(
-            "SELECT DISTINCT s.user_id FROM signups s JOIN seasons x ON x.id=s.season_id "
-            "WHERE x.status='draft' AND s.pool=? AND s.user_id<>'' "
-            "AND s.user_id NOT GLOB '*[^0-9]*' ORDER BY s.user_id",
-            (pool,),
+        row[0]
+        for row in db.execute(
+            "SELECT DISTINCT user_id FROM signups WHERE season_id=? AND pool=? ORDER BY user_id",
+            (season_id, pool),
         )
-        if ID.fullmatch(r[0])
+        if ID.fullmatch(row[0])
     ]
 
 
 def member_basis(db, pool):
-    return hashlib.sha256(json.dumps(members(db, pool)).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps([active_season(db), members(db, pool)]).encode()
+    ).hexdigest()
 
 
 def initialize(db):
@@ -87,36 +95,83 @@ def initialize(db):
             "ALTER TABLE cwl_pool_role_clock ADD COLUMN last_prune REAL NOT NULL DEFAULT 0"
         )
 
-    # Every signup source, including staff changes, uses this same atomic outbox.
-    # Blank settings bypass it entirely. No network failure can fail a signup.
-    def enqueue(uid, pool):
-        return f"""
+    columns = {r[1] for r in db.execute("PRAGMA table_info(cwl_pool_role_jobs)")}
+    for name, declaration in (
+        ("intent", "TEXT NOT NULL DEFAULT 'add'"),
+        ("season_id", "INTEGER"),
+        ("cycle_cutoff", "REAL NOT NULL DEFAULT 0"),
+    ):
+        if name not in columns:
+            db.execute(
+                f"ALTER TABLE cwl_pool_role_jobs ADD COLUMN {name} {declaration}"
+            )
+    clock_columns = {r[1] for r in db.execute("PRAGMA table_info(cwl_pool_role_clock)")}
+    for name, declaration in (
+        ("progress_version", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_backup_version", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_backup_attempt", "REAL NOT NULL DEFAULT 0"),
+    ):
+        if name not in clock_columns:
+            db.execute(
+                f"ALTER TABLE cwl_pool_role_clock ADD COLUMN {name} {declaration}"
+            )
+    # Only the member-facing draft season participates. A job retains its own
+    # season scope; unarchived historical drafts never contribute to its count.
+    stamp = "((julianday('now')-2440587.5)*86400.0)"
+
+    def enqueue(uid, pool, season, intent):
+        supersede = (
+            f"""UPDATE cwl_pool_role_jobs SET state='superseded',lease_token=NULL
+          WHERE kind='remove' AND user_id={uid} AND state IN ('pending','leased')
+          AND role_id IN (SELECT role_id FROM cwl_pool_role_settings WHERE pool={pool})
+          AND {season}=(SELECT season_id FROM member_season WHERE id=1);"""
+            if intent == "add"
+            else ""
+        )
+        return supersede + f"""
         INSERT INTO cwl_pool_role_jobs
-          (id,job_key,pool,role_id,setting_revision,kind,user_id,requested_at)
+          (id,job_key,pool,role_id,setting_revision,kind,intent,season_id,user_id,requested_at)
         SELECT lower(hex(randomblob(16))),
-          'sync:'||r.pool||':'||{uid}||':'||r.revision,
-          r.pool,r.role_id,r.revision,'sync',{uid},unixepoch()
+          'sync:'||r.pool||':'||{season}||':'||{uid}||':'||r.revision,
+          r.pool,r.role_id,r.revision,'sync','{intent}',{season},{uid},{stamp}
         FROM cwl_pool_role_settings r WHERE r.pool={pool}
           AND r.role_id IS NOT NULL AND {uid}<>''
+          AND {season}=(SELECT season_id FROM member_season WHERE id=1)
+          AND EXISTS(SELECT 1 FROM seasons WHERE id={season} AND status='draft')
           AND {uid} NOT GLOB '*[^0-9]*' AND length({uid}) BETWEEN 15 AND 22
           AND substr({uid},1,1)<>'0'
         ON CONFLICT(job_key) DO UPDATE SET generation=generation+1,
-          state='pending',attempts=0,next_at=0,lease_token=NULL,lease_until=NULL,requested_at=unixepoch();
+          intent=excluded.intent,season_id=excluded.season_id,
+          state='pending',attempts=0,next_at=0,lease_token=NULL,lease_until=NULL,requested_at={stamp};
         """
 
     for event, name, body in (
-        ("INSERT", "insert", enqueue("NEW.user_id", "NEW.pool")),
-        ("DELETE", "delete", enqueue("OLD.user_id", "OLD.pool")),
+        (
+            "INSERT",
+            "insert",
+            enqueue("NEW.user_id", "NEW.pool", "NEW.season_id", "add"),
+        ),
+        (
+            "DELETE",
+            "delete",
+            enqueue("OLD.user_id", "OLD.pool", "OLD.season_id", "cancel"),
+        ),
         (
             "UPDATE",
             "update",
-            enqueue("OLD.user_id", "OLD.pool") + enqueue("NEW.user_id", "NEW.pool"),
+            enqueue("OLD.user_id", "OLD.pool", "OLD.season_id", "cancel")
+            + enqueue("NEW.user_id", "NEW.pool", "NEW.season_id", "add"),
         ),
     ):
-        db.execute(f"DROP TRIGGER IF EXISTS cwl_pool_role_{name}")
+        for suffix in ("", "_v2"):
+            db.execute(f"DROP TRIGGER IF EXISTS cwl_pool_role_{name}{suffix}")
+        condition = (
+            "WHEN OLD.user_id<>NEW.user_id OR OLD.pool<>NEW.pool OR OLD.season_id<>NEW.season_id"
+            if event == "UPDATE"
+            else ""
+        )
         db.executescript(
-            f"CREATE TRIGGER IF NOT EXISTS cwl_pool_role_{name}_v2 "
-            f"AFTER {event} ON signups BEGIN {body} END;"
+            f"CREATE TRIGGER IF NOT EXISTS cwl_pool_role_{name}_v3 AFTER {event} ON signups {condition} BEGIN {body} END;"
         )
 
 
@@ -176,7 +231,7 @@ def snapshot(db):
         failure = db.execute(
             "SELECT message FROM cwl_pool_role_jobs WHERE "
             + condition
-            + " AND message<>'' AND state IN ('failed','pending') "
+            + " AND message<>'' AND state IN ('failed','pending','leased') "
             "ORDER BY requested_at DESC,created_at DESC LIMIT 1",
             args,
         ).fetchone()
@@ -191,13 +246,13 @@ def snapshot(db):
             failure=failure[0] if failure else None,
         )
         result.append(setting)
-    return {"pools": result}
+    return {"pools": result, "season_id": active_season(db)}
 
 
 def _insert(db, key, setting, kind, uid=None):
     db.execute(
         "INSERT OR IGNORE INTO cwl_pool_role_jobs"
-        "(id,job_key,pool,role_id,setting_revision,kind,user_id,requested_at) VALUES (?,?,?,?,?,?,?,unixepoch())",
+        "(id,job_key,pool,role_id,setting_revision,kind,user_id,requested_at,intent,season_id,cycle_cutoff) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (
             uuid4().hex,
             key,
@@ -206,6 +261,10 @@ def _insert(db, key, setting, kind, uid=None):
             setting.get("revision", setting.get("setting_revision")),
             kind,
             uid,
+            time.time(),
+            setting.get("intent", "add"),
+            setting.get("season_id"),
+            setting.get("cycle_cutoff", 0),
         ),
     )
 
@@ -220,6 +279,8 @@ def save(db, pool, role_id, revision, basis, actor, *, now=None):
     ).fetchone()
     if old["revision"] != revision or member_basis(db, pool) != basis:
         raise Conflict("Signups or settings changed. Review the count again.")
+    if role_id == old["role_id"]:
+        return snapshot(db)  # A same-role Save never discards cleanup/cancel work.
     now = now or datetime.now(timezone.utc)
     next_expiry = (
         expires_at_for(now, section="MAIN" if pool == "main" else "FWA").isoformat()
@@ -238,10 +299,20 @@ def save(db, pool, role_id, revision, basis, actor, *, now=None):
         "WHERE pool=? AND state IN ('pending','leased')",
         (pool,),
     )
-    setting = dict(old) | {"role_id": role_id, "revision": revision + 1}
+    setting = dict(old) | {
+        "role_id": role_id,
+        "revision": revision + 1,
+        "season_id": active_season(db),
+    }
     if role_id:
         for uid in members(db, pool):
-            _insert(db, f"sync:{pool}:{uid}:{revision+1}", setting, "sync", uid)
+            _insert(
+                db,
+                f"sync:{pool}:{active_season(db)}:{uid}:{revision+1}",
+                setting,
+                "sync",
+                uid,
+            )
     audit(
         db,
         pool,
@@ -274,7 +345,7 @@ def _due(db, now):
             "AND state IN ('pending','leased') AND requested_at<?",
             (row["pool"], row["revision"], due.timestamp()),
         )
-        setting = dict(row)
+        setting = dict(row) | {"cycle_cutoff": due.timestamp()}
         _insert(
             db,
             f"expiry:{row['pool']}:{row['revision']}:{due.isoformat()}",
@@ -288,6 +359,8 @@ def _due(db, now):
 
 
 def _valid(db, job):
+    if job["season_id"] is not None and job["season_id"] != active_season(db):
+        return False
     return db.execute(
         "SELECT 1 FROM cwl_pool_role_settings WHERE pool=? AND role_id=? "
         "AND revision=?",
@@ -301,11 +374,29 @@ def desired(db, job):
     # If the operator chooses the same physical role for both pools, retain it
     # while this member is signed up in either configured pool.
     return any(
-        job["user_id"] in members(db, row[0])
+        job["user_id"] in members(db, row[0], job["season_id"])
         for row in db.execute(
             "SELECT pool FROM cwl_pool_role_settings WHERE role_id=?", (job["role_id"],)
         )
     )
+
+
+def skip_change(db, job):
+    if job["kind"] == "sync" and job["intent"] == "cancel":
+        return desired(db, job)  # Retain an existing role, never add on cancel.
+    if job["kind"] == "remove":
+        return bool(
+            db.execute(
+                "SELECT 1 FROM cwl_pool_role_jobs j JOIN cwl_pool_role_settings r ON r.pool=j.pool AND r.role_id=j.role_id AND r.revision=j.setting_revision WHERE j.kind='sync' AND j.intent='add' AND j.user_id=? AND j.role_id=? AND j.season_id=? AND j.requested_at>=? LIMIT 1",
+                (
+                    job["user_id"],
+                    job["role_id"],
+                    active_season(db),
+                    job["cycle_cutoff"],
+                ),
+            ).fetchone()
+        )
+    return False
 
 
 def claim(db, *, now=None):
@@ -331,7 +422,7 @@ def claim(db, *, now=None):
         )
         db.execute("UPDATE cwl_pool_role_clock SET last_prune=? WHERE id=1", (stamp,))
     db.execute(
-        "UPDATE cwl_pool_role_jobs SET state='pending',lease_token=NULL WHERE state='leased' "
+        "UPDATE cwl_pool_role_jobs SET state='pending',lease_token=NULL,message=COALESCE(message,'Role work was not confirmed. Checking current roles.') WHERE state='leased' "
         "AND lease_until<=?",
         (stamp,),
     )
@@ -339,6 +430,10 @@ def claim(db, *, now=None):
         "UPDATE cwl_pool_role_jobs SET state='superseded' WHERE state='pending' AND NOT EXISTS "
         "(SELECT 1 FROM cwl_pool_role_settings r WHERE r.pool=cwl_pool_role_jobs.pool "
         "AND r.role_id=cwl_pool_role_jobs.role_id AND r.revision=cwl_pool_role_jobs.setting_revision)"
+    )
+    db.execute(
+        "UPDATE cwl_pool_role_jobs SET state='superseded',lease_token=NULL WHERE season_id IS NOT NULL AND (season_id<>? OR ? IS NULL) AND state IN ('pending','leased')",
+        (active_season(db), active_season(db)),
     )
     row = db.execute(
         "SELECT * FROM cwl_pool_role_jobs WHERE state='pending' AND next_at<=? "
@@ -364,6 +459,7 @@ def claim(db, *, now=None):
         "lease_token": token,
         "lease_until": stamp + LEASE_SECONDS,
         "desired": desired(db, job) if job["kind"] != "scan" else None,
+        "skip": skip_change(db, job),
     }
 
 
@@ -388,6 +484,7 @@ def validate(db, job_id, token, generation):
     return {
         "valid": bool(job),
         "desired": desired(db, job) if job and job["kind"] != "scan" else None,
+        "skip": skip_change(db, job) if job else False,
     }
 
 
@@ -464,3 +561,221 @@ def finish(
         actor_id="bot",
     )
     return {"accepted": True}
+
+
+# Role progress is locally committed with SQLite FULL synchronous durability.
+# Its separate recovery snapshot never changes the dashboard head/revision.
+PROGRESS_TABLES = (
+    "cwl_pool_role_settings",
+    "cwl_pool_role_jobs",
+    "cwl_pool_role_clock",
+    "cwl_pool_role_audit",
+)
+
+
+def progress_image(db):
+    tables = {}
+    for table in PROGRESS_TABLES:
+        columns = [row[1] for row in db.execute(f"PRAGMA table_info({table})")]
+        if not columns:
+            return None
+        tables[table] = {
+            "columns": columns,
+            "rows": [list(row) for row in db.execute(f"SELECT * FROM {table}")],
+        }
+    clock = dict(
+        zip(
+            tables[PROGRESS_TABLES[2]]["columns"], tables[PROGRESS_TABLES[2]]["rows"][0]
+        )
+    )
+    raw = json.dumps({"format": 1, "tables": tables}, separators=(",", ":")).encode()
+    if len(raw) > 32 * 1024 * 1024:
+        raise ValueError("Role progress recovery image is too large.")
+    import zlib
+
+    payload = zlib.compress(raw)
+    if len(payload) > 12 * 1024 * 1024:
+        raise ValueError("Role progress recovery image exceeds its backup limit.")
+    return {
+        "format": 1,
+        "payload": payload,
+        "raw_bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "version": clock["progress_version"],
+    }
+
+
+def decode_progress(image):
+    import zlib
+
+    if not image or image.get("format") != 1:
+        raise ValueError("Role progress recovery format is unavailable.")
+    unpacker = zlib.decompressobj()
+    raw = unpacker.decompress(image["payload"], 32 * 1024 * 1024 + 1)
+    if (
+        len(raw) > 32 * 1024 * 1024
+        or not unpacker.eof
+        or unpacker.unused_data
+        or len(raw) != image["raw_bytes"]
+        or hashlib.sha256(raw).hexdigest() != image["sha256"]
+    ):
+        raise ValueError("Role progress recovery checksum failed.")
+    value = json.loads(raw)
+    if value.get("format") != 1 or set(value.get("tables", {})) != set(PROGRESS_TABLES):
+        raise ValueError("Role progress recovery tables are invalid.")
+    return value["tables"]
+
+
+def recover_progress(db, image):
+    """Merge only matching intents; the Mongo head owns signups and settings."""
+    tables = decode_progress(image)
+    decoded = {}
+    for table in PROGRESS_TABLES:
+        columns = [row[1] for row in db.execute(f"PRAGMA table_info({table})")]
+        data = tables[table]
+        if data.get("columns") != columns or not isinstance(data.get("rows"), list):
+            raise ValueError("Role progress recovery schema does not match.")
+        if any(
+            not isinstance(row, list) or len(row) != len(columns)
+            for row in data["rows"]
+        ):
+            raise ValueError("Role progress recovery row is invalid.")
+        decoded[table] = [dict(zip(columns, row)) for row in data["rows"]]
+    clocks = decoded[PROGRESS_TABLES[2]]
+    if (
+        len(clocks) != 1
+        or clocks[0]["id"] != 1
+        or clocks[0]["progress_version"] != image["version"]
+    ):
+        raise ValueError("Role progress recovery version is invalid.")
+    current_clock = db.execute(
+        "SELECT * FROM cwl_pool_role_clock WHERE id=1"
+    ).fetchone()
+    if image["version"] < current_clock["progress_version"]:
+        return {"restored": 0, "older": True}
+    settings = {row["pool"]: row for row in decoded[PROGRESS_TABLES[0]]}
+    current = {
+        row["pool"]: dict(row)
+        for row in db.execute("SELECT * FROM cwl_pool_role_settings")
+    }
+    compatible = {
+        pool
+        for pool, row in settings.items()
+        if pool in current
+        and row["role_id"] is not None
+        and (row["role_id"], row["revision"])
+        == (current[pool]["role_id"], current[pool]["revision"])
+    }
+    restored = 0
+    for job in decoded[PROGRESS_TABLES[1]]:
+        if job["pool"] not in compatible or not _valid(db, job):
+            continue
+        if job["state"] not in ("pending", "leased", "done", "failed", "superseded"):
+            raise ValueError("Invalid recovered role state.")
+        existing = db.execute(
+            "SELECT * FROM cwl_pool_role_jobs WHERE id=?", (job["id"],)
+        ).fetchone()
+        if existing:
+            if (
+                existing["generation"] != job["generation"]
+                or existing["job_key"] != job["job_key"]
+                or existing["intent"] != job["intent"]
+            ):
+                continue
+            if existing["state"] in ("done", "failed", "superseded") and job[
+                "state"
+            ] in ("pending", "leased"):
+                continue
+            fields = (
+                "state",
+                "attempts",
+                "next_at",
+                "lease_token",
+                "lease_until",
+                "message",
+                "cursor",
+                "cycle_cutoff",
+            )
+            db.execute(
+                "UPDATE cwl_pool_role_jobs SET "
+                + ",".join(field + "=?" for field in fields)
+                + " WHERE id=?",
+                tuple(job[field] for field in fields) + (job["id"],),
+            )
+        elif (
+            job["kind"] in ("scan", "remove")
+            and job["job_key"].startswith(
+                f"expiry:{job['pool']}:{job['setting_revision']}:"
+            )
+            and job["cycle_cutoff"] > 0
+        ):
+            columns = tables[PROGRESS_TABLES[1]]["columns"]
+            db.execute(
+                "INSERT INTO cwl_pool_role_jobs ("
+                + ",".join(columns)
+                + ") VALUES ("
+                + ",".join("?" for _ in columns)
+                + ")",
+                tuple(job[column] for column in columns),
+            )
+        else:
+            continue  # Never restore a signup intent missing from the authoritative head.
+        restored += 1
+    for pool in compatible:
+        old, new = current[pool]["next_expiry"], settings[pool]["next_expiry"]
+        if new and (
+            not old or datetime.fromisoformat(new) > datetime.fromisoformat(old)
+        ):
+            db.execute(
+                "UPDATE cwl_pool_role_settings SET next_expiry=? WHERE pool=?",
+                (new, pool),
+            )
+    for row in decoded[PROGRESS_TABLES[3]]:
+        if not row["action"].startswith("role_") or row["pool"] not in compatible:
+            continue
+        try:
+            job_id = json.loads(row["details_json"])["job_id"]
+        except (ValueError, KeyError, TypeError):
+            continue
+        if not db.execute(
+            "SELECT 1 FROM cwl_pool_role_jobs WHERE id=? AND pool=? AND role_id=?",
+            (job_id, row["pool"], row["role_id"]),
+        ).fetchone():
+            continue
+        columns = tables[PROGRESS_TABLES[3]]["columns"]
+        db.execute(
+            "INSERT OR IGNORE INTO cwl_pool_role_audit ("
+            + ",".join(columns)
+            + ") VALUES ("
+            + ",".join("?" for _ in columns)
+            + ")",
+            tuple(row[column] for column in columns),
+        )
+    db.execute(
+        "UPDATE cwl_pool_role_clock SET progress_version=MAX(progress_version,?),next_at=MAX(next_at,?),last_prune=MAX(last_prune,?),last_backup_attempt=MAX(last_backup_attempt,?),last_backup_version=MAX(last_backup_version,?) WHERE id=1",
+        tuple(
+            clocks[0][field]
+            for field in (
+                "progress_version",
+                "next_at",
+                "last_prune",
+                "last_backup_attempt",
+                "last_backup_version",
+            )
+        ),
+    )
+    return {"restored": restored, "older": False}
+
+
+def local_progress(path):
+    """Read only the actual local copy preserved by this startup's restore."""
+    import sqlite3
+    from pathlib import Path
+
+    source = Path(path)
+    if not source.is_file():
+        return None
+    with sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True) as db:
+        if db.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+            raise ValueError("Local role progress integrity check failed.")
+        return progress_image(db)

@@ -104,6 +104,7 @@ class MongoDashboardState:
         self.revision = None
         self.poisoned = False
         self.acquired = False
+        self.previous_local_path = None
 
     @classmethod
     def open(cls, uri, *, routes=None):
@@ -153,6 +154,7 @@ class MongoDashboardState:
         temporary = None
         try:
             # Preserve the previous local copy for investigation, even if corrupt.
+            self.previous_local_path = None
             if target.exists() and target.stat().st_size:
                 backup = target.with_name(target.name + '.before-mongo')
                 try:
@@ -161,6 +163,7 @@ class MongoDashboardState:
                 except sqlite3.DatabaseError:
                     shutil.copy2(target, backup)
                 os.chmod(backup, 0o600)
+                self.previous_local_path = backup
             fd, name = tempfile.mkstemp(prefix=target.name + '.', dir=target.parent)
             os.close(fd)
             temporary = Path(name)
@@ -184,9 +187,40 @@ class MongoDashboardState:
                 temporary.unlink(missing_ok=True)
         return document['tables']
 
+    def save_role_progress(self, image):
+        """Independent coalesced role recovery copy; never fences the main head."""
+        self.check()
+        document = {
+            **image,
+            "dashboard_revision": self.revision,
+            "saved_at": utcnow(),
+            "writer": self.owner,
+        }
+        result = self.collection.update_one(
+            {
+                "_id": self.key + ":pool-roles-progress",
+                "$or": [
+                    {"dashboard_revision": {"$lt": self.revision}},
+                    {
+                        "dashboard_revision": self.revision,
+                        "version": {"$lte": image["version"]},
+                    },
+                    {"dashboard_revision": {"$exists": False}},
+                ],
+            },
+            {"$set": document},
+            upsert=True,
+        )
+        return bool(result.matched_count or result.upserted_id)
+
+    def load_role_progress(self):
+        return self.collection.find_one({"_id": self.key + ":pool-roles-progress"})
+
     def check(self):
         if self.poisoned:
-            raise DashboardDurabilityError('Durable storage needs recovery. Restart the dashboard before making more changes.')
+            raise DashboardDurabilityError(
+                "Durable storage needs recovery. Restart the dashboard before making more changes."
+            )
 
     def heartbeat(self):
         self.check()

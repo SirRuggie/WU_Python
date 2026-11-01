@@ -4,6 +4,11 @@ The coordinator supplies snapshots and raw profiles from the same observations.
 No database write or broad exclusion of departure flags is allowed here.
 """
 
+import re
+import json
+from pathlib import Path
+from bson import json_util
+
 from copy import deepcopy
 from datetime import datetime, timezone
 
@@ -26,6 +31,31 @@ def compare_protected(
     Profile maps use (str(guild_id), player_tag) keys. Raw BSON-decoded profiles
     must be captured alongside each metrics snapshot, not reconstructed later.
     """
+    required = {
+        "active",
+        "streaks",
+        "replacement",
+        "member_profiles_count",
+        "member_profiles_digest",
+        "warrior_settings_digest",
+    }
+    for snapshot in (before, after):
+        if (
+            not isinstance(snapshot, dict)
+            or not required <= set(snapshot)
+            or not isinstance(snapshot["active"], list)
+            or not isinstance(snapshot["streaks"], list)
+            or not snapshot["streaks"]
+            or not isinstance(snapshot["replacement"], dict)
+            or type(snapshot["member_profiles_count"]) is not int
+            or snapshot["member_profiles_count"] <= 0
+            or any(
+                not isinstance(snapshot[key], str)
+                or not re.fullmatch(r"[a-f0-9]{64}", snapshot[key])
+                for key in ("member_profiles_digest", "warrior_settings_digest")
+            )
+        ):
+            raise ValueError("Protected snapshot is empty or incomplete.")
     left, right = deepcopy(before), deepcopy(after)
     a, b = left.pop("replacement"), right.pop("replacement")
     if left != right or set(a) != set(b):
@@ -90,4 +120,44 @@ def compare_protected(
                     "transition": "proven_roster_sync_departure",
                 }
             )
+    return evidence
+
+
+def compare_capture_files(directory, before_name, after_name):
+    directory = Path(directory)
+
+    def load(name):
+        metrics = json.loads((directory / (name + ".json")).read_text())
+        proof = json_util.loads((directory / (name + "-profiles.json")).read_text())
+        profiles = proof["profiles"]
+        if not isinstance(profiles, list) or not profiles:
+            raise ValueError("Missing contemporaneous profile evidence")
+        mapping = {(str(row["guild_id"]), row["player_tag"]): row for row in profiles}
+        expected = {(str(row[0]), row[1]) for row in metrics["streaks"]}
+        if len(mapping) != len(profiles) or set(mapping) != expected:
+            raise ValueError("Profile evidence does not match protected snapshot")
+        return metrics, proof, mapping
+
+    before, prior, profiles_before = load(before_name)
+    after, current, profiles_after = load(after_name)
+    evidence = compare_protected(
+        before,
+        after,
+        profiles_before,
+        profiles_after,
+        started=prior["started"],
+        ended=current["ended"],
+    )
+    report = directory / (after_name + "-comparison.json")
+    report.write_text(
+        json.dumps(
+            {
+                "compared_to": before_name,
+                "departure_count": len(evidence),
+                "observed_at": [row["observed_at"] for row in evidence],
+            },
+            indent=2,
+        )
+    )
+    report.chmod(0o600)
     return evidence

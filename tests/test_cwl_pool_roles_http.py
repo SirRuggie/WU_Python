@@ -3,6 +3,8 @@
 import os
 import unittest
 from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace as NS
+from dashboard_access_fakes import AccessCollection
 from tests import test_cwl_web_roster as roster_fixture
 from cwl_web import cwl_pool_roles as http
 from utils import cwl_pool_roles as service
@@ -19,6 +21,7 @@ class PoolRolesHTTP(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         await roster_fixture.RosterTests.asyncSetUp(self)
+        self.app["server_management_mongo"] = NS(bot_config=AccessCollection())
         self.providers.links[USER] = self.providers.links["100"]
         self.member = self.auth(USER)
         options = [
@@ -71,8 +74,44 @@ class PoolRolesHTTP(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await roster_fixture.RosterTests.asyncTearDown(self)
 
+    async def test_blank_status_does_not_fetch_discord_or_role_choices(self):
+        with patch.object(
+            http, "choices", AsyncMock(side_effect=AssertionError("choices fetched"))
+        ):
+            response = await self.call("GET", "/pool-roles", self.owner)
+            self.assertEqual(response.status, 200)
+            result = await response.json()
+        self.assertNotIn("roles", result)
+        self.assertNotIn("roles_error", result)
+        self.discord.assert_not_awaited()
+
+    async def test_dashboard_grant_role_is_not_an_automatic_role_even_for_owner(self):
+        from utils.dashboard_access import DOCUMENT_ID
+
+        collection = self.app["server_management_mongo"].bot_config
+        collection.documents[DOCUMENT_ID] = {
+            "_id": DOCUMENT_ID,
+            "revision": 1,
+            "grants": [{"kind": "role", "id": ROLE, "permissions": ["cwl_settings"]}],
+        }
+        state = await self.state()
+        self.assertNotIn(ROLE, [role["id"] for role in state["roles"]])
+        row = next(row for row in state["pools"] if row["pool"] == "main")
+        response = await self.call(
+            "POST",
+            "/pool-roles",
+            self.owner,
+            json={
+                "pool": "main",
+                "role_id": ROLE,
+                "revision": row["revision"],
+                "member_basis": row["member_basis"],
+            },
+        )
+        self.assertEqual(response.status, 400, await response.text())
+
     async def state(self):
-        response = await self.call("GET", "/pool-roles", self.owner)
+        response = await self.call("GET", "/pool-roles?choices=1", self.owner)
         self.assertEqual(response.status, 200, await response.text())
         return await response.json()
 
@@ -372,7 +411,7 @@ class PoolRolesHTTP(unittest.IsolatedAsyncioTestCase):
         self.discord.side_effect = web.HTTPServiceUnavailable(
             text="Discord unavailable"
         )
-        response = await self.call("GET", "/pool-roles", self.owner)
+        response = await self.call("GET", "/pool-roles?choices=1", self.owner)
         self.assertEqual(response.status, 200)
         state = await response.json()
         self.assertTrue(state["roles_error"])
@@ -437,3 +476,65 @@ class PoolRolesHTTP(unittest.IsolatedAsyncioTestCase):
             (await self.call("GET", "/pool-roles", self.member)).status, 403
         )
         self.discord.assert_not_awaited()
+
+    async def test_delegated_actor_cannot_grant_permissions_they_do_not_have(self):
+        import json
+
+        actor = http.identity.return_value
+        actor["user_id"] = USER
+        actor["member"] = {"user": {"id": USER}, "roles": ["777777777777777777"]}
+        actor["roles"].append(
+            {
+                "id": "777777777777777777",
+                "name": "Staff",
+                "position": 10,
+                "permissions": 0,
+            }
+        )
+        next(role for role in actor["roles"] if role["id"] == ROLE)["permissions"] = (
+            1 << 1
+        )
+        with self.app["store"].tx() as db:
+            db.execute(
+                "INSERT INTO grants(user_id,granted_by,permissions) VALUES (?,?,?)",
+                (USER, OWNER, json.dumps(["cwl_settings"])),
+            )
+        response = await self.call("GET", "/pool-roles?choices=1", self.member)
+        self.assertEqual(response.status, 200)
+        state = await response.json()
+        self.assertNotIn(ROLE, [role["id"] for role in state["roles"]])
+        row = next(row for row in state["pools"] if row["pool"] == "main")
+        response = await self.call(
+            "POST",
+            "/pool-roles",
+            self.member,
+            json={
+                "pool": "main",
+                "role_id": ROLE,
+                "revision": row["revision"],
+                "member_basis": row["member_basis"],
+            },
+        )
+        self.assertEqual(response.status, 400)
+
+    async def test_picker_forbidden_missing_and_unavailable_preserve_blank_settings(
+        self,
+    ):
+        from aiohttp import web
+
+        for failure in (
+            web.HTTPForbidden,
+            web.HTTPNotFound,
+            web.HTTPServiceUnavailable,
+        ):
+            with self.subTest(status=failure.status_code):
+                with patch.object(http, "identity", AsyncMock(side_effect=failure())):
+                    response = await self.call(
+                        "GET", "/pool-roles?choices=1", self.owner
+                    )
+                self.assertEqual(response.status, 200)
+                body = await response.json()
+                self.assertTrue(body["roles_error"])
+                self.assertEqual(body["roles"], [])
+                self.assertTrue(all(row["role_id"] is None for row in body["pools"]))
+                self.assertNotIn("worker_warning", body)

@@ -875,7 +875,7 @@ current signups; changing or clearing a role never removes the previous role.
 
 The shared SQLite owner uses signup triggers in the same durable transaction, so
 dashboard, Discord and staff paths cannot diverge. Discord failures cannot affect
-the committed signup. Membership means signed-up accounts in active draft seasons;
+the committed signup. Membership means signed-up accounts in the selected member-facing draft season;
 cancelling one account preserves the role while another remains. If both pools
 use the same physical role, it remains while either pool has an active signup.
 
@@ -886,11 +886,10 @@ The web process never performs a role write. Both server and bot reject everyone
 managed, administrator and above-bot roles; Seasons rights, CSRF, revisions and
 setting audit apply.
 
-At00:00UTC on the16th, the saved-list expiry calculation schedules a durable
+On the 16th at midnight UTC, the saved-list expiry calculation schedules a durable
 paged scan of every role holder, including people without signups. Removal runs
 once per due cycle and catches up after downtime. Signups and settings remain.
-No automatic startup backfill re-adds old signups after expiry; only signup changes
-or explicit Save do that. Progress and failure stay in one short line per pool.
+No automatic startup backfill re-adds old signups after expiry; only a signup/re-signup or a changed role Save does that. A cancellation never adds a role; an unchanged Save is a no-op. Progress and failure stay in one short line per pool.
 
 This feature requires a bot restart when released after review. No real role is
 configured or changed by the agent. Validation uses isolated fixtures and fake
@@ -915,11 +914,7 @@ accepting administrator roles. No result proves live Discord delivery.
 Release tooling now has a pure, fail-closed protected-state comparator. It accepts
 only an exact roster-sync departure proven by contemporaneous raw profiles and an
 observation timestamp inside the activation window. All other protected metrics,
-replacement membership/priority/listed state and profile fields stay strict. The
-next coordinator must capture matching raw evidence and use this comparator; it
-must never ignore all departure flags or restore over legitimate activity.
-Eleven synthetic cases cover acceptance and rejection; production integration is
-an activation gate, not claimed complete by these tests.
+replacement membership/priority/listed state and profile fields stay strict. The prepared PR140 coordinator captures matching raw profile evidence and invokes the comparator at every protected Mongo gate. Equal empty or incomplete snapshots fail closed; it never ignores departure flags generally or restores over legitimate activity. Nineteen synthetic cases cover the comparator and file-capture gate. The coordinator has not been activated; fresh tagged artifacts, backups, restore/rehearsal evidence and Claude ACCEPT remain required.
 
 Claude smoke 296's first Declaration extras failure had no captured status and
 has not been reproduced. The existing read helper already retries network errors
@@ -945,3 +940,45 @@ No assistive-technology certification or live all-holder expiry is claimed.
 The release must preserve both blank settings and all existing SQLite rows;
 new settings/jobs/clock/audit tables are additive. A bot restart is required,
 with a 210-second drain and no queued Standardize run before activation.
+
+
+### Prompt95 rework in progress
+
+Role progress now uses FULL-synchronous local SQLite commits and an independent
+compressed Mongo recovery document, coalesced to at most one attempted backup per
+minute off the HTTP event loop. Its authorizer permits only role job, clock and
+audit changes, plus the next-expiry cursor; signup intents and role settings
+retain the ordinary majority-protected dashboard transaction. Failure of the
+role-only backup does not poison the dashboard head or block a later signup.
+
+Normal restart merges the actual local copy preserved by that startup's Mongo
+restore, accepting only matching current role configuration, season and intent
+generation. A remote-only recovery with unfinished work pauses automatic roles
+rather than blindly replaying an ambiguous operation. Staff see a persistent
+warning and can turn both settings off, check Discord, then configure again.
+Completed/failed progress never regresses to pending. No notification is retried.
+Role backup failure can lose recent remote progress if the local disk is lost;
+the recovery pause is deliberate, not a claim of lossless cross-host delivery.
+
+Never drop the new role tables while their signup triggers remain. A rollback
+keeps additive tables and all old rows; disable both role settings before an
+older worker is restored. Configuration changes never remove the old role.
+
+Automatic choices reject roles that confer dashboard access, including for an
+owner. Server Save repeats that policy and bot execution requires a fresh
+authenticated policy result before the actual write. Blank/status loads fetch no
+Discord role choices; picker focus loads them lazily and 403/404/unavailable
+choices preserve the section. The existing RoleSelect exposes separate search
+and selection controls, so no new parallel combobox was introduced.
+
+A 91-job protocol fixture records 182 local role transactions, zero role-initiated
+full dashboard publishes, five independent backups during 270 virtual seconds
+and a final backup at 300 seconds. Owned real Mongo protocol time was 0.909s,
+with a final 4,901-byte compressed recovery image. This excludes Discord and
+production network latency. Initial recovery/protocol Mongo tests passed; full
+rework, mutation and layout gates are still pending, so this is not READY.
+
+M12's removed Save supersede UPDATE is redundant with claim-time invalidation
+for changed settings; unchanged Save no longer enters either replacement path.
+Preserving both pending expiry and cancel work is tested directly. No artificial
+mutation-kill claim is made for an equivalent implementation.
