@@ -458,7 +458,7 @@ window.fetch = async (input, init) => {
     url.searchParams.get("activity") === "true"
   ) {
     const options = new URLSearchParams(location.search);
-    const count = [26, 65, 125].includes(Number(options.get("count")))
+    const count = [26, 65, 125, 560].includes(Number(options.get("count")))
       ? Number(options.get("count"))
       : 125;
     const clans = [
@@ -537,7 +537,12 @@ window.fetch = async (input, init) => {
           tracking_started_at: now,
           missed_attacks: index === 0 ? 28 : 0,
           observed_attacks: index === 0 ? 28 : 0,
-          no_attack_wars: index === 0 ? 14 : 0,
+          observed_wars: unknown ? null : 14,
+          attacked_wars: unknown ? null : index === 0 ? 0 : 7,
+          last_attacked_war_end: unknown || index === 0 ? null : now,
+          observed_raid_weekends: unknown ? null : 2,
+          attacked_raid_weekends: unknown ? null : index === 0 ? 0 : 2,
+          no_attack_wars: index === 0 ? 14 : index % 5 === 0 ? 5 : 0,
           skipped_raid_weekends: index === 0 ? 2 : 0,
           discord_name: "Fixture member",
           discord_id: "123456789012345678",

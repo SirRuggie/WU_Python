@@ -157,7 +157,7 @@ def test_consumed_preview_survives_restart_after_discord_success_storage_failure
         try:
             await ui.save(ctx, {"_id": "wizard"}, c, mongo, state, bot)
             assert ctx.respond.await_args.args[0].startswith(
-                "Nickname changed in Discord; profile not saved"
+                "Nickname changed in Discord; profile save not confirmed"
             )
             assert await db.member_profiles.count_documents({}) == 0
             # A fresh wrapper represents a restarted worker reading the durable receipt.

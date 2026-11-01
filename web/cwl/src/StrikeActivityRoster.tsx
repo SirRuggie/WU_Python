@@ -1,3 +1,5 @@
+import StrikeActivityRows from "./StrikeActivityRows";
+import RecruitWeightTool from "./RecruitWeightTool";
 import useActivityIdentityRefresh, {
   mergeIdentityAccounts,
 } from "./useActivityIdentityRefresh";
@@ -8,24 +10,30 @@ import {
   useRef,
   useState,
   type RefObject,
+  type ReactNode,
 } from "react";
 import { api, ApiError } from "./api";
 import StrikeBulkMark from "./StrikeBulkMark";
-import { compactWeight, enteredWeight } from "./replacementView";
 import type { ViewMemory } from "./strikeViewMemory";
+import type { ActivityAccount } from "./strikeActivityView";
+import StrikeActivityFiltersPanel from "./StrikeActivityFiltersPanel";
 import {
-  activityChips,
-  activityCounts,
   activityFilterQuery,
+  activityFilterKeys,
   activitySorts,
-  activityStatusLabels,
+  activitySortLabels,
   parseActivityFilters,
+  clearActivityFilters,
   visibleActivityAccounts,
-  type ActivityAccount,
+  activityViews,
+  activityViewPreset,
+  activityViewCounts,
+  normalizeActivityView,
+  appliedActivityFilters,
+  copyActivityList,
   type ActivityFilters,
   type ActivitySort,
-  type ActivityStatus,
-} from "./strikeActivityView";
+} from "./strikeActivityFilters";
 import "./StrikeActivityRoster.css";
 
 type Response = {
@@ -37,21 +45,6 @@ type Response = {
   history_warning?: string;
   identity_updating?: boolean;
 };
-const sortNames: Record<ActivitySort, string> = {
-  status: "Status",
-  quiet: "Quiet days",
-  strikes: "Strikes",
-  weight: "Weight",
-  th: "Town hall",
-  missed: "Missed attacks",
-  name: "Name",
-  priority: "Priority",
-};
-const toggle = <T,>(values: T[], value: T) =>
-  values.includes(value)
-    ? values.filter((item) => item !== value)
-    : [...values, value];
-
 export default function StrikeActivityRoster({
   state,
   canManage = false,
@@ -67,7 +60,9 @@ export default function StrikeActivityRoster({
   onState,
   onChoose,
   onDenied,
+  overviewActions,
 }: {
+  overviewActions?: ReactNode;
   state?: string;
   canManage?: boolean;
   selectionReset?: number;
@@ -94,7 +89,8 @@ export default function StrikeActivityRoster({
   const filterIdentity = JSON.stringify({
     ...filters,
     page: 0,
-    sort: "status",
+    sort: "wars",
+    direction: "desc",
   });
   useEffect(() => {
     setSelected([]);
@@ -105,6 +101,18 @@ export default function StrikeActivityRoster({
     [error, setError] = useState(""),
     [loadedAt, setLoadedAt] = useState("");
   const [tools, setTools] = useState(false);
+  const [filterTrigger, setFilterTrigger] = useState<HTMLElement | null>(null);
+  const copyIdentity = useRef(filterIdentity);
+  copyIdentity.current = filterIdentity;
+  const [copied, setCopied] = useState("");
+  useEffect(() => {
+    setCopied("");
+  }, [filterIdentity]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(""), 4000);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const [selecting, setSelecting] = useState(false),
     [selected, setSelected] = useState<string[]>([]),
     [bulkBusy, setBulkBusy] = useState(false);
@@ -188,7 +196,7 @@ export default function StrikeActivityRoster({
     () => visibleActivityAccounts(data.accounts, filters),
     [data.accounts, filters],
   );
-  const counts = activityCounts(visible),
+  const counts = activityViewCounts(data.accounts, filters.includeLow, filters),
     lastPage = Math.max(0, Math.ceil(visible.length / 25) - 1),
     page = Math.min(filters.page, lastPage);
   const rows = visible.slice(page * 25, (page + 1) * 25);
@@ -209,35 +217,32 @@ export default function StrikeActivityRoster({
   }, [loading, focusTag, headingRef, memory, rows.length]);
   function change(patch: Partial<ActivityFilters>, push = true) {
     if (bulkBusy) return;
-    if (Object.keys(patch).some((key) => key !== "page" && key !== "sort"))
+    if (
+      Object.keys(patch).some(
+        (key) => key !== "page" && key !== "sort" && key !== "direction",
+      )
+    )
       setSelected([]);
-    const next = {
+    const next = normalizeActivityView({
       ...filters,
       ...patch,
       page: "page" in patch ? patch.page! : 0,
-    };
+    });
     setLocal(next);
     if (onState) onState(activityFilterQuery(next), push);
     else {
       const url = new URL(window.location.href);
-      for (const key of [
-        "action",
-        "q",
-        "clans",
-        "status",
-        "marked",
-        "low",
-        "strikes",
-        "th",
-        "left",
-        "sort",
-        "page",
-      ])
-        url.searchParams.delete(key);
+      for (const key of activityFilterKeys) url.searchParams.delete(key);
       new URLSearchParams(activityFilterQuery(next)).forEach((value, key) =>
         url.searchParams.set(key, value),
       );
-      history.replaceState(history.state, "", url.pathname + url.search);
+      const historyState =
+        history.state && typeof history.state === "object"
+          ? { ...history.state }
+          : {};
+      // Applying a route consumes the panel entry; its cleanup must not pop away the filters.
+      delete historyState.wuActionPanel;
+      history.replaceState(historyState, "", url.pathname + url.search);
     }
   }
   function choose(row: ActivityAccount) {
@@ -250,55 +255,123 @@ export default function StrikeActivityRoster({
   const selectedRows = data.accounts.filter((row) =>
     selected.includes(row.player_tag),
   );
-  const halls = [
-    ...new Set(
-      data.accounts
-        .map((row) => row.town_hall)
-        .filter((value): value is number => !!value),
-    ),
-  ].sort((a, b) => b - a);
+  const clearedFilters = clearActivityFilters(filters);
+  const hasExtraFilters = appliedActivityFilters(filters, data.clans).some(
+    (filter) =>
+      JSON.stringify(normalizeActivityView({ ...filters, ...filter.clear })) !==
+      JSON.stringify(filters),
+  );
   return (
     <section
       className="strike-activity-roster"
       aria-label="Family activity overview"
     >
-      <div className="strike-activity-toolbar">
-        <label>
-          Find account or member
-          <input
-            type="search"
-            value={filters.query}
-            maxLength={80}
-            placeholder="Name, tag or Discord member"
-            onChange={(event) => change({ query: event.target.value }, false)}
-          />
-        </label>
-        <label>
-          Sort
-          <select
-            value={filters.sort}
-            onChange={(event) =>
-              change({ sort: event.target.value as ActivitySort })
-            }
+      <div className="strike-activity-tabs" aria-label="Account views">
+        {activityViews.map((view) => (
+          <button
+            key={view}
+            aria-pressed={filters.view === view}
+            disabled={bulkBusy}
+            onClick={() => change(activityViewPreset(filters, view))}
           >
-            {activitySorts.map((value) => (
-              <option key={value} value={value}>
-                {sortNames[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <details className="strike-activity-actions">
+            {
+              {
+                not_attacking: "Not attacking",
+                inactive: "Inactive",
+                replacements: "Replacements",
+                all: "All",
+              }[view]
+            }{" "}
+            <small>{counts[view]}</small>
+          </button>
+        ))}
+      </div>
+      <div className="strike-activity-toolbar">
+        <input
+          aria-label="Find account or member"
+          type="search"
+          value={filters.query}
+          maxLength={80}
+          placeholder="Name, tag or member"
+          onChange={(event) => change({ query: event.target.value }, false)}
+        />
+        <select
+          aria-label="Sort accounts"
+          value={filters.sort}
+          onChange={(event) =>
+            change({ sort: event.target.value as ActivitySort })
+          }
+        >
+          {activitySorts.map((value) => (
+            <option key={value} value={value}>
+              {activitySortLabels[value]}
+            </option>
+          ))}
+        </select>
+        <button
+          aria-label={
+            filters.direction === "asc"
+              ? "Ascending order; switch to descending"
+              : "Descending order; switch to ascending"
+          }
+          onClick={() =>
+            change({ direction: filters.direction === "asc" ? "desc" : "asc" })
+          }
+        >
+          {filters.direction === "asc" ? "↑" : "↓"}
+        </button>
+        <button
+          disabled={bulkBusy}
+          onClick={(event) => setFilterTrigger(event.currentTarget)}
+        >
+          Filters
+        </button>
+        <details
+          className="strike-activity-actions"
+          onToggle={(event) => {
+            const menu = event.currentTarget.querySelector<HTMLElement>(
+              ".strike-activity-action-menu",
+            );
+            if (!event.currentTarget.open || !menu) return;
+            const anchor = event.currentTarget.getBoundingClientRect();
+            const below = window.innerHeight - anchor.bottom - 8;
+            const above = anchor.top - 8;
+            const flip = below < menu.scrollHeight && above > below;
+            Object.assign(menu.style, {
+              top: flip ? "auto" : "48px",
+              bottom: flip ? "48px" : "auto",
+              maxHeight: `${Math.max(44, flip ? above : below)}px`,
+              overflowY: "auto",
+              boxSizing: "border-box",
+            });
+          }}
+        >
           <summary aria-label="Activity actions">⋯</summary>
           <div className="strike-activity-action-menu">
+            {overviewActions}
+            <button disabled={loading || bulkBusy} onClick={() => void read()}>
+              Refresh activity
+            </button>
             <button
-              disabled={loading || bulkBusy}
-              onClick={(event) => {
+              disabled={!visible.length}
+              onClick={async (event) => {
                 event.currentTarget.closest("details")?.removeAttribute("open");
-                void read();
+                const current = filterIdentity;
+                try {
+                  await navigator.clipboard.writeText(
+                    copyActivityList(visible),
+                  );
+                  if (copyIdentity.current !== current) return;
+                  setCopied(`Copied ${visible.length} accounts`);
+                } catch {
+                  if (copyIdentity.current !== current) return;
+                  setCopied(
+                    "Copy failed. Your browser did not allow clipboard access.",
+                  );
+                }
               }}
             >
-              {loading ? "Refreshing…" : "Refresh activity"}
+              Copy list
             </button>
             {canManage && !selecting && (
               <button
@@ -316,147 +389,65 @@ export default function StrikeActivityRoster({
           </div>
         </details>
       </div>
-      <div className="strike-activity-filters">
-        <details className="strike-activity-clans">
-          <summary>
-            Clans
-            {filters.clans.length
-              ? ` (${filters.clans.length} selected)`
-              : " · all"}
-          </summary>
-          <fieldset>
-            <legend>Show clans</legend>
-            {data.clans.map((clan) => (
-              <label key={clan.tag}>
-                <input
-                  type="checkbox"
-                  checked={filters.clans.includes(clan.tag)}
-                  onChange={() =>
-                    change({ clans: toggle(filters.clans, clan.tag) })
-                  }
-                />
-                {clan.name}
-              </label>
-            ))}
-            <button onClick={() => change({ clans: [] })}>All clans</button>
-          </fieldset>
-        </details>
-
-        <label>
-          <input
-            type="checkbox"
-            aria-label="Marked for replacement"
-            checked={filters.marked}
-            onChange={(event) => change({ marked: event.target.checked })}
-          />
-          <span title="Marked for replacement">Marked</span>
-        </label>
-        <details>
-          <summary>
-            Filters
-            {filters.action !== "all" ||
-            filters.onlyStrikes ||
-            filters.statuses.length ||
-            filters.townHalls.length ||
-            filters.left !== "all"
-              ? " · applied"
-              : ""}
-          </summary>
-          <div className="strike-activity-more">
-            <label>
-              Strike activity
-              <select
-                value={filters.action}
-                onChange={(event) =>
-                  change({
-                    action: event.target.value as ActivityFilters["action"],
-                  })
-                }
+      {filterTrigger && (
+        <StrikeActivityFiltersPanel
+          filters={filters}
+          accounts={data.accounts}
+          clans={data.clans}
+          trigger={filterTrigger}
+          onClose={() => setFilterTrigger(null)}
+          onApply={(next) => {
+            change(next);
+            setFilterTrigger(null);
+          }}
+        />
+      )}
+      <div className="strike-activity-applied">
+        {appliedActivityFilters(filters, data.clans).map((filter) => {
+          const next = normalizeActivityView({ ...filters, ...filter.clear });
+          if (
+            Object.keys(filter.clear).every(
+              (key) =>
+                next[key as keyof ActivityFilters] ===
+                filters[key as keyof ActivityFilters],
+            )
+          )
+            return (
+              <span
+                key={filter.key}
+                className="strike-tab-predicate"
+                title="This predicate defines the selected tab. Choose All to include other accounts."
               >
-                <option value="all">All accounts</option>
-                <option value="over_limit">Over limit</option>
-                <option value="new_this_week">New this week</option>
-              </select>
-            </label>
-            {filters.marked && (
-              <label>
-                <input
-                  type="checkbox"
-                  checked={filters.includeLow}
-                  onChange={(event) =>
-                    change({ includeLow: event.target.checked })
-                  }
-                />
-                Include 1–2 strikes
-              </label>
-            )}
-
-            <fieldset className="strike-activity-status">
-              <legend>Status</legend>
-              {(["risk", "watch", "active"] as ActivityStatus[]).map(
-                (value) => (
-                  <label key={value}>
-                    <input
-                      type="checkbox"
-                      checked={filters.statuses.includes(value)}
-                      onChange={() =>
-                        change({ statuses: toggle(filters.statuses, value) })
-                      }
-                    />
-                    {activityStatusLabels[value]}
-                  </label>
-                ),
-              )}
-            </fieldset>
-            <label>
-              <input
-                type="checkbox"
-                checked={filters.onlyStrikes}
-                onChange={(event) =>
-                  change({ onlyStrikes: event.target.checked })
-                }
-              />
-              Has active strikes
-            </label>
-            <label>
-              Membership
-              <select
-                value={filters.left}
-                onChange={(event) =>
-                  change({
-                    left: event.target.value as ActivityFilters["left"],
-                  })
-                }
-              >
-                <option value="all">Current and left accounts</option>
-                <option value="current">Current members</option>
-                <option value="left">Left clan</option>
-              </select>
-            </label>
-            <fieldset>
-              <legend>Town halls</legend>
-              {halls.map((value) => (
-                <label key={value}>
-                  <input
-                    type="checkbox"
-                    checked={filters.townHalls.includes(value)}
-                    onChange={() =>
-                      change({ townHalls: toggle(filters.townHalls, value) })
-                    }
-                  />
-                  TH{value}
-                </label>
-              ))}
-            </fieldset>
-          </div>
-        </details>
+                {filter.label}
+              </span>
+            );
+          return (
+            <button
+              key={filter.key}
+              aria-label={`Remove ${filter.label}`}
+              onClick={() => change(filter.clear)}
+            >
+              {filter.label} ×
+            </button>
+          );
+        })}
       </div>
-      <p className="strike-activity-summary" role="status">
-        {loading || error
-          ? "— at risk · — watch · — active"
-          : `${counts.risk} at risk · ${counts.watch} watch · ${counts.active} active`}
-        {loadedAt ? ` · Updated ${loadedAt}` : ""}
+      <p
+        className="strike-activity-summary"
+        role="status"
+        title={loadedAt ? `Updated ${loadedAt}` : undefined}
+      >
+        {(error
+          ? "Activity unavailable"
+          : loading && !data.accounts.length
+            ? "Loading accounts…"
+            : "") || `Showing ${visible.length} of ${data.accounts.length}`}
       </p>
+      {copied && (
+        <div className="strike-copy-toast" role="status">
+          {copied}
+        </div>
+      )}
       {error && (
         <p className="notice error" role="alert">
           {error}
@@ -475,7 +466,7 @@ export default function StrikeActivityRoster({
       {data.identity_warning && (
         <p className="notice error">{data.identity_warning}</p>
       )}
-      <h2 ref={headingRef} tabIndex={-1}>
+      <h2 className="sr-only" ref={headingRef} tabIndex={-1}>
         Family accounts <small>({visible.length})</small>
       </h2>
       {loading && !data.accounts.length ? (
@@ -484,12 +475,16 @@ export default function StrikeActivityRoster({
         <div className="card empty">
           <p>
             {data.accounts.length
-              ? "No accounts match these filters."
+              ? hasExtraFilters
+                ? `No accounts match these filters in the ${filters.view.replaceAll("_", " ")} tab.`
+                : `No accounts in the ${filters.view.replaceAll("_", " ")} tab.`
               : "No family accounts have been observed yet."}
           </p>
-          <button onClick={() => change(parseActivityFilters())}>
-            Clear filters
-          </button>
+          {hasExtraFilters && (
+            <button onClick={() => change(clearedFilters)}>
+              Clear filters
+            </button>
+          )}
         </div>
       ) : null}
       {canManage && selecting && (
@@ -543,83 +538,26 @@ export default function StrikeActivityRoster({
           }}
         />
       )}
-      <div className="strike-activity-list">
-        {rows.map((row) => (
-          <div
-            key={row.player_tag}
-            className={`strike-activity-entry${canManage && selecting ? " selecting" : ""}`}
-          >
-            {canManage && selecting && (
-              <label>
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${row.player_name}`}
-                  checked={selected.includes(row.player_tag)}
-                  disabled={
-                    bulkBusy ||
-                    row.left_clan ||
-                    !row.current_clan_tag ||
-                    (!selected.includes(row.player_tag) &&
-                      selected.length >= 50)
-                  }
-                  onChange={(event) =>
-                    setSelected(
-                      event.target.checked
-                        ? [...selected, row.player_tag]
-                        : selected.filter((tag) => tag !== row.player_tag),
-                    )
-                  }
-                />
-              </label>
-            )}
-            <button
-              disabled={bulkBusy}
-              data-strike-player={row.player_tag}
-              className="strike-activity-row"
-              onClick={() => choose(row)}
-            >
-              <span className="strike-activity-main">
-                <span className={`strike-activity-badge ${row.status}`}>
-                  {activityStatusLabels[row.status]}
-                </span>
-                <span className="strike-activity-identity">
-                  <strong>{row.player_name}</strong>
-                  <span>
-                    TH{row.town_hall || "—"} ·{" "}
-                    {row.current_clan_name || row.last_clan_name || "No clan"} ·{" "}
-                    {row.weight
-                      ? compactWeight(row.weight)
-                      : "Weight unavailable"}
-                  </span>
-                </span>
-                <span className="strike-activity-count">
-                  {row.active_strikes > 0 ? "⚠ " : ""}
-                  {row.active_strikes}{" "}
-                  {row.active_strikes === 1 ? "strike" : "strikes"}
-                </span>
-              </span>
-              {row.replacement_note && (
-                <span
-                  className="strike-activity-note"
-                  title={row.replacement_note}
-                >
-                  {row.replacement_note}
-                </span>
-              )}
-              <span className="strike-activity-chips">
-                {activityChips(row).map((chip) => (
-                  <span
-                    className={`strike-activity-chip ${chip.tone}`}
-                    key={chip.label}
-                  >
-                    {chip.label}
-                  </span>
-                ))}
-              </span>
-            </button>
-          </div>
-        ))}
-      </div>
+      <StrikeActivityRows
+        rows={rows}
+        filters={filters}
+        onSort={(sort) =>
+          change({
+            sort,
+            direction:
+              filters.sort === sort
+                ? filters.direction === "asc"
+                  ? "desc"
+                  : "asc"
+                : "desc",
+          })
+        }
+        selecting={canManage && selecting}
+        selected={selected}
+        busy={bulkBusy}
+        onSelected={setSelected}
+        onChoose={choose}
+      />
       {visible.length > 25 && (
         <nav
           className="strike-activity-pages"
@@ -644,106 +582,6 @@ export default function StrikeActivityRoster({
         <summary>Match a recruit’s weight</summary>
         {tools && <RecruitWeightTool rows={data.accounts} onChoose={choose} />}
       </details>
-    </section>
-  );
-}
-function RecruitWeightTool({
-  rows,
-  onChoose,
-}: {
-  rows: ActivityAccount[];
-  onChoose: (row: ActivityAccount) => void;
-}) {
-  const [weight, setWeight] = useState(""),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [matches, setMatches] = useState<
-      {
-        player_tag: string;
-        player_name: string;
-        weight: number;
-        clan_name: string;
-      }[]
-    >([]);
-  const current = useRef(0);
-  useEffect(
-    () => () => {
-      current.current++;
-    },
-    [],
-  );
-  async function find() {
-    const value = Number(weight);
-    if (!Number.isFinite(value) || value <= 0) {
-      setError("Enter a positive recruit weight.");
-      return;
-    }
-    const amount = enteredWeight(weight);
-    const id = ++current.current;
-    setBusy(true);
-    setError("");
-    try {
-      const data = await api<{ candidates: typeof matches }>(
-        `/strikes/replacements?weight=${Math.round(amount)}&limit=3`,
-      );
-      if (!Array.isArray(data.candidates))
-        throw new Error("Weight matches are incomplete. Try again.");
-      if (id === current.current) setMatches(data.candidates);
-    } catch (cause) {
-      if (id === current.current) {
-        setMatches([]);
-        setError(
-          cause instanceof Error ? cause.message : "Weights are unavailable.",
-        );
-      }
-    } finally {
-      if (id === current.current) setBusy(false);
-    }
-  }
-  return (
-    <section className="strike-activity-recruit">
-      <p>
-        Find the three closest eligible replacement weights. Uses all FWA clans
-        and Town Halls; list filters do not apply.
-      </p>
-      <label>
-        Recruit weight
-        <input
-          inputMode="decimal"
-          value={weight}
-          onChange={(event) => {
-            current.current++;
-            setBusy(false);
-            setMatches([]);
-            setError("");
-            setWeight(event.target.value);
-          }}
-          placeholder="149 or 149000"
-        />
-      </label>
-      <button disabled={busy} onClick={() => void find()}>
-        {busy ? "Finding…" : "Find closest weights"}
-      </button>
-      {error && <p role="alert">{error}</p>}
-      <ul>
-        {matches.map((item) => (
-          <li key={item.player_tag}>
-            <button
-              disabled={!rows.some((row) => row.player_tag === item.player_tag)}
-              onClick={() => {
-                const row = rows.find(
-                  (row) => row.player_tag === item.player_tag,
-                );
-                if (row) onChoose(row);
-              }}
-            >
-              {item.player_name} · {item.clan_name} ·{" "}
-              {compactWeight(item.weight)} · Gap{" "}
-              {compactWeight(Math.abs(item.weight - enteredWeight(weight)))}
-            </button>
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }

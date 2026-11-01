@@ -299,3 +299,18 @@ Saved member profiles supply Compare time zones before nickname parsing. Scoped
 background metadata enrichment merges only owner zones/nicknames, preserving
 working placements and drafts. Invalid/unavailable profiles fall back to cached
 nicknames; no sort or navigation action writes a Discord nickname.
+
+## Strikes usability checks (prompt 65)
+
+Account list controls reuse ActionPanel, RosterFilterOptions and the shared
+RosterMenu clan search. Participation and Bonus Hosting clan menus use the same
+searchable menu, retaining disabled and discard behavior. Every filter has an
+applied chip and URL key; activity_view stays distinct from dashboard view.
+Scoped browser checks cover 320, 360, 390 and 1440 widths and 26, 65, 125 and 560
+accounts, keyboard focus, no overflow, minimum 44 px controls and minimum 12 px
+text. Compact rows measured 90 px phone and 44.5 px desktop after visual fixes,
+with a 54 px sticky toolbar; screenshots were inspected at narrow and wide widths.
+The table caption remains accessible without consuming visual space and mobile
+priority labels remain visible while the summary truncates. Full detail holds
+the unabridged evidence and notes. Isolated fake transport never proves live
+Discord or clipboard permissions on another browser.

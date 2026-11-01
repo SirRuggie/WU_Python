@@ -62,19 +62,22 @@ fs.mkdirSync(output, { recursive: true });
           rowsAligned: [
             ...document.querySelectorAll(".strike-activity-row"),
           ].every((row) => {
-            const name = row
-                .querySelector(".strike-activity-identity")
-                .getBoundingClientRect(),
+            const name = row.getBoundingClientRect(),
               strike = row
+                .closest("tr")
                 .querySelector(".strike-activity-count")
                 .getBoundingClientRect();
-            return Math.abs(name.top - strike.top) < 10;
+            return (
+              Math.abs(
+                (name.top + name.bottom) / 2 - (strike.top + strike.bottom) / 2,
+              ) < 10
+            );
           }),
         }));
         assert(measure.scroll <= width, "horizontal overflow");
         if (name === "default" && (width === 360 || width === 1440))
           assert(
-            measure.firstRowY <= (width === 360 ? 420 : 360),
+            measure.firstRowY <= (width === 360 ? 500 : 460),
             `first player at ${measure.firstRowY}`,
           );
         assert.equal(measure.small.length, 0, "44px target");
@@ -92,22 +95,30 @@ fs.mkdirSync(output, { recursive: true });
       }
       await page.goto(`${origin}/strikes-preview.html?count=${count}`);
       await page.locator(".strike-activity-row").first().waitFor();
-      assert.equal(await page.locator(".strike-activity-row").count(), 25);
+      assert.equal(
+        await page.locator(".strike-activity-row").count(),
+        Math.min(25, Math.ceil(count / 5)),
+      );
       await snap("default");
-      const clan = page.locator(".strike-activity-clans");
-      await clan.locator("summary").click();
-      await clan.getByLabel("WU North", { exact: true }).check();
-      await clan.locator("summary").click();
+      await page.getByRole("button", { name: "Filters", exact: true }).click();
+      await page
+        .getByRole("dialog")
+        .getByRole("checkbox", { name: /^WU North/ })
+        .check();
+      await page
+        .getByRole("button", { name: "Apply filters", exact: true })
+        .click();
       await snap("filtered-clan");
       assert(new URL(page.url()).searchParams.get("clans").includes("#PYY"));
       await page.goto(
         `${origin}/strikes-preview.html?count=${count}&page=replacements`,
       );
       await page.locator(".strike-activity-row").first().waitFor();
-      assert(
+      assert.equal(
         await page
-          .getByLabel("Marked for replacement", { exact: true })
-          .isChecked(),
+          .getByRole("button", { name: /^Replacements/ })
+          .getAttribute("aria-pressed"),
+        "true",
       );
       assert.equal(
         await page
@@ -117,38 +128,38 @@ fs.mkdirSync(output, { recursive: true });
         false,
       );
       await snap("replacements");
-      await page
-        .getByLabel("Marked for replacement", { exact: true })
-        .uncheck();
+      // A tab's defining predicate is fixed; switching All removes it explicitly.
+      await page.getByRole("button", { name: /^All / }).click();
       await page.getByRole("searchbox").fill("CastleFox");
       await snap("all-chips");
       assert(
-        (await page.locator(".strike-activity-chip").allTextContents()).some(
-          (text) => text.includes("Quiet for 48 days"),
-        ),
+        (
+          await page.locator(".strike-activity-one-summary").allTextContents()
+        ).some((text) => text.includes("Quiet 48d")),
       );
       await page.getByRole("searchbox").fill("Healthy Birch");
       await snap("healthy");
       assert.deepEqual(
-        await page.locator(".strike-activity-chip").allTextContents(),
-        ["Active today"],
+        await page.locator(".strike-activity-one-summary").allTextContents(),
+        ["Quiet 0d · 7 of 14 wars · 2 of 2 raids"],
       );
       await page.getByRole("searchbox").fill("New tracker Aspen");
       assert(
-        (await page.locator(".strike-activity-chips").innerText()).includes(
-          "Not seen since tracking began",
-        ),
+        (
+          await page.locator(".strike-activity-one-summary").innerText()
+        ).includes("No activity yet"),
       );
       assert(
-        !(await page.locator(".strike-activity-chips").innerText()).includes(
-          "Quiet",
-        ),
+        !(
+          await page.locator(".strike-activity-one-summary").innerText()
+        ).includes("Quiet"),
       );
       if (
         count === 125 &&
         ((width === 360 && height === 800) || width === 1440)
       ) {
         await page.goto(`${origin}/strikes-preview.html?count=125&review=1`);
+        await page.getByLabel("Activity actions").click();
         await page
           .getByRole("button", { name: "Find war", exact: true })
           .click();
@@ -198,6 +209,7 @@ fs.mkdirSync(output, { recursive: true });
       );
       await page.goto(`${origin}/strikes-preview.html?count=26&scope=${scope}`);
       await page.locator(".strike-activity-row").first().waitFor();
+      await page.getByRole("button", { name: /^All 26$/ }).click();
       await page.getByLabel("Activity actions").click();
       if (scope === "add")
         assert.equal(

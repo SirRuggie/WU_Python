@@ -101,5 +101,24 @@ def test_revoked_wars_are_neutral_and_incomplete_history_cannot_chain():
     result = activity_signals({"recent_wars": [{"war_key": "unread", "occurred_at": NOW + timedelta(seconds=1), "unusable": True}]}, rows, now=NOW)
     assert (
         result["no_attack_wars"] == 0
+        and result["war_chain_unavailable"]
         and result["status"] != "risk"
     )
+
+
+def test_compact_summary_counts_only_known_wars_and_recent_known_raids():
+    end=latest_raid_end(NOW)
+    recent=[{'war_key':'miss','occurred_at':NOW-timedelta(days=1),'attacks_used':0,'attacks_available':2},
+            {'war_key':'hit','occurred_at':NOW-timedelta(days=3),'attacks_used':1,'attacks_available':2},
+            {'war_key':'barrier','occurred_at':NOW-timedelta(days=4),'unusable':True}]
+    raids=[{'weekend_id':end.isoformat(),'attacked':False},
+           {'weekend_id':(end-timedelta(days=7)).isoformat(),'attacked':None},
+           {'weekend_id':(end-timedelta(days=14)).isoformat(),'attacked':True}]
+    result=activity_signals({'recent_wars':recent,'raid_weekends':raids},[],now=NOW)
+    assert result['observed_wars']==2 and result['attacked_wars']==1
+    assert result['last_attacked_war_end']==NOW-timedelta(days=3)
+    assert result['observed_raid_weekends']==1 and result['attacked_raid_weekends']==0
+    empty=activity_signals({},[],now=NOW)
+    assert empty['observed_wars']==0 and empty['attacked_wars']==0
+    assert empty['last_attacked_war_end'] is None
+    assert empty['observed_raid_weekends']==0 and empty['attacked_raid_weekends']==0

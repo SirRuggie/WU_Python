@@ -396,3 +396,17 @@ it("round-trips family clan routes without stealing Strikes or Replacements", ()
     "home",
   );
 });
+
+it("preserves the activity tab and every threshold through route and login state", () => {
+  const query =
+    "?activity_view=all&wars=5&quiet=14&raids=2&priority=high&min_weight=100000&max_weight=150000&direction=asc&sort=weight&no_activity=1";
+  const route = dashboardTarget(query, "/strikes");
+  expect(route.view).toBe("strikes");
+  const restored = new URL(dashboardPath(route), "https://fixture");
+  for (const [key, value] of new URLSearchParams(query))
+    expect(restored.searchParams.get(key)).toBe(value);
+  const login = new URL(loginPath(query, false, "/strikes"), "https://fixture");
+  expect(login.searchParams.get("view")).toBe("strikes");
+  for (const [key, value] of new URLSearchParams(query))
+    expect(login.searchParams.get(key)).toBe(value);
+});

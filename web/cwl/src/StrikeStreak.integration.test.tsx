@@ -23,6 +23,7 @@ const click = async (name: string) => {
   );
 };
 beforeEach(() => {
+  history.replaceState({}, "", "/strikes?activity_view=all");
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.useFakeTimers();
   transport.mockReset();

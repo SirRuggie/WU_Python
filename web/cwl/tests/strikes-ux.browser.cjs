@@ -158,6 +158,12 @@ fs.mkdirSync(output, { recursive: true });
     await p.waitForFunction(
       () => document.querySelectorAll(".strike-compact-row").length === 5,
     );
+    if (
+      !(await p
+        .getByRole("button", { name: "Add strike", exact: true })
+        .isVisible())
+    )
+      await p.getByLabel("Activity actions").click();
     await p.getByRole("button", { name: "Add strike", exact: true }).click();
     await p
       .getByRole("heading", { name: "Add a strike", exact: true })
@@ -176,6 +182,12 @@ fs.mkdirSync(output, { recursive: true });
         document.activeElement?.getAttribute("data-strike-player") ===
         "#P22ABC",
     );
+    if (
+      !(await p
+        .getByRole("button", { name: "Add strike", exact: true })
+        .isVisible())
+    )
+      await p.getByLabel("Activity actions").click();
     await p.getByRole("button", { name: "Add strike", exact: true }).click();
     await p
       .getByRole("heading", { name: "Add a strike", exact: true })
