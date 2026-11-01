@@ -30,7 +30,11 @@ The separate prompt 85 frontend commit removes the Declaration ping paragraph, a
 
 The production evidence cannot reconstruct the original import's underlying exception because the old handler did not log it. Fixture timings below use fake Discord transport and a dedicated temporary local MongoDB, not live delivery. No production Import, Standardize, Rename or Send was pressed. No deployment is claimed by this implementation review.
 
-Final validation totals and fixture measurements are recorded with the READY handoff after the integrated gates finish. Earlier failed checks were corrected before READY; their logs remain in the worktree.
+Final integrated validation: 5,669 guarded backend tests passed, 54 skipped, 224 subtests passed; 1,351 frontend tests across 242 files; TypeScript and production build; 138 focused integrated backend checks; and 12 dedicated real Mongo lease/CAS, atomic claim, restart, Stop and import checks. The required war-reminder command passed 213 backend checks (one skip), 35 frontend checks, TypeScript and isolated build. All ten behavioral mutants were caught: saved-profile overwrite, bot inclusion, reused uncertain ID, extra hidden ID, preview before import, preselected Check name, unsaved Declaration channel Ping, missing atomic claim guard, missing old-nickname check and zero pacing.
+
+The 1,447-member isolated browser flow passed at 320, 360, 390 and 1440 pixels, including the unchanged editor, Import/Preview order, all categories, hidden selection, pagination, immediate selected-only run, Stop, lost permission, no overflow, 44px controls and 12px minimum text. Final 360/1440 preview and result screenshots were visually reviewed. Declaration copy has 12 isolated layout states and its own frontend-only commit. These fixture requests use fake transport. Earlier failed checks were corrected before READY; their logs remain in the worktree.
+
+Evidence is retained under `.local/p83-evidence`, `.local/p86-evidence`, `.local/p86-layout-final` and the validation logs in the feature worktree. Review preview port 8938 serves an isolated fixture; entry `index-BMehtGM7.js` SHA256 `6377344747103e52767e005d891cce97a4bf7dc82386875294902bd1b322762b`. Declaration copy preview remains on port 40585. These are review assets, not a production deployment.
 
 | Fixture | Members | Elapsed | First edit |
 |---|---:|---:|---:|
