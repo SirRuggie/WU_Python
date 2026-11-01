@@ -42,12 +42,21 @@ fs.mkdirSync(output, { recursive: true });
         "Preview",
         "Shorten a name",
         "Partial upstream data",
+        "Quick Set-up partially applied",
+        "Town Hall change partially applied",
+        "Role status unavailable",
       ]) {
         await page
           .getByLabel("Example", { exact: true })
           .selectOption({ label: name });
         const region = page.getByRole("region", { name, exact: true });
         await region.waitFor();
+        if(name.includes('partially applied')||name==='Role status unavailable'){
+          const text=await region.innerText();
+          assert(text.includes('Confirmed role changes'));
+          assert(text.includes('Return to Warrior Setup'));
+          assert(!text.includes('Retry'));
+        }
         if (
           ["Australia zones", "United States zones", "All zones"].includes(name)
         ) {
