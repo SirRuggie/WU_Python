@@ -122,3 +122,40 @@ it("capacity summaries include filler occupants without losing their explicit ma
   expect(summary.assignedCount).toBe(16);
   expect(summary.fillerCount).toBe(1);
 });
+
+it("current mark changes and undo never replace published placements, including removed signup tags", async () => {
+  const { mergeRosterMarks } = await import("./roster");
+  const { roster } = fixture();
+  roster.accounts[0].assigned_clan_tag = "#PUBLISHED";
+  const latest = { ...roster, revision: 4, accounts: [] };
+  const changed = mergeRosterMarks(roster, latest, {
+    tag: "#A",
+    roster_filler: false,
+    mark_revision: 2,
+  });
+  expect(changed.accounts[0].assigned_clan_tag).toBe("#PUBLISHED");
+  expect(changed.accounts[0].roster_filler).toBe(false);
+  const restored = mergeRosterMarks(
+    changed,
+    { ...latest, revision: 5 },
+    { tag: "#A", roster_filler: true, mark_revision: 3 },
+  );
+  expect(restored.accounts[0].assigned_clan_tag).toBe("#PUBLISHED");
+  expect(restored.accounts[0].roster_filler).toBe(true);
+  expect(restored.revision).toBe(5);
+});
+
+it("newer individual location evidence wins over an older filler clan observation", () => {
+  const { roster, data, extra } = fixture();
+  extra.checked_at = new Date(now - 60000).toISOString();
+  const records = {
+    "#A": {
+      current_clan_tag: "#NEW",
+      current_clan_name: "New clan",
+      current_clan_checked_at: stamp,
+    },
+  };
+  const group = declarationGroups(data, roster, records, now, [extra])[0];
+  expect(group.late.map((a) => a.tag)).toEqual(["#A"]);
+  expect(group.readiness.arrivedCount).toBe(1);
+});

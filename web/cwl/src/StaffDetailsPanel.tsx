@@ -1,3 +1,4 @@
+import { mergeRosterMarks } from "./roster";
 import {
   useEffect,
   useRef,
@@ -160,13 +161,25 @@ export default function StaffDetailsPanel({
     setUndo({ status: "pending", label: saved.label });
     try {
       const path = `/seasons/${encodeURIComponent(request.seasonId)}/roster`;
-      await api(`${path}/undo`, "POST", {
+      const restored = await api<{
+        tag?: string;
+        roster_filler?: boolean;
+        mark_revision?: number;
+      }>(`${path}/undo`, "POST", {
         revision: snapshot.revision,
         undo_id: saved.id,
       });
       const latest = await api<RosterSnapshot>(path);
       if (id === generation.current) {
-        setSnapshot(latest);
+        setSnapshot((previous) =>
+          request.viewOnly === "declaration" && previous
+            ? mergeRosterMarks(
+                previous,
+                latest,
+                restored.tag ? { ...restored, tag: restored.tag } : undefined,
+              )
+            : latest,
+        );
         setUndo(null);
         receipt.current = null;
         await request.onChanged?.();
@@ -206,6 +219,33 @@ export default function StaffDetailsPanel({
       {request && snapshot && account && (
         <RosterPlayerDialog
           seasonId={request.seasonId}
+          onFillerChanged={async (saved) => {
+            if (!saved) {
+              setSnapshot(null);
+              await request.onChanged?.();
+              return;
+            }
+            const id = generation.current;
+            const latest = await api<RosterSnapshot>(
+              `/seasons/${encodeURIComponent(request.seasonId)}/roster`,
+            );
+            if (id !== generation.current) return;
+            setSnapshot((previous) =>
+              previous
+                ? mergeRosterMarks(previous, latest, {
+                    tag: request.tag,
+                    ...saved,
+                  })
+                : latest,
+            );
+            receipt.current = saved?.undo || null;
+            setUndo(
+              saved?.undo
+                ? { status: "available", label: saved.undo.label }
+                : null,
+            );
+            request.onChanged?.();
+          }}
           account={account}
           archived={archived || request.archived}
           viewOnly={request.viewOnly}
@@ -271,6 +311,10 @@ export default function StaffDetailsPanel({
                     }
                   : latest,
               );
+              if (latest.undo && latest.undo.revision === latest.revision) {
+                receipt.current = latest.undo;
+                setUndo({ status: "available", label: latest.undo.label });
+              }
               request.onChanged?.();
               setError("");
             }

@@ -1,3 +1,7 @@
+import type { RosterUndo } from "./roster";
+export type FillerSaveResult = {
+  roster_filler?: boolean;
+  mark_revision?: number; revision: number; undo?: RosterUndo | null };
 import { useRef, useState } from "react";
 import { api, ApiError } from "./api";
 
@@ -19,7 +23,7 @@ export default function RosterFillerCheckbox({
   markRevision: number;
   revision: number;
   disabled?: boolean;
-  onChanged: () => void | Promise<void>;
+  onChanged: (result?: FillerSaveResult) => void | Promise<void>;
 }) {
   const pending = useRef(false);
   const [accessLost, setAccessLost] = useState(false);
@@ -31,7 +35,7 @@ export default function RosterFillerCheckbox({
     setBusy(true);
     setError("");
     try {
-      await api(
+      const saved = await api<FillerSaveResult>(
         `/seasons/${encodeURIComponent(seasonId)}/roster-filler/${encodeURIComponent(tag)}`,
         "PATCH",
         {
@@ -40,7 +44,7 @@ export default function RosterFillerCheckbox({
           mark_revision: markRevision,
         },
       );
-      await onChanged();
+      await onChanged(saved);
     } catch (cause) {
       if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
         setAccessLost(true);

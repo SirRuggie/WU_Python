@@ -1332,6 +1332,7 @@ export default function RosterWorkspace({
           {editingTag && roster.accounts.some((a) => a.tag === editingTag) && (
             <RosterPlayerDialog
               seasonId={seasonId}
+              onFillerChanged={() => afterWrite("Filler mark saved.")}
               onClanWeights={onClanWeights}
               rosterUi
               onDirty={setPlayerDirty}

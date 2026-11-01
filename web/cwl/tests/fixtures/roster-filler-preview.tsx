@@ -1,3 +1,4 @@
+import RosterUndoToast from "../../src/RosterUndoToast";
 import { DashboardPermissions } from "../../src/DashboardPermissions";
 /** Disconnected sample data. The only write changes this page's in-memory marks. */
 import { useState } from "react";
@@ -59,6 +60,12 @@ const initial: RosterSnapshot = {
   })),
 };
 function Preview() {
+  const [undo, setUndo] = useState<{
+    tag: string;
+    value: boolean;
+    markRevision: number;
+    revision: number;
+  } | null>(null);
   const [roster, setRoster] = useState(initial),
     [filters, setFilters] = useState(DEFAULT_ROSTER_RELEASE_PREFERENCES),
     [editing, setEditing] = useState<string | null>(null),
@@ -72,6 +79,14 @@ function Preview() {
     const url = new URL(String(input), location.origin);
     const method = options?.method || "GET";
     methods.push(method);
+    if (
+      url.origin === location.origin &&
+      method === "GET" &&
+      url.pathname === "/api/cwl/staff-signup-members"
+    )
+      return new Response(JSON.stringify({ options: [] }), {
+        headers: { "Content-Type": "application/json" },
+      });
     if (
       url.origin !== location.origin ||
       method !== "PATCH" ||
@@ -91,6 +106,12 @@ function Preview() {
         JSON.stringify({ error: "Fixture revision changed" }),
         { status: 409 },
       );
+    setUndo({
+      tag,
+      value: !!(old?.roster_filler || prior?.value),
+      markRevision: body.mark_revision + 1,
+      revision: roster.revision + 1,
+    });
     setRoster((r) => ({
       ...r,
       revision: r.revision + 1,
@@ -108,9 +129,21 @@ function Preview() {
       ...m,
       [tag]: { value: body.roster_filler, revision: body.mark_revision + 1 },
     }));
-    return new Response(JSON.stringify({ revision: roster.revision + 1 }), {
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        revision: roster.revision + 1,
+        roster_filler: body.roster_filler,
+        mark_revision: body.mark_revision + 1,
+        undo: {
+          id: roster.revision + 1,
+          revision: roster.revision + 1,
+          label: "Change filler mark",
+        },
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   };
   const sample = [
     {
@@ -147,7 +180,7 @@ function Preview() {
     status: "current",
     checked_at: now,
     extras: sample.filter((a) => !a.roster_filler && a.town_hall > 9),
-    low_th: sample.filter((a) => !a.roster_filler && a.town_hall <= 9),
+    low_th: sample.filter((a) => a.town_hall <= 9),
     fillers: sample.filter((a) => a.roster_filler),
     count: sample.filter((a) => !a.roster_filler && a.town_hall > 9).length,
   };
@@ -156,6 +189,34 @@ function Preview() {
     roster.clans,
     filters,
   ).matches;
+  const undoControl = undo ? (
+    <RosterUndoToast
+      state={{ status: "available", label: "Change filler mark" }}
+      onUndo={() => {
+        if (undo.revision !== roster.revision) return;
+        methods.push("POST");
+        setRoster((r) => ({
+          ...r,
+          revision: r.revision + 1,
+          accounts: r.accounts.map((a) =>
+            a.tag === undo.tag
+              ? {
+                  ...a,
+                  roster_filler: undo.value,
+                  roster_filler_revision: undo.markRevision + 1,
+                }
+              : a,
+          ),
+        }));
+        setExtraMarks((m) => ({
+          ...m,
+          [undo.tag]: { value: undo.value, revision: undo.markRevision + 1 },
+        }));
+        setUndo(null);
+      }}
+      onDismiss={() => setUndo(null)}
+    />
+  ) : undefined;
   return (
     <main
       className="roster-ui roster-workspace"
@@ -210,6 +271,7 @@ function Preview() {
           />
         ))}
       </div>
+      {!editing && undoControl}
       {editing && (
         <RosterPlayerDialog
           seasonId="1"
@@ -217,6 +279,7 @@ function Preview() {
           roster={roster}
           clans={roster.clans}
           busy={false}
+          undo={undoControl}
           onClose={() => setEditing(null)}
           onSave={async () => false}
           onRemove={async () => false}

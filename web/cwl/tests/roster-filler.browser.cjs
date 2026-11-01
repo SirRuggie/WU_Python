@@ -81,7 +81,15 @@ fs.mkdirSync(out, { recursive: true });
         });
         await low.click();
         await page.waitForFunction(() => window.fillerFixture().revision === 3);
-        assert.equal(await page.locator(".declaration-low-th").count(), 0);
+        assert.equal(await page.locator(".declaration-low-th").count(), 1);
+        assert(
+          await page
+            .getByRole("checkbox", {
+              name: "Filler: Low TH sample",
+              exact: true,
+            })
+            .isChecked(),
+        );
         await page.locator(".declaration-extras summary").click();
         const dm = page
           .locator(".declaration-extras")
@@ -105,7 +113,18 @@ fs.mkdirSync(out, { recursive: true });
         await extra.click();
         await page.waitForFunction(() => window.fillerFixture().revision === 4);
         assert.equal(await page.locator(".declaration-extras").count(), 0);
-        await page.locator(".declaration-fillers summary").click();
+        await page.getByRole("button", { name: "Undo", exact: true }).click();
+        await page.waitForFunction(() => window.fillerFixture().revision === 5);
+        assert.equal(await page.locator(".declaration-extras").count(), 1);
+
+        assert(
+          await page
+            .getByRole("checkbox", {
+              name: "Filler: Low TH sample",
+              exact: true,
+            })
+            .isChecked(),
+        );
         await page.screenshot({
           path: path.join(out, `${count}-${width}-marked.png`),
           fullPage: true,
@@ -118,7 +137,7 @@ fs.mkdirSync(out, { recursive: true });
         assert(metrics.scroll <= width + 1, JSON.stringify(metrics));
         assert.deepEqual(
           metrics.methods.filter((m) => m !== "GET"),
-          ["PATCH", "PATCH", "PATCH"],
+          ["PATCH", "PATCH", "PATCH", "POST"],
         );
         assert.deepEqual(errors, []);
         results.push({

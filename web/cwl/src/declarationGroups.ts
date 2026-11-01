@@ -37,8 +37,18 @@ export function declarationGroups(
     map.get(key)!.accounts.push(a);
   }
   for (const extra of extras) {
-    if (extra.status === 'current' && extra.fillers?.length && !map.has(extra.tag))
-      map.set(extra.tag, {tag: extra.tag, name: extra.name, pool: 'lazy', capacity: extra.capacity, accounts: []});
+    if (
+      extra.status === "current" &&
+      extra.fillers?.length &&
+      !map.has(extra.tag)
+    )
+      map.set(extra.tag, {
+        tag: extra.tag,
+        name: extra.name,
+        pool: "lazy",
+        capacity: extra.capacity,
+        accounts: [],
+      });
   }
   return [...map.values()]
     .map((g) => {
@@ -46,7 +56,13 @@ export function declarationGroups(
         (c) => c.tag === g.tag && c.status === "current",
       );
       const observed = (a: (typeof g.accounts)[number]) =>
-        extra?.fillers?.some((f) => f.tag === a.tag)
+        extra?.fillers?.some((f) => f.tag === a.tag) &&
+        Date.parse(extra.checked_at || "") >=
+          (Number.isFinite(
+            Date.parse(records[a.tag]?.current_clan_checked_at || ""),
+          )
+            ? Date.parse(records[a.tag].current_clan_checked_at!)
+            : -Infinity)
           ? {
               current_clan_tag: g.tag,
               current_clan_name: g.name,

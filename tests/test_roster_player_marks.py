@@ -1,6 +1,5 @@
 """Season-independent staff marks never infer or modify Strikes filler rules."""
 
-import sqlite3
 import pytest
 from cwl_web.store import Store
 from utils import roster_player_marks as marks
@@ -231,7 +230,9 @@ def test_declaration_marks_and_low_th_never_infer_filler_unknown_stays_flagged()
     low = extras_for(
         "#HOST", members, assignments, {}, roster_marks=saved, category="low_th"
     )
-    assert len(low) == 1 and low[0]["tag"] == "#LOW" and not low[0]["roster_filler"]
+    assert {r["tag"] for r in low} == {"#LOW", "#ASSIGNED"}
+    assert not next(r for r in low if r["tag"] == "#LOW")["roster_filler"]
+    assert next(r for r in low if r["tag"] == "#ASSIGNED")["roster_filler"]
     fillers = extras_for(
         "#HOST", members, assignments, {}, roster_marks=saved, category="fillers"
     )
@@ -327,6 +328,21 @@ class FillerWorkflowHTTP(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.assertEqual(pub.status, 201, await pub.text())
+        removed = await self.call(
+            "DELETE", f"/seasons/{self.sid}/signups/%23Q2Y", self.member
+        )
+        self.assertEqual(removed.status, 200, await removed.text())
+        arrival = await (
+            await self.call(
+                "GET",
+                f"/seasons/{self.sid}/arrival-check?source=published&background=1",
+                self.owner,
+            )
+        ).json()
+        self.assertTrue(
+            next(a for a in arrival["accounts"] if a["tag"] == "#Q2Y")["roster_filler"]
+        )
+
         response = await self.call(
             "POST",
             "/seasons",

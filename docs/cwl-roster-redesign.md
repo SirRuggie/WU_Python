@@ -772,17 +772,43 @@ explicit checkbox writes refresh the view without a page reload.
 Rename screen: reconnect to an active run on page load, preserving Stop; Past runs
 has a loading label and summaries omit full member manifests. Existing production
 logs (read only) showed 256 profile saves with median 89 ms, authorization median
-288 ms, finished worker actions median 2.12 s, but median claim-to-claim gap11.42 s
-(max40.48 s). No NetworkTimeout line appeared in the sampled bot invocation. Those
+288 ms, finished worker actions median 2.12 s, but median claim-to-claim gap 11.42 s
+(max 20.35 s), filtering to the 256 Standardize actions. No NetworkTimeout line appeared in the sampled bot invocation. Those
 logs do not instrument every query/scheduler boundary, so the residual gap cannot
 be attributed to Atlas or Discord with confidence. No production timing probe or
 rename was run. Do not claim the history projection proves the measured3 s root
 cause. No risky worker optimization is included; live pace remains an explicit
 review limitation. No activation while any Standardize run remains queued.
 
-Implementation and adversarial checks are in progress; this section is not READY
-or release evidence yet. Required fixture migration, permissions/CAS/undo/capacity,
-full backend/frontend, mutants and 320/360/390/1440 layouts remain completion gates.
+Validation: full guarded backend 5,700 passed / 58 skipped / 224 subtests; final
+focused backend 43 passed after the mark receipt/published-account audit. Full
+frontend 1,376 passed / 246 files, TypeScript and build passed. Sixteen real Mongo
+fixture tests passed, including large-manifest summary projection. The repository
+war-reminder check passed: 213 backend / 1 skip, 35 frontend, TypeScript/build.
+Twelve required UI states use 26/65/125 sample accounts at 320/360/390/1440; narrow
+and wide screenshots are inspected. Seven requested filler mutations, the prompt
+90 per-row lookup mutation and four audit mutations were caught. Owned Mongo and
+mutation exports were removed after preserving evidence. No live delivery, real
+DM click, production mark or rename is tested or claimed.
+
+End-to-end audit covered authorization and CSRF, malformed booleans/revisions,
+concurrent staff edits and double taps, additive migration with existing rows
+preserved, season carryover, mixed/manual/swap/undo capacity at 15 and 30, publish,
+unknown TH, off-roster readiness/deduplication, failed/stale identity reads,
+permission loss, external text/ID labels, and cached versus newer player locations.
+Mark Undo is exposed through the existing roster Undo control, including inline
+Declaration marks and published-only Details. Published placements stay immutable
+when current player marks change, including withdrawn signup tags. Low TH counts
+remain literal even after marking; a marked low-TH member keeps its checkbox in
+that list. A separate neutral disclosure retains other off-roster marked fillers.
+The Filler label appears in both responsive account card layouts.
+
+This is development/review evidence. Release requires Claude ACCEPT plus fresh
+backup/restore, protected counts, readiness, rollback and public hashes. Check for
+queued Standardize work immediately before activation and wait if any exists.
+Backend/frontend only: no bot restart is expected because worker logic, scheduler,
+Discord transport and worker storage contracts are unchanged. Rollback can retain
+the two additive SQLite tables and their data; never restore a database blindly.
 
 Prompt 90 adds the shared compact DiscordIdentity and its staff-operated DM link
 on linked extra/low-TH rows. One optional ownership batch and one cached member

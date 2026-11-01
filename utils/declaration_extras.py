@@ -29,7 +29,7 @@ def extras_for(
         )
         if category == "fillers" and not marked:
             continue
-        if category == "low_th" and (not low or marked):
+        if category == "low_th" and not low:
             continue
         if category == "extras" and (marked or low):
             continue

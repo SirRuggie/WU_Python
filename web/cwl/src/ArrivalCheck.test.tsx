@@ -401,3 +401,83 @@ it("uses only the selected pool for Ping availability while another pool is stil
     "Checking locations…",
   );
 });
+
+it("offers revision-bound Undo after a declaration filler mark and guards double tap", async () => {
+  const { DashboardPermissions } = await import("./DashboardPermissions");
+  const transport = vi
+    .spyOn(await import("./api"), "api")
+    .mockImplementation(async (path: string) =>
+      path.includes("roster-filler")
+        ? ({
+            revision: 2,
+            undo: { id: 77, label: "Change filler mark", revision: 2 },
+          } as any)
+        : ({ revision: 3 } as any),
+    );
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
+  extraState.value = {
+    loading: false,
+    error: "",
+    refresh: vi.fn(),
+    data: {
+      source: "published",
+      basis: 1,
+      revision: 1,
+      clans: [
+        {
+          tag: "#A",
+          name: "Amber",
+          capacity: 15,
+          status: "current",
+          checked_at: new Date(now).toISOString(),
+          count: 1,
+          extras: [
+            {
+              tag: "#EXTRA",
+              name: "Extra account",
+              town_hall: 16,
+              context: "Not signed up",
+              assigned_clan_tag: null,
+              roster_filler: false,
+              roster_filler_revision: 0,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  await act(async () =>
+    root.render(
+      <DashboardPermissions.Provider
+        value={{ owner: false, permissions: ["cwl_roster"] }}
+      >
+        <ArrivalCheck seasonId="7" />
+      </DashboardPermissions.Provider>,
+    ),
+  );
+  const box = host.querySelector<HTMLInputElement>(
+    'input[aria-label="Filler: Extra account"]',
+  )!;
+  expect(box).toBeTruthy();
+  await act(async () => box.click());
+  expect(host.textContent).toContain("Undo available: Change filler mark");
+  const undo = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Undo",
+  )!;
+  await act(async () => {
+    undo.click();
+    undo.click();
+  });
+  expect(
+    transport.mock.calls.filter((c) => c[0].endsWith("/roster/undo")),
+  ).toHaveLength(1);
+  expect(
+    transport.mock.calls.find((c) => c[0].endsWith("/roster/undo"))?.[2],
+  ).toEqual({ revision: 2, undo_id: 77 });
+  expect(state.value.refresh).toHaveBeenCalled();
+  expect(extraState.value.refresh).toHaveBeenCalled();
+});

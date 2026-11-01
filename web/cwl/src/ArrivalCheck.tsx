@@ -1,3 +1,6 @@
+import { api } from "./api";
+import RosterUndoToast from "./RosterUndoToast";
+import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
@@ -29,6 +32,10 @@ export default function ArrivalCheck({
   const pingWorking = useRef(false);
   const { data, error, refresh, records, now, checkedAt, checking } =
     useDeclarationData(seasonId);
+  const undoPending = useRef(false);
+  const [markUndo, setMarkUndo] = useState<FillerSaveResult | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [undoError, setUndoError] = useState("");
   const [pool, setPool] = useCwlPool();
   const [helpOpen, setHelpOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -78,13 +85,39 @@ export default function ArrivalCheck({
       ? {
           seasonId,
           revision: extras.data?.revision ?? data.roster.revision,
-          disabled: checking || extras.loading,
-          onChanged: () => {
+          disabled: checking || extras.loading || undoBusy,
+          onChanged: (saved?: FillerSaveResult) => {
+            setMarkUndo(saved?.undo ? saved : null);
+            setUndoError("");
             refresh();
             extras.refresh();
           },
         }
       : undefined;
+  async function undoMark() {
+    if (!markUndo?.undo || undoPending.current) return;
+    undoPending.current = true;
+    setUndoBusy(true);
+    setUndoError("");
+    try {
+      await api(
+        `/seasons/${encodeURIComponent(seasonId)}/roster/undo`,
+        "POST",
+        { revision: markUndo.revision, undo_id: markUndo.undo.id },
+      );
+      setMarkUndo(null);
+      refresh();
+      extras.refresh();
+    } catch (cause) {
+      setMarkUndo(null);
+      setUndoError(
+        cause instanceof Error ? cause.message : "Could not undo filler mark.",
+      );
+    } finally {
+      undoPending.current = false;
+      setUndoBusy(false);
+    }
+  }
   const poolGroups = groups.filter((g) => g.pool === pool);
   const visible = poolGroups.filter(
     (g) =>
@@ -111,6 +144,8 @@ export default function ArrivalCheck({
       });
   }
   useEffect(() => {
+    setMarkUndo(null);
+    setUndoError("");
     setExpanded([]);
     setSearch("");
     setActiveClan("");
@@ -414,6 +449,10 @@ export default function ArrivalCheck({
                 seasonId,
                 viewOnly: "declaration",
                 publishedSnapshot: context,
+                onChanged: () => {
+                  refresh();
+                  extras.refresh();
+                },
               }}
               open={expanded.includes(group.key)}
               onToggle={() => {
@@ -424,6 +463,18 @@ export default function ArrivalCheck({
             />
           ))}
         </>
+      )}
+      {undoError && <p role="alert">{undoError}</p>}
+      {markUndo?.undo && (
+        <RosterUndoToast
+          state={
+            undoBusy
+              ? { status: "pending", label: markUndo.undo.label }
+              : { status: "available", label: markUndo.undo.label }
+          }
+          onUndo={() => void undoMark()}
+          onDismiss={() => setMarkUndo(null)}
+        />
       )}
     </section>
   );

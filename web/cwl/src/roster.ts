@@ -208,3 +208,34 @@ export function retainRosterFwa(
     })),
   };
 }
+
+/** Player marks are current even when Details preserves a published placement. */
+export function mergeRosterMarks(
+  snapshot: RosterSnapshot,
+  latest: RosterSnapshot,
+  changed?: {
+    tag: string;
+    roster_filler?: boolean;
+    mark_revision?: number;
+  },
+): RosterSnapshot {
+  const current = new Map(latest.accounts.map((a) => [a.tag, a]));
+  return {
+    ...snapshot,
+    revision: latest.revision,
+    accounts: snapshot.accounts.map((a) => {
+      const saved = current.get(a.tag);
+      return {
+        ...a,
+        roster_filler:
+          changed?.tag === a.tag
+            ? changed.roster_filler
+            : (saved?.roster_filler ?? a.roster_filler),
+        roster_filler_revision:
+          changed?.tag === a.tag
+            ? changed.mark_revision
+            : (saved?.roster_filler_revision ?? a.roster_filler_revision),
+      };
+    }),
+  };
+}

@@ -39,6 +39,15 @@ export default function DeclarationExtras({
           : " · Never checked"}
       </p>
     );
+  const otherFillers =
+    row.fillers?.filter(
+      (member) =>
+        !(
+          typeof member.town_hall === "number" &&
+          member.town_hall > 0 &&
+          member.town_hall <= 9
+        ),
+    ) || [];
   return (
     <>
       {!!row.low_th?.length && (
@@ -47,13 +56,13 @@ export default function DeclarationExtras({
           <DeclarationMemberMarks rows={row.low_th} control={markControl} />
         </details>
       )}
-      {!!row.fillers?.length && (
+      {!!otherFillers.length && (
         <details className="declaration-fillers">
           <summary>
-            {row.fillers.length} filler{row.fillers.length === 1 ? "" : "s"} in
-            clan
+            {otherFillers.length} other filler
+            {otherFillers.length === 1 ? "" : "s"} in clan
           </summary>
-          <DeclarationMemberMarks rows={row.fillers} control={markControl} />
+          <DeclarationMemberMarks rows={otherFillers} control={markControl} />
         </details>
       )}
       {!row.count ? (

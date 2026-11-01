@@ -1,10 +1,12 @@
 import DiscordIdentity from "./DiscordIdentity";
 import type { DeclarationExtraClan } from "./declarationExtras";
-import RosterFillerCheckbox from "./RosterFillerCheckbox";
+import RosterFillerCheckbox, {
+  type FillerSaveResult,
+} from "./RosterFillerCheckbox";
 export type DeclarationMarkControl = {
   seasonId: string;
   revision: number;
-  onChanged: () => void | Promise<void>;
+  onChanged: (result?: FillerSaveResult) => void | Promise<void>;
   disabled?: boolean;
 };
 export default function DeclarationMemberMarks({

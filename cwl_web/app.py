@@ -1114,6 +1114,7 @@ async def arrival_snapshot(request, *, source=None, force=None):
             accounts = _roster_rows(db, sid)
             names = {row['tag']:row['name'] for row in db.execute('SELECT tag,name FROM clans')}
             for account in accounts: account['assigned_clan_name'] = names.get(account['assigned_clan_tag'])
+        roster_player_marks.overlay(db, accounts)
         clan_pools = {row['tag']: row['pool'] for row in _rule_rows(db, sid)}
         for account in accounts:
             account['hosting_pool'] = clan_pools.get(account['assigned_clan_tag']) or account['pool']
@@ -1219,7 +1220,8 @@ async def update_roster_filler(request):
                            'mark_revision': after['revision']}])
         return web.json_response({'revision': _revision(db, sid),
                                   'roster_filler': bool(after['roster_filler']),
-                                  'mark_revision': after['revision']})
+                                  'mark_revision': after['revision'],
+                                  'undo': _current_undo(db, sid, session['user_id'])})
 
 
 async def bulk_assign_roster(request):
@@ -1467,7 +1469,9 @@ async def undo_roster(request):
             db.execute("UPDATE roster_undo SET consumed_at=CURRENT_TIMESTAMP WHERE id=?", (undo['id'],))
             _audit(db, sid, change['tag'], session['user_id'], 'roster_filler_undo',
                    {'roster_filler': change['after']}, {'roster_filler': change['before']})
-            return web.json_response({'revision': _revision(db, sid)})
+            return web.json_response({'revision': _revision(db, sid), 'tag': change['tag'],
+                                      'roster_filler': bool(restored['roster_filler']),
+                                      'mark_revision': restored['revision']})
         current = {}
         occupancy_delta = {}
         restored_hosts = set()

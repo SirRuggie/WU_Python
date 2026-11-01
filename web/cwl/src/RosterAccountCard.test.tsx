@@ -501,3 +501,15 @@ it.each(["Emerald Watch", "W. U. Lazy .125"])(
     w.happyDOM.abort();
   },
 );
+
+it("keeps a filler mark in both mobile metadata and the desktop account column", () => {
+  const host = document.createElement("div");
+  host.innerHTML = render({ account: { ...account, roster_filler: true } });
+  expect(host.querySelector(".player-card-meta")?.textContent).toContain(
+    "Filler",
+  );
+  expect(
+    host.querySelector(".roster-account-column-pool .roster-account-filler")
+      ?.textContent,
+  ).toBe("Filler");
+});
