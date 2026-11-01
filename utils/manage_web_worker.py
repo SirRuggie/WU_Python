@@ -6,10 +6,12 @@ from types import SimpleNamespace as NS
 from datetime import datetime, timezone, timedelta
 import hikari
 from pymongo import ReturnDocument
+from utils.member_profiles import ProfileOutcomeUncertain
 
 WORKER_ID = 'manage-web-worker:644963518025826315'
 GUILD_ID = 644963518025826315
 ACTIONS = {
+ *{('member_profiles', x) for x in ('save','import','standardize_one')},
  ('clans','emoji'), ('clans','thread'),
  ('fwa_points','enable'), ('fwa_points','disable'),
  ('fwa_sync','check_feed'), ('fwa_sync','test_dm'),
@@ -23,7 +25,7 @@ ACTIONS = {
 
 async def context(bot, mongo, row):
     from extensions.commands.recruit.perms import guild_permissions
-    from cwl_web.server_management import allowed
+    from utils.dashboard_access import dashboard_allowed as allowed
     user = await bot.rest.fetch_member(GUILD_ID, int(row['user_id']))
     role_list = await bot.rest.fetch_roles(GUILD_ID)
     guild = await bot.rest.fetch_guild(GUILD_ID)
@@ -33,7 +35,7 @@ async def context(bot, mongo, row):
     member = NS(id=user.id, guild_id=GUILD_ID, role_ids=user.role_ids, permissions=permissions,
                 display_name=user.display_name, get_roles=lambda:[r for r in role_list if r.id in user.role_ids])
     actor = {'user_id':str(user.id), 'role_ids':set(map(int,user.role_ids)), 'permissions':int(permissions), 'guild_owner':user.id==guild.owner_id, 'dashboard': True}
-    if not await allowed(actor, row['section'], mongo, write=not (row['section']=='ticket_testing' and row['action'] in ('main','fwa'))):
+    if not await allowed(actor, row['section'], mongo):
         raise ValueError('Your Discord access changed. This action was not run.')
     async def noop(*args, **kwargs):
         return None
@@ -51,6 +53,9 @@ async def dispatch(bot, mongo, row, ctx):
     section, action, values = row['section'], row['action'], row['values']
     if (section,action) not in ACTIONS or not isinstance(values,dict):
         raise ValueError('Unknown management action.')
+    if section=='member_profiles':
+        from extensions.warrior.profile_dashboard import apply
+        return await apply(bot,mongo,row)
     if section=='clans':
         from utils.manage_operations_runtime import revision
         from cwl_web.manage_clans import audit
@@ -222,9 +227,14 @@ async def _poll(bot, mongo):
     await mongo.bot_config.update_one({'_id':WORKER_ID},{'$set':{'checked_at':time.time()}},upsert=True)
     from utils.return_bulk import activate
     await activate(mongo)
+    from utils.member_profile_runs import ProfileRuns, ProfileRunStopped
+    try:
+        await ProfileRuns(mongo).advance()
+    except Exception:
+        logging.getLogger(__name__).warning('Member profile run scheduling unavailable',exc_info=True)
     # A crashed sending claim is never replayed: the Discord effect may exist.
     await mongo.bot_config.update_many({'kind':'manage_web_request','status':'running','started_at':{'$lt':time.time()-300}},
-        {'$set':{'status':'uncertain','message':'The bot stopped before confirming this action. Check Discord before repeating it.'}})
+        {'$set':{'status':'uncertain','finished_at':time.time(),'message':'The bot stopped before confirming this action. Check Discord before repeating it.'}})
     for _ in range(5):
         row=await mongo.bot_config.find_one_and_update({'kind':'manage_web_request','status':'pending'},
             {'$set':{'status':'running','started_at':time.time()}},return_document=ReturnDocument.AFTER)
@@ -235,6 +245,10 @@ async def _poll(bot, mongo):
             ctx=await context(bot,mongo,row)
             result=await asyncio.wait_for(dispatch(bot,mongo,row,ctx),120)
             update={'status':'done','message':result.get('message','Completed.'),'result':result}
+        except ProfileRunStopped as exc:
+            update={'status':'stopped','message':str(exc)[:400]}
+        except ProfileOutcomeUncertain as exc:
+            update={'status':'uncertain','message':str(exc)[:400]}
         except ValueError as exc:
             update={'status':'failed','message':str(exc)[:400]}
         except Exception:

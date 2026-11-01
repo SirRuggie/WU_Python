@@ -1,0 +1,80 @@
+[
+  [
+    "Name | Mt",
+    {
+      "label": "MT",
+      "offsetMinutes": null
+    }
+  ],
+  [
+    "Name | MT",
+    {
+      "label": "MT",
+      "offsetMinutes": -420
+    }
+  ],
+  [
+    "Name | GMT 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    {
+      "label": "GMT",
+      "offsetMinutes": 0
+    }
+  ],
+  [
+    "Name | 𝗘𝗦𝗧 🇺🇸",
+    {
+      "label": "EST",
+      "offsetMinutes": -300
+    }
+  ],
+  [
+    "Name | GMT+5:45 🇳🇵",
+    {
+      "label": "GMT+5:45",
+      "offsetMinutes": 345
+    }
+  ],
+  [
+    "Name | GMT+14:01",
+    {
+      "label": "GMT+14:01",
+      "offsetMinutes": null
+    }
+  ],
+  [
+    "Name | GMT+8 (NEW)",
+    {
+      "label": "GMT+8 (NEW)",
+      "offsetMinutes": null
+    }
+  ],
+  [
+    "Name | NZT",
+    {
+      "label": "NZT",
+      "offsetMinutes": 720
+    }
+  ],
+  [
+    "Name",
+    null
+  ],
+  [
+    "Name | 🇺🇸",
+    null
+  ],
+  [
+    "aha tamatar| GMT+5:30 🇮🇳",
+    {
+      "label": "GMT+5:30",
+      "offsetMinutes": 330
+    }
+  ],
+  [
+    "Ameyatma/Ashtavakra | GMT+5:45🇳🇵",
+    {
+      "label": "GMT+5:45",
+      "offsetMinutes": 345
+    }
+  ]
+]
