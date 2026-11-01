@@ -20,6 +20,7 @@ import type { PublishedComparisonAccount } from "./useComparisonLocations";
 type Props = {
   account: RosterAccount;
   ownerNickname?: string;
+  ownerTimeZone?: import("./compareTimeZone").OwnerTimeZone;
   clan: RosterClan;
   record?: ComparisonLocation;
   now: number;
@@ -30,6 +31,7 @@ type Props = {
 export default function ComparePlayerCard({
   account,
   ownerNickname,
+  ownerTimeZone: savedZone,
   clan,
   record,
   now,
@@ -38,7 +40,7 @@ export default function ComparePlayerCard({
   onDetails,
 }: Props) {
   const id = useId();
-  const zone = ownerTimeZone(ownerNickname);
+  const zone = ownerTimeZone(ownerNickname, savedZone);
   const location = comparisonLocation(record, clan.tag, now, clan.name);
   const status = playerClanStatus(
     clan.tag,

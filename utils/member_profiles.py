@@ -25,6 +25,7 @@ def member_id(value):
 
 class MemberProfiles:
     def __init__(self, mongo):
+        self.mongo = mongo
         self.collection = mongo.member_profiles
 
     async def ensure_indexes(self):
@@ -46,7 +47,50 @@ class MemberProfiles:
         ).to_list(length=None)
         return {row["discord_id"]: row for row in rows}
 
-    async def write(
+    async def write(self, discord_id, fields, **options):
+        from utils.member_profile_leases import editing, verify
+
+        async with editing(self.mongo, member_id(discord_id)) as claim:
+            await verify(self.mongo, claim)
+            return await self._write(discord_id, fields, **options)
+
+    async def commit_after(
+        self, discord_id, fields, *, change, expected_revision, updated_by, source
+    ):
+        """Serialize the external edit with CAS; failed edits never save a profile.
+
+        The caller owns Discord transport and must use a bounded one-shot call.
+        On cancellation/uncertain delivery the caller's durable preview receipt
+        stays consumed. Never automatically retry that callback.
+        """
+        from utils.member_profile_leases import editing, verify
+
+        if (
+            source not in ("warrior", "staff")
+            or type(expected_revision) is not int
+            or expected_revision < 0
+        ):
+            raise ValueError("Invalid profile edit source or revision.")
+        member_id(updated_by)
+        async with editing(self.mongo, member_id(discord_id)) as claim:
+            current = await self.get(discord_id)
+            if int((current or {}).get("revision", 0)) != expected_revision:
+                raise ProfileConflict("Member profile changed. Refresh before saving.")
+            from utils.member_timezones import profile_fields
+
+            profile_fields(fields)
+            await verify(self.mongo, claim)
+            await change()
+            await verify(self.mongo, claim)
+            return await self._write(
+                discord_id,
+                fields,
+                expected_revision=expected_revision,
+                updated_by=updated_by,
+                source=source,
+            )
+
+    async def _write(
         self,
         discord_id,
         fields,
@@ -108,7 +152,10 @@ class MemberProfiles:
 
     async def membership(self, discord_id, *, left_at):
         """Membership events update existing profiles only, through the same CAS writer."""
-        for _ in range(3):
+        import asyncio
+        from utils.member_profile_leases import ProfileBusy
+
+        for _ in range(65):
             current = await self.get(discord_id)
             if current is None or current.get("left_at") == left_at:
                 return current
@@ -121,6 +168,7 @@ class MemberProfiles:
                     source=current["source"],
                     left_at=left_at,
                 )
-            except ProfileConflict:
+            except (ProfileConflict, ProfileBusy):
+                await asyncio.sleep(1)
                 continue
         raise ProfileConflict("Member membership changed concurrently.")

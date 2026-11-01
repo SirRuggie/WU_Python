@@ -16,12 +16,13 @@ export function compareClanAccounts(
   clanTag: string,
   sort: RosterSort,
   owners: Record<string, string> = {},
+  profiles: Record<string, import("./compareTimeZone").OwnerTimeZone> = {},
 ): RosterAccount[] {
   const members = accounts.filter(
     (account) => account.assigned_clan_tag === clanTag,
   );
   return sort === "time_zone"
-    ? sortTimeZoneAccounts(members, owners)
+    ? sortTimeZoneAccounts(members, owners, profiles)
     : sortRosterAccounts(members, sort);
 }
 export function clanSummary(

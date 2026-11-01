@@ -128,3 +128,56 @@ def test_name_choice_official_lookup_partial_and_api_failure(monkeypatch):
         assert (await name_choices(None, USER))["unavailable"]
 
     asyncio.run(run())
+
+
+@pytest.fixture(autouse=True)
+def isolated_lease(monkeypatch):
+    from contextlib import asynccontextmanager
+    from utils import member_profile_leases
+
+    @asynccontextmanager
+    async def claim(*args):
+        yield {"owner": "test"}
+
+    monkeypatch.setattr(member_profile_leases, "editing", claim)
+    monkeypatch.setattr(member_profile_leases, "verify", AsyncMock())
+
+
+def test_discord_failure_never_saves_and_stale_revision_never_edits():
+    async def run():
+        coll = Collection()
+        store = MemberProfiles(S(member_profiles=coll))
+        edit = AsyncMock(side_effect=RuntimeError("Discord refused"))
+        with pytest.raises(RuntimeError):
+            await store.commit_after(
+                USER,
+                FIELDS,
+                change=edit,
+                expected_revision=0,
+                updated_by=ACTOR,
+                source="warrior",
+            )
+        assert coll.row is None
+        edit.side_effect = None
+        await store.commit_after(
+            USER,
+            FIELDS,
+            change=edit,
+            expected_revision=0,
+            updated_by=ACTOR,
+            source="warrior",
+        )
+        assert coll.row["revision"] == 1
+        edit.reset_mock()
+        with pytest.raises(ProfileConflict):
+            await store.commit_after(
+                USER,
+                FIELDS,
+                change=edit,
+                expected_revision=0,
+                updated_by=ACTOR,
+                source="warrior",
+            )
+        edit.assert_not_awaited()
+
+    asyncio.run(run())

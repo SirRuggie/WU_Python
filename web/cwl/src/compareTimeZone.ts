@@ -35,7 +35,19 @@ const offsets: Record<string, number> = {
   PACIFIC: -480,
   MOUNTAIN: -420,
 };
-export function ownerTimeZone(nickname?: string | null): OwnerTimeZone | null {
+export function ownerTimeZone(
+  nickname?: string | null,
+  saved?: OwnerTimeZone | null,
+): OwnerTimeZone | null {
+  if (saved && typeof saved.label === "string") {
+    const checked = ownerTimeZone(`Member | ${saved.label}`);
+    if (
+      checked &&
+      checked.offsetMinutes !== null &&
+      checked.offsetMinutes === saved.offsetMinutes
+    )
+      return checked;
+  }
   if (!nickname || !nickname.includes(" | ")) return null;
   const label = nickname
     .slice(nickname.lastIndexOf(" | ") + 3)
@@ -67,13 +79,14 @@ export function ownerTimeZone(nickname?: string | null): OwnerTimeZone | null {
 export function sortTimeZoneAccounts(
   accounts: RosterAccount[],
   owners: Record<string, string>,
+  profiles: Record<string, OwnerTimeZone> = {},
 ): RosterAccount[] {
   const text = (a: string, b: string) =>
     a.localeCompare(b, undefined, { sensitivity: "base" });
   const rows = accounts.map((account) => ({
     account,
     nickname: owners[account.user_id] || "",
-    zone: ownerTimeZone(owners[account.user_id]),
+    zone: ownerTimeZone(owners[account.user_id], profiles[account.user_id]),
   }));
   const rank = (zone: OwnerTimeZone | null) =>
     zone?.offsetMinutes != null ? 0 : zone ? 1 : 2;
