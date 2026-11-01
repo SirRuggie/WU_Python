@@ -1,6 +1,8 @@
 import { retainFwaMembership } from "./clanWeightPolicy";
 import type { Pool } from "./api";
 export type RosterAccount = {
+  roster_filler?: boolean;
+  roster_filler_revision?: number;
   signed_up_at?: string | null;
   outside_family_and_hosts?: boolean;
   current_clan_checked_at?: string;

@@ -28,7 +28,7 @@ export function finalizeStatus(draft: PublicationDraft): string {
 export function capacityWarnings(draft: PublicationDraft) {
   const assigned = new Map<string, number>();
   for (const account of draft.preview.accounts) {
-    if (account.assigned_clan_tag)
+    if (account.assigned_clan_tag && !account.roster_filler)
       assigned.set(
         account.assigned_clan_tag,
         (assigned.get(account.assigned_clan_tag) || 0) + 1,

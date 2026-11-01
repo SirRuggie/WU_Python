@@ -3,9 +3,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 const transport = vi.hoisted(() => vi.fn());
+const activeLookup = vi.hoisted(() => vi.fn());
 vi.mock("../api", async (orig) => ({
   ...(await orig<object>()),
-  api: transport,
+  api: (...args: unknown[]) => args[0] === "/manage/member-timezones/runs?active=1" ? activeLookup() : transport(...args),
 }));
 import Standardize from "./Standardize";
 import type { Change } from "./types";
@@ -42,6 +43,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  activeLookup.mockReset().mockResolvedValue({runs: []});
   transport.mockReset().mockImplementation(async (path: string) =>
     path.endsWith("/import")
       ? { request_id: "request", status: "done", status_url: "/receipt" }
@@ -364,4 +366,24 @@ it('hides one-page review pagers and restores entry help only after Back', async
   expect(host.querySelector('nav[aria-label="Review pages"]')).toBeNull();
   await click('Back to members');
   expect(host.querySelector('.mt-review-help')).not.toBeNull();
+});
+
+it("reopens the shared queued run on another device with Stop and no writes", async () => {
+  activeLookup.mockResolvedValue({runs: [{run_id: "live"}]});
+  transport.mockImplementation(async (path: string) => {
+    expect(path).toBe("/manage/member-timezones/runs/live");
+    return {run_id: "live", state: "queued", rows: rows.slice(0, 2).map(r => ({...r, status: "waiting"}))};
+  });
+  await mount();
+  expect(host.textContent).toContain("Renaming 0 of 2");
+  expect([...host.querySelectorAll('button')].some(b => b.textContent?.includes('Stop'))).toBe(true);
+  expect(transport.mock.calls.every(c => !c[1] || c[1] === 'GET')).toBe(true);
+});
+it("shows history loading until the summary request finishes", async () => {
+  let resolve!: (value: unknown) => void;
+  transport.mockImplementation(() => new Promise(r => {resolve = r;}));
+  await mount(); await click("Past runs");
+  expect(host.textContent).toContain("Loading…");
+  await act(async () => resolve({runs: []}));
+  expect(host.textContent).toContain("Choose a run");
 });

@@ -288,14 +288,10 @@ async def standardize_confirm(request):
 
 async def standardize_runs(request):
     actor = await require_manage(request, "member_profiles")
-    from utils.member_profile_runs import KIND
+    from utils.member_profile_runs import ProfileRuns
 
     async with mongo(request) as db:
-        runs = (
-            await db.bot_config.find({"kind": KIND, "guild_id": GUILD_ID})
-            .sort("created_at", -1)
-            .to_list(length=21)
-        )
+        runs = await ProfileRuns(db).summaries(GUILD_ID, active_only=getattr(request, 'query', {}).get('active') == '1')
     return web.json_response(
         dict(
             runs=[

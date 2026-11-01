@@ -51,6 +51,10 @@ async def check(request):
     expected = request.query.get("basis")
     if expected is not None and expected != str(basis):
         raise web.HTTPConflict(text="Roster changed. Refresh before checking members.")
+    from utils.roster_player_marks import marks
+
+    with request.app["store"].tx() as db:
+        roster_marks = marks(db)
     assigned = {row.get("assigned_clan_tag") for row in accounts}
     lazy = [
         clan
@@ -88,6 +92,7 @@ async def check(request):
                     accounts,
                     names,
                     current_accounts=current_accounts,
+                    roster_marks=roster_marks,
                 )
                 if current
                 else None
@@ -95,7 +100,25 @@ async def check(request):
         except (KeyError, TypeError, ValueError):
             current = False
             extras = None
+
+        def classified(category):
+            return (
+                extras_for(
+                    clan["tag"],
+                    saved["value"]["members"],
+                    accounts,
+                    names,
+                    current_accounts=current_accounts,
+                    roster_marks=roster_marks,
+                    category=category,
+                )
+                if current
+                else None
+            )
+
         return {
+            "low_th": classified("low_th"),
+            "fillers": classified("fillers"),
             "tag": clan["tag"],
             "name": clan["name"],
             "status": "current" if current else "unavailable",
@@ -113,7 +136,9 @@ async def check(request):
         raise web.HTTPConflict(
             text="Roster changed while members were checked. Refresh again."
         )
-    return web.json_response({"source": source, "basis": basis, "clans": rows})
+    return web.json_response(
+        {"source": source, "basis": basis, "revision": current_revision, "clans": rows}
+    )
 
 
 def routes():

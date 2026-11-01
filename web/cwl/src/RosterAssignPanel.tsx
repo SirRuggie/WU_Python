@@ -204,9 +204,15 @@ export default function RosterAssignPanel({
                   currentTotalWeight,
                   currentKnownWeights,
                 }) => {
-                  const currentlyFull = currentCount >= clan.effective_capacity;
+                  const regularIncoming = selectedAccounts.filter(
+                    (a) => !a.roster_filler && a.assigned_clan_tag !== clan.tag,
+                  ).length;
+                  const currentlyFull =
+                    regularIncoming > 0 &&
+                    currentCount >= clan.effective_capacity;
                   const projectedOverCapacity =
-                    projectedCount > clan.effective_capacity;
+                    regularIncoming > 0 &&
+                    currentCount + regularIncoming > clan.effective_capacity;
                   const unavailableDestination =
                     currentlyFull || projectedOverCapacity;
                   const unchanged = incomingCount === 0;

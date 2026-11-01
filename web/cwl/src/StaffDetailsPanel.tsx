@@ -205,6 +205,7 @@ export default function StaffDetailsPanel({
       )}
       {request && snapshot && account && (
         <RosterPlayerDialog
+          seasonId={request.seasonId}
           account={account}
           archived={archived || request.archived}
           viewOnly={request.viewOnly}
@@ -251,7 +252,26 @@ export default function StaffDetailsPanel({
               `/seasons/${encodeURIComponent(request.seasonId)}/roster`,
             );
             if (id === generation.current) {
-              setSnapshot(latest);
+              setSnapshot((previous) =>
+                request.viewOnly === "declaration" && previous
+                  ? {
+                      ...previous,
+                      revision: latest.revision,
+                      accounts: previous.accounts.map((a) => {
+                        const current = latest.accounts.find(
+                          (x) => x.tag === a.tag,
+                        );
+                        return {
+                          ...a,
+                          roster_filler: current?.roster_filler,
+                          roster_filler_revision:
+                            current?.roster_filler_revision,
+                        };
+                      }),
+                    }
+                  : latest,
+              );
+              request.onChanged?.();
               setError("");
             }
           }}

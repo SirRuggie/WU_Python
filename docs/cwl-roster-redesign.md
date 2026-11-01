@@ -747,3 +747,39 @@ Main later requires an explicit policy change to the server's Lazy hosting filte
 the UI scope label and Main-exclusion tests, followed by review; there is no hidden
 client switch. No new persistent collection or production write is introduced.
 
+
+### Persistent roster filler marks — prompt 89 (development)
+
+Staff explicitly mark a player tag as Filler; TH never creates a mark. A separate
+SQLite roster-player mark owner retains the mark across seasons, audits who/when
+and on/off, and uses both the season revision and a per-tag revision. Marking and
+undo invalidate plans in all seasons. This does not reuse or change Strikes filler
+settings. Migration adds two empty tables; existing player/season rows are intact.
+
+Fillers occupy clan seats but manual assignment can exceed 15/30 capacity. Mixed
+assignment checks regular incoming accounts against all existing occupants before
+adding fillers. Balance and Auto-place never place or move fillers. Unmark never
+moves an account; normal capacity warnings may return. Publication remains a
+placement snapshot; current player marks are independently overlaid for staff.
+
+Declaration extras remain scoped to Lazy hosting clans. Marked fillers in an
+observed clan count toward readiness once, even without a roster assignment;
+assigned fillers outside their destination remain missing and pingable. Unmarked
+TH 9 and below are not intruders and do not count as fillers. Unknown TH retains
+the prior not-on-roster flag. Low TH and filler rows use collapsed neutral lists;
+explicit checkbox writes refresh the view without a page reload.
+
+Rename screen: reconnect to an active run on page load, preserving Stop; Past runs
+has a loading label and summaries omit full member manifests. Existing production
+logs (read only) showed 256 profile saves with median 89 ms, authorization median
+288 ms, finished worker actions median 2.12 s, but median claim-to-claim gap11.42 s
+(max40.48 s). No NetworkTimeout line appeared in the sampled bot invocation. Those
+logs do not instrument every query/scheduler boundary, so the residual gap cannot
+be attributed to Atlas or Discord with confidence. No production timing probe or
+rename was run. Do not claim the history projection proves the measured3 s root
+cause. No risky worker optimization is included; live pace remains an explicit
+review limitation. No activation while any Standardize run remains queued.
+
+Implementation and adversarial checks are in progress; this section is not READY
+or release evidence yet. Required fixture migration, permissions/CAS/undo/capacity,
+full backend/frontend, mutants and 320/360/390/1440 layouts remain completion gates.

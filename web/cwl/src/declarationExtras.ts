@@ -1,4 +1,6 @@
 export type DeclarationExtraClan = {
+  low_th?: DeclarationExtraClan["extras"];
+  fillers?: DeclarationExtraClan["extras"];
   tag: string;
   name: string;
   capacity: number | null;
@@ -7,6 +9,9 @@ export type DeclarationExtraClan = {
   count: number | null;
   extras:
     | {
+        roster_filler?: boolean;
+        roster_filler_revision?: number;
+        assigned_here?: boolean;
         tag: string;
         name: string;
         town_hall: number | null;
@@ -16,6 +21,7 @@ export type DeclarationExtraClan = {
     | null;
 };
 export type DeclarationExtraResponse = {
+  revision?: number;
   source: "draft" | "published";
   basis: number;
   clans: DeclarationExtraClan[];

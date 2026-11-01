@@ -1,3 +1,4 @@
+import type { DeclarationExtraClan } from "./declarationExtras";
 import { comparisonLocation, type LocationRecords } from "./comparisonLocation";
 import { summarizeArrivalReadiness } from "./arrivalReadiness";
 import type { DeclarationData } from "./declarationData";
@@ -8,6 +9,7 @@ export function declarationGroups(
   snapshot: RosterSnapshot,
   records: LocationRecords,
   now: number,
+  extras: DeclarationExtraClan[] = [],
 ) {
   const map = new Map<
     string,
@@ -36,9 +38,19 @@ export function declarationGroups(
   }
   return [...map.values()]
     .map((g) => {
+      const extra = extras.find(
+        (c) => c.tag === g.tag && c.status === "current",
+      );
+      const observed = (a: (typeof g.accounts)[number]) =>
+        extra?.fillers?.some((f) => f.tag === a.tag)
+          ? {
+              current_clan_tag: g.tag,
+              current_clan_name: g.name,
+              current_clan_checked_at: extra.checked_at || undefined,
+            }
+          : records[a.tag];
       const arrived = (a: (typeof g.accounts)[number]) =>
-        comparisonLocation(records[a.tag], g.tag, now, g.name).state ===
-        "arrived";
+        comparisonLocation(observed(a), g.tag, now, g.name).state === "arrived";
       const accounts = [...g.accounts].sort(
         (a, b) =>
           Number(arrived(a)) - Number(arrived(b)) ||
@@ -46,6 +58,29 @@ export function declarationGroups(
           a.tag.localeCompare(b.tag),
       );
       const late = accounts.filter((a) => !!g.tag && !arrived(a));
+      const presentFillers =
+        extra?.fillers?.filter((f) => !accounts.some((a) => a.tag === f.tag)) ||
+        [];
+      const readiness = summarizeArrivalReadiness(
+        [
+          ...accounts.map((a) => ({
+            ...a,
+            current_clan_tag: observed(a)?.current_clan_tag ?? null,
+            current_clan_name: observed(a)?.current_clan_name ?? null,
+            current_clan_checked_at: observed(a)?.current_clan_checked_at,
+            assigned_clan_name: g.name,
+          })),
+          ...presentFillers.map((f) => ({
+            tag: f.tag,
+            assigned_clan_tag: g.tag,
+            assigned_clan_name: g.name,
+            current_clan_tag: g.tag,
+            current_clan_name: g.name,
+            current_clan_checked_at: extra?.checked_at || undefined,
+          })),
+        ],
+        { now, capacity: g.capacity },
+      );
       return {
         ...g,
         key: g.tag || `unassigned:${g.pool}`,
@@ -54,20 +89,11 @@ export function declarationGroups(
         checkingCount: g.tag
           ? accounts.filter(
               (a) =>
-                comparisonLocation(records[a.tag], g.tag, now, g.name).state ===
+                comparisonLocation(observed(a), g.tag, now, g.name).state ===
                 "checking",
             ).length
           : 0,
-        readiness: summarizeArrivalReadiness(
-          accounts.map((a) => ({
-            ...a,
-            current_clan_tag: records[a.tag]?.current_clan_tag ?? null,
-            current_clan_name: records[a.tag]?.current_clan_name ?? null,
-            current_clan_checked_at: records[a.tag]?.current_clan_checked_at,
-            assigned_clan_name: g.name,
-          })),
-          { now, capacity: g.capacity },
-        ),
+        readiness,
       };
     })
     .sort(

@@ -256,6 +256,7 @@ export default function PublicationWorkspace({
     tag,
     name: group.name,
     total: group.accounts.length,
+    fillerCount: group.accounts.filter(account => account.roster_filler).length,
     capacity: draft?.preview.clans.find(clan => clan.tag === tag)?.effective_capacity,
     accounts: query ? group.accounts.filter(account =>
       [account.player_name, account.tag, account.pool, group.name, tag]
@@ -523,8 +524,9 @@ export default function PublicationWorkspace({
                           {group.tag === "unassigned"
                             ? `${group.total} account${group.total === 1 ? "" : "s"}`
                             : `${group.tag} · ${group.total} / ${group.capacity ?? "—"}`}
-                          {group.capacity && group.total > group.capacity ? (
-                            <span className="publication-over">{` · +${group.total - group.capacity} over`}</span>
+                          {group.fillerCount > 0 && <small>{` · +${group.fillerCount} filler${group.fillerCount === 1 ? "" : "s"}`}</small>}
+                          {group.capacity && group.total - group.fillerCount > group.capacity ? (
+                            <span className="publication-over">{` · +${group.total - group.fillerCount - group.capacity} over`}</span>
                           ) : null}
                         </span>
                       </summary>

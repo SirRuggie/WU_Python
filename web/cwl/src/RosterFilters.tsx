@@ -30,6 +30,7 @@ const statusLabels: Record<RosterReleaseStatus, string> = {
   over_capacity: "Over capacity",
   locked: "Locked placement",
   outside_family: "Outside family",
+  filler: "Filler",
 };
 
 export function activeRosterFilterCount(value: RosterReleaseFilters): number {

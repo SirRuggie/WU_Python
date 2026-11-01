@@ -435,7 +435,9 @@ def test_staff_can_list_and_read_another_staff_members_run(monkeypatch):
             async def to_list(self, **kwargs):
                 return [parent] if self.parent else []
 
-        def find(query):
+        def find(query, projection=None):
+            if projection is not None:
+                assert "items" not in projection
             queries.append(query)
             cursor = Cursor()
             cursor.parent = "parent_id" not in query

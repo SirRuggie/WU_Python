@@ -405,6 +405,16 @@ class ProfileRuns:
             )
             await self.prune()
 
+    async def summaries(self, guild_id, *, active_only=False):
+        query = {'kind': KIND, 'guild_id': guild_id}
+        if active_only:
+            query['state'] = 'queued'
+        # Manifests contain every member's reviewed data. The picker needs none
+        # of those large arrays, nor child receipts.
+        projection = {'_id': 1, 'state': 1, 'user_id': 1, 'stopped_by': 1,
+                      'stop_requested': 1, 'created_at': 1}
+        return await self.collection.find(query, projection).sort('created_at', -1).to_list(length=21)
+
     async def prune_throttled(self, at):
         # One process-wide cadence per collection; terminal transitions still prune.
         key = id(self.mongo)

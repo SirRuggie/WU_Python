@@ -61,10 +61,28 @@ export default function ArrivalCheck({
   const groups = useMemo(
     () =>
       data && context
-        ? declarationGroups(data, context.roster, records, now)
+        ? declarationGroups(
+            data,
+            context.roster,
+            records,
+            now,
+            extras.data?.clans,
+          )
         : [],
-    [data, context, records, now],
+    [data, context, records, now, extras.data],
   );
+  const markControl =
+    data && !pingWorking.current
+      ? {
+          seasonId,
+          revision: extras.data?.revision ?? data.roster.revision,
+          disabled: checking || extras.loading,
+          onChanged: () => {
+            refresh();
+            extras.refresh();
+          },
+        }
+      : undefined;
   const poolGroups = groups.filter((g) => g.pool === pool);
   const visible = poolGroups.filter(
     (g) =>
@@ -342,6 +360,7 @@ export default function ArrivalCheck({
                     excluded from readiness.
                   </p>
                   <DeclarationExtras
+                    markControl={markControl}
                     row={c}
                     loading={extras.loading}
                     error={extras.error}
@@ -379,6 +398,7 @@ export default function ArrivalCheck({
             ) && <p>No matching players or clans.</p>}
           {visible.map((group) => (
             <DeclarationClan
+              markControl={markControl}
               key={group.key}
               group={group}
               records={records}

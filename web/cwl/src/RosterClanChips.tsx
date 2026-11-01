@@ -16,6 +16,7 @@ type Props = {
 export type RosterClanChipSummary = {
   clan: RosterClan;
   assignedCount: number;
+  fillerCount: number;
   knownWeightCount: number;
   missingWeightCount: number;
   totalWeight: number | null;
@@ -36,16 +37,18 @@ export function buildRosterClanChipSummaries(
 ): RosterClanChipSummary[] {
   const byClan = new Map<
     string,
-    { count: number; known: number; weight: number }
+    { count: number; known: number; weight: number; fillers: number }
   >();
   for (const account of accounts) {
     if (!account.assigned_clan_tag) continue;
     const summary = byClan.get(account.assigned_clan_tag) || {
       count: 0,
+      fillers: 0,
       known: 0,
       weight: 0,
     };
     summary.count += 1;
+    summary.fillers += Number(!!account.roster_filler);
     if (
       account.effective_weight != null &&
       Number.isFinite(account.effective_weight)
@@ -66,12 +69,14 @@ export function buildRosterClanChipSummaries(
     .map((clan) => {
       const accountSummary = byClan.get(clan.tag) || {
         count: 0,
+        fillers: 0,
         known: 0,
         weight: 0,
       };
       return {
         clan,
         assignedCount: accountSummary.count,
+        fillerCount: accountSummary.fillers,
         knownWeightCount: accountSummary.known,
         missingWeightCount: accountSummary.count - accountSummary.known,
         totalWeight: accountSummary.known ? accountSummary.weight : null,
@@ -144,7 +149,8 @@ export default function RosterClanChips({
                   summary.assignedCount >= summary.capacity;
                 const over =
                   summary.capacity !== null &&
-                  summary.assignedCount > summary.capacity;
+                  summary.assignedCount - summary.fillerCount >
+                    summary.capacity;
                 const countLabel =
                   summary.capacity === null
                     ? `${summary.assignedCount} assigned`
@@ -182,6 +188,12 @@ export default function RosterClanChips({
                             : ` / ${summary.capacity}`}
                         </span>
                       </span>
+                      {summary.fillerCount > 0 && (
+                        <small>
+                          +{summary.fillerCount} filler
+                          {summary.fillerCount === 1 ? "" : "s"}
+                        </small>
+                      )}
                       <span className="roster-clan-chip-meta">
                         <span>{totalLabel}</span>
                         {summary.missingWeightCount > 0 && (

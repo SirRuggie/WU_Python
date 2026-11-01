@@ -1331,6 +1331,7 @@ export default function RosterWorkspace({
           )}
           {editingTag && roster.accounts.some((a) => a.tag === editingTag) && (
             <RosterPlayerDialog
+              seasonId={seasonId}
               onClanWeights={onClanWeights}
               rosterUi
               onDirty={setPlayerDirty}
