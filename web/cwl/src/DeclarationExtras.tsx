@@ -13,7 +13,7 @@ export default function DeclarationExtras({
   error: string;
   now: number;
 }) {
-  if (loading || (!row && !error))
+  if (loading)
     return (
       <p className="declaration-extras-status" role="status">
         Checking clan members…

@@ -6,6 +6,7 @@ import { declarationGroups } from "./declarationGroups";
 import DeclarationClan from "./DeclarationClan";
 import DeclarationPingPanel from "./DeclarationPingPanel";
 import useDeclarationExtras from "./useDeclarationExtras";
+import DeclarationExtras from "./DeclarationExtras";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import { useCwlPool } from "./CwlPoolTabs";
 import { hiddenPublicationStatus } from "./publicationStatus";
@@ -60,15 +61,9 @@ export default function ArrivalCheck({
   const groups = useMemo(
     () =>
       data && context
-        ? declarationGroups(
-            data,
-            context.roster,
-            records,
-            now,
-            extras.data?.clans,
-          )
+        ? declarationGroups(data, context.roster, records, now)
         : [],
-    [data, context, records, now, extras.data],
+    [data, context, records, now],
   );
   const poolGroups = groups.filter((g) => g.pool === pool);
   const visible = poolGroups.filter(
@@ -133,8 +128,18 @@ export default function ArrivalCheck({
     order: ordered.map((a) => a.tag),
   });
   const hosts = groups.filter((g) => g.tag);
+  const extraOnlyHosts =
+    extras.data?.clans.filter((c) => !groups.some((g) => g.tag === c.tag)) ||
+    [];
   const failedExtras =
-    extras.data?.clans.filter((c) => c.status !== "current").length || 0;
+    (extras.data?.clans.filter((c) => c.status !== "current").length || 0) +
+    groups.filter(
+      (g) =>
+        g.pool === "lazy" &&
+        !!g.tag &&
+        !!extras.data &&
+        !extras.data.clans.some((c) => c.tag === g.tag),
+    ).length;
   return (
     <section
       ref={root}
@@ -175,7 +180,7 @@ export default function ArrivalCheck({
               ? "Couldn't check clan members"
               : extras.loading || !extras.data
                 ? "Checking clan members…"
-                : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${extras.data.clans.some((c) => c.status !== "current") ? "confirmed " : ""}not on roster`}
+                : `${extras.data.clans.reduce((n, c) => n + (c.count || 0), 0)} ${failedExtras ? "confirmed " : ""}not on roster`}
             {failedExtras > 0 &&
               ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} couldn't be checked`}
             <button
@@ -286,6 +291,24 @@ export default function ArrivalCheck({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {pool === "lazy" &&
+            extraOnlyHosts
+              .filter((c) => !onlyExtras || (c.count || 0) > 0)
+              .map((c) => (
+                <section className="declaration-extra-only" key={c.tag}>
+                  <h3>{c.name}</h3>
+                  <p>
+                    No assigned accounts in the shown roster. Member flags only;
+                    excluded from readiness.
+                  </p>
+                  <DeclarationExtras
+                    row={c}
+                    loading={extras.loading}
+                    error={extras.error}
+                    now={now}
+                  />
+                </section>
+              ))}
           {!visible.length && (
             <p>
               {pool === "lazy" && onlyExtras ? (

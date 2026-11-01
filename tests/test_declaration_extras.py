@@ -209,3 +209,39 @@ class DeclarationExtrasHTTP(unittest.IsolatedAsyncioTestCase):
                 ).status,
                 409,
             )
+
+    async def test_signup_after_publication_uses_current_signup_context(self):
+        await self.prepare()
+        with self.app["store"].tx() as db:
+            db.execute(
+                "DELETE FROM signups WHERE season_id=? AND tag='#G2Y'", (self.sid,)
+            )
+        await self.publish()
+        await self.signup("lazy", "#G2Y")
+        data = await self.read("?source=published")
+        target = next(c for c in data["clans"] if c["tag"] == "#C2Y")
+        player = next(r for r in target["extras"] if r["tag"] == "#G2Y")
+        self.assertEqual(player["context"], "Signed up, unplaced")
+
+    async def test_timeout_never_turns_cached_current_empty_into_zero(self):
+        from types import SimpleNamespace
+
+        cache = SimpleNamespace(
+            refresh_roster=AsyncMock(side_effect=TimeoutError()),
+            roster=lambda tag: {
+                "status": "current",
+                "value": {"members": []},
+                "checked_at": "2026-11-01T05:00:00Z",
+            },
+        )
+        await self.prepare()
+        with patch("cwl_web.declaration_extras.observations", return_value=cache):
+            rows = (await self.read())["clans"]
+        self.assertTrue(
+            all(
+                r["status"] == "unavailable"
+                and r["count"] is None
+                and r["extras"] is None
+                for r in rows
+            )
+        )

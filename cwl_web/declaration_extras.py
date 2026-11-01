@@ -1,7 +1,6 @@
 """Staff-only, explicit reads of extra members in Lazy hosting clans."""
 
 import asyncio
-import json
 from aiohttp import web
 from utils.declaration_extras import extras_for
 from .clan_weights import observations
@@ -31,7 +30,7 @@ def snapshot(request, source):
                     (publication["id"],),
                 )
             ]
-            clans = json.loads(publication["clans_json"])
+            clans = _rule_rows(db, sid)
             basis = publication["version"]
         else:
             accounts = _roster_rows(db, sid)
@@ -48,6 +47,7 @@ async def check(request):
     if source not in ("published", "draft"):
         raise web.HTTPBadRequest(text="Choose the shown roster source")
     accounts, clans, basis = snapshot(request, source)
+    current_accounts, _, current_revision = snapshot(request, "draft")
     expected = request.query.get("basis")
     if expected is not None and expected != str(basis):
         raise web.HTTPConflict(text="Roster changed. Refresh before checking members.")
@@ -82,7 +82,13 @@ async def check(request):
         current = saved["status"] == "current" and not timed_out
         try:
             extras = (
-                extras_for(clan["tag"], saved["value"]["members"], accounts, names)
+                extras_for(
+                    clan["tag"],
+                    saved["value"]["members"],
+                    accounts,
+                    names,
+                    current_accounts=current_accounts,
+                )
                 if current
                 else None
             )
@@ -100,7 +106,10 @@ async def check(request):
         }
 
     rows = await asyncio.gather(*(one(clan, index) for index, clan in enumerate(lazy)))
-    if snapshot(request, source)[2] != basis:
+    if (
+        snapshot(request, source)[2] != basis
+        or snapshot(request, "draft")[2] != current_revision
+    ):
         raise web.HTTPConflict(
             text="Roster changed while members were checked. Refresh again."
         )

@@ -715,14 +715,19 @@ tests and approximate rendered posts do not prove live Discord delivery.
 
 Declaration check separately reads the current official member list for Lazy
 hosting clans and compares account tags with assignments in the shown source.
-Published checks use that publication's accounts and clan rules; draft checks use
-the current draft. A player assigned elsewhere is labeled with the other clan,
+Published checks use the shown publication's account assignments; draft checks
+use the draft. Hosting scope and signup context use current rules and signups, so
+a signup after publication is never mislabeled as not signed up. A player
+assigned elsewhere is labeled with the other clan,
 an unassigned signup as `Signed up, unplaced`, and other accounts as `Not signed up`.
 Sharing an owner with a rostered account does not make an alt rostered.
 
 The amber clan disclosure lists name, TH, tag and context. The summary counts
 confirmed extras, marks incomplete checks, and a Lazy-only filter narrows the clan
-cards. Empty hosting clans are included. This flag never changes placements,
+cards. Empty hosting clans have a separate member-flags section and never seed
+readiness groups or alter their capacity, denominator, pool or ping count. A
+completed response missing a clan row is unavailable, never stuck checking.
+This flag never changes placements,
 blocks declaration, pings or kicks. The existing pool-wide ping count and fresh
 confirmation path continue to consider missing assigned accounts only, regardless
 of the extra-member filter.

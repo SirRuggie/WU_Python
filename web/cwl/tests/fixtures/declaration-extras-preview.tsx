@@ -42,7 +42,7 @@ window.fetch = async (input, options) => {
     result = {
       revision: 0,
       channel: null,
-      can_send: false,
+      can_send: true,
       channels: [],
       active: null,
       test_running: false,
@@ -57,13 +57,15 @@ window.fetch = async (input, options) => {
     result = {
       source: "published",
       basis: 1,
-      clans: data.extra_clans.map((row, i) =>
-        query.has("failure") && i === 0
-          ? { ...row, status: "unavailable", count: null, extras: null }
-          : query.has("empty")
-            ? { ...row, status: "current", count: 0, extras: [] }
-            : row,
-      ),
+      clans: data.extra_clans
+        .filter((_, i) => !query.has("omit") || i !== 0)
+        .map((row, i) =>
+          query.has("failure") && i === 0
+            ? { ...row, status: "unavailable", count: null, extras: null }
+            : query.has("empty")
+              ? { ...row, status: "current", count: 0, extras: [] }
+              : row,
+        ),
     };
   } else
     return new Response(

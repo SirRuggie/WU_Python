@@ -38,18 +38,39 @@ fs.mkdirSync(output, { recursive: true });
         path: path.join(output, `${width}-rows-first.png`),
         fullPage: true,
       });
-      const flag = page.locator(".declaration-extras summary").first();
+      const readinessBefore = await page
+        .getByRole("button", { name: /^(Main|Lazy) ·/ })
+        .allTextContents();
+      const pingBefore = await page
+        .getByRole("button", { name: /^Ping \d+ missing$/ })
+        .textContent();
+      const amber = page
+        .locator(".declaration-clan")
+        .filter({ hasText: "W. U. Lazy Amber" });
+      const flag = amber.locator(".declaration-extras summary");
       await flag.waitFor();
+      assert.deepEqual(
+        await page
+          .getByRole("button", { name: /^(Main|Lazy) ·/ })
+          .allTextContents(),
+        readinessBefore,
+      );
+      assert.equal(
+        await page
+          .getByRole("button", { name: /^Ping \d+ missing$/ })
+          .textContent(),
+        pingBefore,
+      );
       await flag.click();
       assert(
-        (
-          await page.locator(".declaration-extras").first().innerText()
-        ).includes("Assigned to W. U. Lazy Blaze"),
+        (await amber.locator(".declaration-extras").innerText()).includes(
+          "Assigned to W. U. Lazy Blaze",
+        ),
       );
       assert(
-        (
-          await page.locator(".declaration-extras").first().innerText()
-        ).includes("Family member alt"),
+        (await amber.locator(".declaration-extras").innerText()).includes(
+          "Family member alt",
+        ),
       );
       await page.screenshot({
         path: path.join(output, `${width}-expanded.png`),
@@ -82,7 +103,8 @@ fs.mkdirSync(output, { recursive: true });
       await page
         .getByRole("checkbox", { name: "Clans with not-on-roster players" })
         .check();
-      assert.equal(await page.locator(".declaration-clan-toggle").count(), 2);
+      assert.equal(await page.locator(".declaration-clan-toggle").count(), 1);
+      assert.equal(await page.locator(".declaration-extra-only").count(), 1);
       await page.screenshot({
         path: path.join(output, `${width}-filtered.png`),
         fullPage: true,
@@ -114,11 +136,17 @@ fs.mkdirSync(output, { recursive: true });
       await page
         .getByRole("button", { name: "Clear filter", exact: true })
         .click();
-      assert.equal(await page.locator(".declaration-clan-toggle").count(), 4);
+      assert.equal(await page.locator(".declaration-clan-toggle").count(), 3);
       await page.screenshot({
         path: path.join(output, `${width}-empty.png`),
         fullPage: true,
       });
+      await page.goto(`${origin}/declaration-extras-preview.html?omit=1`);
+      const missingRow = page.locator(".declaration-clan").filter({hasText: "W. U. Lazy Amber"});
+      await missingRow.getByText(/Couldn't check/).waitFor();
+      assert(!(await missingRow.innerText()).includes("Checking clan members"));
+      assert((await page.locator(".arrival-check").innerText()).includes("couldn't be checked"));
+      await page.screenshot({path: path.join(output, `${width}-missing-row.png`), fullPage: true});
       assert.deepEqual(errors, []);
       results.push(measure);
       await page.close();

@@ -82,3 +82,14 @@ it("lists account identity and context without a send action or external HTML", 
   expect(host.querySelector("img")).toBeNull();
   expect(host.querySelector("button")).toBeNull();
 });
+
+it("a completed response missing this clan is terminal unavailable", async () => {
+  await act(async () =>
+    root.render(
+      <DeclarationExtras loading={false} error="" now={Date.now()} />,
+    ),
+  );
+  expect(host.textContent).toContain("Couldn't check");
+  expect(host.textContent).not.toContain("Checking");
+  expect(host.textContent).not.toContain("0 not on roster");
+});
