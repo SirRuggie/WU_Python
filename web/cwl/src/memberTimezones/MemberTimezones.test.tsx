@@ -422,7 +422,8 @@ it("retains the selected run and progress when editing a member and returning", 
       return {
         run_id: "run",
         state: "queued",
-        started_by: "Staff fixture",
+        started_by: uid,
+        stopped_by: uid,
         rows: [
           {
             discord_id: uid,
@@ -452,9 +453,16 @@ it("retains the selected run and progress when editing a member and returning", 
   expect(details.textContent).toContain("Standardize progress");
   await click("Edit Ada");
   await click("Cancel");
-  expect(host.querySelector(".mt-top-actions")?.textContent).toContain(
-    "Started by Staff fixture",
-  );
+  const actions = host.querySelector(".mt-top-actions")!;
+  expect(actions.textContent).toContain("Started by");
+  expect(actions.textContent).toContain("Stopped by");
+  expect(actions.textContent).not.toContain(uid);
+  expect(transport.mock.calls.some(([path])=>String(path).includes("staff-signup-members"))).toBe(false);
+  expect(
+    [...actions.querySelectorAll(".user-display-name")].map(
+      (n) => n.textContent,
+    ),
+  ).toContain("Ada");
   expect(host.querySelector(".mt-top-actions")?.textContent).toContain(
     "Standardize progress",
   );

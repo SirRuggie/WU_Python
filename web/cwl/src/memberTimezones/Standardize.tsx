@@ -1,4 +1,4 @@
-import DiscordIdentity from "../DiscordIdentity";
+import DiscordIdentity, { discordIdentityName } from "../DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import type { Change, Run, Member } from "./types";
@@ -24,6 +24,15 @@ export default function Standardize({
       { run_id: string; state: string; started_by?: string }[]
     >([]);
   const [reviewOnly, setReviewOnly] = useState(false);
+  const actorProfile = (id?: string) =>
+    members.find((m) => m.discord_id === id)?.discord_profile || null;
+  const actorName = (id?: string) =>
+    discordIdentityName(
+      id,
+      actorProfile(id),
+      members.find((m) => m.discord_id === id)?.name,
+    );
+
   const alive = useRef(true),
     generation = useRef(0);
   useEffect(() => {
@@ -216,7 +225,9 @@ export default function Standardize({
               {history.map((r) => (
                 <option key={r.run_id} value={r.run_id}>
                   {r.state} · {r.run_id.slice(-10)}
-                  {r.started_by ? ` · Started by ${r.started_by}` : ""}
+                  {r.started_by
+                    ? ` · Started by ${actorName(r.started_by) || "Discord member unavailable"}`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -305,10 +316,28 @@ export default function Standardize({
                     ? "Stopping after current member"
                     : "Working"}
             </h2>
-            <p>
-              Started by {run.started_by || "Unknown"}
-              {run.stopped_by ? ` · Stopped by ${run.stopped_by}` : ""}
-            </p>
+            <div>
+              <span>Started by</span>
+              <DiscordIdentity
+                userId={run.started_by}
+                displayName={actorName(run.started_by)}
+                resolvedMember={actorProfile(run.started_by)}
+                variant="compact"
+                contact={false}
+              />
+              {run.stopped_by && (
+                <>
+                  <span>Stopped by</span>
+                  <DiscordIdentity
+                    userId={run.stopped_by}
+                    displayName={actorName(run.stopped_by)}
+                    resolvedMember={actorProfile(run.stopped_by)}
+                    variant="compact"
+                    contact={false}
+                  />
+                </>
+              )}
+            </div>
             {["queued", "stopping"].includes(run.state) && (
               <button
                 disabled={busy || disabled || run.state === "stopping"}

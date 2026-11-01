@@ -318,10 +318,14 @@ export default function ManualStrikeEditor({
                           key={item.id}
                           onClick={() => void choose(item)}
                         >
-                          {item.name}
-                          <small>
-                            Discord member · {item.id} · Choose account
-                          </small>
+                          <DiscordIdentity
+                            userId={item.id}
+                            displayName={item.name}
+                            resolvedMember={item.discord_profile || null}
+                            variant="compact"
+                            contact={false}
+                          />
+                          <small>Choose account</small>
                         </button>
                       ))}
                     </div>

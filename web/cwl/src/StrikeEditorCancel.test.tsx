@@ -208,12 +208,23 @@ it("starts empty, searches Discord members and requires choosing a linked accoun
     if (path.startsWith("/strikes/targets?"))
       return {
         accounts: [],
-        members: [{ id: "42", name: "Birch member", accounts: [] }],
+        members: [
+          {
+            id: "700731132936978456",
+            name: "Birch member",
+            accounts: [],
+            discord_profile: {
+              id: "700731132936978456",
+              display_name: "Birch member",
+              username: "birch",
+            },
+          },
+        ],
       };
-    if (path === "/strikes/members/42/accounts")
+    if (path === "/strikes/members/700731132936978456/accounts")
       return {
         member: {
-          id: "42",
+          id: "700731132936978456",
           name: "Birch member",
           accounts: [
             {
@@ -235,6 +246,10 @@ it("starts empty, searches Discord members and requires choosing a linked accoun
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
   });
+  expect(host.textContent).not.toContain("700731132936978456");
+  expect(host.querySelector(".user-display-name")?.textContent).toBe(
+    "Birch member",
+  );
   await act(async () =>
     [...host.querySelectorAll("button")]
       .find((b) => b.textContent?.includes("Birch member"))!

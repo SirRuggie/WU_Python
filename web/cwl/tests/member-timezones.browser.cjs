@@ -192,6 +192,15 @@ fs.mkdirSync(output, { recursive: true });
         .getByRole("heading", { name: /Standardize progress · Stopped/ })
         .waitFor();
       assert(
+        !(await scope.textContent()).includes("700731132936978456"),
+        "run actors use shared profiles, never numeric labels",
+      );
+      assert((await scope.textContent()).includes("Started by"));
+      assert((await scope.textContent()).includes("Stopped by"));
+      const actor=scope.locator('.discord-identity-compact').filter({hasText:'Discord member unavailable'}).first();
+      await actor.scrollIntoViewIfNeeded();
+      await page.screenshot({path:`${output}/${width}-run-actors.png`,fullPage:false});
+      assert(
         (await scope.textContent()).includes(
           "Stopped before this member started.",
         ),

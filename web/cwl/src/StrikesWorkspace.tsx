@@ -1223,7 +1223,7 @@ export default function StrikesWorkspace({
                   <h2 ref={detailHeading} tabIndex={-1}>
                     {selectedAccount.player_name}
                   </h2>
-                  {selectedAccount.player_tag} ·{" "}
+                  <div>{selectedAccount.player_tag}</div>
                   <DiscordIdentity
                     userId={selectedAccount.discord_id}
                     linkStatus={selectedAccount.link_status}
@@ -1234,8 +1234,7 @@ export default function StrikesWorkspace({
                       ] || null
                     }
                     resolving={discordProfiles.loading}
-                  />{" "}
-                  ·{" "}
+                  />
                   {selectedAccount.current_clan_name
                     ? `${selectedAccount.clan_is_current === false ? "Last known" : "Current"}: ${selectedAccount.current_clan_name}`
                     : "No clan"}{" "}

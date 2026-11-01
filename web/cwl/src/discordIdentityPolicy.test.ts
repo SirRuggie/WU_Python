@@ -13,13 +13,29 @@ function sourceFiles(folder: string): string[] {
         : [],
   );
 }
+function rawIdentityLabel(source: string) {
+  return /Discord\s+(?:member\s*·\s*)?(?:\$\{[^}]+\}|\{\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\}|[1-9][0-9]{14,21})/.test(
+    source,
+  );
+}
+it("rejects raw identity labels for nested template and JSX values and real IDs", () => {
+  for (const source of [
+    "`Discord ${item.id}`",
+    "<small>Discord {id}</small>",
+    "<small>Discord member · {item.id}</small>",
+    "<strong>Discord 700731132936978456</strong>",
+  ])
+    expect(rawIdentityLabel(source)).toBe(true);
+  for (const source of [
+    "<summary>Discord details</summary>",
+    "Discord ID: <code>{userId}</code>",
+    "<DiscordIdentity userId={item.id}/>",
+  ])
+    expect(rawIdentityLabel(source)).toBe(false);
+});
 it("blocks Discord plus a raw identity as a primary label in dashboard source", () => {
   const offenders = sourceFiles(
     fileURLToPath(new URL(".", import.meta.url)),
-  ).filter((file) =>
-    /Discord\s+\$\{[^}]*\b(?:discordId|discord_id|userId|user_id|member\.id)\b/.test(
-      readFileSync(file, "utf8"),
-    ),
-  );
+  ).filter((file) => rawIdentityLabel(readFileSync(file, "utf8")));
   expect(offenders).toEqual([]);
 });
