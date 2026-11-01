@@ -176,7 +176,7 @@ export default function StrikeActivityRoster({
     };
   }, [read, reload]);
   useActivityIdentityRefresh({
-    enabled: !!data.identity_updating,
+    enabled: !!data.identity_updating || !!data.identity_warning,
     generation: request.current,
     busy: () => pending.current || bulkBusy,
     onResult: (result) =>
@@ -463,8 +463,10 @@ export default function StrikeActivityRoster({
       {data.weight_warning && (
         <p className="notice error">{data.weight_warning}</p>
       )}
-      {data.identity_warning && (
-        <p className="notice error">{data.identity_warning}</p>
+      {data.identity_warning && !data.identity_updating && (
+        <p className="muted" role="status">
+          {data.identity_warning}
+        </p>
       )}
       <h2 className="sr-only" ref={headingRef} tabIndex={-1}>
         Family accounts <small>({visible.length})</small>

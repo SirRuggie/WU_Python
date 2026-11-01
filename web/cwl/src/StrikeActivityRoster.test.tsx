@@ -575,3 +575,10 @@ it("empty base tab has no dead Clear filters action", async () => {
     ),
   ).toBe(false);
 });
+it("shows a muted unavailable-names status and no failure while loading", async () => {
+  vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({accounts:[row], clans:[], identity_warning:"Names temporarily unavailable", identity_updating:false})));
+  await act(async () => root.render(<StrikeActivityRoster state="?activity_view=all" onChoose={vi.fn()} />));
+  const status = [...host.querySelectorAll("[role=status]")].find(node => node.textContent === "Names temporarily unavailable");
+  expect(status?.classList.contains("muted")).toBe(true);
+  expect(status?.classList.contains("error")).toBe(false);
+});
