@@ -1,5 +1,53 @@
 # Dashboard frontend releases
 
+## Compare-timezones-1 — October 31, 2026
+
+PR [#112](https://github.com/SirRuggie/WU_Python/pull/112), tag
+`compare-timezones-1`, revision `95228f9e6df5873c76dfe8e708c6e8e1df794a1b`.
+Claude ACCEPT219 and read-only SMOKE221 passed. Compare Time zone sorts known
+zones west to east, then unknown labels, then no zone; owner groups stay together.
+Labels use the last spaced pipe in a nickname and standard GMT offsets, without
+seasonal inference. Other roster sorts and placements remain unchanged.
+
+Backend and external immutable frontend activated19:44:04EDT after B smoke220.
+BackendPID676530/invocation27f244b4930449e2b8dba1cc5a142e5b runs95228f9;
+botPID667192/invocationcd3a187e0eeb40608d2d31828a8449df stayed on Bdf1ef46.
+Two readiness samples, network-blocked runtime imports, no startup tracebacks,
+and public manifest hashes passed. Unrelated service drop-ins were preserved.
+Fresh SQLite backup/integrity/protected data verification:
+repository `.local/compare-timezones-1-backup-20261031T234249Z`.
+Retained B Mongo backup/testrestore remains the protected baseline; this release
+adds read-only identity enrichment and no Mongo schema or bot changes. Exact
+3,560active strikes/301accounts/581profiles/274eligible rows and streaks,
+SQLite protected state and bot identity were unchanged after activation.
+
+Clean tagged build/staging used an isolated checkout; workspace dist was not a
+deployment target. Public entry `index-CwPH5ifa.js` SHA256
+`480d389116b2175b768e0a4d7d0e658bce9f49812d983a76f977838703d53335`;
+`RosterWorkspace-BsFwh72b.js` SHA256
+`e61799407a139097f18b6c416a3dd3a1553a869273338e57c73f8912b7ae915a`.
+All selected roster JS/CSS assets matched the immutable manifest.
+
+Validation:1,225frontend tests/228files,47guarded focused backend tests,
+TypeScript/build, all seven integrated layout stages and three mutation kills.
+Isolated360×800/1440×1000 checks asserted owner grouping/order, narrow labels,
+no overflow/console errors/non-login writes. Claude independently ran437backend
+web tests and400sort-fuzz rounds, cold/hung directory checks, and the browser
+fixture. Live smoke showed PST→EST→GMT-3→CEST→IST→AEST at360 without overflow;
+93of97roster owners had cached nicknames. A broader read-only count of287linked
+owners yielded189known zones/9unknown labels/89none. This broader population is
+different from the97owners in the sampled roster.
+
+Follow-up polish tracks UK/NZT aliases and subdivision flag tag characters,
+logged lookup failures, wiring the timezone fixture into the main layout harness,
+and signup-activity visibility refresh frequency. These were not changed during
+this accepted release. No Discord nickname edits or other live writes were sent.
+Evidence `/tmp/wu-timezones-release/{live.json,activation.log,owner-zones.json,
+rollback.json,sqlite-backup.log}`. Guarded backend/frontend rollback retains B
+`df1ef46ea683dbfa3ca8c8f2c399e7b3fd2fb95a`, verifies readiness/public hashes and
+keeps the bot unchanged; it was not executed. Do not restore data.
+
+
 ## Outside-family-1 — October 31, 2026
 
 PR [#110](https://github.com/SirRuggie/WU_Python/pull/110), tag `outside-family-1`,
