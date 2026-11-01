@@ -87,7 +87,7 @@ def test_random_capacity_no_unselected_moves_determinism():
 
 
 def test_filler_weight_band_is_retained_when_replanning_equal_weight_candidates():
-    rows = [account('f', 100000, '0', roster_filler=True), account('heavy', 200000, '1', kept=True), account('x', 100000), account('y', 100000)]
+    rows = [account('f', 100000, '0', roster_filler=True), dict(account('heavy', 200000, '1'), kept=True), account('x', 100000), account('y', 100000)]
     plan, skipped = balance_accounts(rows, hosts()[:2], ['f', 'x', 'y'], ['0', '1'])
     assert {'tag':'f','reason':'filler_manual_only'} in skipped
     assert not any(p['tag']=='f' for p in plan)

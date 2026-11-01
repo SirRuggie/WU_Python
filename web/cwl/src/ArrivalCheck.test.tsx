@@ -682,6 +682,11 @@ it("two rapid confirmed marks retain both overlays and send the newest revision 
   }
 });
 it("does not offer filler controls without roster permission", async () => {
+  localStorage.setItem("wu-staff-cwl-pool", "lazy");
+  for (const a of state.value.data.arrival.accounts) {
+    a.pool = "lazy";
+    a.hosting_pool = "lazy";
+  }
   const extrasView = vi.spyOn(await import("./DeclarationExtras"), "default");
   const { DashboardPermissions } = await import("./DashboardPermissions");
   extraState.value = {
@@ -720,6 +725,7 @@ it("does not offer filler controls without roster permission", async () => {
     ),
   );
   expect(host.querySelector('[aria-label^="Filler:"]')).toBeNull();
+  expect(extrasView).toHaveBeenCalled();
   expect(extrasView.mock.calls.at(-1)?.[0].markControl).toBeUndefined();
   extrasView.mockRestore();
 });
