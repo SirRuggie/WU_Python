@@ -88,8 +88,8 @@ Prompt 70 validation: 84 focused Warrior cases and three actual isolated Mongo
 cases passed. Six behavioral mutants were killed: cached final rename guard,
 missing between-role authorization, missing interaction lock, missing background
 load lock, cached settings authorization and shutdown cancellation omitted.
-The full guarded backend result is recorded in the handoff once complete.
-The unchanged frontend checks from prompt 68 remain 1248 tests, tsc/build.
+The final combined70/73 guarded backend result is5556passed,29skipped and221subtests; all owned Mongo fixtures stopped.
+Combined73frontend validation is1249tests/230files,tsc/build;20wizard scenarios at360/1440 include visible AU/US/all-zone menus.
 All owned Mongo daemons stopped. No migration or live rename was performed.
 
 Prompt73 is included before READY so the zone picker shares the same bot restart.
