@@ -146,7 +146,13 @@ export default function CompareClans({
 
   const detailsOrderKey = visibleClans
     .flatMap((tag) =>
-      compareClanAccounts(roster.accounts, tag, sort, roster.owner_nicknames)
+      compareClanAccounts(
+        roster.accounts,
+        tag,
+        sort,
+        roster.owner_nicknames,
+        roster.owner_timezones,
+      )
         .filter((account) => matchesTownHall(account.town_hall, townHalls))
         .map((account) => account.tag),
     )
@@ -342,6 +348,11 @@ export default function CompareClans({
           onChange={updateClans}
         />
       )}
+      {roster.owner_timezones_warning && (
+        <p className="notice error" role="status">
+          {roster.owner_timezones_warning}
+        </p>
+      )}
       {panel === "sort" && (
         <ActionPanel
           title="Sort players"
@@ -488,6 +499,7 @@ export default function CompareClans({
                   clanTag,
                   sort,
                   roster.owner_nicknames,
+                  roster.owner_timezones,
                 ).filter((account) =>
                   matchesTownHall(account.town_hall, townHalls),
                 );
@@ -554,6 +566,9 @@ export default function CompareClans({
                           <ComparePlayerCard
                             key={account.tag}
                             account={account}
+                            ownerTimeZone={
+                              roster.owner_timezones?.[account.user_id]
+                            }
                             ownerNickname={
                               roster.owner_nicknames?.[account.user_id]
                             }

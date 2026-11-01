@@ -1,5 +1,6 @@
 """Warrior Setup, the supported replacement for the retired recruit dashboard."""
 
+import coc
 import asyncio
 import logging
 from uuid import uuid4
@@ -15,7 +16,7 @@ from hikari.impl import (
     ModalActionRowBuilder as ModalRow,
 )
 from extensions.components import register_action
-from extensions.warrior import core, walkthrough
+from extensions.warrior import core, walkthrough, nickname_setup
 from utils.mongo import MongoClient
 from utils.emoji import emojis
 from utils.component_state import insert_state, update_state
@@ -429,33 +430,19 @@ async def action(
     action_id,
     mongo: MongoClient = lightbulb.di.INJECTED,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+    coc_client: coc.Client = lightbulb.di.INJECTED,
     **kwargs,
 ):
     sid, _, verb = action_id.partition(":")
     # Modals acknowledge immediately; all authorization and bounds are checked
     # again on submission before touching a member or configuration.
     if verb == "nick":
-        await ctx.respond_with_modal(
-            title="Warrior nickname",
-            custom_id=f"warrior_form:{sid}:nick",
-            components=[
-                ModalRow().add_text_input(
-                    "ign", "In-game name", max_length=25, required=True
-                ),
-                ModalRow().add_text_input(
-                    "zone",
-                    "Time zone (e.g. EST or UTC+5)",
-                    max_length=10,
-                    required=True,
-                ),
-                ModalRow().add_text_input(
-                    "country",
-                    "Country code or flag (e.g. US)",
-                    max_length=4,
-                    required=True,
-                ),
-            ],
-        )
+        await ctx.defer(edit=True)
+        try:
+            data, c = await core.session(ctx, bot, mongo, sid)
+            await nickname_setup.begin(ctx, data, c, mongo, coc_client)
+        except Exception as error:
+            await nickname_setup.failure(ctx, sid, error)
         return
     if verb == "setting":
         selected = ctx.interaction.values[0]
@@ -472,6 +459,8 @@ async def action(
     await ctx.defer(edit=True)
     try:
         data, c = await core.session(ctx, bot, mongo, sid)
+        if data.get("nickname_setup"):
+            await update_state(mongo, sid, {"$unset": {"nickname_setup": ""}})
         cfg = await core.settings(mongo, c["guild"].id)
         if verb == "home":
             output = await home(data, c, mongo)
@@ -690,14 +679,18 @@ async def action(
                 *back(sid),
             )
         elif verb == "retry":
-            existing_run = await mongo.warrior_walkthroughs.find_one({
-                "_id": walkthrough.run_id(c["guild"].id, c["member"].id),
-                "state": "paused",
-            })
+            existing_run = await mongo.warrior_walkthroughs.find_one(
+                {
+                    "_id": walkthrough.run_id(c["guild"].id, c["member"].id),
+                    "state": "paused",
+                }
+            )
             if not existing_run or not existing_run.get("ticket_id"):
                 raise core.SetupError("There is no paused walkthrough to retry.")
             ticket = await core.open_ticket(
-                mongo, c["guild"].id, c["member"].id,
+                mongo,
+                c["guild"].id,
+                c["member"].id,
                 ticket_id=existing_run["ticket_id"],
             )
             await mongo.warrior_walkthroughs.update_one(
@@ -764,21 +757,9 @@ async def form(
     try:
         data, c = await core.session(ctx, bot, mongo, sid)
         if verb == "nick":
-            core.manageable_target(c)
-            if not c["bot_permissions"] & hikari.Permissions.MANAGE_NICKNAMES:
-                raise core.SetupError("The bot needs Manage Nicknames.")
-            value = core.nickname(
-                modal_value(ctx, "ign"),
-                modal_value(ctx, "zone"),
-                modal_value(ctx, "country"),
+            raise core.SetupError(
+                "This old nickname form expired. Use the new nickname step in /warrior."
             )
-            await bot.rest.edit_member(
-                c["guild"].id,
-                c["member"].id,
-                nickname=value,
-                reason=f"Warrior Setup by {ctx.user.id}",
-            )
-            note = "Nickname updated."
         elif verb.startswith("setting:"):
             if not c["actor_permissions"] & hikari.Permissions.ADMINISTRATOR:
                 raise core.SetupError("Administrator permission is required.")
@@ -900,9 +881,42 @@ async def started(
     mongo: MongoClient = lightbulb.di.INJECTED,
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
 ):
+    from utils.member_profiles import MemberProfiles
+
     walkthrough.start(bot, mongo)
+    await MemberProfiles(mongo).ensure_indexes()
+    from extensions.warrior import profile_membership
+
+    profile_membership.start(bot, mongo)
 
 
 @loader.listener(hikari.StoppingEvent)
 async def stopping(_: hikari.StoppingEvent):
+    from extensions.warrior import profile_membership
+
+    await profile_membership.stop()
     await walkthrough.stop()
+
+
+@loader.listener(hikari.MemberDeleteEvent)
+@lightbulb.di.with_di
+async def profile_left(
+    event: hikari.MemberDeleteEvent, mongo: MongoClient = lightbulb.di.INJECTED
+):
+    from utils.constants import WARRIORS_UNITED_GUILD_ID
+    from utils.member_profiles import MemberProfiles
+
+    if int(event.guild_id) == WARRIORS_UNITED_GUILD_ID:
+        await MemberProfiles(mongo).membership(event.user.id, left_at=core.now())
+
+
+@loader.listener(hikari.MemberCreateEvent)
+@lightbulb.di.with_di
+async def profile_joined(
+    event: hikari.MemberCreateEvent, mongo: MongoClient = lightbulb.di.INJECTED
+):
+    from utils.constants import WARRIORS_UNITED_GUILD_ID
+    from utils.member_profiles import MemberProfiles
+
+    if int(event.guild_id) == WARRIORS_UNITED_GUILD_ID:
+        await MemberProfiles(mongo).membership(event.user.id, left_at=None)

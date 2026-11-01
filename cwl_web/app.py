@@ -1908,6 +1908,8 @@ def create_app(*, db_path=None, durability=None, providers=None, oauth=None, sec
     app.cleanup_ctx.append(_dashboard_accounts_lifecycle)
     from .roster_owner_names import lifecycle as owner_nicknames_lifecycle
     app.cleanup_ctx.append(owner_nicknames_lifecycle)
+    from .roster_profile_zones import lifecycle as profile_zones_lifecycle
+    app.cleanup_ctx.append(profile_zones_lifecycle)
     from .account_display import lifecycle as account_display_lifecycle
     app.cleanup_ctx.append(account_display_lifecycle)
     app.cleanup_ctx.append(todo_lifecycle)

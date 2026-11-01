@@ -138,19 +138,6 @@ def test_protected_targets_are_not_mutated(target):
         core.manageable_target(c)
 
 
-@pytest.mark.parametrize(
-    "ign,zone,country",
-    [("x" * 25, "UTC+100", "US"), ("Name", "EST", "notflag"), ("a\nb", "EST", "US")],
-)
-def test_nickname_validates_combined_length_and_country(ign, zone, country):
-    with pytest.raises(core.SetupError):
-        core.nickname(ign, zone, country)
-
-
-def test_nickname_country_conversion():
-    assert core.nickname("Warrior", "est", "us") == "Warrior | EST 🇺🇸"
-
-
 @pytest.mark.parametrize("rows", [[], [{"_id": "one"}, {"_id": "two"}]])
 def test_walkthrough_requires_exactly_one_open_ticket(rows):
     m = S(tickets=S(find=lambda query: Cursor(rows)))
@@ -264,11 +251,19 @@ def test_clans_paginate_without_dropping_options(monkeypatch):
     assert len(b["components"][1]["components"][0]["options"]) == 5
 
 
-def test_modals_acknowledge_without_member_changes():
-    ctx = S(respond_with_modal=AsyncMock())
-    run(ui.action(ctx, "1:nick", mongo=object(), bot=object()))
-    fields = ctx.respond_with_modal.call_args.kwargs["components"]
-    assert len(fields) == 3 and all(x.build()[0]["type"] == 1 for x in fields)
+def test_nickname_wizard_acknowledges_then_rechecks_session_before_loading(monkeypatch):
+    ctx = S(defer=AsyncMock())
+    data = {"_id": "1"}
+    c = context()
+    bot = object()
+    m = object()
+    client = object()
+    monkeypatch.setattr(core, "session", AsyncMock(return_value=(data, c)))
+    begin = AsyncMock()
+    monkeypatch.setattr(ui.nickname_setup, "begin", begin)
+    run(ui.action(ctx, "1:nick", mongo=m, bot=bot, coc_client=client))
+    ctx.defer.assert_awaited_once_with(edit=True)
+    begin.assert_awaited_once_with(ctx, data, c, m, client)
 
 
 def test_config_form_rechecks_authorization(monkeypatch):
@@ -391,7 +386,11 @@ def test_stale_bulk_confirmation_does_not_change_roles(monkeypatch):
     changes = AsyncMock()
     monkeypatch.setattr(core, "change_roles", changes)
     ctx = S(defer=AsyncMock(), interaction=S(edit_initial_response=AsyncMock()))
-    run(ui.action(ctx, "1:apply:all_clans:stale", mongo=m, bot=object()))
+    run(
+        ui.action(
+            ctx, "1:apply:all_clans:stale", mongo=m, bot=object(), coc_client=object()
+        )
+    )
     changes.assert_not_awaited()
     assert "already used" in repr(ctx.interaction.edit_initial_response.call_args)
 
@@ -411,7 +410,7 @@ def test_quick_setup_retains_visitor_if_standard_roles_fail(monkeypatch):
         return_value={"added": [], "removed": [], "unchanged": [], "failed": ["Family"]}
     )
     monkeypatch.setattr(core, "change_roles", changes)
-    run(ui.action(ctx, "1:quick", mongo=m, bot=object()))
+    run(ui.action(ctx, "1:quick", mongo=m, bot=object(), coc_client=object()))
     assert changes.await_count == 1 and "remove" not in changes.call_args.kwargs
 
 
@@ -459,36 +458,51 @@ def test_home_displays_assigned_roles_and_setup_guidance(monkeypatch):
 def test_new_walkthrough_falls_back_to_latest_approved_ticket():
     queries = []
     sorts = []
+
     class ApprovedCursor(Cursor):
         def sort(self, spec):
             sorts.append(spec)
             return self
+
     def find(query):
         queries.append(query)
-        return ApprovedCursor([] if query['status'] == 'open' else [
-            {'_id': 'approved_latest', 'status': 'approved'},
-            {'_id': 'approved_older', 'status': 'approved'},
-        ])
+        return ApprovedCursor(
+            []
+            if query["status"] == "open"
+            else [
+                {"_id": "approved_latest", "status": "approved"},
+                {"_id": "approved_older", "status": "approved"},
+            ]
+        )
+
     selected = run(core.open_ticket(S(tickets=S(find=find)), 10, 30))
-    assert selected['_id'] == 'approved_latest'
-    assert [q['status'] for q in queries] == ['open', 'approved']
-    assert sorts[0][0] == ('handled_at', -1)
-    assert all(q['guild_id'] == 10 and q['user_id'] == {'$in': [30, '30']} for q in queries)
+    assert selected["_id"] == "approved_latest"
+    assert [q["status"] for q in queries] == ["open", "approved"]
+    assert sorts[0][0] == ("handled_at", -1)
+    assert all(
+        q["guild_id"] == 10 and q["user_id"] == {"$in": [30, "30"]} for q in queries
+    )
 
 
-@pytest.mark.parametrize('status', ['open', 'approved', 'denied', 'closed'])
+@pytest.mark.parametrize("status", ["open", "approved", "denied", "closed"])
 def test_existing_walkthrough_validates_its_original_ticket_status(status):
     queries = []
+
     def find(query):
         queries.append(query)
-        assert query['_id'] == 'original'
-        assert query['status'] == {'$in': ['open', 'approved']}
-        return Cursor([{'_id': 'original', 'status': status}] if status in query['status']['$in'] else [])
-    call = core.open_ticket(S(tickets=S(find=find)), 10, 30, ticket_id='original')
-    if status in ('open', 'approved'):
-        assert run(call)['_id'] == 'original'
+        assert query["_id"] == "original"
+        assert query["status"] == {"$in": ["open", "approved"]}
+        return Cursor(
+            [{"_id": "original", "status": status}]
+            if status in query["status"]["$in"]
+            else []
+        )
+
+    call = core.open_ticket(S(tickets=S(find=find)), 10, 30, ticket_id="original")
+    if status in ("open", "approved"):
+        assert run(call)["_id"] == "original"
     else:
-        with pytest.raises(core.SetupError, match='open or approved'):
+        with pytest.raises(core.SetupError, match="open or approved"):
             run(call)
     assert len(queries) == 1
 
@@ -497,8 +511,8 @@ def test_begin_after_approval_remains_on_original_ticket(monkeypatch):
     r = record()
     m = mongo()
     m.warrior_walkthroughs.find_one_and_update = AsyncMock(return_value=r)
-    lookup = AsyncMock(return_value={'_id': r['ticket_id'], 'status': 'approved'})
-    monkeypatch.setattr(core, 'open_ticket', lookup)
-    monkeypatch.setattr(core, 'context', AsyncMock(return_value=context()))
-    assert run(walkthrough.begin(object(), m, r, 20, r['ticket_channel']))
-    assert lookup.call_args.kwargs == {'ticket_id': r['ticket_id']}
+    lookup = AsyncMock(return_value={"_id": r["ticket_id"], "status": "approved"})
+    monkeypatch.setattr(core, "open_ticket", lookup)
+    monkeypatch.setattr(core, "context", AsyncMock(return_value=context()))
+    assert run(walkthrough.begin(object(), m, r, 20, r["ticket_channel"]))
+    assert lookup.call_args.kwargs == {"ticket_id": r["ticket_id"]}

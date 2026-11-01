@@ -294,3 +294,8 @@ metadata refresh merges owner names without replacing assignments or drafts. Nor
 apply, and only owners present in that roster appear in the response. No signup,
 assignment, nickname or Discord write is performed. Release verification records
 counts of family owners with known, unknown and missing zones.
+
+Saved member profiles supply Compare time zones before nickname parsing. Scoped
+background metadata enrichment merges only owner zones/nicknames, preserving
+working placements and drafts. Invalid/unavailable profiles fall back to cached
+nicknames; no sort or navigation action writes a Discord nickname.

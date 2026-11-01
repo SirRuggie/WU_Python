@@ -50,6 +50,8 @@ export type RosterClan = {
 export type RosterUndo = { id: number; label: string; revision: number };
 export type RosterSnapshot = {
   owner_nicknames?: Record<string, string>;
+  owner_timezones?: Record<string, import("./compareTimeZone").OwnerTimeZone>;
+  owner_timezones_warning?: string | null;
   metadata_updating?: boolean;
   revision: number;
   accounts: RosterAccount[];
@@ -159,6 +161,8 @@ export function mergeRosterMetadata(
     ...current,
     metadata_updating: incoming.metadata_updating,
     owner_nicknames: incoming.owner_nicknames ?? current.owner_nicknames,
+    owner_timezones: incoming.owner_timezones ?? current.owner_timezones,
+    owner_timezones_warning: incoming.owner_timezones_warning,
     accounts: current.accounts.map((account) => {
       const live = accounts.get(account.tag);
       return live

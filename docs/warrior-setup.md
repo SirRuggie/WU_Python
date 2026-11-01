@@ -115,3 +115,13 @@ then conditionally removes the unchanged source. Conflicts stop migration and
 preserve the source for review. It never moves legacy `/recruit` records.
 Storage tests verify separation, version/date normalization, conflict preservation
 and recovery after a partial migration.
+
+## Member profile nickname wizard (prompt 62 PR 1)
+
+Nickname setup now checks linked official Town Halls, autofills a unique highest
+account, and asks on ties/partial reads. Country and standard-GMT menus lead to a
+32-character preview and explicit Set nickname action. Typed names and other
+country codes remain available. Existing setup roles and walkthrough steps stay.
+The legacy three-field nickname form is retired. See [member profiles](member-profiles.md)
+for revision/lease, failure, TTL and daylight-saving behavior. Mocked tests do not
+prove live Discord delivery; no live test renames are authorized.

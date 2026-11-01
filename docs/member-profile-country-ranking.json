@@ -1,0 +1,102 @@
+{
+  "source": "Read-only linked-owner nickname aggregate, 2026-10-31",
+  "owners": 287,
+  "selected_countries": [
+    {
+      "country": "US",
+      "flags": 62
+    },
+    {
+      "country": "IN",
+      "flags": 45
+    },
+    {
+      "country": "CA",
+      "flags": 14
+    },
+    {
+      "country": "GB",
+      "flags": 9
+    },
+    {
+      "country": "AU",
+      "flags": 8
+    },
+    {
+      "country": "BD",
+      "flags": 7
+    },
+    {
+      "country": "DE",
+      "flags": 5
+    },
+    {
+      "country": "PH",
+      "flags": 5
+    },
+    {
+      "country": "ID",
+      "flags": 3
+    },
+    {
+      "country": "MY",
+      "flags": 3
+    },
+    {
+      "country": "NZ",
+      "flags": 3
+    },
+    {
+      "country": "ES",
+      "flags": 2
+    },
+    {
+      "country": "NO",
+      "flags": 2
+    },
+    {
+      "country": "PL",
+      "flags": 2
+    },
+    {
+      "country": "AE",
+      "flags": 1
+    },
+    {
+      "country": "AL",
+      "flags": 1
+    },
+    {
+      "country": "AR",
+      "flags": 1
+    },
+    {
+      "country": "BE",
+      "flags": 1
+    },
+    {
+      "country": "BG",
+      "flags": 1
+    },
+    {
+      "country": "BR",
+      "flags": 1
+    },
+    {
+      "country": "CO",
+      "flags": 1
+    },
+    {
+      "country": "HK",
+      "flags": 1
+    },
+    {
+      "country": "IE",
+      "flags": 1
+    },
+    {
+      "country": "KR",
+      "flags": 1
+    }
+  ]
+}
