@@ -151,6 +151,7 @@ export default function Standardize({
         "/manage/member-timezones/import",
         "POST",
         { request_id: importId.current },
+        { signal: abort.signal },
       );
       receipt.current = result;
       while (["pending", "running"].includes(result.status)) {

@@ -42,31 +42,27 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  transport
-    .mockReset()
-    .mockImplementation(async (path: string) =>
-      path.endsWith("/import")
-        ? { request_id: "request", status: "done", status_url: "/receipt" }
-        : path.endsWith("/preview")
-          ? { token: "fresh-token", rows }
-          : path.endsWith("/confirm")
-            ? { run_id: "run" }
-            : path.endsWith("/runs")
-              ? {
-                  runs: [
-                    { run_id: "run", state: "queued", started_by: uid(0) },
-                  ],
-                }
-              : {
-                  run_id: "run",
-                  state: "done",
-                  rows: rows.map((r) => ({
-                    ...r,
-                    status: "uncertain",
-                    message: "Check Discord before repeating",
-                  })),
-                },
-    );
+  transport.mockReset().mockImplementation(async (path: string) =>
+    path.endsWith("/import")
+      ? { request_id: "request", status: "done", status_url: "/receipt" }
+      : path.endsWith("/preview")
+        ? { token: "fresh-token", rows }
+        : path.endsWith("/confirm")
+          ? { run_id: "run" }
+          : path.endsWith("/runs")
+            ? {
+                runs: [{ run_id: "run", state: "queued", started_by: uid(0) }],
+              }
+            : {
+                run_id: "run",
+                state: "done",
+                rows: rows.map((r) => ({
+                  ...r,
+                  status: "uncertain",
+                  message: "Check Discord before repeating",
+                })),
+              },
+  );
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -195,4 +191,73 @@ it("Past runs loads on demand, stops once and never offers replay of uncertain r
   await click("Check manually");
   expect(host.textContent).toContain("Check Discord before repeating");
   expect(host.textContent).not.toContain(uid(0));
+});
+
+it("closing an in-flight import aborts the read but explicit retry retains its durable identity", async () => {
+  const ids: string[] = [];
+  let attempts = 0;
+  transport.mockImplementation(
+    (path: string, _method: string, body: any, options: any) => {
+      if (path.endsWith("/import")) {
+        ids.push(body.request_id);
+        if (!attempts++) {
+          return new Promise((_resolve, reject) =>
+            options.signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            ),
+          );
+        }
+        return Promise.resolve({
+          status: "done",
+          request_id: "x",
+          status_url: "/receipt",
+        });
+      }
+      return Promise.resolve({ token: "token", rows });
+    },
+  );
+  await mount();
+  await click("Review nicknames");
+  await click("Back to members");
+  await click("Review nicknames");
+  expect(ids).toHaveLength(2);
+  expect(ids[0]).toBe(ids[1]);
+  expect(host.textContent).toContain("51 selected");
+});
+it("Stop uses the existing one-shot command and terminal polling never retries a nickname", async () => {
+  let stopped = false;
+  transport.mockImplementation(async (path: string) => {
+    if (path.endsWith("/runs"))
+      return { runs: [{ run_id: "run", state: "queued" }] };
+    if (path.endsWith("/stop")) {
+      stopped = true;
+      return {};
+    }
+    return {
+      run_id: "run",
+      state: stopped ? "stopped" : "queued",
+      rows: [
+        {
+          ...rows[0],
+          status: stopped ? "stopped" : "waiting",
+          message: "Stopped before this member started.",
+        },
+      ],
+    };
+  });
+  await mount();
+  await click("Past runs");
+  const select = host.querySelector("select")!;
+  await act(async () => {
+    select.value = "run";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await click("Stop run");
+  expect(host.textContent).toContain("Standardize progress · Stopped");
+  expect(
+    transport.mock.calls.filter((c) => String(c[0]).endsWith("/stop")),
+  ).toHaveLength(1);
+  expect(host.textContent).toContain("Skipped");
 });

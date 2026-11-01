@@ -17,3 +17,7 @@
   border-color: #c6ae70;
   background: #393326;
 }
+
+.filter-chips small {
+  font-size: inherit;
+}

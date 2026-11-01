@@ -188,6 +188,19 @@ fs.mkdirSync(output, { recursive: true });
         JSON.stringify(actionBox),
       );
       assert(actionBox.height >= 44);
+      const tiny = await review.evaluate((node) =>
+        [...node.querySelectorAll("*")]
+          .filter(
+            (e) =>
+              e.getBoundingClientRect().height &&
+              [...e.childNodes].some(
+                (n) => n.nodeType === 3 && n.textContent.trim(),
+              ) &&
+              parseFloat(getComputedStyle(e).fontSize) < 12,
+          )
+          .map((e) => e.textContent),
+      );
+      assert.equal(tiny.length, 0, JSON.stringify(tiny));
       await rename.click();
       await page
         .getByRole("heading", { name: /Standardize progress/ })
