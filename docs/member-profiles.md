@@ -39,13 +39,17 @@ silently broken. Account menus page 24 choices plus Type a name. With no loaded
 accounts, a Type a name button opens the private modal (Discord cannot open a
 modal after acknowledging an asynchronous account lookup).
 
-Country menus have 24 common choices plus Other, accepting a two-letter code.
+Country menus page 24 choices plus Other, accepting a two-letter code. Russia
+and Mexico are on the second page.
 Choices are ranked by aggregate flags from 287 linked-owner nicknames in the
 read-only release observation (US 62, IN 45, CA 14, GB 9, AU 8, BD 7, DE/PH 5, etc.);
 ties use country code. See member-profile-country-ranking.json.
-Multi-zone countries ask for a zone. The nineteen standard labels are GMT-8,
--7,-6,-5,-4,-3,GMT,+1,+2,+3,+4,+5,+5:30,+6,+7,+8,+9,+10,+12, with regional
-explanations. The profile zone ID is the stable lowercase GMT label, not an IANA
+Multi-zone countries show their main standard zones, with Show all zones.
+Australia lists East, Central and West, including GMT+9:30. Single-zone choices
+autofill. The full menu contains25 standard offsets; friendly regional labels
+include familiar aliases such as EST/EDT and ACST/ACDT. Aliases are menu text
+only and never appear in the generated nickname. The shared data lives in
+utils/member_timezone_data.json. The profile zone ID is the stable lowercase GMT label, not an IANA
 civil-time identifier. A GMT label describes standard time and can be an hour off
 during daylight saving; grouping is unaffected. Regional/dependency exceptions
 ask for a supported standard label explicitly. Do not choose an inaccurate
@@ -96,3 +100,7 @@ After the approved release, Ruggie must run one real `/warrior` nickname setup o
 himself or an agreed test member, verify the Discord nickname and saved profile,
 and report the result. Codex does not perform that live rename. PR 2 release
 remains blocked until this manual transport check passes.
+
+Picker labels were checked against the IANA tzdb source files (australasia,
+northamerica, europe and asia at https://github.com/eggert/tz). Familiar display
+aliases do not change standard offsets or imply automatic daylight adjustment.

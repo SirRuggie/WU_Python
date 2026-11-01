@@ -186,3 +186,10 @@ it.each(["Mt", "mt", "mT", "Mtn", "mtn"])(
     expect(ownerTimeZone(`Rick | ${label}`)?.offsetMinutes).toBeNull();
   },
 );
+
+it("parses the new Australian central standard offset", () => {
+  expect(ownerTimeZone("Example | GMT+9:30 🇦🇺")).toEqual({
+    label: "GMT+9:30",
+    offsetMinutes: 570,
+  });
+});

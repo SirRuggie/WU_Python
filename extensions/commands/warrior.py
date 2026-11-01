@@ -1,5 +1,6 @@
 """Warrior Setup, the supported replacement for the retired recruit dashboard."""
 
+from extensions.warrior.timing import click
 import coc
 import asyncio
 import logging
@@ -67,6 +68,25 @@ async def show(ctx, components):
         user_mentions=False,
         role_mentions=False,
         mentions_everyone=False,
+    )
+
+
+def partial_role_panel(sid, result, message):
+    """Preserve confirmed writes even when a later phase/display read fails."""
+    added, removed = result.get("added", []), result.get("removed", [])
+    lines = [f"**Confirmed role changes:** {len(added)} added, {len(removed)} removed."]
+    for label, values in (("Added", added), ("Removed", removed)):
+        if values:
+            text = ", ".join(map(str, values))
+            lines.append(
+                f"**{label}:** " + (text[:399] + "…" if len(text) > 400 else text)
+            )
+    return panel(
+        "Set-up needs attention",
+        Text(content=str(message)[:500]),
+        Text(content="\n".join(lines)),
+        *back(sid),
+        color=RED_ACCENT,
     )
 
 
@@ -205,6 +225,7 @@ class WarriorSetup(
 
     @lightbulb.invoke
     @lightbulb.di.with_di
+    @click
     async def invoke(
         self,
         ctx: lightbulb.Context,
@@ -216,7 +237,12 @@ class WarriorSetup(
             if not ctx.guild_id:
                 raise core.SetupError("Run /warrior setup in the server.")
             c = await core.context(
-                bot, mongo, int(ctx.guild_id), int(ctx.user.id), int(self.user.id)
+                bot,
+                mongo,
+                int(ctx.guild_id),
+                int(ctx.user.id),
+                int(self.user.id),
+                fresh=False,
             )
             data = {
                 "_id": str(ctx.interaction.id),
@@ -425,6 +451,10 @@ def modal_value(ctx, name):
 
 @register_action("warrior", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
+@click
+@nickname_setup.serialized(
+    modal=lambda ctx, action_id: action_id.partition(":")[2] == "setting"
+)
 async def action(
     ctx,
     action_id,
@@ -437,7 +467,6 @@ async def action(
     # Modals acknowledge immediately; all authorization and bounds are checked
     # again on submission before touching a member or configuration.
     if verb == "nick":
-        await ctx.defer(edit=True)
         try:
             data, c = await core.session(ctx, bot, mongo, sid)
             await nickname_setup.begin(ctx, data, c, mongo, coc_client)
@@ -456,11 +485,10 @@ async def action(
             ],
         )
         return
-    await ctx.defer(edit=True)
+    role_result = None
     try:
         data, c = await core.session(ctx, bot, mongo, sid)
-        if data.get("nickname_setup"):
-            await update_state(mongo, sid, {"$unset": {"nickname_setup": ""}})
+        await nickname_setup.abandon(mongo, data)
         cfg = await core.settings(mongo, c["guild"].id)
         if verb == "home":
             output = await home(data, c, mongo)
@@ -489,9 +517,8 @@ async def action(
                 c,
                 **({"add": selected} if verb == "role_add" else {"remove": selected}),
             )
-            c = await core.context(
-                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-            )
+            role_result = result
+            c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb == "quick":
             result = await core.change_roles(
@@ -500,15 +527,14 @@ async def action(
                 c,
                 add=[cfg["roles"][x] for x in ("family", "recruit", "strike_accepted")],
             )
+            role_result = result
             if not result["failed"]:
                 removed = await core.change_roles(
                     bot, mongo, c, remove=[cfg["roles"]["visitor"]]
                 )
                 for key in result:
                     result[key] += removed[key]
-            c = await core.context(
-                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-            )
+            c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb == "th":
             output = th_menu(data, c, cfg)
@@ -521,15 +547,14 @@ async def action(
                 )
             # Add first. Do not strip working roles if replacements cannot be added.
             result = await core.change_roles(bot, mongo, c, add=selected)
+            role_result = result
             if not result["failed"]:
                 removed = await core.change_roles(
                     bot, mongo, c, remove=allowed - selected
                 )
                 for key in result:
                     result[key] += removed[key]
-            c = await core.context(
-                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-            )
+            c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb.startswith("clans:"):
             output = await clan_menu(data, c, mongo, int(verb.split(":")[1]))
@@ -546,9 +571,8 @@ async def action(
                 c,
                 add=[r["role_id"] for r in available if r["tag"] in selected],
             )
-            c = await core.context(
-                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-            )
+            role_result = result
+            c = await core.refresh_target(bot, c)
             output = await home(data, c, mongo, core.result_text(result))
         elif verb == "advanced":
             output = await advanced(data, c, mongo)
@@ -575,6 +599,10 @@ async def action(
             output = confirm(data, operation + ":" + token, descriptions[operation])
         elif verb.startswith("apply:"):
             _, operation, token = verb.split(":")
+            if operation == "restart":
+                c = await core.context(
+                    bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+                )
             consumed = await mongo.component_state.find_one_and_update(
                 {
                     "_id": sid,
@@ -624,9 +652,8 @@ async def action(
                         else {"remove": roles}
                     ),
                 )
-                c = await core.context(
-                    bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-                )
+                role_result = result
+                c = await core.refresh_target(bot, c)
                 output = await home(data, c, mongo, core.result_text(result))
         elif verb == "tour" or verb.startswith("tourpage:"):
             run = await mongo.warrior_walkthroughs.find_one(
@@ -693,6 +720,9 @@ async def action(
                 c["member"].id,
                 ticket_id=existing_run["ticket_id"],
             )
+            c = await core.context(
+                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+            )
             await mongo.warrior_walkthroughs.update_one(
                 {
                     "_id": walkthrough.run_id(c["guild"].id, c["member"].id),
@@ -718,12 +748,28 @@ async def action(
             raise core.SetupError(
                 "This action is no longer available. Refresh the dashboard."
             )
+        if (
+            role_result
+            and role_result.get("failed")
+            and (role_result.get("added") or role_result.get("removed"))
+        ):
+            output = partial_role_panel(
+                sid, role_result, "\n".join(role_result["failed"])
+            )
         await show(ctx, output)
     except Exception as error:
         log.exception("warrior action error")
         log.warning(
             "warrior action failed action=%s error=%s", verb, type(error).__name__
         )
+        if role_result and (role_result.get("added") or role_result.get("removed")):
+            message = (
+                str(error)
+                if isinstance(error, (core.SetupError, ValueError))
+                else "The later operation or status read could not finish. Confirmed changes are listed below; inspect current roles before another attempt."
+            )
+            await show(ctx, partial_role_panel(sid, role_result, message))
+            return
         await show(
             ctx,
             panel(
@@ -743,6 +789,8 @@ async def action(
 
 @register_action("warrior_form", is_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
+@click
+@nickname_setup.serialized(form=True)
 async def form(
     ctx,
     action_id,
@@ -750,9 +798,6 @@ async def form(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     **kwargs,
 ):
-    await ctx.interaction.create_initial_response(
-        hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
-    )
     sid, _, verb = action_id.partition(":")
     try:
         data, c = await core.session(ctx, bot, mongo, sid)
@@ -761,6 +806,9 @@ async def form(
                 "This old nickname form expired. Use the new nickname step in /warrior."
             )
         elif verb.startswith("setting:"):
+            c = await core.context(
+                bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+            )
             if not c["actor_permissions"] & hikari.Permissions.ADMINISTRATOR:
                 raise core.SetupError("Administrator permission is required.")
             _, group, key = verb.split(":")
@@ -894,6 +942,7 @@ async def started(
 async def stopping(_: hikari.StoppingEvent):
     from extensions.warrior import profile_membership
 
+    await nickname_setup.stop()
     await profile_membership.stop()
     await walkthrough.stop()
 
