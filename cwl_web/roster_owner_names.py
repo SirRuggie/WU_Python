@@ -51,6 +51,9 @@ def enrich(request, result):
     result["owner_timezones"] = cached_profile_zones(
         request, {row["user_id"] for row in result["accounts"]}
     )
+    result["owner_timezones_warning"] = request.app.get("roster_profile_zones", {}).get(
+        "warning"
+    )
     result["owner_nicknames"] = cached_owner_nicknames(
         request, {row["user_id"] for row in result["accounts"]}
     )

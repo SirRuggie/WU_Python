@@ -6,7 +6,8 @@ to the second PR and are not activated here.
 
 `member_profiles` has an explicit Mongo route. One document keyed by Discord ID
 holds the standard zone ID/label/offset, country/flag, chosen account tag, source,
-editor/time, revision and `left_at`. The storage owner is
+editor/time, revision and `left_at`. A bounded `membership_at` observation timestamp
+prevents a delayed departure from overriding a newer rejoin. The storage owner is
 `utils/member_profiles.py`; callers do not write this collection themselves.
 `left_at` has a90-day TTL. Returning members clear it; departed members are marked
 only in the Warriors United guild. There is no profile history collection.
@@ -22,7 +23,8 @@ bound, then writes the profile. A failed or uncertain Discord response saves no
 profile. The consumed preview never retries automatically, including after a
 restart. If Discord may have accepted a change, check the current nickname before
 making a new preview. A later storage failure is also surfaced for reconciliation;
-there is no automatic compensating rename.
+there is no automatic compensating rename. A saved profile remains reported as
+saved even if the subsequent setup-summary read fails.
 
 Warrior retains Recruitment Team/administrator authorization and checks actor,
 bot role hierarchy, server owner and Manage Nicknames again before saving. Profile
@@ -54,8 +56,29 @@ saved above32characters. Mentions are disabled in responses. Saved profiles take
 precedence in Compare's timezone sorting/card labels; nickname parsing remains
 the fallback. The scoped profile read runs in the background, has an8-second
 bound and30-second cache, preserves drafts/placements and cancels on shutdown.
-Only the existing editor-authorized roster route includes these values.
+Only the existing editor-authorized roster route includes these values. Failed
+profile reads retain cached values, fall back to nickname labels when absent,
+and show a Compare warning.
 
 The nickname import, staff page, restartable Standardize jobs and bounded old-name
 receipts are reserved for PR2. Only staff may press Standardize in production;
 agent smoke checks will stop at its preview.
+
+Adversarial checks cover delayed leave/rejoin ordering and a successful save
+followed by an unavailable summary. The first cannot set a newer member's TTL;
+the second still reports the confirmed save. If Discord confirms but Mongo does
+not, the UI explicitly reports that split outcome and consumes the preview.
+A real-Mongo receipt test creates a fresh worker wrapper after that uncertainty
+and proves the mocked Discord callback is not repeated. This is evidence for
+restart behavior with mocked transport, not proof of live Discord delivery.
+
+Retention repair runs once after startup and daily thereafter (hourly retry on
+unavailability), using a complete bounded directory that must include the bot.
+Partial, empty or failed directory reads do not mark departures. This repairs
+missed offline events without sliding an existing departure date. Membership
+observations advance their own ordering timestamp while preserving the last
+actual profile-edit date. A current member edit also records presence.
+
+Preview consumption and final receipts use the profile owner's nonce/identity
+CAS. Returning home or opening a newer wizard prevents an older operation's
+result from replacing it. A failed retention-index check refuses external edits.

@@ -179,21 +179,26 @@ async def save(ctx, data, c, mongo, state, bot):
 
     authorize(c)
     value = nickname(state["name"], state["zone_id"], state["country"])
-    consumed = await mongo.component_state.find_one_and_update(
-        {
-            "_id": data["_id"],
-            "nickname_setup.nonce": state["nonce"],
-            "nickname_setup.step": "preview",
-        },
-        {"$set": {"nickname_setup.step": "applying"}},
+    store = MemberProfiles(mongo)
+    consumed = await store.consume_preview(
+        data["_id"],
+        state["nonce"],
+        guild_id=c["guild"].id,
+        discord_id=c["member"].id,
+        actor_id=ctx.user.id,
     )
     if not consumed:
+        if not await store.preview_current(data["_id"], state["nonce"]):
+            return
         raise core.SetupError(
             "This preview was already used. Check the member before editing again."
         )
     fields = {k: state.get(k) for k in ("zone_id", "country", "name_source_tag")}
 
+    discord_confirmed = False
+
     async def change():
+        nonlocal discord_confirmed
         async with asyncio.timeout(20):
             fresh = await core.context(
                 bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
@@ -205,9 +210,10 @@ async def save(ctx, data, c, mongo, state, bot):
                 nickname=value,
                 reason=f"Warrior Setup by {ctx.user.id}",
             )
+            discord_confirmed = True
 
     try:
-        await MemberProfiles(mongo).commit_after(
+        await store.commit_after(
             c["member"].id,
             fields,
             change=change,
@@ -215,19 +221,53 @@ async def save(ctx, data, c, mongo, state, bot):
             updated_by=ctx.user.id,
             source="warrior",
         )
-    except BaseException:
-        # A consumed preview never automatically retries an uncertain Discord edit.
-        await update_state(
-            mongo, data["_id"], {"$set": {"nickname_setup.step": "needs_attention"}}
+    except BaseException as error:
+        # A consumed preview never automatically retries an uncertain external edit.
+        current = await store.finish_preview(
+            data["_id"], state["nonce"], "needs_attention"
         )
+        if not current and isinstance(error, Exception):
+            log.warning(
+                "Nickname result belongs to an abandoned preview (%s)",
+                type(error).__name__,
+            )
+            return
+        if discord_confirmed and isinstance(error, Exception):
+            raise core.SetupError(
+                "Discord nickname updated; the profile save was not confirmed. Check the member profile before making another edit."
+            ) from error
         raise
-    await update_state(mongo, data["_id"], {"$set": {"nickname_setup.step": "saved"}})
-    refreshed = await core.context(
-        bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
-    )
-    await show(
-        ctx, await home(data, refreshed, mongo, "Nickname and member time zone saved.")
-    )
+    try:
+        if not await store.finish_preview(data["_id"], state["nonce"], "saved"):
+            return
+        refreshed = await core.context(
+            bot, mongo, c["guild"].id, ctx.user.id, c["member"].id
+        )
+        if await store.preview_current(data["_id"], state["nonce"]):
+            await show(
+                ctx,
+                await home(
+                    data, refreshed, mongo, "Nickname and member time zone saved."
+                ),
+            )
+    except Exception as error:
+        from extensions.commands.warrior import panel, back
+
+        log.warning(
+            "Nickname saved but setup summary failed (%s)", type(error).__name__
+        )
+        if not await store.preview_current(data["_id"], state["nonce"]):
+            return
+        await show(
+            ctx,
+            panel(
+                "Nickname saved",
+                Text(
+                    content="Nickname and member profile saved. The setup summary could not reload; return to refresh it."
+                ),
+                *back(data["_id"]),
+            ),
+        )
 
 
 @register_action("warrior_nick", opens_modal=True, no_return=True, preload_state=False)
@@ -309,7 +349,7 @@ async def failure(ctx, sid, error):
     message = (
         str(error)
         if isinstance(error, (ValueError, core.SetupError))
-        else "Discord did not confirm the nickname change; the profile was not saved. Check the current nickname before editing again."
+        else "The operation was not confirmed. Check the current nickname and member profile before making a new edit."
     )
     await show(
         ctx, panel("Nickname needs attention", Text(content=message[:1000]), *back(sid))

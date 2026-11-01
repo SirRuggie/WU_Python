@@ -68,7 +68,9 @@ def test_bounded_revision_writer_import_protection_and_membership_ttl():
         )
         assert coll.row == before
         left = datetime(2026, 10, 31, tzinfo=timezone.utc)
+        edited_at = coll.row["updated_at"]
         await store.membership(USER, left_at=left)
+        assert coll.row["updated_at"] == edited_at
         assert coll.row["left_at"] == left and coll.row["revision"] == 2
         await store.membership(USER, left_at=None)
         assert coll.row["left_at"] is None and coll.row["revision"] == 3
@@ -102,6 +104,8 @@ def test_zone_country_limits_format_and_length():
             nickname(name, "gmt", "GB")
     with pytest.raises(ValueError):
         profile_fields(dict(FIELDS, zone_id="bogus"))
+    with pytest.raises(ValueError):
+        nickname("Name", "gmt", "notflag")
 
 
 def test_name_choice_official_lookup_partial_and_api_failure(monkeypatch):
@@ -126,6 +130,8 @@ def test_name_choice_official_lookup_partial_and_api_failure(monkeypatch):
         assert result["suggested"] is None and not result["complete"]
         links.side_effect = TimeoutError()
         assert (await name_choices(None, USER))["unavailable"]
+        links.side_effect = RuntimeError("upstream failure")
+        assert (await name_choices(None, USER))["suggested"] is None
 
     asyncio.run(run())
 
@@ -179,5 +185,53 @@ def test_discord_failure_never_saves_and_stale_revision_never_edits():
                 source="warrior",
             )
         edit.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_delayed_departure_cannot_expire_a_newer_rejoin():
+    async def run():
+        coll = Collection()
+        store = MemberProfiles(S(member_profiles=coll))
+        await store.write(
+            USER,
+            FIELDS,
+            expected_revision=0,
+            updated_by=ACTOR,
+            source="warrior",
+            now=datetime(2026, 10, 31, 11, tzinfo=timezone.utc),
+        )
+        departed = datetime(2026, 10, 31, 12, tzinfo=timezone.utc)
+        joined = datetime(2026, 10, 31, 13, tzinfo=timezone.utc)
+        # The newer join can complete while the older departure waits for an edit lease.
+        await store.membership(USER, left_at=None, observed_at=joined)
+        revision = coll.row["revision"]
+        await store.membership(USER, left_at=departed, observed_at=departed)
+        assert coll.row["left_at"] is None and coll.row["revision"] == revision
+        await store.write(
+            USER, FIELDS, expected_revision=revision, updated_by=ACTOR, source="staff"
+        )
+        assert coll.row["membership_at"] >= joined
+
+    asyncio.run(run())
+
+
+def test_retention_index_failure_refuses_edit_before_discord():
+    async def run():
+        coll = Collection()
+        coll.create_index.side_effect = RuntimeError("index unavailable")
+        edit = AsyncMock()
+        store = MemberProfiles(S(member_profiles=coll))
+        with pytest.raises(RuntimeError, match="index unavailable"):
+            await store.commit_after(
+                USER,
+                FIELDS,
+                change=edit,
+                expected_revision=0,
+                updated_by=ACTOR,
+                source="warrior",
+            )
+        edit.assert_not_awaited()
+        assert coll.row is None
 
     asyncio.run(run())

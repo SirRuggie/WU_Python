@@ -39,6 +39,14 @@ def test_profile_cache_is_scoped_immediate_and_cancels(monkeypatch):
         assert other not in cached_profile_zones(request, {one})
         state = request.app["roster_profile_zones"]
         state["until"] = 0
+        provider.side_effect = RuntimeError("database unavailable")
+        assert cached_profile_zones(request, {one}) == {
+            one: {"label": "GMT+5:30", "offsetMinutes": 330}
+        }
+        await state["task"]
+        assert "unavailable" in state["warning"]
+        provider.side_effect = read
+        state["until"] = 0
         event.clear()
         life = lifecycle(request.app)
         await anext(life)

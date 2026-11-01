@@ -94,3 +94,114 @@ def test_real_profile_lease_concurrency_failure_cas_and_ttl():
             await client.close()
 
     asyncio.run(run())
+
+
+def test_consumed_preview_survives_restart_after_discord_success_storage_failure(
+    monkeypatch,
+):
+    assert URI == "mongodb://127.0.0.1:27154"
+    from extensions.warrior import nickname_setup as ui, core
+    from extensions.commands import warrior
+    from tests.test_warrior_setup import context
+
+    async def run():
+        client = AsyncMongoClient(URI)
+        db = client["wu_profile_receipt_fixture_" + uuid4().hex]
+        mongo = S(
+            member_profiles=db.member_profiles,
+            component_state=db.component_state,
+            button_store=db.button_store,
+        )
+        c = context()
+        c["member"].id = int(USER)
+        monkeypatch.setattr(ui, "GUILD_ID", 10)
+        monkeypatch.setattr(core, "context", AsyncMock(return_value=c))
+        monkeypatch.setattr(warrior, "home", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            MemberProfiles,
+            "_write",
+            AsyncMock(side_effect=RuntimeError("storage acknowledgement unavailable")),
+        )
+        bot = S(rest=S(edit_member=AsyncMock()))
+        ctx = S(user=S(id=int(ACTOR)), interaction=S(edit_initial_response=AsyncMock()))
+        state = {
+            "nonce": "preview",
+            "step": "preview",
+            "name": "Main",
+            "zone_id": "gmt",
+            "country": "GB",
+            "profile_revision": 0,
+        }
+        await db.component_state.insert_one(
+            {
+                "_id": "wizard",
+                "type": "warrior_setup",
+                "guild_id": 10,
+                "user_id": int(USER),
+                "recruiter_id": int(ACTOR),
+                "nickname_setup": dict(state),
+            }
+        )
+        try:
+            with pytest.raises(core.SetupError, match="profile save was not confirmed"):
+                await ui.save(ctx, {"_id": "wizard"}, c, mongo, state, bot)
+            assert await db.member_profiles.count_documents({}) == 0
+            # A fresh wrapper represents a restarted worker reading the durable receipt.
+            restarted = S(
+                member_profiles=db.member_profiles,
+                component_state=db.component_state,
+                button_store=db.button_store,
+            )
+            with pytest.raises(core.SetupError, match="already used"):
+                await ui.save(ctx, {"_id": "wizard"}, c, restarted, state, bot)
+            bot.rest.edit_member.assert_awaited_once()
+            receipt = await db.component_state.find_one({"_id": "wizard"})
+            assert receipt["nickname_setup"]["step"] == "needs_attention"
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_receipt_nonce_cas_preserves_newer_drafts(monkeypatch):
+    assert URI == "mongodb://127.0.0.1:27154"
+
+    async def run():
+        client = AsyncMongoClient(URI)
+        db = client["wu_profile_nonce_fixture_" + uuid4().hex]
+        mongo = S(
+            member_profiles=db.member_profiles,
+            component_state=db.component_state,
+            button_store=db.button_store,
+        )
+        store = MemberProfiles(mongo)
+        try:
+            await db.component_state.insert_one(
+                {
+                    "_id": "wizard",
+                    "type": "warrior_setup",
+                    "guild_id": 10,
+                    "user_id": int(USER),
+                    "recruiter_id": int(ACTOR),
+                    "nickname_setup": {"nonce": "old", "step": "preview"},
+                }
+            )
+            assert await store.consume_preview(
+                "wizard", "old", guild_id=10, discord_id=USER, actor_id=ACTOR
+            )
+            assert not await store.consume_preview(
+                "wizard", "old", guild_id=10, discord_id=USER, actor_id=ACTOR
+            )
+            await db.component_state.update_one(
+                {"_id": "wizard"},
+                {"$set": {"nickname_setup": {"nonce": "new", "step": "country"}}},
+            )
+            assert not await store.finish_preview("wizard", "old", "saved")
+            row = await db.component_state.find_one({"_id": "wizard"})
+            assert row["nickname_setup"] == {"nonce": "new", "step": "country"}
+        finally:
+            await client.drop_database(db.name)
+            await client.close()
+
+    asyncio.run(run())

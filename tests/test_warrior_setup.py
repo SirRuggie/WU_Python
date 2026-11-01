@@ -138,19 +138,6 @@ def test_protected_targets_are_not_mutated(target):
         core.manageable_target(c)
 
 
-@pytest.mark.parametrize(
-    "ign,zone,country",
-    [("x" * 25, "UTC+100", "US"), ("Name", "EST", "notflag"), ("a\nb", "EST", "US")],
-)
-def test_nickname_validates_combined_length_and_country(ign, zone, country):
-    with pytest.raises(core.SetupError):
-        core.nickname(ign, zone, country)
-
-
-def test_nickname_country_conversion():
-    assert core.nickname("Warrior", "est", "us") == "Warrior | EST 🇺🇸"
-
-
 @pytest.mark.parametrize("rows", [[], [{"_id": "one"}, {"_id": "two"}]])
 def test_walkthrough_requires_exactly_one_open_ticket(rows):
     m = S(tickets=S(find=lambda query: Cursor(rows)))
@@ -289,11 +276,7 @@ def test_config_form_rechecks_authorization(monkeypatch):
     monkeypatch.setattr(core, "session", AsyncMock(return_value=({"_id": "1"}, c)))
     m = mongo()
     m.ticket_setup.update_one = AsyncMock()
-    run(
-        ui.form(
-            ctx, "1:setting:roles:family", mongo=m, bot=object()
-        )
-    )
+    run(ui.form(ctx, "1:setting:roles:family", mongo=m, bot=object()))
     m.ticket_setup.update_one.assert_not_awaited()
     assert "Administrator" in repr(ctx.interaction.edit_initial_response.call_args)
 

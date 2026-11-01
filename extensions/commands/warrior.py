@@ -883,12 +883,18 @@ async def started(
 ):
     from utils.member_profiles import MemberProfiles
 
-    await MemberProfiles(mongo).ensure_indexes()
     walkthrough.start(bot, mongo)
+    await MemberProfiles(mongo).ensure_indexes()
+    from extensions.warrior import profile_membership
+
+    profile_membership.start(bot, mongo)
 
 
 @loader.listener(hikari.StoppingEvent)
 async def stopping(_: hikari.StoppingEvent):
+    from extensions.warrior import profile_membership
+
+    await profile_membership.stop()
     await walkthrough.stop()
 
 

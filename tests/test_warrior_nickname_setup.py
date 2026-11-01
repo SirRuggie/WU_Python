@@ -70,7 +70,7 @@ def test_typed_name_modal_does_not_change_a_member_before_authorized_submission(
     )
 
 
-def test_duplicate_preview_is_refused_before_the_discord_change():
+def test_duplicate_preview_is_refused_before_the_discord_change(monkeypatch):
     async def run():
         c = context()
         bot = S(rest=S(edit_member=AsyncMock()))
@@ -82,6 +82,14 @@ def test_duplicate_preview_is_refused_before_the_discord_change():
             "country": "GB",
         }
         m = S(component_state=S(find_one_and_update=AsyncMock(return_value=None)))
+        monkeypatch.setattr(
+            ui,
+            "MemberProfiles",
+            lambda db: S(
+                consume_preview=AsyncMock(return_value=False),
+                preview_current=AsyncMock(return_value=True),
+            ),
+        )
         with pytest.raises(core.SetupError, match="already used"):
             await ui.save(S(user=S(id=20)), {"_id": "1"}, c, m, state, bot)
         bot.rest.edit_member.assert_not_awaited()
@@ -94,3 +102,101 @@ def test_other_guild_cannot_change_family_profile():
     c["guild"].id = 999
     with pytest.raises(core.SetupError, match="Warriors United"):
         ui.authorize(c)
+
+
+def test_successful_save_is_not_reported_as_failure_when_summary_read_fails(
+    monkeypatch,
+):
+    async def run():
+        c = context()
+        bot = S(rest=S(edit_member=AsyncMock()))
+        state = {
+            "nonce": "n",
+            "step": "preview",
+            "name": "Main",
+            "zone_id": "gmt",
+            "country": "GB",
+            "profile_revision": 0,
+        }
+        m = S(
+            component_state=S(find_one_and_update=AsyncMock(return_value={"_id": "1"}))
+        )
+
+        async def commit(*args, change, **kwargs):
+            await change()
+            return {"revision": 1}
+
+        monkeypatch.setattr(
+            ui,
+            "MemberProfiles",
+            lambda db: S(
+                commit_after=commit,
+                consume_preview=AsyncMock(return_value=True),
+                finish_preview=AsyncMock(return_value=True),
+                preview_current=AsyncMock(return_value=True),
+            ),
+        )
+        monkeypatch.setattr(ui, "update_state", AsyncMock())
+        monkeypatch.setattr(
+            core,
+            "context",
+            AsyncMock(side_effect=[c, RuntimeError("summary unavailable")]),
+        )
+        ctx = S(user=S(id=20), interaction=S(edit_initial_response=AsyncMock()))
+        await ui.save(ctx, {"_id": "1"}, c, m, state, bot)
+        bot.rest.edit_member.assert_awaited_once()
+        assert "Nickname and member profile saved" in repr(
+            ctx.interaction.edit_initial_response.call_args
+        )
+
+    asyncio.run(run())
+
+
+def test_finished_old_save_does_not_replace_a_newer_wizard(monkeypatch):
+    async def run():
+        c = context()
+        ctx = S(user=S(id=20), interaction=S(edit_initial_response=AsyncMock()))
+        store = S(
+            consume_preview=AsyncMock(return_value=True),
+            commit_after=AsyncMock(),
+            finish_preview=AsyncMock(return_value=False),
+            preview_current=AsyncMock(return_value=True),
+        )
+        monkeypatch.setattr(ui, "MemberProfiles", lambda db: store)
+        monkeypatch.setattr(core, "context", AsyncMock(return_value=c))
+        from extensions.commands import warrior
+
+        monkeypatch.setattr(warrior, "home", AsyncMock(return_value=[]))
+        state = {
+            "nonce": "old",
+            "name": "Main",
+            "zone_id": "gmt",
+            "country": "GB",
+            "profile_revision": 0,
+        }
+        await ui.save(ctx, {"_id": "1"}, c, object(), state, object())
+        ctx.interaction.edit_initial_response.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_old_consume_race_does_not_replace_newer_controls(monkeypatch):
+    async def run():
+        c = context()
+        ctx = S(user=S(id=20), interaction=S(edit_initial_response=AsyncMock()))
+        store = S(
+            consume_preview=AsyncMock(return_value=False),
+            preview_current=AsyncMock(return_value=False),
+        )
+        monkeypatch.setattr(ui, "MemberProfiles", lambda db: store)
+        state = {
+            "nonce": "old",
+            "name": "Main",
+            "zone_id": "gmt",
+            "country": "GB",
+            "profile_revision": 0,
+        }
+        await ui.save(ctx, {"_id": "1"}, c, object(), state, object())
+        ctx.interaction.edit_initial_response.assert_not_awaited()
+
+    asyncio.run(run())

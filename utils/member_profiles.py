@@ -47,7 +47,59 @@ class MemberProfiles:
         ).to_list(length=None)
         return {row["discord_id"]: row for row in rows}
 
+    async def membership_rows(self):
+        rows = await self.collection.find({}, {"_id": 1, "left_at": 1}).to_list(
+            length=10001
+        )
+        if len(rows) > 10000:
+            raise ValueError(
+                "Member profile reconciliation limit exceeded; no absence marks applied."
+            )
+        return rows
+
+    async def consume_preview(
+        self, session_id, nonce, *, guild_id, discord_id, actor_id
+    ):
+        from utils.component_state import update_state
+
+        query = {
+            "_id": session_id,
+            "type": "warrior_setup",
+            "guild_id": int(guild_id),
+            "user_id": int(member_id(discord_id)),
+            "recruiter_id": int(member_id(actor_id)),
+            "nickname_setup.nonce": nonce,
+            "nickname_setup.step": "preview",
+        }
+        result = await update_state(
+            self.mongo, query, {"$set": {"nickname_setup.step": "applying"}}
+        )
+        return bool(result.matched_count)
+
+    async def finish_preview(self, session_id, nonce, status):
+        from utils.component_state import update_state
+
+        if status not in ("saved", "needs_attention"):
+            raise ValueError("Invalid nickname receipt status.")
+        result = await update_state(
+            self.mongo,
+            {
+                "_id": session_id,
+                "nickname_setup.nonce": nonce,
+                "nickname_setup.step": "applying",
+            },
+            {"$set": {"nickname_setup.step": status}},
+        )
+        return bool(result.matched_count)
+
+    async def preview_current(self, session_id, nonce):
+        from utils.component_state import get_state
+
+        row = await get_state(self.mongo, session_id)
+        return bool(row and (row.get("nickname_setup") or {}).get("nonce") == nonce)
+
     async def write(self, discord_id, fields, **options):
+        await self.ensure_indexes()
         from utils.member_profile_leases import editing, verify
 
         async with editing(self.mongo, member_id(discord_id)) as claim:
@@ -72,6 +124,7 @@ class MemberProfiles:
         ):
             raise ValueError("Invalid profile edit source or revision.")
         member_id(updated_by)
+        await self.ensure_indexes()
         async with editing(self.mongo, member_id(discord_id)) as claim:
             current = await self.get(discord_id)
             if int((current or {}).get("revision", 0)) != expected_revision:
@@ -99,7 +152,9 @@ class MemberProfiles:
         updated_by,
         source,
         now=None,
-        left_at=None
+        left_at=None,
+        membership_at=None,
+        preserve_edit_timestamp=False,
     ):
         """CAS replace, never append history; imported values cannot displace staff."""
         from utils.member_timezones import profile_fields
@@ -129,9 +184,14 @@ class MemberProfiles:
             discord_id=key,
             source=source,
             updated_by=actor,
-            updated_at=at,
+            updated_at=(
+                current.get("updated_at", at)
+                if preserve_edit_timestamp and current
+                else at
+            ),
             revision=expected_revision + 1,
             left_at=left_at,
+            membership_at=membership_at or at,
         )
         try:
             if current is None:
@@ -150,14 +210,20 @@ class MemberProfiles:
             ) from error
         return row
 
-    async def membership(self, discord_id, *, left_at):
+    async def membership(self, discord_id, *, left_at, observed_at=None):
         """Membership events update existing profiles only, through the same CAS writer."""
         import asyncio
         from utils.member_profile_leases import ProfileBusy
 
+        observed_at = observed_at or datetime.now(timezone.utc)
         for _ in range(65):
             current = await self.get(discord_id)
-            if current is None or current.get("left_at") == left_at:
+            if current is None:
+                return current
+            prior = current.get("membership_at")
+            if prior is not None and prior.tzinfo is None:
+                prior = prior.replace(tzinfo=timezone.utc)
+            if prior is not None and prior >= observed_at:
                 return current
             try:
                 return await self.write(
@@ -167,6 +233,8 @@ class MemberProfiles:
                     updated_by=current["updated_by"],
                     source=current["source"],
                     left_at=left_at,
+                    membership_at=observed_at,
+                    preserve_edit_timestamp=True,
                 )
             except (ProfileConflict, ProfileBusy):
                 await asyncio.sleep(1)

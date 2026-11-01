@@ -2,7 +2,6 @@
 
 from datetime import datetime, timezone
 import logging
-import re
 import hikari
 from extensions.commands.recruit import perms
 from extensions.commands.tickets import store, testing_service
@@ -247,22 +246,6 @@ def result_text(result):
     )
 
 
-def nickname(ign, zone, country):
-    ign, zone, country = ign.strip(), zone.strip().upper(), country.strip()
-    if re.fullmatch("[A-Za-z]{2}", country):
-        country = "".join(chr(ord(x) + 127397) for x in country.upper())
-    elif not (len(country) == 2 and all(0x1F1E6 <= ord(x) <= 0x1F1FF for x in country)):
-        raise SetupError(
-            "Use a two-letter country code, such as US, or a country flag."
-        )
-    value = f"{ign} | {zone} {country}"
-    if not ign or not zone or len(value) > 32 or "\n" in value:
-        raise SetupError(
-            f"The combined nickname must fit within 32 characters (currently {len(value)}). Shorten the name or time zone."
-        )
-    return value
-
-
 async def open_ticket(mongo, guild_id, user_id, *, ticket_id=None):
     """Select an onboarding ticket, or validate a run's original ticket.
 
@@ -280,27 +263,43 @@ async def open_ticket(mongo, guild_id, user_id, *, ticket_id=None):
         rows = await mongo.tickets.find(query).to_list(length=1)
     else:
         rows = await mongo.tickets.find({**query, "status": "open"}).to_list(length=3)
-        rows = [r for r in rows if not r.get("thread_missing") and not testing_service.is_test_ticket(r)]
+        rows = [
+            r
+            for r in rows
+            if not r.get("thread_missing") and not testing_service.is_test_ticket(r)
+        ]
         if len(rows) > 1:
-            raise SetupError("This member has multiple open tickets. Resolve the duplicate before starting the walkthrough.")
+            raise SetupError(
+                "This member has multiple open tickets. Resolve the duplicate before starting the walkthrough."
+            )
         if not rows:
-            rows = await mongo.tickets.find({
-                **query,
-                "status": "approved",
-                "$or": [
-                    {"thread_missing": {"$exists": False}},
-                    {"thread_missing": None},
-                    {"thread_missing": False},
-                    {"thread_missing": {}},
-                ],
-            }).sort([("handled_at", -1), ("created_at", -1), ("_id", -1)]).to_list(length=3)
+            rows = (
+                await mongo.tickets.find(
+                    {
+                        **query,
+                        "status": "approved",
+                        "$or": [
+                            {"thread_missing": {"$exists": False}},
+                            {"thread_missing": None},
+                            {"thread_missing": False},
+                            {"thread_missing": {}},
+                        ],
+                    }
+                )
+                .sort([("handled_at", -1), ("created_at", -1), ("_id", -1)])
+                .to_list(length=3)
+            )
             rows = [r for r in rows if not testing_service.is_test_ticket(r)][:1]
-    rows = [r for r in rows if not r.get("thread_missing") and not testing_service.is_test_ticket(r)]
+    rows = [
+        r
+        for r in rows
+        if not r.get("thread_missing") and not testing_service.is_test_ticket(r)
+    ]
     if not rows:
         raise SetupError(
             "The walkthrough’s original ticket must still be open or approved and available."
-            if ticket_id is not None else
-            "There is no open or approved live ticket for this member in this server."
+            if ticket_id is not None
+            else "There is no open or approved live ticket for this member in this server."
         )
     return rows[0]
 

@@ -43,9 +43,13 @@ def cached_profile_zones(request, owner_ids):
                             "Invalid saved member timezone; falling back to nickname"
                         )
                 state["zones"] = values
+                state["warning"] = None
             except asyncio.CancelledError:
                 raise
             except Exception as error:
+                state["warning"] = (
+                    "Saved time zones unavailable; using cached profiles or nickname labels."
+                )
                 log.warning(
                     "Roster member profile read failed (%s); retaining cache",
                     type(error).__name__,

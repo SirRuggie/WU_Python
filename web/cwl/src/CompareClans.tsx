@@ -348,6 +348,11 @@ export default function CompareClans({
           onChange={updateClans}
         />
       )}
+      {roster.owner_timezones_warning && (
+        <p className="notice error" role="status">
+          {roster.owner_timezones_warning}
+        </p>
+      )}
       {panel === "sort" && (
         <ActionPanel
           title="Sort players"

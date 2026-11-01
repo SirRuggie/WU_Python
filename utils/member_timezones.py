@@ -1,6 +1,9 @@
 """Standard GMT labels, country choices and safe nickname/name selection rules."""
 
 import re
+import logging
+
+log = logging.getLogger(__name__)
 
 # Standard offsets are deliberate; labels can differ from summer civil time.
 ZONE_CHOICES = (
@@ -161,7 +164,8 @@ async def name_choices(coc_client, discord_id):
             "complete": complete,
             "unavailable": not complete,
         }
-    except (TimeoutError, OSError):
+    except Exception as error:
+        log.warning("Warrior name lookup unavailable (%s)", type(error).__name__)
         return {
             "accounts": [],
             "suggested": None,
